@@ -110,6 +110,44 @@ describe('Hetzner distributed recipe workflow', () => {
         }
     });
 
+    it('installs and executes controller scripts from the logged-in user home directory', async () => {
+        const workflowPaths = [
+            '.github/workflows/hetzner-distributed-recipe.yml',
+            '.github/workflows/hetzner-headless-browsers.yml',
+            '.github/workflows/deploy-hetzner-controller.yml',
+        ];
+
+        for (const workflowPath of workflowPaths) {
+            const workflow = await readFile(path.join(repoRoot, workflowPath), 'utf8');
+
+            expect(workflow).toContain('rallar_script_dir="${HOME}/rallar-controller"');
+            expect(workflow).toContain('"${HETZNER_USER}@${HETZNER_HOST}:~/rallar-controller/"');
+            expect(workflow).toContain('ln -sf "${rallar_script_dir}/15-logs.sh" /usr/local/bin/rallar-logs');
+            expect(workflow).toContain('cd "${HOME}/rallar-controller"');
+            expect(workflow).not.toMatch(/\/tmp\/rallar-controller(?:\/|\s|'|"|$)/);
+        }
+    });
+
+    it('passes browser log level through workflows that start headless workers', async () => {
+        const distributedWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            'utf8',
+        );
+        const headlessWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+
+        for (const workflow of [distributedWorkflow, headlessWorkflow]) {
+            expect(workflow).toContain('browser_log_level:');
+            expect(workflow).toContain('default: warning');
+            expect(workflow).toContain('RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}');
+            expect(workflow).toContain(
+                'printf \'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL}")"',
+            );
+        }
+    });
+
     it('uses a shared lock-aware Playwright installer from rollout and headless scripts', async () => {
         const rolloutScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),

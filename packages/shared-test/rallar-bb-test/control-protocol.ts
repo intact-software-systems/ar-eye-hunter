@@ -193,6 +193,21 @@ function validateNumberField(
         : fail(`${path}.${key} must be a number.`);
 }
 
+function validatePositiveNumberField(
+    value: Record<string, unknown>,
+    key: string,
+    path: string,
+): ControlCommandValidationResult {
+    const result = validateNumberField(value, key, path);
+    if (!result.ok || value[key] === undefined) {
+        return result;
+    }
+
+    return (value[key] as number) > 0
+        ? { ok: true }
+        : fail(`${path}.${key} must be > 0.`);
+}
+
 function validateIntegerField(
     value: Record<string, unknown>,
     key: string,
@@ -657,6 +672,116 @@ function validateRtcConnectReadiness(value: unknown): ControlCommandValidationRe
     return { ok: true };
 }
 
+function validateRtcStreamThresholds(value: unknown): ControlCommandValidationResult {
+    if (value === undefined) {
+        return { ok: true };
+    }
+    if (!isRecord(value)) {
+        return fail('rtc.stream.thresholds must be an object.');
+    }
+
+    let result = validateKeys(value, [
+        'minSendSuccessRatio',
+        'maxDroppedFrames',
+        'maxBackpressureCount',
+        'maxP95SendDurationMs',
+        'maxP99SendDurationMs',
+        'maxAverageStartDriftMs',
+        'maxStartDriftMs',
+        'maxJitterMs',
+    ], 'rtc.stream.thresholds');
+    if (!result.ok) {
+        return result;
+    }
+
+    result = validateNumberField(value, 'minSendSuccessRatio', 'rtc.stream.thresholds');
+    if (!result.ok) {
+        return result;
+    }
+    if (
+        value.minSendSuccessRatio !== undefined &&
+        ((value.minSendSuccessRatio as number) < 0 || (value.minSendSuccessRatio as number) > 1)
+    ) {
+        return fail('rtc.stream.thresholds.minSendSuccessRatio must be between 0 and 1.');
+    }
+
+    for (const field of [
+        'maxDroppedFrames',
+        'maxBackpressureCount',
+        'maxP95SendDurationMs',
+        'maxP99SendDurationMs',
+        'maxAverageStartDriftMs',
+        'maxStartDriftMs',
+        'maxJitterMs',
+    ]) {
+        result = validateNumberField(value, field, 'rtc.stream.thresholds');
+        if (!result.ok) {
+            return result;
+        }
+        if (value[field] !== undefined && (value[field] as number) < 0) {
+            return fail(`rtc.stream.thresholds.${field} must be >= 0.`);
+        }
+    }
+
+    return { ok: true };
+}
+
+function validateRtcStreamCommand(command: Record<string, unknown>): ControlCommandValidationResult {
+    if (command.send === undefined) {
+        return fail('rtc.stream.send is required.');
+    }
+    if (command.count === undefined && command.durationMs === undefined) {
+        return fail('rtc.stream requires count or durationMs.');
+    }
+    if (command.intervalMs === undefined && command.rateHz === undefined) {
+        return fail('rtc.stream requires intervalMs or rateHz.');
+    }
+
+    let result = validateIntegerField(command, 'count', 'rtc.stream', {
+        minimum: 1,
+        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount,
+    });
+    if (!result.ok) {
+        return result;
+    }
+    result = validateIntegerField(command, 'durationMs', 'rtc.stream', {
+        minimum: 1,
+        maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs,
+    });
+    if (!result.ok) {
+        return result;
+    }
+    result = validateIntegerField(command, 'intervalMs', 'rtc.stream', { minimum: 1 });
+    if (!result.ok) {
+        return result;
+    }
+    result = validatePositiveNumberField(command, 'rateHz', 'rtc.stream');
+    if (!result.ok) {
+        return result;
+    }
+    result = validateIntegerField(command, 'maxInFlight', 'rtc.stream', { minimum: 1 });
+    if (!result.ok) {
+        return result;
+    }
+    result = validateIntegerField(command, 'drainTimeoutMs', 'rtc.stream', { minimum: 0 });
+    if (!result.ok) {
+        return result;
+    }
+    result = validateIntegerField(command, 'progressEveryMs', 'rtc.stream', { minimum: 1 });
+    if (!result.ok) {
+        return result;
+    }
+    result = validateIntegerField(command, 'sampleEvery', 'rtc.stream', { minimum: 1 });
+    if (!result.ok) {
+        return result;
+    }
+    result = validateBooleanField(command, 'continueOnSendFailure', 'rtc.stream');
+    if (!result.ok) {
+        return result;
+    }
+    return validateRtcStreamThresholds(command.thresholds);
+}
+
 function validateDirectorRoomFields(
     command: Record<string, unknown>,
     path: string,
@@ -965,6 +1090,39 @@ export function validateRallarBlackBoxTestCommand(
                 'rtc.send',
             );
             return !result.ok ? result : validateRtcCommand(command);
+        case 'rtc.stream':
+            result = validateKeys(
+                command,
+                [
+                    ...base,
+                    'connection',
+                    'actor',
+                    'roomId',
+                    'applicationId',
+                    'workspaceId',
+                    'scope',
+                    'roomRef',
+                    'minSnapshotVersion',
+                    'transport',
+                    'send',
+                    'count',
+                    'durationMs',
+                    'intervalMs',
+                    'rateHz',
+                    'maxInFlight',
+                    'drainTimeoutMs',
+                    'continueOnSendFailure',
+                    'progressEveryMs',
+                    'sampleEvery',
+                    'thresholds',
+                ],
+                'rtc.stream',
+            );
+            if (!result.ok) {
+                return result;
+            }
+            result = validateRtcCommand(command);
+            return !result.ok ? result : validateRtcStreamCommand(command);
         case 'ws.open':
             result = validateKeys(command, [...base, 'connection', 'url', 'protocols', 'headers'], 'ws.open');
             return !result.ok ? result : validateWsCommand(command);

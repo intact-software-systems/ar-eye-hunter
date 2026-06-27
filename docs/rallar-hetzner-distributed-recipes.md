@@ -42,8 +42,8 @@ cheapest confidence check to heavier RTC/load baseline:
 | 2 | `apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json` | 2 | Loop, parallel, wait, and assert evidence without live RTC dependency. |
 | 3 | `apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json` | 2 | Live RTC connect/send/stats smoke. |
 | 4 | `apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json` | 2 | Browser-rallar provider parity across connect, direct, multicast, broadcast, health, close, and reset. |
-| 5 | `apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json` | 2 | Short 20 Hz RTC realtime performance baseline. |
-| 6 | `apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json` | 3 | Heavier three-agent realtime/load baseline. |
+| 5 | `apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json` | 2 | Short 20 Hz RTC realtime `rtc.stream` performance baseline. |
+| 6 | `apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json` | 3 | Heavier three-agent realtime/load `rtc.stream` baseline. |
 
 Diagnostic manifests live under
 `apps/rallar-black-box/manifests/hetzner/diagnostic/` and are not part of the
@@ -266,10 +266,21 @@ diagnostic count, exported event count, agent-reported event count, and
 stale/missing/flaky agent counts. If no baseline exists, treat the first clean
 run as the baseline.
 
+For `05-rtc-realtime-2-agent-5s.json` and
+`06-rtc-realtime-3-agent-15s.json`, also review the stream timing section:
+stream count, completed/planned frames, attempted frames, failed frames, dropped
+frames, backpressure count, p50/p95/p99/max stream send duration, achieved Hz,
+and slowest stream agents. These manifests use one bounded `rtc.stream` command
+per agent instead of expanding the realtime traffic into many sequential
+`rtc.send` commands, so stream frame metrics are the primary performance
+baseline.
+
 ## SPA Review
 
 Download the raw distributed artifact from GitHub Actions and import its JSON
 and JSONL files in the `rallar-black-box` Runs panel with `Import CI artifact`.
 The SPA uses the same analysis core as the CLI, then shows the verdict,
 likely cause, next action, minimal fix area, evidence file, warnings, and
-performance baseline beside the live distributed run monitor.
+performance baseline beside the live distributed run monitor. Imported stream
+runs show stream frames, p50/p95/p99 stream send duration, drops, backpressure,
+achieved Hz, and slowest stream agent rows in the Performance Health band.

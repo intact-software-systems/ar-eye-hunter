@@ -476,6 +476,52 @@ describe('distributed recipes helpers', () => {
         });
     });
 
+    it('builds RTC realtime recipes with an opt-in stream command', () => {
+        const recipe = createRallarBlackBoxRtcRealtimeRecipe({
+            durationSeconds: 5,
+            executionMode: 'stream',
+            readyPeerCount: 1,
+            readyTimeoutMs: 10_000,
+        });
+        const stream = recipe.commands.find(command => command.kind === 'rtc.stream') as
+            | Extract<typeof recipe.commands[number], { kind: 'rtc.stream' }>
+            | undefined;
+
+        expect(recipe.commands.map(command => command.kind)).toContain('rtc.stream');
+        expect(recipe.commands.map(command => command.kind)).not.toContain('loop');
+        expect(stream).toMatchObject({
+            commandId: 'rtc-realtime-position-stream',
+            count: 100,
+            intervalMs: 50,
+            maxInFlight: 64,
+            drainTimeoutMs: 5_000,
+            thresholds: {
+                minSendSuccessRatio: 0.99,
+                maxDroppedFrames: 0,
+            },
+            metadata: {
+                realtime: {
+                    executionMode: 'stream',
+                    frameCount: 100,
+                },
+            },
+        });
+        expect((stream?.send as { data?: Record<string, unknown> } | undefined)?.data).toMatchObject({
+            seq: '{stream.index}',
+            tMs: '{stream.elapsedMs}',
+            position: {
+                frame: '{stream.iteration}',
+                x: '{stream.index}',
+            },
+        });
+        expect(distributedRecipeCommandPreview(recipe)).toEqual({
+            manifestCommandCount: 5,
+            effectiveCommandCount: 5,
+            effectiveFrameCount: 100,
+            label: '5 manifest commands - 100 stream frames',
+        });
+    });
+
     it('builds the RTC smoke fixture with idempotent group and member setup before connect', () => {
         const recipe = createRallarBlackBoxRtcSmokeRecipe({
             group: {

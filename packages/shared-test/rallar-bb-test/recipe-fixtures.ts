@@ -24,6 +24,13 @@ export type RallarBlackBoxRtcRealtimeRecipeOptions = Readonly<{
     connection?: string;
     readyPeerCount?: number;
     readyTimeoutMs?: number;
+    executionMode?: 'loop' | 'stream';
+    stream?: Readonly<{
+        maxInFlight?: number;
+        drainTimeoutMs?: number;
+        progressEveryMs?: number;
+        sampleEvery?: number;
+    }>;
 }>;
 
 export type RallarBlackBoxLiveRecipeOptions = Readonly<{
@@ -342,6 +349,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
     const connection = options.connection ?? 'rtcRealtime';
     const group = options.group ?? defaultRallarBlackBoxGroup();
     const roomRef = groupRoomRef(group);
+    const executionMode = options.executionMode ?? 'loop';
     const sendCommand: RallarBlackBoxTestCommand = {
         kind: 'rtc.send',
         commandId: 'rtc-realtime-position',
@@ -385,6 +393,60 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
             },
         },
     };
+    const streamCommand: RallarBlackBoxTestCommand = {
+        kind: 'rtc.stream',
+        commandId: 'rtc-realtime-position-stream',
+        connection,
+        actor: '{auth.clientId}',
+        transport: 'realtime',
+        applicationId: group.applicationId,
+        workspaceId: group.workspaceId,
+        roomId: group.groupId,
+        roomRef,
+        count: frameCount,
+        intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+        maxInFlight: options.stream?.maxInFlight ?? 64,
+        drainTimeoutMs: options.stream?.drainTimeoutMs ?? 5_000,
+        progressEveryMs: options.stream?.progressEveryMs ?? 1_000,
+        sampleEvery: options.stream?.sampleEvery ?? 1,
+        thresholds: {
+            minSendSuccessRatio: 0.99,
+            maxDroppedFrames: 0,
+        },
+        metadata: {
+            realtime: {
+                rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                durationSeconds,
+                frameCount,
+                executionMode: 'stream',
+            },
+        },
+        send: {
+            roomId: group.groupId,
+            roomRef,
+            openTimeoutMs: 10_000,
+            data: {
+                topic: 'room.black-box.rtc-realtime.position',
+                typeId: 'room.black-box.rtc-realtime.position',
+                actor: '{auth.clientId}',
+                seq: '{stream.index}',
+                rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                durationSeconds,
+                totalFrames: frameCount,
+                tMs: '{stream.elapsedMs}',
+                position: {
+                    frame: '{stream.iteration}',
+                    x: '{stream.index}',
+                    y: 0,
+                    z: '{stream.index}',
+                    headingDeg: '{stream.index}',
+                    velocityMps: 4,
+                },
+            },
+        },
+    };
     return {
         recipeId: RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
         name: 'RTC realtime position stream',
@@ -396,6 +458,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
             intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
             durationSeconds,
             frameCount,
+            executionMode,
             group,
         },
         commands: [
@@ -425,23 +488,25 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
                     },
                 },
             },
-            {
-                kind: 'loop',
-                commandId: 'rtc-realtime-position-loop',
-                count: frameCount,
-                intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
-                maxCommands: frameCount,
-                continueOnFailure: false,
-                metadata: {
-                    realtime: {
-                        rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-                        intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
-                        durationSeconds,
-                        frameCount,
+            executionMode === 'stream'
+                ? streamCommand
+                : {
+                    kind: 'loop',
+                    commandId: 'rtc-realtime-position-loop',
+                    count: frameCount,
+                    intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                    maxCommands: frameCount,
+                    continueOnFailure: false,
+                    metadata: {
+                        realtime: {
+                            rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                            intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                            durationSeconds,
+                            frameCount,
+                        },
                     },
+                    commands: [sendCommand],
                 },
-                commands: [sendCommand],
-            },
             {
                 kind: 'stats',
                 commandId: 'rtc-realtime-stats',

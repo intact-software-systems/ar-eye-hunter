@@ -358,6 +358,289 @@ describe('Hetzner distributed run artifact analysis', () => {
         expect(analysis.fixProposalMarkdown).toBeUndefined();
     });
 
+    it('derives stream performance from rtc.stream JSONL result summaries', () => {
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-stream-passed',
+                    controlRunId: 'run-stream-passed',
+                    state: 'passed',
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 7_000,
+                    commandLinks: [
+                        { phase: 'start', agentId: 'controller-01', commandId: 'stream-a' },
+                        { phase: 'start', agentId: 'controller-02', commandId: 'stream-b' },
+                    ],
+                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
+                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
+                    targetAgentIds: ['controller-01', 'controller-02'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-stream-passed',
+                    agents: [
+                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 30 },
+                        { agentId: 'controller-02', connected: true, reconnectCount: 0, receivedEventCount: 35 },
+                    ],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': [
+                    JSON.stringify({
+                        agentId: 'controller-01',
+                        commandId: 'stream-a',
+                        action: 'rtc.stream',
+                        status: 'OK',
+                        ok: true,
+                        result: {
+                            commandId: 'rtc-realtime-position-stream',
+                            transport: 'realtime',
+                            plannedFrames: 3,
+                            scheduledFrames: 3,
+                            attemptedFrames: 3,
+                            completedFrames: 3,
+                            failedFrames: 0,
+                            droppedFrames: 0,
+                            backpressureCount: 0,
+                            requestedRateHz: 20,
+                            achievedScheduleHz: 20,
+                            achievedCompletionHz: 20,
+                            duration: { minMs: 10, p50Ms: 20, p95Ms: 30, p99Ms: 30, maxMs: 30, averageMs: 20 },
+                            observations: [
+                                { index: 0, iteration: 1, durationMs: 10, ok: true },
+                                { index: 1, iteration: 2, durationMs: 20, ok: true },
+                                { index: 2, iteration: 3, durationMs: 30, ok: true },
+                            ],
+                            thresholdFailures: [],
+                        },
+                    }),
+                    JSON.stringify({
+                        agentId: 'controller-02',
+                        commandId: 'stream-b',
+                        action: 'rtc.stream',
+                        status: 'OK',
+                        ok: true,
+                        result: {
+                            commandId: 'rtc-realtime-position-stream',
+                            transport: 'realtime',
+                            plannedFrames: 2,
+                            scheduledFrames: 2,
+                            attemptedFrames: 2,
+                            completedFrames: 2,
+                            failedFrames: 0,
+                            droppedFrames: 0,
+                            backpressureCount: 1,
+                            requestedRateHz: 20,
+                            achievedScheduleHz: 18,
+                            achievedCompletionHz: 18,
+                            duration: { minMs: 40, p50Ms: 40, p95Ms: 50, p99Ms: 50, maxMs: 50, averageMs: 45 },
+                            observations: [
+                                { index: 0, iteration: 1, durationMs: 40, ok: true, backpressured: true },
+                                { index: 1, iteration: 2, durationMs: 50, ok: true },
+                            ],
+                            thresholdFailures: [],
+                        },
+                    }),
+                ].join('\n'),
+                'events.jsonl': '',
+            },
+        });
+
+        expect(analysis.performance?.streamTiming).toMatchObject({
+            streamCount: 2,
+            plannedFrames: 5,
+            scheduledFrames: 5,
+            attemptedFrames: 5,
+            completedFrames: 5,
+            failedFrames: 0,
+            droppedFrames: 0,
+            backpressureCount: 1,
+            sendSuccessRatio: 1,
+            duration: {
+                count: 5,
+                minMs: 10,
+                p50Ms: 30,
+                p95Ms: 50,
+                p99Ms: 50,
+                maxMs: 50,
+                averageMs: 30,
+                outlierCount: 1,
+            },
+        });
+        expect(analysis.performance?.streamTiming?.slowestAgents[0]).toMatchObject({
+            agentId: 'controller-02',
+            streamCount: 1,
+            completedFrames: 2,
+            maxMs: 50,
+        });
+        expect(analysis.performanceMarkdown).toContain('Stream timing: streams=2, frames=5/5');
+        expect(analysis.performanceMarkdown).toContain('p99=50ms');
+    });
+
+    it('uses the latest stream event when result JSONL is bounded', () => {
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-stream-events',
+                    controlRunId: 'run-stream-events',
+                    state: 'passed',
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 7_000,
+                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
+                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
+                    targetAgentIds: ['controller-01'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-stream-events',
+                    agents: [{ agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 3 }],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': '',
+                'events.jsonl': [
+                    JSON.stringify({
+                        kind: 'diagnostic',
+                        topic: 'rallar.bb.rtc.stream_started',
+                        severity: 'info',
+                        agentId: 'controller-01',
+                        commandId: 'rtc-realtime-position-stream',
+                        payload: {
+                            topic: 'rallar.bb.rtc.stream_started',
+                            severity: 'info',
+                            data: { plannedFrames: 100, scheduledFrames: 0, completedFrames: 0 },
+                        },
+                    }),
+                    JSON.stringify({
+                        kind: 'diagnostic',
+                        topic: 'rallar.bb.rtc.stream_progress',
+                        severity: 'info',
+                        agentId: 'controller-01',
+                        commandId: 'rtc-realtime-position-stream',
+                        payload: {
+                            topic: 'rallar.bb.rtc.stream_progress',
+                            severity: 'info',
+                            data: { plannedFrames: 100, scheduledFrames: 80, attemptedFrames: 80, completedFrames: 80 },
+                        },
+                    }),
+                    JSON.stringify({
+                        kind: 'diagnostic',
+                        topic: 'rallar.bb.rtc.stream_completed',
+                        severity: 'info',
+                        agentId: 'controller-01',
+                        commandId: 'rtc-realtime-position-stream',
+                        payload: {
+                            topic: 'rallar.bb.rtc.stream_completed',
+                            severity: 'info',
+                            data: {
+                                plannedFrames: 100,
+                                scheduledFrames: 100,
+                                attemptedFrames: 100,
+                                completedFrames: 100,
+                                failedFrames: 0,
+                                droppedFrames: 0,
+                                duration: { p50Ms: 25, p95Ms: 40, p99Ms: 45, maxMs: 50 },
+                            },
+                        },
+                    }),
+                ].join('\n'),
+            },
+        });
+
+        expect(analysis.performance?.streamTiming).toMatchObject({
+            streamCount: 1,
+            plannedFrames: 100,
+            scheduledFrames: 100,
+            attemptedFrames: 100,
+            completedFrames: 100,
+            duration: {
+                p50Ms: 25,
+                p95Ms: 40,
+                p99Ms: 45,
+                maxMs: 50,
+            },
+        });
+    });
+
+    it('uses stream progress evidence when timed-out runs have no failed result', () => {
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-stream-timeout',
+                    controlRunId: 'run-stream-timeout',
+                    state: 'timed-out',
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 61_000,
+                    rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
+                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
+                    targetAgentIds: ['controller-01'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-stream-timeout',
+                    agents: [{ agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 5 }],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': '',
+                'events.jsonl': [
+                    JSON.stringify({
+                        kind: 'diagnostic',
+                        topic: 'rallar.bb.rtc.stream_started',
+                        severity: 'info',
+                        agentId: 'controller-01',
+                        commandId: 'rtc-realtime-position-stream',
+                        payload: {
+                            topic: 'rallar.bb.rtc.stream_started',
+                            severity: 'info',
+                            data: { plannedFrames: 100, scheduledFrames: 0, completedFrames: 0 },
+                        },
+                    }),
+                    JSON.stringify({
+                        kind: 'diagnostic',
+                        topic: 'rallar.bb.rtc.stream_progress',
+                        severity: 'info',
+                        agentId: 'controller-01',
+                        commandId: 'rtc-realtime-position-stream',
+                        payload: {
+                            topic: 'rallar.bb.rtc.stream_progress',
+                            severity: 'info',
+                            data: {
+                                plannedFrames: 100,
+                                scheduledFrames: 100,
+                                attemptedFrames: 100,
+                                completedFrames: 98,
+                                failedFrames: 0,
+                                droppedFrames: 0,
+                                inFlightFrames: 2,
+                            },
+                        },
+                    }),
+                ].join('\n'),
+            },
+        });
+
+        expect(analysis.failure).toMatchObject({
+            category: 'rtc-stream',
+            title: 'RTC stream did not finish before the distributed run timed out.',
+            likelyCause: 'RTC stream rtc-realtime-position-stream reached 98 of 100 completed frames before the run stopped.',
+            commandId: 'rtc-realtime-position-stream',
+            evidenceFile: 'events.jsonl',
+            minimalFixArea: 'RTC/TURN',
+        });
+        expect(analysis.fixProposalMarkdown).toContain('RTC stream did not finish');
+        expect(analysis.fixProposalMarkdown).not.toContain('no specific failure evidence was exported');
+    });
+
     it('keeps command timing metrics on one linked distributed-command sample set', () => {
         const analysis = analyzeDistributedRunArtifactFiles({
             files: {

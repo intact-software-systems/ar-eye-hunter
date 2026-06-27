@@ -1,4 +1,5 @@
 export type HeadlessWorkerTransport = "realtime" | "messages.rtc";
+export type HeadlessWorkerBrowserLogLevel = "warning" | "info" | "debug";
 
 export type HeadlessWorkerCredentials = Readonly<{
   username: string;
@@ -43,6 +44,7 @@ export type HeadlessWorkerConfig = Readonly<{
   restoreSession: boolean;
   logoutOnClose: boolean;
   leaveRoomOnClose: boolean;
+  browserLogLevel: HeadlessWorkerBrowserLogLevel;
   headless: boolean;
   launchTimeoutMs: number;
   readyTimeoutMs: number;
@@ -55,12 +57,16 @@ export type HeadlessWorkerConfigInput = Readonly<{
 }>;
 
 export type HeadlessWorkerAgentUrlInput =
-  & Omit<HeadlessWorkerConfig, "agents" | "agentCredentials">
+  & Omit<
+    HeadlessWorkerConfig,
+    "agents" | "agentCredentials" | "browserLogLevel"
+  >
   & Omit<HeadlessWorkerAgentConfig, "url">;
 
 const DEFAULT_AGENT_COUNT = 1;
 const DEFAULT_AGENT_PREFIX = "hetzner-agent";
 const DEFAULT_TRANSPORT: HeadlessWorkerTransport = "realtime";
+const DEFAULT_BROWSER_LOG_LEVEL: HeadlessWorkerBrowserLogLevel = "warning";
 const DEFAULT_LAUNCH_TIMEOUT_MS = 30_000;
 const DEFAULT_READY_TIMEOUT_MS = 45_000;
 
@@ -145,6 +151,11 @@ export function readHeadlessWorkerConfig(
       env,
       "RALLAR_BLACK_BOX_LEAVE_ROOM_ON_CLOSE",
       false,
+    ),
+    browserLogLevel: browserLogLevelEnv(
+      env,
+      "RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL",
+      DEFAULT_BROWSER_LOG_LEVEL,
     ),
     headless: booleanEnv(env, "RALLAR_BLACK_BOX_HEADLESS", true),
     launchTimeoutMs: positiveIntegerEnv(
@@ -394,6 +405,23 @@ function transportEnv(
     return raw;
   }
   throw new Error(`${key} must be realtime or messages.rtc. Received: ${raw}`);
+}
+
+function browserLogLevelEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  key: string,
+  fallback: HeadlessWorkerBrowserLogLevel,
+): HeadlessWorkerBrowserLogLevel {
+  const raw = envValue(env, key);
+  if (!raw) {
+    return fallback;
+  }
+  if (raw === "warning" || raw === "info" || raw === "debug") {
+    return raw;
+  }
+  throw new Error(
+    `${key} must be warning, info, or debug. Received: ${raw}`,
+  );
 }
 
 function normalizeBaseUrl(value: string): string {

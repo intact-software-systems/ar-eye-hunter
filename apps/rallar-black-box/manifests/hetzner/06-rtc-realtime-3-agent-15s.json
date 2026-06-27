@@ -22,6 +22,7 @@
           "intervalMs": 50,
           "durationSeconds": 15,
           "frameCount": 300,
+          "executionMode": "stream",
           "group": {
             "applicationId": "rallar-server",
             "workspaceId": "default",
@@ -110,73 +111,66 @@
             }
           },
           {
-            "kind": "loop",
-            "commandId": "rtc-realtime-position-loop",
+            "kind": "rtc.stream",
+            "commandId": "rtc-realtime-position-stream",
+            "connection": "rtcRealtime",
+            "actor": "{auth.clientId}",
+            "transport": "realtime",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomId": "hetzner-headless-room",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
             "count": 300,
             "intervalMs": 50,
-            "maxCommands": 300,
-            "continueOnFailure": false,
+            "maxInFlight": 64,
+            "drainTimeoutMs": 5000,
+            "progressEveryMs": 1000,
+            "sampleEvery": 1,
+            "thresholds": {
+              "minSendSuccessRatio": 0.99,
+              "maxDroppedFrames": 0
+            },
             "metadata": {
               "realtime": {
                 "rateHz": 20,
                 "intervalMs": 50,
                 "durationSeconds": 15,
-                "frameCount": 300
+                "frameCount": 300,
+                "executionMode": "stream"
               }
             },
-            "commands": [
-              {
-                "kind": "rtc.send",
-                "commandId": "rtc-realtime-position",
-                "connection": "rtcRealtime",
-                "transport": "realtime",
+            "send": {
+              "roomId": "hetzner-headless-room",
+              "roomRef": {
                 "applicationId": "rallar-server",
                 "workspaceId": "default",
-                "roomRef": {
-                  "applicationId": "rallar-server",
-                  "workspaceId": "default",
-                  "groupId": "hetzner-headless-room"
-                },
-                "timeoutMs": 3000,
-                "metadata": {
-                  "realtime": {
-                    "rateHz": 20,
-                    "intervalMs": 50,
-                    "durationSeconds": 15,
-                    "frame": "{loop.iteration}",
-                    "totalFrames": 300
-                  }
-                },
-                "send": {
-                  "roomId": "hetzner-headless-room",
-                  "roomRef": {
-                    "applicationId": "rallar-server",
-                    "workspaceId": "default",
-                    "groupId": "hetzner-headless-room"
-                  },
-                  "openTimeoutMs": 10000,
-                  "data": {
-                    "topic": "room.black-box.rtc-realtime.position",
-                    "typeId": "room.black-box.rtc-realtime.position",
-                    "actor": "{auth.clientId}",
-                    "seq": "{loop.index}",
-                    "rateHz": 20,
-                    "intervalMs": 50,
-                    "durationSeconds": 15,
-                    "totalFrames": 300,
-                    "tMs": "{loop.elapsedMs}",
-                    "position": {
-                      "frame": "{loop.iteration}",
-                      "x": "{loop.index}",
-                      "y": 0,
-                      "z": "{loop.index}",
-                      "headingDeg": "{loop.index}",
-                      "velocityMps": 4
-                    }
-                  }
+                "groupId": "hetzner-headless-room"
+              },
+              "openTimeoutMs": 10000,
+              "data": {
+                "topic": "room.black-box.rtc-realtime.position",
+                "typeId": "room.black-box.rtc-realtime.position",
+                "actor": "{auth.clientId}",
+                "seq": "{stream.index}",
+                "rateHz": 20,
+                "intervalMs": 50,
+                "durationSeconds": 15,
+                "totalFrames": 300,
+                "tMs": "{stream.elapsedMs}",
+                "position": {
+                  "frame": "{stream.iteration}",
+                  "x": "{stream.index}",
+                  "y": 0,
+                  "z": "{stream.index}",
+                  "headingDeg": "{stream.index}",
+                  "velocityMps": 4
                 }
               }
-            ]
+            }
           },
           {
             "kind": "stats",

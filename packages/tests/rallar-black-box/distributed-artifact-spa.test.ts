@@ -26,6 +26,14 @@ describe('distributed artifact SPA reuse', () => {
         expect(source).toContain('P95 command');
         expect(source).toContain('P99 command');
         expect(source).toContain('Outliers');
+        expect(source).toContain('Stream frames');
+        expect(source).toContain('P50 stream');
+        expect(source).toContain('P95 stream');
+        expect(source).toContain('P99 stream');
+        expect(source).toContain('Stream drops');
+        expect(source).toContain('Backpressure');
+        expect(source).toContain('Achieved Hz');
+        expect(source).toContain('Slowest stream agent');
         expect(source).toContain('Slowest agent');
     });
 });

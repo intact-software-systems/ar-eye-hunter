@@ -9,15 +9,17 @@ Run them as `root` on `rallar-controller-fsn1-01`.
 From your local machine:
 
 ```sh
-scp -r scripts/hetzner/controller root@api.rallar.intactss.com:/tmp/rallar-controller
+ssh root@api.rallar.intactss.com 'rm -rf ~/rallar-controller && mkdir -p ~/rallar-controller'
+scp -r scripts/hetzner/controller/. root@api.rallar.intactss.com:~/rallar-controller/
 ```
 
 Then SSH to the VM:
 
 ```sh
 ssh root@api.rallar.intactss.com
-cd /tmp/rallar-controller
+cd ~/rallar-controller
 chmod +x *.sh
+ln -sf ~/rallar-controller/15-logs.sh /usr/local/bin/rallar-logs
 ```
 
 ## Run Order
@@ -86,6 +88,22 @@ Show service status, memory, and recent logs:
 ```sh
 ./07-status-controller.sh
 ```
+
+Tail app and headless browser logs from anywhere on the VM:
+
+```sh
+rallar-logs
+rallar-logs -f
+rallar-logs --browser -f
+rallar-logs --services api,control,caddy --since "30 min ago"
+rallar-logs --grep rtc-realtime --follow --pager
+```
+
+`rallar-logs` reads systemd journals for the Rallar API, control server,
+headless browser worker, and Caddy. Browser logs come from the headless worker;
+by default the worker logs browser warnings, errors, and page errors. Set
+`RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL=info` or `debug` before starting workers to
+capture more console output. Debug mode also logs failed browser requests.
 
 Roll out the latest version from Git using a controlled stop/update/start flow:
 

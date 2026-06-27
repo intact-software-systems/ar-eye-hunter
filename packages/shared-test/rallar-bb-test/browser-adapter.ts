@@ -4,6 +4,12 @@ import {
     inferRallarBlackBoxDiagnosticSeverity,
     normalizeRallarBlackBoxRuntimeDiagnostic,
 } from './diagnostics.ts';
+import {
+    planRallarBlackBoxRtcStreamFrames,
+    replaceRallarBlackBoxRtcStreamPlaceholders,
+    sampleRallarBlackBoxRtcStreamObservations,
+    summarizeRallarBlackBoxRtcStreamObservations,
+} from './rtc-stream.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
@@ -12,6 +18,7 @@ import type {
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestCleanupInput,
     RallarBlackBoxTestConfig,
+    RallarBlackBoxTestRtcStreamFrameObservation,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestRuntimeEventInput,
     RallarBlackBoxTestTransport,
@@ -909,6 +916,8 @@ class BrowserCommandAdapter {
                 return await this.connectRtc(command, context);
             case 'rtc.send':
                 return await this.sendRtc(command, context);
+            case 'rtc.stream':
+                return await this.streamRtc(command, context);
             case 'ws.open':
                 return await this.openWebSocket(command, context);
             case 'ws.send':
@@ -1823,6 +1832,361 @@ class BrowserCommandAdapter {
             status: 'ok',
             value: withSendObservationValue(diagnostics, sendObservation),
             nextStatus: context.state().status,
+        };
+    }
+
+    private async streamRtc(
+        command: Extract<CommandWithId, { kind: 'rtc.stream' }>,
+        context: RallarBlackBoxTestCommandContext,
+    ): Promise<RallarBlackBoxTestCommandOutcome> {
+        const plan = planRallarBlackBoxRtcStreamFrames({
+            count: command.count,
+            durationMs: command.durationMs,
+            intervalMs: command.intervalMs,
+            rateHz: command.rateHz,
+        });
+        const rallarRuntime = this.requireRallarRuntime();
+        const abort = this.commandAbortSignal(command, context);
+        const streamStartedAtEpochMs = Date.now();
+        const maxInFlight = toPositiveInteger(command.maxInFlight, 64);
+        const drainTimeoutMs = typeof command.drainTimeoutMs === 'number' && command.drainTimeoutMs >= 0
+            ? command.drainTimeoutMs
+            : 5_000;
+        const progressEveryMs = toPositiveInteger(command.progressEveryMs, 1_000);
+        const sampleEvery = toPositiveInteger(command.sampleEvery, 1);
+        const observations: RallarBlackBoxTestRtcStreamFrameObservation[] = [];
+        const active = new Map<string, Readonly<{
+            commandId: string;
+            index: number;
+            iteration: number;
+            scheduledAtEpochMs: number;
+            startedAtEpochMs: number;
+        }>>();
+        const inFlight = new Set<Promise<void>>();
+        let lastProgressAtEpochMs = streamStartedAtEpochMs;
+
+        const recordProgress = (force = false): void => {
+            const now = Date.now();
+            if (!force && now - lastProgressAtEpochMs < progressEveryMs) {
+                return;
+            }
+            lastProgressAtEpochMs = now;
+            context.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.rtc.stream_progress',
+                commandId: command.commandId,
+                connection: command.connection,
+                transport: command.transport,
+                severity: 'info',
+                payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                    topic: 'rallar.bb.rtc.stream_progress',
+                    severity: 'info',
+                    commandId: command.commandId,
+                    connection: command.connection,
+                    transport: command.transport,
+                    data: {
+                        plannedFrames: plan.frames.length,
+                        scheduledFrames: observations.length + active.size,
+                        completedFrames: observations.filter(observation => observation.ok && !observation.dropped).length,
+                        failedFrames: observations.filter(observation => !observation.ok).length,
+                        droppedFrames: observations.filter(observation => observation.dropped).length,
+                        inFlightFrames: active.size,
+                    },
+                    source: 'browser-adapter',
+                }),
+            });
+        };
+
+        context.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.bb.rtc.stream_started',
+            commandId: command.commandId,
+            connection: command.connection,
+            transport: command.transport,
+            severity: 'info',
+            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                topic: 'rallar.bb.rtc.stream_started',
+                severity: 'info',
+                commandId: command.commandId,
+                connection: command.connection,
+                transport: command.transport,
+                data: {
+                    plannedFrames: plan.frames.length,
+                    intervalMs: plan.intervalMs,
+                    requestedRateHz: plan.requestedRateHz,
+                    maxInFlight,
+                    drainTimeoutMs,
+                },
+                source: 'browser-adapter',
+            }),
+        });
+
+        try {
+            for (const frame of plan.frames) {
+                const scheduledAtEpochMs = streamStartedAtEpochMs + frame.scheduledElapsedMs;
+                const delayMs = Math.max(0, scheduledAtEpochMs - Date.now());
+                if (delayMs > 0) {
+                    await sleep(delayMs, abort.signal);
+                }
+
+                const startedAtEpochMs = Date.now();
+                const frameCommandId = `${command.commandId}:f${frame.iteration}`;
+                if (active.size >= maxInFlight) {
+                    observations.push({
+                        commandId: frameCommandId,
+                        index: frame.index,
+                        iteration: frame.iteration,
+                        scheduledAtEpochMs,
+                        startedAtEpochMs,
+                        completedAtEpochMs: startedAtEpochMs,
+                        startDriftMs: Math.max(0, startedAtEpochMs - scheduledAtEpochMs),
+                        durationMs: 0,
+                        ok: false,
+                        dropped: true,
+                        status: 'dropped',
+                        errorCode: 'RALLAR_BLACK_BOX_RTC_STREAM_IN_FLIGHT_LIMIT',
+                    });
+                    recordProgress();
+                    continue;
+                }
+
+                const scopedSend = this.toScopedRtcStreamSend(command, context, {
+                    commandId: frameCommandId,
+                    index: frame.index,
+                    iteration: frame.iteration,
+                    elapsedMs: Math.max(0, startedAtEpochMs - streamStartedAtEpochMs),
+                    scheduledElapsedMs: frame.scheduledElapsedMs,
+                });
+                const activeFrame = {
+                    commandId: frameCommandId,
+                    index: frame.index,
+                    iteration: frame.iteration,
+                    scheduledAtEpochMs,
+                    startedAtEpochMs,
+                };
+                active.set(frameCommandId, activeFrame);
+                const promise = (async () => {
+                    try {
+                        const diagnostics = await this.withAbort(
+                            rallarRuntime.send(scopedSend),
+                            abort.signal,
+                        );
+                        const completedAtEpochMs = Date.now();
+                        const failure = rtcSendFailureFromDiagnostics(diagnostics);
+                        observations.push(this.toRtcStreamObservation(
+                            activeFrame,
+                            completedAtEpochMs,
+                            diagnostics,
+                            failure?.code,
+                            failure === undefined,
+                        ));
+                    } catch (error) {
+                        const completedAtEpochMs = Date.now();
+                        observations.push({
+                            commandId: activeFrame.commandId,
+                            index: activeFrame.index,
+                            iteration: activeFrame.iteration,
+                            scheduledAtEpochMs: activeFrame.scheduledAtEpochMs,
+                            startedAtEpochMs: activeFrame.startedAtEpochMs,
+                            completedAtEpochMs,
+                            startDriftMs: Math.max(0, activeFrame.startedAtEpochMs - activeFrame.scheduledAtEpochMs),
+                            durationMs: Math.max(0, completedAtEpochMs - activeFrame.startedAtEpochMs),
+                            ok: false,
+                            status: 'failed',
+                            errorCode: error instanceof Error ? error.name : 'RALLAR_BLACK_BOX_RTC_STREAM_SEND_FAILED',
+                        });
+                    } finally {
+                        active.delete(frameCommandId);
+                    }
+                })();
+                inFlight.add(promise);
+                promise.finally(() => inFlight.delete(promise));
+                recordProgress();
+            }
+
+            const drainDeadlineEpochMs = Date.now() + drainTimeoutMs;
+            while (inFlight.size > 0 && Date.now() < drainDeadlineEpochMs) {
+                const remainingMs = Math.max(0, drainDeadlineEpochMs - Date.now());
+                await Promise.race([
+                    ...inFlight,
+                    sleep(Math.min(remainingMs, 25), abort.signal),
+                ]);
+            }
+            if (active.size > 0) {
+                const now = Date.now();
+                for (const frame of active.values()) {
+                    observations.push({
+                        commandId: frame.commandId,
+                        index: frame.index,
+                        iteration: frame.iteration,
+                        scheduledAtEpochMs: frame.scheduledAtEpochMs,
+                        startedAtEpochMs: frame.startedAtEpochMs,
+                        completedAtEpochMs: now,
+                        startDriftMs: Math.max(0, frame.startedAtEpochMs - frame.scheduledAtEpochMs),
+                        durationMs: Math.max(0, now - frame.startedAtEpochMs),
+                        ok: false,
+                        status: 'drain-timeout',
+                        errorCode: 'RALLAR_BLACK_BOX_RTC_STREAM_DRAIN_TIMEOUT',
+                    });
+                }
+                active.clear();
+            }
+        } finally {
+            abort.cleanup();
+        }
+
+        recordProgress(true);
+        const endedAtEpochMs = Date.now();
+        const summarizedValue = summarizeRallarBlackBoxRtcStreamObservations({
+            commandId: command.commandId,
+            transport: command.transport,
+            startedAtEpochMs: streamStartedAtEpochMs,
+            endedAtEpochMs,
+            intervalMs: plan.intervalMs,
+            requestedRateHz: plan.requestedRateHz,
+            plannedFrames: plan.frames.length,
+            observations,
+            thresholds: command.thresholds,
+        });
+        const value = {
+            ...summarizedValue,
+            observations: sampleRallarBlackBoxRtcStreamObservations(
+                summarizedValue.observations,
+                sampleEvery,
+            ),
+        };
+        const thresholdFailed = value.thresholdFailures.length > 0;
+        const sendFailed = value.failedFrames > 0 && command.continueOnSendFailure !== true;
+        const failed = thresholdFailed || sendFailed;
+        const topic = failed ? 'rallar.bb.rtc.stream_failed' : 'rallar.bb.rtc.stream_completed';
+        const message = thresholdFailed
+            ? 'RTC stream did not satisfy configured thresholds.'
+            : sendFailed
+                ? 'RTC stream had failed frame sends.'
+                : undefined;
+        const error = thresholdFailed
+            ? {
+                code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                message: message ?? 'RTC stream threshold failed.',
+                details: {
+                    thresholdFailures: value.thresholdFailures,
+                },
+            }
+            : sendFailed
+                ? {
+                    code: 'RALLAR_BLACK_BOX_RTC_STREAM_SEND_FAILED',
+                    message: message ?? 'RTC stream send failed.',
+                    details: {
+                        failedFrames: value.failedFrames,
+                        droppedFrames: value.droppedFrames,
+                    },
+                }
+                : undefined;
+
+        context.recordEvent({
+            kind: 'diagnostic',
+            topic,
+            commandId: command.commandId,
+            connection: command.connection,
+            transport: command.transport,
+            severity: failed ? 'error' : 'info',
+            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                topic,
+                severity: failed ? 'error' : 'info',
+                commandId: command.commandId,
+                connection: command.connection,
+                transport: command.transport,
+                data: value,
+                payload: value,
+                message,
+                error,
+                source: 'browser-adapter',
+            }),
+        });
+
+        return {
+            status: failed ? 'failed' : 'ok',
+            value,
+            error,
+            nextStatus: failed ? 'failed' : context.state().status,
+        };
+    }
+
+    private toScopedRtcStreamSend(
+        command: Extract<CommandWithId, { kind: 'rtc.stream' }>,
+        context: RallarBlackBoxTestCommandContext,
+        streamContext: Parameters<typeof replaceRallarBlackBoxRtcStreamPlaceholders>[1],
+    ): unknown {
+        const resolvedSend = replaceCommandPlaceholders(command.send, {
+            config: context.config(),
+            session: readOptionalBrowserSession(),
+        });
+        const streamSend = replaceRallarBlackBoxRtcStreamPlaceholders(resolvedSend, streamContext);
+        const scopedSendFields = Object.fromEntries(
+            Object.entries({
+                roomId: command.roomId,
+                applicationId: command.applicationId,
+                workspaceId: command.workspaceId,
+                scope: command.scope,
+                roomRef: command.roomRef,
+                minSnapshotVersion: command.minSnapshotVersion,
+            }).filter(([_key, value]) => value !== undefined),
+        );
+        if (Object.keys(scopedSendFields).length === 0) {
+            return streamSend;
+        }
+
+        return streamSend && typeof streamSend === 'object' && !Array.isArray(streamSend)
+            ? {
+                ...(streamSend as Record<string, unknown>),
+                ...Object.fromEntries(
+                    Object.entries(scopedSendFields).filter(([key]) =>
+                        !Object.prototype.hasOwnProperty.call(streamSend, key)
+                    ),
+                ),
+            }
+            : {
+                data: streamSend,
+                ...scopedSendFields,
+            };
+    }
+
+    private toRtcStreamObservation(
+        frame: Readonly<{
+            commandId: string;
+            index: number;
+            iteration: number;
+            scheduledAtEpochMs: number;
+            startedAtEpochMs: number;
+        }>,
+        completedAtEpochMs: number,
+        diagnostics: unknown,
+        errorCode: string | undefined,
+        ok: boolean,
+    ): RallarBlackBoxTestRtcStreamFrameObservation {
+        const root = asRecord(diagnostics);
+        const message = asRecord(root.message);
+        const status = firstDefined(
+            toStringValue(root.status),
+            toStringValue(message.status),
+        );
+        return {
+            commandId: frame.commandId,
+            index: frame.index,
+            iteration: frame.iteration,
+            scheduledAtEpochMs: frame.scheduledAtEpochMs,
+            startedAtEpochMs: frame.startedAtEpochMs,
+            completedAtEpochMs,
+            startDriftMs: Math.max(0, frame.startedAtEpochMs - frame.scheduledAtEpochMs),
+            durationMs: Math.max(0, completedAtEpochMs - frame.startedAtEpochMs),
+            ok,
+            status,
+            backpressured: status === 'backpressure' ||
+                status === 'backpressured' ||
+                status === 'rate-limited' ||
+                status === 'buffer-full' ||
+                status === 'circuit-open',
+            errorCode,
         };
     }
 

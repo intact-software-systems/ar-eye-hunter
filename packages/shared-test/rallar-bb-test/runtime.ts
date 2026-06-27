@@ -32,6 +32,7 @@ import {
     type RallarBlackBoxTestRecipe,
     type RallarBlackBoxTestRecipeRunCommand,
     type RallarBlackBoxTestResult,
+    type RallarBlackBoxTestRtcStreamResultValue,
     type RallarBlackBoxTestRuntimeCleanup,
     type RallarBlackBoxTestRuntime,
     type RallarBlackBoxTestRuntimeEventInput,
@@ -2469,6 +2470,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         const loopResults = this.currentState.commandHistory.filter(result => result.kind === 'loop');
         const latestLoopResult = loopResults.at(-1);
         const latestLoopValue = this.loopResultValue(latestLoopResult?.value);
+        const streamResults = this.currentState.commandHistory.filter(result => result.kind === 'rtc.stream');
+        const latestStreamResult = streamResults.at(-1);
+        const latestStreamValue = this.streamResultValue(latestStreamResult?.value);
         const lastRallarDiagnostic = events
             .filter(event =>
                 event.topic.includes('rtc.connected') ||
@@ -2514,13 +2518,16 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     : undefined,
                 laneHealth: lastRallarPayload.laneHealth,
             },
-            load: loopResults.length > 0
+            load: loopResults.length > 0 || streamResults.length > 0
                 ? {
                     loopCount: loopResults.length,
                     latestLoopCommandId: latestLoopResult?.commandId,
                     latestPacing: this.toStatsPacingSummary(latestLoopValue?.pacing),
                     latestSends: this.toStatsSendSummary(latestLoopValue?.sends),
                     thresholdFailures: latestLoopValue?.thresholdFailures,
+                    streamCount: streamResults.length,
+                    latestStreamCommandId: latestStreamResult?.commandId,
+                    latestStream: this.toStatsStreamSummary(latestStreamValue),
                 }
                 : undefined,
         };
@@ -2543,6 +2550,16 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         const record = asRecord(value);
         return typeof record.commandId === 'string' && record.pacing !== undefined
             ? value as RallarBlackBoxTestLoopResultValue
+            : undefined;
+    }
+
+    private streamResultValue(value: unknown): RallarBlackBoxTestRtcStreamResultValue | undefined {
+        const record = asRecord(value);
+        return typeof record.commandId === 'string' &&
+                typeof record.plannedFrames === 'number' &&
+                record.pacing !== undefined &&
+                record.duration !== undefined
+            ? value as RallarBlackBoxTestRtcStreamResultValue
             : undefined;
     }
 
@@ -2595,6 +2612,35 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             droppedPayloadCount: sends.droppedPayloadCount,
             replacedPayloadCount: sends.replacedPayloadCount,
             perTransportFailureCounts: sends.perTransportFailureCounts,
+        };
+    }
+
+    private toStatsStreamSummary(
+        stream: RallarBlackBoxTestRtcStreamResultValue | undefined,
+    ): Omit<RallarBlackBoxTestRtcStreamResultValue, 'observations'> | undefined {
+        if (!stream) {
+            return undefined;
+        }
+
+        return {
+            commandId: stream.commandId,
+            transport: stream.transport,
+            plannedFrames: stream.plannedFrames,
+            scheduledFrames: stream.scheduledFrames,
+            attemptedFrames: stream.attemptedFrames,
+            completedFrames: stream.completedFrames,
+            failedFrames: stream.failedFrames,
+            droppedFrames: stream.droppedFrames,
+            backpressureCount: stream.backpressureCount,
+            startedAtEpochMs: stream.startedAtEpochMs,
+            endedAtEpochMs: stream.endedAtEpochMs,
+            elapsedMs: stream.elapsedMs,
+            requestedRateHz: stream.requestedRateHz,
+            achievedScheduleHz: stream.achievedScheduleHz,
+            achievedCompletionHz: stream.achievedCompletionHz,
+            pacing: stream.pacing,
+            duration: stream.duration,
+            thresholdFailures: stream.thresholdFailures,
         };
     }
 
