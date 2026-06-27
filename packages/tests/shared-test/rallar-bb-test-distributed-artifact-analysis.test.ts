@@ -808,6 +808,162 @@ describe('Hetzner distributed run artifact analysis', () => {
         expect(analysis.performanceMarkdown).toContain('dropped=12');
     });
 
+    it('classifies stream threshold failures as pacing performance and keeps sibling stream evidence', () => {
+        const failedStreamValue = {
+            commandId: 'rtc-realtime-position-stream',
+            transport: 'realtime',
+            plannedFrames: 100,
+            scheduledFrames: 100,
+            attemptedFrames: 79,
+            completedFrames: 79,
+            failedFrames: 21,
+            droppedFrames: 21,
+            backpressureCount: 0,
+            requestedRateHz: 20,
+            achievedScheduleHz: 10.45,
+            achievedCompletionHz: 8.25,
+            pacing: {
+                intervalMs: 50,
+                maxStartDriftMs: 7_046,
+                averageStartDriftMs: 4_255.9,
+                maxJitterMs: 7_024,
+                lateFrameCount: 98,
+            },
+            duration: { minMs: 530, p50Ms: 1_768, p95Ms: 1_771, p99Ms: 1_772, maxMs: 1_772, averageMs: 1_534.85 },
+            observations: [
+                { index: 0, iteration: 1, durationMs: 530, ok: true },
+                { index: 78, iteration: 79, durationMs: 1_767, ok: true },
+                { index: 79, iteration: 80, durationMs: 0, ok: false, dropped: true, errorCode: 'RALLAR_BLACK_BOX_RTC_STREAM_IN_FLIGHT_LIMIT' },
+                { index: 80, iteration: 81, durationMs: 0, ok: false, dropped: true, errorCode: 'RALLAR_BLACK_BOX_RTC_STREAM_IN_FLIGHT_LIMIT' },
+            ],
+            thresholdFailures: [
+                {
+                    name: 'maxDroppedFrames',
+                    category: 'delivery',
+                    threshold: 20,
+                    actual: 21,
+                },
+            ],
+        };
+        const completedStreamValue = {
+            commandId: 'rtc-realtime-position-stream',
+            transport: 'realtime',
+            plannedFrames: 100,
+            scheduledFrames: 100,
+            attemptedFrames: 84,
+            completedFrames: 84,
+            failedFrames: 16,
+            droppedFrames: 16,
+            backpressureCount: 0,
+            requestedRateHz: 20,
+            achievedScheduleHz: 12,
+            achievedCompletionHz: 10,
+            pacing: {
+                intervalMs: 50,
+                maxStartDriftMs: 5_000,
+                averageStartDriftMs: 2_500,
+                maxJitterMs: 4_000,
+                lateFrameCount: 80,
+            },
+            duration: { minMs: 400, p50Ms: 1_500, p95Ms: 1_550, p99Ms: 1_553, maxMs: 1_553, averageMs: 1_307.55 },
+            observations: [
+                { index: 0, iteration: 1, durationMs: 400, ok: true },
+                { index: 83, iteration: 84, durationMs: 1_553, ok: true },
+                { index: 84, iteration: 85, durationMs: 0, ok: false, dropped: true, errorCode: 'RALLAR_BLACK_BOX_RTC_STREAM_IN_FLIGHT_LIMIT' },
+            ],
+            thresholdFailures: [],
+        };
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-rtc-stream-performance',
+                    controlRunId: 'run-rtc-stream-performance',
+                    state: 'failed',
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 30_000,
+                    rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
+                    manifest: { recipes: [], group: { groupId: 'hetzner-headless-room' } },
+                    targetAgentIds: ['controller-01', 'controller-02'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-rtc-stream-performance',
+                    agents: [
+                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 230 },
+                        { agentId: 'controller-02', connected: true, reconnectCount: 0, receivedEventCount: 234 },
+                    ],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': JSON.stringify({
+                    agentId: 'controller-02',
+                    commandId: 'distributed-start-controller-02-rtc-realtime',
+                    action: 'recipe.run',
+                    status: 'FAILURE',
+                    ok: false,
+                    actual: {
+                        code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                        message: 'RTC stream did not satisfy configured thresholds.',
+                        details: {
+                            code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                            details: {
+                                thresholdFailures: failedStreamValue.thresholdFailures,
+                                value: failedStreamValue,
+                            },
+                        },
+                    },
+                }),
+                'events.jsonl': [
+                    JSON.stringify({
+                        kind: 'diagnostic',
+                        topic: 'rallar.bb.rtc.stream_completed',
+                        severity: 'info',
+                        agentId: 'controller-01',
+                        commandId: 'rtc-realtime-position-stream',
+                        payload: completedStreamValue,
+                    }),
+                    JSON.stringify({
+                        kind: 'diagnostic',
+                        topic: 'rallar.bb.rtc.stream_failed',
+                        severity: 'error',
+                        agentId: 'controller-02',
+                        commandId: 'rtc-realtime-position-stream',
+                        payload: failedStreamValue,
+                    }),
+                ].join('\n'),
+            },
+        });
+
+        expect(analysis.failure).toMatchObject({
+            category: 'rtc-stream-performance',
+            minimalFixArea: 'RTC stream pacing/performance',
+            affectedAgents: ['controller-02'],
+            commandId: 'rtc-realtime-position-stream',
+        });
+        expect(analysis.failure?.likelyCause).toContain('completed 79/100 frames');
+        expect(analysis.failure?.likelyCause).toContain('dropped 21');
+        expect(analysis.failure?.likelyCause).toContain('in-flight limit drops 2');
+        expect(analysis.failure?.likelyCause).toContain('max drift 7046ms');
+        expect(analysis.performance?.streamTiming).toMatchObject({
+            streamCount: 2,
+            plannedFrames: 200,
+            completedFrames: 163,
+            droppedFrames: 37,
+            inFlightLimitDropCount: 3,
+            maxStartDriftMs: 7_046,
+            lateFrameCount: 178,
+        });
+        expect(analysis.performance?.streamTiming?.slowestAgents.map(agent => agent.agentId)).toEqual([
+            'controller-02',
+            'controller-01',
+        ]);
+        expect(analysis.performanceMarkdown).toContain('in-flight drops=3');
+        expect(analysis.performanceMarkdown).toContain('max drift=7046ms');
+    });
+
     it('uses the latest stream event when result JSONL is bounded', () => {
         const analysis = analyzeDistributedRunArtifactFiles({
             files: {

@@ -10588,6 +10588,21 @@ function ImportedDistributedArtifactAnalysisPanel({
                         tone={(streamTiming?.droppedFrames ?? 0) > 0 ? 'bad' : 'good'}
                     />
                     <Metric
+                        label="In-flight drops"
+                        value={String(streamTiming?.inFlightLimitDropCount ?? 0)}
+                        tone={(streamTiming?.inFlightLimitDropCount ?? 0) > 0 ? 'bad' : 'good'}
+                    />
+                    <Metric
+                        label="Max drift"
+                        value={formatFleetDuration(streamTiming?.maxStartDriftMs)}
+                        tone={(streamTiming?.maxStartDriftMs ?? 0) > 1_000 ? 'warn' : 'active'}
+                    />
+                    <Metric
+                        label="Late frames"
+                        value={String(streamTiming?.lateFrameCount ?? 0)}
+                        tone={(streamTiming?.lateFrameCount ?? 0) > 0 ? 'warn' : 'good'}
+                    />
+                    <Metric
                         label="Backpressure"
                         value={String(streamTiming?.backpressureCount ?? 0)}
                         tone={(streamTiming?.backpressureCount ?? 0) > 0 ? 'warn' : 'good'}

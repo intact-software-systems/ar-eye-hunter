@@ -14,14 +14,14 @@
       "recipe": {
         "recipeId": "rtc-realtime",
         "name": "RTC realtime position stream",
-        "description": "Connect RTC and send game-style position updates at 20 Hz for the configured duration.",
+        "description": "Connect RTC and send game-style position updates at 10 Hz for the configured duration.",
         "continueOnFailure": false,
         "metadata": {
           "profile": "rtc-realtime",
-          "rateHz": 20,
-          "intervalMs": 50,
+          "rateHz": 10,
+          "intervalMs": 100,
           "durationSeconds": 15,
-          "frameCount": 300,
+          "frameCount": 150,
           "executionMode": "stream",
           "group": {
             "applicationId": "rallar-server",
@@ -104,9 +104,9 @@
             },
             "metadata": {
               "realtime": {
-                "rateHz": 20,
+                "rateHz": 10,
                 "durationSeconds": 15,
-                "frameCount": 300
+                "frameCount": 150
               }
             }
           },
@@ -124,8 +124,8 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "count": 300,
-            "intervalMs": 50,
+            "count": 150,
+            "intervalMs": 100,
             "maxInFlight": 64,
             "drainTimeoutMs": 5000,
             "progressEveryMs": 1000,
@@ -133,14 +133,14 @@
             "continueOnSendFailure": true,
             "thresholds": {
               "minSendSuccessRatio": 0.99,
-              "maxDroppedFrames": 60
+              "maxDroppedFrames": 15
             },
             "metadata": {
               "realtime": {
-                "rateHz": 20,
-                "intervalMs": 50,
+                "rateHz": 10,
+                "intervalMs": 100,
                 "durationSeconds": 15,
-                "frameCount": 300,
+                "frameCount": 150,
                 "executionMode": "stream"
               }
             },
@@ -157,10 +157,10 @@
                 "typeId": "room.black-box.rtc-realtime.position",
                 "actor": "{auth.clientId}",
                 "seq": "{stream.index}",
-                "rateHz": 20,
-                "intervalMs": 50,
+                "rateHz": 10,
+                "intervalMs": 100,
                 "durationSeconds": 15,
-                "totalFrames": 300,
+                "totalFrames": 150,
                 "tMs": "{stream.elapsedMs}",
                 "position": {
                   "frame": "{stream.iteration}",
@@ -178,9 +178,9 @@
             "commandId": "rtc-realtime-stats",
             "metadata": {
               "realtime": {
-                "rateHz": 20,
+                "rateHz": 10,
                 "durationSeconds": 15,
-                "frameCount": 300
+                "frameCount": 150
               }
             }
           }
@@ -210,5 +210,5 @@
     "diagnostic": false,
     "expectedFailure": false
   },
-  "description": "Heavier 20 Hz RTC realtime run for three-agent load and percentile baselines."
+  "description": "Heavier 10 Hz RTC realtime run for three-agent load and percentile baselines."
 }

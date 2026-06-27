@@ -50,6 +50,8 @@ type ManifestCommand = Readonly<{
     }>;
     count?: number;
     intervalMs?: number;
+    metadata?: Record<string, unknown>;
+    thresholds?: Record<string, unknown>;
 }>;
 
 function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
@@ -81,6 +83,7 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(diagnosticPaths).toEqual([
             'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/expected-failure-1-agent.json',
+            'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-realtime-2-agent-20hz-stress.json',
         ]);
     });
 
@@ -173,15 +176,19 @@ describe('Hetzner distributed manifest catalog', () => {
         }
     });
 
-    it('uses rtc.stream for high-rate realtime Hetzner manifests', () => {
+    it('uses lower-rate rtc.stream baselines for green realtime Hetzner manifests', () => {
         const expectedStreams = new Map([
             ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', {
-                frameCount: 100,
-                maxDroppedFrames: 20,
+                rateHz: 10,
+                intervalMs: 100,
+                frameCount: 50,
+                maxDroppedFrames: 5,
             }],
             ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', {
-                frameCount: 300,
-                maxDroppedFrames: 60,
+                rateHz: 10,
+                intervalMs: 100,
+                frameCount: 150,
+                maxDroppedFrames: 15,
             }],
         ]);
 
@@ -207,14 +214,51 @@ describe('Hetzner distributed manifest catalog', () => {
                 commandId: 'rtc-realtime-position-stream',
                 continueOnSendFailure: true,
                 count: expectedStreams.get(entry.filePath)?.frameCount,
-                intervalMs: 50,
+                intervalMs: expectedStreams.get(entry.filePath)?.intervalMs,
                 thresholds: {
                     minSendSuccessRatio: 0.99,
                     maxDroppedFrames: expectedStreams.get(entry.filePath)?.maxDroppedFrames,
                 },
+                metadata: {
+                    realtime: {
+                        rateHz: expectedStreams.get(entry.filePath)?.rateHz,
+                        frameCount: expectedStreams.get(entry.filePath)?.frameCount,
+                    },
+                },
             });
             expect(highRateLoop, entry.filePath).toBeUndefined();
         }
+    });
+
+    it('keeps strict 20 Hz realtime stress coverage as a diagnostic manifest', () => {
+        const entry = buildHetznerDistributedManifestCatalog()
+            .find(candidate => candidate.filePath.endsWith('/diagnostic/rtc-realtime-2-agent-20hz-stress.json'));
+        expect(entry).toBeDefined();
+        expect(entry?.diagnostic).toBe(true);
+        expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(entry?.filePath);
+        expect(entry?.manifest.metadata).toMatchObject({
+            diagnostic: true,
+            stress: true,
+            expectedFailure: false,
+        });
+
+        const stream = manifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
+            .find(command => command.kind === 'rtc.stream');
+        expect(stream).toMatchObject({
+            count: 100,
+            intervalMs: 50,
+            continueOnSendFailure: true,
+            thresholds: {
+                minSendSuccessRatio: 0.99,
+                maxDroppedFrames: 20,
+            },
+            metadata: {
+                realtime: {
+                    rateHz: 20,
+                    frameCount: 100,
+                },
+            },
+        });
     });
 
     it('feeds Hetzner CI artifacts into SPA monitor and RTC performance views', () => {

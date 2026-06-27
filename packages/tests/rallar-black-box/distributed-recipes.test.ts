@@ -522,6 +522,60 @@ describe('distributed recipes helpers', () => {
         });
     });
 
+    it('builds RTC realtime stream recipes with a configurable rate', () => {
+        const recipe = createRallarBlackBoxRtcRealtimeRecipe({
+            durationSeconds: 5,
+            executionMode: 'stream',
+            rateHz: 10,
+        });
+        const connect = recipe.commands.find(command => command.kind === 'rtc.connect') as
+            | Extract<typeof recipe.commands[number], { kind: 'rtc.connect' }>
+            | undefined;
+        const stream = recipe.commands.find(command => command.kind === 'rtc.stream') as
+            | Extract<typeof recipe.commands[number], { kind: 'rtc.stream' }>
+            | undefined;
+        const sendPayload = stream?.send as { data?: Record<string, unknown> } | undefined;
+
+        expect(recipe.description).toContain('10 Hz');
+        expect(stream).toMatchObject({
+            count: 50,
+            intervalMs: 100,
+            metadata: {
+                realtime: {
+                    rateHz: 10,
+                    intervalMs: 100,
+                    durationSeconds: 5,
+                    frameCount: 50,
+                },
+            },
+        });
+        expect(connect?.metadata).toMatchObject({
+            realtime: {
+                rateHz: 10,
+                durationSeconds: 5,
+                frameCount: 50,
+            },
+        });
+        expect(sendPayload?.data).toMatchObject({
+            rateHz: 10,
+            intervalMs: 100,
+            durationSeconds: 5,
+            totalFrames: 50,
+        });
+        expect(recipe.metadata).toMatchObject({
+            rateHz: 10,
+            intervalMs: 100,
+            durationSeconds: 5,
+            frameCount: 50,
+        });
+        expect(distributedRecipeCommandPreview(recipe)).toEqual({
+            manifestCommandCount: 5,
+            effectiveCommandCount: 5,
+            effectiveFrameCount: 50,
+            label: '5 manifest commands - 50 stream frames',
+        });
+    });
+
     it('treats configured rtc.stream dropped-frame budgets as non-fatal send failures', () => {
         const strictRecipe = createRallarBlackBoxRtcRealtimeRecipe({
             durationSeconds: 1,

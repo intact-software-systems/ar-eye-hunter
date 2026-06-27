@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "distributedRunId": "hetzner-rtc-realtime-2-agent-5s",
+  "distributedRunId": "hetzner-diagnostic-rtc-realtime-2-agent-20hz-stress",
   "controlRunId": "hetzner-manifest-template-control-run",
-  "displayName": "RTC realtime 2-agent 5s",
+  "displayName": "RTC realtime 2-agent 20 Hz stress",
   "group": {
     "applicationId": "rallar-server",
     "workspaceId": "default",
@@ -14,14 +14,14 @@
       "recipe": {
         "recipeId": "rtc-realtime",
         "name": "RTC realtime position stream",
-        "description": "Connect RTC and send game-style position updates at 10 Hz for the configured duration.",
+        "description": "Connect RTC and send game-style position updates at 20 Hz for the configured duration.",
         "continueOnFailure": false,
         "metadata": {
           "profile": "rtc-realtime",
-          "rateHz": 10,
-          "intervalMs": 100,
+          "rateHz": 20,
+          "intervalMs": 50,
           "durationSeconds": 5,
-          "frameCount": 50,
+          "frameCount": 100,
           "executionMode": "stream",
           "group": {
             "applicationId": "rallar-server",
@@ -104,9 +104,9 @@
             },
             "metadata": {
               "realtime": {
-                "rateHz": 10,
+                "rateHz": 20,
                 "durationSeconds": 5,
-                "frameCount": 50
+                "frameCount": 100
               }
             }
           },
@@ -124,8 +124,8 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "count": 50,
-            "intervalMs": 100,
+            "count": 100,
+            "intervalMs": 50,
             "maxInFlight": 64,
             "drainTimeoutMs": 5000,
             "progressEveryMs": 1000,
@@ -133,14 +133,14 @@
             "continueOnSendFailure": true,
             "thresholds": {
               "minSendSuccessRatio": 0.99,
-              "maxDroppedFrames": 5
+              "maxDroppedFrames": 20
             },
             "metadata": {
               "realtime": {
-                "rateHz": 10,
-                "intervalMs": 100,
+                "rateHz": 20,
+                "intervalMs": 50,
                 "durationSeconds": 5,
-                "frameCount": 50,
+                "frameCount": 100,
                 "executionMode": "stream"
               }
             },
@@ -157,10 +157,10 @@
                 "typeId": "room.black-box.rtc-realtime.position",
                 "actor": "{auth.clientId}",
                 "seq": "{stream.index}",
-                "rateHz": 10,
-                "intervalMs": 100,
+                "rateHz": 20,
+                "intervalMs": 50,
                 "durationSeconds": 5,
-                "totalFrames": 50,
+                "totalFrames": 100,
                 "tMs": "{stream.elapsedMs}",
                 "position": {
                   "frame": "{stream.iteration}",
@@ -178,9 +178,9 @@
             "commandId": "rtc-realtime-stats",
             "metadata": {
               "realtime": {
-                "rateHz": 10,
+                "rateHz": 20,
                 "durationSeconds": 5,
-                "frameCount": 50
+                "frameCount": 100
               }
             }
           }
@@ -207,8 +207,9 @@
     "createdBy": "rallar-black-box-spa",
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
-    "diagnostic": false,
-    "expectedFailure": false
+    "diagnostic": true,
+    "expectedFailure": false,
+    "stress": true
   },
-  "description": "Short 10 Hz RTC realtime run for first-pass RTT and event-rate performance baseline."
+  "description": "Strict 20 Hz RTC realtime stress run for stream pacing and in-flight backlog diagnostics."
 }

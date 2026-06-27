@@ -72,11 +72,14 @@ export type DistributedRunPerformanceAnalysis = Readonly<{
         completedFrames: number;
         failedFrames: number;
         droppedFrames: number;
+        inFlightLimitDropCount: number;
         backpressureCount: number;
         sendSuccessRatio?: number;
         requestedRateHz?: number;
         achievedScheduleHz?: number;
         achievedCompletionHz?: number;
+        maxStartDriftMs?: number;
+        lateFrameCount: number;
         duration: Readonly<{
             count: number;
             minMs?: number;
@@ -413,6 +416,11 @@ function deriveFailure(input: Readonly<{
         return controlPostFailureAnalysis(input.controlPostFailure);
     }
 
+    const streamPerformance = streamPerformanceFailure(input.results, input.events);
+    if (streamPerformance) {
+        return streamPerformance;
+    }
+
     const fleetSignature = arrayRecords(input.fleetReport.failureSignatures)[0];
     if (fleetSignature) {
         const failedResult = firstFailedResult(input.results);
@@ -665,7 +673,7 @@ function renderPerformanceMarkdown(
         `Flaky agents: ${performance.flakyAgentCount}`,
         `Command timing: count=${performance.commandTiming.count}, min=${formatMs(performance.commandTiming.minMs)}, p50=${formatMs(performance.commandTiming.p50Ms)}, p95=${formatMs(performance.commandTiming.p95Ms)}, p99=${formatMs(performance.commandTiming.p99Ms)}, max=${formatMs(performance.commandTiming.maxMs)}, avg=${formatMs(performance.commandTiming.averageMs)}, outliers=${performance.commandTiming.outlierCount}`,
         performance.streamTiming
-            ? `Stream timing: streams=${performance.streamTiming.streamCount}, frames=${performance.streamTiming.completedFrames}/${performance.streamTiming.plannedFrames}, attempted=${performance.streamTiming.attemptedFrames}, failed=${performance.streamTiming.failedFrames}, dropped=${performance.streamTiming.droppedFrames}, backpressure=${performance.streamTiming.backpressureCount}, p50=${formatMs(performance.streamTiming.duration.p50Ms)}, p95=${formatMs(performance.streamTiming.duration.p95Ms)}, p99=${formatMs(performance.streamTiming.duration.p99Ms)}, max=${formatMs(performance.streamTiming.duration.maxMs)}, achieved=${formatRate(performance.streamTiming.achievedCompletionHz)}`
+            ? `Stream timing: streams=${performance.streamTiming.streamCount}, frames=${performance.streamTiming.completedFrames}/${performance.streamTiming.plannedFrames}, attempted=${performance.streamTiming.attemptedFrames}, failed=${performance.streamTiming.failedFrames}, dropped=${performance.streamTiming.droppedFrames}, in-flight drops=${performance.streamTiming.inFlightLimitDropCount}, backpressure=${performance.streamTiming.backpressureCount}, max drift=${formatMs(performance.streamTiming.maxStartDriftMs)}, late frames=${performance.streamTiming.lateFrameCount}, p50=${formatMs(performance.streamTiming.duration.p50Ms)}, p95=${formatMs(performance.streamTiming.duration.p95Ms)}, p99=${formatMs(performance.streamTiming.duration.p99Ms)}, max=${formatMs(performance.streamTiming.duration.maxMs)}, achieved=${formatRate(performance.streamTiming.achievedCompletionHz)}`
             : undefined,
         performance.streamTiming && performance.streamTiming.slowestAgents.length > 0
             ? `Slowest stream agents: ${performance.streamTiming.slowestAgents.map((agent) => `${agent.agentId} max=${formatMs(agent.maxMs)} p99=${formatMs(agent.p99Ms)}`).join(', ')}`
@@ -685,7 +693,115 @@ function firstFailedResult(
     );
 }
 
+function streamPerformanceFailure(
+    results: readonly Record<string, unknown>[],
+    events: readonly Record<string, unknown>[],
+): DistributedRunFailureAnalysis | undefined {
+    const resultCandidates = results
+        .filter(result => {
+            const actual = asRecord(result.actual ?? result.error ?? result.result);
+            return isStreamFailureText([
+                firstString(result.action),
+                firstString(actual.code),
+                firstString(actual.message),
+                JSON.stringify(actual),
+            ].filter(Boolean).join(' '));
+        })
+        .map(result => ({
+            sample: streamSampleFromResult(result),
+            agentId: firstString(result.agentId),
+            evidenceFile: 'results.jsonl',
+        }))
+        .filter((candidate): candidate is Readonly<{
+            sample: StreamTimingSample;
+            agentId: string | undefined;
+            evidenceFile: string;
+        }> => candidate.sample !== undefined);
+    const eventCandidates = events
+        .filter(event => {
+            const topic = eventTopic(event);
+            return topic === 'rallar.bb.rtc.stream_failed' ||
+                isStreamFailureText([
+                    topic,
+                    firstString(event.commandId),
+                    eventMessage(event),
+                    JSON.stringify(streamSummaryFromEvent(event) ?? {}),
+                ].filter(Boolean).join(' '));
+        })
+        .map(event => ({
+            sample: streamSampleFromEvent(event),
+            agentId: firstString(event.agentId),
+            evidenceFile: 'events.jsonl',
+        }))
+        .filter((candidate): candidate is Readonly<{
+            sample: StreamTimingSample;
+            agentId: string | undefined;
+            evidenceFile: string;
+        }> => candidate.sample !== undefined);
+    const candidate = [...resultCandidates, ...eventCandidates]
+        .find(entry => streamSampleHasFailureEvidence(entry.sample));
+    if (!candidate) {
+        return undefined;
+    }
+
+    const summary = candidate.sample.summary;
+    const commandId = firstString(candidate.sample.commandId, summary.commandId);
+    const completedFrames = numberValue(summary.completedFrames) ?? 0;
+    const plannedFrames = numberValue(summary.plannedFrames);
+    const droppedFrames = numberValue(summary.droppedFrames) ?? 0;
+    const inFlightLimitDropCount = streamSampleInFlightLimitDropCount(candidate.sample);
+    const pacing = asRecord(summary.pacing);
+    const maxStartDriftMs = numberValue(pacing.maxStartDriftMs);
+    const lateFrameCount = numberValue(pacing.lateFrameCount);
+    const duration = asRecord(summary.duration);
+    const p99Ms = numberValue(duration.p99Ms);
+    const frameText = plannedFrames !== undefined
+        ? `${completedFrames}/${plannedFrames} frames`
+        : `${completedFrames} frames`;
+    const details = [
+        `completed ${frameText}`,
+        `dropped ${droppedFrames}`,
+        `in-flight limit drops ${inFlightLimitDropCount}`,
+        maxStartDriftMs !== undefined ? `max drift ${maxStartDriftMs}ms` : undefined,
+        lateFrameCount !== undefined ? `late frames ${lateFrameCount}` : undefined,
+        p99Ms !== undefined ? `p99 ${p99Ms}ms` : undefined,
+    ].filter((value): value is string => value !== undefined);
+    const likelyCause = `RTC stream ${commandId ?? 'unknown-stream'} exceeded pacing/backlog thresholds: ${details.join(', ')}.`;
+    return {
+        category: 'rtc-stream-performance',
+        title: 'RTC stream pacing/backlog threshold failed.',
+        likelyCause,
+        nextAction: 'Reduce green-suite stream rate/load or inspect stream progress, in-flight drops, send duration percentiles, and RTC diagnostics for affected agents.',
+        minimalFixArea: 'RTC stream pacing/performance',
+        verificationCommand: verificationCommand('RTC stream pacing/performance'),
+        affectedAgents: maybeStringArray(candidate.agentId ?? candidate.sample.agentId),
+        affectedRegions: [],
+        commandId,
+        evidenceFile: candidate.evidenceFile,
+    };
+}
+
+function isStreamFailureText(text: string): boolean {
+    const normalized = text.toLowerCase();
+    return normalized.includes('rallar_black_box_rtc_stream_threshold_failed') ||
+        normalized.includes('rallar_black_box_rtc_stream_in_flight_limit') ||
+        normalized.includes('rallar.bb.rtc.stream_failed') ||
+        normalized.includes('maxdroppedframes');
+}
+
+function streamSampleHasFailureEvidence(sample: StreamTimingSample): boolean {
+    return arrayRecords(sample.summary.thresholdFailures).length > 0 ||
+        streamSampleInFlightLimitDropCount(sample) > 0 ||
+        (
+            numberValue(sample.summary.droppedFrames) !== undefined &&
+            (numberValue(sample.summary.droppedFrames) ?? 0) > 0
+        );
+}
+
 function verificationCommand(minimalFixArea: string): string {
+    if (minimalFixArea === 'RTC stream pacing/performance') {
+        return '`npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3`';
+    }
     if (minimalFixArea === 'RTC/TURN') {
         return '`npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3`';
     }
@@ -920,7 +1036,7 @@ function streamSampleFromResult(result: Record<string, unknown>): StreamTimingSa
     }
     return {
         agentId: firstString(result.agentId),
-        commandId: commandIdFromResult(result) ?? firstString(summary?.commandId),
+        commandId: firstString(summary?.commandId, commandIdFromResult(result)),
         summary: summary ?? {},
         observations: arrayRecords(summary?.observations),
     };
@@ -937,7 +1053,7 @@ function streamSampleFromEvent(event: Record<string, unknown>): StreamTimingSamp
     }
     return {
         agentId: firstString(event.agentId),
-        commandId: firstString(event.commandId, summary.commandId),
+        commandId: firstString(summary.commandId, event.commandId),
         summary,
         observations: arrayRecords(summary.observations),
     };
@@ -975,7 +1091,18 @@ function streamTimingFromSamples(
     const completedFrames = sumStreamNumber(samples, 'completedFrames');
     const failedFrames = sumStreamNumber(samples, 'failedFrames');
     const droppedFrames = sumStreamNumber(samples, 'droppedFrames');
+    const inFlightLimitDropCount = samples.reduce(
+        (sum, sample) => sum + streamSampleInFlightLimitDropCount(sample),
+        0,
+    );
     const backpressureCount = sumStreamNumber(samples, 'backpressureCount');
+    const maxStartDriftMs = maxDefined(samples.map(sample =>
+        numberValue(readPath(sample.summary, ['pacing', 'maxStartDriftMs']))
+    ));
+    const lateFrameCount = samples.reduce(
+        (sum, sample) => sum + (numberValue(readPath(sample.summary, ['pacing', 'lateFrameCount'])) ?? 0),
+        0,
+    );
 
     return {
         streamCount: samples.length,
@@ -985,6 +1112,7 @@ function streamTimingFromSamples(
         completedFrames,
         failedFrames,
         droppedFrames,
+        inFlightLimitDropCount,
         backpressureCount,
         sendSuccessRatio: attemptedFrames > 0
             ? roundMetric(completedFrames / attemptedFrames)
@@ -992,6 +1120,8 @@ function streamTimingFromSamples(
         requestedRateHz: averageDefined(samples.map(sample => numberValue(sample.summary.requestedRateHz))),
         achievedScheduleHz: averageDefined(samples.map(sample => numberValue(sample.summary.achievedScheduleHz))),
         achievedCompletionHz: averageDefined(samples.map(sample => numberValue(sample.summary.achievedCompletionHz))),
+        maxStartDriftMs,
+        lateFrameCount,
         duration: streamDurationTimingFromSamples(samples, durations),
         slowestAgents: slowestStreamAgentRows(samples),
     };
@@ -1006,6 +1136,16 @@ function streamSampleObservationDurations(sample: StreamTimingSample): readonly 
         .filter(observation => !observation.dropped)
         .map(observation => numberValue(observation.durationMs))
         .filter((value): value is number => value !== undefined);
+}
+
+function streamSampleInFlightLimitDropCount(sample: StreamTimingSample): number {
+    const fromSummary = numberValue(sample.summary.inFlightLimitDropCount);
+    if (fromSummary !== undefined) {
+        return fromSummary;
+    }
+    return sample.observations.filter(observation =>
+        firstString(observation.errorCode, observation.code) === 'RALLAR_BLACK_BOX_RTC_STREAM_IN_FLIGHT_LIMIT'
+    ).length;
 }
 
 function streamDurationTimingFromSamples(
@@ -1115,6 +1255,8 @@ function streamSummaryRecord(value: unknown): Record<string, unknown> | undefine
     const candidates = [
         asRecord(record.value),
         asRecord(asRecord(record.details)?.value),
+        asRecord(asRecord(record.details)?.details),
+        asRecord(asRecord(asRecord(record.details)?.details)?.value),
         asRecord(record.payload),
         asRecord(record.data),
         record,
@@ -1155,6 +1297,11 @@ function eventTopic(event: Record<string, unknown>): string | undefined {
 
 function averageDefined(values: readonly (number | undefined)[]): number | undefined {
     return average(values.filter((value): value is number => value !== undefined));
+}
+
+function maxDefined(values: readonly (number | undefined)[]): number | undefined {
+    const defined = values.filter((value): value is number => value !== undefined);
+    return defined.length > 0 ? Math.max(...defined) : undefined;
 }
 
 type CommandTimingSample = Readonly<{

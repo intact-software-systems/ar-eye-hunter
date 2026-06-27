@@ -20,6 +20,7 @@ const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.com';
 
 export type RallarBlackBoxRtcRealtimeRecipeOptions = Readonly<{
     durationSeconds?: number;
+    rateHz?: number;
     group?: RallarBlackBoxDistributedGroupRef;
     connection?: string;
     readyPeerCount?: number;
@@ -58,6 +59,18 @@ export function normalizeRallarBlackBoxRtcRealtimeDurationSeconds(value: unknown
         RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS,
         Math.max(RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS, Math.round(numeric)),
     );
+}
+
+function normalizeRallarBlackBoxRtcRealtimeRateHz(value: unknown): number {
+    const numeric = typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+            ? Number.parseFloat(value)
+            : RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
+    }
+    return numeric;
 }
 
 function stateApiPathSegment(value: string): string {
@@ -347,7 +360,9 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
     options: RallarBlackBoxRtcRealtimeRecipeOptions = {},
 ): RallarBlackBoxTestRecipe {
     const durationSeconds = normalizeRallarBlackBoxRtcRealtimeDurationSeconds(options.durationSeconds);
-    const frameCount = durationSeconds * RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
+    const rateHz = normalizeRallarBlackBoxRtcRealtimeRateHz(options.rateHz);
+    const intervalMs = Math.max(1, Math.round(1_000 / rateHz));
+    const frameCount = Math.max(1, Math.round(durationSeconds * rateHz));
     const connection = options.connection ?? 'rtcRealtime';
     const group = options.group ?? defaultRallarBlackBoxGroup();
     const roomRef = groupRoomRef(group);
@@ -365,8 +380,8 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
         timeoutMs: 3_000,
         metadata: {
             realtime: {
-                rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-                intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                rateHz,
+                intervalMs,
                 durationSeconds,
                 frame: '{loop.iteration}',
                 totalFrames: frameCount,
@@ -381,8 +396,8 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
                 typeId: 'room.black-box.rtc-realtime.position',
                 actor: '{auth.clientId}',
                 seq: '{loop.index}',
-                rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-                intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                rateHz,
+                intervalMs,
                 durationSeconds,
                 totalFrames: frameCount,
                 tMs: '{loop.elapsedMs}',
@@ -408,7 +423,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
         roomId: group.groupId,
         roomRef,
         count: frameCount,
-        intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+        intervalMs,
         maxInFlight: options.stream?.maxInFlight ?? 64,
         drainTimeoutMs: options.stream?.drainTimeoutMs ?? 5_000,
         progressEveryMs: options.stream?.progressEveryMs ?? 1_000,
@@ -422,8 +437,8 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
         },
         metadata: {
             realtime: {
-                rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-                intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                rateHz,
+                intervalMs,
                 durationSeconds,
                 frameCount,
                 executionMode: 'stream',
@@ -438,8 +453,8 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
                 typeId: 'room.black-box.rtc-realtime.position',
                 actor: '{auth.clientId}',
                 seq: '{stream.index}',
-                rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-                intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                rateHz,
+                intervalMs,
                 durationSeconds,
                 totalFrames: frameCount,
                 tMs: '{stream.elapsedMs}',
@@ -457,12 +472,12 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
     return {
         recipeId: RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
         name: 'RTC realtime position stream',
-        description: 'Connect RTC and send game-style position updates at 20 Hz for the configured duration.',
+        description: `Connect RTC and send game-style position updates at ${rateHz} Hz for the configured duration.`,
         continueOnFailure: false,
         metadata: {
             profile: 'rtc-realtime',
-            rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-            intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+            rateHz,
+            intervalMs,
             durationSeconds,
             frameCount,
             executionMode,
@@ -489,7 +504,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
                 readiness: rtcConnectReadiness(options),
                 metadata: {
                     realtime: {
-                        rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                        rateHz,
                         durationSeconds,
                         frameCount,
                     },
@@ -501,13 +516,13 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
                     kind: 'loop',
                     commandId: 'rtc-realtime-position-loop',
                     count: frameCount,
-                    intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                    intervalMs,
                     maxCommands: frameCount,
                     continueOnFailure: false,
                     metadata: {
                         realtime: {
-                            rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-                            intervalMs: RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+                            rateHz,
+                            intervalMs,
                             durationSeconds,
                             frameCount,
                         },
@@ -519,7 +534,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
                 commandId: 'rtc-realtime-stats',
                 metadata: {
                     realtime: {
-                        rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                        rateHz,
                         durationSeconds,
                         frameCount,
                     },

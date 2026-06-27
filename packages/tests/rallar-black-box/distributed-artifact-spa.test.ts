@@ -31,6 +31,9 @@ describe('distributed artifact SPA reuse', () => {
         expect(source).toContain('P95 stream');
         expect(source).toContain('P99 stream');
         expect(source).toContain('Stream drops');
+        expect(source).toContain('In-flight drops');
+        expect(source).toContain('Max drift');
+        expect(source).toContain('Late frames');
         expect(source).toContain('Backpressure');
         expect(source).toContain('Achieved Hz');
         expect(source).toContain('Slowest stream agent');

@@ -49,6 +49,7 @@ type ManifestCatalogInput = Readonly<{
     live: boolean;
     diagnostic?: boolean;
     expectedFailure?: boolean;
+    stress?: boolean;
     barrier?: boolean;
 }>;
 
@@ -108,16 +109,17 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[4],
             title: 'RTC realtime 2-agent 5s',
-            description: 'Short 20 Hz RTC realtime run for first-pass RTT and event-rate performance baseline.',
+            description: 'Short 10 Hz RTC realtime run for first-pass RTT and event-rate performance baseline.',
             distributedRunId: 'hetzner-rtc-realtime-2-agent-5s',
             recipe: createRallarBlackBoxRtcRealtimeRecipe({
                 durationSeconds: 5,
+                rateHz: 10,
                 group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
                 readyPeerCount: 1,
                 readyTimeoutMs: 10_000,
                 executionMode: 'stream',
                 stream: {
-                    maxDroppedFrames: 20,
+                    maxDroppedFrames: 5,
                 },
             }),
             agentCount: 2,
@@ -127,16 +129,17 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[5],
             title: 'RTC realtime 3-agent 15s',
-            description: 'Heavier 20 Hz RTC realtime run for three-agent load and percentile baselines.',
+            description: 'Heavier 10 Hz RTC realtime run for three-agent load and percentile baselines.',
             distributedRunId: 'hetzner-rtc-realtime-3-agent-15s',
             recipe: createRallarBlackBoxRtcRealtimeRecipe({
                 durationSeconds: 15,
+                rateHz: 10,
                 group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
                 readyPeerCount: 2,
                 readyTimeoutMs: 10_000,
                 executionMode: 'stream',
                 stream: {
-                    maxDroppedFrames: 60,
+                    maxDroppedFrames: 15,
                 },
             }),
             agentCount: 3,
@@ -166,6 +169,29 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             live: false,
             diagnostic: true,
             expectedFailure: true,
+        }),
+        buildManifestEntry({
+            filePath: 'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-realtime-2-agent-20hz-stress.json',
+            title: 'RTC realtime 2-agent 20 Hz stress',
+            description: 'Strict 20 Hz RTC realtime stress run for stream pacing and in-flight backlog diagnostics.',
+            distributedRunId: 'hetzner-diagnostic-rtc-realtime-2-agent-20hz-stress',
+            recipe: createRallarBlackBoxRtcRealtimeRecipe({
+                durationSeconds: 5,
+                rateHz: 20,
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyPeerCount: 1,
+                readyTimeoutMs: 10_000,
+                executionMode: 'stream',
+                stream: {
+                    maxDroppedFrames: 20,
+                },
+            }),
+            agentCount: 2,
+            profiles: ['rtc', 'realtime', 'stress', 'diagnostic'],
+            live: true,
+            diagnostic: true,
+            expectedFailure: false,
+            stress: true,
         }),
     ];
 }
@@ -205,6 +231,7 @@ function buildManifestEntry(input: ManifestCatalogInput): HetznerDistributedMani
                 manifestSuite: 'hetzner-distributed',
                 diagnostic: input.diagnostic === true,
                 expectedFailure: input.expectedFailure === true,
+                ...(input.stress === true ? { stress: true } : {}),
             },
         },
     };
