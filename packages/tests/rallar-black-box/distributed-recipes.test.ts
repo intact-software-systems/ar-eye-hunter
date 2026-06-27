@@ -373,6 +373,9 @@ describe('distributed recipes helpers', () => {
         const upsertMemberCommand = recipe.commands[1] as
             | Extract<typeof recipe.commands[number], { kind: 'http.request' }>
             | undefined;
+        const connectCommand = recipe.commands.find(command => command.kind === 'rtc.connect') as
+            | Extract<typeof recipe.commands[number], { kind: 'rtc.connect' }>
+            | undefined;
         const loopCommand = recipe.commands.find(command => command.kind === 'loop') as
             | Extract<typeof recipe.commands[number], { kind: 'loop' }>
             | undefined;
@@ -420,6 +423,7 @@ describe('distributed recipes helpers', () => {
                 body: 'json',
             },
         });
+        expect((connectCommand as { readiness?: unknown } | undefined)?.readiness).toBeUndefined();
         expect(loopCommand).toMatchObject({
             kind: 'loop',
             commandId: 'rtc-realtime-position-loop',
@@ -757,6 +761,125 @@ describe('distributed recipes helpers', () => {
             ['rtc.send', 'send RTC - rtcRealtime - arena-1'],
             ['stats', 'agent stats'],
         ]);
+    });
+
+    it('adds explicit ready-peer contracts to live RTC recipes when requested', () => {
+        const group = {
+            applicationId: 'game-app',
+            workspaceId: 'live',
+            groupId: 'arena-1',
+        };
+        const realtime = createRallarBlackBoxRtcRealtimeRecipe({
+            durationSeconds: 2,
+            group,
+            readyPeerCount: 2,
+            readyTimeoutMs: 10_000,
+        } as Parameters<typeof createRallarBlackBoxRtcRealtimeRecipe>[0] & {
+            readyPeerCount: number;
+            readyTimeoutMs: number;
+        });
+        const smoke = createRallarBlackBoxRtcSmokeRecipe({
+            group,
+            readyPeerCount: 1,
+            readyTimeoutMs: 10_000,
+        } as Parameters<typeof createRallarBlackBoxRtcSmokeRecipe>[0] & {
+            readyPeerCount: number;
+            readyTimeoutMs: number;
+        });
+        const parity = createRallarBlackBoxProviderParityLiveRecipe({
+            group,
+            readyPeerCount: 1,
+            readyTimeoutMs: 10_000,
+        } as Parameters<typeof createRallarBlackBoxProviderParityLiveRecipe>[0] & {
+            readyPeerCount: number;
+            readyTimeoutMs: number;
+        });
+
+        const readinesses = [realtime, smoke, parity].map(recipe =>
+            (recipe.commands.find(command => command.kind === 'rtc.connect') as {
+                readiness?: unknown;
+            } | undefined)?.readiness
+        );
+
+        expect(readinesses).toEqual([
+            { minReadyPeers: 2, timeoutMs: 10_000, intervalMs: 100 },
+            { minReadyPeers: 1, timeoutMs: 10_000, intervalMs: 100 },
+            { minReadyPeers: 1, timeoutMs: 10_000, intervalMs: 100 },
+        ]);
+    });
+
+    it('warns when RTC send traffic has no explicit connect readiness contract', () => {
+        const unsafe = distributedRecipePreflight({
+            recipeId: 'unsafe-rtc',
+            commands: [
+                {
+                    kind: 'rtc.connect',
+                    commandId: 'connect',
+                    connection: 'rtc',
+                    roomId: 'room-1',
+                    transport: 'realtime',
+                },
+                {
+                    kind: 'loop',
+                    commandId: 'position-loop',
+                    count: 2,
+                    commands: [
+                        {
+                            kind: 'rtc.send',
+                            commandId: 'position',
+                            connection: 'rtc',
+                            transport: 'realtime',
+                            send: {
+                                roomId: 'room-1',
+                                data: {
+                                    topic: 'position',
+                                },
+                            },
+                        },
+                    ],
+                },
+            ],
+        });
+        const safe = distributedRecipePreflight({
+            recipeId: 'safe-rtc',
+            commands: [
+                {
+                    kind: 'rtc.connect',
+                    commandId: 'connect',
+                    connection: 'rtc',
+                    roomId: 'room-1',
+                    transport: 'realtime',
+                    readiness: {
+                        minReadyPeers: 1,
+                        timeoutMs: 10_000,
+                        intervalMs: 100,
+                    },
+                },
+                {
+                    kind: 'rtc.send',
+                    commandId: 'send',
+                    connection: 'rtc',
+                    transport: 'realtime',
+                    send: {
+                        roomId: 'room-1',
+                        data: {
+                            topic: 'hello',
+                        },
+                    },
+                },
+            ],
+        } as Parameters<typeof distributedRecipePreflight>[0]);
+
+        expect(unsafe.warnings).toEqual(expect.arrayContaining([
+            expect.stringContaining('RTC send traffic starts without an explicit rtc.connect readiness contract'),
+            expect.stringContaining('Looped RTC sends are especially sensitive'),
+        ]));
+        expect(safe.warnings.some(warning =>
+            warning.includes('without an explicit rtc.connect readiness contract')
+        )).toBe(false);
+        expect(safe.tree.find(row => row.commandId === 'connect')?.details).toEqual(expect.arrayContaining([
+            'readiness: min 1 ready peer(s), timeout 10000 ms, poll 100 ms',
+        ]));
     });
 
     it('runs the app-local composite evidence fixture in the browser-agent runtime', async () => {

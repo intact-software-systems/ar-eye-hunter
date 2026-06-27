@@ -746,6 +746,7 @@ export function distributedRecipePreflight(
     ].filter(requirement => requirement !== COMPOSITE_CHILD_REQUIREMENTS_LABEL));
     const warnings = uniqueValues([
         ...analyses.flatMap(analysis => analysis.warnings),
+        ...rtcReadinessWarnings(recipe),
         ...compatibilityWarnings(commandKinds, liveServiceRequirements),
     ]);
     const errors = uniqueValues(analyses.flatMap(analysis => analysis.errors));
@@ -776,6 +777,59 @@ export function distributedRecipePreflight(
 }
 
 type CommandCapability = typeof RALLAR_BLACK_BOX_COMMAND_CAPABILITIES[number];
+
+type RecipeCommandNode = Readonly<{
+    command: RallarBlackBoxTestCommand;
+    insideLoop: boolean;
+}>;
+
+function recipeCommandNodes(
+    commands: readonly RallarBlackBoxTestCommand[],
+    insideLoop = false,
+): readonly RecipeCommandNode[] {
+    return commands.flatMap((command): readonly RecipeCommandNode[] => {
+        const current = [{ command, insideLoop }];
+        if (command.kind === 'loop') {
+            return [
+                ...current,
+                ...recipeCommandNodes(command.commands, true),
+            ];
+        }
+        if (command.kind === 'parallel') {
+            return [
+                ...current,
+                ...command.groups.flatMap(group => recipeCommandNodes(group.commands, insideLoop)),
+            ];
+        }
+        if ((command.kind === 'recipe.load' || command.kind === 'recipe.run') && command.recipe) {
+            return [
+                ...current,
+                ...recipeCommandNodes(command.recipe.commands, insideLoop),
+            ];
+        }
+        return current;
+    });
+}
+
+function hasRtcConnectReadiness(command: RallarBlackBoxTestCommand): boolean {
+    return command.kind === 'rtc.connect' && command.readiness !== undefined;
+}
+
+function rtcReadinessWarnings(recipe: RallarBlackBoxTestRecipe): readonly string[] {
+    const nodes = recipeCommandNodes(recipe.commands);
+    const sends = nodes.filter(node => node.command.kind === 'rtc.send');
+    if (sends.length === 0 || nodes.some(node => hasRtcConnectReadiness(node.command))) {
+        return [];
+    }
+
+    const warnings = [
+        'RTC send traffic starts without an explicit rtc.connect readiness contract; sends can race signaling and data-channel readiness.',
+    ];
+    if (sends.some(node => node.insideLoop)) {
+        warnings.push('Looped RTC sends are especially sensitive to missing ready-peer checks before the first frame.');
+    }
+    return warnings;
+}
 
 type DistributedRecipeCommandAnalysis = Readonly<{
     effectiveCommandCount: number;
@@ -924,6 +978,11 @@ function analyzeDistributedRecipeCommand(
                 summary = `loads ${nestedRecipe.commands.length} recipe command${nestedRecipe.commands.length === 1 ? '' : 's'}`;
             }
             details.push(nestedRecipe.recipeId);
+        }
+    } else if (command.kind === 'rtc.connect') {
+        const readinessDetail = rtcConnectReadinessDetail(command);
+        if (readinessDetail) {
+            details.push(readinessDetail);
         }
     } else if (command.kind === 'wait') {
         waits = [waitPreflight(command, path)];
@@ -1133,6 +1192,19 @@ function roomLabel(
     const send = command.kind === 'rtc.send' ? asRecord(command.send) : {};
     const roomId = command.kind === 'rtc.connect' ? command.roomId : undefined;
     return String(roomId ?? send.roomId ?? roomRef.groupId ?? roomRef.roomId ?? '') || undefined;
+}
+
+function rtcConnectReadinessDetail(
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' }>,
+): string | undefined {
+    if (!command.readiness) {
+        return undefined;
+    }
+
+    const minReadyPeers = optionalPositiveIntegerValue(command.readiness.minReadyPeers) ?? 1;
+    const timeoutMs = optionalPositiveIntegerValue(command.readiness.timeoutMs) ?? 5_000;
+    const intervalMs = optionalPositiveIntegerValue(command.readiness.intervalMs) ?? 100;
+    return `readiness: min ${minReadyPeers} ready peer(s), timeout ${timeoutMs} ms, poll ${intervalMs} ms`;
 }
 
 function waitPreflight(command: RallarBlackBoxTestWaitCommand, path: string): DistributedRecipePreflightWait {

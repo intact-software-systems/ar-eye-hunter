@@ -434,6 +434,39 @@ describe('rallar-bb-test capability and schema contract', () => {
         }
     });
 
+    it('validates optional rtc.connect readiness contract', () => {
+        expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'rtc.connect',
+            commandId: 'connect-ready',
+            connection: 'rtc',
+            roomId: 'room-1',
+            transport: 'realtime',
+            readiness: {
+                minReadyPeers: 2,
+                timeoutMs: 10_000,
+                intervalMs: 100,
+            },
+        });
+
+        const invalidReadiness = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'rtc.connect',
+            commandId: 'connect-invalid-ready',
+            connection: 'rtc',
+            readiness: {
+                minReadyPeers: 0,
+                timeoutMs: -1,
+                intervalMs: 1.5,
+            },
+        });
+
+        expect(invalidReadiness.ok).toBe(false);
+        if (!invalidReadiness.ok) {
+            const text = formatJsonSchemaValidationErrors(invalidReadiness.errors);
+            expect(text).toContain('Expected number >=');
+            expect(text).toContain('Expected integer');
+        }
+    });
+
     it('validates every shared-test black-box-runner example scenario', () => {
         const exampleNames = readdirSync(runnerExamplesRoot).filter(name => name.endsWith('.json'));
         expect(exampleNames.length).toBeGreaterThan(0);

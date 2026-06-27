@@ -96,6 +96,11 @@
             },
             "transport": "realtime",
             "timeoutMs": 10000,
+            "readiness": {
+              "minReadyPeers": 1,
+              "timeoutMs": 10000,
+              "intervalMs": 100
+            },
             "metadata": {
               "realtime": {
                 "rateHz": 20,

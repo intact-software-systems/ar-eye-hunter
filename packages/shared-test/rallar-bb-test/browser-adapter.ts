@@ -169,6 +169,22 @@ type RtcSendFailure = Readonly<{
     details?: unknown;
 }>;
 
+type RtcConnectReadinessOptions = Readonly<{
+    minReadyPeers: number;
+    timeoutMs: number;
+    intervalMs: number;
+}>;
+
+type RtcConnectReadinessResult = Readonly<{
+    ready: boolean;
+    minReadyPeers: number;
+    timeoutMs: number;
+    intervalMs: number;
+    waitedMs: number;
+    readyPeerIds: readonly string[];
+    health?: unknown;
+}>;
+
 function asRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value as Record<string, unknown>
@@ -187,6 +203,23 @@ function firstDefined<T>(...values: readonly T[]): T | undefined {
 
 function toStringValue(value: unknown): string | undefined {
     return value === undefined || value === null ? undefined : String(value);
+}
+
+function toPositiveInteger(value: unknown, fallback: number): number {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0
+        ? value
+        : fallback;
+}
+
+function toRtcReadyPeerIds(value: unknown): readonly string[] {
+    const root = asRecord(value);
+    const rtcStatus = asRecord(root.rtcStatus);
+    const readyPeerIds = Array.isArray(rtcStatus.readyPeerIds)
+        ? rtcStatus.readyPeerIds
+        : Array.isArray(root.readyPeerIds)
+            ? root.readyPeerIds
+            : [];
+    return readyPeerIds.filter((peerId): peerId is string => typeof peerId === 'string');
 }
 
 function commandLocalDelayMs(command: CommandWithId): number {
@@ -210,6 +243,30 @@ function withSendObservationValue(
         : {
             diagnostics: value,
             sendObservation,
+        };
+}
+
+function withRtcConnectReadinessValue(
+    value: unknown,
+    readiness: RtcConnectReadinessResult,
+): unknown {
+    const readinessValue = {
+        ready: readiness.ready,
+        minReadyPeers: readiness.minReadyPeers,
+        timeoutMs: readiness.timeoutMs,
+        intervalMs: readiness.intervalMs,
+        waitedMs: readiness.waitedMs,
+        readyPeerIds: readiness.readyPeerIds,
+        health: readiness.health,
+    };
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? {
+            ...(value as Record<string, unknown>),
+            readiness: readinessValue,
+        }
+        : {
+            diagnostics: value,
+            readiness: readinessValue,
         };
 }
 
@@ -1493,6 +1550,106 @@ class BrowserCommandAdapter {
         };
     }
 
+    private rtcConnectReadinessOptions(
+        command: Extract<CommandWithId, { kind: 'rtc.connect' }>,
+    ): RtcConnectReadinessOptions | undefined {
+        if (!command.readiness) {
+            return undefined;
+        }
+
+        return {
+            minReadyPeers: toPositiveInteger(command.readiness.minReadyPeers, 1),
+            timeoutMs: toPositiveInteger(command.readiness.timeoutMs, 5_000),
+            intervalMs: toPositiveInteger(command.readiness.intervalMs, 100),
+        };
+    }
+
+    private recordRtcReadinessDiagnostic(
+        context: RallarBlackBoxTestCommandContext,
+        command: Extract<CommandWithId, { kind: 'rtc.connect' }>,
+        topic: string,
+        severity: 'info' | 'error',
+        payload: Readonly<Record<string, unknown>>,
+    ): void {
+        context.recordEvent({
+            kind: 'diagnostic',
+            topic,
+            commandId: command.commandId,
+            connection: command.connection,
+            transport: command.transport,
+            severity,
+            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+                topic,
+                severity,
+                commandId: command.commandId,
+                connection: command.connection,
+                transport: command.transport,
+                data: payload,
+                payload,
+                message: typeof payload.message === 'string'
+                    ? payload.message
+                    : undefined,
+                source: 'browser-adapter',
+            }),
+        });
+    }
+
+    private async waitForRtcConnectReadiness(
+        command: Extract<CommandWithId, { kind: 'rtc.connect' }>,
+        context: RallarBlackBoxTestCommandContext,
+        options: RtcConnectReadinessOptions,
+        signal?: AbortSignal,
+    ): Promise<RtcConnectReadinessResult> {
+        const startedAtEpochMs = Date.now();
+        this.recordRtcReadinessDiagnostic(context, command, 'rallar.bb.rtc.readiness_wait_started', 'info', {
+            minReadyPeers: options.minReadyPeers,
+            timeoutMs: options.timeoutMs,
+            intervalMs: options.intervalMs,
+        });
+
+        let latestHealth: unknown;
+        let readyPeerIds: readonly string[] = [];
+        while (true) {
+            latestHealth = await this.requireRallarRuntime().health();
+            readyPeerIds = toRtcReadyPeerIds(latestHealth);
+            const waitedMs = Math.max(0, Date.now() - startedAtEpochMs);
+            if (readyPeerIds.length >= options.minReadyPeers) {
+                const result: RtcConnectReadinessResult = {
+                    ready: true,
+                    minReadyPeers: options.minReadyPeers,
+                    timeoutMs: options.timeoutMs,
+                    intervalMs: options.intervalMs,
+                    waitedMs,
+                    readyPeerIds,
+                    health: latestHealth,
+                };
+                this.recordRtcReadinessDiagnostic(context, command, 'rallar.bb.rtc.readiness_ready', 'info', {
+                    ...result,
+                });
+                return result;
+            }
+
+            if (waitedMs >= options.timeoutMs) {
+                const result: RtcConnectReadinessResult = {
+                    ready: false,
+                    minReadyPeers: options.minReadyPeers,
+                    timeoutMs: options.timeoutMs,
+                    intervalMs: options.intervalMs,
+                    waitedMs,
+                    readyPeerIds,
+                    health: latestHealth,
+                };
+                this.recordRtcReadinessDiagnostic(context, command, 'rallar.bb.rtc.readiness_timeout', 'error', {
+                    ...result,
+                    message: 'RTC connect timed out waiting for ready peers.',
+                });
+                return result;
+            }
+
+            await sleep(Math.min(options.intervalMs, Math.max(1, options.timeoutMs - waitedMs)), signal);
+        }
+    }
+
     private async connectRtc(
         command: Extract<CommandWithId, { kind: 'rtc.connect' }>,
         context: RallarBlackBoxTestCommandContext,
@@ -1504,16 +1661,41 @@ class BrowserCommandAdapter {
             }),
             context.config(),
         );
-        const abort = this.commandAbortSignal(command, context);
         let diagnostics: unknown;
+        let readiness: RtcConnectReadinessResult | undefined;
+        const connectAbort = this.commandAbortSignal(command, context);
         try {
             diagnostics = await this.withAbort(
                 this.requireRallarRuntime().connect(connectionConfig),
-                abort.signal,
+                connectAbort.signal,
             );
         } finally {
-            abort.cleanup();
+            connectAbort.cleanup();
         }
+        const readinessOptions = this.rtcConnectReadinessOptions(command);
+        if (readinessOptions) {
+            readiness = await this.waitForRtcConnectReadiness(
+                command,
+                context,
+                readinessOptions,
+                context.abortSignal?.(),
+            );
+            if (!readiness.ready) {
+                return {
+                    status: 'failed',
+                    value: withRtcConnectReadinessValue(diagnostics, readiness),
+                    error: {
+                        code: 'RALLAR_BB_RTC_READY_TIMEOUT',
+                        message: 'RTC connect timed out waiting for ready peers.',
+                        details: readiness,
+                    },
+                    nextStatus: 'failed',
+                };
+            }
+        }
+        const value = readiness
+            ? withRtcConnectReadinessValue(diagnostics, readiness)
+            : diagnostics;
         context.recordEvent({
             kind: 'diagnostic',
             topic: 'rallar.bb.rtc.connected',
@@ -1530,15 +1712,15 @@ class BrowserCommandAdapter {
                 actor: connectionConfig.actor,
                 transport: toRtcTransport(connectionConfig.rallar.transport),
                 roomId: connectionConfig.roomId,
-                data: diagnostics,
-                payload: diagnostics,
+                data: value,
+                payload: value,
                 source: 'browser-adapter',
             }),
         });
 
         return {
             status: 'ok',
-            value: diagnostics,
+            value,
             nextStatus: context.state().status === 'idle'
                 ? 'configured'
                 : context.state().status,

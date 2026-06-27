@@ -187,6 +187,15 @@ const configSchema: JsonSchema = {
 };
 
 const rtcTransportSchema: JsonSchema = { type: 'string', enum: ['realtime', 'messages.rtc'] };
+const rtcConnectReadinessSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+        minReadyPeers: { type: 'integer', minimum: 1 },
+        timeoutMs: { type: 'integer', minimum: 1 },
+        intervalMs: { type: 'integer', minimum: 1 },
+    },
+    additionalProperties: false,
+};
 const crdtTransportSchema: JsonSchema = {
     type: 'string',
     enum: ['local-only', 'ws', 'rtc', 'ws-then-rtc', 'rtc-with-ws-fallback'],
@@ -543,6 +552,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         minSnapshotVersion: numberSchema,
         transport: rtcTransportSchema,
         rallar: recordSchema,
+        readiness: rtcConnectReadinessSchema,
     }),
     'rtc.send': strictCommandSchema('rtc.send', [], {
         connection: stringSchema,
@@ -914,6 +924,7 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'minSnapshotVersion',
             'transport',
             'rallar',
+            'readiness',
             'commandId',
             'label',
             'timeoutMs',
@@ -933,6 +944,11 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             applicationId: 'rallar-server',
             workspaceId: 'default',
             transport: 'realtime',
+            readiness: {
+                minReadyPeers: 1,
+                timeoutMs: 10_000,
+                intervalMs: 100,
+            },
             timeoutMs: 10_000,
         },
     },

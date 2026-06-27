@@ -90,7 +90,12 @@
               "groupId": "hetzner-headless-room"
             },
             "transport": "realtime",
-            "timeoutMs": 5000
+            "timeoutMs": 5000,
+            "readiness": {
+              "minReadyPeers": 1,
+              "timeoutMs": 10000,
+              "intervalMs": 100
+            }
           },
           {
             "kind": "rtc.send",

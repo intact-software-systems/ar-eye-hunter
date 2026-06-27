@@ -211,6 +211,12 @@ export type RallarBlackBoxTestAssertCommand =
     expected?: unknown;
 }>;
 
+export type RallarBlackBoxTestRtcConnectReadiness = Readonly<{
+    minReadyPeers?: number;
+    timeoutMs?: number;
+    intervalMs?: number;
+}>;
+
 export type RallarBlackBoxTestRtcConnectCommand =
     & RallarBlackBoxTestCommandBase<'rtc.connect'>
     & Readonly<{
@@ -224,6 +230,7 @@ export type RallarBlackBoxTestRtcConnectCommand =
     minSnapshotVersion?: number;
     transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
     rallar?: Readonly<Record<string, unknown>>;
+    readiness?: RallarBlackBoxTestRtcConnectReadiness;
 }>;
 
 export type RallarBlackBoxTestRtcSendCommand =

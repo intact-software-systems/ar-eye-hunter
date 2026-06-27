@@ -265,6 +265,149 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         });
     });
 
+    it('waits for rtc.connect readiness before reporting success', async () => {
+        const health = vi.fn()
+            .mockResolvedValueOnce({
+                rtcStatus: {
+                    readyPeerIds: [],
+                },
+            })
+            .mockResolvedValueOnce({
+                rtcStatus: {
+                    readyPeerIds: ['peer-a', 'peer-b'],
+                },
+            });
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: vi.fn(async () => ({
+                    connected: true,
+                    rtcStatus: {
+                        readyPeerIds: [],
+                    },
+                })),
+                send: vi.fn(),
+                close: vi.fn(),
+                health,
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-ready-peers',
+            connection: 'rtc',
+            readiness: {
+                minReadyPeers: 2,
+                timeoutMs: 50,
+                intervalMs: 1,
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(health).toHaveBeenCalledTimes(2);
+        expect(result.value).toMatchObject({
+            readiness: {
+                readyPeerIds: ['peer-a', 'peer-b'],
+                minReadyPeers: 2,
+            },
+        });
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map(event => event.topic)).toEqual(expect.arrayContaining([
+            'rallar.bb.rtc.readiness_wait_started',
+            'rallar.bb.rtc.readiness_ready',
+            'rallar.bb.rtc.connected',
+        ]));
+    });
+
+    it('uses the readiness timeout window after rtc.connect completes', async () => {
+        const health = vi.fn()
+            .mockResolvedValueOnce({
+                rtcStatus: {
+                    readyPeerIds: [],
+                },
+            })
+            .mockResolvedValueOnce({
+                rtcStatus: {
+                    readyPeerIds: ['peer-a'],
+                },
+            });
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: vi.fn(async () => ({
+                    connected: true,
+                    rtcStatus: {
+                        readyPeerIds: [],
+                    },
+                })),
+                send: vi.fn(),
+                close: vi.fn(),
+                health,
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-ready-after-command-timeout',
+            connection: 'rtc',
+            timeoutMs: 1,
+            readiness: {
+                minReadyPeers: 1,
+                timeoutMs: 50,
+                intervalMs: 5,
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(health).toHaveBeenCalledTimes(2);
+        expect(result.value).toMatchObject({
+            readiness: {
+                ready: true,
+                readyPeerIds: ['peer-a'],
+                minReadyPeers: 1,
+            },
+        });
+    });
+
+    it('fails rtc.connect when readiness times out', async () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: vi.fn(async () => ({
+                    connected: true,
+                    rtcStatus: {
+                        readyPeerIds: [],
+                    },
+                })),
+                send: vi.fn(),
+                close: vi.fn(),
+                health: vi.fn(async () => ({
+                    rtcStatus: {
+                        readyPeerIds: [],
+                    },
+                })),
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-ready-timeout',
+            connection: 'rtc',
+            readiness: {
+                minReadyPeers: 1,
+                timeoutMs: 5,
+                intervalMs: 1,
+            },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BB_RTC_READY_TIMEOUT',
+            message: 'RTC connect timed out waiting for ready peers.',
+        });
+        expect(selectRallarBlackBoxDiagnostics(runtime.state()).some(event =>
+            event.topic === 'rallar.bb.rtc.readiness_timeout' &&
+            event.commandId === 'connect-ready-timeout' &&
+            event.severity === 'error'
+        )).toBe(true);
+    });
+
     it('fails realtime send commands when the browser runtime resolves no peers', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {

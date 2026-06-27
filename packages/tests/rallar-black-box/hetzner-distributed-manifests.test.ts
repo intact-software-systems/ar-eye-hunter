@@ -36,6 +36,31 @@ function allValues(value: unknown): readonly string[] {
     return [];
 }
 
+type ManifestCommand = Readonly<{
+    kind?: string;
+    commandId?: string;
+    commands?: readonly ManifestCommand[];
+    groups?: readonly Readonly<{
+        commands?: readonly ManifestCommand[];
+    }>[];
+    readiness?: Readonly<{
+        minReadyPeers?: number;
+        timeoutMs?: number;
+        intervalMs?: number;
+    }>;
+}>;
+
+function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
+    const walk = (commands: readonly ManifestCommand[]): readonly ManifestCommand[] =>
+        commands.flatMap(command => [
+            command,
+            ...walk(command.commands ?? []),
+            ...(command.groups ?? []).flatMap(group => walk(group.commands ?? [])),
+        ]);
+
+    return manifest.recipes.flatMap(selection => walk((selection.recipe?.commands ?? []) as readonly ManifestCommand[]));
+}
+
 describe('Hetzner distributed manifest catalog', () => {
     it('defines the green manifest run order and diagnostics separately', () => {
         const catalog = buildHetznerDistributedManifestCatalog();
@@ -118,6 +143,31 @@ describe('Hetzner distributed manifest catalog', () => {
             const match = entry.filePath.match(/-(\d+)-agent/);
             expect(match?.[1], entry.filePath).toBe(String(entry.agentCount));
             expect(entry.manifest.targetPolicy.expectedParticipantCount).toBe(entry.agentCount);
+        }
+    });
+
+    it('requires explicit RTC readiness before green live manifests send RTC traffic', () => {
+        const expectedReadyPeers = new Map([
+            ['apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json', 1],
+            ['apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json', 1],
+            ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', 1],
+            ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', 2],
+        ]);
+
+        for (const entry of buildHetznerDistributedManifestCatalog().filter(candidate => !candidate.diagnostic)) {
+            const commands = manifestCommands(entry.manifest);
+            const sendsRtc = commands.some(command => command.kind === 'rtc.send');
+            if (!sendsRtc) {
+                expect(expectedReadyPeers.has(entry.filePath)).toBe(false);
+                continue;
+            }
+
+            const connect = commands.find(command => command.kind === 'rtc.connect');
+            expect(connect?.readiness, entry.filePath).toEqual({
+                minReadyPeers: expectedReadyPeers.get(entry.filePath),
+                timeoutMs: 10_000,
+                intervalMs: 100,
+            });
         }
     });
 

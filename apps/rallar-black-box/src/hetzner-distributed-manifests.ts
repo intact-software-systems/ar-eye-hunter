@@ -84,6 +84,8 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             distributedRunId: 'hetzner-rtc-smoke-2-agent',
             recipe: createRallarBlackBoxRtcSmokeRecipe({
                 group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyPeerCount: 1,
+                readyTimeoutMs: 10_000,
             }),
             agentCount: 2,
             profiles: ['rtc', 'smoke'],
@@ -96,6 +98,8 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             distributedRunId: 'hetzner-provider-parity-2-agent',
             recipe: withoutDemoCredentials(createRallarBlackBoxProviderParityLiveRecipe({
                 group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyPeerCount: 1,
+                readyTimeoutMs: 10_000,
             })),
             agentCount: 2,
             profiles: ['rtc', 'parity'],
@@ -109,6 +113,8 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             recipe: createRallarBlackBoxRtcRealtimeRecipe({
                 durationSeconds: 5,
                 group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyPeerCount: 1,
+                readyTimeoutMs: 10_000,
             }),
             agentCount: 2,
             profiles: ['rtc', 'realtime', 'baseline'],
@@ -122,6 +128,8 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             recipe: createRallarBlackBoxRtcRealtimeRecipe({
                 durationSeconds: 15,
                 group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyPeerCount: 2,
+                readyTimeoutMs: 10_000,
             }),
             agentCount: 3,
             profiles: ['rtc', 'realtime', 'load'],

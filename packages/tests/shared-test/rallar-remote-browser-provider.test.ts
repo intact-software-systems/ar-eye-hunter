@@ -268,6 +268,11 @@ describe('rallar remote browser RTC provider', () => {
                             actor: 'alice',
                             roomId: 'room-1',
                             roomRef,
+                            readiness: {
+                                minReadyPeers: 1,
+                                timeoutMs: 10_000,
+                                intervalMs: 100,
+                            },
                             scenarioExecutionNumber: 1,
                             interactionExecutionNumber: 1,
                         },
@@ -347,6 +352,11 @@ describe('rallar remote browser RTC provider', () => {
         expect(server.commands[0]).toMatchObject({
             kind: 'rtc.connect',
             roomRef,
+            readiness: {
+                minReadyPeers: 1,
+                timeoutMs: 10_000,
+                intervalMs: 100,
+            },
             applicationId: 'app-1',
             workspaceId: 'workspace-a',
             scope: {

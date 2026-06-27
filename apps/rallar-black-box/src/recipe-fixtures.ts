@@ -22,6 +22,8 @@ export type RallarBlackBoxRtcRealtimeRecipeOptions = Readonly<{
     durationSeconds?: number;
     group?: RallarBlackBoxDistributedGroupRef;
     connection?: string;
+    readyPeerCount?: number;
+    readyTimeoutMs?: number;
 }>;
 
 export type RallarBlackBoxLiveRecipeOptions = Readonly<{
@@ -29,6 +31,8 @@ export type RallarBlackBoxLiveRecipeOptions = Readonly<{
     apiBaseUrl?: string;
     actor?: string;
     connection?: string;
+    readyPeerCount?: number;
+    readyTimeoutMs?: number;
 }>;
 
 export function normalizeRallarBlackBoxRtcRealtimeDurationSeconds(value: unknown): number {
@@ -68,6 +72,29 @@ function groupRoomRef(group: RallarBlackBoxDistributedGroupRef): RallarBlackBoxD
         applicationId: group.applicationId,
         workspaceId: group.workspaceId,
         groupId: group.groupId,
+    };
+}
+
+function rtcConnectReadiness(
+    options: Readonly<{
+        readyPeerCount?: number;
+        readyTimeoutMs?: number;
+    }>,
+): { minReadyPeers: number; timeoutMs: number; intervalMs: number } | undefined {
+    if (
+        typeof options.readyPeerCount !== 'number' ||
+        !Number.isFinite(options.readyPeerCount) ||
+        options.readyPeerCount <= 0
+    ) {
+        return undefined;
+    }
+
+    return {
+        minReadyPeers: Math.max(1, Math.round(options.readyPeerCount)),
+        timeoutMs: typeof options.readyTimeoutMs === 'number' && Number.isFinite(options.readyTimeoutMs)
+            ? Math.max(1, Math.round(options.readyTimeoutMs))
+            : 5_000,
+        intervalMs: 100,
     };
 }
 
@@ -184,6 +211,7 @@ export function createRallarBlackBoxRtcSmokeRecipe(
                 roomRef,
                 transport: 'realtime',
                 timeoutMs: 5_000,
+                readiness: rtcConnectReadiness(options),
             },
             {
                 kind: 'rtc.send',
@@ -264,6 +292,7 @@ export function createRallarBlackBoxProviderParityLiveRecipe(
                     roomRef,
                     restoreSession: true,
                 },
+                readiness: rtcConnectReadiness(options),
             };
         }
         if (command.kind === 'rtc.send') {
@@ -387,6 +416,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
                 roomRef,
                 transport: 'realtime',
                 timeoutMs: 10_000,
+                readiness: rtcConnectReadiness(options),
                 metadata: {
                     realtime: {
                         rateHz: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,

@@ -188,6 +188,11 @@
               "applicationId": "rallar-server",
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
+            },
+            "readiness": {
+              "minReadyPeers": 1,
+              "timeoutMs": 10000,
+              "intervalMs": 100
             }
           },
           {

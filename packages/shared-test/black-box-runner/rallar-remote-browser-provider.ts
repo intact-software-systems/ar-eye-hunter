@@ -337,6 +337,7 @@ function toConnectCommand(commandId: string, interaction: any): RallarBlackBoxTe
         roomId: request.roomId,
         ...scopeFields,
         transport: toTransport(request),
+        readiness: request.readiness,
         rallar: {
             ...asRecord(request.rallar),
             ...scopeFields,
