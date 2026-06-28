@@ -1,12 +1,16 @@
 import {
   type Browser,
   type BrowserContext,
+  type BrowserType,
   chromium,
+  firefox,
   type Page,
+  webkit,
 } from "playwright";
 import {
   controlRunSnapshotUrlFromControlUrl,
   type HeadlessWorkerAgentConfig,
+  type HeadlessWorkerBrowserEngine,
   readHeadlessWorkerConfig,
 } from "../src/headless-worker-config.ts";
 
@@ -27,6 +31,11 @@ type RunningAgent = Readonly<{
 }>;
 
 const WORKBENCH_UI_CONFIRMATION_TIMEOUT_MS = 5_000;
+const browserTypes = {
+  chromium,
+  firefox,
+  webkit,
+} satisfies Record<HeadlessWorkerBrowserEngine, BrowserType>;
 
 const config = readHeadlessWorkerConfig({ env: process.env });
 const shutdown = createShutdownSignal();
@@ -37,9 +46,10 @@ let runningAgents: readonly RunningAgent[] = [];
 try {
   log(
     `Starting rallar-black-box headless worker run=${config.runId} ` +
-      `agents=${config.agentCount} spa=${config.spaUrl} control=${config.controlUrl}`,
+      `agents=${config.agentCount} engine=${config.browserEngine} ` +
+      `spa=${config.spaUrl} control=${config.controlUrl}`,
   );
-  browser = await chromium.launch({
+  browser = await browserTypes[config.browserEngine].launch({
     headless: config.headless,
     timeout: config.launchTimeoutMs,
   });

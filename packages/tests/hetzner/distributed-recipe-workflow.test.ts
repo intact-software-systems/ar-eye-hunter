@@ -171,7 +171,64 @@ describe('Hetzner distributed recipe workflow', () => {
         }
     });
 
-    it('uses a shared lock-aware Playwright installer from rollout and headless scripts', async () => {
+    it('passes the selected Playwright browser engine through Hetzner workflows and helpers', async () => {
+        const distributedWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            'utf8',
+        );
+        const headlessWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+        const startScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            'utf8',
+        );
+        const statusScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/12-status-headless-workers.sh'),
+            'utf8',
+        );
+        const installScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/rallar-playwright-install.sh'),
+            'utf8',
+        );
+        const dispatchScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh'),
+            'utf8',
+        );
+
+        for (const workflow of [distributedWorkflow, headlessWorkflow]) {
+            expect(workflow).toContain('browser_engine:');
+            expect(workflow).toContain('default: chromium');
+            expect(workflow).toContain('- chromium');
+            expect(workflow).toContain('- firefox');
+            expect(workflow).toContain('- webkit');
+            expect(workflow).toContain('RALLAR_BLACK_BOX_BROWSER_ENGINE: ${{ inputs.browser_engine }}');
+            expect(workflow).toContain(
+                'printf \'RALLAR_BLACK_BOX_BROWSER_ENGINE=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_BROWSER_ENGINE}")"',
+            );
+        }
+
+        expect(startScript).toContain('RALLAR_BLACK_BOX_BROWSER_ENGINE="${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"');
+        expect(startScript).toContain('validate_browser_engine RALLAR_BLACK_BOX_BROWSER_ENGINE');
+        expect(startScript).toContain('RALLAR_BLACK_BOX_BROWSER_ENGINE');
+        expect(startScript).toContain('install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE}"');
+        expect(startScript).toContain('echo "Browser eng.: ${RALLAR_BLACK_BOX_BROWSER_ENGINE}"');
+
+        expect(installScript).toContain('rallar_playwright_normalize_browser');
+        expect(installScript).toContain('install_rallar_playwright_browser()');
+        expect(installScript).toContain('playwright install-deps "${browser_name}"');
+        expect(installScript).toContain('playwright install "${browser_name}"');
+
+        expect(statusScript).toContain('chrome|chromium|firefox|webkit|WebKit|MiniBrowser|rallar-black-box');
+
+        expect(dispatchScript).toContain('--browser-engine <engine>');
+        expect(dispatchScript).toContain('BROWSER_ENGINE="chromium"');
+        expect(dispatchScript).toContain('normalize_browser_engine');
+        expect(dispatchScript).toContain('-f "browser_engine=${BROWSER_ENGINE}"');
+    });
+
+    it('uses a shared lock-aware Playwright browser installer from rollout and headless scripts', async () => {
         const rolloutScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
             'utf8',
@@ -183,7 +240,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         for (const script of [rolloutScript, headlessScript]) {
             expect(script).toContain('source "${SCRIPT_DIR}/rallar-playwright-install.sh"');
-            expect(script).toContain('install_rallar_playwright_chromium "${RALLAR_CHECKOUT_DIR}"');
+            expect(script).toContain('install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}"');
             expect(script).not.toContain('playwright install-deps chromium');
             expect(script).not.toContain('playwright install chromium');
         }
@@ -196,7 +253,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
 
         expect(script).toContain('source "${SCRIPT_DIR}/rallar-playwright-install.sh"');
-        expect(script).toContain('install_rallar_playwright_chromium "${RALLAR_CHECKOUT_DIR}"');
+        expect(script).toContain('install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}"');
         expect(script).not.toContain('playwright install --with-deps chromium');
     });
 
@@ -777,6 +834,8 @@ describe('Hetzner distributed recipe workflow', () => {
             '-f',
             'register_before_login=true',
             '-f',
+            'browser_engine=chromium',
+            '-f',
             'rollout_before_run=true',
             '-f',
             'install_playwright=true',
@@ -798,6 +857,7 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(stdout).toContain('Dispatched hetzner-distributed-recipe.yml');
         expect(stdout).toContain('03-rtc-smoke-2-agent.json');
         expect(stdout).toContain('Mode     : rollout');
+        expect(stdout).toContain('Browser  : chromium');
         expect(stdout).toContain('Register : true');
     });
 

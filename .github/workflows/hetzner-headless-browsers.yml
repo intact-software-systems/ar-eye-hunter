@@ -89,8 +89,16 @@ on:
           - warning
           - info
           - debug
+      browser_engine:
+        description: Playwright browser engine for headless workers
+        type: choice
+        default: chromium
+        options:
+          - chromium
+          - firefox
+          - webkit
       install_playwright:
-        description: Install/update Chromium and Linux dependencies before starting
+        description: Install/update the selected Playwright browser and Linux dependencies before starting
         type: boolean
         default: true
       npm_ci:
@@ -226,6 +234,7 @@ jobs:
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
           RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}
+          RALLAR_BLACK_BOX_BROWSER_ENGINE: ${{ inputs.browser_engine }}
           RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
           RALLAR_REPO_REF: ${{ inputs.ref }}
           RALLAR_ROLLOUT_BEFORE_HEADLESS_START: ${{ inputs.rollout_before_start }}
@@ -266,6 +275,7 @@ jobs:
             printf 'RALLAR_BLACK_BOX_PASSWORD=%s\n' "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")"
             printf 'RALLAR_BLACK_BOX_REGISTER=%s\n' "$(quote "${RALLAR_BLACK_BOX_REGISTER}")"
             printf 'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL=%s\n' "$(quote "${RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL}")"
+            printf 'RALLAR_BLACK_BOX_BROWSER_ENGINE=%s\n' "$(quote "${RALLAR_BLACK_BOX_BROWSER_ENGINE}")"
             printf 'RALLAR_BLACK_BOX_CONTROL_TOKEN=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_TOKEN}")"
             printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
             printf 'RALLAR_ROLLOUT_BEFORE_HEADLESS_START=%s\n' "$(quote "${RALLAR_ROLLOUT_BEFORE_HEADLESS_START}")"

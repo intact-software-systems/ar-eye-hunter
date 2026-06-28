@@ -15,6 +15,7 @@ RALLAR_NPM_CI="${RALLAR_NPM_CI:-0}"
 RALLAR_WAIT_FOR_HEADLESS_WORKERS="${RALLAR_WAIT_FOR_HEADLESS_WORKERS:-1}"
 RALLAR_HEADLESS_READY_TIMEOUT_SECONDS="${RALLAR_HEADLESS_READY_TIMEOUT_SECONDS:-75}"
 RALLAR_BLACK_BOX_READY_TIMEOUT_MS="${RALLAR_BLACK_BOX_READY_TIMEOUT_MS:-$((RALLAR_HEADLESS_READY_TIMEOUT_SECONDS * 1000))}"
+RALLAR_BLACK_BOX_BROWSER_ENGINE="${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/rallar-playwright-install.sh"
@@ -132,6 +133,18 @@ validate_credentials() {
   done
 }
 
+validate_browser_engine() {
+  local key="$1"
+  local value="${!key-}"
+  case "${value}" in
+    chromium | firefox | webkit) ;;
+    *)
+      echo "${key} must be chromium, firefox, or webkit. Received: ${value}" >&2
+      exit 1
+      ;;
+  esac
+}
+
 apply_default_worker_env() {
   RALLAR_API_HOST="${RALLAR_API_HOST:-api.rallar.intactss.com}"
   RALLAR_CONTROL_HOST="${RALLAR_CONTROL_HOST:-control.rallar.intactss.com}"
@@ -159,6 +172,7 @@ validate_worker_env() {
   validate_required_value RALLAR_BLACK_BOX_AGENT_PREFIX
   validate_required_value RALLAR_BLACK_BOX_AGENT_COUNT
   validate_positive_integer RALLAR_BLACK_BOX_AGENT_COUNT "${RALLAR_BLACK_BOX_AGENT_COUNT}"
+  validate_browser_engine RALLAR_BLACK_BOX_BROWSER_ENGINE
   validate_credentials
 }
 
@@ -199,6 +213,7 @@ EOF_ENV
     RALLAR_BLACK_BOX_LOGOUT_ON_CLOSE
     RALLAR_BLACK_BOX_LEAVE_ROOM_ON_CLOSE
     RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL
+    RALLAR_BLACK_BOX_BROWSER_ENGINE
     RALLAR_BLACK_BOX_HEADLESS
     RALLAR_BLACK_BOX_LAUNCH_TIMEOUT_MS
     RALLAR_BLACK_BOX_READY_TIMEOUT_MS
@@ -287,7 +302,7 @@ install_npm_dependencies_if_requested() {
 
 install_playwright_if_requested() {
   if bool_enabled "${RALLAR_INSTALL_PLAYWRIGHT}"; then
-    install_rallar_playwright_chromium "${RALLAR_CHECKOUT_DIR}"
+    install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE}"
   fi
 }
 
@@ -351,6 +366,7 @@ else
   validate_required_value RALLAR_BLACK_BOX_AGENT_PREFIX
   validate_required_value RALLAR_BLACK_BOX_AGENT_COUNT
   validate_positive_integer RALLAR_BLACK_BOX_AGENT_COUNT "${RALLAR_BLACK_BOX_AGENT_COUNT}"
+  validate_browser_engine RALLAR_BLACK_BOX_BROWSER_ENGINE
 fi
 
 install_npm_dependencies_if_requested
@@ -361,6 +377,7 @@ echo "==> Starting ${SERVICE_NAME}"
 echo "Run id      : ${RALLAR_BLACK_BOX_RUN_ID}"
 echo "Agent prefix: ${RALLAR_BLACK_BOX_AGENT_PREFIX}"
 echo "Agent count : ${RALLAR_BLACK_BOX_AGENT_COUNT}"
+echo "Browser eng.: ${RALLAR_BLACK_BOX_BROWSER_ENGINE}"
 echo "SPA URL     : ${RALLAR_BLACK_BOX_SPA_URL:-from ${ENV_FILE}}"
 echo "Control URL : ${RALLAR_BLACK_BOX_CONTROL_URL}"
 
