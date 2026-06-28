@@ -139,6 +139,18 @@ describe('Hetzner distributed recipe workflow', () => {
         );
     });
 
+    it('writes workflow-provided headless env values when restarting browsers', async () => {
+        const workflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+
+        expect(workflow).toMatch(
+            /restart\)[\s\S]*RALLAR_WRITE_HEADLESS_ENV=1 \.\/09-start-headless-workers\.sh/,
+        );
+        expect(workflow).not.toContain('RALLAR_WRITE_HEADLESS_ENV=0 ./11-restart-headless-workers.sh');
+    });
+
     it('uses a TLS control URL for distributed-run admin API calls', async () => {
         const workflow = await readFile(
             path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
