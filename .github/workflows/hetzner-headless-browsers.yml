@@ -117,10 +117,6 @@ on:
         description: Agent connection wait timeout in seconds
         type: number
         default: 90
-      log_lines:
-        description: Recent service log lines to print for status/failures
-        type: number
-        default: 80
 
 permissions:
   contents: read
@@ -248,7 +244,6 @@ jobs:
           RALLAR_NPM_CI: ${{ inputs.npm_ci }}
           RALLAR_WAIT_FOR_HEADLESS_WORKERS: ${{ inputs.wait_for_agents }}
           RALLAR_HEADLESS_READY_TIMEOUT_SECONDS: ${{ inputs.ready_timeout_seconds }}
-          RALLAR_HEADLESS_LOG_LINES: ${{ inputs.log_lines }}
         run: |
           set -euo pipefail
           quote() { printf '%q' "$1"; }
@@ -290,7 +285,6 @@ jobs:
             printf 'RALLAR_NPM_CI=%s\n' "$(quote "${RALLAR_NPM_CI}")"
             printf 'RALLAR_WAIT_FOR_HEADLESS_WORKERS=%s\n' "$(quote "${RALLAR_WAIT_FOR_HEADLESS_WORKERS}")"
             printf 'RALLAR_HEADLESS_READY_TIMEOUT_SECONDS=%s\n' "$(quote "${RALLAR_HEADLESS_READY_TIMEOUT_SECONDS}")"
-            printf 'RALLAR_HEADLESS_LOG_LINES=%s\n' "$(quote "${RALLAR_HEADLESS_LOG_LINES}")"
           } > "${env_file}"
           chmod 600 "${env_file}"
 

@@ -30,7 +30,49 @@ const versionAtLeast = (version: string, minimum: string): boolean => {
     return true;
 };
 
+const workflowDispatchInputNames = (workflow: string): string[] => {
+    const inputNames: string[] = [];
+    let inInputs = false;
+
+    for (const line of workflow.split(/\r?\n/)) {
+        if (line === '    inputs:') {
+            inInputs = true;
+            continue;
+        }
+        if (inInputs && line.length > 0 && !line.startsWith(' ')) {
+            break;
+        }
+        if (!inInputs) {
+            continue;
+        }
+
+        const match = line.match(/^      ([A-Za-z0-9_]+):$/);
+        if (match) {
+            inputNames.push(match[1]);
+        }
+    }
+
+    return inputNames;
+};
+
 describe('Hetzner distributed recipe workflow', () => {
+    it('keeps workflow_dispatch inputs within the GitHub Actions limit', async () => {
+        const workflowPaths = [
+            '.github/workflows/hetzner-distributed-recipe.yml',
+            '.github/workflows/hetzner-headless-browsers.yml',
+        ];
+
+        for (const workflowPath of workflowPaths) {
+            const workflow = await readFile(path.join(repoRoot, workflowPath), 'utf8');
+            const inputNames = workflowDispatchInputNames(workflow);
+
+            expect(
+                inputNames.length,
+                `${workflowPath} workflow_dispatch inputs: ${inputNames.join(', ')}`,
+            ).toBeLessThanOrEqual(25);
+        }
+    });
+
     it('encodes remote API path identifiers and separates safe artifact directory names', async () => {
         const script = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh'),
