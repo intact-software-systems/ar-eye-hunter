@@ -92,7 +92,7 @@ on:
       headless_entry:
         description: Headless browser app entry; operator-spa keeps the rollback route
         required: false
-        default: operator-spa
+        default: headless
       browser_engine:
         description: Playwright browser engine for headless workers
         type: choice

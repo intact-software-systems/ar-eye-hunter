@@ -11,7 +11,7 @@ READY_TIMEOUT_SECONDS="120"
 TERMINAL_TIMEOUT_SECONDS="300"
 REGISTER_BEFORE_LOGIN="true"
 STOP_AFTER_RUN="true"
-HEADLESS_ENTRY="operator-spa"
+HEADLESS_ENTRY="headless"
 BROWSER_ENGINE="chromium"
 FAST_MODE="0"
 ALLOW_DIAGNOSTIC="0"
@@ -43,7 +43,7 @@ Options:
   --terminal-timeout-seconds <n> Pass terminal_timeout_seconds. Default: 300.
   --register-before-login <bool> Pass register_before_login. Default: true.
   --stop-after-run <bool>        Pass stop_after_run. Default: true.
-  --headless-entry <entry>       Pass headless_entry. Values: operator-spa, headless. Default: operator-spa.
+  --headless-entry <entry>       Pass headless_entry. Values: operator-spa, headless. Default: headless.
   --browser-engine <engine>      Pass browser_engine. Values: chromium, firefox, webkit. Default: chromium.
   --fast                         Skip rollout, Playwright install, and npm ci with shorter timeouts.
   --keep-headless                Keep browsers running after artifacts and analysis for debugging.

@@ -306,7 +306,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         for (const workflow of [distributedWorkflow, headlessWorkflow]) {
             expect(workflow).toContain('headless_entry:');
-            expect(workflow).toContain('default: operator-spa');
+            expect(workflow).toContain('default: headless');
             expect(workflow).toContain('RALLAR_BLACK_BOX_HEADLESS_ENTRY: ${{ inputs.headless_entry }}');
             expect(workflow).toContain(
                 'printf \'RALLAR_BLACK_BOX_HEADLESS_ENTRY=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_HEADLESS_ENTRY}")"',
@@ -314,11 +314,11 @@ describe('Hetzner distributed recipe workflow', () => {
         }
 
         expect(startScript).toContain('RALLAR_BLACK_BOX_HEADLESS_ENTRY');
-        expect(startScript).toContain('echo "Entry      : ${RALLAR_BLACK_BOX_HEADLESS_ENTRY:-operator-spa}"');
-        expect(statusScript).toContain('echo "Entry      : ${RALLAR_BLACK_BOX_HEADLESS_ENTRY:-operator-spa}"');
+        expect(startScript).toContain('echo "Entry      : ${RALLAR_BLACK_BOX_HEADLESS_ENTRY:-headless}"');
+        expect(statusScript).toContain('echo "Entry      : ${RALLAR_BLACK_BOX_HEADLESS_ENTRY:-headless}"');
         expect(statusScript).toContain('echo "Browser eng.: ${RALLAR_BLACK_BOX_BROWSER_ENGINE:-unknown}"');
         expect(dispatchScript).toContain('--headless-entry <entry>');
-        expect(dispatchScript).toContain('HEADLESS_ENTRY="operator-spa"');
+        expect(dispatchScript).toContain('HEADLESS_ENTRY="headless"');
         expect(dispatchScript).toContain('normalize_headless_entry');
         expect(dispatchScript).toContain('-f "headless_entry=${HEADLESS_ENTRY}"');
     });
@@ -929,7 +929,7 @@ describe('Hetzner distributed recipe workflow', () => {
             '-f',
             'register_before_login=true',
             '-f',
-            'headless_entry=operator-spa',
+            'headless_entry=headless',
             '-f',
             'browser_engine=chromium',
             '-f',
@@ -954,7 +954,7 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(stdout).toContain('Dispatched hetzner-distributed-recipe.yml');
         expect(stdout).toContain('03-rtc-smoke-2-agent.json');
         expect(stdout).toContain('Mode     : rollout');
-        expect(stdout).toContain('Entry    : operator-spa');
+        expect(stdout).toContain('Entry    : headless');
         expect(stdout).toContain('Browser  : chromium');
         expect(stdout).toContain('Register : true');
     });
