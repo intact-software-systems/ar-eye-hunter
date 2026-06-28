@@ -1,0 +1,19 @@
+{
+  "name": "rallar-black-box-headless",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "smoke:rendered": "tsx scripts/rendered-smoke.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.3",
+    "vite": "^8.0.11"
+  }
+}

@@ -1,4 +1,4 @@
-import { VivaldiNode, VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
+import { VivaldiNode, type VivaldiNodeData } from '@shared-graph/graph/vivaldi-core.ts';
 import { LatestRepository, type LatestRepositoryOptions, } from '@shared/cache/LatestRepository.ts';
 import {
     configureLatestRepository,

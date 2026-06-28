@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "strict": true,
+    "allowImportingTsExtensions": true,
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
+    "paths": {
+      "@shared-test/*": [
+        "../../packages/shared-test/*"
+      ],
+      "@shared-web/*": [
+        "../../packages/shared-web/*"
+      ],
+      "@shared-server/*": [
+        "../../packages/shared-server/*"
+      ],
+      "@shared-graph/*": [
+        "../../packages/shared-graph/*"
+      ],
+      "@shared/*": [
+        "../../packages/shared/*"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../packages/shared-test/rallar-bb-test/**/*.ts",
+    "../../packages/shared-test/black-box-runner/browser/**/*.ts",
+    "../../types/**/*.d.ts"
+  ]
+}
