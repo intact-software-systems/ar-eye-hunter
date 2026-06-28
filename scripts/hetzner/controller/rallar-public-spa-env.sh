@@ -185,7 +185,7 @@ ${RALLAR_CONTROL_HOST} {
 
 ${RALLAR_BLACKBOX_HOST} {
 	root * /var/www/rallar-black-box
-	try_files {path} /index.html
+	try_files {path} {path}/index.html /index.html
 	file_server
 }
 EOF
@@ -208,7 +208,7 @@ ${RALLAR_CONTROL_HOST} {
 
 ${RALLAR_BLACKBOX_HOST} {
 	root * /var/www/rallar-black-box
-	try_files {path} /index.html
+	try_files {path} {path}/index.html /index.html
 	file_server
 }
 EOF

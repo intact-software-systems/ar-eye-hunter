@@ -43,6 +43,15 @@ describe('Hetzner SPA public env wiring', () => {
         }
     });
 
+    it('serves nested SPA entry points before falling back to the operator index', async () => {
+        const helper = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/rallar-public-spa-env.sh'),
+            'utf8',
+        );
+
+        expect(helper).toContain('try_files {path} {path}/index.html /index.html');
+    });
+
     it('uses the control-server Deno config for Hetzner cache warming and systemd start', async () => {
         const controlConfig = JSON.parse(await readFile(controlServerConfigPath, 'utf8')) as {
             nodeModulesDir?: unknown;

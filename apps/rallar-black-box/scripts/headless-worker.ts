@@ -46,7 +46,8 @@ let runningAgents: readonly RunningAgent[] = [];
 try {
   log(
     `Starting rallar-black-box headless worker run=${config.runId} ` +
-      `agents=${config.agentCount} engine=${config.browserEngine} ` +
+      `agents=${config.agentCount} entry=${config.headlessEntry} ` +
+      `engine=${config.browserEngine} ` +
       `spa=${config.spaUrl} control=${config.controlUrl}`,
   );
   browser = await browserTypes[config.browserEngine].launch({
@@ -76,7 +77,7 @@ async function openAgent(
   browser: Browser,
   agent: HeadlessWorkerAgentConfig,
 ): Promise<RunningAgent> {
-  log(`Opening agent ${agent.agentId}`);
+  log(`Opening agent ${agent.agentId} url=${redactAgentUrlForLog(agent.url)}`);
   const context = await browser.newContext();
   const page = await context.newPage();
   page.on("console", (message) => {
@@ -287,10 +288,22 @@ function shouldLogBrowserConsole(type: string): boolean {
 }
 
 function redactUrlForLog(value: string): string {
+  return redactAgentUrlForLog(value);
+}
+
+function redactAgentUrlForLog(value: string): string {
+  const sensitiveParams = new Set([
+    "controlToken",
+    "rallarPassword",
+    "rallarToken",
+    "token",
+    "password",
+    "secret",
+  ]);
   try {
     const url = new URL(value);
     for (const key of url.searchParams.keys()) {
-      if (/(token|password|secret)/i.test(key)) {
+      if (sensitiveParams.has(key) || /(token|password|secret)/i.test(key)) {
         url.searchParams.set(key, "[REDACTED]");
       }
     }

@@ -547,6 +547,22 @@ function requiresAuthPlaceholder(value: unknown): boolean {
     return Object.values(value).some(item => requiresAuthPlaceholder(item));
 }
 
+function requiresAuthSessionPlaceholder(value: unknown): boolean {
+    if (typeof value === 'string') {
+        return AUTH_PLACEHOLDER_TEST_PATTERN.test(value);
+    }
+
+    if (Array.isArray(value)) {
+        return value.some(item => requiresAuthSessionPlaceholder(item));
+    }
+
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+
+    return Object.values(value).some(item => requiresAuthSessionPlaceholder(item));
+}
+
 function requiresWsTicketPlaceholder(value: unknown): boolean {
     if (typeof value === 'string') {
         return WS_TICKET_PLACEHOLDER_TEST_PATTERN.test(value);
@@ -1033,6 +1049,63 @@ class BrowserCommandAdapter {
         }
 
         return this.rallarRuntime;
+    }
+
+    private toRallarAuthConnectionConfig(
+        config: RallarBlackBoxTestConfig | undefined,
+    ): RallarBlackBoxBrowserRallarConnectionConfig {
+        const configuredRallar = asRecord(config?.rallar);
+        const defaults = asRecord(config?.defaults);
+        const apiBaseUrl = firstDefined(
+            configuredRallar.apiBaseUrl,
+            config?.apiBaseUrl,
+        );
+        const expectedSessionId = firstDefined(
+            configuredRallar.expectedSessionId,
+            configuredRallar.sessionId,
+            config?.sessionId,
+        );
+
+        return {
+            connection: toStringValue(defaults.connection) ??
+                config?.actor ??
+                'default',
+            actor: config?.actor,
+            rallar: {
+                ...configuredRallar,
+                ...(apiBaseUrl ? { apiBaseUrl } : {}),
+                ...(expectedSessionId ? { expectedSessionId } : {}),
+                transport: 'realtime',
+            },
+        };
+    }
+
+    private async sessionForRallarAuth(
+        value: unknown,
+        config: RallarBlackBoxTestConfig | undefined,
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext,
+        options: Readonly<{ required?: boolean }> = {},
+    ): Promise<AuthSession | undefined> {
+        let session = readOptionalBrowserSession();
+        const needsSession = options.required === true ||
+            requiresAuthSessionPlaceholder(value);
+        if (session || !needsSession || !this.rallarRuntime) {
+            return session;
+        }
+
+        const abort = this.commandAbortSignal(command, context);
+        try {
+            await this.withAbort(
+                this.rallarRuntime.connect(this.toRallarAuthConnectionConfig(config)),
+                abort.signal,
+            );
+        } finally {
+            abort.cleanup();
+        }
+
+        session = readOptionalBrowserSession();
+        return session;
     }
 
     private requireRallarCrdtRuntime(
@@ -2220,8 +2293,14 @@ class BrowserCommandAdapter {
         command: Extract<CommandWithId, { kind: 'http.request' }>,
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const session = readOptionalBrowserSession();
         const config = context.config();
+        const session = await this.sessionForRallarAuth(
+            command.request,
+            config,
+            command,
+            context,
+            { required: Boolean(command.request.path) },
+        );
         const wsTicket = requiresWsTicketPlaceholder(command.request)
             ? await requestWebSocketTicket(this.requireFetch(), config, session)
             : undefined;
@@ -2292,8 +2371,13 @@ class BrowserCommandAdapter {
         command: Extract<CommandWithId, { kind: 'ws.open' }>,
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const session = readOptionalBrowserSession();
         const config = context.config();
+        const session = await this.sessionForRallarAuth(
+            command.url,
+            config,
+            command,
+            context,
+        );
         const wsTicket = requiresWsTicketPlaceholder(command.url)
             ? await requestWebSocketTicket(this.requireFetch(), config, session)
             : undefined;
