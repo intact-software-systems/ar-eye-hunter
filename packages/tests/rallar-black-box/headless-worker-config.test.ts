@@ -38,6 +38,7 @@ describe("rallar-black-box headless worker config", () => {
 
     expect(config.spaUrl).toBe("https://blackbox.example.test");
     expect(config.apiBaseUrl).toBe("https://api.example.test");
+    expect(config.headlessEntry).toBe("operator-spa");
     expect(config.agentCount).toBe(2);
     expect(config.fleetRegion).toBe("eu-north");
     expect(config.fleetProvider).toBe("hetzner");
@@ -83,6 +84,50 @@ describe("rallar-black-box headless worker config", () => {
     expect(firstUrl.searchParams.get("fleetTags")).toBe("canary,rtc");
     expect(firstUrl.searchParams.get("applicationId")).toBe("rallar-server");
     expect(firstUrl.searchParams.get("workspaceId")).toBe("default");
+  });
+
+  it("targets the headless SPA when RALLAR_BLACK_BOX_HEADLESS_ENTRY=headless", () => {
+    const config = readHeadlessWorkerConfig({
+      env: {
+        RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
+        RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+        RALLAR_API_BASE_URL: "https://api.example.test/",
+        RALLAR_BLACK_BOX_RUN_ID: "run-headless",
+        RALLAR_BLACK_BOX_ROOM_ID: "room-headless",
+        RALLAR_BLACK_BOX_USERNAME: "alice",
+        RALLAR_BLACK_BOX_PASSWORD: "secret",
+        RALLAR_BLACK_BOX_HEADLESS_ENTRY: "headless",
+      },
+    });
+
+    expect(config.headlessEntry).toBe("headless");
+    const url = new URL(config.agents[0].url);
+    expect(url.origin).toBe("https://blackbox.example.test");
+    expect(url.pathname).toBe("/headless/");
+    expect(url.searchParams.get("mode")).toBe("control");
+    expect(url.searchParams.get("provider")).toBe("browser-rallar");
+    expect(url.searchParams.get("autoConnect")).toBe("1");
+    expect(url.searchParams.get("tab")).toBeNull();
+  });
+
+  it("keeps the operator SPA local-workbench route for rollback", () => {
+    const config = readHeadlessWorkerConfig({
+      env: {
+        RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
+        RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+        RALLAR_API_BASE_URL: "https://api.example.test/",
+        RALLAR_BLACK_BOX_RUN_ID: "run-operator",
+        RALLAR_BLACK_BOX_ROOM_ID: "room-operator",
+        RALLAR_BLACK_BOX_USERNAME: "alice",
+        RALLAR_BLACK_BOX_PASSWORD: "secret",
+        RALLAR_BLACK_BOX_HEADLESS_ENTRY: "operator-spa",
+      },
+    });
+
+    expect(config.headlessEntry).toBe("operator-spa");
+    const url = new URL(config.agents[0].url);
+    expect(url.pathname).toBe("/");
+    expect(url.searchParams.get("tab")).toBe("local-workbench");
   });
 
   it("supports per-agent credentials and messages.rtc transport", () => {
@@ -205,6 +250,17 @@ describe("rallar-black-box headless worker config", () => {
         },
       })
     ).toThrow(/RALLAR_BLACK_BOX_TRANSPORT must be realtime or messages\.rtc/);
+
+    expect(() =>
+      readHeadlessWorkerConfig({
+        env: {
+          ...baseEnv,
+          RALLAR_BLACK_BOX_HEADLESS_ENTRY: "dashboard",
+        },
+      })
+    ).toThrow(
+      /RALLAR_BLACK_BOX_HEADLESS_ENTRY must be operator-spa or headless/,
+    );
   });
 
   it("can build a URL from an explicit config object", () => {
@@ -212,6 +268,7 @@ describe("rallar-black-box headless worker config", () => {
       spaUrl: "https://blackbox.example.test",
       controlUrl: "wss://control.example.test/control",
       apiBaseUrl: "https://api.example.test",
+      headlessEntry: "operator-spa",
       runId: "run-direct",
       agentPrefix: "direct",
       agentCount: 1,

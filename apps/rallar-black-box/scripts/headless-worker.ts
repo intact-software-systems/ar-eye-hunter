@@ -96,7 +96,7 @@ async function openAgent(
   await signInIfLoginGateIsVisible(page, agent);
   await waitForAgentRegistration(agent);
   log(`Agent ${agent.agentId} registered in control server`);
-  void confirmWorkbenchRegistrationUi(page, agent).catch((error) => {
+  void confirmAgentRegistrationUi(page, agent).catch((error) => {
     log(
       `Agent ${agent.agentId} registered in control server; UI confirmation skipped: ${
         errorMessage(error)
@@ -108,6 +108,18 @@ async function openAgent(
     context,
     page,
   };
+}
+
+async function confirmAgentRegistrationUi(
+  page: Page,
+  agent: HeadlessWorkerAgentConfig,
+): Promise<void> {
+  if (config.headlessEntry === "operator-spa") {
+    await confirmWorkbenchRegistrationUi(page, agent);
+    return;
+  }
+
+  await confirmHeadlessRegistrationUi(page, agent);
 }
 
 async function signInIfLoginGateIsVisible(
@@ -180,6 +192,26 @@ async function confirmWorkbenchRegistrationUi(
     timeout,
   });
   await controlPanel.getByText(agent.agentId, { exact: false }).waitFor({
+    state: "visible",
+    timeout,
+  }).catch(() => undefined);
+}
+
+async function confirmHeadlessRegistrationUi(
+  page: Page,
+  agent: HeadlessWorkerAgentConfig,
+): Promise<void> {
+  const timeout = Math.min(
+    config.readyTimeoutMs,
+    WORKBENCH_UI_CONFIRMATION_TIMEOUT_MS,
+  );
+  await page.locator("[data-headless-agent-root]").waitFor({
+    state: "visible",
+    timeout,
+  });
+  await page.locator("[data-agent-id]").getByText(agent.agentId, {
+    exact: false,
+  }).waitFor({
     state: "visible",
     timeout,
   }).catch(() => undefined);

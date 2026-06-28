@@ -1,5 +1,6 @@
 export type HeadlessWorkerTransport = "realtime" | "messages.rtc";
 export type HeadlessWorkerBrowserLogLevel = "warning" | "info" | "debug";
+export type HeadlessWorkerEntry = "operator-spa" | "headless";
 
 export type HeadlessWorkerCredentials = Readonly<{
   username: string;
@@ -18,6 +19,7 @@ export type HeadlessWorkerConfig = Readonly<{
   spaUrl: string;
   controlUrl: string;
   apiBaseUrl: string;
+  headlessEntry: HeadlessWorkerEntry;
   runId: string;
   agentPrefix: string;
   agentCount: number;
@@ -99,6 +101,7 @@ export function readHeadlessWorkerConfig(
     spaUrl: normalizeBaseUrl(requireEnv(env, "RALLAR_BLACK_BOX_SPA_URL")),
     controlUrl: requireEnv(env, "RALLAR_BLACK_BOX_CONTROL_URL"),
     apiBaseUrl: normalizeBaseUrl(requireEnv(env, "RALLAR_API_BASE_URL")),
+    headlessEntry: headlessEntryEnv(env),
     runId: requireEnv(env, "RALLAR_BLACK_BOX_RUN_ID"),
     agentPrefix: envValue(env, "RALLAR_BLACK_BOX_AGENT_PREFIX") ??
       DEFAULT_AGENT_PREFIX,
@@ -203,12 +206,16 @@ export function createHeadlessWorkerAgents(
 export function createHeadlessWorkerAgentUrl(
   input: HeadlessWorkerAgentUrlInput,
 ): string {
-  const url = new URL(input.spaUrl);
+  const url = agentSpaUrl(input.spaUrl, input.headlessEntry);
   const params = url.searchParams;
   params.set("mode", "control");
   params.set("provider", "browser-rallar");
   params.set("autoConnect", "1");
-  params.set("tab", "local-workbench");
+  if (input.headlessEntry === "operator-spa") {
+    params.set("tab", "local-workbench");
+  } else {
+    params.delete("tab");
+  }
   params.set("controlUrl", input.controlUrl);
   params.set("runId", input.runId);
   params.set("agentId", input.agentId);
@@ -256,6 +263,19 @@ export function createHeadlessWorkerAgentUrl(
   }
 
   return url.toString();
+}
+
+function agentSpaUrl(spaUrl: string, entry: HeadlessWorkerEntry): URL {
+  const url = new URL(spaUrl);
+  if (entry === "headless") {
+    const basePath = url.pathname.endsWith("/")
+      ? url.pathname
+      : `${url.pathname}/`;
+    url.pathname = basePath.endsWith("/headless/")
+      ? basePath
+      : `${basePath.replace(/\/+$/, "")}/headless/`;
+  }
+  return url;
 }
 
 export function controlRunSnapshotUrlFromControlUrl(
@@ -405,6 +425,21 @@ function transportEnv(
     return raw;
   }
   throw new Error(`${key} must be realtime or messages.rtc. Received: ${raw}`);
+}
+
+function headlessEntryEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): HeadlessWorkerEntry {
+  const value = envValue(env, "RALLAR_BLACK_BOX_HEADLESS_ENTRY");
+  if (!value || value === "operator-spa") {
+    return "operator-spa";
+  }
+  if (value === "headless") {
+    return "headless";
+  }
+  throw new Error(
+    "RALLAR_BLACK_BOX_HEADLESS_ENTRY must be operator-spa or headless",
+  );
 }
 
 function browserLogLevelEnv(
