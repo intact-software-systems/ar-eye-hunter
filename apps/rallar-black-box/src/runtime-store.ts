@@ -24,12 +24,12 @@ import type {
     RallarBlackBoxTestState,
 } from '@shared-test/rallar-bb-test/types.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES, } from './recipe-fixtures.ts';
-import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot, } from './control-client.ts';
+import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot, } from '@shared-test/rallar-bb-test/control-client.ts';
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge,
-} from './browser-rallar-runtime.ts';
+} from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 
 export {
     bootstrapFleetMetadata,

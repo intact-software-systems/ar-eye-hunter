@@ -16,6 +16,8 @@ export * from './diagnostics.ts';
 export * from './runtime.ts';
 export * from './selectors.ts';
 export * from './browser-adapter.ts';
+export * from './browser-rallar-runtime-bridge.ts';
+export * from './browser-control-agent.ts';
 export * from './black-box-runner-adapter.ts';
 export * from './provider-parity.ts';
 export * from './companion-coverage.ts';
