@@ -1845,7 +1845,9 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
     const catalog = panel.locator('.distributed-recipes-catalog');
 
     await catalog.getByLabel('Search').fill('rtc realtime');
-    const rtcRow = catalog.locator('.distributed-recipe-row').filter({ hasText: 'RTC Realtime' });
+    const rtcRow = catalog.locator('.distributed-recipe-row').filter({
+        has: page.getByText('RTC Realtime', { exact: true }),
+    });
     await rtcRow.getByRole('checkbox').check();
     await expect(rtcRow).toContainText('Preflight');
     await expect(rtcRow).toContainText('Effective ops');

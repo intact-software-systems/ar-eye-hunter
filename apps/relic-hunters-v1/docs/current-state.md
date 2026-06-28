@@ -124,8 +124,8 @@ npm --workspace relic-hunters-v1 run build
 npx vitest run packages/tests/relic-hunters/relic-expedition-blueprint.test.ts packages/tests/relic-hunters/relic-expedition-ai.test.ts packages/tests/relic-hunters/relic-server-service.test.ts
 npx vitest run packages/tests/relic-hunters/relic-web-app.browser.test.ts packages/tests/shared-web/rallar-ai.test.ts
 cd apps/relic-hunter-server-v1 && deno task check
-npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "large-screen side menus|core lobby layouts|Rallar browser bootstrap"
-RELIC_SCENE_BASELINE_WRITE=1 npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "scene upgrade baselines"
+npx playwright test --config apps/relic-hunters-v1/playwright.config.ts tests/playwright/relic-hunters/web.spec.ts --grep "large-screen side menus|core lobby layouts|Rallar browser bootstrap"
+RELIC_SCENE_BASELINE_WRITE=1 npx playwright test --config apps/relic-hunters-v1/playwright.config.ts tests/playwright/relic-hunters/web.spec.ts --grep "scene upgrade baselines"
 npm run test:playwright:relic
 npm run test:playwright:relic:full-stack
 ```
@@ -133,7 +133,7 @@ npm run test:playwright:relic:full-stack
 For this review, `npm --workspace relic-hunters-v1 run test`,
 `npm --workspace relic-hunters-v1 run typecheck`,
 `npm --workspace relic-hunters-v1 run build`, and
-`npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "renders a nonblank Babylon scene"`
+`npx playwright test --config apps/relic-hunters-v1/playwright.config.ts tests/playwright/relic-hunters/web.spec.ts --grep "renders a nonblank Babylon scene"`
 pass. The app workspace test script now runs the Relic Hunters Vitest suite under
 `apps/relic-hunters-v1/tests`, including the RTC avatar routing, stale-room RTC
 avatar rejection, scene movement priming, camera return timing, flyover pose

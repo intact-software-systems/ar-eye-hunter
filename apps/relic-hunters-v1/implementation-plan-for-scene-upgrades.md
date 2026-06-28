@@ -57,7 +57,7 @@ and can write baseline screenshots to
 `docs/scene-contracts.md` documents the room, metadata, player target, prompt,
 and visual baseline contracts future scene modules must preserve. The baseline
 writer passed on 2026-05-18 with:
-`RELIC_SCENE_BASELINE_WRITE=1 npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "scene upgrade baselines"`.
+`RELIC_SCENE_BASELINE_WRITE=1 npx playwright test --config apps/relic-hunters-v1/playwright.config.ts tests/playwright/relic-hunters/web.spec.ts --grep "scene upgrade baselines"`.
 
 Deliverables:
 
@@ -608,7 +608,7 @@ Run the smallest useful set for the touched surface:
 npm --workspace relic-hunters-v1 run test
 npm --workspace relic-hunters-v1 run typecheck
 npm --workspace relic-hunters-v1 run build
-npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "renders a Babylon opening scene|renders a nonblank Babylon scene"
+npx playwright test --config apps/relic-hunters-v1/playwright.config.ts tests/playwright/relic-hunters/web.spec.ts --grep "renders a Babylon opening scene|renders a nonblank Babylon scene"
 git diff --check
 ```
 

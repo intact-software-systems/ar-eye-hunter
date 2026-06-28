@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-    testDir: './tests/playwright',
+    testDir: '../../tests/playwright/relic-hunters',
     timeout: 30_000,
     expect: {
         timeout: 5_000,
@@ -15,7 +15,8 @@ export default defineConfig({
         trace: 'on-first-retry',
     },
     webServer: {
-        command: 'npm --workspace relic-hunters-v1 run dev -- --host 127.0.0.1',
+        command:
+            'cd ../.. && npm --workspace relic-hunters-v1 run dev -- --host 127.0.0.1',
         url: 'http://127.0.0.1:5175',
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,

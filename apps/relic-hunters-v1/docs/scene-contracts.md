@@ -220,5 +220,5 @@ Current scene-upgrade metric artifact:
 Validation command:
 
 ```text
-RELIC_SCENE_BASELINE_WRITE=1 npx playwright test tests/playwright/relic-hunters/web.spec.ts --grep "scene upgrade baselines"
+RELIC_SCENE_BASELINE_WRITE=1 npx playwright test --config apps/relic-hunters-v1/playwright.config.ts tests/playwright/relic-hunters/web.spec.ts --grep "scene upgrade baselines"
 ```

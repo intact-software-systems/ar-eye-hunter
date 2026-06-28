@@ -95,7 +95,7 @@
     "test:shared-black-box:memory:parallel": "npm --workspace @ar-eye-hunter/shared-test run bb:memory:parallel",
     "test:shared-black-box:remote:dry": "npm --workspace @ar-eye-hunter/shared-test run bb:remote:provider-parity:dry",
     "test:playwright": "npm run test:e2e",
-    "test:playwright:relic": "playwright test tests/playwright/relic-hunters",
+    "test:playwright:relic": "playwright test --config apps/relic-hunters-v1/playwright.config.ts",
     "test:playwright:relic:full-stack": "RELIC_HUNTERS_FULL_STACK=1 playwright test --config apps/relic-hunters-v1/playwright.full-stack.config.ts",
     "dev:rallar-black-box": "npm run dev:rallar",
     "build:rallar-black-box": "npm run build:rallar",

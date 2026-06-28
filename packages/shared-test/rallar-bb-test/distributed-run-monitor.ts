@@ -3222,13 +3222,19 @@ function commandFailureNextAction(
 
 function isRtcStreamPerformanceFailureText(text: string): boolean {
     const normalized = text.toLowerCase();
+    const hasRtcStreamContext = normalized.includes('rallar_black_box_rtc_stream') ||
+        normalized.includes('rallar.bb.rtc.stream') ||
+        normalized.includes('rtc.stream') ||
+        normalized.includes('rtc stream') ||
+        normalized.includes('stream pacing');
+    const hasInFlightBacklogText = normalized.includes('in-flight') || normalized.includes('in flight');
     return normalized.includes('rallar_black_box_rtc_stream_threshold_failed') ||
         normalized.includes('rallar_black_box_rtc_stream_in_flight_limit') ||
         normalized.includes('rallar.bb.rtc.stream_failed') ||
         normalized.includes('maxdroppedframes') ||
         normalized.includes('minsend success ratio') ||
         normalized.includes('stream pacing') ||
-        normalized.includes('in-flight');
+        (hasRtcStreamContext && hasInFlightBacklogText);
 }
 
 function failureCategory(failure: DistributedRunFailureRow): DistributedFailureExplanation['category'] {

@@ -1633,6 +1633,108 @@ describe('distributed recipes helpers', () => {
         expect(verdict.summary).toContain('rtc-stream-performance');
     });
 
+    it('does not classify generic in-flight command failures as RTC stream performance', () => {
+        const apiRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            commandLinks: [{
+                phase: 'start',
+                agentId: 'agent-a',
+                commandId: 'api-submit',
+                recipeId: 'health-only',
+                queuedAtEpochMs: 1_510,
+                completedAtEpochMs: 1_620,
+                ok: false,
+                error: {
+                    code: 'HTTP_REQUEST_FAILED',
+                    message: 'Request already in-flight for this user.',
+                },
+            }],
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [{
+                    kind: 'command',
+                    key: 'api-submit',
+                    state: 'failed',
+                    required: true,
+                    error: {
+                        code: 'HTTP_REQUEST_FAILED',
+                        message: 'Request already in-flight for this user.',
+                    },
+                }],
+            },
+        };
+        const apiControlRun: ControlRunSnapshot = {
+            ...distributedControlRun,
+            commands: [{
+                envelope: {
+                    kind: 'command',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-a',
+                    commandId: 'api-submit',
+                    command: {
+                        kind: 'http.request',
+                        commandId: 'api-submit',
+                        request: {
+                            method: 'POST',
+                            path: '/api/submit',
+                        },
+                    },
+                },
+                queuedAtEpochMs: 1_510,
+                dispatchedAtEpochMs: 1_530,
+                completedAtEpochMs: 1_620,
+                dispatchCount: 1,
+            }],
+            results: [{
+                kind: 'result',
+                protocolVersion: 1,
+                runId: 'run-1',
+                agentId: 'agent-a',
+                commandId: 'api-submit',
+                ok: false,
+                error: {
+                    code: 'HTTP_REQUEST_FAILED',
+                    message: 'Request already in-flight for this user.',
+                },
+                result: {
+                    commandId: 'api-submit',
+                    kind: 'http.request',
+                    status: 'failed',
+                    ok: false,
+                    startedAtEpochMs: 1_530,
+                    endedAtEpochMs: 1_620,
+                    durationMs: 90,
+                    error: {
+                        code: 'HTTP_REQUEST_FAILED',
+                        message: 'Request already in-flight for this user.',
+                    },
+                },
+            }],
+        };
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun: apiRun,
+            controlRun: apiControlRun,
+        });
+        const report = deriveDistributedRunAnalysisReport({
+            distributedRun: apiRun,
+            controlRun: apiControlRun,
+        });
+        const verdict = deriveRunVerdictView({
+            distributedRun: apiRun,
+            monitor,
+            report,
+        });
+
+        expect(report.firstFailure?.category).toBe('command');
+        expect(report.nextActions[0]).toMatchObject({
+            category: 'command',
+            title: 'Distributed command failed',
+        });
+        expect(verdict.causalTrail.map(entry => entry.kind)).not.toContain('stream-performance');
+        expect(verdict.summary).not.toContain('rtc-stream-performance');
+    });
+
     it('calls out missing artifacts in the run verdict', () => {
         const monitor = deriveDistributedRunMonitor({
             distributedRun,
