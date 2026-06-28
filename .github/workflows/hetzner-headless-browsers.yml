@@ -89,6 +89,10 @@ on:
           - warning
           - info
           - debug
+      headless_entry:
+        description: Headless browser app entry; operator-spa keeps the rollback route
+        required: false
+        default: operator-spa
       browser_engine:
         description: Playwright browser engine for headless workers
         type: choice
@@ -234,6 +238,7 @@ jobs:
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
           RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}
+          RALLAR_BLACK_BOX_HEADLESS_ENTRY: ${{ inputs.headless_entry }}
           RALLAR_BLACK_BOX_BROWSER_ENGINE: ${{ inputs.browser_engine }}
           RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
           RALLAR_REPO_REF: ${{ inputs.ref }}
@@ -275,6 +280,7 @@ jobs:
             printf 'RALLAR_BLACK_BOX_PASSWORD=%s\n' "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")"
             printf 'RALLAR_BLACK_BOX_REGISTER=%s\n' "$(quote "${RALLAR_BLACK_BOX_REGISTER}")"
             printf 'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL=%s\n' "$(quote "${RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL}")"
+            printf 'RALLAR_BLACK_BOX_HEADLESS_ENTRY=%s\n' "$(quote "${RALLAR_BLACK_BOX_HEADLESS_ENTRY}")"
             printf 'RALLAR_BLACK_BOX_BROWSER_ENGINE=%s\n' "$(quote "${RALLAR_BLACK_BOX_BROWSER_ENGINE}")"
             printf 'RALLAR_BLACK_BOX_CONTROL_TOKEN=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_TOKEN}")"
             printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"

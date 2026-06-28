@@ -11,6 +11,7 @@ READY_TIMEOUT_SECONDS="120"
 TERMINAL_TIMEOUT_SECONDS="300"
 REGISTER_BEFORE_LOGIN="true"
 STOP_AFTER_RUN="true"
+HEADLESS_ENTRY="operator-spa"
 BROWSER_ENGINE="chromium"
 FAST_MODE="0"
 ALLOW_DIAGNOSTIC="0"
@@ -42,6 +43,7 @@ Options:
   --terminal-timeout-seconds <n> Pass terminal_timeout_seconds. Default: 300.
   --register-before-login <bool> Pass register_before_login. Default: true.
   --stop-after-run <bool>        Pass stop_after_run. Default: true.
+  --headless-entry <entry>       Pass headless_entry. Values: operator-spa, headless. Default: operator-spa.
   --browser-engine <engine>      Pass browser_engine. Values: chromium, firefox, webkit. Default: chromium.
   --fast                         Skip rollout, Playwright install, and npm ci with shorter timeouts.
   --keep-headless                Keep browsers running after artifacts and analysis for debugging.
@@ -102,6 +104,17 @@ normalize_browser_engine() {
       ;;
     *)
       fail "browser_engine must be chromium, firefox, or webkit. Received: $1"
+      ;;
+  esac
+}
+
+normalize_headless_entry() {
+  case "$1" in
+    operator-spa | headless)
+      printf '%s' "$1"
+      ;;
+    *)
+      fail "headless_entry must be operator-spa or headless. Received: $1"
       ;;
   esac
 }
@@ -179,6 +192,11 @@ while [[ $# -gt 0 ]]; do
       STOP_AFTER_RUN="$2"
       shift 2
       ;;
+    --headless-entry)
+      [[ $# -ge 2 ]] || fail "--headless-entry requires a value."
+      HEADLESS_ENTRY="$2"
+      shift 2
+      ;;
     --browser-engine)
       [[ $# -ge 2 ]] || fail "--browser-engine requires a value."
       BROWSER_ENGINE="$2"
@@ -235,6 +253,7 @@ NPM_CI="$(normalize_bool npm_ci "${NPM_CI}")"
 WAIT_FOR_AGENTS="$(normalize_bool wait_for_agents "${WAIT_FOR_AGENTS}")"
 REGISTER_BEFORE_LOGIN="$(normalize_bool register_before_login "${REGISTER_BEFORE_LOGIN}")"
 STOP_AFTER_RUN="$(normalize_bool stop_after_run "${STOP_AFTER_RUN}")"
+HEADLESS_ENTRY="$(normalize_headless_entry "${HEADLESS_ENTRY}")"
 BROWSER_ENGINE="$(normalize_browser_engine "${BROWSER_ENGINE}")"
 validate_positive_integer ready_timeout_seconds "${READY_TIMEOUT_SECONDS}"
 validate_positive_integer terminal_timeout_seconds "${TERMINAL_TIMEOUT_SECONDS}"
@@ -309,6 +328,7 @@ echo "Mode     : ${mode}"
 echo "Run ID   : ${safe_run_id}"
 echo "Agents   : ${agent_count}"
 echo "Room     : ${room_id}"
+echo "Entry    : ${HEADLESS_ENTRY}"
 echo "Browser  : ${BROWSER_ENGINE}"
 echo "Register : ${REGISTER_BEFORE_LOGIN}"
 echo "Stop headless: ${STOP_AFTER_RUN}"
@@ -321,6 +341,7 @@ gh workflow run "${WORKFLOW_NAME}" \
   -f "application_id=${application_id}" \
   -f "workspace_id=${workspace_id}" \
   -f "register_before_login=${REGISTER_BEFORE_LOGIN}" \
+  -f "headless_entry=${HEADLESS_ENTRY}" \
   -f "browser_engine=${BROWSER_ENGINE}" \
   -f "rollout_before_run=${ROLLOUT_BEFORE_RUN}" \
   -f "install_playwright=${INSTALL_PLAYWRIGHT}" \

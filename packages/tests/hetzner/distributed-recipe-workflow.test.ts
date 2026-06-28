@@ -228,6 +228,40 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(dispatchScript).toContain('-f "browser_engine=${BROWSER_ENGINE}"');
     });
 
+    it('passes the selected headless SPA entry through Hetzner workflows and helpers', async () => {
+        const distributedWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            'utf8',
+        );
+        const headlessWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+        const startScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            'utf8',
+        );
+        const dispatchScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh'),
+            'utf8',
+        );
+
+        for (const workflow of [distributedWorkflow, headlessWorkflow]) {
+            expect(workflow).toContain('headless_entry:');
+            expect(workflow).toContain('default: operator-spa');
+            expect(workflow).toContain('RALLAR_BLACK_BOX_HEADLESS_ENTRY: ${{ inputs.headless_entry }}');
+            expect(workflow).toContain(
+                'printf \'RALLAR_BLACK_BOX_HEADLESS_ENTRY=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_HEADLESS_ENTRY}")"',
+            );
+        }
+
+        expect(startScript).toContain('RALLAR_BLACK_BOX_HEADLESS_ENTRY');
+        expect(dispatchScript).toContain('--headless-entry <entry>');
+        expect(dispatchScript).toContain('HEADLESS_ENTRY="operator-spa"');
+        expect(dispatchScript).toContain('normalize_headless_entry');
+        expect(dispatchScript).toContain('-f "headless_entry=${HEADLESS_ENTRY}"');
+    });
+
     it('uses a shared lock-aware Playwright browser installer from rollout and headless scripts', async () => {
         const rolloutScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
@@ -834,6 +868,8 @@ describe('Hetzner distributed recipe workflow', () => {
             '-f',
             'register_before_login=true',
             '-f',
+            'headless_entry=operator-spa',
+            '-f',
             'browser_engine=chromium',
             '-f',
             'rollout_before_run=true',
@@ -857,6 +893,7 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(stdout).toContain('Dispatched hetzner-distributed-recipe.yml');
         expect(stdout).toContain('03-rtc-smoke-2-agent.json');
         expect(stdout).toContain('Mode     : rollout');
+        expect(stdout).toContain('Entry    : operator-spa');
         expect(stdout).toContain('Browser  : chromium');
         expect(stdout).toContain('Register : true');
     });

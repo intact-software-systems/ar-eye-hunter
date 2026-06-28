@@ -76,6 +76,10 @@ rm -rf /var/www/rallar-black-box/*
 rsync -a --delete \
   "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist/" \
   /var/www/rallar-black-box/
+install -d -m 0755 -o caddy -g caddy /var/www/rallar-black-box/headless
+rsync -a --delete \
+  "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-headless/dist/" \
+  /var/www/rallar-black-box/headless/
 chown -R caddy:caddy /var/www/rallar-black-box
 
 echo "==> Writing environment files"
