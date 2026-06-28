@@ -168,6 +168,44 @@ describe('rallar-black-box control bootstrap', () => {
     });
   });
 
+  it('parses explicit fleet coordinates and rejects unusable coordinate pairs', () => {
+    const fromEnv = resolveRallarBlackBoxBootstrapConfig('', {
+      VITE_RALLAR_AGENT_LATITUDE: '59.9139',
+      VITE_RALLAR_AGENT_LONGITUDE: '10.7522',
+      VITE_RALLAR_AGENT_LOCATION_LABEL: 'Oslo control rack',
+    });
+    const fromUrl = resolveRallarBlackBoxBootstrapConfig(
+      '?fleetLatitude=40.7128&fleetLongitude=-74.006&fleetLocationLabel=New%20York',
+      {
+        VITE_RALLAR_AGENT_LATITUDE: '59.9139',
+        VITE_RALLAR_AGENT_LONGITUDE: '10.7522',
+      },
+    );
+    const invalid = resolveRallarBlackBoxBootstrapConfig(
+      '?fleetLatitude=95&fleetLongitude=not-a-number&fleetLocationLabel=bad',
+      {},
+    );
+    const malformed = resolveRallarBlackBoxBootstrapConfig(
+      '?fleetLatitude=52.5abc&fleetLongitude=10.7522&fleetLocationLabel=bad',
+      {},
+    );
+
+    expect(fromEnv).toMatchObject({
+      fleetLatitude: 59.9139,
+      fleetLongitude: 10.7522,
+      fleetLocationLabel: 'Oslo control rack',
+    });
+    expect(fromUrl).toMatchObject({
+      fleetLatitude: 40.7128,
+      fleetLongitude: -74.006,
+      fleetLocationLabel: 'New York',
+    });
+    expect(invalid.fleetLatitude).toBeUndefined();
+    expect(invalid.fleetLongitude).toBeUndefined();
+    expect(malformed.fleetLatitude).toBeUndefined();
+    expect(malformed.fleetLongitude).toBeUndefined();
+  });
+
   it('selects browser-rallar provider only when requested', () => {
     const fromUrl = resolveRallarBlackBoxBootstrapConfig(
       '?provider=browser-rallar&apiBaseUrl=https://api.example.test&rallarUsername=alice&rallarPassword=secret',

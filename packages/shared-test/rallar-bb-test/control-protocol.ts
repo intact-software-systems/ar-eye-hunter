@@ -8,6 +8,7 @@ import {
 } from './types.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
+    RallarBlackBoxGeoLocation,
 } from './distributed-run.ts';
 import {
     type RallarValidationIssue,
@@ -962,6 +963,7 @@ function parseControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentId
         browserVersion: optionalString(value.browserVersion),
         os: optionalString(value.os),
         tags: parseStringArray(value.tags),
+        location: parseGeoLocation(value.location),
         capabilities: parseControlAgentCapabilities(value.capabilities),
         updatedAtEpochMs: typeof value.updatedAtEpochMs === 'number'
             ? value.updatedAtEpochMs
@@ -971,6 +973,34 @@ function parseControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentId
     return Object.values(identity).some(entry => entry !== undefined)
         ? identity
         : undefined;
+}
+
+function parseGeoLocation(value: unknown): RallarBlackBoxGeoLocation | undefined {
+    if (!isRecord(value)) {
+        return undefined;
+    }
+
+    const latitude = typeof value.latitude === 'number' ? value.latitude : undefined;
+    const longitude = typeof value.longitude === 'number' ? value.longitude : undefined;
+    if (
+        latitude === undefined ||
+        longitude === undefined ||
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude) ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180
+    ) {
+        return undefined;
+    }
+
+    return {
+        latitude,
+        longitude,
+        label: optionalString(value.label),
+        precision: value.precision === 'approximate' ? 'approximate' : 'exact',
+    };
 }
 
 function parseStringArray(value: unknown): readonly string[] | undefined {

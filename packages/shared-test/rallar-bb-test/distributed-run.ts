@@ -54,6 +54,13 @@ export type RallarBlackBoxDistributedGroupRef = Readonly<{
     groupId: string;
 }>;
 
+export type RallarBlackBoxGeoLocation = Readonly<{
+    latitude: number;
+    longitude: number;
+    label?: string;
+    precision?: 'exact' | 'approximate';
+}>;
+
 export type RallarBlackBoxControlAgentIdentity = Readonly<{
     principalId?: string;
     clientId?: string;
@@ -76,6 +83,7 @@ export type RallarBlackBoxControlAgentIdentity = Readonly<{
     browserVersion?: string;
     os?: string;
     tags?: readonly string[];
+    location?: RallarBlackBoxGeoLocation;
     capabilities?: RallarBlackBoxControlAgentCapabilities;
     updatedAtEpochMs?: number;
 }>;

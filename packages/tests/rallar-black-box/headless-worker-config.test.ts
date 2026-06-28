@@ -25,6 +25,9 @@ describe("rallar-black-box headless worker config", () => {
         RALLAR_AGENT_REGION: "eu-north",
         RALLAR_AGENT_PROVIDER: "hetzner",
         RALLAR_AGENT_DATACENTER: "fsn1",
+        RALLAR_AGENT_LATITUDE: "52.5333",
+        RALLAR_AGENT_LONGITUDE: "13.3833",
+        RALLAR_AGENT_LOCATION_LABEL: "fsn1 worker rack",
         RALLAR_AGENT_POOL_ID: "pool-a",
         RALLAR_AGENT_DEPLOYMENT_ID: "deploy-2026-06-11",
         RALLAR_AGENT_BROWSER_NAME: "chromium",
@@ -42,6 +45,9 @@ describe("rallar-black-box headless worker config", () => {
     expect(config.agentCount).toBe(2);
     expect(config.fleetRegion).toBe("eu-north");
     expect(config.fleetProvider).toBe("hetzner");
+    expect(config.fleetLatitude).toBe(52.5333);
+    expect(config.fleetLongitude).toBe(13.3833);
+    expect(config.fleetLocationLabel).toBe("fsn1 worker rack");
     expect(config.fleetTags).toEqual(["canary", "rtc"]);
     expect(config.browserLogLevel).toBe("warning");
     expect(config.agents.map((agent) => agent.agentId)).toEqual([
@@ -75,6 +81,11 @@ describe("rallar-black-box headless worker config", () => {
     expect(firstUrl.searchParams.get("fleetRegion")).toBe("eu-north");
     expect(firstUrl.searchParams.get("fleetProvider")).toBe("hetzner");
     expect(firstUrl.searchParams.get("fleetDatacenter")).toBe("fsn1");
+    expect(firstUrl.searchParams.get("fleetLatitude")).toBe("52.5333");
+    expect(firstUrl.searchParams.get("fleetLongitude")).toBe("13.3833");
+    expect(firstUrl.searchParams.get("fleetLocationLabel")).toBe(
+      "fsn1 worker rack",
+    );
     expect(firstUrl.searchParams.get("fleetAgentPoolId")).toBe("pool-a");
     expect(firstUrl.searchParams.get("fleetDeploymentId")).toBe(
       "deploy-2026-06-11",
@@ -85,6 +96,42 @@ describe("rallar-black-box headless worker config", () => {
     expect(firstUrl.searchParams.get("fleetTags")).toBe("canary,rtc");
     expect(firstUrl.searchParams.get("applicationId")).toBe("rallar-server");
     expect(firstUrl.searchParams.get("workspaceId")).toBe("default");
+  });
+
+  it("rejects out-of-range headless fleet coordinates", () => {
+    expect(() =>
+      readHeadlessWorkerConfig({
+        env: {
+          RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
+          RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+          RALLAR_API_BASE_URL: "https://api.example.test/",
+          RALLAR_BLACK_BOX_RUN_ID: "run-1",
+          RALLAR_BLACK_BOX_ROOM_ID: "room-1",
+          RALLAR_BLACK_BOX_USERNAME: "alice",
+          RALLAR_BLACK_BOX_PASSWORD: "secret",
+          RALLAR_AGENT_LATITUDE: "120",
+          RALLAR_AGENT_LONGITUDE: "13.3833",
+        },
+      })
+    ).toThrow("RALLAR_AGENT_LATITUDE must be between -90 and 90");
+  });
+
+  it("rejects malformed headless fleet coordinates", () => {
+    expect(() =>
+      readHeadlessWorkerConfig({
+        env: {
+          RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
+          RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+          RALLAR_API_BASE_URL: "https://api.example.test/",
+          RALLAR_BLACK_BOX_RUN_ID: "run-1",
+          RALLAR_BLACK_BOX_ROOM_ID: "room-1",
+          RALLAR_BLACK_BOX_USERNAME: "alice",
+          RALLAR_BLACK_BOX_PASSWORD: "secret",
+          RALLAR_AGENT_LATITUDE: "52.5abc",
+          RALLAR_AGENT_LONGITUDE: "13.3833",
+        },
+      })
+    ).toThrow("RALLAR_AGENT_LATITUDE must be between -90 and 90");
   });
 
   it("targets the headless SPA when RALLAR_BLACK_BOX_HEADLESS_ENTRY=headless", () => {

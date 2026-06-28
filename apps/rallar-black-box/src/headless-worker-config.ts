@@ -44,6 +44,9 @@ export type HeadlessWorkerConfig = Readonly<{
   fleetBrowserVersion?: string;
   fleetOs?: string;
   fleetTags?: readonly string[];
+  fleetLatitude?: number;
+  fleetLongitude?: number;
+  fleetLocationLabel?: string;
   register: boolean;
   restoreSession: boolean;
   logoutOnClose: boolean;
@@ -153,6 +156,22 @@ export function readHeadlessWorkerConfig(
       envValue(env, "RALLAR_BLACK_BOX_AGENT_OS"),
     fleetTags: csvEnv(env, "RALLAR_AGENT_TAGS") ??
       csvEnv(env, "RALLAR_BLACK_BOX_AGENT_TAGS"),
+    fleetLatitude: optionalCoordinateEnv(
+      env,
+      "RALLAR_AGENT_LATITUDE",
+      "RALLAR_BLACK_BOX_AGENT_LATITUDE",
+      -90,
+      90,
+    ),
+    fleetLongitude: optionalCoordinateEnv(
+      env,
+      "RALLAR_AGENT_LONGITUDE",
+      "RALLAR_BLACK_BOX_AGENT_LONGITUDE",
+      -180,
+      180,
+    ),
+    fleetLocationLabel: envValue(env, "RALLAR_AGENT_LOCATION_LABEL") ??
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_LOCATION_LABEL"),
     register: booleanEnv(env, "RALLAR_BLACK_BOX_REGISTER", false),
     restoreSession: booleanEnv(env, "RALLAR_BLACK_BOX_RESTORE_SESSION", false),
     logoutOnClose: booleanEnv(env, "RALLAR_BLACK_BOX_LOGOUT_ON_CLOSE", false),
@@ -260,6 +279,9 @@ export function createHeadlessWorkerAgentUrl(
   setOptionalParam(params, "fleetBrowserVersion", input.fleetBrowserVersion);
   setOptionalParam(params, "fleetOs", input.fleetOs);
   setOptionalParam(params, "fleetTags", input.fleetTags?.join(","));
+  setOptionalParam(params, "fleetLatitude", numberString(input.fleetLatitude));
+  setOptionalParam(params, "fleetLongitude", numberString(input.fleetLongitude));
+  setOptionalParam(params, "fleetLocationLabel", input.fleetLocationLabel);
 
   if (input.register) {
     params.set(
@@ -403,6 +425,29 @@ function optionalPositiveIntegerEnv(
     throw new Error(`${key} must be a positive integer. Received: ${raw}`);
   }
   return parsed;
+}
+
+function optionalCoordinateEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  primaryKey: string,
+  fallbackKey: string,
+  min: number,
+  max: number,
+): number | undefined {
+  const raw = envValue(env, primaryKey) ?? envValue(env, fallbackKey);
+  if (!raw) {
+    return undefined;
+  }
+
+  const parsed = isStrictDecimalNumber(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${primaryKey} must be between ${min} and ${max}. Received: ${raw}`);
+  }
+  return parsed;
+}
+
+function isStrictDecimalNumber(value: string): boolean {
+  return /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:e[+-]?\d+)?$/i.test(value);
 }
 
 function booleanEnv(

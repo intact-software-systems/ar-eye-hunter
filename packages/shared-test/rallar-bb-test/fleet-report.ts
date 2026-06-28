@@ -1,4 +1,7 @@
-import type { RallarBlackBoxDistributedRunState } from './distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedRunState,
+    RallarBlackBoxGeoLocation,
+} from './distributed-run.ts';
 
 export const RALLAR_BLACK_BOX_FLEET_REPORT_SCHEMA_VERSION = 1;
 
@@ -23,6 +26,7 @@ export type ControlFleetAgentLabel = Readonly<{
     browserVersion?: string;
     os?: string;
     tags?: readonly string[];
+    location?: RallarBlackBoxGeoLocation;
 }>;
 
 export type ControlFleetTimingDistribution = Readonly<{
@@ -160,4 +164,3 @@ export type ControlFleetReportsResponse = Readonly<{
     reports: readonly ControlFleetRunReport[];
     aggregate: ControlFleetAggregateReport;
 }>;
-

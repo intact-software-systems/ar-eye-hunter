@@ -4,7 +4,7 @@ This document inventories environment variables used by the apps in this
 repository, plus the repository-level test and infrastructure variables that
 drive those apps.
 
-Last reviewed: 2026-06-23.
+Last reviewed: 2026-06-28.
 
 ## Conventions
 
@@ -244,6 +244,33 @@ Query parameters take precedence over environment variables.
 | `VITE_RALLAR_RESTORE_SESSION`       | No                                                               | Disabled unless a browser auth session already exists                | Boolean. Restore from supplied token/session values or local storage.                                          |
 | `VITE_RALLAR_LOGOUT_ON_CLOSE`       | No                                                               | Disabled                                                             | Boolean. Log out on real-provider cleanup.                                                                     |
 | `VITE_RALLAR_LEAVE_ROOM_ON_CLOSE`   | No                                                               | Enabled                                                              | Boolean. Leave room on real-provider cleanup.                                                                  |
+| `VITE_RALLAR_AGENT_REGION`          | No                                                               | None                                                                 | Fleet label used by control-agent identity, fleet reports, and Fleet World Map fallback lookup.                |
+| `VITE_RALLAR_AGENT_PROVIDER`        | No                                                               | None                                                                 | Fleet provider label used with region/datacenter summaries.                                                    |
+| `VITE_RALLAR_AGENT_DATACENTER`      | No                                                               | None                                                                 | Fleet datacenter label. Known provider/datacenter pairs can resolve approximate map coordinates.               |
+| `VITE_RALLAR_AGENT_LATITUDE`        | No                                                               | None                                                                 | Explicit fleet map latitude. Used only with a valid longitude; must be from `-90` to `90`.                     |
+| `VITE_RALLAR_AGENT_LONGITUDE`       | No                                                               | None                                                                 | Explicit fleet map longitude. Used only with a valid latitude; must be from `-180` to `180`.                   |
+| `VITE_RALLAR_AGENT_LOCATION_LABEL`  | No                                                               | None                                                                 | Human label for explicit fleet map coordinates.                                                                |
+| `VITE_RALLAR_AGENT_TAGS`            | No                                                               | None                                                                 | Comma-separated fleet tags included in control-agent identity and reports.                                     |
+
+The same fleet metadata can be supplied as URL query parameters in browser
+bootstrap flows: `fleetRegion`, `fleetProvider`, `fleetDatacenter`,
+`fleetLatitude`, `fleetLongitude`, `fleetLocationLabel`, and `fleetTags`.
+
+### Rallar Black Box Headless Worker
+
+`apps/rallar-black-box/src/headless-worker-config.ts` reads server-side
+environment variables used by the headless browser worker script, then forwards
+safe values to browser agents as URL parameters.
+
+| Variable                                      | Required | Default | Usage                                                                                  |
+| --------------------------------------------- | -------- | ------- | -------------------------------------------------------------------------------------- |
+| `RALLAR_AGENT_REGION` / `RALLAR_BLACK_BOX_AGENT_REGION` | No | None | Fleet region label forwarded as `fleetRegion`.                                         |
+| `RALLAR_AGENT_PROVIDER` / `RALLAR_BLACK_BOX_AGENT_PROVIDER` | No | None | Fleet provider label forwarded as `fleetProvider`.                                     |
+| `RALLAR_AGENT_DATACENTER` / `RALLAR_BLACK_BOX_AGENT_DATACENTER` | No | None | Fleet datacenter label forwarded as `fleetDatacenter`.                                 |
+| `RALLAR_AGENT_LATITUDE` / `RALLAR_BLACK_BOX_AGENT_LATITUDE` | No | None | Explicit fleet latitude forwarded as `fleetLatitude`; invalid values fail startup.      |
+| `RALLAR_AGENT_LONGITUDE` / `RALLAR_BLACK_BOX_AGENT_LONGITUDE` | No | None | Explicit fleet longitude forwarded as `fleetLongitude`; invalid values fail startup.    |
+| `RALLAR_AGENT_LOCATION_LABEL` / `RALLAR_BLACK_BOX_AGENT_LOCATION_LABEL` | No | None | Human label forwarded as `fleetLocationLabel`.                                         |
+| `RALLAR_AGENT_TAGS` / `RALLAR_BLACK_BOX_AGENT_TAGS` | No | None | Comma-separated fleet tags forwarded as `fleetTags`.                                   |
 
 ### Full-Stack Playwright Startup
 

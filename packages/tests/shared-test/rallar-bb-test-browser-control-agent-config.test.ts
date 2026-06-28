@@ -4,6 +4,7 @@ import {
     parseRallarBlackBoxProviderMode,
 } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
 import {
+    bootstrapFleetMetadata,
     remoteControlConfig,
     resolveRallarBlackBoxBootstrapConfig,
     validateRallarBlackBoxProviderConfig,
@@ -75,6 +76,38 @@ describe('browser control-agent bootstrap config', () => {
 
         expect(bootstrap.rallarRegister).toBe('if-needed');
         expect(runtimeConfig.rallar?.register).toBe('if-needed');
+    });
+
+    it('preserves explicit fleet location metadata in remote-control runtime config', () => {
+        const bootstrap = resolveRallarBlackBoxBootstrapConfig(
+            '?mode=control&fleetRegion=eu-north&fleetProvider=hetzner&fleetDatacenter=fsn1&fleetLatitude=52.5333&fleetLongitude=13.3833&fleetLocationLabel=fsn1%20operator%20rack',
+            {},
+        );
+        const runtimeConfig = remoteControlConfig(bootstrap, 1);
+
+        expect(bootstrap).toMatchObject({
+            fleetLatitude: 52.5333,
+            fleetLongitude: 13.3833,
+            fleetLocationLabel: 'fsn1 operator rack',
+        });
+        expect(bootstrapFleetMetadata(bootstrap)).toMatchObject({
+            region: 'eu-north',
+            provider: 'hetzner',
+            datacenter: 'fsn1',
+            location: {
+                latitude: 52.5333,
+                longitude: 13.3833,
+                label: 'fsn1 operator rack',
+                precision: 'exact',
+            },
+        });
+        expect(runtimeConfig.fleet).toMatchObject({
+            location: {
+                latitude: 52.5333,
+                longitude: 13.3833,
+                precision: 'exact',
+            },
+        });
     });
 
     it('rejects browser-rallar config without usable API and credentials', () => {

@@ -8,6 +8,7 @@ import type {
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestError,
 } from './types.ts';
+import type { RallarBlackBoxGeoLocation } from './distributed-run.ts';
 
 export type RallarBlackBoxBootstrapConfig = Readonly<{
     mode: 'local-workbench' | 'control-agent';
@@ -45,6 +46,9 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     fleetBrowserVersion?: string;
     fleetOs?: string;
     fleetTags?: readonly string[];
+    fleetLatitude?: number;
+    fleetLongitude?: number;
+    fleetLocationLabel?: string;
     runnerAgentPrefix?: string;
     runnerAgentCount?: number;
     source: 'url' | 'environment' | 'default';
@@ -111,6 +115,26 @@ function positiveIntegerParamValue(
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function coordinateParamValue(
+    value: string | undefined,
+    min: number,
+    max: number,
+): number | undefined {
+    const trimmed = value?.trim();
+    if (!trimmed || !isStrictDecimalNumber(trimmed)) {
+        return undefined;
+    }
+
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) && parsed >= min && parsed <= max
+        ? parsed
+        : undefined;
+}
+
+function isStrictDecimalNumber(value: string): boolean {
+    return /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:e[+-]?\d+)?$/i.test(value);
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value as Record<string, unknown>
@@ -161,8 +185,21 @@ function bootstrapSource(
         'rallarRestoreSession',
         'rallarLogoutOnClose',
         'rallarLeaveRoomOnClose',
+        'fleetRegion',
+        'fleetProvider',
+        'fleetDatacenter',
+        'fleetHostId',
+        'fleetAgentPoolId',
+        'fleetDeploymentId',
+        'fleetBrowserName',
+        'fleetBrowserVersion',
+        'fleetOs',
+        'fleetTags',
         'runnerAgentPrefix',
         'runnerAgentCount',
+        'fleetLatitude',
+        'fleetLongitude',
+        'fleetLocationLabel',
     ];
     if (urlKeys.some(key => params.has(key))) {
         return 'url';
@@ -192,8 +229,21 @@ function bootstrapSource(
         'VITE_RALLAR_RESTORE_SESSION',
         'VITE_RALLAR_LOGOUT_ON_CLOSE',
         'VITE_RALLAR_LEAVE_ROOM_ON_CLOSE',
+        'VITE_RALLAR_AGENT_REGION',
+        'VITE_RALLAR_AGENT_PROVIDER',
+        'VITE_RALLAR_AGENT_DATACENTER',
+        'VITE_RALLAR_AGENT_HOST_ID',
+        'VITE_RALLAR_AGENT_POOL_ID',
+        'VITE_RALLAR_AGENT_DEPLOYMENT_ID',
+        'VITE_RALLAR_AGENT_BROWSER_NAME',
+        'VITE_RALLAR_AGENT_BROWSER_VERSION',
+        'VITE_RALLAR_AGENT_OS',
+        'VITE_RALLAR_AGENT_TAGS',
         'VITE_RALLAR_RUNNER_AGENT_PREFIX',
         'VITE_RALLAR_RUNNER_AGENT_COUNT',
+        'VITE_RALLAR_AGENT_LATITUDE',
+        'VITE_RALLAR_AGENT_LONGITUDE',
+        'VITE_RALLAR_AGENT_LOCATION_LABEL',
     ];
     return envKeys.some(key => env[key]) ? 'environment' : 'default';
 }
@@ -282,6 +332,22 @@ export function resolveRallarBlackBoxBootstrapConfig(
         'runnerAgentCount',
         'VITE_RALLAR_RUNNER_AGENT_COUNT',
     );
+    const rawFleetLatitude = paramValue(
+        params,
+        env,
+        'fleetLatitude',
+        'VITE_RALLAR_AGENT_LATITUDE',
+    );
+    const rawFleetLongitude = paramValue(
+        params,
+        env,
+        'fleetLongitude',
+        'VITE_RALLAR_AGENT_LONGITUDE',
+    );
+    const fleetLatitude = coordinateParamValue(rawFleetLatitude, -90, 90);
+    const fleetLongitude = coordinateParamValue(rawFleetLongitude, -180, 180);
+    const hasFleetCoordinatePair =
+        fleetLatitude !== undefined && fleetLongitude !== undefined;
     const runId = paramValue(params, env, 'runId', 'VITE_RALLAR_RUN_ID') ??
         (mode === 'control-agent'
             ? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlRunId
@@ -354,6 +420,11 @@ export function resolveRallarBlackBoxBootstrapConfig(
         fleetBrowserVersion: paramValue(params, env, 'fleetBrowserVersion', 'VITE_RALLAR_AGENT_BROWSER_VERSION'),
         fleetOs: paramValue(params, env, 'fleetOs', 'VITE_RALLAR_AGENT_OS'),
         fleetTags: splitBootstrapCsv(paramValue(params, env, 'fleetTags', 'VITE_RALLAR_AGENT_TAGS')),
+        fleetLatitude: hasFleetCoordinatePair ? fleetLatitude : undefined,
+        fleetLongitude: hasFleetCoordinatePair ? fleetLongitude : undefined,
+        fleetLocationLabel: hasFleetCoordinatePair
+            ? paramValue(params, env, 'fleetLocationLabel', 'VITE_RALLAR_AGENT_LOCATION_LABEL')
+            : undefined,
         runnerAgentPrefix: paramValue(params, env, 'runnerAgentPrefix', 'VITE_RALLAR_RUNNER_AGENT_PREFIX'),
         runnerAgentCount: positiveIntegerParamValue(runnerAgentCountValue, 1),
         source: bootstrapSource(params, env),
@@ -446,6 +517,7 @@ export function remoteControlConfig(
 export function bootstrapFleetMetadata(
     bootstrap: RallarBlackBoxBootstrapConfig,
 ): Readonly<Record<string, unknown>> | undefined {
+    const location = bootstrapFleetLocation(bootstrap);
     const fleet = {
         region: bootstrap.fleetRegion,
         provider: bootstrap.fleetProvider,
@@ -457,8 +529,24 @@ export function bootstrapFleetMetadata(
         browserVersion: bootstrap.fleetBrowserVersion,
         os: bootstrap.fleetOs,
         tags: bootstrap.fleetTags,
+        location,
     };
     return Object.values(fleet).some(value => value !== undefined)
         ? fleet
         : undefined;
+}
+
+function bootstrapFleetLocation(
+    bootstrap: RallarBlackBoxBootstrapConfig,
+): RallarBlackBoxGeoLocation | undefined {
+    if (bootstrap.fleetLatitude === undefined || bootstrap.fleetLongitude === undefined) {
+        return undefined;
+    }
+
+    return {
+        latitude: bootstrap.fleetLatitude,
+        longitude: bootstrap.fleetLongitude,
+        label: bootstrap.fleetLocationLabel,
+        precision: 'exact',
+    };
 }
