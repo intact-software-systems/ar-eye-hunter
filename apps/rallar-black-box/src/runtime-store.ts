@@ -1,6 +1,15 @@
 import { useSyncExternalStore } from 'react';
-import { readSession } from '@shared/api/auth.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser-adapter.ts';
+import {
+    bootstrapFleetMetadata,
+    rallarBlackBoxProviderModeFromConfig,
+    rallarConfigFromBootstrap,
+    remoteControlConfig,
+    resolveRallarBlackBoxBootstrapConfig,
+    validateRallarBlackBoxProviderConfig,
+    type RallarBlackBoxBootstrapConfig,
+} from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -17,15 +26,20 @@ import type {
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES, } from './recipe-fixtures.ts';
 import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot, } from './control-client.ts';
 import {
-    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
-    parseRallarBlackBoxProviderMode,
-    type RallarBlackBoxProviderMode,
-} from './client-defaults.ts';
-import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge,
 } from './browser-rallar-runtime.ts';
+
+export {
+    bootstrapFleetMetadata,
+    rallarBlackBoxProviderModeFromConfig,
+    rallarConfigFromBootstrap,
+    remoteControlConfig,
+    resolveRallarBlackBoxBootstrapConfig,
+    validateRallarBlackBoxProviderConfig,
+} from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+export type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 
 type RuntimeStoreSnapshot = Readonly<{
     state: RallarBlackBoxTestState;
@@ -41,47 +55,6 @@ type RuntimeStoreSnapshot = Readonly<{
 
 type StoreListener = () => void;
 
-export type RallarBlackBoxBootstrapConfig = Readonly<{
-    mode: 'local-workbench' | 'control-agent';
-    autoConnect: boolean;
-    providerMode: RallarBlackBoxProviderMode;
-    controlUrl: string;
-    runId: string;
-    agentId: string;
-    controlToken?: string;
-    heartbeatIntervalMs?: number;
-    statsIntervalMs?: number;
-    finalReportUploadUrl?: string;
-    environment: string;
-    apiBaseUrl: string;
-    applicationId: string;
-    workspaceId: string;
-    actor: string;
-    sessionId: string;
-    roomId: string;
-    transport: 'realtime' | 'messages.rtc';
-    rallarUsername?: string;
-    rallarPassword?: string;
-    rallarToken?: string;
-    rallarRegister: boolean;
-    rallarRestoreSession: boolean;
-    rallarLogoutOnClose: boolean;
-    rallarLeaveRoomOnClose: boolean;
-    fleetRegion?: string;
-    fleetProvider?: string;
-    fleetDatacenter?: string;
-    fleetHostId?: string;
-    fleetAgentPoolId?: string;
-    fleetDeploymentId?: string;
-    fleetBrowserName?: string;
-    fleetBrowserVersion?: string;
-    fleetOs?: string;
-    fleetTags?: readonly string[];
-    runnerAgentPrefix?: string;
-    runnerAgentCount?: number;
-    source: 'url' | 'environment' | 'default';
-}>;
-
 function initialControlSnapshot(): RallarBlackBoxControlSnapshot {
     const bootstrap = resolveRallarBlackBoxBootstrapConfig();
     return {
@@ -95,353 +68,6 @@ function initialControlSnapshot(): RallarBlackBoxControlSnapshot {
 
 function delay(ms: number): Promise<void> {
     return new Promise(resolve => window.setTimeout(resolve, ms));
-}
-
-function searchParams(search: string): URLSearchParams {
-    return new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
-}
-
-function paramValue(
-    params: URLSearchParams,
-    env: Readonly<Record<string, string | undefined>>,
-    paramName: string,
-    envName: string,
-): string | undefined {
-    const fromUrl = params.get(paramName)?.trim();
-    return fromUrl && fromUrl.length > 0 ? fromUrl : env[envName]?.trim() || undefined;
-}
-
-function booleanParamValue(
-    value: string | undefined,
-    fallback = false,
-): boolean {
-    if (!value) {
-        return fallback;
-    }
-
-    const normalized = value.toLowerCase();
-    return normalized === '1' ||
-        normalized === 'true' ||
-        normalized === 'yes' ||
-        normalized === 'on';
-}
-
-function numberParamValue(
-    value: string | undefined,
-): number | undefined {
-    if (!value) {
-        return undefined;
-    }
-
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
-function positiveIntegerParamValue(
-    value: string | undefined,
-    fallback: number,
-): number | undefined {
-    if (!value) {
-        return undefined;
-    }
-
-    const parsed = Number.parseInt(value, 10);
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : {};
-}
-
-function stringValue(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0
-        ? value
-        : undefined;
-}
-
-function controlModeFrom(
-    params: URLSearchParams,
-    env: Readonly<Record<string, string | undefined>>,
-): RallarBlackBoxBootstrapConfig['mode'] {
-    const mode = params.get('mode') ?? env.VITE_RALLAR_BOOTSTRAP_MODE;
-    return mode === 'control' || mode === 'control-agent'
-        ? 'control-agent'
-        : 'local-workbench';
-}
-
-function bootstrapSource(
-    params: URLSearchParams,
-    env: Readonly<Record<string, string | undefined>>,
-): RallarBlackBoxBootstrapConfig['source'] {
-    const urlKeys = [
-        'mode',
-        'controlUrl',
-        'autoConnect',
-        'provider',
-        'providerMode',
-        'runId',
-        'agentId',
-        'controlToken',
-        'statsIntervalMs',
-        'reportUploadUrl',
-        'environment',
-        'apiBaseUrl',
-        'actor',
-        'sessionId',
-        'roomId',
-        'transport',
-        'rallarUsername',
-        'rallarPassword',
-        'rallarToken',
-        'rallarRegister',
-        'rallarRestoreSession',
-        'rallarLogoutOnClose',
-        'rallarLeaveRoomOnClose',
-        'runnerAgentPrefix',
-        'runnerAgentCount',
-    ];
-    if (urlKeys.some(key => params.has(key))) {
-        return 'url';
-    }
-
-    const envKeys = [
-        'VITE_RALLAR_BOOTSTRAP_MODE',
-        'VITE_RALLAR_CONTROL_URL',
-        'VITE_RALLAR_AUTO_CONNECT',
-        'VITE_RALLAR_PROVIDER',
-        'VITE_RALLAR_PROVIDER_MODE',
-        'VITE_RALLAR_RUN_ID',
-        'VITE_RALLAR_AGENT_ID',
-        'VITE_RALLAR_CONTROL_TOKEN',
-        'VITE_RALLAR_STATS_INTERVAL_MS',
-        'VITE_RALLAR_REPORT_UPLOAD_URL',
-        'VITE_RALLAR_ENVIRONMENT',
-        'VITE_RALLAR_API_BASE_URL',
-        'VITE_RALLAR_ACTOR',
-        'VITE_RALLAR_SESSION_ID',
-        'VITE_RALLAR_ROOM_ID',
-        'VITE_RALLAR_TRANSPORT',
-        'VITE_RALLAR_USERNAME',
-        'VITE_RALLAR_PASSWORD',
-        'VITE_RALLAR_TOKEN',
-        'VITE_RALLAR_REGISTER',
-        'VITE_RALLAR_RESTORE_SESSION',
-        'VITE_RALLAR_LOGOUT_ON_CLOSE',
-        'VITE_RALLAR_LEAVE_ROOM_ON_CLOSE',
-        'VITE_RALLAR_RUNNER_AGENT_PREFIX',
-        'VITE_RALLAR_RUNNER_AGENT_COUNT',
-    ];
-    return envKeys.some(key => env[key]) ? 'environment' : 'default';
-}
-
-export function rallarBlackBoxProviderModeFromConfig(
-    config: RallarBlackBoxTestConfig | undefined,
-): RallarBlackBoxProviderMode {
-    const control = asRecord(config?.control);
-    const defaults = asRecord(config?.defaults);
-    return parseRallarBlackBoxProviderMode(
-        stringValue(control.providerMode) ??
-        stringValue(control.provider) ??
-        stringValue(defaults.providerMode) ??
-        stringValue(defaults.provider),
-    );
-}
-
-export function validateRallarBlackBoxProviderConfig(
-    config: RallarBlackBoxTestConfig,
-): RallarBlackBoxTestError | undefined {
-    const providerMode = rallarBlackBoxProviderModeFromConfig(config);
-    if (providerMode === 'simulated') {
-        return undefined;
-    }
-
-    if (
-        !config.apiBaseUrl ||
-        config.apiBaseUrl === RALLAR_BLACK_BOX_CLIENT_DEFAULTS.apiBaseUrl
-    ) {
-        return {
-            code: 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID',
-            message: 'browser-rallar provider requires a real Rallar API base URL.',
-            details: {
-                providerMode,
-                apiBaseUrl: config.apiBaseUrl,
-            },
-        };
-    }
-
-    const rallar = asRecord(config.rallar);
-    const hasLogin = Boolean(stringValue(rallar.username) && stringValue(rallar.password));
-    const canRestoreSession = rallar.restoreSession === true;
-    if (!hasLogin && !canRestoreSession) {
-        return {
-            code: 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID',
-            message: 'browser-rallar provider requires rallar username/password or restoreSession=true.',
-            details: {
-                providerMode,
-                hasApiBaseUrl: true,
-                hasUsernamePassword: hasLogin,
-                restoreSession: canRestoreSession,
-            },
-        };
-    }
-
-    return undefined;
-}
-
-export function resolveRallarBlackBoxBootstrapConfig(
-    search = globalThis.window?.location?.search ?? '',
-    env: Readonly<Record<string, string | undefined>> =
-        (import.meta as { env?: Record<string, string | undefined> }).env ?? {},
-): RallarBlackBoxBootstrapConfig {
-    const params = searchParams(search);
-    const mode = controlModeFrom(params, env);
-    const providerMode = parseRallarBlackBoxProviderMode(
-        paramValue(params, env, 'provider', 'VITE_RALLAR_PROVIDER') ??
-        paramValue(params, env, 'providerMode', 'VITE_RALLAR_PROVIDER_MODE'),
-    );
-    const controlUrl = paramValue(
-        params,
-        env,
-        'controlUrl',
-        'VITE_RALLAR_CONTROL_URL',
-    ) ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlUrl;
-    const autoConnect = booleanParamValue(
-        paramValue(params, env, 'autoConnect', 'VITE_RALLAR_AUTO_CONNECT'),
-        mode === 'control-agent',
-    );
-    const agentId = paramValue(params, env, 'agentId', 'VITE_RALLAR_AGENT_ID') ??
-        RALLAR_BLACK_BOX_CLIENT_DEFAULTS.agentId;
-    const transport = paramValue(params, env, 'transport', 'VITE_RALLAR_TRANSPORT');
-    const runnerAgentCountValue = paramValue(
-        params,
-        env,
-        'runnerAgentCount',
-        'VITE_RALLAR_RUNNER_AGENT_COUNT',
-    );
-    const runId = paramValue(params, env, 'runId', 'VITE_RALLAR_RUN_ID') ??
-        (mode === 'control-agent'
-            ? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlRunId
-            : RALLAR_BLACK_BOX_CLIENT_DEFAULTS.localRunId);
-
-    return {
-        mode: autoConnect ? 'control-agent' : mode,
-        autoConnect,
-        providerMode,
-        controlUrl,
-        runId,
-        agentId,
-        controlToken: paramValue(params, env, 'controlToken', 'VITE_RALLAR_CONTROL_TOKEN'),
-        heartbeatIntervalMs: numberParamValue(paramValue(
-            params,
-            env,
-            'heartbeatIntervalMs',
-            'VITE_RALLAR_HEARTBEAT_INTERVAL_MS',
-        )),
-        statsIntervalMs: numberParamValue(paramValue(
-            params,
-            env,
-            'statsIntervalMs',
-            'VITE_RALLAR_STATS_INTERVAL_MS',
-        )),
-        finalReportUploadUrl: paramValue(
-            params,
-            env,
-            'reportUploadUrl',
-            'VITE_RALLAR_REPORT_UPLOAD_URL',
-        ),
-        environment: paramValue(params, env, 'environment', 'VITE_RALLAR_ENVIRONMENT') ??
-            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.environment,
-        apiBaseUrl: paramValue(params, env, 'apiBaseUrl', 'VITE_RALLAR_API_BASE_URL') ??
-            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.apiBaseUrl,
-        applicationId: paramValue(params, env, 'applicationId', 'VITE_RALLAR_APPLICATION_ID') ??
-            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.applicationId,
-        workspaceId: paramValue(params, env, 'workspaceId', 'VITE_RALLAR_WORKSPACE_ID') ??
-            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.workspaceId,
-        actor: paramValue(params, env, 'actor', 'VITE_RALLAR_ACTOR') ??
-            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.actor,
-        sessionId: paramValue(params, env, 'sessionId', 'VITE_RALLAR_SESSION_ID') ??
-            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.sessionId,
-        roomId: paramValue(params, env, 'roomId', 'VITE_RALLAR_ROOM_ID') ??
-            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId,
-        transport: transport === 'messages.rtc' ? 'messages.rtc' : 'realtime',
-        rallarUsername: paramValue(params, env, 'rallarUsername', 'VITE_RALLAR_USERNAME'),
-        rallarPassword: paramValue(params, env, 'rallarPassword', 'VITE_RALLAR_PASSWORD'),
-        rallarToken: paramValue(params, env, 'rallarToken', 'VITE_RALLAR_TOKEN'),
-        rallarRegister: booleanParamValue(
-            paramValue(params, env, 'rallarRegister', 'VITE_RALLAR_REGISTER'),
-        ),
-        rallarRestoreSession: booleanParamValue(
-            paramValue(params, env, 'rallarRestoreSession', 'VITE_RALLAR_RESTORE_SESSION'),
-        ),
-        rallarLogoutOnClose: booleanParamValue(
-            paramValue(params, env, 'rallarLogoutOnClose', 'VITE_RALLAR_LOGOUT_ON_CLOSE'),
-        ),
-        rallarLeaveRoomOnClose: booleanParamValue(
-            paramValue(params, env, 'rallarLeaveRoomOnClose', 'VITE_RALLAR_LEAVE_ROOM_ON_CLOSE'),
-            true,
-        ),
-        fleetRegion: paramValue(params, env, 'fleetRegion', 'VITE_RALLAR_AGENT_REGION'),
-        fleetProvider: paramValue(params, env, 'fleetProvider', 'VITE_RALLAR_AGENT_PROVIDER'),
-        fleetDatacenter: paramValue(params, env, 'fleetDatacenter', 'VITE_RALLAR_AGENT_DATACENTER'),
-        fleetHostId: paramValue(params, env, 'fleetHostId', 'VITE_RALLAR_AGENT_HOST_ID'),
-        fleetAgentPoolId: paramValue(params, env, 'fleetAgentPoolId', 'VITE_RALLAR_AGENT_POOL_ID'),
-        fleetDeploymentId: paramValue(params, env, 'fleetDeploymentId', 'VITE_RALLAR_AGENT_DEPLOYMENT_ID'),
-        fleetBrowserName: paramValue(params, env, 'fleetBrowserName', 'VITE_RALLAR_AGENT_BROWSER_NAME'),
-        fleetBrowserVersion: paramValue(params, env, 'fleetBrowserVersion', 'VITE_RALLAR_AGENT_BROWSER_VERSION'),
-        fleetOs: paramValue(params, env, 'fleetOs', 'VITE_RALLAR_AGENT_OS'),
-        fleetTags: splitBootstrapCsv(paramValue(params, env, 'fleetTags', 'VITE_RALLAR_AGENT_TAGS')),
-        runnerAgentPrefix: paramValue(params, env, 'runnerAgentPrefix', 'VITE_RALLAR_RUNNER_AGENT_PREFIX'),
-        runnerAgentCount: positiveIntegerParamValue(runnerAgentCountValue, 1),
-        source: bootstrapSource(params, env),
-    };
-}
-
-function splitBootstrapCsv(value: string | undefined): readonly string[] | undefined {
-    if (!value) {
-        return undefined;
-    }
-    const entries = value.split(',')
-        .map(entry => entry.trim())
-        .filter(Boolean);
-    return entries.length > 0 ? entries : undefined;
-}
-
-function rallarConfigFromBootstrap(
-    bootstrap: RallarBlackBoxBootstrapConfig,
-): RallarBlackBoxTestConfig['rallar'] {
-    if (bootstrap.providerMode === 'simulated') {
-        return {
-            username: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoUsername,
-            password: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoPassword,
-            token: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoToken,
-        };
-    }
-
-    const rallar: Record<string, unknown> = {
-        ...(bootstrap.rallarUsername ? { username: bootstrap.rallarUsername } : {}),
-        ...(bootstrap.rallarPassword ? { password: bootstrap.rallarPassword } : {}),
-        ...(bootstrap.rallarRegister ? { register: true } : {}),
-        ...(bootstrap.rallarRestoreSession || browserAuthSessionExists()
-            ? { restoreSession: true }
-            : {}),
-        ...(bootstrap.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
-        leaveRoomOnClose: bootstrap.rallarLeaveRoomOnClose,
-    };
-    return Object.keys(rallar).length > 0 ? rallar : undefined;
-}
-
-function browserAuthSessionExists(): boolean {
-    if (typeof localStorage === 'undefined') {
-        return false;
-    }
-
-    try {
-        return Boolean(readSession());
-    } catch {
-        return false;
-    }
 }
 
 function recordAndThrowProviderConfigError(
@@ -460,63 +86,6 @@ function recordAndThrowProviderConfigError(
         payload: configError,
     });
     throw new Error(configError.message);
-}
-
-function remoteControlConfig(
-    bootstrap: RallarBlackBoxBootstrapConfig,
-    runNumber: number,
-): RallarBlackBoxTestConfig {
-    const runId = bootstrap.runId || `${RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlRunId}-${runNumber}`;
-    const rallar = rallarConfigFromBootstrap(bootstrap);
-    return {
-        runId,
-        agentId: bootstrap.agentId,
-        environment: bootstrap.environment,
-        apiBaseUrl: bootstrap.apiBaseUrl,
-        actor: bootstrap.actor,
-        sessionId: bootstrap.sessionId,
-        roomId: bootstrap.roomId,
-        transport: bootstrap.transport,
-        ...(rallar ? { rallar } : {}),
-        control: {
-            mode: 'remote-control',
-            providerMode: bootstrap.providerMode,
-            protocolVersion: 1,
-            connected: bootstrap.autoConnect,
-            autoConnect: bootstrap.autoConnect,
-            url: bootstrap.controlUrl,
-            source: bootstrap.source,
-        },
-        defaults: {
-            timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
-            connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.remoteConnection,
-            providerMode: bootstrap.providerMode,
-            applicationId: bootstrap.applicationId,
-            workspaceId: bootstrap.workspaceId,
-            groupId: bootstrap.roomId,
-        },
-        fleet: bootstrapFleetMetadata(bootstrap),
-    };
-}
-
-function bootstrapFleetMetadata(
-    bootstrap: RallarBlackBoxBootstrapConfig,
-): Readonly<Record<string, unknown>> | undefined {
-    const fleet = {
-        region: bootstrap.fleetRegion,
-        provider: bootstrap.fleetProvider,
-        datacenter: bootstrap.fleetDatacenter,
-        hostId: bootstrap.fleetHostId,
-        agentPoolId: bootstrap.fleetAgentPoolId,
-        deploymentId: bootstrap.fleetDeploymentId,
-        browserName: bootstrap.fleetBrowserName,
-        browserVersion: bootstrap.fleetBrowserVersion,
-        os: bootstrap.fleetOs,
-        tags: bootstrap.fleetTags,
-    };
-    return Object.values(fleet).some(value => value !== undefined)
-        ? fleet
-        : undefined;
 }
 
 function runtimeDelayFor(command: RallarBlackBoxTestCommand): number {
