@@ -15,6 +15,12 @@ type FleetAgentOutcome = Readonly<{
         browserVersion?: string;
         os?: string;
         tags?: readonly string[];
+        location?: Readonly<{
+            latitude: number;
+            longitude: number;
+            label?: string;
+            precision?: 'exact' | 'approximate';
+        }>;
     }>;
     state: 'passed' | 'failed' | 'missing' | 'timed-out';
     ok: boolean;
@@ -110,6 +116,11 @@ test('Fleet tab renders 20-agent heatmap, regional patterns, failures, timings, 
     const panel = page.locator('#panel-fleet');
     await expect(panel).toBeVisible();
     await expect(panel.getByText('Agent x Run Heatmap')).toBeVisible();
+    await expect(panel.getByLabel('Fleet World Map')).toBeVisible();
+    await expect(panel.locator('.fleet-map-marker')).toHaveCount(0);
+    await expect(panel.locator('.fleet-map-region-marker')).toHaveCount(2);
+    await expect(panel.getByText(/10 unresolved locations/)).toBeVisible();
+    await expect(panel.getByText('No observed routes with map-ready endpoints.')).toBeVisible();
     await expect(panel.getByText('Region Summary')).toBeVisible();
     await expect(panel.getByText('Failure Signatures')).toBeVisible();
     await expect(panel.getByText('Timing Distributions')).toBeVisible();
@@ -126,7 +137,7 @@ test('Fleet tab renders 20-agent heatmap, regional patterns, failures, timings, 
     await expect(panel.locator('.fleet-agent-detail')).toContainText('agent-04');
     await expect(panel.locator('.fleet-agent-detail')).toContainText(/passed|failed/);
 
-    await panel.getByLabel('Region').fill('eu-north');
+    await panel.getByRole('textbox', { name: 'Region' }).fill('eu-north');
     await expect(page).toHaveURL(/region=eu-north/);
     await panel.getByRole('button', { name: 'Refresh' }).click();
     await expect.poll(() => requestedUrls.some((url) => url.includes('region=eu-north')))
@@ -135,6 +146,24 @@ test('Fleet tab renders 20-agent heatmap, regional patterns, failures, timings, 
     await panel.getByRole('button', { name: 'Export report' }).click();
     await expect(panel.locator('.fleet-export-files')).toContainText('summary.md');
     await expect(panel.locator('.fleet-export-files')).toContainText('agent-results.csv');
+});
+
+test('Fleet world map restores layer state from the share URL', async ({ page }) => {
+    await mockFleetApi(page, fleetFixture(), []);
+
+    await page.goto(
+        '/?provider=simulated&workspace=black-box-runner&tab=fleet&roomId=bb-group&fleetMapLayers=live-agents,failures',
+    );
+
+    const panel = page.locator('#panel-fleet');
+    const historicalLayer = panel.getByRole('button', { name: /Historical regions/ });
+    await expect(panel.getByLabel('Fleet World Map')).toBeVisible();
+    await expect(historicalLayer).toHaveAttribute('aria-pressed', 'false');
+
+    await historicalLayer.click();
+
+    await expect(historicalLayer).toHaveAttribute('aria-pressed', 'true');
+    await expect(page).toHaveURL(/fleetMapLayers=live-agents%2Chistorical-regions%2Cfailures/);
 });
 
 test('Fleet tab remains usable on mobile with the same 20-agent data', async ({ page }) => {
@@ -156,6 +185,22 @@ async function mockFleetApi(
     fixture: ReturnType<typeof fleetFixture>,
     requestedUrls: string[],
 ): Promise<void> {
+    await page.route('**/runs**', async (route: Route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname === '/runs') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ runs: [] }),
+            });
+            return;
+        }
+        await route.fulfill({
+            status: 404,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'not mocked' }),
+        });
+    });
     await page.route('**/fleet/reports**', async (route: Route) => {
         const url = route.request().url();
         requestedUrls.push(url);

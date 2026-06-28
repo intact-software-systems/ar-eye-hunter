@@ -590,6 +590,29 @@ The control server can export a shared-test-compatible artifact bundle from a ru
 with the same parser used by the `Shared Test` artifact import panel, so the copied files can be attached to issues or
 loaded back into the SPA.
 
+## Fleet
+
+The `Fleet` tab is the cross-run operator view for distributed browser agents.
+
+Use it after the control server has terminal distributed-run reports, or while live control agents are connected. The
+tab reads Fleet reports from the control server and refreshes the live run snapshot for the selected control run.
+
+It shows:
+
+- live control-agent targetability and heartbeat status
+- a Fleet World Map with layer toggles for live agents, historical regions, failures, and observed routes
+- an agent x run heatmap
+- region summaries, repeated failure signatures, and timing distributions
+- selected failure and selected agent drilldowns
+- shareable report export files
+
+The map uses explicit agent coordinates when agents provide `fleetLatitude` and `fleetLongitude`. If those are absent,
+it falls back to known datacenter or broad region centers and counts agents with unresolved locations. Observed routes
+are drawn only when control events explicitly name source and target agents that both have map locations.
+
+Layer state is stored in the `fleetMapLayers` query parameter, and `Copy share link` preserves both Fleet filters and
+map layer state.
+
 ## Distributed Recipes
 
 The `Distributed Recipes` tab is the group-aware front end for distributed browser-agent tests.

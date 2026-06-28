@@ -119,6 +119,9 @@ The SPA currently provides:
   payload summaries for received-message evidence, failure-correlated warning evidence, failures, ACK and barrier
   readiness, per-agent/per-recipe progress, latency summaries, artifact validation, historical filters, and two-run
   deltas
+- Fleet workspace reporting now includes a deterministic SVG Fleet World Map with live-agent, historical-region,
+  failure, and observed-route layer toggles. Agent locations come from explicit `fleetLatitude`/`fleetLongitude`
+  metadata first, then known datacenter/region lookups, with unresolved agents counted instead of guessed.
 - full-stack QA coverage ownership in `src/full-stack-qa-matrix.ts`, with skip-gated Playwright specs mapped to auth,
   groups/clients, WebSocket, REST, recipes/artifacts, RTC, control, and resilience evidence
 - reload-safe UI persistence for selected tab, selected command, Manual Rallar drafts, Event Stream filters, and Rallar
@@ -339,6 +342,8 @@ The main gaps are:
   WS-vs-RTC parity matrices still need real-backend automation
 - topology is derived from runtime events and now has search/node limits, but it is not yet performance-tested for very
   large event streams
+- Fleet World Map v1 is a report-snapshot and live-agent operational map, not a 3D globe or animated historical replay;
+  observed route arcs appear only when control events explicitly name source and target agents with resolvable locations
 - Event Stream has bounded windows, but true virtualization/cursor pagination and the deeper accessibility/viewport QA
   pass remain future work
 

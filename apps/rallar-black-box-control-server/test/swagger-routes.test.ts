@@ -5,6 +5,7 @@ import {
 } from '../src/routes/swagger-routes.ts';
 
 type OpenApiSchema = Readonly<{
+  $ref?: string;
   enum?: readonly unknown[];
   items?: OpenApiSchema;
   properties?: Record<string, OpenApiSchema>;
@@ -62,6 +63,7 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
   const distributedArtifact = schemas?.ControlDistributedRunArtifactBundle;
   const fleetReport = schemas?.ControlFleetRunReport;
   const fleetBundle = schemas?.ControlFleetReportBundle;
+  const geoLocation = schemas?.RallarBlackBoxGeoLocation;
   assertEquals(crdtCapability?.required, ['supported']);
   assert(
     crdtCapability?.properties?.transports?.items?.enum?.includes('rtc-with-ws-fallback'),
@@ -78,6 +80,20 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
   assert(
     Boolean(schemas?.ControlAgentIdentity?.properties?.region),
     'ControlAgentIdentity should document fleet region metadata.',
+  );
+  assert(
+    schemas?.ControlAgentIdentity?.properties?.location?.$ref ===
+      '#/components/schemas/RallarBlackBoxGeoLocation',
+    'ControlAgentIdentity should document fleet location metadata.',
+  );
+  assert(
+    schemas?.ControlFleetAgentLabel?.properties?.location?.$ref ===
+      '#/components/schemas/RallarBlackBoxGeoLocation',
+    'ControlFleetAgentLabel should document fleet report location metadata.',
+  );
+  assert(
+    Boolean(geoLocation?.properties?.latitude && geoLocation?.properties?.longitude),
+    'Fleet location schema should document latitude and longitude.',
   );
   assert(
     Boolean(fleetReport?.properties?.failureSignatures),

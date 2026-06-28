@@ -1137,6 +1137,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
           browserVersion: { type: 'string' },
           os: { type: 'string' },
           tags: { type: 'array', items: { type: 'string' } },
+          location: { $ref: '#/components/schemas/RallarBlackBoxGeoLocation' },
           capabilities: {
             type: 'object',
             properties: {
@@ -1498,7 +1499,30 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
           browserVersion: { type: 'string' },
           os: { type: 'string' },
           tags: { type: 'array', items: { type: 'string' } },
+          location: { $ref: '#/components/schemas/RallarBlackBoxGeoLocation' },
         },
+      },
+      RallarBlackBoxGeoLocation: {
+        type: 'object',
+        required: ['latitude', 'longitude'],
+        properties: {
+          latitude: {
+            type: 'number',
+            minimum: -90,
+            maximum: 90,
+          },
+          longitude: {
+            type: 'number',
+            minimum: -180,
+            maximum: 180,
+          },
+          label: { type: 'string' },
+          precision: {
+            type: 'string',
+            enum: ['exact', 'approximate'],
+          },
+        },
+        additionalProperties: false,
       },
       ControlFleetRegionSummary: {
         type: 'object',

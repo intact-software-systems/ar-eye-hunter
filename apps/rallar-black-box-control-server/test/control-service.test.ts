@@ -616,6 +616,12 @@ Deno.test('control service derives, filters, persists, and exports fleet reports
     region: 'eu-north',
     provider: 'hetzner',
     datacenter: 'fsn1',
+    location: {
+      latitude: 52.5333,
+      longitude: 13.3833,
+      label: 'fsn1 worker rack',
+      precision: 'exact',
+    },
     browserName: 'chromium',
     browserVersion: '126',
     os: 'linux',
@@ -631,6 +637,12 @@ Deno.test('control service derives, filters, persists, and exports fleet reports
     region: 'us-east',
     provider: 'hetzner',
     datacenter: 'ash',
+    location: {
+      latitude: 39.0438,
+      longitude: -77.4874,
+      label: 'ash worker rack',
+      precision: 'exact',
+    },
     browserName: 'chromium',
     browserVersion: '126',
     os: 'linux',
@@ -709,6 +721,8 @@ Deno.test('control service derives, filters, persists, and exports fleet reports
   assertEquals(report.summary.passed, 1);
   assertEquals(report.summary.failed, 1);
   assertEquals(report.agents.find((agent) => agent.agentId === 'agent-2')?.label.region, 'us-east');
+  assertEquals(report.agents.find((agent) => agent.agentId === 'agent-1')?.label.location?.latitude, 52.5333);
+  assertEquals(report.agents.find((agent) => agent.agentId === 'agent-2')?.label.location?.label, 'ash worker rack');
   assert(report.regions.some((region) => region.region === 'eu-north'));
   assert(report.regions.some((region) => region.region === 'us-east'));
   assert(report.failureSignatures.some((signature) => signature.category === 'command'));

@@ -324,6 +324,10 @@ local tooling or the control server.
   row derivation, bulk enqueue, reset/delete, artifact export loading,
   JSONL/failure-bundle fetches, distributed-run lifecycle calls, and control URL
   normalization for the Run Manager and Distributed Recipes tabs.
+- `src/fleet-world-map.tsx`, `src/world-map-model.ts`,
+  `src/world-map-geo-fixtures.ts`, and `src/world-map-projection.ts`: the
+  Fleet tab's deterministic SVG world map, layer state, location fallback
+  lookup, route-evidence filtering, and map projection helpers.
 - `src/distributed-recipes.ts`: Distributed Recipes target-resolution,
   role-pattern, manifest-building, composite preflight, composite monitor
   drilldowns, history-filter, compare, artifact-validation, and state-tone

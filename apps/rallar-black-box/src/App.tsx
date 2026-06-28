@@ -115,6 +115,16 @@ import {
     type ControlAgentBoardSummary,
     type ControlAgentRunParticipation,
 } from './control-agent-board.ts';
+import { FleetWorldMap } from './fleet-world-map.tsx';
+import {
+    DEFAULT_FLEET_WORLD_MAP_LAYER_STATE,
+    FLEET_WORLD_MAP_LAYER_IDS,
+    deriveFleetWorldMapModel,
+    routeEvidenceFromControlRun,
+    type FleetWorldMapLayerId,
+    type FleetWorldMapLayerState,
+    type FleetWorldMapRegion,
+} from './world-map-model.ts';
 import {
     resolveBlackBoxControlToken,
     type BlackBoxControlTokenSession,
@@ -8723,6 +8733,9 @@ function RunnerFleetPanel({
     const [filters, setFilters] = useState<FleetFilterState>(
         readFleetFiltersFromUrl,
     );
+    const [mapLayers, setMapLayers] = useState<FleetWorldMapLayerState>(
+        readFleetWorldMapLayersFromUrl,
+    );
     const [response, setResponse] = useState<
         ControlFleetReportsResponse | undefined
     >();
@@ -8829,6 +8842,19 @@ function RunnerFleetPanel({
         () => summarizeControlAgentBoardRows(liveAgentRows),
         [liveAgentRows],
     );
+    const routeEvidence = useMemo(
+        () => routeEvidenceFromControlRun(liveRun),
+        [liveRun],
+    );
+    const worldMapModel = useMemo(
+        () =>
+            deriveFleetWorldMapModel({
+                liveAgents: liveAgentRows,
+                reports,
+                routeEvidence,
+            }),
+        [liveAgentRows, reports, routeEvidence],
+    );
 
     const refreshFleet = async (
         options: Readonly<{ rebuild?: boolean; quiet?: boolean }> = {},
@@ -8897,6 +8923,10 @@ function RunnerFleetPanel({
     }, [filters]);
 
     useEffect(() => {
+        writeFleetWorldMapLayersToUrl(mapLayers);
+    }, [mapLayers]);
+
+    useEffect(() => {
         if (!selectedReportId && reports[0]) {
             setSelectedReportId(reports[0].distributedRunId);
         }
@@ -8909,6 +8939,28 @@ function RunnerFleetPanel({
         setFilters((current) => ({ ...current, [key]: value }));
     };
 
+    const updateMapLayer = (
+        layerId: FleetWorldMapLayerId,
+        enabled: boolean,
+    ): void => {
+        setMapLayers((current) => ({
+            ...current,
+            [layerId]: enabled,
+        }));
+    };
+
+    const selectMapRegion = (region: FleetWorldMapRegion): void => {
+        if (region.region && region.region !== 'unlabeled') {
+            updateFilter('region', region.region);
+        }
+        if (region.provider) {
+            updateFilter('provider', region.provider);
+        }
+        if (region.latestRunId) {
+            setSelectedReportId(region.latestRunId);
+        }
+    };
+
     const copyShareLink = async (): Promise<void> => {
         if (typeof window === 'undefined') {
             return;
@@ -8917,6 +8969,7 @@ function RunnerFleetPanel({
         url.searchParams.set('mode', 'black-box-runner');
         url.searchParams.set('tab', 'fleet');
         writeFleetFiltersToSearchParams(url.searchParams, filters);
+        writeFleetWorldMapLayersToSearchParams(url.searchParams, mapLayers);
         await navigator.clipboard?.writeText(url.toString());
     };
 
@@ -9174,6 +9227,14 @@ function RunnerFleetPanel({
                     tone={displaySummary.stale > 0 ? 'warn' : 'good'}
                 />
             </div>
+            <FleetWorldMap
+                model={worldMapModel}
+                layers={mapLayers}
+                selectedAgentId={selectedAgentId}
+                onLayerChange={updateMapLayer}
+                onSelectAgent={setSelectedAgentId}
+                onSelectRegion={selectMapRegion}
+            />
             {reports.length === 0 && !error && (
                 <div className="empty-state">
                     No terminal distributed run reports found for these filters.
@@ -9594,6 +9655,67 @@ function writeFleetFiltersToSearchParams(
             params.delete(key);
         }
     });
+}
+
+function readFleetWorldMapLayersFromUrl(): FleetWorldMapLayerState {
+    if (typeof window === 'undefined') {
+        return DEFAULT_FLEET_WORLD_MAP_LAYER_STATE;
+    }
+    const params = new URL(window.location.href).searchParams;
+    return parseFleetWorldMapLayers(params.get('fleetMapLayers'));
+}
+
+function writeFleetWorldMapLayersToUrl(layers: FleetWorldMapLayerState): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    const url = new URL(window.location.href);
+    writeFleetWorldMapLayersToSearchParams(url.searchParams, layers);
+    window.history.replaceState(window.history.state, '', url.toString());
+}
+
+function writeFleetWorldMapLayersToSearchParams(
+    params: URLSearchParams,
+    layers: FleetWorldMapLayerState,
+): void {
+    if (fleetWorldMapLayersEqual(layers, DEFAULT_FLEET_WORLD_MAP_LAYER_STATE)) {
+        params.delete('fleetMapLayers');
+        return;
+    }
+    const enabled = FLEET_WORLD_MAP_LAYER_IDS.filter((layerId) => layers[layerId]);
+    if (enabled.length === 0) {
+        params.set('fleetMapLayers', 'none');
+    } else {
+        params.set('fleetMapLayers', enabled.join(','));
+    }
+}
+
+function parseFleetWorldMapLayers(
+    value: string | null,
+): FleetWorldMapLayerState {
+    if (!value) {
+        return DEFAULT_FLEET_WORLD_MAP_LAYER_STATE;
+    }
+    const enabled = new Set(
+        value.split(',')
+            .map((entry) => entry.trim())
+            .filter((entry): entry is FleetWorldMapLayerId =>
+                FLEET_WORLD_MAP_LAYER_IDS.includes(entry as FleetWorldMapLayerId)
+            ),
+    );
+    return {
+        'live-agents': enabled.has('live-agents'),
+        'historical-regions': enabled.has('historical-regions'),
+        failures: enabled.has('failures'),
+        'observed-routes': enabled.has('observed-routes'),
+    };
+}
+
+function fleetWorldMapLayersEqual(
+    left: FleetWorldMapLayerState,
+    right: FleetWorldMapLayerState,
+): boolean {
+    return FLEET_WORLD_MAP_LAYER_IDS.every((layerId) => left[layerId] === right[layerId]);
 }
 
 function parseFleetWindow(

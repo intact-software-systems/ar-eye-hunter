@@ -453,6 +453,7 @@ function labelFromAgent(
     browserVersion: identity?.browserVersion,
     os: identity?.os,
     tags: identity?.tags,
+    location: identity?.location,
   };
 }
 

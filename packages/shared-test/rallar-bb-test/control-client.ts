@@ -7,7 +7,10 @@ import type {
     RallarBlackBoxTestState,
     RallarBlackBoxTestStatsSnapshot,
 } from './types.ts';
-import type { RallarBlackBoxControlAgentIdentity } from './distributed-run.ts';
+import type {
+    RallarBlackBoxControlAgentIdentity,
+    RallarBlackBoxGeoLocation,
+} from './distributed-run.ts';
 import { redactRallarBlackBoxValue } from './redaction.ts';
 import {
     type ControlClientEnvelope,
@@ -238,6 +241,7 @@ function toControlAgentIdentity(
         browserVersion: firstString(fleet.browserVersion, browser.version),
         os: firstString(fleet.os, browser.os),
         tags: stringArray(fleet.tags),
+        location: geoLocation(fleet.location),
         capabilities: {
             crdt: {
                 supported: crdtSupported,
@@ -262,6 +266,32 @@ function stringArray(value: unknown): readonly string[] | undefined {
         .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
         .map(entry => entry.trim());
     return entries.length > 0 ? entries : undefined;
+}
+
+function geoLocation(value: unknown): RallarBlackBoxGeoLocation | undefined {
+    const record = asRecord(value);
+    const latitude = typeof record.latitude === 'number' ? record.latitude : undefined;
+    const longitude = typeof record.longitude === 'number' ? record.longitude : undefined;
+    if (
+        latitude === undefined ||
+        longitude === undefined ||
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude) ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180
+    ) {
+        return undefined;
+    }
+
+    const precision = record.precision === 'approximate' ? 'approximate' : 'exact';
+    return {
+        latitude,
+        longitude,
+        label: firstString(record.label),
+        precision,
+    };
 }
 
 function toStatsSnapshot(

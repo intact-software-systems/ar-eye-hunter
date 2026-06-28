@@ -395,6 +395,12 @@ describe('shared rallar black-box control client', () => {
                     region: 'eu-north',
                     provider: 'hetzner',
                     datacenter: 'fsn1',
+                    location: {
+                        latitude: 52.5333,
+                        longitude: 13.3833,
+                        label: 'fsn1 worker rack',
+                        precision: 'exact',
+                    },
                     hostId: 'host-1',
                     agentPoolId: 'pool-a',
                     deploymentId: 'deploy-1',
@@ -423,6 +429,12 @@ describe('shared rallar black-box control client', () => {
                     region: 'eu-north',
                     provider: 'hetzner',
                     datacenter: 'fsn1',
+                    location: {
+                        latitude: 52.5333,
+                        longitude: 13.3833,
+                        label: 'fsn1 worker rack',
+                        precision: 'exact',
+                    },
                     hostId: 'host-1',
                     agentPoolId: 'pool-a',
                     deploymentId: 'deploy-1',
@@ -451,6 +463,12 @@ describe('shared rallar black-box control client', () => {
                 identity: {
                     region: 'eu-north',
                     provider: 'hetzner',
+                    location: {
+                        latitude: 52.5333,
+                        longitude: 13.3833,
+                        label: 'fsn1 worker rack',
+                        precision: 'exact',
+                    },
                     capabilities: {
                         crdt: {
                             supported: true,
