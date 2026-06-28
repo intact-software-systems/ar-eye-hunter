@@ -440,11 +440,11 @@ function headlessEntryEnv(
   env: Readonly<Record<string, string | undefined>>,
 ): HeadlessWorkerEntry {
   const value = envValue(env, "RALLAR_BLACK_BOX_HEADLESS_ENTRY");
-  if (!value || value === "operator-spa") {
-    return "operator-spa";
-  }
-  if (value === "headless") {
+  if (!value || value === "headless") {
     return "headless";
+  }
+  if (value === "operator-spa") {
+    return "operator-spa";
   }
   throw new Error(
     "RALLAR_BLACK_BOX_HEADLESS_ENTRY must be operator-spa or headless",

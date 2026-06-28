@@ -38,7 +38,7 @@ describe("rallar-black-box headless worker config", () => {
 
     expect(config.spaUrl).toBe("https://blackbox.example.test");
     expect(config.apiBaseUrl).toBe("https://api.example.test");
-    expect(config.headlessEntry).toBe("operator-spa");
+    expect(config.headlessEntry).toBe("headless");
     expect(config.agentCount).toBe(2);
     expect(config.fleetRegion).toBe("eu-north");
     expect(config.fleetProvider).toBe("hetzner");
@@ -51,10 +51,11 @@ describe("rallar-black-box headless worker config", () => {
 
     const firstUrl = new URL(config.agents[0].url);
     expect(firstUrl.origin).toBe("https://blackbox.example.test");
+    expect(firstUrl.pathname).toBe("/headless/");
     expect(firstUrl.searchParams.get("mode")).toBe("control");
     expect(firstUrl.searchParams.get("provider")).toBe("browser-rallar");
     expect(firstUrl.searchParams.get("autoConnect")).toBe("1");
-    expect(firstUrl.searchParams.get("tab")).toBe("local-workbench");
+    expect(firstUrl.searchParams.get("tab")).toBeNull();
     expect(firstUrl.searchParams.get("controlUrl")).toBe(
       "wss://control.example.test/control",
     );
@@ -179,7 +180,7 @@ describe("rallar-black-box headless worker config", () => {
     expect(secondUrl.searchParams.get("transport")).toBe("messages.rtc");
     expect(secondUrl.searchParams.get("rallarUsername")).toBe("bob");
     expect(secondUrl.searchParams.get("rallarPassword")).toBe("bob-secret");
-    expect(secondUrl.searchParams.get("rallarRegister")).toBe("1");
+    expect(secondUrl.searchParams.get("rallarRegister")).toBe("if-needed");
     expect(secondUrl.searchParams.get("rallarRestoreSession")).toBe("1");
     expect(secondUrl.searchParams.get("rallarLeaveRoomOnClose")).toBe("1");
   });
