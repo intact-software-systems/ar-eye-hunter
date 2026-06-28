@@ -1080,14 +1080,17 @@ class BrowserCommandAdapter {
         };
     }
 
-    private async sessionForAuthPlaceholders(
+    private async sessionForRallarAuth(
         value: unknown,
         config: RallarBlackBoxTestConfig | undefined,
         command: CommandWithId,
         context: RallarBlackBoxTestCommandContext,
+        options: Readonly<{ required?: boolean }> = {},
     ): Promise<AuthSession | undefined> {
         let session = readOptionalBrowserSession();
-        if (session || !requiresAuthSessionPlaceholder(value) || !this.rallarRuntime) {
+        const needsSession = options.required === true ||
+            requiresAuthSessionPlaceholder(value);
+        if (session || !needsSession || !this.rallarRuntime) {
             return session;
         }
 
@@ -2291,11 +2294,12 @@ class BrowserCommandAdapter {
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome> {
         const config = context.config();
-        const session = await this.sessionForAuthPlaceholders(
+        const session = await this.sessionForRallarAuth(
             command.request,
             config,
             command,
             context,
+            { required: Boolean(command.request.path) },
         );
         const wsTicket = requiresWsTicketPlaceholder(command.request)
             ? await requestWebSocketTicket(this.requireFetch(), config, session)
@@ -2368,7 +2372,7 @@ class BrowserCommandAdapter {
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome> {
         const config = context.config();
-        const session = await this.sessionForAuthPlaceholders(
+        const session = await this.sessionForRallarAuth(
             command.url,
             config,
             command,
