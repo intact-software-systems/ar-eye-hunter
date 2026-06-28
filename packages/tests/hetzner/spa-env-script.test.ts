@@ -19,6 +19,8 @@ describe('Hetzner SPA public env wiring', () => {
         expect(helper).toContain('VITE_RALLAR_ROOM_ID="${RALLAR_BLACK_BOX_ROOM_ID}"');
         expect(helper).toContain('VITE_RALLAR_RUNNER_AGENT_PREFIX="${RALLAR_BLACK_BOX_AGENT_PREFIX}"');
         expect(helper).toContain('VITE_RALLAR_RUNNER_AGENT_COUNT="${RALLAR_BLACK_BOX_AGENT_COUNT}"');
+        expect(helper).toContain('npm --prefix "${checkout_dir}" --workspace rallar-black-box run build');
+        expect(helper).toContain('npm --prefix "${checkout_dir}" --workspace rallar-black-box-headless run build');
         expect(helper).toContain('/etc/rallar/black-box-spa.env');
     });
 
@@ -35,6 +37,8 @@ describe('Hetzner SPA public env wiring', () => {
         for (const script of [deployScript, rolloutScript]) {
             expect(script).toContain('source "${SCRIPT_DIR}/rallar-public-spa-env.sh"');
             expect(script).toContain('build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"');
+            expect(script).toContain('"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-headless/dist/"');
+            expect(script).toContain('/var/www/rallar-black-box/headless/');
             expect(script).toContain('write_rallar_black_box_spa_env_file');
         }
     });

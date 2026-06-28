@@ -242,6 +242,17 @@ build_rallar_black_box_spa() {
     VITE_RALLAR_RUNNER_AGENT_PREFIX="${RALLAR_BLACK_BOX_AGENT_PREFIX}" \
     VITE_RALLAR_RUNNER_AGENT_COUNT="${RALLAR_BLACK_BOX_AGENT_COUNT}" \
     npm --prefix "${checkout_dir}" --workspace rallar-black-box run build
+
+  runuser -u rallar -- env \
+    VITE_RALLAR_PROVIDER=browser-rallar \
+    VITE_RALLAR_API_BASE_URL="${RALLAR_API_BASE_URL}" \
+    VITE_RALLAR_CONTROL_URL="${RALLAR_BLACK_BOX_CONTROL_URL}" \
+    VITE_RALLAR_ROOM_ID="${RALLAR_BLACK_BOX_ROOM_ID}" \
+    VITE_RALLAR_APPLICATION_ID="${RALLAR_BLACK_BOX_APPLICATION_ID}" \
+    VITE_RALLAR_WORKSPACE_ID="${RALLAR_BLACK_BOX_WORKSPACE_ID}" \
+    VITE_RALLAR_RUNNER_AGENT_PREFIX="${RALLAR_BLACK_BOX_AGENT_PREFIX}" \
+    VITE_RALLAR_RUNNER_AGENT_COUNT="${RALLAR_BLACK_BOX_AGENT_COUNT}" \
+    npm --prefix "${checkout_dir}" --workspace rallar-black-box-headless run build
 }
 
 write_rallar_black_box_spa_env_file() {

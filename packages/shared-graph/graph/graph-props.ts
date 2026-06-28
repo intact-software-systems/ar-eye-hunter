@@ -1,4 +1,4 @@
-import { UndirectedGraph } from 'graphology';
+import type { UndirectedGraph } from 'graphology';
 
 export enum VertexType {
     CLIENT = 'CLIENT',

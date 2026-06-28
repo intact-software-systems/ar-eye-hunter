@@ -302,24 +302,42 @@ rallar_playwright_remove_stale_lock_if_safe() {
   echo "removed stale Playwright lock: ${lock_path}"
 }
 
-install_rallar_playwright_chromium() {
+rallar_playwright_normalize_browser() {
+  case "${1:-chromium}" in
+    chromium | firefox | webkit)
+      printf '%s' "$1"
+      ;;
+    *)
+      rallar_playwright_fail "Playwright browser must be chromium, firefox, or webkit. Received: ${1:-}"
+      return 1
+      ;;
+  esac
+}
+
+install_rallar_playwright_browser() {
   local checkout_dir="$1"
   local user="${RALLAR_PLAYWRIGHT_USER:-rallar}"
+  local browser_name
+  browser_name="$(rallar_playwright_normalize_browser "${2:-chromium}")"
 
-  echo "==> Installing Playwright Chromium system dependencies"
+  echo "==> Installing Playwright ${browser_name} system dependencies"
   rallar_playwright_run_with_heartbeat \
-    "Playwright Chromium dependency install" \
-    npm --prefix "${checkout_dir}" exec -- playwright install-deps chromium
+    "Playwright ${browser_name} dependency install" \
+    npm --prefix "${checkout_dir}" exec -- playwright install-deps "${browser_name}"
 
   rallar_playwright_remove_stale_lock_if_safe
 
-  echo "==> Installing Playwright Chromium for the ${user} user"
+  echo "==> Installing Playwright ${browser_name} for the ${user} user"
   rallar_playwright_run_with_heartbeat \
-    "Playwright Chromium install for ${user}" \
+    "Playwright ${browser_name} install for ${user}" \
     rallar_playwright_run_user_command_in_checkout \
       "${user}" \
       "${checkout_dir}" \
-      npm --prefix "${checkout_dir}" exec -- playwright install chromium
+      npm --prefix "${checkout_dir}" exec -- playwright install "${browser_name}"
+}
+
+install_rallar_playwright_chromium() {
+  install_rallar_playwright_browser "$1" chromium
 }
 
 rallar_playwright_self_test() {

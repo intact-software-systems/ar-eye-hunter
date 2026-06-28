@@ -1,5 +1,7 @@
 export type HeadlessWorkerTransport = "realtime" | "messages.rtc";
 export type HeadlessWorkerBrowserLogLevel = "warning" | "info" | "debug";
+export type HeadlessWorkerEntry = "operator-spa" | "headless";
+export type HeadlessWorkerBrowserEngine = "chromium" | "firefox" | "webkit";
 
 export type HeadlessWorkerCredentials = Readonly<{
   username: string;
@@ -18,6 +20,8 @@ export type HeadlessWorkerConfig = Readonly<{
   spaUrl: string;
   controlUrl: string;
   apiBaseUrl: string;
+  headlessEntry: HeadlessWorkerEntry;
+  browserEngine: HeadlessWorkerBrowserEngine;
   runId: string;
   agentPrefix: string;
   agentCount: number;
@@ -67,6 +71,7 @@ const DEFAULT_AGENT_COUNT = 1;
 const DEFAULT_AGENT_PREFIX = "hetzner-agent";
 const DEFAULT_TRANSPORT: HeadlessWorkerTransport = "realtime";
 const DEFAULT_BROWSER_LOG_LEVEL: HeadlessWorkerBrowserLogLevel = "warning";
+const DEFAULT_BROWSER_ENGINE: HeadlessWorkerBrowserEngine = "chromium";
 const DEFAULT_LAUNCH_TIMEOUT_MS = 30_000;
 const DEFAULT_READY_TIMEOUT_MS = 45_000;
 
@@ -94,11 +99,14 @@ export function readHeadlessWorkerConfig(
     "RALLAR_BLACK_BOX_AGENT_COUNT",
     DEFAULT_AGENT_COUNT,
   );
+  const browserEngine = browserEngineEnv(env);
   const agentCredentials = readAgentCredentials(env, agentCount);
   const baseConfig = {
     spaUrl: normalizeBaseUrl(requireEnv(env, "RALLAR_BLACK_BOX_SPA_URL")),
     controlUrl: requireEnv(env, "RALLAR_BLACK_BOX_CONTROL_URL"),
     apiBaseUrl: normalizeBaseUrl(requireEnv(env, "RALLAR_API_BASE_URL")),
+    headlessEntry: headlessEntryEnv(env),
+    browserEngine,
     runId: requireEnv(env, "RALLAR_BLACK_BOX_RUN_ID"),
     agentPrefix: envValue(env, "RALLAR_BLACK_BOX_AGENT_PREFIX") ??
       DEFAULT_AGENT_PREFIX,
@@ -137,7 +145,8 @@ export function readHeadlessWorkerConfig(
     fleetDeploymentId: envValue(env, "RALLAR_AGENT_DEPLOYMENT_ID") ??
       envValue(env, "RALLAR_BLACK_BOX_AGENT_DEPLOYMENT_ID"),
     fleetBrowserName: envValue(env, "RALLAR_AGENT_BROWSER_NAME") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_BROWSER_NAME"),
+      envValue(env, "RALLAR_BLACK_BOX_AGENT_BROWSER_NAME") ??
+      browserEngine,
     fleetBrowserVersion: envValue(env, "RALLAR_AGENT_BROWSER_VERSION") ??
       envValue(env, "RALLAR_BLACK_BOX_AGENT_BROWSER_VERSION"),
     fleetOs: envValue(env, "RALLAR_AGENT_OS") ??
@@ -203,12 +212,16 @@ export function createHeadlessWorkerAgents(
 export function createHeadlessWorkerAgentUrl(
   input: HeadlessWorkerAgentUrlInput,
 ): string {
-  const url = new URL(input.spaUrl);
+  const url = agentSpaUrl(input.spaUrl, input.headlessEntry);
   const params = url.searchParams;
   params.set("mode", "control");
   params.set("provider", "browser-rallar");
   params.set("autoConnect", "1");
-  params.set("tab", "local-workbench");
+  if (input.headlessEntry === "operator-spa") {
+    params.set("tab", "local-workbench");
+  } else {
+    params.delete("tab");
+  }
   params.set("controlUrl", input.controlUrl);
   params.set("runId", input.runId);
   params.set("agentId", input.agentId);
@@ -256,6 +269,19 @@ export function createHeadlessWorkerAgentUrl(
   }
 
   return url.toString();
+}
+
+function agentSpaUrl(spaUrl: string, entry: HeadlessWorkerEntry): URL {
+  const url = new URL(spaUrl);
+  if (entry === "headless") {
+    const basePath = url.pathname.endsWith("/")
+      ? url.pathname
+      : `${url.pathname}/`;
+    url.pathname = basePath.endsWith("/headless/")
+      ? basePath
+      : `${basePath.replace(/\/+$/, "")}/headless/`;
+  }
+  return url;
 }
 
 export function controlRunSnapshotUrlFromControlUrl(
@@ -407,6 +433,21 @@ function transportEnv(
   throw new Error(`${key} must be realtime or messages.rtc. Received: ${raw}`);
 }
 
+function headlessEntryEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): HeadlessWorkerEntry {
+  const value = envValue(env, "RALLAR_BLACK_BOX_HEADLESS_ENTRY");
+  if (!value || value === "operator-spa") {
+    return "operator-spa";
+  }
+  if (value === "headless") {
+    return "headless";
+  }
+  throw new Error(
+    "RALLAR_BLACK_BOX_HEADLESS_ENTRY must be operator-spa or headless",
+  );
+}
+
 function browserLogLevelEnv(
   env: Readonly<Record<string, string | undefined>>,
   key: string,
@@ -421,6 +462,21 @@ function browserLogLevelEnv(
   }
   throw new Error(
     `${key} must be warning, info, or debug. Received: ${raw}`,
+  );
+}
+
+function browserEngineEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): HeadlessWorkerBrowserEngine {
+  const value = envValue(env, "RALLAR_BLACK_BOX_BROWSER_ENGINE");
+  if (!value) {
+    return DEFAULT_BROWSER_ENGINE;
+  }
+  if (value === "chromium" || value === "firefox" || value === "webkit") {
+    return value;
+  }
+  throw new Error(
+    "RALLAR_BLACK_BOX_BROWSER_ENGINE must be chromium, firefox, or webkit",
   );
 }
 

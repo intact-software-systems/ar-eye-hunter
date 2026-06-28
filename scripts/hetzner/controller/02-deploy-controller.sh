@@ -65,7 +65,7 @@ runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
   "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
 
 if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
-  install_rallar_playwright_chromium "${RALLAR_CHECKOUT_DIR}"
+  install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"
 fi
 
 echo "==> Building rallar-black-box SPA"
@@ -76,6 +76,10 @@ rm -rf /var/www/rallar-black-box/*
 rsync -a --delete \
   "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist/" \
   /var/www/rallar-black-box/
+install -d -m 0755 -o caddy -g caddy /var/www/rallar-black-box/headless
+rsync -a --delete \
+  "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-headless/dist/" \
+  /var/www/rallar-black-box/headless/
 chown -R caddy:caddy /var/www/rallar-black-box
 
 echo "==> Writing environment files"

@@ -66,7 +66,8 @@ free -h || true
 
 echo
 echo "==> Browser and worker processes"
-ps -eo pid,ppid,pcpu,pmem,rss,comm | awk 'NR == 1 || $6 ~ /(node|chrome|chromium)/ { print }' || true
+ps -eo pid,ppid,pcpu,pmem,rss,comm,args | \
+  awk 'NR == 1 || $0 ~ /(chrome|chromium|firefox|webkit|WebKit|MiniBrowser|rallar-black-box)/ { print }' || true
 
 if bool_enabled "${RALLAR_SHOW_HEADLESS_RUN}" && command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
   if [[ -n "${RALLAR_BLACK_BOX_CONTROL_URL:-}" && -n "${RALLAR_BLACK_BOX_RUN_ID:-}" ]]; then

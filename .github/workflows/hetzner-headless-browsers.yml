@@ -89,8 +89,20 @@ on:
           - warning
           - info
           - debug
+      headless_entry:
+        description: Headless browser app entry; operator-spa keeps the rollback route
+        required: false
+        default: operator-spa
+      browser_engine:
+        description: Playwright browser engine for headless workers
+        type: choice
+        default: chromium
+        options:
+          - chromium
+          - firefox
+          - webkit
       install_playwright:
-        description: Install/update Chromium and Linux dependencies before starting
+        description: Install/update the selected Playwright browser and Linux dependencies before starting
         type: boolean
         default: true
       npm_ci:
@@ -105,10 +117,6 @@ on:
         description: Agent connection wait timeout in seconds
         type: number
         default: 90
-      log_lines:
-        description: Recent service log lines to print for status/failures
-        type: number
-        default: 80
 
 permissions:
   contents: read
@@ -226,6 +234,8 @@ jobs:
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
           RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}
+          RALLAR_BLACK_BOX_HEADLESS_ENTRY: ${{ inputs.headless_entry }}
+          RALLAR_BLACK_BOX_BROWSER_ENGINE: ${{ inputs.browser_engine }}
           RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
           RALLAR_REPO_REF: ${{ inputs.ref }}
           RALLAR_ROLLOUT_BEFORE_HEADLESS_START: ${{ inputs.rollout_before_start }}
@@ -234,7 +244,6 @@ jobs:
           RALLAR_NPM_CI: ${{ inputs.npm_ci }}
           RALLAR_WAIT_FOR_HEADLESS_WORKERS: ${{ inputs.wait_for_agents }}
           RALLAR_HEADLESS_READY_TIMEOUT_SECONDS: ${{ inputs.ready_timeout_seconds }}
-          RALLAR_HEADLESS_LOG_LINES: ${{ inputs.log_lines }}
         run: |
           set -euo pipefail
           quote() { printf '%q' "$1"; }
@@ -266,6 +275,8 @@ jobs:
             printf 'RALLAR_BLACK_BOX_PASSWORD=%s\n' "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")"
             printf 'RALLAR_BLACK_BOX_REGISTER=%s\n' "$(quote "${RALLAR_BLACK_BOX_REGISTER}")"
             printf 'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL=%s\n' "$(quote "${RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL}")"
+            printf 'RALLAR_BLACK_BOX_HEADLESS_ENTRY=%s\n' "$(quote "${RALLAR_BLACK_BOX_HEADLESS_ENTRY}")"
+            printf 'RALLAR_BLACK_BOX_BROWSER_ENGINE=%s\n' "$(quote "${RALLAR_BLACK_BOX_BROWSER_ENGINE}")"
             printf 'RALLAR_BLACK_BOX_CONTROL_TOKEN=%s\n' "$(quote "${RALLAR_BLACK_BOX_CONTROL_TOKEN}")"
             printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
             printf 'RALLAR_ROLLOUT_BEFORE_HEADLESS_START=%s\n' "$(quote "${RALLAR_ROLLOUT_BEFORE_HEADLESS_START}")"
@@ -274,7 +285,6 @@ jobs:
             printf 'RALLAR_NPM_CI=%s\n' "$(quote "${RALLAR_NPM_CI}")"
             printf 'RALLAR_WAIT_FOR_HEADLESS_WORKERS=%s\n' "$(quote "${RALLAR_WAIT_FOR_HEADLESS_WORKERS}")"
             printf 'RALLAR_HEADLESS_READY_TIMEOUT_SECONDS=%s\n' "$(quote "${RALLAR_HEADLESS_READY_TIMEOUT_SECONDS}")"
-            printf 'RALLAR_HEADLESS_LOG_LINES=%s\n' "$(quote "${RALLAR_HEADLESS_LOG_LINES}")"
           } > "${env_file}"
           chmod 600 "${env_file}"
 
