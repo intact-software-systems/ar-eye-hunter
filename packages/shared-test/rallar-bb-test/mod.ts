@@ -3,6 +3,7 @@ export * from './client-defaults.ts';
 export * from './browser-control-agent-config.ts';
 export * from './distributed-run.ts';
 export * from './control-protocol.ts';
+export * from './control-client.ts';
 export * from './control-snapshots.ts';
 export * from './distributed-run-monitor.ts';
 export * from './distributed-artifact-analysis.ts';
