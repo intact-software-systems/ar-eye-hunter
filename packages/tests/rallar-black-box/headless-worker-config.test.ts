@@ -110,6 +110,25 @@ describe("rallar-black-box headless worker config", () => {
     expect(url.searchParams.get("tab")).toBeNull();
   });
 
+  it("uses register-if-needed for direct headless agents", () => {
+    const config = readHeadlessWorkerConfig({
+      env: {
+        RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test/",
+        RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+        RALLAR_API_BASE_URL: "https://api.example.test/",
+        RALLAR_BLACK_BOX_RUN_ID: "run-headless-register",
+        RALLAR_BLACK_BOX_ROOM_ID: "room-headless-register",
+        RALLAR_BLACK_BOX_USERNAME: "alice",
+        RALLAR_BLACK_BOX_PASSWORD: "secret",
+        RALLAR_BLACK_BOX_HEADLESS_ENTRY: "headless",
+        RALLAR_BLACK_BOX_REGISTER: "1",
+      },
+    });
+
+    const url = new URL(config.agents[0].url);
+    expect(url.searchParams.get("rallarRegister")).toBe("if-needed");
+  });
+
   it("keeps the operator SPA local-workbench route for rollback", () => {
     const config = readHeadlessWorkerConfig({
       env: {

@@ -31,7 +31,7 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     rallarUsername?: string;
     rallarPassword?: string;
     rallarToken?: string;
-    rallarRegister: boolean;
+    rallarRegister: boolean | 'if-needed';
     rallarRestoreSession: boolean;
     rallarLogoutOnClose: boolean;
     rallarLeaveRoomOnClose: boolean;
@@ -77,6 +77,15 @@ function booleanParamValue(
         normalized === 'true' ||
         normalized === 'yes' ||
         normalized === 'on';
+}
+
+function registerParamValue(
+    value: string | undefined,
+): boolean | 'if-needed' {
+    if (value?.toLowerCase() === 'if-needed') {
+        return 'if-needed';
+    }
+    return booleanParamValue(value);
 }
 
 function numberParamValue(
@@ -322,7 +331,7 @@ export function resolveRallarBlackBoxBootstrapConfig(
         rallarUsername: paramValue(params, env, 'rallarUsername', 'VITE_RALLAR_USERNAME'),
         rallarPassword: paramValue(params, env, 'rallarPassword', 'VITE_RALLAR_PASSWORD'),
         rallarToken: paramValue(params, env, 'rallarToken', 'VITE_RALLAR_TOKEN'),
-        rallarRegister: booleanParamValue(
+        rallarRegister: registerParamValue(
             paramValue(params, env, 'rallarRegister', 'VITE_RALLAR_REGISTER'),
         ),
         rallarRestoreSession: booleanParamValue(
@@ -375,7 +384,7 @@ export function rallarConfigFromBootstrap(
     const rallar: Record<string, unknown> = {
         ...(bootstrap.rallarUsername ? { username: bootstrap.rallarUsername } : {}),
         ...(bootstrap.rallarPassword ? { password: bootstrap.rallarPassword } : {}),
-        ...(bootstrap.rallarRegister ? { register: true } : {}),
+        ...(bootstrap.rallarRegister ? { register: bootstrap.rallarRegister } : {}),
         ...(bootstrap.rallarRestoreSession || browserAuthSessionExists()
             ? { restoreSession: true }
             : {}),

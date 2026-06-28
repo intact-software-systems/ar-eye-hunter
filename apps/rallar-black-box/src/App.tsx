@@ -3471,7 +3471,9 @@ function webSocketConfigureCommand(
               ...(input.authSession || input.bootstrap.rallarRestoreSession
                   ? { restoreSession: true }
                   : {}),
-              ...(input.bootstrap.rallarRegister ? { register: true } : {}),
+              ...(input.bootstrap.rallarRegister
+                  ? { register: input.bootstrap.rallarRegister }
+                  : {}),
               ...(input.bootstrap.rallarLogoutOnClose
                   ? { logoutOnClose: true }
                   : {}),
@@ -4071,8 +4073,8 @@ function manualValuesFromState(
             authSession?.username ??
             stringValue(configRallar.username),
         rallarPassword: bootstrap.rallarPassword,
-        rallarRegister:
-            bootstrap.rallarRegister || booleanValue(configRallar.register),
+        rallarRegister: Boolean(bootstrap.rallarRegister) ||
+            booleanValue(configRallar.register),
         rallarRestoreSession:
             bootstrap.rallarRestoreSession ||
             Boolean(authSession) ||
@@ -4154,7 +4156,7 @@ function LoginScreen({
         bootstrap.rallarUsername ?? bootstrap.actor,
     );
     const [password, setPassword] = useState(bootstrap.rallarPassword ?? '');
-    const [register, setRegister] = useState(bootstrap.rallarRegister);
+    const [register, setRegister] = useState(Boolean(bootstrap.rallarRegister));
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | undefined>();
 

@@ -57,6 +57,8 @@ echo "Env file    : ${ENV_FILE}"
 echo "Run id      : ${RALLAR_BLACK_BOX_RUN_ID:-unknown}"
 echo "Agent prefix: ${RALLAR_BLACK_BOX_AGENT_PREFIX:-unknown}"
 echo "Agent count : ${RALLAR_BLACK_BOX_AGENT_COUNT:-unknown}"
+echo "Entry      : ${RALLAR_BLACK_BOX_HEADLESS_ENTRY:-operator-spa}"
+echo "Browser eng.: ${RALLAR_BLACK_BOX_BROWSER_ENGINE:-unknown}"
 echo "SPA URL     : ${RALLAR_BLACK_BOX_SPA_URL:-unknown}"
 echo "Control URL : ${RALLAR_BLACK_BOX_CONTROL_URL:-unknown}"
 

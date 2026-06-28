@@ -283,6 +283,10 @@ describe('Hetzner distributed recipe workflow', () => {
             path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
             'utf8',
         );
+        const statusScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/12-status-headless-workers.sh'),
+            'utf8',
+        );
         const dispatchScript = await readFile(
             path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh'),
             'utf8',
@@ -298,6 +302,9 @@ describe('Hetzner distributed recipe workflow', () => {
         }
 
         expect(startScript).toContain('RALLAR_BLACK_BOX_HEADLESS_ENTRY');
+        expect(startScript).toContain('echo "Entry      : ${RALLAR_BLACK_BOX_HEADLESS_ENTRY:-operator-spa}"');
+        expect(statusScript).toContain('echo "Entry      : ${RALLAR_BLACK_BOX_HEADLESS_ENTRY:-operator-spa}"');
+        expect(statusScript).toContain('echo "Browser eng.: ${RALLAR_BLACK_BOX_BROWSER_ENGINE:-unknown}"');
         expect(dispatchScript).toContain('--headless-entry <entry>');
         expect(dispatchScript).toContain('HEADLESS_ENTRY="operator-spa"');
         expect(dispatchScript).toContain('normalize_headless_entry');

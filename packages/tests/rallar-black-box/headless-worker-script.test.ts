@@ -21,4 +21,16 @@ describe("rallar-black-box headless worker script", () => {
     expect(source).toContain("browserTypes[config.browserEngine].launch");
     expect(source).toContain("engine=${config.browserEngine}");
   });
+
+  it("logs the selected entry and redacted per-agent URLs", async () => {
+    const source = await readFile(
+      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain("entry=${config.headlessEntry}");
+    expect(source).toContain("redactAgentUrlForLog(agent.url)");
+    expect(source).toContain("rallarPassword");
+    expect(source).toContain("controlToken");
+  });
 });

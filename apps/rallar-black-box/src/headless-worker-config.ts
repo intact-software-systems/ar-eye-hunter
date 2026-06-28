@@ -262,7 +262,10 @@ export function createHeadlessWorkerAgentUrl(
   setOptionalParam(params, "fleetTags", input.fleetTags?.join(","));
 
   if (input.register) {
-    params.set("rallarRegister", "1");
+    params.set(
+      "rallarRegister",
+      input.headlessEntry === "headless" ? "if-needed" : "1",
+    );
   }
   if (input.restoreSession) {
     params.set("rallarRestoreSession", "1");

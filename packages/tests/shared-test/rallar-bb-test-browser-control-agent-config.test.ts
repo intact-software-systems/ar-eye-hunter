@@ -65,6 +65,18 @@ describe('browser control-agent bootstrap config', () => {
         });
     });
 
+    it('passes register-if-needed through to the browser runtime', () => {
+        const bootstrap = resolveRallarBlackBoxBootstrapConfig(
+            '?mode=control&autoConnect=1&provider=browser-rallar&apiBaseUrl=https%3A%2F%2Fapi.example.test&rallarUsername=alice&rallarPassword=secret&rallarRegister=if-needed',
+            {},
+        );
+
+        const runtimeConfig = remoteControlConfig(bootstrap, 1);
+
+        expect(bootstrap.rallarRegister).toBe('if-needed');
+        expect(runtimeConfig.rallar?.register).toBe('if-needed');
+    });
+
     it('rejects browser-rallar config without usable API and credentials', () => {
         expect(parseRallarBlackBoxProviderMode('browser-rallar')).toBe('browser-rallar');
         expect(parseRallarBlackBoxProviderMode('anything')).toBe(
