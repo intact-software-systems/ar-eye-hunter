@@ -489,6 +489,7 @@ export type DistributedFailureExplanation = Readonly<{
         | 'readiness'
         | 'barrier'
         | 'command'
+        | 'rtc-stream-performance'
         | 'diagnostic'
         | 'runtime'
         | 'unknown';
@@ -574,6 +575,7 @@ export type RunCausalTrailItem = Readonly<{
     kind:
         | 'failure-category'
         | 'command-result'
+        | 'stream-performance'
         | 'diagnostic'
         | 'artifact'
         | 'events';
@@ -1006,6 +1008,9 @@ function analyzeDistributedRecipeCommand(
         }
         if (command.thresholds?.minSendSuccessRatio !== undefined) {
             details.push(`min success ratio ${command.thresholds.minSendSuccessRatio}`);
+        }
+        if (command.thresholds?.maxDroppedFrames !== undefined) {
+            details.push(`max dropped frames ${command.thresholds.maxDroppedFrames}`);
         }
     } else if (command.kind === 'wait') {
         waits = [waitPreflight(command, path)];
@@ -1892,6 +1897,40 @@ function runVerdictCausalTrail(
             event.agentId === report.firstFailure?.agentId
         )
         .map(event => event.eventId);
+    const streamPerformanceEvent = monitor.events.find(event =>
+        isRtcStreamPerformanceFailureText(`${event.topic ?? ''} ${event.summary} ${event.payloadSummary}`)
+    );
+    const isStreamPerformanceFailure = firstAction?.category === 'rtc-stream-performance' ||
+        isRtcStreamPerformanceFailureText(`${report.firstFailure.code ?? ''} ${report.firstFailure.message}`);
+    const streamAgentId = report.firstFailure.agentId ?? streamPerformanceEvent?.agentId;
+    const streamCommandId = report.firstFailure.commandId ?? streamPerformanceEvent?.commandId;
+    const streamEventEvidence = eventEvidence.length > 0
+        ? eventEvidence
+        : streamPerformanceEvent
+        ? [streamPerformanceEvent.eventId]
+        : [];
+    const streamPerformanceItem: RunCausalTrailItem | undefined = isStreamPerformanceFailure
+        ? {
+              kind: 'stream-performance',
+              label: 'Stream pacing evidence',
+              detail:
+                  'Check frame disposition, in-flight drops, max start drift, late frames, and stream P95/P99 before changing RTC routing or recipe thresholds.',
+              tone: 'bad',
+              targetKind: streamCommandId ? 'command' : 'agent',
+              targetId: streamCommandId ?? streamAgentId,
+              actionLabel: 'Inspect stream pacing',
+              agentId: streamAgentId,
+              recipeId: report.firstFailure.recipeId,
+              commandId: streamCommandId,
+              atEpochMs: report.firstFailure.atEpochMs,
+              evidence: compactStrings([
+                  streamCommandId,
+                  streamAgentId,
+                  report.firstFailure.code,
+                  ...streamEventEvidence.slice(0, 3),
+              ]),
+          }
+        : undefined;
 
     return [
         {
@@ -1934,6 +1973,7 @@ function runVerdictCausalTrail(
                 report.firstFailure.recipeId,
             ]),
         },
+        ...(streamPerformanceItem ? [streamPerformanceItem] : []),
         {
             kind: 'diagnostic',
             label: correlatedDiagnostics.length > 0
@@ -3135,6 +3175,16 @@ function explanationForFailure(
             evidence,
         };
     }
+    if (isRtcStreamPerformanceFailureText(text)) {
+        return {
+            category: 'rtc-stream-performance',
+            title: 'RTC stream pacing/backlog threshold failed',
+            likelyCause: failure.message || 'The RTC stream command exceeded pacing, backlog, or frame-drop thresholds.',
+            nextAction:
+                'Inspect frame disposition, in-flight drops, max start drift, late frames, stream duration percentiles, and slowest stream agents before changing RTC routing or thresholds.',
+            evidence,
+        };
+    }
     if (failure.kind === 'command' || failure.commandId) {
         return {
             category: 'command',
@@ -3170,9 +3220,23 @@ function commandFailureNextAction(
     return 'Inspect the command result, runtime diagnostics, and raw evidence for this command ID.';
 }
 
+function isRtcStreamPerformanceFailureText(text: string): boolean {
+    const normalized = text.toLowerCase();
+    return normalized.includes('rallar_black_box_rtc_stream_threshold_failed') ||
+        normalized.includes('rallar_black_box_rtc_stream_in_flight_limit') ||
+        normalized.includes('rallar.bb.rtc.stream_failed') ||
+        normalized.includes('maxdroppedframes') ||
+        normalized.includes('minsend success ratio') ||
+        normalized.includes('stream pacing') ||
+        normalized.includes('in-flight');
+}
+
 function failureCategory(failure: DistributedRunFailureRow): DistributedFailureExplanation['category'] {
     const code = failure.code ?? '';
     const text = `${code} ${failure.message}`.toLowerCase();
+    if (isRtcStreamPerformanceFailureText(text)) {
+        return 'rtc-stream-performance';
+    }
     if (text.includes('target')) {
         return 'targeting';
     }

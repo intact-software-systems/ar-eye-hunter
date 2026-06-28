@@ -704,6 +704,282 @@ describe('Hetzner distributed run artifact analysis', () => {
         expect(analysis.performanceMarkdown).toContain('p99=50ms');
     });
 
+    it('derives stream performance from nested recipe.run JSONL results without double-counting direct samples', () => {
+        const controller01Stream = {
+            commandId: 'rtc-realtime-position-stream',
+            transport: 'realtime',
+            plannedFrames: 3,
+            scheduledFrames: 3,
+            attemptedFrames: 3,
+            completedFrames: 3,
+            failedFrames: 0,
+            droppedFrames: 0,
+            backpressureCount: 0,
+            requestedRateHz: 20,
+            achievedScheduleHz: 20,
+            achievedCompletionHz: 20,
+            duration: { minMs: 10, p50Ms: 20, p95Ms: 30, p99Ms: 30, maxMs: 30, averageMs: 20 },
+            observations: [
+                { index: 0, iteration: 1, durationMs: 10, ok: true },
+                { index: 1, iteration: 2, durationMs: 20, ok: true },
+                { index: 2, iteration: 3, durationMs: 30, ok: true },
+            ],
+            thresholdFailures: [],
+        };
+        const controller02Stream = {
+            commandId: 'rtc-realtime-position-stream',
+            transport: 'realtime',
+            plannedFrames: 2,
+            scheduledFrames: 2,
+            attemptedFrames: 2,
+            completedFrames: 2,
+            failedFrames: 0,
+            droppedFrames: 0,
+            backpressureCount: 1,
+            requestedRateHz: 20,
+            achievedScheduleHz: 18,
+            achievedCompletionHz: 18,
+            duration: { minMs: 40, p50Ms: 40, p95Ms: 50, p99Ms: 50, maxMs: 50, averageMs: 45 },
+            observations: [
+                { index: 0, iteration: 1, durationMs: 40, ok: true, backpressured: true },
+                { index: 1, iteration: 2, durationMs: 50, ok: true },
+            ],
+            thresholdFailures: [],
+        };
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-nested-stream-passed',
+                    controlRunId: 'run-nested-stream-passed',
+                    state: 'passed',
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 7_000,
+                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
+                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
+                    targetAgentIds: ['controller-01', 'controller-02'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-nested-stream-passed',
+                    agents: [
+                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 30 },
+                        { agentId: 'controller-02', connected: true, reconnectCount: 0, receivedEventCount: 35 },
+                    ],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': [
+                    JSON.stringify({
+                        agentId: 'controller-01',
+                        commandId: 'distributed-start-controller-01-rtc-realtime',
+                        action: 'recipe.run',
+                        status: 'SUCCESS',
+                        ok: true,
+                        actual: {
+                            recipeId: 'rtc-realtime',
+                            results: [
+                                {
+                                    commandId: 'rtc-realtime-position-stream',
+                                    kind: 'rtc.stream',
+                                    status: 'ok',
+                                    ok: true,
+                                    durationMs: 300,
+                                    value: controller01Stream,
+                                },
+                            ],
+                        },
+                    }),
+                    JSON.stringify({
+                        agentId: 'controller-02',
+                        commandId: 'distributed-start-controller-02-rtc-realtime',
+                        action: 'recipe.run',
+                        status: 'SUCCESS',
+                        ok: true,
+                        actual: {
+                            recipeId: 'rtc-realtime',
+                            results: [
+                                {
+                                    commandId: 'rtc-realtime-position-stream',
+                                    kind: 'rtc.stream',
+                                    status: 'ok',
+                                    ok: true,
+                                    durationMs: 200,
+                                    value: controller02Stream,
+                                },
+                            ],
+                        },
+                    }),
+                    JSON.stringify({
+                        agentId: 'controller-02',
+                        commandId: 'rtc-realtime-position-stream',
+                        action: 'rtc.stream',
+                        status: 'SUCCESS',
+                        ok: true,
+                        actual: controller02Stream,
+                    }),
+                ].join('\n'),
+                'events.jsonl': '',
+            },
+        });
+
+        expect(analysis.performance?.streamTiming).toMatchObject({
+            streamCount: 2,
+            plannedFrames: 5,
+            scheduledFrames: 5,
+            attemptedFrames: 5,
+            completedFrames: 5,
+            failedFrames: 0,
+            droppedFrames: 0,
+            backpressureCount: 1,
+            sendSuccessRatio: 1,
+            duration: {
+                count: 5,
+                minMs: 10,
+                p50Ms: 30,
+                p95Ms: 50,
+                p99Ms: 50,
+                maxMs: 50,
+                averageMs: 30,
+                outlierCount: 1,
+            },
+        });
+        expect(analysis.performance?.streamTiming?.slowestAgents.map(agent => agent.agentId)).toEqual([
+            'controller-02',
+            'controller-01',
+        ]);
+    });
+
+    it('counts repeated nested recipe.run stream executions separately', () => {
+        const firstStream = {
+            commandId: 'rtc-realtime-position-stream',
+            transport: 'realtime',
+            plannedFrames: 2,
+            scheduledFrames: 2,
+            attemptedFrames: 2,
+            completedFrames: 2,
+            failedFrames: 0,
+            droppedFrames: 0,
+            requestedRateHz: 10,
+            achievedCompletionHz: 10,
+            duration: { minMs: 10, p50Ms: 12, p95Ms: 14, p99Ms: 14, maxMs: 14, averageMs: 12 },
+            observations: [
+                { index: 0, iteration: 1, durationMs: 10, ok: true },
+                { index: 1, iteration: 2, durationMs: 14, ok: true },
+            ],
+            thresholdFailures: [],
+        };
+        const secondStream = {
+            commandId: 'rtc-realtime-position-stream',
+            transport: 'realtime',
+            plannedFrames: 3,
+            scheduledFrames: 3,
+            attemptedFrames: 3,
+            completedFrames: 3,
+            failedFrames: 0,
+            droppedFrames: 0,
+            requestedRateHz: 10,
+            achievedCompletionHz: 10,
+            duration: { minMs: 20, p50Ms: 24, p95Ms: 28, p99Ms: 28, maxMs: 28, averageMs: 24 },
+            observations: [
+                { index: 0, iteration: 1, durationMs: 20, ok: true },
+                { index: 1, iteration: 2, durationMs: 24, ok: true },
+                { index: 2, iteration: 3, durationMs: 28, ok: true },
+            ],
+            thresholdFailures: [],
+        };
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-repeated-nested-streams',
+                    controlRunId: 'run-repeated-nested-streams',
+                    state: 'passed',
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 9_000,
+                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
+                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
+                    targetAgentIds: ['controller-01'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-repeated-nested-streams',
+                    agents: [{ agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 60 }],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': [
+                    JSON.stringify({
+                        agentId: 'controller-01',
+                        commandId: 'distributed-start-controller-01-rtc-realtime-pass-1',
+                        action: 'recipe.run',
+                        status: 'SUCCESS',
+                        ok: true,
+                        actual: {
+                            recipeId: 'rtc-realtime',
+                            results: [
+                                {
+                                    commandId: 'rtc-realtime-position-stream',
+                                    kind: 'rtc.stream',
+                                    status: 'ok',
+                                    ok: true,
+                                    value: firstStream,
+                                },
+                            ],
+                        },
+                    }),
+                    JSON.stringify({
+                        agentId: 'controller-01',
+                        commandId: 'distributed-start-controller-01-rtc-realtime-pass-2',
+                        action: 'recipe.run',
+                        status: 'SUCCESS',
+                        ok: true,
+                        actual: {
+                            recipeId: 'rtc-realtime',
+                            results: [
+                                {
+                                    commandId: 'rtc-realtime-position-stream',
+                                    kind: 'rtc.stream',
+                                    status: 'ok',
+                                    ok: true,
+                                    value: secondStream,
+                                },
+                            ],
+                        },
+                    }),
+                ].join('\n'),
+                'events.jsonl': '',
+            },
+        });
+
+        expect(analysis.performance?.streamTiming).toMatchObject({
+            streamCount: 2,
+            plannedFrames: 5,
+            scheduledFrames: 5,
+            attemptedFrames: 5,
+            completedFrames: 5,
+            droppedFrames: 0,
+            duration: {
+                count: 5,
+                minMs: 10,
+                p50Ms: 20,
+                p95Ms: 28,
+                p99Ms: 28,
+                maxMs: 28,
+            },
+        });
+        expect(analysis.performance?.streamTiming?.slowestAgents[0]).toMatchObject({
+            agentId: 'controller-01',
+            streamCount: 2,
+            completedFrames: 5,
+            maxMs: 28,
+        });
+    });
+
     it('keeps failed rtc.stream result summaries available for performance analysis', () => {
         const analysis = analyzeDistributedRunArtifactFiles({
             files: {
@@ -806,6 +1082,197 @@ describe('Hetzner distributed run artifact analysis', () => {
         });
         expect(analysis.performanceMarkdown).toContain('Stream timing: streams=1, frames=88/100');
         expect(analysis.performanceMarkdown).toContain('dropped=12');
+    });
+
+    it('does not classify tolerated drops from a successful stream as stream failure', () => {
+        const toleratedStream = {
+            commandId: 'rtc-realtime-position-stream',
+            transport: 'realtime',
+            plannedFrames: 50,
+            scheduledFrames: 50,
+            attemptedFrames: 48,
+            completedFrames: 48,
+            failedFrames: 0,
+            droppedFrames: 2,
+            inFlightLimitDropCount: 1,
+            requestedRateHz: 10,
+            achievedCompletionHz: 9.6,
+            duration: { minMs: 10, p50Ms: 12, p95Ms: 16, p99Ms: 16, maxMs: 16, averageMs: 12.5 },
+            observations: [
+                { index: 0, iteration: 1, durationMs: 10, ok: true },
+                {
+                    index: 48,
+                    iteration: 49,
+                    durationMs: 0,
+                    ok: false,
+                    dropped: true,
+                    errorCode: 'RALLAR_BLACK_BOX_RTC_STREAM_IN_FLIGHT_LIMIT',
+                },
+            ],
+            thresholdFailures: [],
+        };
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-tolerated-stream-drops',
+                    controlRunId: 'run-tolerated-stream-drops',
+                    state: 'failed',
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 8_000,
+                    rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
+                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
+                    targetAgentIds: ['controller-01'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-tolerated-stream-drops',
+                    agents: [{ agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 50 }],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': [
+                    JSON.stringify({
+                        agentId: 'controller-01',
+                        commandId: 'rtc-realtime-position-stream',
+                        action: 'rtc.stream',
+                        status: 'SUCCESS',
+                        ok: true,
+                        actual: toleratedStream,
+                    }),
+                    JSON.stringify({
+                        agentId: 'controller-01',
+                        commandId: 'assert-post-stream-state',
+                        action: 'assert',
+                        status: 'FAILURE',
+                        ok: false,
+                        actual: {
+                            code: 'ASSERT_FAILED',
+                            message: 'Expected post-stream state to be visible.',
+                        },
+                    }),
+                ].join('\n'),
+                'events.jsonl': '',
+            },
+        });
+
+        expect(analysis.failure).toMatchObject({
+            category: 'command',
+            minimalFixArea: 'recipe assertion',
+            commandId: 'assert-post-stream-state',
+            evidenceFile: 'results.jsonl',
+        });
+        expect(analysis.failure?.likelyCause).toBe('Expected post-stream state to be visible.');
+        expect(analysis.performance?.streamTiming).toMatchObject({
+            streamCount: 1,
+            completedFrames: 48,
+            droppedFrames: 2,
+            inFlightLimitDropCount: 1,
+        });
+    });
+
+    it('classifies nested recipe.run stream threshold failures as pacing performance', () => {
+        const failedStreamValue = {
+            commandId: 'rtc-realtime-position-stream',
+            transport: 'realtime',
+            plannedFrames: 100,
+            scheduledFrames: 100,
+            attemptedFrames: 90,
+            completedFrames: 90,
+            failedFrames: 0,
+            droppedFrames: 10,
+            backpressureCount: 0,
+            requestedRateHz: 20,
+            achievedScheduleHz: 20,
+            achievedCompletionHz: 18,
+            pacing: {
+                intervalMs: 50,
+                maxStartDriftMs: 2_000,
+                lateFrameCount: 12,
+            },
+            duration: { minMs: 10, p50Ms: 20, p95Ms: 40, p99Ms: 45, maxMs: 45, averageMs: 22 },
+            observations: [
+                { index: 0, iteration: 1, durationMs: 10, ok: true },
+                { index: 89, iteration: 90, durationMs: 45, ok: true },
+                { index: 90, iteration: 91, durationMs: 0, ok: false, dropped: true },
+            ],
+            thresholdFailures: [
+                {
+                    name: 'maxDroppedFrames',
+                    category: 'delivery',
+                    threshold: 5,
+                    actual: 10,
+                },
+            ],
+        };
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-nested-stream-failed',
+                    controlRunId: 'run-nested-stream-failed',
+                    state: 'failed',
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 9_000,
+                    rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
+                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
+                    targetAgentIds: ['controller-02'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-nested-stream-failed',
+                    agents: [
+                        { agentId: 'controller-02', connected: true, reconnectCount: 0, receivedEventCount: 30 },
+                    ],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': JSON.stringify({
+                    agentId: 'controller-02',
+                    commandId: 'distributed-start-controller-02-rtc-realtime',
+                    action: 'recipe.run',
+                    status: 'FAILURE',
+                    ok: false,
+                    actual: {
+                        recipeId: 'rtc-realtime',
+                        results: [
+                            {
+                                commandId: 'rtc-realtime-position-stream',
+                                kind: 'rtc.stream',
+                                status: 'failed',
+                                ok: false,
+                                value: failedStreamValue,
+                                error: {
+                                    code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                                    message: 'RTC stream did not satisfy configured thresholds.',
+                                },
+                            },
+                        ],
+                    },
+                }),
+                'events.jsonl': '',
+            },
+        });
+
+        expect(analysis.failure).toMatchObject({
+            category: 'rtc-stream-performance',
+            minimalFixArea: 'RTC stream pacing/performance',
+            affectedAgents: ['controller-02'],
+            commandId: 'rtc-realtime-position-stream',
+            evidenceFile: 'results.jsonl',
+        });
+        expect(analysis.failure?.likelyCause).toContain('completed 90/100 frames');
+        expect(analysis.failure?.likelyCause).toContain('dropped 10');
+        expect(analysis.performance?.streamTiming).toMatchObject({
+            streamCount: 1,
+            plannedFrames: 100,
+            completedFrames: 90,
+            droppedFrames: 10,
+        });
     });
 
     it('classifies stream threshold failures as pacing performance and keeps sibling stream evidence', () => {
@@ -962,6 +1429,10 @@ describe('Hetzner distributed run artifact analysis', () => {
         ]);
         expect(analysis.performanceMarkdown).toContain('in-flight drops=3');
         expect(analysis.performanceMarkdown).toContain('max drift=7046ms');
+        expect(analysis.performanceMarkdown).toContain(
+            'Frame disposition: streams=2, planned=200, completed=163, failed=37, dropped=37, in-flight drops=3',
+        );
+        expect(analysis.performanceMarkdown).toContain('Slowest stream agents: controller-02');
     });
 
     it('uses the latest stream event when result JSONL is bounded', () => {

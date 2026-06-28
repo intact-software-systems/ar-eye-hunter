@@ -3,6 +3,7 @@ import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/type
 export {
     createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
+    createRallarBlackBoxRtcRealtimeStabilityRecipe,
     createRallarBlackBoxRtcSmokeRecipe,
     normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
@@ -12,6 +13,7 @@ export {
     RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
     recipeFixtureText,
 } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 export type {

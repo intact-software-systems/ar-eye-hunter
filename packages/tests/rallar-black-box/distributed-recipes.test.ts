@@ -19,8 +19,10 @@ import {
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+    RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
     createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
+    createRallarBlackBoxRtcRealtimeStabilityRecipe,
     createRallarBlackBoxRtcSmokeRecipe,
 } from '../../../apps/rallar-black-box/src/recipe-fixtures.ts';
 import type {
@@ -607,6 +609,50 @@ describe('distributed recipes helpers', () => {
                 maxDroppedFrames: 4,
             },
         });
+    });
+
+    it('exposes a lower-risk RTC realtime stability recipe with scan-friendly preflight details', () => {
+        const recipe = createRallarBlackBoxRtcRealtimeStabilityRecipe({
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'hetzner-headless-room',
+            },
+            readyPeerCount: 1,
+            readyTimeoutMs: 10_000,
+        });
+        const fixture = RALLAR_BLACK_BOX_RECIPE_FIXTURES.find(entry =>
+            entry.fixtureId === RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
+        );
+        const preflight = distributedRecipePreflight(recipe);
+        const streamRow = preflight.tree.find(row => row.kind === 'rtc.stream');
+        const connectRow = preflight.tree.find(row => row.kind === 'rtc.connect');
+
+        expect(fixture).toMatchObject({
+            fixtureId: RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
+            label: 'RTC Realtime Stability',
+        });
+        expect(recipe.metadata).toMatchObject({
+            profile: 'rtc-realtime-stability',
+            rateHz: 5,
+            frameCount: 25,
+            executionMode: 'stream',
+        });
+        expect(distributedRecipeCommandPreview(recipe)).toEqual({
+            manifestCommandCount: 5,
+            effectiveCommandCount: 5,
+            effectiveFrameCount: 25,
+            label: '5 manifest commands - 25 stream frames',
+        });
+        expect(preflight.warnings.join(' ')).not.toContain('readiness');
+        expect(connectRow?.details.join(' | ')).toContain('readiness: min 1 ready peer(s), timeout 10000 ms');
+        expect(streamRow?.details).toEqual(expect.arrayContaining([
+            '25 frames',
+            'interval 200 ms',
+            'max in-flight 8',
+            'min success ratio 0.95',
+            'max dropped frames 2',
+        ]));
     });
 
     it('builds the RTC smoke fixture with idempotent group and member setup before connect', () => {
@@ -1423,6 +1469,168 @@ describe('distributed recipes helpers', () => {
             'Linked evidence',
             '1 failure / 0 diagnostics / 1 event',
         ]);
+    });
+
+    it('adds stream-performance causal trail evidence for RTC stream threshold failures', () => {
+        const streamRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            manifest: {
+                ...distributedRun.manifest,
+                recipes: [{
+                    recipeId: 'rtc-realtime-stability',
+                    recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+                        readyPeerCount: 1,
+                    }),
+                    profile: 'rtc',
+                    required: true,
+                }],
+            },
+            commandLinks: [
+                {
+                    phase: 'start',
+                    agentId: 'agent-a',
+                    commandId: 'rtc-realtime-position-stream',
+                    recipeId: 'rtc-realtime-stability',
+                    queuedAtEpochMs: 1_510,
+                },
+            ],
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [{
+                    kind: 'recipe',
+                    key: 'rtc-realtime-stability',
+                    state: 'failed',
+                    required: true,
+                    error: {
+                        code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                        message: 'RTC stream did not satisfy configured thresholds.',
+                    },
+                }],
+            },
+        };
+        const streamControlRun: ControlRunSnapshot = {
+            ...distributedControlRun,
+            commands: [{
+                envelope: {
+                    kind: 'command',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-a',
+                    commandId: 'rtc-realtime-position-stream',
+                    command: {
+                        kind: 'rtc.stream',
+                        commandId: 'rtc-realtime-position-stream',
+                        connection: 'rtcRealtime',
+                        roomId: 'bb-group',
+                        count: 25,
+                        intervalMs: 200,
+                        send: { data: { topic: 'room.black-box.rtc-realtime.position' } },
+                    },
+                },
+                queuedAtEpochMs: 1_510,
+                dispatchedAtEpochMs: 1_530,
+                completedAtEpochMs: 3_000,
+                dispatchCount: 1,
+            }],
+            results: [{
+                kind: 'result',
+                protocolVersion: 1,
+                runId: 'run-1',
+                agentId: 'agent-a',
+                commandId: 'rtc-realtime-position-stream',
+                ok: false,
+                error: {
+                    code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                    message: 'RTC stream did not satisfy configured thresholds.',
+                },
+                result: {
+                    commandId: 'rtc-realtime-position-stream',
+                    kind: 'rtc.stream',
+                    status: 'failed',
+                    ok: false,
+                    startedAtEpochMs: 1_530,
+                    endedAtEpochMs: 3_000,
+                    durationMs: 1_470,
+                    value: {
+                        commandId: 'rtc-realtime-position-stream',
+                        plannedFrames: 25,
+                        scheduledFrames: 25,
+                        attemptedFrames: 23,
+                        completedFrames: 23,
+                        failedFrames: 2,
+                        droppedFrames: 2,
+                        inFlightLimitDropCount: 1,
+                        pacing: {
+                            maxStartDriftMs: 620,
+                            lateFrameCount: 3,
+                        },
+                        duration: {
+                            p50Ms: 35,
+                            p95Ms: 140,
+                            p99Ms: 180,
+                            maxMs: 180,
+                        },
+                        thresholdFailures: [{
+                            name: 'maxDroppedFrames',
+                            category: 'delivery',
+                            threshold: 1,
+                            actual: 2,
+                            message: 'Dropped frame count was 2, above the configured 1 maximum.',
+                        }],
+                    },
+                    error: {
+                        code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                        message: 'RTC stream did not satisfy configured thresholds.',
+                    },
+                },
+            }],
+            events: [{
+                kind: 'diagnostic',
+                protocolVersion: 1,
+                runId: 'run-1',
+                agentId: 'agent-a',
+                commandId: 'rtc-realtime-position-stream',
+                eventId: 'stream-failed',
+                atEpochMs: 3_000,
+                topic: 'rallar.bb.rtc.stream_failed',
+                severity: 'error',
+                payload: {
+                    commandId: 'rtc-realtime-position-stream',
+                    plannedFrames: 25,
+                    completedFrames: 23,
+                    droppedFrames: 2,
+                    inFlightLimitDropCount: 1,
+                    thresholdFailures: [{ name: 'maxDroppedFrames' }],
+                },
+            }],
+        };
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun: streamRun,
+            controlRun: streamControlRun,
+        });
+        const report = deriveDistributedRunAnalysisReport({
+            distributedRun: streamRun,
+            controlRun: streamControlRun,
+        });
+        const verdict = deriveRunVerdictView({
+            distributedRun: streamRun,
+            monitor,
+            report,
+        });
+
+        expect(report.nextActions[0]).toMatchObject({
+            category: 'rtc-stream-performance',
+            title: 'RTC stream pacing/backlog threshold failed',
+        });
+        expect(verdict.causalTrail.map(entry => entry.kind)).toContain('stream-performance');
+        expect(verdict.causalTrail.find(entry => entry.kind === 'stream-performance')).toMatchObject({
+            label: 'Stream pacing evidence',
+            commandId: 'rtc-realtime-position-stream',
+            agentId: 'agent-a',
+            targetKind: 'command',
+            actionLabel: 'Inspect stream pacing',
+        });
+        expect(verdict.summary).toContain('rtc-stream-performance');
     });
 
     it('calls out missing artifacts in the run verdict', () => {

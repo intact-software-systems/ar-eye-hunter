@@ -128,8 +128,10 @@ import {
     RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
     createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
+    createRallarBlackBoxRtcRealtimeStabilityRecipe,
     createRallarBlackBoxRtcSmokeRecipe,
     normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
     recipeFixtureText,
@@ -833,6 +835,9 @@ const APP_LOCAL_RECIPE_CATALOG: readonly AppLocalRecipeEntry[] = [
     },
 ];
 
+const RTC_REALTIME_STABILITY_CATALOG_TITLE = 'RTC Realtime Stability';
+const RTC_STREAM_PERFORMANCE_CATEGORY = 'rtc-stream-performance';
+
 const DISTRIBUTED_RECIPE_CATALOG: readonly DistributedRecipeCatalogItem[] =
     RALLAR_BLACK_BOX_RECIPE_FIXTURES.map((fixture) => {
         const commandKinds = distributedRecipeCommandKinds(fixture.recipe);
@@ -845,13 +850,18 @@ const DISTRIBUTED_RECIPE_CATALOG: readonly DistributedRecipeCatalogItem[] =
 
         return {
             itemId: fixture.fixtureId,
-            title: fixture.label,
+            title: fixture.fixtureId === RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
+                ? RTC_REALTIME_STABILITY_CATALOG_TITLE
+                : fixture.label,
             description: fixture.description,
             recipe: fixture.recipe,
             providerMode: usesNetwork ? 'browser-rallar' : 'simulated',
             profiles:
                 fixture.fixtureId ===
-                RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
+                RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
+                    ? ['rtc', 'realtime', 'stability', 'green', 'rtc-realtime-stability']
+                    : fixture.fixtureId ===
+                      RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
                     ? ['rtc', 'realtime', 'soak']
                     : [
                           fixture.fixtureId.includes('rtc') ||
@@ -907,6 +917,17 @@ function configuredDistributedRecipeCatalogItem(
             recipe: createRallarBlackBoxRtcRealtimeRecipe({
                 durationSeconds: input.rtcRealtimeDurationSeconds,
                 group: input.group,
+            }),
+        };
+    }
+
+    if (item.itemId === RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID) {
+        return {
+            ...item,
+            recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+                group: input.group,
+                readyPeerCount: 1,
+                readyTimeoutMs: 10_000,
             }),
         };
     }
@@ -10429,6 +10450,8 @@ function ImportedDistributedArtifactAnalysisPanel({
     const slowestAgent = performance?.slowestAgents[0];
     const streamTiming = performance?.streamTiming;
     const slowestStreamAgent = streamTiming?.slowestAgents[0];
+    const artifactVerdict = analysis.spa?.verdict;
+    const causalTrail = artifactVerdict?.causalTrail ?? [];
     const stateTone = analysis.ok
         ? 'good'
         : failure
@@ -10518,6 +10541,9 @@ function ImportedDistributedArtifactAnalysisPanel({
                     </div>
                 )}
             </div>
+            {causalTrail.length > 0 && (
+                <CausalTrailPanel items={causalTrail} />
+            )}
             <div className="imported-artifact-band">
                 <div className="section-heading compact">
                     <h4>Performance Health</h4>
@@ -10613,6 +10639,32 @@ function ImportedDistributedArtifactAnalysisPanel({
                         tone={streamTiming?.achievedCompletionHz !== undefined ? 'active' : 'muted'}
                     />
                 </div>
+                {streamTiming && (
+                    <div className="stream-frame-disposition" aria-label="Frame disposition">
+                        <div className="section-heading compact">
+                            <h4>Frame disposition</h4>
+                            <span>{streamTiming.streamCount} stream samples</span>
+                        </div>
+                        <div className="stream-frame-disposition-grid">
+                            <span className="good">
+                                <strong>Completed</strong>
+                                {streamTiming.completedFrames}
+                            </span>
+                            <span className={streamTiming.failedFrames > 0 ? 'bad' : 'good'}>
+                                <strong>Failed</strong>
+                                {streamTiming.failedFrames}
+                            </span>
+                            <span className={streamTiming.droppedFrames > 0 ? 'warn' : 'good'}>
+                                <strong>Dropped</strong>
+                                {streamTiming.droppedFrames}
+                            </span>
+                            <span className={streamTiming.inFlightLimitDropCount > 0 ? 'bad' : 'good'}>
+                                <strong>In-flight drops</strong>
+                                {streamTiming.inFlightLimitDropCount}
+                            </span>
+                        </div>
+                    </div>
+                )}
                 {streamTiming && (
                     <div className="imported-artifact-slowest">
                         <strong>Slowest stream agent</strong>
@@ -16786,7 +16838,11 @@ function distributedProgressTone(status: DistributedRunProgressStatus): string {
 function distributedFailureCategoryTone(
     category: DistributedRunAnalysisReport['nextActions'][number]['category'],
 ): string {
-    if (category === 'command' || category === 'diagnostic') {
+    if (
+        category === 'command' ||
+        category === 'diagnostic' ||
+        category === RTC_STREAM_PERFORMANCE_CATEGORY
+    ) {
         return 'bad';
     }
     if (

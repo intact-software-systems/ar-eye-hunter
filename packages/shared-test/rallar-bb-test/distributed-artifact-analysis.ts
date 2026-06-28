@@ -222,7 +222,7 @@ export function analyzeDistributedRunArtifactFiles(
     const ok = booleanValue(fleetReport.ok) ?? booleanValue(readPath(distributedRun, ['rollup', 'ok'])) ??
         status === 'passed';
     const group = groupFromArtifacts(distributedRun, fleetReport);
-    const performance = derivePerformance(distributedRun, controlRun, fleetReport, events);
+    const performance = derivePerformance(distributedRun, controlRun, fleetReport, results, events);
     const failure = ok
         ? undefined
         : deriveFailure({
@@ -565,13 +565,18 @@ function derivePerformance(
     distributedRun: ControlDistributedRunSnapshot,
     controlRun: ControlRunSnapshot,
     fleetReport: Record<string, unknown>,
+    results: readonly Record<string, unknown>[],
     events: readonly Record<string, unknown>[],
 ): DistributedRunPerformanceAnalysis {
     const agents = arrayRecords(controlRun.agents);
     const commandTimingSamples = timingSamplesFromControlRun(distributedRun, controlRun);
     const commandDurations = commandTimingSamples.map(sample => sample.durationMs);
     const commandTiming = timingFromFleetOrValues(readPath(fleetReport, ['timing', 'commands']), commandDurations);
-    const streamSamples = streamSamplesFromControlRunAndEvents(controlRun, events);
+    const streamSamples = streamSamplesFromResultsAndEvents(
+        arrayRecords(controlRun.results),
+        results,
+        events,
+    );
     const streamTiming = streamTimingFromSamples(streamSamples);
     const diagnosticCounts = diagnosticCountsFromEvents(events);
     const runDurationMs = durationFromFields(distributedRun, 'startedAtEpochMs', 'completedAtEpochMs') ??
@@ -675,6 +680,9 @@ function renderPerformanceMarkdown(
         performance.streamTiming
             ? `Stream timing: streams=${performance.streamTiming.streamCount}, frames=${performance.streamTiming.completedFrames}/${performance.streamTiming.plannedFrames}, attempted=${performance.streamTiming.attemptedFrames}, failed=${performance.streamTiming.failedFrames}, dropped=${performance.streamTiming.droppedFrames}, in-flight drops=${performance.streamTiming.inFlightLimitDropCount}, backpressure=${performance.streamTiming.backpressureCount}, max drift=${formatMs(performance.streamTiming.maxStartDriftMs)}, late frames=${performance.streamTiming.lateFrameCount}, p50=${formatMs(performance.streamTiming.duration.p50Ms)}, p95=${formatMs(performance.streamTiming.duration.p95Ms)}, p99=${formatMs(performance.streamTiming.duration.p99Ms)}, max=${formatMs(performance.streamTiming.duration.maxMs)}, achieved=${formatRate(performance.streamTiming.achievedCompletionHz)}`
             : undefined,
+        performance.streamTiming
+            ? `Frame disposition: streams=${performance.streamTiming.streamCount}, planned=${performance.streamTiming.plannedFrames}, completed=${performance.streamTiming.completedFrames}, failed=${performance.streamTiming.failedFrames}, dropped=${performance.streamTiming.droppedFrames}, in-flight drops=${performance.streamTiming.inFlightLimitDropCount}`
+            : undefined,
         performance.streamTiming && performance.streamTiming.slowestAgents.length > 0
             ? `Slowest stream agents: ${performance.streamTiming.slowestAgents.map((agent) => `${agent.agentId} max=${formatMs(agent.maxMs)} p99=${formatMs(agent.p99Ms)}`).join(', ')}`
             : undefined,
@@ -698,25 +706,14 @@ function streamPerformanceFailure(
     events: readonly Record<string, unknown>[],
 ): DistributedRunFailureAnalysis | undefined {
     const resultCandidates = results
-        .filter(result => {
-            const actual = asRecord(result.actual ?? result.error ?? result.result);
-            return isStreamFailureText([
-                firstString(result.action),
-                firstString(actual.code),
-                firstString(actual.message),
-                JSON.stringify(actual),
-            ].filter(Boolean).join(' '));
-        })
-        .map(result => ({
-            sample: streamSampleFromResult(result),
-            agentId: firstString(result.agentId),
-            evidenceFile: 'results.jsonl',
-        }))
-        .filter((candidate): candidate is Readonly<{
-            sample: StreamTimingSample;
-            agentId: string | undefined;
-            evidenceFile: string;
-        }> => candidate.sample !== undefined);
+        .flatMap(result => streamSamplesFromResult(result)
+            .filter(streamSampleHasFailureEvidence)
+            .map(sample => ({
+                sample,
+                agentId: firstString(result.agentId, sample.agentId),
+                evidenceFile: 'results.jsonl',
+            })))
+        .filter(candidate => streamSampleHasFailureEvidence(candidate.sample));
     const eventCandidates = events
         .filter(event => {
             const topic = eventTopic(event);
@@ -790,12 +787,8 @@ function isStreamFailureText(text: string): boolean {
 }
 
 function streamSampleHasFailureEvidence(sample: StreamTimingSample): boolean {
-    return arrayRecords(sample.summary.thresholdFailures).length > 0 ||
-        streamSampleInFlightLimitDropCount(sample) > 0 ||
-        (
-            numberValue(sample.summary.droppedFrames) !== undefined &&
-            (numberValue(sample.summary.droppedFrames) ?? 0) > 0
-        );
+    return sample.failed === true ||
+        arrayRecords(sample.summary.thresholdFailures).length > 0;
 }
 
 function verificationCommand(minimalFixArea: string): string {
@@ -820,6 +813,9 @@ function minimalFixArea(input: Readonly<{
     text?: string;
 }>): string {
     const text = `${input.category ?? ''} ${input.transport ?? ''} ${input.text ?? ''}`.toLowerCase();
+    if (text.includes('rtc-stream-performance') || isStreamFailureText(text)) {
+        return 'RTC stream pacing/performance';
+    }
     if (text.includes('target')) return 'distributed targeting';
     if (text.includes('ack') || text.includes('readiness')) return 'headless agent readiness';
     if (text.includes('barrier')) return 'distributed barrier';
@@ -835,6 +831,7 @@ function minimalFixArea(input: Readonly<{
 
 function failureCategory(code: string | undefined, message: string): string {
     const text = `${code ?? ''} ${message}`.toLowerCase();
+    if (isStreamFailureText(text)) return 'rtc-stream-performance';
     if (text.includes('target')) return 'targeting';
     if (text.includes('ack')) return 'readiness';
     if (text.includes('barrier')) return 'barrier';
@@ -979,67 +976,161 @@ function eventMessage(event: Record<string, unknown>): string | undefined {
 type StreamTimingSample = Readonly<{
     agentId?: string;
     commandId?: string;
+    identityKey?: string;
+    failed?: boolean;
+    nested?: boolean;
     summary: Record<string, unknown>;
     observations: readonly Record<string, unknown>[];
 }>;
 
-function streamSamplesFromControlRunAndEvents(
-    controlRun: ControlRunSnapshot,
+type StreamTimingSampleCandidate = Readonly<{
+    sample: StreamTimingSample;
+    sourcePriority: number;
+    index: number;
+}>;
+
+function streamSamplesFromResultsAndEvents(
+    controlResults: readonly Record<string, unknown>[],
+    jsonlResults: readonly Record<string, unknown>[],
     events: readonly Record<string, unknown>[],
 ): readonly StreamTimingSample[] {
-    const samples: StreamTimingSample[] = [];
-    const sampledKeys = new Set<string>();
-    for (const result of arrayRecords(controlRun.results)) {
-        const sample = streamSampleFromResult(result);
-        if (!sample) {
-            continue;
+    const samples = new Map<string, StreamTimingSampleCandidate>();
+    let index = 0;
+    for (const result of controlResults) {
+        for (const sample of streamSamplesFromResult(result)) {
+            upsertBestStreamSample(samples, { sample, sourcePriority: 40, index: index++ });
         }
-        const key = streamSampleKey(sample);
-        sampledKeys.add(key);
-        samples.push(sample);
     }
-
-    const eventSamples = new Map<string, Readonly<{
-        sample: StreamTimingSample;
-        priority: number;
-        index: number;
-    }>>();
-    events.forEach((event, index) => {
+    for (const result of jsonlResults) {
+        for (const sample of streamSamplesFromResult(result)) {
+            upsertBestStreamSample(samples, { sample, sourcePriority: 50, index: index++ });
+        }
+    }
+    events.forEach((event) => {
         const sample = streamSampleFromEvent(event);
         if (!sample) {
             return;
         }
-        const key = streamSampleKey(sample);
-        if (sampledKeys.has(key)) {
-            return;
-        }
-        const priority = streamEventPriority(event);
-        const current = eventSamples.get(key);
-        if (!current || priority > current.priority || (priority === current.priority && index > current.index)) {
-            eventSamples.set(key, { sample, priority, index });
-        }
+        upsertBestStreamSample(samples, {
+            sample,
+            sourcePriority: streamEventPriority(event) * 10,
+            index: index++,
+        });
     });
-    return [
-        ...samples,
-        ...[...eventSamples.values()].map(entry => entry.sample),
-    ];
+    return [...samples.values()]
+        .sort((left, right) => left.index - right.index)
+        .map(candidate => candidate.sample);
 }
 
-function streamSampleFromResult(result: Record<string, unknown>): StreamTimingSample | undefined {
+function streamSamplesFromResult(
+    result: Record<string, unknown>,
+    inheritedAgentId?: string,
+    inheritedIdentityKey?: string,
+): readonly StreamTimingSample[] {
     const action = firstString(result.action, result.kind, readPath(result, ['result', 'kind']));
     const summary = streamSummaryRecord(result.result) ??
         streamSummaryRecord(result.value) ??
         streamSummaryRecord(result.actual) ??
         streamSummaryRecord(result.error);
-    if (!summary && action !== 'rtc.stream') {
-        return undefined;
+    const agentId = firstString(result.agentId, inheritedAgentId);
+    const resultIdentity = streamResultIdentity(result);
+    const identityKey = firstString(inheritedIdentityKey, resultIdentity);
+    const samples: StreamTimingSample[] = [];
+    if (summary || action === 'rtc.stream') {
+        samples.push({
+            agentId,
+            commandId: firstString(summary?.commandId, commandIdFromResult(result)),
+            identityKey,
+            failed: streamResultHasFailureSignal(result),
+            nested: inheritedIdentityKey !== undefined,
+            summary: summary ?? {},
+            observations: arrayRecords(summary?.observations),
+        });
     }
-    return {
-        agentId: firstString(result.agentId),
-        commandId: firstString(summary?.commandId, commandIdFromResult(result)),
-        summary: summary ?? {},
-        observations: arrayRecords(summary?.observations),
-    };
+    nestedRecipeResultRecords(result).forEach((nestedResult, nestedIndex) => {
+        const nestedIdentity = [
+            firstString(resultIdentity, inheritedIdentityKey, commandIdFromResult(result)),
+            `nested-${nestedIndex}`,
+            streamResultIdentity(nestedResult),
+        ].filter((value): value is string => value !== undefined).join('/');
+        samples.push(...streamSamplesFromResult(
+            nestedResult,
+            agentId,
+            nestedIdentity || inheritedIdentityKey,
+        ));
+    });
+    return samples;
+}
+
+function streamResultIdentity(result: Record<string, unknown>): string | undefined {
+    return firstString(
+        result.resultKey,
+        result.id,
+        result.commandId,
+        readPath(result, ['envelope', 'commandId']),
+        commandIdFromResult(result),
+    );
+}
+
+function streamResultHasFailureSignal(result: Record<string, unknown>): boolean {
+    const status = firstString(result.status)?.toLowerCase();
+    if (status === 'failure' || status === 'failed' || status === 'error') {
+        return true;
+    }
+    if (booleanValue(result.ok) === false) {
+        return true;
+    }
+    const actual = asRecord(result.actual);
+    const error = asRecord(result.error);
+    const value = asRecord(result.value);
+    return isStreamFailureText([
+        firstString(actual.code),
+        firstString(actual.message),
+        firstString(readPath(actual, ['details', 'code'])),
+        firstString(readPath(actual, ['details', 'message'])),
+        firstString(error.code),
+        firstString(error.message),
+        firstString(value.code),
+        firstString(value.message),
+    ].filter(Boolean).join(' '));
+}
+
+function nestedRecipeResultRecords(result: Record<string, unknown>): readonly Record<string, unknown>[] {
+    return [
+        ...arrayRecords(readPath(result, ['actual', 'results'])),
+        ...arrayRecords(readPath(result, ['result', 'results'])),
+        ...arrayRecords(readPath(result, ['result', 'value', 'results'])),
+        ...arrayRecords(readPath(result, ['value', 'results'])),
+    ];
+}
+
+function upsertBestStreamSample(
+    samples: Map<string, StreamTimingSampleCandidate>,
+    candidate: StreamTimingSampleCandidate,
+): void {
+    const key = equivalentStreamSampleKey(samples, candidate.sample) ?? streamSampleKey(candidate.sample);
+    const current = samples.get(key);
+    if (!current || compareStreamSampleCandidates(candidate, current) > 0) {
+        samples.set(key, candidate);
+    }
+}
+
+function compareStreamSampleCandidates(
+    left: StreamTimingSampleCandidate,
+    right: StreamTimingSampleCandidate,
+): number {
+    return streamSampleEvidenceScore(left.sample) - streamSampleEvidenceScore(right.sample) ||
+        left.sourcePriority - right.sourcePriority ||
+        left.index - right.index;
+}
+
+function streamSampleEvidenceScore(sample: StreamTimingSample): number {
+    return (arrayRecords(sample.summary.thresholdFailures).length > 0 ? 1_000_000 : 0) +
+        (sample.failed === true ? 500_000 : 0) +
+        (numberValue(sample.summary.completedFrames) ?? 0) * 10_000 +
+        (numberValue(sample.summary.scheduledFrames) ?? 0) * 1_000 +
+        (numberValue(sample.summary.plannedFrames) ?? 0) * 100 +
+        sample.observations.length;
 }
 
 function streamSampleFromEvent(event: Record<string, unknown>): StreamTimingSample | undefined {
@@ -1054,13 +1145,77 @@ function streamSampleFromEvent(event: Record<string, unknown>): StreamTimingSamp
     return {
         agentId: firstString(event.agentId),
         commandId: firstString(summary.commandId, event.commandId),
+        failed: topic === 'rallar.bb.rtc.stream_failed' || eventSeverity(event) === 'error',
         summary,
         observations: arrayRecords(summary.observations),
     };
 }
 
 function streamSampleKey(sample: StreamTimingSample): string {
+    const baseKey = streamSampleBaseKey(sample);
+    return sample.identityKey ? `${baseKey}:${sample.identityKey}` : baseKey;
+}
+
+function equivalentStreamSampleKey(
+    samples: Map<string, StreamTimingSampleCandidate>,
+    sample: StreamTimingSample,
+): string | undefined {
+    for (const [key, candidate] of samples) {
+        if (streamSamplesRepresentSameExecution(candidate.sample, sample)) {
+            return key;
+        }
+    }
+    return undefined;
+}
+
+function streamSamplesRepresentSameExecution(left: StreamTimingSample, right: StreamTimingSample): boolean {
+    if (streamSampleBaseKey(left) !== streamSampleBaseKey(right)) {
+        return false;
+    }
+    if (left.identityKey && right.identityKey) {
+        if (left.identityKey === right.identityKey) {
+            return true;
+        }
+        if (left.nested === true && right.nested === true) {
+            return false;
+        }
+        if (left.nested !== true && right.nested !== true) {
+            return false;
+        }
+        return streamSampleFingerprint(left) === streamSampleFingerprint(right);
+    }
+    if (!left.identityKey && !right.identityKey) {
+        return true;
+    }
+    return streamSampleFingerprint(left) === streamSampleFingerprint(right);
+}
+
+function streamSampleBaseKey(sample: StreamTimingSample): string {
     return `${sample.agentId ?? 'unknown-agent'}:${sample.commandId ?? firstString(sample.summary.commandId, 'unknown-stream') ?? 'unknown-stream'}`;
+}
+
+function streamSampleFingerprint(sample: StreamTimingSample): string {
+    const summary = sample.summary;
+    return JSON.stringify({
+        plannedFrames: numberValue(summary.plannedFrames),
+        scheduledFrames: numberValue(summary.scheduledFrames),
+        attemptedFrames: numberValue(summary.attemptedFrames),
+        completedFrames: numberValue(summary.completedFrames),
+        failedFrames: numberValue(summary.failedFrames),
+        droppedFrames: numberValue(summary.droppedFrames),
+        inFlightLimitDropCount: streamSampleInFlightLimitDropCount(sample),
+        backpressureCount: numberValue(summary.backpressureCount),
+        requestedRateHz: numberValue(summary.requestedRateHz),
+        achievedScheduleHz: numberValue(summary.achievedScheduleHz),
+        achievedCompletionHz: numberValue(summary.achievedCompletionHz),
+        pacing: {
+            maxStartDriftMs: numberValue(readPath(summary, ['pacing', 'maxStartDriftMs'])),
+            lateFrameCount: numberValue(readPath(summary, ['pacing', 'lateFrameCount'])),
+        },
+        duration: asRecord(summary.duration),
+        thresholdFailures: arrayRecords(summary.thresholdFailures),
+        observations: sample.observations,
+    });
 }
 
 function streamEventPriority(event: Record<string, unknown>): number {

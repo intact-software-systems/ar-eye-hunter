@@ -10,6 +10,7 @@ import {
 import {
     createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
+    createRallarBlackBoxRtcRealtimeStabilityRecipe,
     createRallarBlackBoxRtcSmokeRecipe,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
 } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
@@ -25,6 +26,7 @@ export const HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
+    'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
     'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
     'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
 ] as const;
@@ -108,6 +110,20 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
         }),
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[4],
+            title: 'RTC realtime stability 2-agent 5s',
+            description: 'Lower-risk 5 Hz RTC realtime stream for green stability and first-pass pacing evidence.',
+            distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-5s',
+            recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyPeerCount: 1,
+                readyTimeoutMs: 10_000,
+            }),
+            agentCount: 2,
+            profiles: ['rtc', 'realtime', 'stability', 'green'],
+            live: true,
+        }),
+        buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[5],
             title: 'RTC realtime 2-agent 5s',
             description: 'Short 10 Hz RTC realtime run for first-pass RTT and event-rate performance baseline.',
             distributedRunId: 'hetzner-rtc-realtime-2-agent-5s',
@@ -127,7 +143,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             live: true,
         }),
         buildManifestEntry({
-            filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[5],
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[6],
             title: 'RTC realtime 3-agent 15s',
             description: 'Heavier 10 Hz RTC realtime run for three-agent load and percentile baselines.',
             distributedRunId: 'hetzner-rtc-realtime-3-agent-15s',

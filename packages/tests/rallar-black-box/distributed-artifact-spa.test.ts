@@ -15,6 +15,8 @@ describe('distributed artifact SPA reuse', () => {
         expect(source).toContain('distributedArtifactBundleFromFiles');
         expect(source).toContain('Imported CI artifact analysis');
         expect(source).toContain('handleDistributedArtifactFiles');
+        expect(source).toContain('RTC Realtime Stability');
+        expect(source).toContain('rtc-realtime-stability');
         expect(source).toContain('type="file"');
         expect(source).toContain('accept=".json,.jsonl,application/json"');
         expect(source).toContain('webkitdirectory');
@@ -22,6 +24,9 @@ describe('distributed artifact SPA reuse', () => {
         expect(source).toContain('Selected files');
         expect(source).toContain('Evidence Quality');
         expect(source).toContain('Performance Health');
+        expect(source).toContain('Causal Trail');
+        expect(source).toContain('rtc-stream-performance');
+        expect(source).toContain('Frame disposition');
         expect(source).toContain('P50 command');
         expect(source).toContain('P95 command');
         expect(source).toContain('P99 command');

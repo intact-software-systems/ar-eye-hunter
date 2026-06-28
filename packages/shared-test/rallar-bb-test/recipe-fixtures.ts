@@ -10,6 +10,7 @@ export type RallarBlackBoxRecipeFixture = Readonly<{
 }>;
 
 export const RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID = 'rtc-realtime';
+export const RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID = 'rtc-realtime-stability';
 export const RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ = 20;
 export const RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS =
     Math.round(1_000 / RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ);
@@ -32,6 +33,7 @@ export type RallarBlackBoxRtcRealtimeRecipeOptions = Readonly<{
         progressEveryMs?: number;
         sampleEvery?: number;
         maxDroppedFrames?: number;
+        minSendSuccessRatio?: number;
         continueOnSendFailure?: boolean;
     }>;
 }>;
@@ -432,7 +434,7 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
             ? {}
             : { continueOnSendFailure: continueOnStreamSendFailure }),
         thresholds: {
-            minSendSuccessRatio: 0.99,
+            minSendSuccessRatio: options.stream?.minSendSuccessRatio ?? 0.99,
             maxDroppedFrames: options.stream?.maxDroppedFrames ?? 0,
         },
         metadata: {
@@ -544,6 +546,36 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
     };
 }
 
+export function createRallarBlackBoxRtcRealtimeStabilityRecipe(
+    options: RallarBlackBoxRtcRealtimeRecipeOptions = {},
+): RallarBlackBoxTestRecipe {
+    const recipe = createRallarBlackBoxRtcRealtimeRecipe({
+        ...options,
+        durationSeconds: options.durationSeconds ?? 5,
+        rateHz: options.rateHz ?? 5,
+        executionMode: options.executionMode ?? 'stream',
+        stream: {
+            maxInFlight: 8,
+            maxDroppedFrames: 2,
+            minSendSuccessRatio: 0.95,
+            continueOnSendFailure: true,
+            ...options.stream,
+        },
+    });
+
+    return {
+        ...recipe,
+        recipeId: RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
+        name: 'RTC realtime stability stream',
+        description:
+            'Connect RTC and send a lower-rate stream intended as a green realtime stability baseline.',
+        metadata: {
+            ...recipe.metadata,
+            profile: RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
+        },
+    };
+}
+
 export const RALLAR_BLACK_BOX_RECIPE_FIXTURES: readonly RallarBlackBoxRecipeFixture[] = [
     {
         fixtureId: 'rtc-smoke',
@@ -614,6 +646,12 @@ export const RALLAR_BLACK_BOX_RECIPE_FIXTURES: readonly RallarBlackBoxRecipeFixt
         label: 'RTC Realtime',
         description: 'Sends game-style position updates over RTC at 20 Hz for a configurable duration.',
         recipe: createRallarBlackBoxRtcRealtimeRecipe(),
+    },
+    {
+        fixtureId: RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
+        label: 'RTC Realtime Stability',
+        description: 'Lower-risk 5 Hz RTC realtime stream for green stability checks.',
+        recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe(),
     },
     {
         fixtureId: 'composite-evidence',

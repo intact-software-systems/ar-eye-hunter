@@ -50,6 +50,8 @@ type ManifestCommand = Readonly<{
     }>;
     count?: number;
     intervalMs?: number;
+    maxInFlight?: number;
+    continueOnSendFailure?: boolean;
     metadata?: Record<string, unknown>;
     thresholds?: Record<string, unknown>;
 }>;
@@ -77,6 +79,7 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
+            'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
             'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
             'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
         ]);
@@ -155,6 +158,7 @@ describe('Hetzner distributed manifest catalog', () => {
         const expectedReadyPeers = new Map([
             ['apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json', 1],
+            ['apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', 2],
         ]);
@@ -178,17 +182,29 @@ describe('Hetzner distributed manifest catalog', () => {
 
     it('uses lower-rate rtc.stream baselines for green realtime Hetzner manifests', () => {
         const expectedStreams = new Map([
+            ['apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json', {
+                rateHz: 5,
+                intervalMs: 200,
+                frameCount: 25,
+                maxDroppedFrames: 2,
+                minSendSuccessRatio: 0.95,
+                maxInFlight: 8,
+            }],
             ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', {
                 rateHz: 10,
                 intervalMs: 100,
                 frameCount: 50,
                 maxDroppedFrames: 5,
+                minSendSuccessRatio: 0.99,
+                maxInFlight: 64,
             }],
             ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', {
                 rateHz: 10,
                 intervalMs: 100,
                 frameCount: 150,
                 maxDroppedFrames: 15,
+                minSendSuccessRatio: 0.99,
+                maxInFlight: 64,
             }],
         ]);
 
@@ -215,8 +231,9 @@ describe('Hetzner distributed manifest catalog', () => {
                 continueOnSendFailure: true,
                 count: expectedStreams.get(entry.filePath)?.frameCount,
                 intervalMs: expectedStreams.get(entry.filePath)?.intervalMs,
+                maxInFlight: expectedStreams.get(entry.filePath)?.maxInFlight,
                 thresholds: {
-                    minSendSuccessRatio: 0.99,
+                    minSendSuccessRatio: expectedStreams.get(entry.filePath)?.minSendSuccessRatio,
                     maxDroppedFrames: expectedStreams.get(entry.filePath)?.maxDroppedFrames,
                 },
                 metadata: {
@@ -258,6 +275,34 @@ describe('Hetzner distributed manifest catalog', () => {
                     frameCount: 100,
                 },
             },
+        });
+    });
+
+    it('adds a lower-risk realtime stability manifest before heavier green baselines', () => {
+        const catalog = buildHetznerDistributedManifestCatalog();
+        const stability = catalog.find(entry =>
+            entry.filePath === 'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json'
+        );
+        const stabilityIndex = HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER.indexOf(
+            'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
+        );
+        const baselineIndex = HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER.indexOf(
+            'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
+        );
+
+        expect(stability).toBeDefined();
+        expect(stability?.diagnostic).toBe(false);
+        expect(stability?.agentCount).toBe(2);
+        expect(stabilityIndex).toBeGreaterThan(-1);
+        expect(stabilityIndex).toBeLessThan(baselineIndex);
+        expect(stability?.manifest.metadata).toMatchObject({
+            manifestSuite: 'hetzner-distributed',
+            diagnostic: false,
+            expectedFailure: false,
+        });
+        expect(stability?.manifest.recipes[0]).toMatchObject({
+            recipeId: 'rtc-realtime-stability',
+            profile: 'rtc',
         });
     });
 
