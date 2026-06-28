@@ -81,8 +81,8 @@ describe('rallar-bb browser adapter auth', () => {
             },
         });
 
-        const headers = new Headers(fetchCalls[0].init?.headers);
         expect(result.ok).toBe(true);
+        const headers = new Headers(fetchCalls[0].init?.headers);
         expect(fetchCalls[0].input).toBe('https://api.example.test/api/state/apps/app/workspaces/ws/groups');
         expect(headers.get('authorization')).toBe('Bearer token-1');
         expect(headers.get('x-client-id')).toBe('client-1');
@@ -147,6 +147,101 @@ describe('rallar-bb browser adapter auth', () => {
             nested: {
                 sessionId: 'session-1',
             },
+        });
+    });
+
+    it('connects the configured browser Rallar runtime before resolving HTTP auth placeholders', async () => {
+        const fetchCalls: Array<{
+            input: RequestInfo | URL;
+            init?: RequestInit;
+        }> = [];
+        const connectConfigs: unknown[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async (input, init) => {
+                fetchCalls.push({ input, init });
+                return new Response(JSON.stringify({ ok: true }), {
+                    status: 200,
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                });
+            }) as typeof fetch,
+            rallarRuntime: {
+                connect: async (config) => {
+                    connectConfigs.push(config);
+                    storage.setItem('auth.session', JSON.stringify({
+                        clientId: 'controller-01',
+                        accessToken: 'token-1',
+                        username: 'rallar',
+                        sessionId: 'controller-01',
+                        expiresAtEpochMs: Date.now() + 60_000,
+                    }));
+                    return { connected: true };
+                },
+                send: async () => ({ sent: true }),
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-api-auth-placeholders-with-runtime-login',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'controller-01',
+                sessionId: 'controller-01',
+                roomId: 'hetzner-headless-room',
+                transport: 'realtime',
+                rallar: {
+                    apiBaseUrl: 'https://api.example.test',
+                    username: 'rallar',
+                    password: 'secret',
+                    register: 'if-needed',
+                    transport: 'realtime',
+                },
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'http.request',
+            commandId: 'http-api-auth-placeholders-with-runtime-login',
+            request: {
+                path: '/api/state/apps/app/workspaces/ws/groups/bb-group/members/{auth.clientId}',
+                method: 'PUT',
+                body: {
+                    requestId: 'ensure-member:{auth.clientId}',
+                    status: 'active',
+                },
+            },
+            response: {
+                body: 'json',
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        const headers = new Headers(fetchCalls[0].init?.headers);
+        expect(connectConfigs).toEqual([
+            expect.objectContaining({
+                connection: 'controller-01',
+                actor: 'controller-01',
+                rallar: expect.objectContaining({
+                    apiBaseUrl: 'https://api.example.test',
+                    username: 'rallar',
+                    password: 'secret',
+                    register: 'if-needed',
+                    transport: 'realtime',
+                    expectedSessionId: 'controller-01',
+                }),
+            }),
+        ]);
+        expect(connectConfigs[0]).not.toHaveProperty('roomId');
+        expect(fetchCalls[0].input).toBe(
+            'https://api.example.test/api/state/apps/app/workspaces/ws/groups/bb-group/members/controller-01',
+        );
+        expect(headers.get('authorization')).toBe('Bearer token-1');
+        expect(JSON.parse(String(fetchCalls[0].init?.body))).toEqual({
+            requestId: 'ensure-member:controller-01',
+            status: 'active',
         });
     });
 
