@@ -27469,6 +27469,8 @@ export default function App() {
 
             writeSession(session);
             scrubAgentSessionTicketFromUrl();
+            setAuthSession(session);
+            setAuthBusy(false);
             rallarBlackBoxRuntimeStore.updateBootstrapConfig(
                 {
                     ...bootstrapPatchFromAuthSession(
@@ -27478,7 +27480,6 @@ export default function App() {
                     rallarAgentSessionTicket: undefined,
                 },
             );
-            setAuthSession(session);
         })()
             .catch((error) => {
                 if (!cancelled) {
