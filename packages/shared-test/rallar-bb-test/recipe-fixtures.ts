@@ -279,6 +279,8 @@ export function createRallarBlackBoxProviderParityLiveRecipe(
         actor,
         roomId: group.groupId,
         connection,
+        directPeerIds: ['{rtc.readyPeerIds[0]}'],
+        multicastPeerIds: ['{rtc.readyPeerIds}'],
         rallar: {
             apiBaseUrl,
             applicationId: group.applicationId,

@@ -812,6 +812,7 @@ describe('distributed recipes helpers', () => {
             workspaceId: 'live',
             send: {
                 roomId: 'arena-1',
+                peerIds: ['{rtc.readyPeerIds[0]}'],
                 roomRef: {
                     applicationId: 'game-app',
                     workspaceId: 'live',
@@ -819,6 +820,8 @@ describe('distributed recipes helpers', () => {
                 },
             },
         });
+        expect(JSON.stringify(recipe)).not.toContain('bob-session');
+        expect(JSON.stringify(recipe)).not.toContain('charlie-session');
     });
 
     it('derives nested composite command kinds and preview counts for app-local fixtures', () => {

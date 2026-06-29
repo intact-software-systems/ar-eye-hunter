@@ -211,7 +211,7 @@
               },
               "roomId": "hetzner-headless-room",
               "peerIds": [
-                "bob-session"
+                "{rtc.readyPeerIds[0]}"
               ],
               "roomRef": {
                 "applicationId": "rallar-server",
@@ -227,7 +227,7 @@
                   "aliceRtc"
                 ],
                 "targetPeerIds": [
-                  "bob-session"
+                  "{rtc.readyPeerIds[0]}"
                 ],
                 "runnerAction": "send",
                 "providerSpecificFields": [
@@ -269,8 +269,7 @@
               },
               "roomId": "hetzner-headless-room",
               "peerIds": [
-                "bob-session",
-                "charlie-session"
+                "{rtc.readyPeerIds}"
               ],
               "roomRef": {
                 "applicationId": "rallar-server",
@@ -284,8 +283,7 @@
                 "deliveryMode": "multicast",
                 "expectedConnections": [],
                 "targetPeerIds": [
-                  "bob-session",
-                  "charlie-session"
+                  "{rtc.readyPeerIds}"
                 ],
                 "runnerAction": "send",
                 "providerSpecificFields": [

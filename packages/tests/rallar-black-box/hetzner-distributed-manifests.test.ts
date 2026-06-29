@@ -326,6 +326,10 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(rallar).not.toMatchObject({ password: expect.any(String) });
         expect(rallar).not.toMatchObject({ token: expect.any(String) });
         expect(rallar).not.toMatchObject({ restoreSession: true });
+        expect(JSON.stringify(parity?.manifest)).toContain('{rtc.readyPeerIds[0]}');
+        expect(JSON.stringify(parity?.manifest)).toContain('{rtc.readyPeerIds}');
+        expect(JSON.stringify(parity?.manifest)).not.toContain('bob-session');
+        expect(JSON.stringify(parity?.manifest)).not.toContain('charlie-session');
     });
 
     it('feeds Hetzner CI artifacts into SPA monitor and RTC performance views', () => {

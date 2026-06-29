@@ -510,6 +510,51 @@ describe('rallar-bb browser adapter auth', () => {
         });
     });
 
+    it('resolves rtc.send ready peer placeholders from runtime health', async () => {
+        const sentPayloads: unknown[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: async () => ({ connected: true }),
+                send: async (input) => {
+                    sentPayloads.push(input);
+                    return {
+                        status: 'sent',
+                        peerIds: ['peer-ready-1'],
+                        results: [{ peerId: 'peer-ready-1', result: { status: 'sent' } }],
+                        health: [],
+                    };
+                },
+                close: async () => ({ closed: true }),
+                health: async () => ({
+                    rtcStatus: {
+                        readyPeerIds: ['peer-ready-1', 'peer-ready-2'],
+                    },
+                }),
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'send-ready-peer',
+            connection: 'aliceRtc',
+            transport: 'realtime',
+            send: {
+                roomId: 'room-1',
+                data: { topic: 'rallar.test' },
+                peerIds: ['{rtc.readyPeerIds[0]}'],
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(sentPayloads).toEqual([
+            {
+                roomId: 'room-1',
+                data: { topic: 'rallar.test' },
+                peerIds: ['peer-ready-1'],
+            },
+        ]);
+    });
+
     it('resolves logged-in auth placeholders and fetches a websocket ticket for ws.open', async () => {
         storage.setItem('auth.session', JSON.stringify({
             clientId: 'alice',
