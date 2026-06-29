@@ -308,6 +308,26 @@ describe('Hetzner distributed manifest catalog', () => {
         });
     });
 
+    it('keeps provider parity manifests from replacing headless auth with restore-only demo auth', () => {
+        const catalog = buildHetznerDistributedManifestCatalog();
+        const parity = catalog.find(entry =>
+            entry.filePath === 'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json'
+        );
+        const configure = parity?.manifest.recipes[0]?.recipe.commands[0];
+
+        expect(parity).toBeDefined();
+        expect(configure).toMatchObject({ kind: 'configure' });
+        if (!configure || configure.kind !== 'configure') {
+            throw new Error('Expected provider parity manifest to start with configure.');
+        }
+
+        const rallar = configure.config.rallar;
+        expect(rallar).not.toMatchObject({ username: expect.any(String) });
+        expect(rallar).not.toMatchObject({ password: expect.any(String) });
+        expect(rallar).not.toMatchObject({ token: expect.any(String) });
+        expect(rallar).not.toMatchObject({ restoreSession: true });
+    });
+
     it('feeds Hetzner CI artifacts into SPA monitor and RTC performance views', () => {
         const entry = buildHetznerDistributedManifestCatalog()
             .find(candidate => candidate.filePath.endsWith('/05-rtc-realtime-2-agent-5s.json'));

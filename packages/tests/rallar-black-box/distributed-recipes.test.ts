@@ -767,6 +767,21 @@ describe('distributed recipes helpers', () => {
                 },
             },
         });
+        if (configureCommand.kind !== 'configure') {
+            throw new Error('Expected provider parity live recipe to start with configure.');
+        }
+        expect(configureCommand.config.rallar).not.toMatchObject({
+            username: expect.any(String),
+        });
+        expect(configureCommand.config.rallar).not.toMatchObject({
+            password: expect.any(String),
+        });
+        expect(configureCommand.config.rallar).not.toMatchObject({
+            token: expect.any(String),
+        });
+        expect(configureCommand.config.rallar).not.toMatchObject({
+            restoreSession: true,
+        });
         expect(recipe.commands[1]).toMatchObject({
             kind: 'http.request',
             commandId: 'parity-ensure-group',

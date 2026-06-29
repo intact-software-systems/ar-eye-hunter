@@ -46,7 +46,6 @@
               "roomId": "hetzner-headless-room",
               "transport": "realtime",
               "rallar": {
-                "username": "alice",
                 "apiBaseUrl": "https://api.rallar.intactss.com",
                 "applicationId": "rallar-server",
                 "workspaceId": "default",
@@ -58,8 +57,7 @@
                   "applicationId": "rallar-server",
                   "workspaceId": "default",
                   "groupId": "hetzner-headless-room"
-                },
-                "restoreSession": true
+                }
               },
               "control": {
                 "providerMode": "browser-rallar",
@@ -160,8 +158,7 @@
                 "applicationId": "rallar-server",
                 "workspaceId": "default",
                 "groupId": "hetzner-headless-room"
-              },
-              "restoreSession": true
+              }
             },
             "metadata": {
               "parity": {

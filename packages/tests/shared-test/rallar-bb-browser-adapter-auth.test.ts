@@ -164,6 +164,106 @@ describe('rallar-bb browser adapter auth', () => {
         expect(headers.get('x-client-id')).toBe('controller-01');
     });
 
+    it('preserves bootstrap Rallar credentials when recipe configure narrows live scope', async () => {
+        const connectConfigs: unknown[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async () =>
+                new Response(JSON.stringify({ ok: true }), {
+                    status: 201,
+                    headers: {
+                        'content-type': 'application/json',
+                    },
+                })) as typeof fetch,
+            rallarRuntime: {
+                connect: async (config) => {
+                    connectConfigs.push(config);
+                    const rallar = (config as { rallar?: { username?: string; password?: string } }).rallar;
+                    if (!rallar?.username || !rallar.password) {
+                        throw new Error('missing Rallar credentials');
+                    }
+                    storage.setItem('auth.session', JSON.stringify({
+                        clientId: 'controller-01',
+                        accessToken: 'token-1',
+                        username: rallar.username,
+                        sessionId: 'controller-01',
+                        expiresAtEpochMs: Date.now() + 60_000,
+                    }));
+                    return { connected: true };
+                },
+                send: async () => ({ sent: true }),
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'bootstrap-configure',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'controller-01',
+                sessionId: 'controller-01',
+                roomId: 'hetzner-headless-room',
+                rallar: {
+                    username: 'rallar',
+                    password: 'secret',
+                    register: 'if-needed',
+                },
+            },
+        });
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'recipe-configure-live-scope',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'controller-01',
+                sessionId: 'controller-01',
+                roomId: 'hetzner-headless-room',
+                rallar: {
+                    apiBaseUrl: 'https://api.example.test',
+                    applicationId: 'rallar-server',
+                    workspaceId: 'default',
+                    scope: {
+                        applicationId: 'rallar-server',
+                        workspaceId: 'default',
+                    },
+                    roomRef: {
+                        applicationId: 'rallar-server',
+                        workspaceId: 'default',
+                        groupId: 'hetzner-headless-room',
+                    },
+                },
+            },
+        });
+        const result = await runtime.execute({
+            kind: 'http.request',
+            commandId: 'http-api-auth-after-recipe-configure',
+            request: {
+                path: '/api/state/apps/rallar-server/workspaces/default/groups',
+                method: 'POST',
+                body: {
+                    requestId: 'ensure-group',
+                    groupId: 'hetzner-headless-room',
+                },
+            },
+            response: {
+                body: 'json',
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(connectConfigs).toHaveLength(1);
+        expect(connectConfigs[0]).toMatchObject({
+            rallar: {
+                username: 'rallar',
+                password: 'secret',
+                register: 'if-needed',
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+            },
+        });
+    });
+
     it('resolves logged-in auth placeholders in HTTP paths and bodies', async () => {
         storage.setItem('auth.session', JSON.stringify({
             clientId: 'alice',
