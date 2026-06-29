@@ -7,6 +7,16 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const execFileAsync = promisify(execFile);
+const distributedWorkflowPath = '.github/workflows/hetzner-distributed-recipe.yml';
+const distributedRunnerWorkflowPath = '.github/workflows/hetzner-distributed-recipe-runner.yml';
+const supportedManifestsWorkflowPath = '.github/workflows/hetzner-supported-distributed-manifests.yml';
+const supportedMainlineManifestPaths = [
+    'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
+    'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
+    'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
+    'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
+    'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
+];
 
 const parseMajorMinorPatch = (version: string): [number, number, number] => {
     const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -58,7 +68,7 @@ const workflowDispatchInputNames = (workflow: string): string[] => {
 describe('Hetzner distributed recipe workflow', () => {
     it('keeps workflow_dispatch inputs within the GitHub Actions limit', async () => {
         const workflowPaths = [
-            '.github/workflows/hetzner-distributed-recipe.yml',
+            distributedWorkflowPath,
             '.github/workflows/hetzner-headless-browsers.yml',
         ];
 
@@ -71,6 +81,59 @@ describe('Hetzner distributed recipe workflow', () => {
                 `${workflowPath} workflow_dispatch inputs: ${inputNames.join(', ')}`,
             ).toBeLessThanOrEqual(25);
         }
+    });
+
+    it('keeps the distributed recipe workflow as a manual dispatch wrapper', async () => {
+        const workflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
+        const runnerWorkflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
+
+        expect(workflow).toContain('workflow_dispatch:');
+        expect(workflow).toContain('uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml');
+        expect(workflow).toContain('secrets: inherit');
+        expect(workflow).toContain('manifest_path: ${{ inputs.manifest_path }}');
+        expect(workflow).toContain('ref: ${{ inputs.ref }}');
+        expect(workflow).toContain('run_id: ${{ inputs.run_id }}');
+        expect(workflow).not.toContain('concurrency:');
+        expect(runnerWorkflow).toContain('group: hetzner-distributed-recipe');
+    });
+
+    it('keeps the reusable distributed recipe runner responsible for Hetzner execution', async () => {
+        const workflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
+
+        expect(workflow).toContain('workflow_call:');
+        expect(workflow).toContain('name: Resolve manifest defaults');
+        expect(workflow).toContain("jq -r '.targetPolicy.expectedParticipantCount // empty'");
+        expect(workflow).toContain("jq -r '.group.groupId // empty'");
+        expect(workflow).toContain("jq -r '.group.applicationId // empty'");
+        expect(workflow).toContain("jq -r '.group.workspaceId // empty'");
+        expect(workflow).toContain('name: Configure SSH');
+        expect(workflow).toContain('name: Copy controller scripts and manifest');
+        expect(workflow).toContain('name: Run distributed recipe');
+        expect(workflow).toContain('name: Copy distributed artifacts');
+        expect(workflow).toContain('name: Analyze distributed artifacts');
+        expect(workflow).toContain('name: Publish distributed analysis summary');
+        expect(workflow).toContain('name: Fail if distributed recipe failed');
+    });
+
+    it('runs supported Hetzner manifests on every main push with a serial matrix', async () => {
+        const workflow = await readFile(path.join(repoRoot, supportedManifestsWorkflowPath), 'utf8');
+        const matrixPaths = [...workflow.matchAll(/manifest_path:\s+(apps\/rallar-black-box\/manifests\/hetzner\/[^\s]+\.json)/g)]
+            .map(match => match[1]);
+
+        expect(workflow).toContain('push:');
+        expect(workflow).toContain('branches: [main]');
+        expect(workflow).toContain('workflow_dispatch:');
+        expect(workflow).not.toMatch(/\n\s+paths:/);
+        expect(workflow).toContain('cancel-in-progress: false');
+        expect(workflow).toContain('fail-fast: false');
+        expect(workflow).toContain('max-parallel: 1');
+        expect(matrixPaths).toEqual(supportedMainlineManifestPaths);
+        expect(workflow).not.toContain('apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json');
+        expect(workflow).not.toContain('apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json');
+        expect(workflow).toContain('uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml');
+        expect(workflow).toContain('secrets: inherit');
+        expect(workflow).toContain('ref: ${{ github.sha }}');
+        expect(workflow).toContain('run_id: main-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.manifest_id }}');
     });
 
     it('encodes remote API path identifiers and separates safe artifact directory names', async () => {
@@ -104,7 +167,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('publishes analyzer markdown into the GitHub step summary', async () => {
         const workflow = await readFile(
-            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
         );
 
@@ -117,20 +180,24 @@ describe('Hetzner distributed recipe workflow', () => {
     });
 
     it('stops headless browsers by default after distributed artifacts and analysis are uploaded', async () => {
-        const workflow = await readFile(
-            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+        const manualWorkflow = await readFile(
+            path.join(repoRoot, distributedWorkflowPath),
+            'utf8',
+        );
+        const runnerWorkflow = await readFile(
+            path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
         );
 
-        expect(workflow).toMatch(/stop_after_run:[\s\S]*?default: true/);
-        expect(workflow).toMatch(
+        expect(manualWorkflow).toMatch(/stop_after_run:[\s\S]*?default: true/);
+        expect(runnerWorkflow).toMatch(
             /name: Upload distributed analysis[\s\S]*name: Stop headless browsers[\s\S]*if: always\(\) && inputs\.stop_after_run/,
         );
     });
 
     it('stops existing headless browsers before starting fresh workers for every distributed recipe run', async () => {
         const workflow = await readFile(
-            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
         );
 
@@ -153,7 +220,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('uses a TLS control URL for distributed-run admin API calls', async () => {
         const workflow = await readFile(
-            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
         );
         const script = await readFile(
@@ -171,7 +238,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('configures SSH keepalives for long Hetzner workflow operations', async () => {
         const distributedWorkflow = await readFile(
-            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
         );
         const headlessWorkflow = await readFile(
@@ -189,7 +256,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('installs and executes controller scripts from the logged-in user home directory', async () => {
         const workflowPaths = [
-            '.github/workflows/hetzner-distributed-recipe.yml',
+            distributedRunnerWorkflowPath,
             '.github/workflows/hetzner-headless-browsers.yml',
             '.github/workflows/deploy-hetzner-controller.yml',
         ];
@@ -207,7 +274,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('passes browser log level through workflows that start headless workers', async () => {
         const distributedWorkflow = await readFile(
-            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
         );
         const headlessWorkflow = await readFile(
@@ -227,7 +294,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('passes the selected Playwright browser engine through Hetzner workflows and helpers', async () => {
         const distributedWorkflow = await readFile(
-            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
         );
         const headlessWorkflow = await readFile(
@@ -254,13 +321,15 @@ describe('Hetzner distributed recipe workflow', () => {
         for (const workflow of [distributedWorkflow, headlessWorkflow]) {
             expect(workflow).toContain('browser_engine:');
             expect(workflow).toContain('default: chromium');
-            expect(workflow).toContain('- chromium');
-            expect(workflow).toContain('- firefox');
-            expect(workflow).toContain('- webkit');
             expect(workflow).toContain('RALLAR_BLACK_BOX_BROWSER_ENGINE: ${{ inputs.browser_engine }}');
             expect(workflow).toContain(
                 'printf \'RALLAR_BLACK_BOX_BROWSER_ENGINE=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_BROWSER_ENGINE}")"',
             );
+        }
+        for (const workflow of [await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8'), headlessWorkflow]) {
+            expect(workflow).toContain('- chromium');
+            expect(workflow).toContain('- firefox');
+            expect(workflow).toContain('- webkit');
         }
 
         expect(startScript).toContain('RALLAR_BLACK_BOX_BROWSER_ENGINE="${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"');
@@ -284,7 +353,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('passes the selected headless SPA entry through Hetzner workflows and helpers', async () => {
         const distributedWorkflow = await readFile(
-            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
         );
         const headlessWorkflow = await readFile(
@@ -387,6 +456,45 @@ describe('Hetzner distributed recipe workflow', () => {
 
         expect(stdout).toContain('repairedKnownDenoLockDrift=true');
         await expect(readFile(denoLock, 'utf8')).resolves.toBe('clean\n');
+    });
+
+    it('checks out exact commit SHAs without treating them as branch pull refs', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-sha-ref-'));
+        const originDir = path.join(tmp, 'origin.git');
+        const sourceDir = path.join(tmp, 'source');
+        const checkoutDir = path.join(tmp, 'checkout');
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh');
+        const rolloutScript = await readFile(scriptPath, 'utf8');
+
+        await execFileAsync('git', ['init', '--bare', originDir]);
+        await mkdir(sourceDir, { recursive: true });
+        await execFileAsync('git', ['init'], { cwd: sourceDir });
+        await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: sourceDir });
+        await execFileAsync('git', ['config', 'user.name', 'Test User'], { cwd: sourceDir });
+        await writeFile(path.join(sourceDir, 'README.md'), 'seed\n');
+        await execFileAsync('git', ['add', 'README.md'], { cwd: sourceDir });
+        await execFileAsync('git', ['commit', '-m', 'seed'], { cwd: sourceDir });
+        await execFileAsync('git', ['branch', '-M', 'main'], { cwd: sourceDir });
+        await execFileAsync('git', ['remote', 'add', 'origin', originDir], { cwd: sourceDir });
+        await execFileAsync('git', ['push', '-u', 'origin', 'main'], { cwd: sourceDir });
+        await execFileAsync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], { cwd: originDir });
+        const { stdout: commitSha } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: sourceDir });
+
+        await execFileAsync('git', ['clone', originDir, checkoutDir]);
+        const { stdout } = await execFileAsync('bash', [scriptPath], {
+            env: {
+                ...process.env,
+                RALLAR_CHECKOUT_DIR: checkoutDir,
+                RALLAR_REPO_REF: commitSha.trim(),
+                RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'checkout-ref',
+            },
+        });
+
+        expect(stdout).toContain(`checkoutHead=${commitSha.trim()}`);
+        expect(stdout).toContain('checkoutBranch=HEAD');
+        expect(rolloutScript).toMatch(
+            /if is_full_git_sha "\$\{repo_ref\}"; then[\s\S]*checkout --detach "\$\{repo_ref\}"[\s\S]*return[\s\S]*pull --ff-only origin "\$\{repo_ref\}"/,
+        );
     });
 
     it('warms Deno caches without mutating checked-in lockfiles', async () => {
@@ -678,7 +786,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('skips the duplicate headless Playwright install after a successful rollout', async () => {
         const distributedWorkflow = await readFile(
-            path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml'),
+            path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
         );
         const headlessWorkflow = await readFile(
@@ -694,14 +802,19 @@ describe('Hetzner distributed recipe workflow', () => {
     });
 
     it('parses the workflow YAML with the same parser used in verification', async () => {
-        const workflowPath = path.join(repoRoot, '.github/workflows/hetzner-distributed-recipe.yml');
+        for (const workflowPath of [
+            distributedWorkflowPath,
+            distributedRunnerWorkflowPath,
+            supportedManifestsWorkflowPath,
+        ]) {
+            const absoluteWorkflowPath = path.join(repoRoot, workflowPath);
+            const { stdout } = await execFileAsync('ruby', [
+                '-e',
+                `require 'yaml'; YAML.load_file('${absoluteWorkflowPath}'); puts 'workflow yaml ok'`,
+            ]);
 
-        const { stdout } = await execFileAsync('ruby', [
-            '-e',
-            `require 'yaml'; YAML.load_file('${workflowPath}'); puts 'workflow yaml ok'`,
-        ]);
-
-        expect(stdout.trim()).toBe('workflow yaml ok');
+            expect(stdout.trim()).toBe('workflow yaml ok');
+        }
     });
 
     it('exercises controller script helper behavior without contacting Hetzner', async () => {

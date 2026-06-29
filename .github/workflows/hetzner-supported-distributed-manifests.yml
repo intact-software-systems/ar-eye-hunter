@@ -1,0 +1,50 @@
+name: Run Hetzner Supported Distributed Manifests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hetzner-supported-distributed-manifests-main
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: ${{ matrix.manifest_id }}
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - manifest_id: 01-health-2-agent
+            manifest_path: apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json
+          - manifest_id: 02-composite-evidence-2-agent
+            manifest_path: apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json
+          - manifest_id: 03-rtc-smoke-2-agent
+            manifest_path: apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json
+          - manifest_id: 04-provider-parity-2-agent
+            manifest_path: apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json
+          - manifest_id: 05a-rtc-realtime-stability-2-agent-5s
+            manifest_path: apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json
+    uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
+    with:
+      ref: ${{ github.sha }}
+      rollout_before_run: true
+      run_id: main-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.manifest_id }}
+      agent_prefix: controller
+      manifest_path: ${{ matrix.manifest_path }}
+      register_before_login: true
+      browser_log_level: warning
+      headless_entry: headless
+      browser_engine: chromium
+      install_playwright: true
+      npm_ci: false
+      wait_for_agents: true
+      ready_timeout_seconds: '120'
+      terminal_timeout_seconds: '300'
+      stop_after_run: true
+    secrets: inherit

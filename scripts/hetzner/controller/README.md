@@ -723,7 +723,25 @@ HTTP API after frequent headless browser rollouts.
 ## GitHub Action: Distributed Recipe
 
 The workflow `.github/workflows/hetzner-distributed-recipe.yml` exposes a
-manual action named `Run Hetzner Distributed Recipe`.
+manual action named `Run Hetzner Distributed Recipe`. It delegates the actual
+Hetzner work to the reusable
+`.github/workflows/hetzner-distributed-recipe-runner.yml` workflow.
+
+The workflow `.github/workflows/hetzner-supported-distributed-manifests.yml`
+runs on every push to `main` and can also be triggered manually. It queues every
+commit, runs manifests serially against the shared Hetzner room, and covers the
+supported green set:
+
+- `01-health-2-agent.json`
+- `02-composite-evidence-2-agent.json`
+- `03-rtc-smoke-2-agent.json`
+- `04-provider-parity-2-agent.json`
+- `05a-rtc-realtime-stability-2-agent-5s.json`
+
+The `05-rtc-realtime-2-agent-5s.json` and
+`06-rtc-realtime-3-agent-15s.json` manifests remain generated and valid, but
+they are extended/manual RTC follow-up runs rather than the main-branch green
+gate.
 
 It copies a checked-in distributed manifest to the VM, optionally runs
 `08-rollout-controller.sh`, starts headless browsers with

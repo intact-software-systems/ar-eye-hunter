@@ -27,6 +27,9 @@ export const HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
+] as const;
+
+export const HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
     'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
 ] as const;
@@ -36,6 +39,7 @@ export type HetznerDistributedManifestEntry = Readonly<{
     title: string;
     description: string;
     agentCount: number;
+    mainline: boolean;
     diagnostic: boolean;
     manifest: RallarBlackBoxDistributedRunManifest;
 }>;
@@ -49,6 +53,7 @@ type ManifestCatalogInput = Readonly<{
     agentCount: number;
     profiles: readonly string[];
     live: boolean;
+    mainline?: boolean;
     diagnostic?: boolean;
     expectedFailure?: boolean;
     stress?: boolean;
@@ -69,6 +74,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             agentCount: 2,
             profiles: ['health', 'smoke'],
             live: false,
+            mainline: true,
         }),
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[1],
@@ -79,6 +85,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             agentCount: 2,
             profiles: ['composite', 'smoke'],
             live: false,
+            mainline: true,
         }),
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[2],
@@ -93,6 +100,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             agentCount: 2,
             profiles: ['rtc', 'smoke'],
             live: true,
+            mainline: true,
         }),
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[3],
@@ -107,6 +115,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             agentCount: 2,
             profiles: ['rtc', 'parity'],
             live: true,
+            mainline: true,
         }),
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[4],
@@ -121,9 +130,10 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             agentCount: 2,
             profiles: ['rtc', 'realtime', 'stability', 'green'],
             live: true,
+            mainline: true,
         }),
         buildManifestEntry({
-            filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[5],
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[0],
             title: 'RTC realtime 2-agent 5s',
             description: 'Short 10 Hz RTC realtime run for first-pass RTT and event-rate performance baseline.',
             distributedRunId: 'hetzner-rtc-realtime-2-agent-5s',
@@ -143,7 +153,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             live: true,
         }),
         buildManifestEntry({
-            filePath: HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER[6],
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[1],
             title: 'RTC realtime 3-agent 15s',
             description: 'Heavier 10 Hz RTC realtime run for three-agent load and percentile baselines.',
             distributedRunId: 'hetzner-rtc-realtime-3-agent-15s',
@@ -238,6 +248,7 @@ function buildManifestEntry(input: ManifestCatalogInput): HetznerDistributedMani
         title: input.title,
         description: input.description,
         agentCount: input.agentCount,
+        mainline: input.mainline === true,
         diagnostic: input.diagnostic === true,
         manifest: {
             ...manifest,

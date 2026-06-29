@@ -23,6 +23,24 @@ is_known_rollout_generated_lockfile() {
   esac
 }
 
+is_full_git_sha() {
+  [[ "$1" =~ ^[0-9a-fA-F]{40}$ ]]
+}
+
+update_rollout_checkout() {
+  local checkout_dir="$1"
+  local repo_ref="$2"
+
+  git -C "${checkout_dir}" fetch --prune origin
+  if is_full_git_sha "${repo_ref}"; then
+    git -C "${checkout_dir}" checkout --detach "${repo_ref}"
+    return
+  fi
+
+  git -C "${checkout_dir}" checkout "${repo_ref}"
+  git -C "${checkout_dir}" pull --ff-only origin "${repo_ref}"
+}
+
 repair_known_rollout_generated_checkout_changes() {
   local checkout_dir="$1"
   local status line state file repaired_files=()
@@ -50,6 +68,11 @@ repair_known_rollout_generated_checkout_changes() {
 
 run_rollout_self_test() {
   case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
+    checkout-ref)
+      update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
+      printf 'checkoutHead=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse HEAD)"
+      printf 'checkoutBranch=%s\n' "$(git -C "${RALLAR_CHECKOUT_DIR}" symbolic-ref --short -q HEAD || echo HEAD)"
+      ;;
     repair-known-drift)
       repair_known_rollout_generated_checkout_changes "${RALLAR_CHECKOUT_DIR}"
       if [[ -n "$(git -C "${RALLAR_CHECKOUT_DIR}" status --porcelain)" ]]; then
@@ -262,7 +285,7 @@ restart_stopped_services_on_error() {
   exit "${exit_code}"
 }
 
-echo "==> Controlled rollout from ${previous_revision} to origin/${RALLAR_REPO_REF}"
+echo "==> Controlled rollout from ${previous_revision} to ${RALLAR_REPO_REF}"
 echo "Checkout: ${RALLAR_CHECKOUT_DIR}"
 echo "Services:"
 printf "  %s\n" "${services[@]}"
@@ -272,9 +295,7 @@ echo "Note: stopping rallar-api-v1 resets its pglite-memory data."
 trap restart_stopped_services_on_error ERR
 
 echo "==> Updating git checkout"
-git -C "${RALLAR_CHECKOUT_DIR}" fetch --prune origin
-git -C "${RALLAR_CHECKOUT_DIR}" checkout "${RALLAR_REPO_REF}"
-git -C "${RALLAR_CHECKOUT_DIR}" pull --ff-only origin "${RALLAR_REPO_REF}"
+update_rollout_checkout "${RALLAR_CHECKOUT_DIR}" "${RALLAR_REPO_REF}"
 chown -R rallar:rallar "${RALLAR_CHECKOUT_DIR}"
 
 current_revision="$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse --short HEAD)"

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+    HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER,
     buildHetznerDistributedManifestCatalog,
 } from '../../../apps/rallar-black-box/src/hetzner-distributed-manifests.ts';
@@ -68,9 +69,10 @@ function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): reado
 }
 
 describe('Hetzner distributed manifest catalog', () => {
-    it('defines the green manifest run order and diagnostics separately', () => {
+    it('defines the mainline green, extended, and diagnostic manifest groups separately', () => {
         const catalog = buildHetznerDistributedManifestCatalog();
-        const greenPaths = catalog.filter(entry => !entry.diagnostic).map(entry => entry.filePath);
+        const greenPaths = catalog.filter(entry => entry.mainline).map(entry => entry.filePath);
+        const extendedPaths = catalog.filter(entry => !entry.mainline && !entry.diagnostic).map(entry => entry.filePath);
         const diagnosticPaths = catalog.filter(entry => entry.diagnostic).map(entry => entry.filePath);
 
         expect(greenPaths).toEqual(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER);
@@ -80,6 +82,9 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
             'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
+        ]);
+        expect(extendedPaths).toEqual(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER);
+        expect(extendedPaths).toEqual([
             'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
             'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
         ]);
@@ -129,9 +134,9 @@ describe('Hetzner distributed manifest catalog', () => {
         }
     });
 
-    it('keeps green manifests secret-free and marks the expected-failure diagnostic only', () => {
+    it('keeps mainline green manifests secret-free and marks the expected-failure diagnostic only', () => {
         const catalog = buildHetznerDistributedManifestCatalog();
-        const greenEntries = catalog.filter(entry => !entry.diagnostic);
+        const greenEntries = catalog.filter(entry => entry.mainline);
         const expectedFailure = catalog.find(entry => entry.filePath.endsWith('/expected-failure-1-agent.json'));
 
         expect(expectedFailure?.manifest.metadata).toMatchObject({
@@ -154,7 +159,7 @@ describe('Hetzner distributed manifest catalog', () => {
         }
     });
 
-    it('requires explicit RTC readiness before green live manifests send RTC traffic', () => {
+    it('requires explicit RTC readiness before non-diagnostic live manifests send RTC traffic', () => {
         const expectedReadyPeers = new Map([
             ['apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json', 1],
@@ -180,7 +185,7 @@ describe('Hetzner distributed manifest catalog', () => {
         }
     });
 
-    it('uses lower-rate rtc.stream baselines for green realtime Hetzner manifests', () => {
+    it('uses lower-rate rtc.stream baselines for non-diagnostic realtime Hetzner manifests', () => {
         const expectedStreams = new Map([
             ['apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json', {
                 rateHz: 5,
@@ -278,23 +283,20 @@ describe('Hetzner distributed manifest catalog', () => {
         });
     });
 
-    it('adds a lower-risk realtime stability manifest before heavier green baselines', () => {
+    it('keeps the lower-risk realtime stability manifest in mainline before heavier extended baselines', () => {
         const catalog = buildHetznerDistributedManifestCatalog();
+        const stabilityPath = 'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json';
+        const baselinePath = 'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json';
         const stability = catalog.find(entry =>
-            entry.filePath === 'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json'
-        );
-        const stabilityIndex = HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER.indexOf(
-            'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
-        );
-        const baselineIndex = HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER.indexOf(
-            'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
+            entry.filePath === stabilityPath
         );
 
         expect(stability).toBeDefined();
+        expect(stability?.mainline).toBe(true);
         expect(stability?.diagnostic).toBe(false);
         expect(stability?.agentCount).toBe(2);
-        expect(stabilityIndex).toBeGreaterThan(-1);
-        expect(stabilityIndex).toBeLessThan(baselineIndex);
+        expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER.at(-1)).toBe(stabilityPath);
+        expect(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[0]).toBe(baselinePath);
         expect(stability?.manifest.metadata).toMatchObject({
             manifestSuite: 'hetzner-distributed',
             diagnostic: false,
