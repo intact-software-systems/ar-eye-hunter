@@ -27351,7 +27351,10 @@ export default function App() {
         advancedSurface: activeAdvancedSurface,
     } = navigation;
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(
-        () => readCurrentAuthSession(),
+        () =>
+            bootstrap.rallarAgentSessionTicket
+                ? undefined
+                : readCurrentAuthSession(),
     );
     const [authBusy, setAuthBusy] = useState(false);
     const [authError, setAuthError] = useState<string | undefined>();
@@ -27409,6 +27412,9 @@ export default function App() {
 
                 facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl });
                 unsubscribe = facade.auth.onChange((state) => {
+                    if (bootstrap.rallarAgentSessionTicket) {
+                        return;
+                    }
                     const nextSession = readAuthSessionFromRallarAuthState(state);
                     setAuthSession(nextSession);
                     if (!nextSession) {
@@ -27424,7 +27430,7 @@ export default function App() {
             cancelled = true;
             unsubscribe?.();
         };
-    }, [bootstrap.apiBaseUrl, requiresLogin]);
+    }, [bootstrap.apiBaseUrl, bootstrap.rallarAgentSessionTicket, requiresLogin]);
 
     useEffect(() => {
         if (requiresLogin && authSession) {
@@ -27440,7 +27446,6 @@ export default function App() {
     useEffect(() => {
         if (
             !requiresLogin ||
-            authSession ||
             !bootstrap.rallarAgentSessionTicket
         ) {
             return;
@@ -27453,6 +27458,7 @@ export default function App() {
         void (async () => {
             const facade = await loadBrowserRallarFacade();
             facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl });
+            clearSession();
             const session = await consumeBootstrapAgentSessionTicket(
                 bootstrap.rallarAgentSessionTicket ?? '',
                 bootstrap.apiBaseUrl,
@@ -27489,7 +27495,6 @@ export default function App() {
             cancelled = true;
         };
     }, [
-        authSession,
         bootstrap.apiBaseUrl,
         bootstrap.rallarAgentSessionTicket,
         requiresLogin,
@@ -27634,7 +27639,7 @@ export default function App() {
         }
     };
 
-    if (requiresLogin && !authSession && bootstrap.rallarAgentSessionTicket) {
+    if (requiresLogin && bootstrap.rallarAgentSessionTicket) {
         return (
             <main className="auth-shell">
                 <section className="auth-panel">
