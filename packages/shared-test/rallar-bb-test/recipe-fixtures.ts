@@ -274,10 +274,13 @@ export function createRallarBlackBoxProviderParityLiveRecipe(
     const apiBaseUrl = options.apiBaseUrl ?? RALLAR_BLACK_BOX_LIVE_API_BASE_URL;
     const baseRecipe = createRallarBlackBoxProviderParityRecipe({
         providerMode: 'browser-rallar',
+        includeDemoAuth: false,
         apiBaseUrl,
         actor,
         roomId: group.groupId,
         connection,
+        directPeerIds: ['{rtc.readyPeerIds[0]}'],
+        multicastPeerIds: ['{rtc.readyPeerIds}'],
         rallar: {
             apiBaseUrl,
             applicationId: group.applicationId,
@@ -287,7 +290,6 @@ export function createRallarBlackBoxProviderParityLiveRecipe(
                 workspaceId: group.workspaceId,
             },
             roomRef,
-            restoreSession: true,
         },
         control: {
             providerMode: 'browser-rallar',
@@ -314,7 +316,6 @@ export function createRallarBlackBoxProviderParityLiveRecipe(
                         workspaceId: group.workspaceId,
                     },
                     roomRef,
-                    restoreSession: true,
                 },
                 readiness: rtcConnectReadiness(options),
             };

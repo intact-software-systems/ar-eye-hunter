@@ -595,6 +595,46 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
   assertEquals(restored.snapshotDistributedRun('dist-1')?.state, 'passed');
 });
 
+Deno.test('control service reconciles persisted distributed start links from completed control results', () => {
+  const service = createRallarBlackBoxControlService();
+  service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-1'));
+  service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-2'));
+
+  service.createDistributedRun(distributedManifest());
+  service.stageDistributedRun('dist-1');
+  const agent1StageCommands = service.takeDispatchableCommands('run-1', 'agent-1');
+  const agent2StageCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+  service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', agent1StageCommands[0]));
+  service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-2', agent2StageCommands[0]));
+
+  service.startDistributedRun('dist-1');
+  const agent1StartCommands = service.takeDispatchableCommands('run-1', 'agent-1');
+  const agent2StartCommands = service.takeDispatchableCommands('run-1', 'agent-2');
+  service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-1', agent1StartCommands[0]));
+  service.receiveClientEnvelope(commandResultEnvelope('run-1', 'agent-2', agent2StartCommands[0]));
+
+  const snapshot = JSON.parse(JSON.stringify(service.snapshot())) as ReturnType<typeof service.snapshot>;
+  const staleSnapshot = {
+    ...snapshot,
+    distributedRuns: (snapshot.distributedRuns ?? []).map((distributedRun) => ({
+      ...distributedRun,
+      state: 'ready' as const,
+      startedAtEpochMs: undefined,
+      completedAtEpochMs: undefined,
+      commandLinks: distributedRun.commandLinks.filter((link) => link.phase !== 'start'),
+    })),
+  };
+
+  const restored = createRallarBlackBoxControlService();
+  restored.restoreSnapshot(staleSnapshot);
+  const reconciled = restored.snapshotDistributedRun('dist-1');
+
+  assert(reconciled);
+  assertEquals(reconciled.commandLinks.filter((link) => link.phase === 'start').length, 2);
+  assertEquals(reconciled.state, 'passed');
+  assertEquals(reconciled.rollup.ok, true);
+});
+
 Deno.test('control service derives, filters, persists, and exports fleet reports', () => {
   let now = 1_000;
   const service = createRallarBlackBoxControlService({

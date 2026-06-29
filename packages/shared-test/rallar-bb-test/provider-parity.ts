@@ -53,6 +53,7 @@ export type RallarBlackBoxProviderParityRecipeOptions = Readonly<{
     transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
     timeoutMs?: number;
     providerMode?: 'simulated' | 'browser-rallar';
+    includeDemoAuth?: boolean;
     rallar?: Readonly<Record<string, unknown>>;
     browser?: Readonly<Record<string, unknown>>;
     control?: Readonly<Record<string, unknown>>;
@@ -206,6 +207,13 @@ export function createRallarBlackBoxProviderParityRecipe(
     );
     const multicastExpectedConnections = cleanStrings(options.multicastExpectedConnections);
     const broadcastExpectedConnections = cleanStrings(options.broadcastExpectedConnections);
+    const demoRallarAuth = options.includeDemoAuth === false
+        ? {}
+        : {
+            username: 'alice',
+            password: 'local-demo-password',
+            token: 'local-demo-token',
+        };
 
     return {
         recipeId: options.recipeId ?? 'rallar-provider-parity-recipe',
@@ -237,9 +245,7 @@ export function createRallarBlackBoxProviderParityRecipe(
                     roomId,
                     transport,
                     rallar: {
-                        username: 'alice',
-                        password: 'local-demo-password',
-                        token: 'local-demo-token',
+                        ...demoRallarAuth,
                         ...(options.rallar ?? {}),
                     },
                     ...(options.browser ? { browser: options.browser } : {}),

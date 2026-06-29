@@ -1060,6 +1060,70 @@ export class RallarBlackBoxControlService {
     distributedRun.updatedAtEpochMs = this.now();
   }
 
+  private reconcileDistributedCommandLinks(distributedRun: StoredDistributedRun): void {
+    const run = this.runs.get(distributedRun.controlRunId);
+    if (!run || distributedRun.targetAgentIds.length === 0) {
+      return;
+    }
+
+    for (const agentId of distributedRun.targetAgentIds) {
+      for (const selection of this.recipeSelectionsForAgent(distributedRun.manifest, agentId)) {
+        this.reconcileDistributedCommandLink(distributedRun, run, 'stage', agentId, selection);
+        this.reconcileDistributedCommandLink(distributedRun, run, 'start', agentId, selection);
+      }
+      if (this.distributedRunBarrierEnabled(distributedRun)) {
+        this.reconcileDistributedCommandLink(distributedRun, run, 'barrier', agentId, undefined);
+      }
+    }
+  }
+
+  private reconcileDistributedCommandLink(
+    distributedRun: StoredDistributedRun,
+    run: StoredRun,
+    phase: ControlDistributedRunCommandPhase,
+    agentId: string,
+    selection: RallarBlackBoxDistributedRunRecipeSelection | undefined,
+  ): void {
+    const recipeId = selection ? this.recipeKey(selection) : undefined;
+    const commandId = phase === 'barrier'
+      ? this.distributedCommandId(distributedRun, phase, agentId, 'ready')
+      : this.distributedCommandId(
+        distributedRun,
+        phase,
+        agentId,
+        recipeId ?? 'recipe',
+      );
+    if (distributedRun.commandLinks.some((link) => link.commandId === commandId)) {
+      return;
+    }
+
+    const command = run.commands.get(commandId);
+    const result = run.results.get(commandId);
+    if (!command && !result) {
+      return;
+    }
+
+    const queuedAtEpochMs = command?.queuedAtEpochMs ??
+      result?.result?.startedAtEpochMs ??
+      result?.result?.endedAtEpochMs ??
+      distributedRun.updatedAtEpochMs;
+    distributedRun.commandLinks.push({
+      phase,
+      agentId,
+      commandId,
+      recipeId,
+      role: selection?.role,
+      queuedAtEpochMs,
+    });
+    if (phase === 'start') {
+      distributedRun.startedAtEpochMs ??= queuedAtEpochMs;
+    }
+    if (phase === 'barrier') {
+      distributedRun.barrierStartedAtEpochMs ??= queuedAtEpochMs;
+    }
+    distributedRun.updatedAtEpochMs = this.now();
+  }
+
   private allTargetPhaseCommandsSucceeded(
     distributedRun: StoredDistributedRun,
     phase: ControlDistributedRunCommandPhase,
@@ -1322,6 +1386,7 @@ export class RallarBlackBoxControlService {
   private refreshDistributedRunState(
     distributedRun: StoredDistributedRun,
   ): RallarBlackBoxDistributedRunRollup {
+    this.reconcileDistributedCommandLinks(distributedRun);
     this.advanceDistributedRunOrchestration(distributedRun);
     const evaluated = this.evaluateDistributedRun(distributedRun);
     if (evaluated.state !== distributedRun.state) {

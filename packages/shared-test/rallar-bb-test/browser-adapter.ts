@@ -198,6 +198,9 @@ type RtcConnectReadinessResult = Readonly<{
     health?: unknown;
 }>;
 
+const RTC_READY_PEER_IDS_PLACEHOLDER = '{rtc.readyPeerIds}';
+const RTC_READY_PEER_ID_PLACEHOLDER_PATTERN = /^\{rtc\.readyPeerIds\[(\d+)\]\}$/;
+
 function asRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value as Record<string, unknown>
@@ -233,6 +236,67 @@ function toRtcReadyPeerIds(value: unknown): readonly string[] {
             ? root.readyPeerIds
             : [];
     return readyPeerIds.filter((peerId): peerId is string => typeof peerId === 'string');
+}
+
+function requiresRtcReadyPeerPlaceholder(value: unknown): boolean {
+    if (typeof value === 'string') {
+        return value === RTC_READY_PEER_IDS_PLACEHOLDER ||
+            RTC_READY_PEER_ID_PLACEHOLDER_PATTERN.test(value);
+    }
+
+    if (Array.isArray(value)) {
+        return value.some(item => requiresRtcReadyPeerPlaceholder(item));
+    }
+
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+
+    return Object.values(value).some(item => requiresRtcReadyPeerPlaceholder(item));
+}
+
+function replaceRtcReadyPeerPlaceholders(
+    value: unknown,
+    readyPeerIds: readonly string[],
+): unknown {
+    function replace(current: unknown): unknown {
+        if (typeof current === 'string') {
+            if (current === RTC_READY_PEER_IDS_PLACEHOLDER) {
+                return [...readyPeerIds];
+            }
+
+            const indexed = RTC_READY_PEER_ID_PLACEHOLDER_PATTERN.exec(current);
+            if (indexed) {
+                const index = Number.parseInt(indexed[1] ?? '', 10);
+                const peerId = readyPeerIds[index];
+                if (!peerId) {
+                    throw new Error(
+                        `Cannot resolve recipe placeholder ${current}; ` +
+                            `only ${readyPeerIds.length} RTC ready peer(s) are available.`,
+                    );
+                }
+
+                return peerId;
+            }
+        }
+
+        if (Array.isArray(current)) {
+            return current.flatMap(item => {
+                const replaced = replace(item);
+                return Array.isArray(replaced) ? replaced : [replaced];
+            });
+        }
+
+        if (!current || typeof current !== 'object') {
+            return current;
+        }
+
+        return Object.fromEntries(
+            Object.entries(current).map(([key, item]) => [key, replace(item)]),
+        );
+    }
+
+    return replace(value);
 }
 
 function commandLocalDelayMs(command: CommandWithId): number {
@@ -1865,6 +1929,10 @@ class BrowserCommandAdapter {
                     data: resolvedSend,
                     ...scopedSendFields,
                 };
+        }
+        if (requiresRtcReadyPeerPlaceholder(scopedSend)) {
+            const health = await this.requireRallarRuntime().health();
+            scopedSend = replaceRtcReadyPeerPlaceholders(scopedSend, toRtcReadyPeerIds(health));
         }
         const abort = this.commandAbortSignal(command, context);
         let diagnostics: unknown;

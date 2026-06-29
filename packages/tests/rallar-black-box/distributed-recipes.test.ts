@@ -767,6 +767,21 @@ describe('distributed recipes helpers', () => {
                 },
             },
         });
+        if (configureCommand.kind !== 'configure') {
+            throw new Error('Expected provider parity live recipe to start with configure.');
+        }
+        expect(configureCommand.config.rallar).not.toMatchObject({
+            username: expect.any(String),
+        });
+        expect(configureCommand.config.rallar).not.toMatchObject({
+            password: expect.any(String),
+        });
+        expect(configureCommand.config.rallar).not.toMatchObject({
+            token: expect.any(String),
+        });
+        expect(configureCommand.config.rallar).not.toMatchObject({
+            restoreSession: true,
+        });
         expect(recipe.commands[1]).toMatchObject({
             kind: 'http.request',
             commandId: 'parity-ensure-group',
@@ -797,6 +812,7 @@ describe('distributed recipes helpers', () => {
             workspaceId: 'live',
             send: {
                 roomId: 'arena-1',
+                peerIds: ['{rtc.readyPeerIds[0]}'],
                 roomRef: {
                     applicationId: 'game-app',
                     workspaceId: 'live',
@@ -804,6 +820,8 @@ describe('distributed recipes helpers', () => {
                 },
             },
         });
+        expect(JSON.stringify(recipe)).not.toContain('bob-session');
+        expect(JSON.stringify(recipe)).not.toContain('charlie-session');
     });
 
     it('derives nested composite command kinds and preview counts for app-local fixtures', () => {

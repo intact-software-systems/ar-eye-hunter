@@ -330,8 +330,10 @@ function withoutDemoCredentials(recipe: RallarBlackBoxTestRecipe): RallarBlackBo
         if (!rallar || typeof rallar !== 'object' || Array.isArray(rallar)) {
             continue;
         }
+        delete (rallar as { username?: unknown }).username;
         delete (rallar as { password?: unknown }).password;
         delete (rallar as { token?: unknown }).token;
+        delete (rallar as { restoreSession?: unknown }).restoreSession;
     }
     return copy;
 }
