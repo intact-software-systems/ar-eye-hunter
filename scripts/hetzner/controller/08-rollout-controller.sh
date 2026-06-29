@@ -11,6 +11,92 @@ RALLAR_INSTALL_PLAYWRIGHT="${RALLAR_INSTALL_PLAYWRIGHT:-0}"
 RALLAR_ACME_EMAIL="${RALLAR_ACME_EMAIL:-}"
 RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS="${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS:-86400000}"
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS:-}"
+RALLAR_DISTRIBUTED_ARTIFACT_DIR="${RALLAR_DISTRIBUTED_ARTIFACT_DIR:-/tmp/rallar-distributed-runs}"
+
+rallar_user_home() {
+  local user="${1:-rallar}"
+  local home_dir=""
+
+  if command -v getent >/dev/null 2>&1; then
+    home_dir="$(getent passwd "${user}" | cut -d: -f6 || true)"
+  fi
+  if [[ -z "${home_dir}" ]]; then
+    home_dir="$(eval "printf '%s' ~${user}" 2>/dev/null || true)"
+  fi
+  if [[ -z "${home_dir}" || "${home_dir}" == "~${user}" ]]; then
+    return 1
+  fi
+
+  printf '%s' "${home_dir}"
+}
+
+rollout_npm_cache_dir() {
+  if [[ -n "${RALLAR_ROLLOUT_NPM_CACHE_DIR:-}" ]]; then
+    printf '%s' "${RALLAR_ROLLOUT_NPM_CACHE_DIR}"
+    return 0
+  fi
+
+  local home_dir
+  home_dir="$(rallar_user_home rallar)" || return 1
+  printf '%s/.npm/_cacache' "${home_dir}"
+}
+
+rollout_npm_log_dir() {
+  if [[ -n "${RALLAR_ROLLOUT_NPM_LOG_DIR:-}" ]]; then
+    printf '%s' "${RALLAR_ROLLOUT_NPM_LOG_DIR}"
+    return 0
+  fi
+
+  local home_dir
+  home_dir="$(rallar_user_home rallar)" || return 1
+  printf '%s/.npm/_logs' "${home_dir}"
+}
+
+print_rollout_disk_summary() {
+  local label="$1"
+  echo "==> Disk usage ${label}"
+  df -h "${RALLAR_CHECKOUT_DIR}" /tmp 2>/dev/null || true
+}
+
+remove_directory_contents() {
+  local dir="$1"
+  if [[ -z "${dir}" || "${dir}" == "/" ]]; then
+    echo "Refusing unsafe rollout cleanup directory: ${dir:-<empty>}" >&2
+    return 1
+  fi
+  [[ -d "${dir}" ]] || return 0
+  find "${dir}" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+}
+
+remove_rollout_path() {
+  local path="$1"
+  if [[ -z "${path}" || "${path}" == "/" ]]; then
+    echo "Refusing unsafe rollout cleanup path: ${path:-<empty>}" >&2
+    return 1
+  fi
+  rm -rf -- "${path}"
+}
+
+cleanup_rollout_disk_pressure() {
+  local npm_cache_dir npm_log_dir
+
+  npm_cache_dir="$(rollout_npm_cache_dir || true)"
+  npm_log_dir="$(rollout_npm_log_dir || true)"
+
+  print_rollout_disk_summary "before rollout cleanup"
+  echo "==> Cleaning rollout transient disk pressure"
+  remove_rollout_path "${RALLAR_CHECKOUT_DIR}/node_modules/.vite-temp"
+  remove_rollout_path "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist"
+  remove_rollout_path "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-headless/dist"
+  remove_directory_contents "${RALLAR_DISTRIBUTED_ARTIFACT_DIR}"
+  if [[ -n "${npm_cache_dir}" ]]; then
+    remove_rollout_path "${npm_cache_dir}"
+  fi
+  if [[ -n "${npm_log_dir}" ]]; then
+    remove_rollout_path "${npm_log_dir}"
+  fi
+  print_rollout_disk_summary "after rollout cleanup"
+}
 
 is_known_rollout_generated_lockfile() {
   case "$1" in
@@ -80,6 +166,10 @@ run_rollout_self_test() {
         return 1
       fi
       echo "repairedKnownDenoLockDrift=true"
+      ;;
+    cleanup-disk-pressure)
+      cleanup_rollout_disk_pressure
+      echo "cleanedRolloutDiskPressure=true"
       ;;
     *)
       echo "Unknown RALLAR_ROLLOUT_SCRIPT_SELF_TEST: ${RALLAR_ROLLOUT_SCRIPT_SELF_TEST}" >&2
@@ -300,6 +390,8 @@ chown -R rallar:rallar "${RALLAR_CHECKOUT_DIR}"
 
 current_revision="$(git -C "${RALLAR_CHECKOUT_DIR}" rev-parse --short HEAD)"
 echo "Updated ${previous_revision} -> ${current_revision}"
+
+cleanup_rollout_disk_pressure
 
 echo "==> Installing npm dependencies"
 runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" ci
