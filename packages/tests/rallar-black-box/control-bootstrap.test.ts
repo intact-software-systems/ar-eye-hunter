@@ -230,6 +230,20 @@ describe('rallar-black-box control bootstrap', () => {
     expect(invalid.providerMode).toBe('simulated');
   });
 
+  it('parses per-tab auth storage and agent session ticket handoff from launch links', () => {
+    const bootstrap = resolveRallarBlackBoxBootstrapConfig(
+      '?mode=control&provider=browser-rallar&autoConnect=1&apiBaseUrl=https%3A%2F%2Fapi.example.test&rallarAuthStorage=session&actor=alice&sessionId=agent-session&rallarRestoreSession=1',
+      {},
+      '#agentSessionTicket=one-time-ticket',
+    );
+
+    expect(bootstrap.rallarAuthStorage).toBe('session');
+    expect(bootstrap.rallarAgentSessionTicket).toBe('one-time-ticket');
+    expect(bootstrap.actor).toBe('alice');
+    expect(bootstrap.sessionId).toBe('agent-session');
+    expect(bootstrap.rallarRestoreSession).toBe(true);
+  });
+
   it('validates browser-rallar provider config before real execution exists', () => {
     expect(validateRallarBlackBoxProviderConfig({
       control: {

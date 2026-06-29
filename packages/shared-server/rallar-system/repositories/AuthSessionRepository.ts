@@ -8,6 +8,7 @@ import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore
 const AUTH_SESSIONS_BY_TOKEN_NAMESPACE = 'auth-sessions:by-token';
 const AUTH_SESSIONS_BY_SESSION_NAMESPACE = 'auth-sessions:by-session';
 const WS_AUTH_TICKETS_NAMESPACE = 'auth-sessions:ws-tickets';
+const AGENT_SESSION_TICKETS_NAMESPACE = 'auth-sessions:agent-session-tickets';
 
 export type IssuedAuthSession = AuthSession &
     Readonly<{
@@ -19,6 +20,15 @@ export type IssuedWebSocketTicket = Readonly<{
     ticket: string;
     sessionId: string;
     clientId: string;
+    issuedAtEpochMs: number;
+    expiresAtEpochMs: number;
+}>;
+
+export type IssuedAgentSessionTicket = Readonly<{
+    ticket: string;
+    sessionId: string;
+    clientId: string;
+    agentId: string;
     issuedAtEpochMs: number;
     expiresAtEpochMs: number;
 }>;
@@ -92,6 +102,30 @@ export class AuthSessionRepository extends RuntimeStateJsonStore {
         return await this.consumeWebSocketTicketByKey(ticketKey);
     }
 
+    async putAgentSessionTicket(ticket: IssuedAgentSessionTicket): Promise<void> {
+        await this.putValue(
+            AGENT_SESSION_TICKETS_NAMESPACE,
+            this.ticketKey(ticket.ticket),
+            ticket,
+            ticket.expiresAtEpochMs,
+        );
+    }
+
+    async consumeAgentSessionTicket(ticket: string): Promise<IssuedAuthSession | undefined> {
+        const ticketKey = this.ticketKey(ticket);
+
+        if (isRuntimeStateTransactionalRepositoryLike(this.repository)) {
+            return await this.repository.begin(async (repository) => {
+                await repository.lockKey(AGENT_SESSION_TICKETS_NAMESPACE, ticketKey);
+                return await new AuthSessionRepository(repository).consumeAgentSessionTicketByKey(
+                    ticketKey,
+                );
+            });
+        }
+
+        return await this.consumeAgentSessionTicketByKey(ticketKey);
+    }
+
     private async consumeWebSocketTicketByKey(
         ticketKey: string,
     ): Promise<IssuedAuthSession | undefined> {
@@ -105,6 +139,28 @@ export class AuthSessionRepository extends RuntimeStateJsonStore {
         }
 
         await this.deleteValue(WS_AUTH_TICKETS_NAMESPACE, ticketKey);
+
+        const session = await this.findBySessionId(issuedTicket.sessionId);
+        if (!session || session.clientId !== issuedTicket.clientId) {
+            return undefined;
+        }
+
+        return session;
+    }
+
+    private async consumeAgentSessionTicketByKey(
+        ticketKey: string,
+    ): Promise<IssuedAuthSession | undefined> {
+        const issuedTicket = await this.getValue<IssuedAgentSessionTicket>(
+            AGENT_SESSION_TICKETS_NAMESPACE,
+            ticketKey,
+        );
+
+        if (!issuedTicket) {
+            return undefined;
+        }
+
+        await this.deleteValue(AGENT_SESSION_TICKETS_NAMESPACE, ticketKey);
 
         const session = await this.findBySessionId(issuedTicket.sessionId);
         if (!session || session.clientId !== issuedTicket.clientId) {

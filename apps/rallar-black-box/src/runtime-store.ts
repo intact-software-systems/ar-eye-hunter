@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser-adapter.ts';
 import {
     bootstrapFleetMetadata,
@@ -55,8 +56,15 @@ type RuntimeStoreSnapshot = Readonly<{
 
 type StoreListener = () => void;
 
-function initialControlSnapshot(): RallarBlackBoxControlSnapshot {
+function resolveInitialBootstrapConfig(): RallarBlackBoxBootstrapConfig {
     const bootstrap = resolveRallarBlackBoxBootstrapConfig();
+    configureAuthSessionStorage(bootstrap.rallarAuthStorage);
+    return bootstrap;
+}
+
+function initialControlSnapshot(
+    bootstrap: RallarBlackBoxBootstrapConfig,
+): RallarBlackBoxControlSnapshot {
     return {
         state: 'idle',
         url: bootstrap.controlUrl,
@@ -484,7 +492,7 @@ class RallarBlackBoxRuntimeStore {
     private snapshot: RuntimeStoreSnapshot;
     private bootstrapStarted = false;
     private runSequence = 1;
-    private bootstrapConfig = resolveRallarBlackBoxBootstrapConfig();
+    private bootstrapConfig = resolveInitialBootstrapConfig();
 
     constructor() {
         if (
@@ -505,7 +513,7 @@ class RallarBlackBoxRuntimeStore {
         }
         this.snapshot = {
             state: this.runtime.state(),
-            control: initialControlSnapshot(),
+            control: initialControlSnapshot(this.bootstrapConfig),
             bootstrap: this.bootstrapConfig,
             bootstrapping: false,
             busy: false,

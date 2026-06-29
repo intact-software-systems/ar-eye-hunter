@@ -208,6 +208,165 @@ test('opens runner mode on Recipes and runs a local recipe from the launcher', a
     await expect(advancedPanel.getByRole('button', { name: 'Distributed Recipes' })).toBeVisible();
 });
 
+test('opens fresh same-user agent tabs through the visible UI', async ({ page }) => {
+    const operatorSession = {
+        clientId: 'alice-client',
+        accessToken: 'operator-token-value',
+        username: 'alice',
+        sessionId: 'operator-session',
+        expiresAtEpochMs: Date.now() + 60_000,
+    };
+    const issuedSessions = new Map<string, typeof operatorSession>();
+    const context = page.context();
+
+    await context.route('http://localhost:8080/api/auth/login', async route => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(operatorSession),
+        });
+    });
+    await context.route('http://localhost:8080/api/auth/logout', async route => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ loggedOut: true }),
+        });
+    });
+    await context.route('http://localhost:8080/api/config', async route => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                apiBaseUrl: 'http://localhost:8080',
+                wsBaseUrl: 'ws://localhost:8080',
+                endpoints: {
+                    createWs: '/api/ws/{auth.sessionId}',
+                },
+            }),
+        });
+    });
+    await context.route('http://localhost:8080/api/auth/agent-session-tickets', async route => {
+        expect(route.request().headers().authorization).toBe(
+            'Bearer operator-token-value',
+        );
+        const request = route.request().postDataJSON() as { agentIds?: readonly string[] };
+        const tickets = (request.agentIds ?? []).map((agentId, index) => {
+            const ticket = `agent-ticket-${index + 1}-secret-value`;
+            const session = {
+                ...operatorSession,
+                accessToken: `agent-access-${index + 1}-secret-value`,
+                sessionId: `${agentId}-session`,
+            };
+            issuedSessions.set(ticket, session);
+            return {
+                agentId,
+                ticket,
+                sessionId: session.sessionId,
+                expiresAtEpochMs: Date.now() + 30_000,
+            };
+        });
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ tickets }),
+        });
+    });
+    await context.route(
+        'http://localhost:8080/api/auth/agent-session-tickets/consume',
+        async route => {
+            const request = route.request().postDataJSON() as { ticket?: string };
+            const session = request.ticket
+                ? issuedSessions.get(request.ticket)
+                : undefined;
+            if (!session || !request.ticket) {
+                await route.fulfill({
+                    status: 404,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        error: 'Agent session ticket is invalid or expired.',
+                    }),
+                });
+                return;
+            }
+            issuedSessions.delete(request.ticket);
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(session),
+            });
+        },
+    );
+
+    await page.goto(
+        '/?provider=browser-rallar&workspace=black-box-runner&tab=recipes&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&roomId=bb-group',
+    );
+    await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
+    await page.getByLabel('API Base URL').fill('http://localhost:8080');
+    await page.getByLabel('Username').fill('alice');
+    await page.getByLabel('Password').fill('local-secret');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.locator('.run-header')).toContainText('alice');
+
+    const panel = page.locator('#panel-recipes');
+    const agentSetup = panel.getByLabel('Connect Agents');
+    await agentSetup.getByLabel('Run ID').fill('ui-agent-run');
+    await agentSetup.getByLabel('Agent Prefix').fill('ui-agent');
+    await agentSetup.getByLabel('Agent Tabs').fill('2');
+
+    const agentPages: Page[] = [];
+    const collectPopup = (popup: Page): void => {
+        agentPages.push(popup);
+    };
+    page.on('popup', collectPopup);
+    await agentSetup.getByRole('button', { name: 'Open agent tabs' }).click();
+    await expect.poll(() => agentPages.length, { timeout: 10_000 }).toBe(2);
+    page.off('popup', collectPopup);
+    await Promise.all(agentPages.map(async agentPage => {
+        await agentPage.waitForURL(/mode=control/, { timeout: 10_000 });
+        await agentPage.waitForLoadState('domcontentloaded');
+        await expect.poll(
+            async () => await agentPage.evaluate(() => Boolean(sessionStorage.getItem('auth.session'))),
+            { timeout: 10_000 },
+        ).toBe(true);
+    }));
+
+    const popupStates = await Promise.all(agentPages.map(async agentPage =>
+        await agentPage.evaluate(() => {
+            const sessionRaw = sessionStorage.getItem('auth.session');
+            const localRaw = localStorage.getItem('auth.session');
+            return {
+                href: window.location.href,
+                hash: window.location.hash,
+                session: sessionRaw ? JSON.parse(sessionRaw) as { username?: string; sessionId?: string } : undefined,
+                local: localRaw ? JSON.parse(localRaw) as { sessionId?: string } : undefined,
+            };
+        })));
+    const sessionIds = popupStates.map(state => state.session?.sessionId);
+    expect(new Set(sessionIds).size).toBe(2);
+    for (const popupState of popupStates) {
+        expect(popupState.session?.username).toBe('alice');
+        expect(popupState.session?.sessionId).not.toBe(operatorSession.sessionId);
+        expect(popupState.local?.sessionId).toBe(operatorSession.sessionId);
+        expect(popupState.href).not.toContain('agent-ticket');
+        expect(popupState.hash).toBe('');
+    }
+
+    const firstAgentPage = agentPages[0];
+    await firstAgentPage.getByRole('button', { name: 'Show details' }).click();
+    await firstAgentPage.getByRole('button', { name: 'Logout' }).click();
+    await expect(
+        firstAgentPage.getByRole('heading', { name: 'Rallar Server Login' }),
+    ).toBeVisible();
+    await expect.poll(async () =>
+        await firstAgentPage.evaluate(() =>
+            Boolean(sessionStorage.getItem('auth.session'))
+        ),
+    ).toBe(false);
+
+    await Promise.all(agentPages.map(agentPage => agentPage.close()));
+});
+
 test('explains runner readiness failures before live recipe launch', async ({ page }) => {
     await page.addInitScript(() => {
         localStorage.setItem('auth.session', JSON.stringify({
@@ -1065,7 +1224,7 @@ test('runs auth command-center actions with redacted session output', async ({ p
     await expect(panel).toContainText('redacted');
     await expect(panel).toContainText('Session TTL');
     await expect(panel).toContainText('Ticket TTL');
-    await expect(panel).toContainText('Use separate browser contexts for Alice, Bob, and Charlie');
+    await expect(panel).toContainText('Ordinary same-origin tabs share localStorage');
 
     await panel.getByRole('button', { name: 'Create WS ticket' }).click();
     await expect(panel).toContainText('Create WS ticket');

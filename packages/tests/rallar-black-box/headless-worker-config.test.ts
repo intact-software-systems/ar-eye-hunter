@@ -67,6 +67,8 @@ describe("rallar-black-box headless worker config", () => {
     );
     expect(firstUrl.searchParams.get("runId")).toBe("run-1");
     expect(firstUrl.searchParams.get("agentId")).toBe("fsn1-worker-01");
+    expect(firstUrl.searchParams.get("actor")).toBe("fsn1-worker-01");
+    expect(firstUrl.searchParams.get("sessionId")).toBe("fsn1-worker-01");
     expect(firstUrl.searchParams.get("apiBaseUrl")).toBe(
       "https://api.example.test",
     );

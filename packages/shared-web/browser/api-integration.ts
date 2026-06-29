@@ -2,8 +2,12 @@ import { Temporal } from '@js-temporal/polyfill';
 import { readApiBaseUrl } from './api-client-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import {
+    AgentSessionTicketRequest,
+    AgentSessionTicketResponse,
     ApiConfig,
     type AuthSession,
+    ConsumeAgentSessionTicketRequest,
+    ConsumeAgentSessionTicketResponse,
     IceConfig,
     LoginRequest,
     LoginResponse,
@@ -496,6 +500,32 @@ export async function logoutFromApi(
         '/api/auth/logout',
         'POST',
         {},
+        options,
+    );
+}
+
+export async function issueAgentSessionTickets(
+    request: AgentSessionTicketRequest,
+    options?: ApiRequestOptions,
+): Promise<AgentSessionTicketResponse> {
+    return await executeHttpRequest<AgentSessionTicketRequest, AgentSessionTicketResponse>(
+        readApiBaseUrl(),
+        '/api/auth/agent-session-tickets',
+        'POST',
+        request,
+        options,
+    );
+}
+
+export async function consumeAgentSessionTicket(
+    request: ConsumeAgentSessionTicketRequest,
+    options?: ApiRequestOptions,
+): Promise<ConsumeAgentSessionTicketResponse> {
+    return await executeHttpRequest<ConsumeAgentSessionTicketRequest, ConsumeAgentSessionTicketResponse>(
+        readApiBaseUrl(),
+        '/api/auth/agent-session-tickets/consume',
+        'POST',
+        request,
         options,
     );
 }

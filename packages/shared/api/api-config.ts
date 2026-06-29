@@ -88,6 +88,27 @@ export type WebSocketTicketResponse = {
     expiresAtEpochMs: number;
 };
 
+export type AgentSessionTicketRequest = {
+    readonly agentIds: readonly string[];
+};
+
+export type AgentSessionTicket = {
+    readonly agentId: string;
+    readonly ticket: string;
+    readonly sessionId: string;
+    readonly expiresAtEpochMs: number;
+};
+
+export type AgentSessionTicketResponse = {
+    readonly tickets: readonly AgentSessionTicket[];
+};
+
+export type ConsumeAgentSessionTicketRequest = {
+    readonly ticket: string;
+};
+
+export type ConsumeAgentSessionTicketResponse = AuthSession;
+
 export type GroupId = string;
 
 export type OverlayId = string;

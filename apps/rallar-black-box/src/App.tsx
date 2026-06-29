@@ -14,7 +14,12 @@ import type {
     AuthSession,
     WebSocketTicketResponse,
 } from '@shared/api/api-config.ts';
-import { clearSession, readSession } from '@shared/api/auth.ts';
+import { clearSession, readSession, writeSession } from '@shared/api/auth.ts';
+import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import {
+    consumeAgentSessionTicket,
+    issueAgentSessionTickets,
+} from '@shared-web/browser/api-integration.ts';
 import {
     selectRallarBlackBoxActiveCommand,
     selectRallarBlackBoxCommandHistory,
@@ -69,6 +74,11 @@ import {
     bootstrapPatchFromAuthSession,
 } from './auth-flow.ts';
 import { readAuthSessionFromRallarAuthState } from './auth-lifecycle.ts';
+import {
+    createRunnerAgentLaunchUrl,
+    runnerAgentId,
+    runnerNewAgentLaunchSuffix,
+} from './runner-agent-launch.ts';
 import type { RallarBlackBoxControlSnapshot } from './control-client.ts';
 import {
     cancelDistributedRun,
@@ -458,20 +468,6 @@ type RunnerRecipeCatalogEntry = Readonly<{
 type RunnerServiceProbe = Readonly<{
     status: RunnerServiceProbeStatus;
     detail: string;
-}>;
-
-type RunnerAgentLaunchInput = Readonly<{
-    origin: string;
-    providerMode: RallarBlackBoxBootstrapConfig['providerMode'];
-    controlWsUrl: string;
-    runId: string;
-    agentId: string;
-    groupId: string;
-    apiBaseUrl: string;
-    applicationId: string;
-    workspaceId: string;
-    restoreSession: boolean;
-    controlToken?: string;
 }>;
 
 type CommandCenterRestActionLog = Readonly<{
@@ -1116,47 +1112,6 @@ function runnerControlWsUrlFromHttpBaseUrl(value: string): string {
 
 function runnerBrowserOrigin(): string {
     return globalThis.location?.origin ?? 'http://localhost:5176';
-}
-
-function runnerNewAgentLaunchSuffix(): string {
-    return Date.now().toString(36).slice(-5);
-}
-
-function runnerAgentId(
-    prefix: string,
-    index: number,
-    count: number,
-    suffix: string,
-): string {
-    const safePrefix = safeIdSegment(prefix || 'agent');
-    const safeSuffix = safeIdSegment(suffix || runnerNewAgentLaunchSuffix());
-    return count > 1
-        ? `${safePrefix}-${safeSuffix}-${index + 1}`
-        : `${safePrefix}-${safeSuffix}`;
-}
-
-function runnerAgentLaunchUrl(input: RunnerAgentLaunchInput): string {
-    const url = new URL('/', input.origin);
-    url.searchParams.set('mode', 'control');
-    url.searchParams.set('workspace', 'black-box-runner');
-    url.searchParams.set('tab', 'local-workbench');
-    url.searchParams.set('provider', input.providerMode);
-    url.searchParams.set('autoConnect', '1');
-    url.searchParams.set('controlUrl', input.controlWsUrl);
-    url.searchParams.set('runId', input.runId);
-    url.searchParams.set('agentId', input.agentId);
-    url.searchParams.set('roomId', input.groupId);
-    url.searchParams.set('apiBaseUrl', input.apiBaseUrl);
-    url.searchParams.set('applicationId', input.applicationId);
-    url.searchParams.set('workspaceId', input.workspaceId);
-    url.searchParams.set('rallarLeaveRoomOnClose', '0');
-    if (input.restoreSession) {
-        url.searchParams.set('rallarRestoreSession', '1');
-    }
-    if (input.controlToken) {
-        url.searchParams.set('controlToken', input.controlToken);
-    }
-    return url.toString();
 }
 
 function runnerReadinessCheckTone(check: RunnerReadinessCheck): string {
@@ -4141,6 +4096,50 @@ function readCurrentAuthSession(): AuthSession | undefined {
     }
 }
 
+function scrubAgentSessionTicketFromUrl(): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    const hashParams = new URLSearchParams(
+        window.location.hash.startsWith('#')
+            ? window.location.hash.slice(1)
+            : window.location.hash,
+    );
+    if (!hashParams.has('agentSessionTicket')) {
+        return;
+    }
+
+    hashParams.delete('agentSessionTicket');
+    const nextUrl = new URL(window.location.href);
+    nextUrl.hash = hashParams.toString();
+    window.history.replaceState(null, document.title, nextUrl.toString());
+}
+
+let pendingAgentSessionTicketConsume: Readonly<{
+    ticket: string;
+    promise: Promise<AuthSession>;
+}> | undefined;
+
+function consumeBootstrapAgentSessionTicket(
+    ticket: string,
+    apiBaseUrl: string,
+): Promise<AuthSession> {
+    if (pendingAgentSessionTicketConsume?.ticket === ticket) {
+        return pendingAgentSessionTicketConsume.promise;
+    }
+
+    configureApiClient({ apiBaseUrl });
+    const promise = consumeAgentSessionTicket({ ticket })
+        .finally(() => {
+            if (pendingAgentSessionTicketConsume?.ticket === ticket) {
+                pendingAgentSessionTicketConsume = undefined;
+            }
+        });
+    pendingAgentSessionTicketConsume = { ticket, promise };
+    return promise;
+}
+
 async function loadBrowserRallarFacade() {
     const directFacade =
         typeof window === 'undefined'
@@ -6275,7 +6274,7 @@ function RunnerAgentSetupPanel({
                             onRestoreSessionChange(event.target.checked)
                         }
                     />
-                    <span>Use current login</span>
+                    <span>Mint fresh per-tab sessions from current login</span>
                 </label>
             </div>
             <div className="runner-agent-actions">
@@ -6322,9 +6321,9 @@ function RunnerAgentSetupPanel({
                     <dt>Login</dt>
                     <dd>
                         {authSession
-                            ? `${authSession.username} session`
+                            ? `${authSession.username} fresh per-tab sessions`
                             : restoreSession
-                              ? 'restore requested'
+                              ? 'fresh per-tab sessions requested'
                               : 'agent signs in'}
                     </dd>
                 </div>
@@ -6354,7 +6353,7 @@ function RunnerAgentSetupPanel({
                 </div>
             ) : showConnectedAgents ? (
                 <div className="empty-state">
-                    Open an agent tab, sign in there if asked, then Refresh.
+                    Open an agent tab with a one-time link, then Refresh.
                 </div>
             ) : undefined}
             {showConnectedAgents && connectedAgents.length > activeAgents.length && (
@@ -6881,35 +6880,43 @@ function RunnerRecipesPanel({
         selectRallarBlackBoxFirstFailure(state) ?? failures[0];
     const latestResult = history.at(-1);
     const agentControlWsUrl = runnerControlWsUrlFromHttpBaseUrl(controlBaseUrl);
-    const agentLaunchUrls = useMemo(
+    const agentIds = useMemo(
         () =>
             Array.from({ length: agentCount }, (_, index) =>
-                runnerAgentLaunchUrl({
+                runnerAgentId(
+                    agentPrefix,
+                    index,
+                    agentCount,
+                    agentLaunchSuffix,
+                ),
+            ),
+        [agentCount, agentLaunchSuffix, agentPrefix],
+    );
+    const agentLaunchUrls = useMemo(
+        () =>
+            agentIds.map((agentId) =>
+                createRunnerAgentLaunchUrl({
                     origin: runnerBrowserOrigin(),
                     providerMode: bootstrap.providerMode,
                     controlWsUrl: agentControlWsUrl,
                     runId: agentRunId,
-                    agentId: runnerAgentId(
-                        agentPrefix,
-                        index,
-                        agentCount,
-                        agentLaunchSuffix,
-                    ),
+                    agentId,
                     groupId: globalValues.roomId,
                     apiBaseUrl: globalValues.apiBaseUrl,
                     applicationId: globalValues.applicationId,
                     workspaceId: globalValues.workspaceId,
                     restoreSession: agentRestoreSession,
+                    authStorage: agentRestoreSession ? 'session' : undefined,
+                    actor: authSession?.username,
                     controlToken,
                 }),
             ),
         [
             agentControlWsUrl,
-            agentCount,
-            agentLaunchSuffix,
-            agentPrefix,
+            agentIds,
             agentRestoreSession,
             agentRunId,
+            authSession?.username,
             bootstrap.providerMode,
             controlToken,
             globalValues.apiBaseUrl,
@@ -7097,25 +7104,139 @@ function RunnerRecipesPanel({
         setLaunchMessage(message);
     };
 
-    const copyAgentLinks = async (): Promise<void> => {
-        await copyText(
-            agentLaunchUrls.join('\n'),
-            `Copied ${agentLaunchUrls.length} agent link${agentLaunchUrls.length === 1 ? '' : 's'}.`,
-        );
-        setAgentLaunchMessage(
-            `Copied ${agentLaunchUrls.length} agent link${agentLaunchUrls.length === 1 ? '' : 's'}.`,
+    const createBrokeredAgentLaunchUrls = async (): Promise<readonly string[]> => {
+        if (
+            agentRestoreSession &&
+            bootstrap.providerMode === 'browser-rallar'
+        ) {
+            if (!authSession) {
+                throw new Error(
+                    'Open agent tabs requires a logged-in browser session.',
+                );
+            }
+
+            configureApiClient({ apiBaseUrl: globalValues.apiBaseUrl });
+            const response = await issueAgentSessionTickets(
+                { agentIds },
+                { authSession },
+            );
+            const ticketsByAgent = new Map(
+                response.tickets.map((ticket) => [ticket.agentId, ticket]),
+            );
+
+            return agentIds.map((agentId) => {
+                const ticket = ticketsByAgent.get(agentId);
+                if (!ticket) {
+                    throw new Error(`Missing agent session ticket for ${agentId}.`);
+                }
+
+                return createRunnerAgentLaunchUrl({
+                    origin: runnerBrowserOrigin(),
+                    providerMode: bootstrap.providerMode,
+                    controlWsUrl: agentControlWsUrl,
+                    runId: agentRunId,
+                    agentId,
+                    groupId: globalValues.roomId,
+                    apiBaseUrl: globalValues.apiBaseUrl,
+                    applicationId: globalValues.applicationId,
+                    workspaceId: globalValues.workspaceId,
+                    restoreSession: true,
+                    authStorage: 'session',
+                    actor: authSession.username,
+                    sessionId: ticket.sessionId,
+                    controlToken,
+                    agentSessionTicket: ticket.ticket,
+                });
+            });
+        }
+
+        return agentIds.map((agentId) =>
+            createRunnerAgentLaunchUrl({
+                origin: runnerBrowserOrigin(),
+                providerMode: bootstrap.providerMode,
+                controlWsUrl: agentControlWsUrl,
+                runId: agentRunId,
+                agentId,
+                groupId: globalValues.roomId,
+                apiBaseUrl: globalValues.apiBaseUrl,
+                applicationId: globalValues.applicationId,
+                workspaceId: globalValues.workspaceId,
+                restoreSession: agentRestoreSession,
+                authStorage: agentRestoreSession ? 'session' : undefined,
+                actor: authSession?.username,
+                sessionId: authSession?.sessionId,
+                controlToken,
+            }),
         );
     };
 
-    const openAgentTabs = (): void => {
-        setControlRunId(agentRunId);
-        agentLaunchUrls.forEach((url) => {
-            globalThis.open?.(url, '_blank', 'noopener,noreferrer');
+    const copyAgentLinks = async (): Promise<void> => {
+        setBusyAction('agent-links');
+        setAgentLaunchMessage('Minting fresh one-time agent links...');
+        try {
+            const launchUrls = await createBrokeredAgentLaunchUrls();
+            await copyText(
+                launchUrls.join('\n'),
+                `Copied ${launchUrls.length} one-time agent link${launchUrls.length === 1 ? '' : 's'}.`,
+            );
+            setAgentLaunchMessage(
+                `Copied ${launchUrls.length} one-time, short-lived agent link${launchUrls.length === 1 ? '' : 's'}.`,
+            );
+            setAgentLaunchSuffix(runnerNewAgentLaunchSuffix());
+        } catch (error) {
+            setAgentLaunchMessage(runnerFriendlyErrorMessage(error));
+        } finally {
+            setBusyAction(undefined);
+        }
+    };
+
+    const openAgentTabs = async (): Promise<void> => {
+        const pendingAgentWindows = agentIds.map(() => {
+            const popup = globalThis.open?.('about:blank', '_blank');
+            try {
+                if (popup) {
+                    popup.opener = null;
+                    popup.document.title = 'Rallar Agent';
+                    popup.document.body.textContent =
+                        'Preparing fresh Rallar agent session...';
+                }
+            } catch {
+                // Popup access can be unavailable in browser security modes.
+            }
+            return popup;
         });
-        setAgentLaunchMessage(
-            `Requested ${agentLaunchUrls.length} agent tab${agentLaunchUrls.length === 1 ? '' : 's'}. Copy links if your browser blocked popups.`,
-        );
-        setAgentLaunchSuffix(runnerNewAgentLaunchSuffix());
+        setBusyAction('agent-tabs');
+        setAgentLaunchMessage('Minting fresh one-time agent sessions...');
+        try {
+            const launchUrls = await createBrokeredAgentLaunchUrls();
+            setControlRunId(agentRunId);
+            launchUrls.forEach((url, index) => {
+                const pendingWindow = pendingAgentWindows[index];
+                if (pendingWindow && !pendingWindow.closed) {
+                    pendingWindow.location.href = url;
+                    return;
+                }
+                globalThis.open?.(url, '_blank', 'noopener,noreferrer');
+            });
+            setAgentLaunchMessage(
+                `Requested ${launchUrls.length} agent tab${launchUrls.length === 1 ? '' : 's'} with fresh one-time sessions. Copy links if your browser blocked popups.`,
+            );
+            setAgentLaunchSuffix(runnerNewAgentLaunchSuffix());
+        } catch (error) {
+            const message = runnerFriendlyErrorMessage(error);
+            pendingAgentWindows.forEach((pendingWindow) => {
+                try {
+                    if (pendingWindow && !pendingWindow.closed) {
+                        pendingWindow.document.body.textContent = message;
+                    }
+                } catch {
+                    // Ignore inaccessible popup documents.
+                }
+            });
+            setAgentLaunchMessage(message);
+        } finally {
+            setBusyAction(undefined);
+        }
     };
 
     const runLocalRecipe = async (): Promise<void> => {
@@ -23771,10 +23892,10 @@ function AuthCommandCenterPanel({
                 className="command-center-status auth-session-guidance"
                 role="note"
             >
-                Use separate browser contexts for Alice, Bob, and Charlie so
-                each tab has its own local `auth.session`. The session ID here
-                must match Global Context before REST, WS, RTC, or Rallar Data
-                actions should be expected to authorize.
+                Ordinary same-origin tabs share localStorage `auth.session`.
+                Agent tabs opened from Connect Agents use one-time links and
+                sessionStorage so the same logged-in user can create distinct
+                targetable browser sessions.
             </div>
             {busyAction && (
                 <div className="command-center-status" role="status">
@@ -27317,6 +27438,64 @@ export default function App() {
     }, [authSession, bootstrap.apiBaseUrl, requiresLogin]);
 
     useEffect(() => {
+        if (
+            !requiresLogin ||
+            authSession ||
+            !bootstrap.rallarAgentSessionTicket
+        ) {
+            return;
+        }
+
+        let cancelled = false;
+        setAuthBusy(true);
+        setAuthError(undefined);
+
+        void (async () => {
+            const facade = await loadBrowserRallarFacade();
+            facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl });
+            const session = await consumeBootstrapAgentSessionTicket(
+                bootstrap.rallarAgentSessionTicket ?? '',
+                bootstrap.apiBaseUrl,
+            );
+            if (cancelled) {
+                return;
+            }
+
+            writeSession(session);
+            scrubAgentSessionTicketFromUrl();
+            rallarBlackBoxRuntimeStore.updateBootstrapConfig(
+                {
+                    ...bootstrapPatchFromAuthSession(
+                        session,
+                        bootstrap.apiBaseUrl,
+                    ),
+                    rallarAgentSessionTicket: undefined,
+                },
+            );
+            setAuthSession(session);
+        })()
+            .catch((error) => {
+                if (!cancelled) {
+                    setAuthError(authErrorMessage(error));
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setAuthBusy(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        authSession,
+        bootstrap.apiBaseUrl,
+        bootstrap.rallarAgentSessionTicket,
+        requiresLogin,
+    ]);
+
+    useEffect(() => {
         const authKey = authSession
             ? `${authSession.clientId ?? authSession.username}:${authSession.sessionId}`
             : undefined;
@@ -27454,6 +27633,33 @@ export default function App() {
             setAuthBusy(false);
         }
     };
+
+    if (requiresLogin && !authSession && bootstrap.rallarAgentSessionTicket) {
+        return (
+            <main className="auth-shell">
+                <section className="auth-panel">
+                    <div className="auth-heading">
+                        <p className="eyebrow">Rallar Kit</p>
+                        <h1>Connecting agent session</h1>
+                        <span className="pill active">one-time link</span>
+                    </div>
+                    <p className="auth-guidance">
+                        Preparing a fresh per-tab session for this agent.
+                    </p>
+                    {authBusy && (
+                        <div className="command-center-status" role="status">
+                            Consuming one-time agent ticket...
+                        </div>
+                    )}
+                    {authError && (
+                        <div className="workbench-error" role="status">
+                            {authError}
+                        </div>
+                    )}
+                </section>
+            </main>
+        );
+    }
 
     if (requiresLogin && !authSession) {
         return (

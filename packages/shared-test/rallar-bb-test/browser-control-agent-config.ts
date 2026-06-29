@@ -1,4 +1,4 @@
-import { readSession } from '@shared/api/auth.ts';
+import { readSession, type AuthSessionStorageKind } from '@shared/api/auth.ts';
 import {
     RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
     parseRallarBlackBoxProviderMode,
@@ -33,6 +33,8 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
     rallarPassword?: string;
     rallarToken?: string;
     rallarRegister: boolean | 'if-needed';
+    rallarAuthStorage: AuthSessionStorageKind;
+    rallarAgentSessionTicket?: string;
     rallarRestoreSession: boolean;
     rallarLogoutOnClose: boolean;
     rallarLeaveRoomOnClose: boolean;
@@ -56,6 +58,10 @@ export type RallarBlackBoxBootstrapConfig = Readonly<{
 
 function searchParams(search: string): URLSearchParams {
     return new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+}
+
+function hashParams(hash: string): URLSearchParams {
+    return new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
 }
 
 function paramValue(
@@ -90,6 +96,12 @@ function registerParamValue(
         return 'if-needed';
     }
     return booleanParamValue(value);
+}
+
+function authStorageParamValue(
+    value: string | undefined,
+): AuthSessionStorageKind {
+    return value?.toLowerCase() === 'session' ? 'session' : 'local';
 }
 
 function numberParamValue(
@@ -182,6 +194,7 @@ function bootstrapSource(
         'rallarPassword',
         'rallarToken',
         'rallarRegister',
+        'rallarAuthStorage',
         'rallarRestoreSession',
         'rallarLogoutOnClose',
         'rallarLeaveRoomOnClose',
@@ -226,6 +239,7 @@ function bootstrapSource(
         'VITE_RALLAR_PASSWORD',
         'VITE_RALLAR_TOKEN',
         'VITE_RALLAR_REGISTER',
+        'VITE_RALLAR_AUTH_STORAGE',
         'VITE_RALLAR_RESTORE_SESSION',
         'VITE_RALLAR_LOGOUT_ON_CLOSE',
         'VITE_RALLAR_LEAVE_ROOM_ON_CLOSE',
@@ -306,8 +320,10 @@ export function resolveRallarBlackBoxBootstrapConfig(
     search = globalThis.window?.location?.search ?? '',
     env: Readonly<Record<string, string | undefined>> =
         (import.meta as { env?: Record<string, string | undefined> }).env ?? {},
+    hash = globalThis.window?.location?.hash ?? '',
 ): RallarBlackBoxBootstrapConfig {
     const params = searchParams(search);
+    const fragmentParams = hashParams(hash);
     const mode = controlModeFrom(params, env);
     const providerMode = parseRallarBlackBoxProviderMode(
         paramValue(params, env, 'provider', 'VITE_RALLAR_PROVIDER') ??
@@ -400,6 +416,11 @@ export function resolveRallarBlackBoxBootstrapConfig(
         rallarRegister: registerParamValue(
             paramValue(params, env, 'rallarRegister', 'VITE_RALLAR_REGISTER'),
         ),
+        rallarAuthStorage: authStorageParamValue(
+            paramValue(params, env, 'rallarAuthStorage', 'VITE_RALLAR_AUTH_STORAGE'),
+        ),
+        rallarAgentSessionTicket: fragmentParams.get('agentSessionTicket')?.trim() ||
+            undefined,
         rallarRestoreSession: booleanParamValue(
             paramValue(params, env, 'rallarRestoreSession', 'VITE_RALLAR_RESTORE_SESSION'),
         ),
@@ -466,7 +487,7 @@ export function rallarConfigFromBootstrap(
 }
 
 function browserAuthSessionExists(): boolean {
-    if (typeof localStorage === 'undefined') {
+    if (typeof localStorage === 'undefined' && typeof sessionStorage === 'undefined') {
         return false;
     }
 

@@ -39,6 +39,18 @@ npm run test:rallar:full-stack:memory
 npm run test:playwright:relic:full-stack
 ```
 
+## UI Workflow Testing
+
+- Prefer role/label selectors over implementation selectors.
+- Start from a realistic logged-in or unauthenticated screen.
+- Click and type through the visible workflow a human would operate.
+- Verify the state the user cares about plus hidden browser state when the bug is state-related.
+- For popups, auth, storage, realtime, downloads, or navigation, assert URL cleanup, localStorage/sessionStorage, requests, visible status, session IDs, connected agents, or artifacts.
+
+```bash
+npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
+```
+
 ## Notes
 
 - Deno tasks are app-local; run them from the app directory unless the root script wraps them.

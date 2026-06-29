@@ -78,6 +78,21 @@ describe('browser control-agent bootstrap config', () => {
         expect(runtimeConfig.rallar?.register).toBe('if-needed');
     });
 
+    it('passes per-tab auth storage through bootstrap without putting tickets in runtime config', () => {
+        const bootstrap = resolveRallarBlackBoxBootstrapConfig(
+            '?mode=control&autoConnect=1&provider=browser-rallar&apiBaseUrl=https%3A%2F%2Fapi.example.test&rallarAuthStorage=session&actor=alice&sessionId=agent-session&rallarRestoreSession=1',
+            {},
+            '#agentSessionTicket=one-time-ticket',
+        );
+
+        const runtimeConfig = remoteControlConfig(bootstrap, 3);
+
+        expect(bootstrap.rallarAuthStorage).toBe('session');
+        expect(bootstrap.rallarAgentSessionTicket).toBe('one-time-ticket');
+        expect(runtimeConfig.rallar?.restoreSession).toBe(true);
+        expect(JSON.stringify(runtimeConfig)).not.toContain('one-time-ticket');
+    });
+
     it('preserves explicit fleet location metadata in remote-control runtime config', () => {
         const bootstrap = resolveRallarBlackBoxBootstrapConfig(
             '?mode=control&fleetRegion=eu-north&fleetProvider=hetzner&fleetDatacenter=fsn1&fleetLatitude=52.5333&fleetLongitude=13.3833&fleetLocationLabel=fsn1%20operator%20rack',
