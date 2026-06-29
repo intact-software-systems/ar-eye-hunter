@@ -464,22 +464,32 @@ describe('Hetzner distributed recipe workflow', () => {
         const artifactDir = path.join(tmp, 'distributed-runs');
         const npmCacheDir = path.join(tmp, 'npm-cache');
         const npmLogDir = path.join(tmp, 'npm-logs');
+        const controlStateDir = path.join(tmp, 'control-state');
+        const playwrightTmpDir = path.join(tmp, 'playwright_chromiumdev_profile-old');
         const viteTempDir = path.join(checkoutDir, 'node_modules/.vite-temp');
+        const nodeModulesPackageDir = path.join(checkoutDir, 'node_modules/react');
         const blackBoxDist = path.join(checkoutDir, 'apps/rallar-black-box/dist');
         const headlessDist = path.join(checkoutDir, 'apps/rallar-black-box-headless/dist');
 
         await mkdir(viteTempDir, { recursive: true });
+        await mkdir(nodeModulesPackageDir, { recursive: true });
         await mkdir(blackBoxDist, { recursive: true });
         await mkdir(headlessDist, { recursive: true });
         await mkdir(path.join(artifactDir, 'old-run'), { recursive: true });
         await mkdir(npmCacheDir, { recursive: true });
         await mkdir(npmLogDir, { recursive: true });
+        await mkdir(controlStateDir, { recursive: true });
+        await mkdir(playwrightTmpDir, { recursive: true });
         await writeFile(path.join(viteTempDir, 'chunk.tmp'), 'temp\n');
+        await writeFile(path.join(nodeModulesPackageDir, 'index.js'), 'export default null;\n');
         await writeFile(path.join(blackBoxDist, 'bundle.js'), 'bundle\n');
         await writeFile(path.join(headlessDist, 'headless.js'), 'headless\n');
         await writeFile(path.join(artifactDir, 'old-run/report.json'), '{}\n');
         await writeFile(path.join(npmCacheDir, 'cache-entry'), 'cache\n');
         await writeFile(path.join(npmLogDir, 'debug.log'), 'log\n');
+        await writeFile(path.join(controlStateDir, 'control-snapshot.json'), '{}\n');
+        await writeFile(path.join(controlStateDir, 'control-snapshot.json.tmp-123'), '{}\n');
+        await writeFile(path.join(playwrightTmpDir, 'LOCK'), 'profile\n');
 
         const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh');
         const rolloutScript = await readFile(scriptPath, 'utf8');
@@ -490,6 +500,8 @@ describe('Hetzner distributed recipe workflow', () => {
                 RALLAR_DISTRIBUTED_ARTIFACT_DIR: artifactDir,
                 RALLAR_ROLLOUT_NPM_CACHE_DIR: npmCacheDir,
                 RALLAR_ROLLOUT_NPM_LOG_DIR: npmLogDir,
+                RALLAR_ROLLOUT_CONTROL_STATE_DIR: controlStateDir,
+                RALLAR_ROLLOUT_TMP_DIR: tmp,
                 RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'cleanup-disk-pressure',
             },
         });
@@ -498,12 +510,15 @@ describe('Hetzner distributed recipe workflow', () => {
             /cleanup_rollout_disk_pressure\s+echo "==> Installing npm dependencies"/,
         );
         expect(stdout).toContain('cleanedRolloutDiskPressure=true');
-        await expect(stat(viteTempDir)).rejects.toThrow();
+        await expect(stat(path.join(checkoutDir, 'node_modules'))).rejects.toThrow();
         await expect(stat(blackBoxDist)).rejects.toThrow();
         await expect(stat(headlessDist)).rejects.toThrow();
         await expect(stat(path.join(artifactDir, 'old-run'))).rejects.toThrow();
         await expect(stat(npmCacheDir)).rejects.toThrow();
         await expect(stat(npmLogDir)).rejects.toThrow();
+        await expect(stat(path.join(controlStateDir, 'control-snapshot.json'))).resolves.toBeTruthy();
+        await expect(stat(path.join(controlStateDir, 'control-snapshot.json.tmp-123'))).rejects.toThrow();
+        await expect(stat(playwrightTmpDir)).rejects.toThrow();
     });
 
     it('checks out exact commit SHAs without treating them as branch pull refs', async () => {
