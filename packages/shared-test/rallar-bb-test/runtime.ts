@@ -11,11 +11,11 @@ import {
     type RallarBlackBoxTestAssertCommand,
     type RallarBlackBoxTestAssertOperator,
     type RallarBlackBoxTestAssertResultValue,
-    type RallarBlackBoxTestCompositeChildResult,
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestCommandContext,
     type RallarBlackBoxTestCommandExecutor,
     type RallarBlackBoxTestCommandOutcome,
+    type RallarBlackBoxTestCompositeChildResult,
     type RallarBlackBoxTestConfig,
     type RallarBlackBoxTestError,
     type RallarBlackBoxTestEvent,
@@ -33,8 +33,8 @@ import {
     type RallarBlackBoxTestRecipeRunCommand,
     type RallarBlackBoxTestResult,
     type RallarBlackBoxTestRtcStreamResultValue,
-    type RallarBlackBoxTestRuntimeCleanup,
     type RallarBlackBoxTestRuntime,
+    type RallarBlackBoxTestRuntimeCleanup,
     type RallarBlackBoxTestRuntimeEventInput,
     type RallarBlackBoxTestRuntimeStatus,
     type RallarBlackBoxTestSendObservation,
@@ -102,13 +102,16 @@ const DEFAULT_WAIT_TIMEOUT_MS = 5_000;
 const RECENT_ASSERT_SOURCE_LIMIT = 20;
 const ASSERT_OPERATORS = ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte'] as const;
 const ABORT_ERROR_CODE = 'RALLAR_BLACK_BOX_ABORTED';
-const RALLAR_CONFIG_AUTH_KEYS = [
+const RALLAR_CONFIG_AUTH_INTENT_KEYS = [
     'username',
     'password',
     'token',
     'register',
     'displayName',
     'restoreSession',
+] as const;
+const RALLAR_CONFIG_INHERITED_KEYS = [
+    ...RALLAR_CONFIG_AUTH_INTENT_KEYS,
     'logoutOnClose',
     'leaveRoomOnClose',
     'timeoutMs',
@@ -177,7 +180,7 @@ function mergeConfigureConfig(
     }
 
     const nextRallar = asRecord(next.rallar);
-    const hasIncomingAuth = RALLAR_CONFIG_AUTH_KEYS
+    const hasIncomingAuth = RALLAR_CONFIG_AUTH_INTENT_KEYS
         .some(key => Object.prototype.hasOwnProperty.call(nextRallar, key));
     if (hasIncomingAuth) {
         return next;
@@ -185,7 +188,7 @@ function mergeConfigureConfig(
 
     const currentRallar = asRecord(current?.rallar);
     const inheritedAuth = Object.fromEntries(
-        RALLAR_CONFIG_AUTH_KEYS
+        RALLAR_CONFIG_INHERITED_KEYS
             .filter(key => currentRallar[key] !== undefined)
             .map(key => [key, currentRallar[key]]),
     );
@@ -228,9 +231,9 @@ function stringValue(value: unknown): string | undefined {
 
 function transportValue(value: unknown): RallarBlackBoxTestTransport | undefined {
     return value === 'realtime' ||
-        value === 'messages.rtc' ||
-        value === 'ws' ||
-        value === 'http'
+    value === 'messages.rtc' ||
+    value === 'ws' ||
+    value === 'http'
         ? value
         : undefined;
 }
@@ -1407,10 +1410,10 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         const backpressured = firstDefined(
             booleanValue(explicitObservation.backpressured),
             status === 'backpressure' ||
-                status === 'backpressured' ||
-                status === 'rate-limited' ||
-                status === 'buffer-full' ||
-                status === 'circuit-open',
+            status === 'backpressured' ||
+            status === 'rate-limited' ||
+            status === 'buffer-full' ||
+            status === 'circuit-open',
         );
 
         return {
@@ -2602,9 +2605,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private streamResultValue(value: unknown): RallarBlackBoxTestRtcStreamResultValue | undefined {
         const record = asRecord(value);
         return typeof record.commandId === 'string' &&
-                typeof record.plannedFrames === 'number' &&
-                record.pacing !== undefined &&
-                record.duration !== undefined
+        typeof record.plannedFrames === 'number' &&
+        record.pacing !== undefined &&
+        record.duration !== undefined
             ? value as RallarBlackBoxTestRtcStreamResultValue
             : undefined;
     }

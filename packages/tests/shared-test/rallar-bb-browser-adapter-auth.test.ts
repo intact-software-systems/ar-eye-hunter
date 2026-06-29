@@ -223,6 +223,9 @@ describe('rallar-bb browser adapter auth', () => {
                     apiBaseUrl: 'https://api.example.test',
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
+                    timeoutMs: 10_000,
+                    logoutOnClose: false,
+                    leaveRoomOnClose: false,
                     scope: {
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
@@ -260,6 +263,9 @@ describe('rallar-bb browser adapter auth', () => {
                 register: 'if-needed',
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
+                timeoutMs: 10_000,
+                logoutOnClose: false,
+                leaveRoomOnClose: false,
             },
         });
     });
