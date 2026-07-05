@@ -172,7 +172,7 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json', 1],
-            ['apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json', 1],
+            ['apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json', 2],
             ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', 2],
         ]);
 

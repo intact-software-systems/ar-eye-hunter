@@ -224,7 +224,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
                 durationSeconds: 30,
                 rateHz: 20,
                 group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-                readyPeerCount: 1,
+                readyPeerCount: 2,
                 readyTimeoutMs: 10_000,
                 stream: {
                     maxInFlight: 64,

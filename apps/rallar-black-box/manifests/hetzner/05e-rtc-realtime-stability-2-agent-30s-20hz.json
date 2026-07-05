@@ -98,7 +98,7 @@
             "transport": "realtime",
             "timeoutMs": 10000,
             "readiness": {
-              "minReadyPeers": 1,
+              "minReadyPeers": 2,
               "timeoutMs": 10000,
               "intervalMs": 100
             },
