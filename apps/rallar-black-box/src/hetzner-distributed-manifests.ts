@@ -33,6 +33,7 @@ export const HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
     'apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json',
     'apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json',
+    'apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json',
     'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
 ] as const;
 
@@ -193,6 +194,28 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
         }),
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[3],
+            title: 'RTC realtime stability 2-agent 30s 15 Hz',
+            description: 'Higher-rate 15 Hz RTC realtime stability stream for sustained pacing evidence.',
+            distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-30s-15hz',
+            recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+                durationSeconds: 30,
+                rateHz: 15,
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyPeerCount: 1,
+                readyTimeoutMs: 10_000,
+                stream: {
+                    maxInFlight: 64,
+                    maxDroppedFrames: 22,
+                    maxP95SendDurationMs: 200,
+                    maxP99SendDurationMs: 1000,
+                },
+            }),
+            agentCount: 2,
+            profiles: ['rtc', 'realtime', 'stability', 'extended'],
+            live: true,
+        }),
+        buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[4],
             title: 'RTC realtime 3-agent 15s',
             description: 'Heavier 10 Hz RTC realtime run for three-agent load and percentile baselines.',
             distributedRunId: 'hetzner-rtc-realtime-3-agent-15s',
