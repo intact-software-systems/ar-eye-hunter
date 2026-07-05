@@ -88,8 +88,8 @@ export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRunt
         async close() {
             return await (await resolveBrowserRallarRuntime()).close();
         },
-        async health() {
-            return await (await resolveBrowserRallarRuntime()).health();
+        async health(input?: unknown) {
+            return await (await resolveBrowserRallarRuntime()).health(input);
         },
     };
 }

@@ -163,13 +163,7 @@ export class WebRtcGroupService {
             return undefined;
         }
 
-        return this.groupCache.readAllValues()
-            .filter((snapshot) =>
-                readGroupId(snapshot) === this.groupRef.groupId &&
-                isSameGroupScope(snapshot.group, this.groupRef)
-            )
-            .sort((left, right) => readGroupVersion(right) - readGroupVersion(left))
-            .at(0);
+        return this.findLatestMatchingCachedGroup(this.groupCache.readAllValues());
     }
 
     private readDirectCachedGroup(
@@ -179,6 +173,30 @@ export class WebRtcGroupService {
         return mode === 'read'
             ? this.groupCache.read(key)
             : this.groupCache.peek(key);
+    }
+
+    private findLatestMatchingCachedGroup(
+        snapshots: readonly AnyGroupPresence[],
+    ): AnyGroupPresence | undefined {
+        let latest: AnyGroupPresence | undefined;
+        let latestVersion = Number.NEGATIVE_INFINITY;
+
+        for (const snapshot of snapshots) {
+            if (
+                readGroupId(snapshot) !== this.groupRef.groupId ||
+                !isSameGroupScope(snapshot.group, this.groupRef)
+            ) {
+                continue;
+            }
+
+            const version = readGroupVersion(snapshot);
+            if (version > latestVersion) {
+                latest = snapshot;
+                latestVersion = version;
+            }
+        }
+
+        return latest;
     }
 
     private computeDiff(

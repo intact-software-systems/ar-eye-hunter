@@ -50,7 +50,7 @@ import {
 import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { isDefined, jsonEquals } from '@shared/repository/state-utils.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import {
     timeRallarAsync,
@@ -105,6 +105,10 @@ export type GroupStateService = Readonly<{
     listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
     readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
     listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
+    listRecentEvents?(
+        ref: GroupRef,
+        query: StateEventListQuery,
+    ): Promise<readonly GroupEvent[]>;
     listEventPage(
         ref: GroupRef,
         query: StateEventListQuery,
@@ -242,13 +246,7 @@ export function createGroupStateService(
 
     const service: GroupStateService = {
         listSnapshots: async (scope) => {
-            const repository = repositoryFor(runtimeRepository);
-            const groups = await repository.listGroups(scope);
-            const snapshots = await Promise.all(
-                groups.map(async (group) => await repository.readSnapshot(group)),
-            );
-
-            return snapshots.filter(isDefined);
+            return await repositoryFor(runtimeRepository).listSnapshots(scope);
         },
         readSnapshot: async (ref) => {
             return await repositoryFor(runtimeRepository).readSnapshot(
@@ -257,6 +255,12 @@ export function createGroupStateService(
         },
         listEvents: async (ref) => {
             return await repositoryFor(runtimeRepository).listEvents(ref);
+        },
+        listRecentEvents: async (ref, query) => {
+            return await repositoryFor(runtimeRepository).listRecentEvents(
+                ref,
+                query,
+            );
         },
         listEventPage: async (ref, query) => {
             return await repositoryFor(runtimeRepository).listEventPage(
@@ -1714,6 +1718,12 @@ function withGroupStateServiceTiming(
                 timing,
                 toGroupTimingInput(serviceId, 'listEvents', ref),
                 () => service.listEvents(ref),
+            ),
+        listRecentEvents: async (ref, query) =>
+            await timeRallarAsync(
+                timing,
+                toGroupTimingInput(serviceId, 'listRecentEvents', ref),
+                () => service.listRecentEvents!(ref, query),
             ),
         listEventPage: async (ref, query) =>
             await timeRallarAsync(

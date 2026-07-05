@@ -7,8 +7,10 @@ import {
 } from '@shared/mod.ts';
 import { PSqlInboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
 import { PSqlOutboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
+import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/postgres/al-runtime/runtime-state-prefix-reader.ts';
 import type {
     RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
     RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
@@ -17,6 +19,56 @@ afterEach(() => {
 });
 
 describe('PSqlInboundAdmissionBackend', () => {
+    it('lists prefix rows through runtime-state pages when available', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const namespace = 'psql-test:inbound:paged-list';
+        const backend = new PSqlInboundAdmissionBackend(repository, namespace);
+        const prefix = 'effect:';
+        const total = RUNTIME_STATE_PREFIX_READ_PAGE_SIZE + 2;
+
+        for (let index = 0; index < total; index++) {
+            await repository.upsert(
+                namespace,
+                `${prefix}${String(index).padStart(6, '0')}`,
+                JSON.stringify({ index }),
+                Date.now() + 60_000,
+            );
+        }
+        await repository.upsert(
+            namespace,
+            'other:000001',
+            JSON.stringify({ index: -1 }),
+            Date.now() + 60_000,
+        );
+
+        const values = await backend.list<{ index: number }>(prefix);
+
+        expect(values).toHaveLength(total);
+        expect(values[0]).toEqual({
+            key: 'effect:000000',
+            value: { index: 0 },
+        });
+        expect(values.at(-1)).toEqual({
+            key: `effect:${String(total - 1).padStart(6, '0')}`,
+            value: { index: total - 1 },
+        });
+        expect(repository.findEntriesByPrefixCalls).toEqual([]);
+        expect(repository.findEntriesByPrefixPageCalls).toEqual([
+            {
+                namespace,
+                keyPrefix: prefix,
+                afterKey: undefined,
+                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+            },
+            {
+                namespace,
+                keyPrefix: prefix,
+                afterKey: `effect:${String(RUNTIME_STATE_PREFIX_READ_PAGE_SIZE - 1).padStart(6, '0')}`,
+                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+            },
+        ]);
+    });
+
     it('locks the sender version key when committing mutations', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:admission';
@@ -100,6 +152,45 @@ describe('PSqlInboundAdmissionBackend', () => {
 });
 
 describe('PSqlOutboundAdmissionBackend', () => {
+    it('lists prefix rows through runtime-state pages when available', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const namespace = 'psql-test:outbound:paged-list';
+        const backend = new PSqlOutboundAdmissionBackend(repository, namespace);
+        const prefix = 'sent:';
+        const total = RUNTIME_STATE_PREFIX_READ_PAGE_SIZE + 1;
+
+        for (let index = 0; index < total; index++) {
+            await repository.upsert(
+                namespace,
+                `${prefix}${String(index).padStart(6, '0')}`,
+                JSON.stringify({ index }),
+                Date.now() + 60_000,
+            );
+        }
+
+        const values = await backend.list<{ index: number }>(prefix);
+
+        expect(values).toHaveLength(total);
+        expect(values.map((entry) => entry.value.index)).toEqual(
+            Array.from({ length: total }, (_, index) => index),
+        );
+        expect(repository.findEntriesByPrefixCalls).toEqual([]);
+        expect(repository.findEntriesByPrefixPageCalls).toEqual([
+            {
+                namespace,
+                keyPrefix: prefix,
+                afterKey: undefined,
+                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+            },
+            {
+                namespace,
+                keyPrefix: prefix,
+                afterKey: `sent:${String(RUNTIME_STATE_PREFIX_READ_PAGE_SIZE - 1).padStart(6, '0')}`,
+                limit: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+            },
+        ]);
+    });
+
     it('locks the sender version key and persists durable effects when committing a bundle', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:outbound:admission';
@@ -297,6 +388,17 @@ type TestPreparedOutboundSend = Readonly<{
 class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
     readonly lockedKeys: Array<Readonly<{ namespace: string; key: string }>> = [];
+    readonly findEntriesByPrefixCalls: Array<
+        Readonly<{ namespace: string; keyPrefix: string }>
+    > = [];
+    readonly findEntriesByPrefixPageCalls: Array<
+        Readonly<{
+            namespace: string;
+            keyPrefix: string;
+            afterKey?: string;
+            limit: number;
+        }>
+    > = [];
 
     async begin<T>(
         fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
@@ -319,14 +421,28 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         namespace: string,
         keyPrefix: string,
     ): Promise<readonly RuntimeStateEntry[]> {
-        return [...this.data.entries()]
-            .filter(
-                ([compositeKey]) =>
-                    this.toNamespace(compositeKey) === namespace &&
-                    this.toStoreKey(compositeKey).startsWith(keyPrefix),
+        this.findEntriesByPrefixCalls.push({ namespace, keyPrefix });
+        return this.findPrefixEntries(namespace, keyPrefix);
+    }
+
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        this.findEntriesByPrefixPageCalls.push({
+            namespace,
+            keyPrefix,
+            afterKey: options.afterKey,
+            limit: options.limit,
+        });
+
+        return this.findPrefixEntries(namespace, keyPrefix)
+            .filter((entry) =>
+                options.afterKey === undefined ||
+                entry.key.localeCompare(options.afterKey) > 0
             )
-            .map(([, entry]) => ({ ...entry }))
-            .sort((left, right) => left.key.localeCompare(right.key));
+            .slice(0, options.limit);
     }
 
     async upsert(
@@ -374,6 +490,20 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
 
     private toKey(namespace: string, key: string): string {
         return `${namespace}::${key}`;
+    }
+
+    private findPrefixEntries(
+        namespace: string,
+        keyPrefix: string,
+    ): RuntimeStateEntry[] {
+        return [...this.data.entries()]
+            .filter(
+                ([compositeKey]) =>
+                    this.toNamespace(compositeKey) === namespace &&
+                    this.toStoreKey(compositeKey).startsWith(keyPrefix),
+            )
+            .map(([, entry]) => ({ ...entry }))
+            .sort((left, right) => left.key.localeCompare(right.key));
     }
 
     private toNamespace(compositeKey: string): string {

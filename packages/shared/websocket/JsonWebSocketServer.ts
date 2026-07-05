@@ -14,6 +14,10 @@ export interface WebSocketServerOnMessageCallback {
     onMessage: (ctx: ConnectionContext, data: unknown, ev: MessageEvent) => Promise<void>;
 }
 
+export type EncodedJsonWebSocketMessage = Readonly<{
+    text: string;
+}>;
+
 export class ConnectionContext {
     constructor(
         public readonly id: string,
@@ -171,17 +175,29 @@ export class JsonWebSocketServer {
     // --------------------
 
     send(connectionId: string, data: unknown): void {
+        this.sendEncoded(connectionId, this.encode(data));
+    }
+
+    encode(data: unknown): EncodedJsonWebSocketMessage {
+        return {
+            text: JSON.stringify(data),
+        };
+    }
+
+    sendEncoded(
+        connectionId: string,
+        encoded: EncodedJsonWebSocketMessage,
+    ): void {
         const ctx = this.connections.get(connectionId);
         if (!ctx || !ctx.isOpen) {
             throw new Error(`JsonWebSocketServer: cannot send; connection not open: ${connectionId}`);
         }
 
-        const encoded = JSON.stringify(data);
-        ctx.socket.send(encoded);
+        ctx.socket.send(encoded.text);
     }
 
     broadcast(data: unknown, filter?: (ctx: ConnectionContext) => boolean): number {
-        const encoded = JSON.stringify(data);
+        const encoded = this.encode(data);
 
         let count = 0;
         for (const ctx of this.connections.values()) {
@@ -189,7 +205,7 @@ export class JsonWebSocketServer {
             if (filter && !filter(ctx)) continue;
 
             try {
-                ctx.socket.send(encoded);
+                ctx.socket.send(encoded.text);
                 count += 1;
             } catch (e) {
                 console.error('Broadcast send failed:', e);

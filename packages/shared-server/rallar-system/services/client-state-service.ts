@@ -31,7 +31,7 @@ import {
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
-import { arrayEquals, isDefined, jsonEquals, } from '@shared/repository/state-utils.ts';
+import { arrayEquals, jsonEquals, } from '@shared/repository/state-utils.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import {
@@ -72,6 +72,10 @@ export type ClientStateService = Readonly<{
         ref: ClientPrincipalRef,
     ): Promise<ClientPresenceSnapshot | undefined>;
     listEvents(ref: ClientPrincipalRef): Promise<readonly ClientEvent[]>;
+    listRecentEvents?(
+        ref: ClientPrincipalRef,
+        query: StateEventListQuery,
+    ): Promise<readonly ClientEvent[]>;
     listEventPage(
         ref: ClientPrincipalRef,
         query: StateEventListQuery,
@@ -148,15 +152,7 @@ export function createClientStateService(
 
     const service: ClientStateService = {
         listSnapshots: async (scope) => {
-            const repository = repositoryFor(runtimeRepository);
-            const principals = await repository.listPrincipals(scope);
-            const snapshots = await Promise.all(
-                principals.map(
-                    async (principal) => await repository.readSnapshot(principal),
-                ),
-            );
-
-            return snapshots.filter(isDefined);
+            return await repositoryFor(runtimeRepository).listSnapshots(scope);
         },
         readSnapshot: async (ref) => {
             return await repositoryFor(runtimeRepository).readSnapshot(
@@ -168,6 +164,12 @@ export function createClientStateService(
         },
         listEvents: async (ref) => {
             return await repositoryFor(runtimeRepository).listEvents(ref);
+        },
+        listRecentEvents: async (ref, query) => {
+            return await repositoryFor(runtimeRepository).listRecentEvents(
+                ref,
+                query,
+            );
         },
         listEventPage: async (ref, query) => {
             return await repositoryFor(runtimeRepository).listEventPage(
@@ -944,6 +946,12 @@ function withClientStateServiceTiming(
                 timing,
                 toClientTimingInput(serviceId, 'listEvents', ref),
                 () => service.listEvents(ref),
+            ),
+        listRecentEvents: async (ref, query) =>
+            await timeRallarAsync(
+                timing,
+                toClientTimingInput(serviceId, 'listRecentEvents', ref),
+                () => service.listRecentEvents!(ref, query),
             ),
         listEventPage: async (ref, query) =>
             await timeRallarAsync(

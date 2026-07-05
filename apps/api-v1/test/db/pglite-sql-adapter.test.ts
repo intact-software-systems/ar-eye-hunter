@@ -20,6 +20,7 @@ import {
   type RallarCrdtOperationBatch,
   type RallarCrdtSnapshotEnvelope,
   type RallarCrdtUpdateEnvelope,
+  toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
@@ -161,6 +162,18 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
         limit: 1,
       },
     );
+    const recentClientEvents = await clientEvents.listRecentClientEvents(
+      clientRef,
+      { limit: 2 },
+    );
+    const recentFilteredClientEvents = await clientEvents.listRecentClientEvents(
+      clientRef,
+      {
+        eventTypes: ['session-disconnected'],
+        limit: 1,
+        after: firstClientPage.nextCursor,
+      },
+    );
 
     assert.deepEqual(
       firstClientPage.events.map((event) => event.eventId),
@@ -186,6 +199,14 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
         'client-late-snapshot',
         'client-filtered',
       ],
+    );
+    assert.deepEqual(
+      recentClientEvents.map((event) => event.eventId),
+      ['client-late-snapshot', 'client-filtered'],
+    );
+    assert.deepEqual(
+      recentFilteredClientEvents.map((event) => event.eventId),
+      ['client-filtered'],
     );
 
     await groupEvents.appendGroupEvent(
@@ -213,6 +234,10 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
       limit: 2,
       after: firstGroupPage.nextCursor,
     });
+    const recentGroupEvents = await groupEvents.listRecentGroupEvents(
+      groupRef,
+      { limit: 2 },
+    );
 
     assert.deepEqual(
       firstGroupPage.events.map((event) => event.eventId),
@@ -230,6 +255,10 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
       occurredAtEpochMs: 4_000,
       eventId: 'group-duplicate',
     });
+    assert.deepEqual(
+      recentGroupEvents.map((event) => event.eventId),
+      ['group-late-snapshot', 'group-duplicate'],
+    );
   });
 });
 
@@ -356,6 +385,21 @@ Deno.test('PSqlAppDataRepository runs against PGlite SQL adapter', async () => {
 
     const prefixed = await repository.findEntries('app-smoke', 'store', 'a');
     assert.deepEqual(prefixed.map((entry) => entry.key), ['alpha']);
+    const firstPage = await repository.findEntriesPage('app-smoke', 'store', {
+      limit: 1,
+    });
+    const secondPage = await repository.findEntriesPage('app-smoke', 'store', {
+      afterKey: firstPage.at(-1)?.key,
+      limit: 10,
+    });
+    const prefixedPage = await repository.findEntriesPage('app-smoke', 'store', {
+      keyPrefix: 'a',
+      limit: 10,
+    });
+
+    assert.deepEqual(firstPage.map((entry) => entry.key), ['alpha']);
+    assert.deepEqual(secondPage.map((entry) => entry.key), ['beta', 'expired']);
+    assert.deepEqual(prefixedPage.map((entry) => entry.key), ['alpha']);
 
     assert.equal(await repository.deleteExpired('app-smoke', 'store'), 1);
     assert.equal(await repository.deleteByKey('app-smoke', 'store', 'beta'), true);
@@ -375,6 +419,7 @@ Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
     const accepted = await repository.append(toCrdtAppendInput(first));
     const duplicate = await repository.append(toCrdtAppendInput(first));
     await repository.append(toCrdtAppendInput(second));
+    const storedBytes = await readCrdtStoredUpdateBytes(sql, CRDT_DOCUMENT_REF);
 
     assert.equal(accepted.status, 'accepted');
     assert.equal(accepted.status === 'accepted' && accepted.append.appendSequence, 1);
@@ -382,6 +427,11 @@ Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
     assert.equal(
       duplicate.status === 'duplicate' && duplicate.append.appendSequence,
       1,
+    );
+    assert.equal(
+      storedBytes,
+      byteLengthOfSerializedJson(JSON.stringify(first)) +
+        byteLengthOfSerializedJson(JSON.stringify(second)),
     );
 
     const page = await repository.listAfter({
@@ -541,6 +591,22 @@ async function withPGliteSql(
   } finally {
     await sql.close();
   }
+}
+
+async function readCrdtStoredUpdateBytes(
+  sql: PGliteSql,
+  document: RallarCrdtDocumentRef,
+): Promise<number> {
+  const rows = await sql<{ stored_update_bytes: string | number }[]>`
+        select stored_update_bytes
+        from crdt_documents
+        where document_key = ${toRallarCrdtDocumentKey(document)}
+    `;
+  return Number(rows[0]?.stored_update_bytes ?? 0);
+}
+
+function byteLengthOfSerializedJson(serialized: string): number {
+  return new TextEncoder().encode(serialized).byteLength;
 }
 
 function createClientStateEvent(

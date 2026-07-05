@@ -132,6 +132,11 @@ describe('rallar-bb-test capability and schema contract', () => {
             expect(capability.artifactExpectations.length).toBeGreaterThan(0);
             expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, capability.example);
         }
+
+        expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'health',
+            includeRtcDiagnostics: true,
+        });
     });
 
     it('validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets', () => {
@@ -707,6 +712,15 @@ describe('rallar-bb-test capability and schema contract', () => {
         expect(recipeResult.ok).toBe(false);
         if (!recipeResult.ok) {
             expect(formatJsonSchemaValidationErrors(recipeResult.errors)).toContain('Missing required property recipeId');
+        }
+
+        const healthDiagnosticsFlagResult = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+            kind: 'health',
+            includeRtcDiagnostics: 'yes',
+        });
+        expect(healthDiagnosticsFlagResult.ok).toBe(false);
+        if (!healthDiagnosticsFlagResult.ok) {
+            expect(formatJsonSchemaValidationErrors(healthDiagnosticsFlagResult.errors)).toContain('Expected boolean');
         }
     });
 });

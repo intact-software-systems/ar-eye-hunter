@@ -111,6 +111,7 @@ export class WriteThroughObservableLatestRepository<K, V>
     }
 
     public async dispose(): Promise<void> {
+        this.memory.dispose();
         await this.whenIdle();
     }
 

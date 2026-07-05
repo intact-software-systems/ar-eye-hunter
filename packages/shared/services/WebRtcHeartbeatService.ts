@@ -39,6 +39,7 @@ export type WebRtcHeartbeatServiceInputDto = {
 export class WebRtcHeartbeatService {
     private readonly status: WebRtcHeartbeatServiceStatusDto;
 
+    private messageCallbackId: string | undefined;
     private versionCounter = 1;
 
     constructor(
@@ -57,7 +58,7 @@ export class WebRtcHeartbeatService {
             return;
         }
 
-        this.setupMessageHandler(this.input, callbacks);
+        this.messageCallbackId = this.setupMessageHandler(this.input, callbacks);
         this.status.pingInterval = this.startHeartbeat(this.input, callbacks);
     }
 
@@ -66,14 +67,22 @@ export class WebRtcHeartbeatService {
             clearInterval(this.status.pingInterval);
             this.status.pingInterval = undefined;
         }
+
+        if (this.messageCallbackId) {
+            this.input.channel.removeOnRtcMessageCallbackById(
+                this.messageCallbackId,
+            );
+            this.messageCallbackId = undefined;
+        }
     }
 
     private setupMessageHandler(
         input: WebRtcHeartbeatServiceInputDto,
         callbacks: WebRtcHeartbeatCallbacks
-    ) {
+    ): string {
+        const callbackId = input.peerSessionId + '-heartbeat';
         input.channel.onRtcMessageDo(
-            input.peerSessionId + '-heartbeat',
+            callbackId,
             {
                 onMessage: async (data: unknown) => {
                     try {
@@ -127,6 +136,7 @@ export class WebRtcHeartbeatService {
             },
             pingMessageType
         );
+        return callbackId;
     }
 
     private startHeartbeat(

@@ -45,6 +45,7 @@ type RetainedPeerConnection = Readonly<{
 export class WebRtcGroupManager {
     private readonly groupsByKey = new Map<string, WebRtcGroupService>();
     private readonly retainedPeerConnections = new Map<PeerId, RetainedPeerConnection>();
+    private peerOwnersCache: ReadonlyMap<PeerId, readonly GroupId[]> | undefined;
     private reconcileInFlight: Promise<void> | undefined;
     private retainedOrder = 0;
 
@@ -66,6 +67,12 @@ export class WebRtcGroupManager {
                 this.rtcQBox,
                 group,
                 this.groupCache,
+            );
+            service.onStateDo(
+                this.peerOwnersInvalidationCallbackId(groupKey),
+                async () => {
+                    this.invalidatePeerOwners();
+                },
             );
             this.groupsByKey.set(groupKey, service);
         }
@@ -93,6 +100,11 @@ export class WebRtcGroupManager {
             return false;
         }
 
+        service?.removeOnStateCallback(
+            this.peerOwnersInvalidationCallbackId(groupKey),
+        );
+        this.invalidatePeerOwners();
+
         if (options.retainConnections && service) {
             this.retainKnownPeersForGroup(service, groupKey);
         } else {
@@ -104,8 +116,14 @@ export class WebRtcGroupManager {
     }
 
     async clear(): Promise<void> {
+        for (const [groupKey, service] of this.groupsByKey.entries()) {
+            service.removeOnStateCallback(
+                this.peerOwnersInvalidationCallbackId(groupKey),
+            );
+        }
         this.groupsByKey.clear();
         this.retainedPeerConnections.clear();
+        this.invalidatePeerOwners();
         await this.reconcileAllGroups();
     }
 
@@ -125,6 +143,18 @@ export class WebRtcGroupManager {
      * Returns peer -> owning groups.
      */
     peerOwners(): ReadonlyMap<PeerId, readonly GroupId[]> {
+        return clonePeerOwners(this.readPeerOwnersCache());
+    }
+
+    private readPeerOwnersCache(): ReadonlyMap<PeerId, readonly GroupId[]> {
+        if (!this.peerOwnersCache) {
+            this.peerOwnersCache = this.buildPeerOwners();
+        }
+
+        return this.peerOwnersCache;
+    }
+
+    private buildPeerOwners(): ReadonlyMap<PeerId, readonly GroupId[]> {
         const owners = new Map<PeerId, GroupId[]>();
 
         for (const group of this.groupsByKey.values()) {
@@ -147,19 +177,21 @@ export class WebRtcGroupManager {
     }
 
     ownerGroupsOfPeer(peerId: PeerId): readonly GroupId[] {
-        return this.peerOwners().get(peerId) ?? [];
+        const groupIds = this.readPeerOwnersCache().get(peerId);
+        return groupIds ? [...groupIds] : [];
     }
 
     isPeerOwnedByAnyGroup(peerId: PeerId): boolean {
-        return this.peerOwners().has(peerId);
+        return this.readPeerOwnersCache().has(peerId);
     }
 
     state(): WebRtcGroupManagerState {
         const peerOwners = this.peerOwners();
         const desiredPeerIds = Array.from(peerOwners.keys());
-        const onlinePeerIds = Array.from(this.onlinePeerIds());
+        const onlinePeerIdSet = this.onlinePeerIds();
+        const onlinePeerIds = Array.from(onlinePeerIdSet);
         const onlineDesiredPeerIds = desiredPeerIds.filter((peerId) =>
-            this.onlinePeerIds().has(peerId)
+            onlinePeerIdSet.has(peerId)
         );
         const peerIdsWithNoReconnectableLanes = this.rtcQBox
             .peerIdsWithNoReconnectableLanes();
@@ -276,7 +308,16 @@ export class WebRtcGroupManager {
     }
 
     notifyOverlayTopologyChanged(): Promise<void> {
+        this.invalidatePeerOwners();
         return this.reconcileAllGroups();
+    }
+
+    private invalidatePeerOwners(): void {
+        this.peerOwnersCache = undefined;
+    }
+
+    private peerOwnersInvalidationCallbackId(groupKey: string): string {
+        return `webrtc-group-manager:peer-owners:${groupKey}`;
     }
 
     private onlinePeerIds(): Set<PeerId> {
@@ -412,4 +453,14 @@ export class WebRtcGroupManager {
             Math.floor(requested),
         );
     }
+}
+
+function clonePeerOwners(
+    peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>,
+): ReadonlyMap<PeerId, readonly GroupId[]> {
+    const copy = new Map<PeerId, readonly GroupId[]>();
+    for (const [peerId, groupIds] of peerOwners.entries()) {
+        copy.set(peerId, [...groupIds]);
+    }
+    return copy;
 }

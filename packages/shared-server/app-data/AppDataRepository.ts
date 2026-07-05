@@ -23,6 +23,12 @@ export type AppDataUpsertIfRevisionInput<V = unknown> = AppDataUpsertInput<V> &
         expectedRevision: number;
     }>;
 
+export type AppDataEntryPageOptions = Readonly<{
+    keyPrefix?: string;
+    afterKey?: string;
+    limit: number;
+}>;
+
 export type AppDataConditionalWriteResult<V = unknown> =
     | Readonly<{
         status: 'written';
@@ -85,6 +91,14 @@ export type AppDataConditionalRepositoryLike = AppDataRepositoryLike &
         ): Promise<AppDataConditionalDeleteResult>;
     }>;
 
+export type AppDataPageRepositoryLike = Readonly<{
+    findEntriesPage(
+        namespace: string,
+        storeName: string,
+        options: AppDataEntryPageOptions,
+    ): Promise<readonly AppDataEntry[]>;
+}>;
+
 export function isAppDataConditionalRepository(
     repository: AppDataRepositoryLike,
 ): repository is AppDataConditionalRepositoryLike {
@@ -92,4 +106,11 @@ export function isAppDataConditionalRepository(
     return typeof candidate.insertIfAbsent === 'function' &&
         typeof candidate.upsertIfRevision === 'function' &&
         typeof candidate.deleteIfRevision === 'function';
+}
+
+export function isAppDataPageRepository(
+    repository: AppDataRepositoryLike,
+): repository is AppDataRepositoryLike & AppDataPageRepositoryLike {
+    const candidate = repository as Partial<AppDataPageRepositoryLike>;
+    return typeof candidate.findEntriesPage === 'function';
 }

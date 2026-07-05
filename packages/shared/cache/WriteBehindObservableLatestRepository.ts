@@ -354,6 +354,7 @@ export class WriteBehindObservableLatestRepository<K, V>
     }
 
     public async dispose(): Promise<void> {
+        this.memory.dispose();
         await this.whenIdle();
         this.mirrorSubscription?.unsubscribe();
         this.mirrorSubscription = undefined;

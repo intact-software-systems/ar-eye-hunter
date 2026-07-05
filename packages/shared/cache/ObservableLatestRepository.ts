@@ -1,4 +1,9 @@
 import {
+    startExpiredEntryEviction,
+    type ExpiredEntryEvictionHandle,
+    type ExpiredEntryEvictionOptions,
+} from './ExpiredEntryEviction.ts';
+import {
     ObservableLatestValue,
     type ObservableLatestValueOptions,
     type ValueEqualityChecker,
@@ -15,7 +20,7 @@ import {
     type UpdateIfNewerOptions,
 } from './RepositoryInterfaces.ts';
 
-export type ObservableLatestRepositoryOptions<K, V> = Readonly<{
+export type ObservableLatestRepositoryOptions<K, V> = Readonly<ExpiredEntryEvictionOptions & {
     ttlMs?: number;
     isValid?: (value: V) => boolean;
     equals?: ValueEqualityChecker<V>;
@@ -27,6 +32,7 @@ export class ObservableLatestRepository<K, V>
     private readonly entries = new Map<K, ObservableLatestValue<V>>();
     private readonly defaultValueOptions: ObservableLatestValueOptions<V>;
     private readonly onObserverError?: ObservableKeyedValueErrorHandler<K, V>;
+    private readonly expiredEntryEviction?: ExpiredEntryEvictionHandle;
     private readonly listenersByType = new Map<
         ObservableValueEventType,
         Set<ObservableKeyedValueListener<K, V>>
@@ -41,6 +47,10 @@ export class ObservableLatestRepository<K, V>
             equals: options.equals,
         };
         this.onObserverError = options.onObserverError;
+        this.expiredEntryEviction = startExpiredEntryEviction(
+            options,
+            () => this.deleteExpired(),
+        );
     }
 
     public accept(key: K, value: V): void {
@@ -257,6 +267,10 @@ export class ObservableLatestRepository<K, V>
         }
 
         return removed;
+    }
+
+    public dispose(): void {
+        this.expiredEntryEviction?.dispose();
     }
 
     public size(): number {

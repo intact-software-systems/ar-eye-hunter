@@ -1,5 +1,9 @@
 import type { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
-import { ConnectionContext, JsonWebSocketServer, } from '../websocket/JsonWebSocketServer.ts';
+import {
+    ConnectionContext,
+    type EncodedJsonWebSocketMessage,
+    JsonWebSocketServer,
+} from '../websocket/JsonWebSocketServer.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
 import { OnWebSocketServerMessageCallback } from './InboxOutboxContracts.ts';
@@ -421,11 +425,34 @@ export class WsQueueBoxServerService {
             };
         }
 
+        let encoded: EncodedJsonWebSocketMessage;
+        try {
+            encoded = this.socket.encode(message);
+        } catch (error) {
+            const reason = errorToReason(error);
+            console.error(
+                `Error encoding WS server message ${message.id.msgId}`,
+                error,
+            );
+            return {
+                status: 'failed',
+                message,
+                recipients,
+                recipientCount: recipients.length,
+                sentCount: 0,
+                failedCount: recipients.length,
+                failures: recipients.map((recipient) => ({
+                    peerId: recipient.peerId,
+                    connectionId: recipient.connectionId,
+                    reason,
+                })),
+            };
+        }
         let sent = 0;
         const failures: WsServerLiveSendFailure[] = [];
         for (const recipient of recipients) {
             try {
-                this.socket.send(recipient.connectionId, message);
+                this.socket.sendEncoded(recipient.connectionId, encoded);
                 sent += 1;
             } catch (error) {
                 failures.push({
@@ -612,8 +639,12 @@ export class WsQueueBoxServerService {
         );
 
         let sent = 0;
+        const encoded = this.tryEncodeDirectMessage(message);
+        if (!encoded) {
+            return Promise.resolve();
+        }
         for (const peerId of nextHopPeerIds) {
-            sent += this.sendToResolvedPeer(peerId, message);
+            sent += this.sendToResolvedPeer(peerId, message, encoded);
         }
 
         if (sent === 0) {
@@ -719,6 +750,7 @@ export class WsQueueBoxServerService {
     private sendToResolvedPeer(
         peerId: string,
         message: ALMessage,
+        encoded?: EncodedJsonWebSocketMessage,
     ): number {
         const recipients =
             this.targetResolver.resolvePeerRecipients?.(peerId, message) ??
@@ -728,10 +760,15 @@ export class WsQueueBoxServerService {
             connectionId: peerId,
         }];
 
+        const encodedMessage = encoded ?? this.tryEncodeDirectMessage(message);
+        if (!encodedMessage) {
+            return 0;
+        }
+
         let sent = 0;
         for (const recipient of deduped) {
             try {
-                this.socket.send(recipient.connectionId, message);
+                this.socket.sendEncoded(recipient.connectionId, encodedMessage);
                 sent += 1;
             } catch (error) {
                 console.error(
@@ -742,6 +779,20 @@ export class WsQueueBoxServerService {
         }
 
         return sent;
+    }
+
+    private tryEncodeDirectMessage(
+        message: ALMessage,
+    ): EncodedJsonWebSocketMessage | undefined {
+        try {
+            return this.socket.encode(message);
+        } catch (error) {
+            console.error(
+                `Error encoding WS server message ${message.id.msgId}`,
+                error,
+            );
+            return undefined;
+        }
     }
 
     private toAckTrackingPlan(

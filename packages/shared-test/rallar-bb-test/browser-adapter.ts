@@ -69,7 +69,7 @@ export type RallarBlackBoxBrowserRallarRuntime = Readonly<{
     crdt?: RallarBlackBoxBrowserRallarCrdtRuntime;
     director?: RallarBlackBoxBrowserRallarDirectorRuntime;
     close(): Promise<unknown>;
-    health(): Promise<unknown>;
+    health(input?: unknown): Promise<unknown>;
 }>;
 
 type RallarBlackBoxBrowserRallarCrdtMethod =
@@ -2820,7 +2820,9 @@ class BrowserCommandAdapter {
         context: RallarBlackBoxTestCommandContext,
     ): Promise<RallarBlackBoxTestCommandOutcome> {
         const rallar = this.rallarRuntime
-            ? await this.rallarRuntime.health()
+            ? await this.rallarRuntime.health({
+                includeRtcDiagnostics: command.includeRtcDiagnostics === true,
+            })
             : undefined;
         return {
             status: 'ok',

@@ -70,7 +70,10 @@ import { CommandsOrchestrator, type CommandsOrchestratorPolicies, } from '@share
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
+import type {
+    QRtcMediaPolicy,
+    QRtcPeerConnectionDiagnostics,
+} from '@shared/webrtc/QRtcPeerConnection.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/QRtcClientCallbacks.ts';
 import type { WebSocketClientCallbacks } from '@shared/websocket/JsonWebSocketClient.ts';
 import type {
@@ -1146,6 +1149,7 @@ export type RallarRtcCandidatePairDiagnostics = Readonly<{
 export type RallarRtcPeerDiagnostics = Readonly<{
     peerId: string;
     connection: RallarRtcPeerConnectionStatus;
+    connectionDiagnostics?: QRtcPeerConnectionDiagnostics;
     lanes: readonly RallarRtcLaneStatus[];
     selectedCandidatePair?: RallarRtcCandidatePairDiagnostics;
     usesRelay: boolean;
@@ -6312,12 +6316,13 @@ class BrowserRallarFacade implements RallarFacade {
         const lanes = laneIds
             ? status.lanes.filter((lane) => laneIds.has(lane.laneId))
             : status.lanes;
+        const connectionDiagnostics = peer?.connection.readDiagnostics?.();
 
         try {
             const selectedCandidatePair = await readSelectedCandidatePairDiagnostics(
                 peer?.connection.status.pc,
             );
-            return {
+            const diagnostics = {
                 peerId: status.peerId,
                 connection: status.connection,
                 lanes,
@@ -6325,8 +6330,11 @@ class BrowserRallarFacade implements RallarFacade {
                 usesRelay: selectedCandidatePair?.usesRelay ?? false,
                 statsAvailable: selectedCandidatePair !== undefined,
             };
+            return connectionDiagnostics === undefined
+                ? diagnostics
+                : { ...diagnostics, connectionDiagnostics };
         } catch (error) {
-            return {
+            const diagnostics = {
                 peerId: status.peerId,
                 connection: status.connection,
                 lanes,
@@ -6334,6 +6342,9 @@ class BrowserRallarFacade implements RallarFacade {
                 statsAvailable: false,
                 statsError: toErrorMessage(error),
             };
+            return connectionDiagnostics === undefined
+                ? diagnostics
+                : { ...diagnostics, connectionDiagnostics };
         }
     }
 

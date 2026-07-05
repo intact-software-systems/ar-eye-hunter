@@ -50,6 +50,67 @@ describe('WebRtcGroupManager', () => {
         });
     });
 
+    it('reads online peers once when materializing manager state', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new CountingClientCache();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+        );
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        clientCache.set('peer-b', createClientInfo('peer-b', true));
+        clientCache.set('peer-c', createClientInfo('peer-c', false));
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, [
+                'self',
+                'peer-a',
+                'peer-b',
+                'peer-c',
+            ]),
+        );
+
+        clientCache.resetCounters();
+
+        expect(manager.state()).toMatchObject({
+            onlinePeerIds: ['peer-a', 'peer-b'],
+            onlineDesiredPeerIds: ['peer-a', 'peer-b'],
+        });
+        expect(clientCache.keysCalls).toBe(1);
+    });
+
+    it('updates cached peer owners after group membership changes', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+        );
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        clientCache.set('peer-b', createClientInfo('peer-b', true));
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, ['self', 'peer-a']),
+        );
+
+        expect(manager.ownerGroupsOfPeer('peer-a')).toEqual(['group-1']);
+        expect(manager.isPeerOwnedByAnyGroup('peer-b')).toBe(false);
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 2, ['self', 'peer-b']),
+        );
+
+        expect(manager.ownerGroupsOfPeer('peer-a')).toEqual([]);
+        expect(manager.ownerGroupsOfPeer('peer-b')).toEqual(['group-1']);
+        expect(manager.isPeerOwnedByAnyGroup('peer-b')).toBe(true);
+    });
+
     it('does not duplicate reconciliations once sync start records a peer', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();
@@ -302,6 +363,8 @@ describe('WebRtcGroupManager', () => {
         expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledTimes(1);
         expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledWith('peer-a');
         expect(manager.state().desiredPeerIds).toEqual(['peer-a']);
+        expect(manager.ownerGroupsOfPeer('peer-a')).toEqual(['group-1']);
+        expect(manager.ownerGroupsOfPeer('peer-b')).toEqual([]);
 
         overlayCache.set(overlayId, createOverlayInfo(group, ['peer-b'], 2));
         await manager.notifyOverlayTopologyChanged();
@@ -309,6 +372,8 @@ describe('WebRtcGroupManager', () => {
         expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledWith('peer-b');
         expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a');
         expect(manager.state().desiredPeerIds).toEqual(['peer-b']);
+        expect(manager.ownerGroupsOfPeer('peer-a')).toEqual([]);
+        expect(manager.ownerGroupsOfPeer('peer-b')).toEqual(['group-1']);
     });
 });
 
@@ -357,6 +422,19 @@ function createRtcQBoxHarness(
         peerIdsWithNoReconnectableLanes: service.peerIdsWithNoReconnectableLanes,
         markReconnectable: (peerId: string) => connectedPeerIds.delete(peerId),
     };
+}
+
+class CountingClientCache extends LatestRepository<string, ClientInfo> {
+    keysCalls = 0;
+
+    override keys(): IterableIterator<string> {
+        this.keysCalls += 1;
+        return super.keys();
+    }
+
+    resetCounters(): void {
+        this.keysCalls = 0;
+    }
 }
 
 function createClientInfo(sessionId: string, isOnline: boolean): ClientInfo {

@@ -7,9 +7,7 @@ import type {
     GroupScope,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
-import type {
-    StateEventPage,
-} from '@shared/api/state-event-types.ts';
+import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
@@ -17,17 +15,9 @@ import type {
     GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import {
-    isLogicallyActiveSession,
-    toSessionPurgeAfterEpochMs,
-} from './session-expiry.ts';
-import {
-    defaultGroupStateEventStoreFor,
-    type GroupStateEventStore,
-} from './StateEventStore.ts';
-import {
-    type StateEventListQuery,
-} from '../state-event-listing.ts';
+import { isLogicallyActiveSession, toSessionPurgeAfterEpochMs } from './session-expiry.ts';
+import { defaultGroupStateEventStoreFor, type GroupStateEventStore } from './StateEventStore.ts';
+import { filterStateEventsForList, type StateEventListQuery } from '../state-event-listing.ts';
 
 const GROUPS_NAMESPACE = 'group-state:groups';
 const MEMBERS_NAMESPACE = 'group-state:members';
@@ -122,6 +112,38 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
     }
 
+    async listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]> {
+        const [groups, members, sessions] = await Promise.all([
+            this.listGroups(scope),
+            this.listValues<GroupMember>(MEMBERS_NAMESPACE, this.scopePrefix(scope)),
+            this.listValues<GroupPresenceSession>(
+                SESSIONS_NAMESPACE,
+                this.scopePrefix(scope),
+            ),
+        ]);
+        const membersByGroupId = new Map<string, GroupMember[]>();
+        for (const member of members) {
+            const current = membersByGroupId.get(member.groupId) ?? [];
+            current.push(member);
+            membersByGroupId.set(member.groupId, current);
+        }
+
+        const activeSessionsByGroupId = new Map<string, GroupPresenceSession[]>();
+        for (const session of this.toActiveSessions(sessions)) {
+            const current = activeSessionsByGroupId.get(session.groupId) ?? [];
+            current.push(session);
+            activeSessionsByGroupId.set(session.groupId, current);
+        }
+
+        return groups.map((group) =>
+            this.toSnapshot(
+                group,
+                membersByGroupId.get(group.groupId) ?? [],
+                activeSessionsByGroupId.get(group.groupId) ?? [],
+            )
+        );
+    }
+
     async findGroupBySlug(
         scope: GroupScope,
         slug: string,
@@ -209,6 +231,18 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         return await this.events.listGroupEvents(ref);
     }
 
+    async listRecentEvents(
+        ref: GroupRef,
+        query: StateEventListQuery = {},
+    ): Promise<readonly GroupEvent[]> {
+        return this.events.listRecentGroupEvents
+            ? await this.events.listRecentGroupEvents(ref, query)
+            : filterStateEventsForList(
+                await this.events.listGroupEvents(ref),
+                query,
+            );
+    }
+
     async listEventPage(
         ref: GroupRef,
         query: StateEventListQuery = {},
@@ -226,6 +260,14 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         const activeSessions = this.toActiveSessions(
             await this.listPresenceSessions(ref),
         );
+        return this.toSnapshot(group, members, activeSessions);
+    }
+
+    private toSnapshot(
+        group: Group,
+        members: readonly GroupMember[],
+        activeSessions: readonly GroupPresenceSession[],
+    ): GroupSnapshot {
         const activePrincipals = new Set(
             activeSessions.map((session) => session.principalId),
         );
@@ -238,9 +280,8 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             members,
             activeSessions,
             memberCount: activeMembers.length,
-            onlineMemberCount: activeMembers.filter((member) =>
-                activePrincipals.has(member.principalId),
-            ).length,
+            onlineMemberCount:
+                activeMembers.filter((member) => activePrincipals.has(member.principalId)).length,
         };
     }
 
@@ -289,5 +330,4 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             ':',
         );
     }
-
 }

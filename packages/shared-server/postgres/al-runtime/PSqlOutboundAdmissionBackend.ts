@@ -7,6 +7,7 @@ import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { readRuntimeStateEntriesByPrefix } from './runtime-state-prefix-reader.ts';
 
 export class PSqlOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
     constructor(
@@ -71,7 +72,11 @@ export class PSqlOutboundAdmissionBackend implements ALOutboundAdmissionBackend 
     ): Promise<readonly Readonly<{ key: string; value: V }>[]> {
         const values: Array<Readonly<{ key: string; value: V }>> = [];
 
-        for (const entry of await repository.findEntriesByPrefix(this.namespace, prefix)) {
+        for await (const entry of readRuntimeStateEntriesByPrefix(
+            repository,
+            this.namespace,
+            prefix,
+        )) {
             if (isExpired(entry)) {
                 await repository.deleteByKey(this.namespace, entry.key);
                 continue;

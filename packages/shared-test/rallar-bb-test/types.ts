@@ -504,8 +504,14 @@ export type RallarBlackBoxTestDirectorCommand =
     | RallarBlackBoxTestDirectorSyncRequestCommand
     | RallarBlackBoxTestDirectorRelayStopCommand;
 
+export type RallarBlackBoxTestHealthCommand =
+    & RallarBlackBoxTestCommandBase<'health'>
+    & Readonly<{
+    includeRtcDiagnostics?: boolean;
+}>;
+
 export type RallarBlackBoxTestSimpleCommand =
-    | RallarBlackBoxTestCommandBase<'health'>
+    | RallarBlackBoxTestHealthCommand
     | RallarBlackBoxTestCommandBase<'stats'>
     | RallarBlackBoxTestCommandBase<'close'>
     | RallarBlackBoxTestCommandBase<'reset'>;

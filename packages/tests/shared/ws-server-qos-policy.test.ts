@@ -133,6 +133,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                     reason: 'send failed',
                 },
             ]);
+            expect(socket.encodeCount).toBe(1);
             expect(socket.sent.map(entry => entry.connectionId).sort()).toEqual([
                 'conn-1',
                 'conn-3',
@@ -602,18 +603,38 @@ function createFakeWsServer(
     const broadcasts: Array<{ data: SharedMessage; recipientIds: string[] }> = [];
     const connectionIds = ['conn-1', 'conn-2', 'conn-3'];
     const failingConnectionIds = new Set(options.failingConnectionIds ?? []);
+    let encodeCount = 0;
 
     return {
         sent,
         broadcasts,
+        get encodeCount() {
+            return encodeCount;
+        },
         onMessageDo() {
             return this;
         },
         send(connectionId: string, data: SharedMessage) {
+            this.sendEncoded(connectionId, this.encode(data));
+        },
+        encode(data: SharedMessage) {
+            encodeCount += 1;
+            return {
+                text: JSON.stringify(data),
+                data,
+            };
+        },
+        sendEncoded(
+            connectionId: string,
+            encoded: Readonly<{ text: string; data?: SharedMessage }>,
+        ) {
             if (failingConnectionIds.has(connectionId)) {
                 throw new Error('send failed');
             }
-            sent.push({ connectionId, data });
+            sent.push({
+                connectionId,
+                data: encoded.data ?? JSON.parse(encoded.text) as SharedMessage,
+            });
         },
         broadcast(data: SharedMessage, filter?: (ctx: { id: string }) => boolean) {
             const recipientIds = connectionIds.filter(connectionId => filter ? filter({ id: connectionId }) : true);

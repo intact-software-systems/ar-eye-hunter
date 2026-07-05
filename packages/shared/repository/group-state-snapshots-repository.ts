@@ -50,11 +50,18 @@ export const groupStateSnapshotRepositoryToken = newObservableLatestRepositoryTo
     'Group state snapshot repository is not configured',
 );
 
+type GroupSessionIndex = Map<string, Set<string>>;
+
+const groupSessionIndexes = new WeakMap<
+    ObservableLatestRepository<string, GroupSnapshot>,
+    GroupSessionIndex
+>();
+
 export function configureGroupStateSnapshotRepository(
     options: GroupStateSnapshotRepositoryOptions,
     manager?: RepositoryManager,
 ): ObservableLatestRepository<string, GroupSnapshot> {
-    return configureObservableLatestRepository(
+    const repository = configureObservableLatestRepository(
         groupStateSnapshotRepositoryToken,
         {
             ...options,
@@ -63,6 +70,8 @@ export function configureGroupStateSnapshotRepository(
         },
         manager,
     );
+    groupSessionIndexes.set(repository, new Map());
+    return repository;
 }
 
 export function onGroupStateSnapshotChange(
@@ -118,6 +127,51 @@ export function findFirstGroupStateSnapshotRefSessionIdIsIn(
         ?.group;
 }
 
+export function findGroupStateSnapshotsBySessionIds(
+    sessionIds: readonly string[],
+    manager?: RepositoryManager,
+): GroupSnapshot[] {
+    const uniqueSessionIds = [...new Set(sessionIds)];
+    if (uniqueSessionIds.length === 0) {
+        return [];
+    }
+
+    const repository = requireGroupStateSnapshotRepository(manager);
+    const index = groupSessionIndexForRepository(repository);
+    const sessionGroupKeys = uniqueSessionIds.map((sessionId) =>
+        index.get(sessionId)
+    );
+
+    if (sessionGroupKeys.some((keys) => keys === undefined || keys.size === 0)) {
+        return [];
+    }
+
+    const [smallest, ...rest] = sessionGroupKeys
+        .toSorted((left, right) => (left?.size ?? 0) - (right?.size ?? 0)) as [
+            Set<string>,
+            ...Set<string>[],
+        ];
+    const snapshots: GroupSnapshot[] = [];
+
+    for (const groupKey of smallest) {
+        if (!rest.every((keys) => keys.has(groupKey))) {
+            continue;
+        }
+
+        const snapshot = repository.read(groupKey);
+        if (!snapshot) {
+            removeGroupKeyFromSessionIndex(index, groupKey);
+            continue;
+        }
+
+        if (groupSnapshotHasSessionIds(snapshot, uniqueSessionIds)) {
+            snapshots.push(snapshot);
+        }
+    }
+
+    return snapshots;
+}
+
 export function setGroupStateSnapshots(
     snapshots: readonly GroupSnapshot[],
     manager?: RepositoryManager,
@@ -138,6 +192,7 @@ export function setGroupStateSnapshot(
     const repository = requireGroupStateSnapshotRepository(manager);
     const repositoryKey = toGroupStateSnapshotRepositoryKey(snapshot.group);
     const current = repository.read(repositoryKey);
+    const previousForIndex = repository.peek(repositoryKey);
     const nextVersion = toGroupSnapshotVersion(snapshot);
     const currentVersion = current
         ? toGroupSnapshotVersion(current)
@@ -145,17 +200,35 @@ export function setGroupStateSnapshot(
 
     if (!current) {
         repository.set(repositoryKey, snapshot);
+        replaceGroupSnapshotInSessionIndex(
+            repository,
+            repositoryKey,
+            previousForIndex,
+            snapshot,
+        );
         return true;
     }
 
     if (currentVersion !== undefined && nextVersion > currentVersion) {
         repository.set(repositoryKey, snapshot);
+        replaceGroupSnapshotInSessionIndex(
+            repository,
+            repositoryKey,
+            previousForIndex,
+            snapshot,
+        );
         console.log(`Received updated group snapshot: ${snapshot.group.groupId}`);
         return true;
     }
 
     if (currentVersion === nextVersion && !jsonEquals(current, snapshot)) {
         repository.set(repositoryKey, snapshot);
+        replaceGroupSnapshotInSessionIndex(
+            repository,
+            repositoryKey,
+            previousForIndex,
+            snapshot,
+        );
     }
 
     return false;
@@ -165,8 +238,18 @@ export function removeGroupStateSnapshotByRef(
     ref: GroupRef,
     manager?: RepositoryManager,
 ): boolean {
-    return requireGroupStateSnapshotRepository(manager)
-        .delete(toGroupStateSnapshotRepositoryKey(ref));
+    const repository = requireGroupStateSnapshotRepository(manager);
+    const repositoryKey = toGroupStateSnapshotRepositoryKey(ref);
+    const previous = repository.peek(repositoryKey);
+    const removed = repository.delete(repositoryKey);
+    if (removed) {
+        removeGroupSnapshotFromSessionIndex(
+            groupSessionIndexForRepository(repository),
+            repositoryKey,
+            previous,
+        );
+    }
+    return removed;
 }
 
 export function getAllGroupStateSnapshots(
@@ -184,6 +267,101 @@ export function findLatestGroupSnapshotById(groupId: string) {
 
 function toGroupSnapshotVersion(snapshot: GroupSnapshot): number {
     return readGroupVersion(snapshot);
+}
+
+function groupSessionIndexForRepository(
+    repository: ObservableLatestRepository<string, GroupSnapshot>,
+): GroupSessionIndex {
+    let index = groupSessionIndexes.get(repository);
+    if (!index) {
+        index = buildGroupSessionIndex(repository);
+        groupSessionIndexes.set(repository, index);
+    }
+    return index;
+}
+
+function buildGroupSessionIndex(
+    repository: ObservableLatestRepository<string, GroupSnapshot>,
+): GroupSessionIndex {
+    const index: GroupSessionIndex = new Map();
+    for (const [key, entry] of repository.entriesView()) {
+        const snapshot = entry.read();
+        if (snapshot) {
+            addGroupSnapshotToSessionIndex(index, key, snapshot);
+        }
+    }
+    return index;
+}
+
+function replaceGroupSnapshotInSessionIndex(
+    repository: ObservableLatestRepository<string, GroupSnapshot>,
+    key: string,
+    previous: GroupSnapshot | undefined,
+    next: GroupSnapshot,
+): void {
+    const index = groupSessionIndexForRepository(repository);
+    removeGroupSnapshotFromSessionIndex(index, key, previous);
+    addGroupSnapshotToSessionIndex(index, key, next);
+}
+
+function addGroupSnapshotToSessionIndex(
+    index: GroupSessionIndex,
+    key: string,
+    snapshot: GroupSnapshot,
+): void {
+    for (const session of snapshot.activeSessions) {
+        let groupKeys = index.get(session.sessionId);
+        if (!groupKeys) {
+            groupKeys = new Set();
+            index.set(session.sessionId, groupKeys);
+        }
+        groupKeys.add(key);
+    }
+}
+
+function removeGroupSnapshotFromSessionIndex(
+    index: GroupSessionIndex,
+    key: string,
+    snapshot: GroupSnapshot | undefined,
+): void {
+    if (!snapshot) {
+        removeGroupKeyFromSessionIndex(index, key);
+        return;
+    }
+
+    for (const session of snapshot.activeSessions) {
+        const groupKeys = index.get(session.sessionId);
+        if (!groupKeys) {
+            continue;
+        }
+
+        groupKeys.delete(key);
+        if (groupKeys.size === 0) {
+            index.delete(session.sessionId);
+        }
+    }
+}
+
+function removeGroupKeyFromSessionIndex(
+    index: GroupSessionIndex,
+    key: string,
+): void {
+    for (const [sessionId, groupKeys] of index) {
+        groupKeys.delete(key);
+        if (groupKeys.size === 0) {
+            index.delete(sessionId);
+        }
+    }
+}
+
+function groupSnapshotHasSessionIds(
+    snapshot: GroupSnapshot,
+    sessionIds: readonly string[],
+): boolean {
+    const activeSessionIds = new Set(
+        snapshot.activeSessions.map((session) => session.sessionId),
+    );
+    return sessionIds.every((sessionId) => activeSessionIds.has(sessionId));
 }
 
 export function toGroupStateSnapshotRepositoryKey(ref: GroupRef): string {

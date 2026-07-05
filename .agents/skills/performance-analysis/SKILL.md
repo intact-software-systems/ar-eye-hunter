@@ -1,0 +1,206 @@
+---
+name: performance-analysis
+description: Deep performance audit skill for static analysis, runtime profiling, algorithmic complexity, CPU/memory usage, memory leaks, costly operations, and evidence-backed optimization. Use when asked to review performance, find bottlenecks, analyze efficiency, profile real workloads, or optimize code safely.
+---
+
+# Performance Analysis Skill
+
+Use this skill when the user asks for performance analysis, optimization, bottleneck hunting, algorithmic complexity review, CPU or memory profiling, memory leak investigation, allocation reduction, query/API call reduction, or runtime validation.
+
+## Core rule
+
+Treat static analysis as hypothesis generation unless the issue is obvious from code. Do not claim a runtime bottleneck is real until it is supported by profiling, benchmarks, logs, production telemetry, or a clear algorithmic proof.
+
+## Default workflow
+
+Follow this sequence unless the user explicitly asks for a different phase.
+
+1. **Frame the task**
+   - Identify the target subsystem, entry points, workload, environment, and success metric.
+   - Inspect repo guidance first, including `AGENTS.md`, README files, docs, build/test config, benchmark config, and existing performance notes.
+   - Determine whether the task is static-only, measurement-only, or optimization.
+   - If the user did not specify a phase, start with static analysis and say that runtime validation is needed later.
+
+2. **Static performance audit**
+   - Do not modify code.
+   - Prefer concrete findings with file, function/class, and line references.
+   - Map likely hot paths: request handlers, jobs, CLIs, batch processors, event handlers, background workers, data pipelines, import/startup paths, and loops over externally sized inputs.
+   - Identify algorithmic complexity, allocation behavior, I/O behavior, and concurrency behavior.
+   - Label each finding as one of:
+     - `Proven from code`
+     - `Strong suspicion`
+     - `Needs runtime measurement`
+     - `Measured`
+   - Avoid generic advice. Every finding should point to a concrete code location or a specific measurement to run.
+
+3. **Measurement plan**
+   - Convert static findings into falsifiable hypotheses.
+   - Define representative, large, and worst-case inputs.
+   - Specify commands, profilers, benchmark harnesses, instrumentation points, and expected signals.
+   - Separate cold-start measurements from steady-state measurements.
+   - Include CPU time, wall time, allocation rate, peak RSS/heap, retained memory, GC pressure, I/O wait, DB/API/file/network call counts, and concurrency bottlenecks when relevant.
+
+4. **Runtime validation**
+   - Do not optimize yet unless the user explicitly asks.
+   - Keep generated benchmark/profile artifacts isolated in a clearly named directory such as `perf-artifacts/`, `tmp/perf/`, or another repo-approved ignored path.
+   - Record exact commands, commit/branch, environment assumptions, input sizes, config, and number of runs.
+   - Run each benchmark more than once when practical.
+   - Compare measurements against the hypotheses and mark each hypothesis confirmed, refuted, or inconclusive.
+
+5. **Optimization**
+   - Make one focused change at a time.
+   - Preserve behavior, public APIs, persistence formats, and compatibility unless the user explicitly approves a breaking change.
+   - Prefer algorithmic, batching, data-structure, I/O, and allocation fixes over micro-optimizations.
+   - Add or update tests and benchmarks when practical.
+   - Re-run relevant tests and before/after measurements.
+   - Report performance impact honestly, including uncertainty and remaining risk.
+
+## Static audit checklist
+
+Look for these issue classes:
+
+- Algorithmic complexity: nested loops over large inputs, repeated scans, repeated sorting, quadratic joins, inefficient graph traversal, repeated deduplication, and avoidable recomputation.
+- Data structures: list membership where a set/map is needed, ordered structures where unordered lookup is enough, excessive copying, large temporary collections, poor key choice, and unnecessary materialization.
+- CPU-heavy work: repeated parsing, repeated regex compilation, expensive regex patterns, repeated serialization/deserialization, compression/encryption/hashing on hot paths, reflection/introspection, excessive formatting, and debug work.
+- Memory pressure: large objects retained too long, avoidable allocations, unbounded growth with input/user/tenant/runtime size, large buffers, full-file reads, unnecessary copies, and high-cardinality metrics/log labels.
+- Leak risks: unbounded caches/maps/queues, forgotten event listeners/subscriptions, timers, background tasks, goroutines/threads, retained closures, file handles, sockets, DB connections, and lifecycle mismatches.
+- I/O and network: N+1 DB/API/file calls, missing batching, missing pagination, missing streaming, no backpressure, repeated metadata reads, synchronous I/O on hot paths, and unnecessary round trips.
+- Database behavior: query inside loop, missing indexes, unbounded result sets, unnecessary eager loading, excessive joins, repeated transactions, lock-heavy access patterns, and missing query count tests.
+- Concurrency: coarse locks, long critical sections, lock ordering risks, thread-pool starvation, event-loop blocking, unbounded parallelism, excessive synchronization, queue contention, and missing cancellation/timeouts.
+- Caching: no cache for expensive stable results, wrong cache key, unbounded cache, stale data risk, cache stampede risk, and per-request cache missed opportunities.
+- Observability cost: expensive logs/metrics/traces in hot paths, string formatting before log-level checks, high-cardinality labels, and excessive span/event creation.
+
+## Measurement checklist
+
+For each finding, specify:
+
+- Hypothesis
+- Measurement that would confirm it
+- Measurement that would falsify it
+- Tool or command to use
+- Input sizes and fixtures
+- Expected signal
+- Noise or accuracy risks
+
+Prefer existing project tooling. If no tooling exists, propose the minimum useful harness before writing one.
+
+Common tool choices by ecosystem, when applicable:
+
+- Python: `pytest-benchmark`, `cProfile`, `py-spy`, `scalene`, `tracemalloc`, `memory_profiler`.
+- JavaScript/TypeScript/Node: `node --prof`, `node --inspect`, Chrome DevTools, `clinic`, `benchmark`, framework-specific profilers.
+- Go: `go test -bench`, `-benchmem`, `pprof`, `trace`, race detector where concurrency is relevant.
+- Java/Kotlin/JVM: JMH, Java Flight Recorder, async-profiler, heap dumps, GC logs.
+- .NET: BenchmarkDotNet, `dotnet-counters`, `dotnet-trace`, `dotnet-gcdump`.
+- Rust: Criterion, `cargo bench`, `perf`, heaptrack, DHAT/Valgrind where available.
+- C/C++: `perf`, Valgrind/Callgrind, heaptrack, sanitizers, compiler optimization reports.
+- Databases: query plans, query count instrumentation, slow query logs, index usage, representative fixtures.
+
+## Report format: static audit
+
+Use this structure:
+
+```md
+# Performance audit
+
+## Executive summary
+- Top 5 risks, ranked by expected impact and confidence.
+
+## Hot path map
+- Entry point -> critical flow -> likely expensive modules.
+
+## Findings
+| Severity | Confidence | Category | Location | Why costly | Complexity/memory impact | Validation | Suggested fix |
+|---|---:|---|---|---|---|---|---|
+| High | Strong suspicion | Algorithmic complexity | `path/file.ext:123` | ... | ... | ... | ... |
+
+## False-positive risks
+- Findings that may be harmless depending on workload.
+
+## Measurement plan
+- Benchmarks, profilers, fixtures, and instrumentation needed next.
+
+## Do first
+1. Highest-impact next action.
+2. Second action.
+3. Third action.
+```
+
+## Report format: runtime validation
+
+Use this structure:
+
+```md
+# Runtime performance validation
+
+## Environment
+- Branch/commit:
+- Hardware/container notes:
+- Runtime versions:
+- Config:
+- Input sizes:
+
+## Commands run
+```sh
+# exact commands
+```
+
+## Results
+| Hypothesis | Result | Evidence | Confirmed/refuted/inconclusive | Notes |
+|---|---|---|---|---|
+
+## CPU profile interpretation
+- Hot functions, call paths, and likely causes.
+
+## Memory profile interpretation
+- Allocation sites, retained memory, peak heap/RSS, GC pressure.
+
+## Leak findings
+- Evidence for or against leak-like growth over repeated/long-running workloads.
+
+## Recommendations
+| Rank | Fix | Expected impact | Confidence | Risk | Validation |
+|---:|---|---|---|---|---|
+
+## Next step
+- One small, safe optimization to attempt first.
+```
+
+## Report format: optimization result
+
+Use this structure:
+
+```md
+# Performance optimization result
+
+## Change summary
+- What changed and why.
+
+## Files changed
+- `path/file.ext`
+
+## Correctness validation
+- Tests run and results.
+
+## Performance validation
+| Metric | Before | After | Delta | Notes |
+|---|---:|---:|---:|---|
+
+## Remaining risks
+- Correctness, compatibility, measurement, or workload caveats.
+
+## Follow-up opportunities
+- Additional fixes that should be separate changes.
+```
+
+## Done when
+
+The task is complete only when:
+
+- Every performance finding has a code location, measured artifact, or explicit reason why location is not applicable.
+- Every major claim is labeled as proven, suspected, needs measurement, measured, confirmed, refuted, or inconclusive.
+- Each suspected issue has a concrete validation step.
+- Recommendations are ranked by expected impact, confidence, and implementation risk.
+- Static-analysis tasks make no code changes.
+- Runtime-validation tasks record exact commands and environment details.
+- Optimization tasks include correctness validation and performance before/after data when practical.
+- No optimization is accepted without a benchmark, profile, telemetry signal, or clear algorithmic proof.
