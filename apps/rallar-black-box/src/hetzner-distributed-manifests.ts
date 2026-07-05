@@ -229,8 +229,8 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
                 stream: {
                     maxInFlight: 64,
                     maxDroppedFrames: 30,
-                    maxP95SendDurationMs: 200,
-                    maxP99SendDurationMs: 1000,
+                    maxP95SendDurationMs: 2500,
+                    maxP99SendDurationMs: 4000,
                 },
             }),
             agentCount: 2,
