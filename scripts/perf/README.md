@@ -382,3 +382,4 @@ When using these scripts to validate an optimization, record:
 - input size and mode;
 - number of runs;
 - before and after artifacts under `tmp/perf/`.
+

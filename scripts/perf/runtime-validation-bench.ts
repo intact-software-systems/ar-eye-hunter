@@ -424,6 +424,8 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
 
 async function benchRateLimiter(results: BenchResult[]): Promise<void> {
     const policy = new RateLimiterPolicy(60_000, 1_000_000);
+    // readRateLimiter() performs cleanup on every insert/read. Keep these
+    // bounded so setup validates scaling without dominating the whole run.
     const sizes = [100, 1_000, 5_000];
     for (const size of sizes) {
         for (let i = 0; i < size; i++) {

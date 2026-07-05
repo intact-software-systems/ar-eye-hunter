@@ -108,12 +108,6 @@ SELECT coalesce(sum(octet_length(update_envelope)), 0)
 FROM crdt_updates
 WHERE document_key = 'perf-doc-hot';
 
-\echo 'crdt_documents quota byte counter'
-EXPLAIN (ANALYZE, BUFFERS)
-SELECT stored_update_bytes
-FROM crdt_documents
-WHERE document_key = 'perf-doc-hot';
-
 \echo 'crdt_updates catch-up page'
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT update_envelope
