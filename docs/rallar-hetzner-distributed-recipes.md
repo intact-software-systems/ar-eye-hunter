@@ -34,7 +34,7 @@ stop_after_run: true
 ## Checked-In Manifests
 
 Use these repo manifests with `manifest_path`. Green manifests are ordered from
-cheapest confidence check to heavier RTC/load baseline:
+cheapest confidence check to the low-risk RTC stability baseline:
 
 | Order | Manifest | Agents | Purpose |
 | --- | --- | ---: | --- |
@@ -42,8 +42,17 @@ cheapest confidence check to heavier RTC/load baseline:
 | 2 | `apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json` | 2 | Loop, parallel, wait, and assert evidence without live RTC dependency. |
 | 3 | `apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json` | 2 | Live RTC connect/send/stats smoke. |
 | 4 | `apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json` | 2 | Browser-rallar provider parity across connect, direct, multicast, broadcast, health, close, and reset. |
-| 5 | `apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json` | 2 | Short 20 Hz RTC realtime `rtc.stream` performance baseline. |
-| 6 | `apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json` | 3 | Heavier three-agent realtime/load `rtc.stream` baseline. |
+| 5 | `apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json` | 2 | Lower-risk 5 Hz RTC realtime stability stream. |
+
+Extended manifests keep heavier or longer realtime baselines out of the default
+green order:
+
+| Manifest | Agents | Purpose |
+| --- | ---: | --- |
+| `apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json` | 2 | Short 10 Hz RTC realtime `rtc.stream` performance baseline. |
+| `apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json` | 2 | Longer 30 second, 5 Hz RTC realtime stability stream. |
+| `apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json` | 2 | Longer 30 second, 10 Hz RTC realtime stability stream. |
+| `apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json` | 3 | Heavier three-agent realtime/load `rtc.stream` baseline. |
 
 Diagnostic manifests live under
 `apps/rallar-black-box/manifests/hetzner/diagnostic/` and are not part of the
@@ -53,6 +62,7 @@ green run order:
 | --- | ---: | --- |
 | `diagnostic/barrier-health-2-agent.json` | 2 | Validates synchronized barrier orchestration before start. |
 | `diagnostic/expected-failure-1-agent.json` | 1 | Intentionally fails to verify analyzer fix proposals and artifact capture. |
+| `diagnostic/rtc-realtime-2-agent-20hz-stress.json` | 2 | Strict 20 Hz realtime stress run for stream pacing and backlog diagnostics. |
 
 Regenerate or verify the checked-in JSON from the TypeScript catalog:
 
@@ -271,14 +281,12 @@ diagnostic count, exported event count, agent-reported event count, and
 stale/missing/flaky agent counts. If no baseline exists, treat the first clean
 run as the baseline.
 
-For `05-rtc-realtime-2-agent-5s.json` and
-`06-rtc-realtime-3-agent-15s.json`, also review the stream timing section:
-stream count, completed/planned frames, attempted frames, failed frames, dropped
-frames, backpressure count, p50/p95/p99/max stream send duration, achieved Hz,
-and slowest stream agents. These manifests use one bounded `rtc.stream` command
-per agent instead of expanding the realtime traffic into many sequential
-`rtc.send` commands, so stream frame metrics are the primary performance
-baseline.
+For realtime manifests, also review the stream timing section: stream count,
+completed/planned frames, attempted frames, failed frames, dropped frames,
+backpressure count, p50/p95/p99/max stream send duration, achieved Hz, and
+slowest stream agents. These manifests use one bounded `rtc.stream` command per
+agent instead of expanding the realtime traffic into many sequential `rtc.send`
+commands, so stream frame metrics are the primary performance baseline.
 
 ## SPA Review
 

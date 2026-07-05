@@ -31,6 +31,8 @@ export const HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER = [
 
 export const HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
+    'apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json',
+    'apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json',
     'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
 ] as const;
 
@@ -154,6 +156,37 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
         }),
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[1],
+            title: 'RTC realtime stability 2-agent 30s',
+            description: 'Longer 5 Hz RTC realtime stability stream for sustained pacing evidence.',
+            distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-30s',
+            recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+                durationSeconds: 30,
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyPeerCount: 1,
+                readyTimeoutMs: 10_000,
+            }),
+            agentCount: 2,
+            profiles: ['rtc', 'realtime', 'stability', 'extended'],
+            live: true,
+        }),
+        buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[2],
+            title: 'RTC realtime stability 2-agent 30s 10 Hz',
+            description: 'Longer 10 Hz RTC realtime stability stream for sustained pacing evidence.',
+            distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-30s-10hz',
+            recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+                durationSeconds: 30,
+                rateHz: 10,
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyPeerCount: 1,
+                readyTimeoutMs: 10_000,
+            }),
+            agentCount: 2,
+            profiles: ['rtc', 'realtime', 'stability', 'extended'],
+            live: true,
+        }),
+        buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[3],
             title: 'RTC realtime 3-agent 15s',
             description: 'Heavier 10 Hz RTC realtime run for three-agent load and percentile baselines.',
             distributedRunId: 'hetzner-rtc-realtime-3-agent-15s',

@@ -86,6 +86,8 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(extendedPaths).toEqual(HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER);
         expect(extendedPaths).toEqual([
             'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
+            'apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json',
+            'apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json',
             'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
         ]);
         expect(diagnosticPaths).toEqual([
@@ -165,6 +167,8 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', 1],
+            ['apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json', 1],
+            ['apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', 2],
         ]);
 
@@ -190,6 +194,7 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json', {
                 rateHz: 5,
                 intervalMs: 200,
+                durationSeconds: 5,
                 frameCount: 25,
                 maxDroppedFrames: 2,
                 minSendSuccessRatio: 0.95,
@@ -198,14 +203,34 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', {
                 rateHz: 10,
                 intervalMs: 100,
+                durationSeconds: 5,
                 frameCount: 50,
                 maxDroppedFrames: 5,
                 minSendSuccessRatio: 0.99,
                 maxInFlight: 64,
             }],
+            ['apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json', {
+                rateHz: 5,
+                intervalMs: 200,
+                durationSeconds: 30,
+                frameCount: 150,
+                maxDroppedFrames: 2,
+                minSendSuccessRatio: 0.95,
+                maxInFlight: 8,
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json', {
+                rateHz: 10,
+                intervalMs: 100,
+                durationSeconds: 30,
+                frameCount: 300,
+                maxDroppedFrames: 2,
+                minSendSuccessRatio: 0.95,
+                maxInFlight: 8,
+            }],
             ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', {
                 rateHz: 10,
                 intervalMs: 100,
+                durationSeconds: 15,
                 frameCount: 150,
                 maxDroppedFrames: 15,
                 minSendSuccessRatio: 0.99,
@@ -244,6 +269,7 @@ describe('Hetzner distributed manifest catalog', () => {
                 metadata: {
                     realtime: {
                         rateHz: expectedStreams.get(entry.filePath)?.rateHz,
+                        durationSeconds: expectedStreams.get(entry.filePath)?.durationSeconds,
                         frameCount: expectedStreams.get(entry.filePath)?.frameCount,
                     },
                 },
