@@ -122,6 +122,7 @@ model crdt_documents {
   last_append_sequence BigInt    @default(0)
   update_count         BigInt    @default(0)
   snapshot_count       BigInt    @default(0)
+  stored_update_bytes  BigInt    @default(0)
   retention_policy     String?
   quota_policy         String?
   projection_ids       String?

@@ -2,7 +2,7 @@ import { defaultRepositoryManager } from './defaultRepositoryManager.ts';
 import { LatestRepository, type LatestRepositoryOptions } from './LatestRepository.ts';
 import { ObservableLatestRepository, type ObservableLatestRepositoryOptions, } from './ObservableLatestRepository.ts';
 import type { RepositoryManager } from './RepositoryManager.ts';
-import { RepositoryToken } from './RepositoryToken.ts';
+import { type DisposableRepository, RepositoryToken } from './RepositoryToken.ts';
 
 export function newLatestRepositoryToken<K, V>(
     id: string,
@@ -33,8 +33,10 @@ export function configureLatestRepository<K, V>(
     options: LatestRepositoryOptions<V>,
     manager: RepositoryManager = defaultRepositoryManager,
 ): LatestRepository<K, V> {
+    const previous = manager.get(token) as DisposableRepository | undefined;
     const repository = new LatestRepository<K, V>(options);
     manager.set(token, repository);
+    disposePreviousRepository(previous, token.id);
     return repository;
 }
 
@@ -43,8 +45,10 @@ export function configureObservableLatestRepository<K, V>(
     options: ObservableLatestRepositoryOptions<K, V>,
     manager: RepositoryManager = defaultRepositoryManager,
 ): ObservableLatestRepository<K, V> {
+    const previous = manager.get(token) as DisposableRepository | undefined;
     const repository = new ObservableLatestRepository<K, V>(options);
     manager.set(token, repository);
+    disposePreviousRepository(previous, token.id);
     return repository;
 }
 
@@ -90,4 +94,16 @@ export function readAllObservableLatestRepository<K, V>(
     manager: RepositoryManager = defaultRepositoryManager,
 ): V[] {
     return requireObservableLatestRepository(token, manager).readAllValues();
+}
+
+function disposePreviousRepository(
+    repository: DisposableRepository | undefined,
+    id: string,
+): void {
+    const disposal = repository?.dispose?.();
+    if (disposal) {
+        void Promise.resolve(disposal).catch((error) => {
+            console.error(`Error disposing replaced repository ${id}`, error);
+        });
+    }
 }

@@ -25,26 +25,33 @@ describe('Deploy workflow release gate', () => {
             path.join(repoRoot, '.github/workflows/deploy.yml'),
             'utf8',
         );
+        const releaseGateWorkflow = await readFile(
+            path.join(repoRoot, '.github/workflows/release-gate.yml'),
+            'utf8',
+        );
 
         expect(workflow).toContain('release-gate:');
         expect(workflow).toContain('name: Release Gate');
-        expect(workflow).toContain('postgres:');
+        expect(getJobBlock(workflow, 'release-gate')).toContain(
+            'uses: ./.github/workflows/release-gate.yml',
+        );
         expect(getJobBlock(workflow, 'release-gate')).toContain(
             releaseGateEnabledCondition,
         );
-        expect(workflow).toContain('npm ci');
-        expect(workflow).toContain('npx playwright install --with-deps chromium');
-        expect(workflow).toContain('npm run test:ci');
-        expect(workflow).toContain('npm run build:ar-eye-hunter-v1');
-        expect(workflow).toContain('npm run build:relic-hunters-v1');
-        expect(workflow).toContain('npm run build:rallar');
-        expect(workflow).toContain('cd apps/api-v1 && deno task check');
-        expect(workflow).toContain('cd apps/relic-hunter-server-v1 && deno task check');
-        expect(workflow).toContain('cd apps/rallar-black-box-control-server && deno task check');
-        expect(workflow).toContain('npm run db:migrate');
-        expect(workflow).toContain('npm run test:postgres:presence-expiry');
-        expect(workflow).toContain('npm run test:rallar:full-stack:postgres:rest');
-        expect(workflow).toContain('npm run test:rallar:full-stack:postgres:control');
+        expect(releaseGateWorkflow).toContain('postgres:');
+        expect(releaseGateWorkflow).toContain('npm ci');
+        expect(releaseGateWorkflow).toContain('npx playwright install --with-deps chromium');
+        expect(releaseGateWorkflow).toContain('npm run test:ci');
+        expect(releaseGateWorkflow).toContain('npm run build:ar-eye-hunter-v1');
+        expect(releaseGateWorkflow).toContain('npm run build:relic-hunters-v1');
+        expect(releaseGateWorkflow).toContain('npm run build:rallar');
+        expect(releaseGateWorkflow).toContain('cd apps/api-v1 && deno task check');
+        expect(releaseGateWorkflow).toContain('cd apps/relic-hunter-server-v1 && deno task check');
+        expect(releaseGateWorkflow).toContain('cd apps/rallar-black-box-control-server && deno task check');
+        expect(releaseGateWorkflow).toContain('npm run db:migrate');
+        expect(releaseGateWorkflow).toContain('npm run test:postgres:presence-expiry');
+        expect(releaseGateWorkflow).toContain('npm run test:rallar:full-stack:postgres:rest');
+        expect(releaseGateWorkflow).toContain('npm run test:rallar:full-stack:postgres:control');
 
         const deployJobs = [
             'deploy-eye-hunter',

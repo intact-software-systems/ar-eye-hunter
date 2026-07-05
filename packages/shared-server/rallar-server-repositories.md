@@ -219,7 +219,8 @@ physical storage source of truth.
 
 - `crdt_documents` stores document identity, application/workspace scope,
   lifecycle, retention/quota metadata, projection ids, and append/snapshot
-  counters.
+  counters, including the rolling stored update-byte total used by document-byte
+  quota checks.
 - `crdt_updates` stores accepted update envelopes by document and append
   sequence, with a unique update-id index per document.
 - `crdt_snapshots` stores compacted snapshot envelopes by document and snapshot

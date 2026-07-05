@@ -9,6 +9,7 @@ import {
     type RallarDirectorStatus,
     type RallarRealtimeLaneHealth,
     type RallarRealtimeSendResult,
+    type RallarRtcDiagnostics,
 } from '@shared-web/browser/rallar.ts';
 import { catchUpRallarCrdtDocument } from '@shared-web/browser/api-integration.ts';
 import type {
@@ -242,8 +243,14 @@ export type BlackBoxRallarHealthDiagnostics = Readonly<{
     workspaceId?: string;
     session?: AuthSession;
     health: readonly RallarRealtimeLaneHealth[];
+    rtcDiagnostics?: RallarRtcDiagnostics;
+    rtcDiagnosticsError?: unknown;
     crdt?: BlackBoxRallarCrdtRuntimeSummary;
     director?: BlackBoxRallarDirectorRelaySummary;
+}>;
+
+export type BlackBoxRallarHealthInput = Readonly<{
+    includeRtcDiagnostics?: boolean;
 }>;
 
 export type BlackBoxRallarCrdtOpenInput = Readonly<{
@@ -474,7 +481,7 @@ export type BlackBoxRallarRuntime = Readonly<{
     crdt: BlackBoxRallarCrdtRuntime;
     director: BlackBoxRallarDirectorRuntime;
     close(): Promise<BlackBoxRallarCloseDiagnostics>;
-    health(): Promise<BlackBoxRallarHealthDiagnostics>;
+    health(input?: BlackBoxRallarHealthInput | unknown): Promise<BlackBoxRallarHealthDiagnostics>;
 }>;
 
 type RuntimeSessionDiagnostic = Pick<AuthSession, 'clientId' | 'sessionId' | 'username'>;
@@ -1792,6 +1799,30 @@ function rtcStatusFor(
     return rtc.status({
         laneId: transportOf(config) === 'realtime' ? laneIdOf(config) : undefined,
     });
+}
+
+async function rtcDiagnosticsFor(
+    config: BlackBoxRallarConnectionConfig | undefined,
+): Promise<RallarRtcDiagnostics | undefined> {
+    const rtc = (rallar as unknown as {
+        rtc?: { diagnostics?: (options?: unknown) => Promise<RallarRtcDiagnostics> };
+    }).rtc;
+    if (!rtc?.diagnostics) {
+        return undefined;
+    }
+
+    const laneId = config && transportOf(config) === 'realtime'
+        ? laneIdOf(config)
+        : undefined;
+    return await rtc.diagnostics(
+        laneId ? { laneIds: [laneId] } : undefined,
+    );
+}
+
+function includeRtcDiagnostics(input: BlackBoxRallarHealthInput | unknown): boolean {
+    return !!input &&
+        typeof input === 'object' &&
+        (input as BlackBoxRallarHealthInput).includeRtcDiagnostics === true;
 }
 
 function statusDiagnostics(
@@ -3149,7 +3180,9 @@ async function close(): Promise<BlackBoxRallarCloseDiagnostics> {
     }
 }
 
-async function health(): Promise<BlackBoxRallarHealthDiagnostics> {
+async function health(
+    input: BlackBoxRallarHealthInput | unknown = {},
+): Promise<BlackBoxRallarHealthDiagnostics> {
     const config = state?.config;
     const transport = config ? transportOf(config) : undefined;
     const rtcLaneId = transport === 'realtime' && config
@@ -3168,6 +3201,16 @@ async function health(): Promise<BlackBoxRallarHealthDiagnostics> {
             readyPeerIds: [],
             peers: [],
         } as ReturnType<typeof rallar.rtc.status>);
+    let rtcDiagnostics: RallarRtcDiagnostics | undefined;
+    let rtcDiagnosticsError: unknown;
+    if (includeRtcDiagnostics(input)) {
+        try {
+            rtcDiagnostics = await rtcDiagnosticsFor(config);
+        } catch (error) {
+            rtcDiagnosticsError = serializeError(error);
+            emitError(config, 'rallar.browser.rtc.diagnostics_failed', error);
+        }
+    }
     return {
         connected: rallar.isConnected(),
         status: rallar.status(),
@@ -3180,6 +3223,8 @@ async function health(): Promise<BlackBoxRallarHealthDiagnostics> {
         ...(config ? scopeDiagnostics(config) : {}),
         session: rallar.session(),
         health: config ? readHealth(config) : [],
+        ...(rtcDiagnostics !== undefined ? { rtcDiagnostics } : {}),
+        ...(rtcDiagnosticsError !== undefined ? { rtcDiagnosticsError } : {}),
         crdt: crdtRuntimeSummary(),
         director: directorRelaySummary(),
     };

@@ -81,6 +81,27 @@ WHERE app_namespace = 'perf-app-20260702'
   AND data_key LIKE 'prefix:%'
 ORDER BY data_key;
 
+\echo 'app_data_store broad prefix first page'
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT data_key, data_value
+FROM app_data_store
+WHERE app_namespace = 'perf-app-20260702'
+  AND store_name = 'store'
+  AND data_key LIKE 'prefix:%'
+ORDER BY data_key
+LIMIT 1000;
+
+\echo 'app_data_store broad prefix next page'
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT data_key, data_value
+FROM app_data_store
+WHERE app_namespace = 'perf-app-20260702'
+  AND store_name = 'store'
+  AND data_key LIKE 'prefix:%'
+  AND data_key > 'prefix:00001000'
+ORDER BY data_key
+LIMIT 1000;
+
 \echo 'crdt_updates quota byte sum'
 EXPLAIN (ANALYZE, BUFFERS)
 SELECT coalesce(sum(octet_length(update_envelope)), 0)

@@ -2,13 +2,14 @@ import { GraphInfo, GraphInfoSnapshot } from './shared-graph-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import * as vivaldiService from './vivaldi-service.ts';
 import * as coreAlgorithms from './graph/core-node-algorithms.ts';
-import { mddlOTTC, relaxDegreeByOne } from './tree/mddl-ottc.ts';
+import { createEmptyTreeLike, mddlOTTC, relaxDegreeByOne } from './tree/mddl-ottc.ts';
 import * as createGraph from './graph/create-graph.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as graphsRepository from './repository/graphs-repository.ts';
 import { DEFAULT_GRAPH_PROP, DEFAULT_K_CORE_NODES } from './algo-props.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { WeightedGraph } from './graph-props.ts';
 
 export const GLOBAL_GRAPH_REF: GroupRef = {
     applicationId: 'global',
@@ -97,8 +98,11 @@ function toMeasuredGroupGraph(nodes: readonly string[], groupRef: GroupRef): Gra
         groupRef,
         graph: measuredGraph,
         coreNodes: measuredCoreNodes,
-        groupGraph:
-        mddlOTTC(measuredGraph, measuredCoreNodes[0], new Set([...nodes]), relaxDegreeByOne).tree,
+        groupGraph: createAvailableNodeGroupTree(
+            measuredGraph,
+            nodes,
+            measuredCoreNodes,
+        ),
     };
 }
 
@@ -116,6 +120,38 @@ function toPredictedGroupGraph(nodes: readonly string[], groupRef: GroupRef): Gr
             predictedGraph,
             DEFAULT_K_CORE_NODES,
         ),
-        groupGraph: mddlOTTC(predictedGraph, coreNodes[0], new Set([...nodes]), relaxDegreeByOne).tree,
+        groupGraph: createAvailableNodeGroupTree(
+            predictedGraph,
+            nodes,
+            coreNodes,
+        ),
     };
+}
+
+function createAvailableNodeGroupTree(
+    graph: WeightedGraph,
+    nodes: readonly string[],
+    coreNodes: readonly string[],
+): WeightedGraph {
+    const availableNodeSet = new Set(
+        nodes.filter((node) => graph.hasNode(node)),
+    );
+    const source = coreNodes.find((node) => availableNodeSet.has(node)) ??
+        (availableNodeSet.values().next().value as string | undefined);
+    const tree = createEmptyTreeLike(graph);
+    if (source === undefined) {
+        return tree;
+    }
+
+    if (availableNodeSet.size === 1) {
+        tree.addNode(source, { ...graph.getNodeAttributes(source) });
+        return tree;
+    }
+
+    return mddlOTTC(
+        graph,
+        source,
+        availableNodeSet,
+        relaxDegreeByOne,
+    ).tree;
 }

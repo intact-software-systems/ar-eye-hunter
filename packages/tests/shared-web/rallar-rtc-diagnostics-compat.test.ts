@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { QRtcPeerConnectionDiagnostics } from '@shared/webrtc/QRtcPeerConnection.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 
 const mocks = vi.hoisted(() => {
@@ -344,6 +345,15 @@ describe('Rallar RTC diagnostics compatibility', () => {
             state: 'Open',
             readyState: 'open',
         });
+        const connectionDiagnostics = createPeerConnectionDiagnostics({
+            connectCallCount: 2,
+            outboundOfferCount: 1,
+            inboundAnswerCount: 1,
+            reconnectAttemptCount: 1,
+            pendingIceCandidateQueueLength: 3,
+            reconnectAttemptsInFlight: 1,
+            hasReconnectTimer: true,
+        });
         const stats = new Map<string, Record<string, unknown>>([
             ['pair-1', {
                 id: 'pair-1',
@@ -391,6 +401,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
         const peer = {
             peerId: 'peer-1',
             connection: {
+                readDiagnostics: vi.fn(() => connectionDiagnostics),
                 status: {
                     state: 'Open',
                     pc,
@@ -420,6 +431,7 @@ describe('Rallar RTC diagnostics compatibility', () => {
         });
 
         expect(pc.getStats).toHaveBeenCalledOnce();
+        expect(peer.connection.readDiagnostics).toHaveBeenCalledOnce();
         expect(diagnostics).toMatchObject({
             sessionId: 'session-1',
             peerCount: 1,
@@ -438,6 +450,15 @@ describe('Rallar RTC diagnostics compatibility', () => {
                         hasLocalDescription: true,
                         hasRemoteDescription: true,
                         canTrickleIceCandidates: true,
+                    },
+                    connectionDiagnostics: {
+                        connectCallCount: 2,
+                        outboundOfferCount: 1,
+                        inboundAnswerCount: 1,
+                        reconnectAttemptCount: 1,
+                        pendingIceCandidateQueueLength: 3,
+                        reconnectAttemptsInFlight: 1,
+                        hasReconnectTimer: true,
                     },
                     selectedCandidatePair: {
                         id: 'pair-1',
@@ -519,5 +540,48 @@ function createChannelHealth(
             receivedString: 0,
             receivedBinary: 0,
         },
+    };
+}
+
+function createPeerConnectionDiagnostics(
+    overrides: Partial<QRtcPeerConnectionDiagnostics> = {},
+): QRtcPeerConnectionDiagnostics {
+    return {
+        connectCallCount: 0,
+        connectIgnoredCount: 0,
+        resetCount: 0,
+        closedPeerConnectionCount: 0,
+        negotiationNeededCount: 0,
+        negotiationSkippedCount: 0,
+        offerCreatedCount: 0,
+        inboundOfferCount: 0,
+        inboundAnswerCount: 0,
+        inboundIceCandidateCount: 0,
+        staleAnswerIgnoredCount: 0,
+        offerCollisionCount: 0,
+        ignoredOfferCollisionCount: 0,
+        politeOfferRollbackCount: 0,
+        outboundOfferCount: 0,
+        outboundAnswerCount: 0,
+        outboundIceCandidateCount: 0,
+        queuedIceCandidateCount: 0,
+        addedIceCandidateCount: 0,
+        flushedIceCandidateCount: 0,
+        ignoredIceCandidateForIgnoredOfferCount: 0,
+        reconnectAttemptCount: 0,
+        reconnectTimerAlreadyActiveCount: 0,
+        reconnectExhaustedCount: 0,
+        iceRestartCount: 0,
+        iceRestartSkippedConnectedCount: 0,
+        disconnectTimerScheduledCount: 0,
+        disconnectTimerAlreadyActiveCount: 0,
+        disconnectTimerClearedCount: 0,
+        disconnectTimerFiredCount: 0,
+        outboundSignalingErrorCount: 0,
+        inboundSignalingErrorCount: 0,
+        pendingIceCandidateQueueLength: 0,
+        reconnectAttemptsInFlight: 0,
+        hasReconnectTimer: false,
+        ...overrides,
     };
 }

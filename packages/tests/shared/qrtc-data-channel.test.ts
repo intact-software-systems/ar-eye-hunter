@@ -312,8 +312,10 @@ describe('QRtcDataChannel', () => {
 
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Failed',
-            readyState: 'closed',
+            readyState: undefined,
         });
+        expect(firstChannel.onopen).toBeNull();
+        expect(firstChannel.onerror).toBeNull();
 
         dataChannel.connect(true);
         const wait = dataChannel.waitUntilOpen(1_000);
@@ -365,6 +367,102 @@ describe('QRtcDataChannel', () => {
             state: 'Open',
             readyState: 'open',
         });
+    });
+
+    it('drops queued sends when a native channel closes before reconnect', async () => {
+        const peerConnection = createPeerConnectionHarness();
+        const dataChannel = new QRtcDataChannel(
+            peerConnection.peerConnection as never,
+            {
+                peerId: 'peer-1',
+                dataChannelName: 'realtime',
+                flowControl: {
+                    highWatermarkBytes: 2,
+                    lowWatermarkBytes: 1,
+                    overflow: 'queue',
+                    maxQueueItems: 2,
+                },
+            },
+        );
+
+        dataChannel.connect(true);
+
+        const firstChannel = peerConnection.createdChannels[0];
+        firstChannel.bufferedAmount = 2;
+        await firstChannel.emitOpen();
+
+        expect(dataChannel.sendJson({ seq: 1 })).toMatchObject({
+            status: 'queued',
+        });
+        expect(dataChannel.sendJson({ seq: 2 })).toMatchObject({
+            status: 'queued',
+        });
+        expect(dataChannel.readHealth().queuedItemCount).toBe(2);
+
+        await firstChannel.emitClose();
+
+        expect(dataChannel.readHealth()).toMatchObject({
+            state: 'Closed',
+            readyState: undefined,
+            queuedItemCount: 0,
+        });
+
+        dataChannel.connect(true);
+
+        const secondChannel = peerConnection.createdChannels[1];
+        await secondChannel.emitOpen();
+        await secondChannel.emitBufferedAmountLow();
+
+        expect(secondChannel.sent).toEqual([]);
+        expect(dataChannel.readHealth().queuedItemCount).toBe(0);
+    });
+
+    it('drops queued sends when a native channel errors before reconnect', async () => {
+        const peerConnection = createPeerConnectionHarness();
+        const dataChannel = new QRtcDataChannel(
+            peerConnection.peerConnection as never,
+            {
+                peerId: 'peer-1',
+                dataChannelName: 'realtime',
+                flowControl: {
+                    highWatermarkBytes: 2,
+                    lowWatermarkBytes: 1,
+                    overflow: 'queue',
+                    maxQueueItems: 2,
+                },
+            },
+        );
+
+        dataChannel.connect(true);
+
+        const firstChannel = peerConnection.createdChannels[0];
+        firstChannel.bufferedAmount = 2;
+        await firstChannel.emitOpen();
+
+        expect(dataChannel.sendJson({ seq: 1 })).toMatchObject({
+            status: 'queued',
+        });
+        expect(dataChannel.sendJson({ seq: 2 })).toMatchObject({
+            status: 'queued',
+        });
+        expect(dataChannel.readHealth().queuedItemCount).toBe(2);
+
+        await firstChannel.emitError();
+
+        expect(dataChannel.readHealth()).toMatchObject({
+            state: 'Failed',
+            readyState: undefined,
+            queuedItemCount: 0,
+        });
+
+        dataChannel.connect(true);
+
+        const secondChannel = peerConnection.createdChannels[1];
+        await secondChannel.emitOpen();
+        await secondChannel.emitBufferedAmountLow();
+
+        expect(secondChannel.sent).toEqual([]);
+        expect(dataChannel.readHealth().queuedItemCount).toBe(0);
     });
 
     it('waits for a replacement receiver channel after the previous channel closed', async () => {
@@ -464,6 +562,79 @@ describe('QRtcDataChannel', () => {
         expect(createdChannel.sent).toEqual([
             JSON.stringify({ x: 2 }),
             bytes,
+        ]);
+    });
+
+    it('preserves queued order for indexed replace-by-key sends', async () => {
+        const peerConnection = createPeerConnectionHarness();
+        const dataChannel = new QRtcDataChannel(
+            peerConnection.peerConnection as never,
+            {
+                peerId: 'peer-1',
+                dataChannelName: 'realtime',
+                flowControl: {
+                    highWatermarkBytes: 2,
+                    lowWatermarkBytes: 1,
+                    overflow: 'replace-by-key',
+                    maxQueueItems: 3,
+                },
+            },
+        );
+
+        dataChannel.connect(true);
+
+        const createdChannel = peerConnection.createdChannels[0];
+        createdChannel.readyState = 'open';
+        createdChannel.bufferedAmount = 2;
+        await createdChannel.emitOpen();
+
+        expect(dataChannel.sendJson({ seq: 1 }, { key: 'a' })).toMatchObject({
+            status: 'queued',
+        });
+        expect(dataChannel.sendJson({ seq: 2 }, { key: 'b' })).toMatchObject({
+            status: 'queued',
+        });
+        expect(dataChannel.sendJson({ seq: 3 }, { key: 'c' })).toMatchObject({
+            status: 'queued',
+        });
+        expect(dataChannel.sendJson({ seq: 4 }, { key: 'b' })).toMatchObject({
+            status: 'replaced',
+        });
+
+        createdChannel.bufferedAmount = 0;
+        await createdChannel.emitBufferedAmountLow();
+
+        expect(createdChannel.sent).toEqual([
+            JSON.stringify({ seq: 1 }),
+            JSON.stringify({ seq: 4 }),
+            JSON.stringify({ seq: 3 }),
+        ]);
+        expect(dataChannel.readHealth()).toMatchObject({
+            queuedItemCount: 0,
+            counters: {
+                queued: 3,
+                replaced: 1,
+                flushed: 3,
+                sent: 3,
+            },
+        });
+
+        createdChannel.bufferedAmount = 2;
+        expect(dataChannel.sendJson({ seq: 5 }, { key: 'b' })).toMatchObject({
+            status: 'queued',
+        });
+        expect(dataChannel.sendJson({ seq: 6 }, { key: 'b' })).toMatchObject({
+            status: 'replaced',
+        });
+
+        createdChannel.bufferedAmount = 0;
+        await createdChannel.emitBufferedAmountLow();
+
+        expect(createdChannel.sent).toEqual([
+            JSON.stringify({ seq: 1 }),
+            JSON.stringify({ seq: 4 }),
+            JSON.stringify({ seq: 3 }),
+            JSON.stringify({ seq: 6 }),
         ]);
     });
 

@@ -4,6 +4,7 @@ import type { GroupEvent } from '@shared/api/group-types.ts';
 import {
     DEFAULT_STATE_EVENT_LIST_LIMIT,
     filterStateEventsForList,
+    listRecentStateEvents,
     listStateEventsPage,
     MAX_STATE_EVENT_LIST_LIMIT,
     readStateEventListQuery,
@@ -37,6 +38,23 @@ describe('state event listing', () => {
 
         expect(
             filterStateEventsForList(events, query).map((event) => event.eventId),
+        ).toEqual(['event-2', 'event-3']);
+    });
+
+    it('keeps legacy recent-list semantics by ignoring cursor params', () => {
+        const events = [
+            createClientEvent('event-1', 'principal-created', 1_000),
+            createClientEvent('event-2', 'principal-updated', 2_000),
+            createClientEvent('event-3', 'session-connected', 3_000),
+        ];
+        const query = readStateEventListQuery(
+            new URLSearchParams(
+                'afterSnapshotVersion=2000&afterOccurredAtEpochMs=2000&afterEventId=event-2&limit=2',
+            ),
+        );
+
+        expect(
+            listRecentStateEvents(events, query).map((event) => event.eventId),
         ).toEqual(['event-2', 'event-3']);
     });
 

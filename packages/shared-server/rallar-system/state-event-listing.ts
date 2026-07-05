@@ -1,7 +1,4 @@
-import type {
-    StateEventCursor,
-    StateEventPage,
-} from '@shared/api/state-event-types.ts';
+import type { StateEventCursor, StateEventPage } from '@shared/api/state-event-types.ts';
 
 export type StateEventListQuery<TEventType extends string = string> = Readonly<{
     eventTypes?: readonly TEventType[];
@@ -36,6 +33,16 @@ export function readStateEventListQuery(
 }
 
 export function filterStateEventsForList<
+    TEvent extends StateEventListable<TEventType>,
+    TEventType extends string = string,
+>(
+    events: readonly TEvent[],
+    query: StateEventListQuery<TEventType> = {},
+): readonly TEvent[] {
+    return listRecentStateEvents(events, query);
+}
+
+export function listRecentStateEvents<
     TEvent extends StateEventListable<TEventType>,
     TEventType extends string = string,
 >(

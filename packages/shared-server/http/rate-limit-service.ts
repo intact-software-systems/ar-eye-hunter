@@ -2,6 +2,7 @@ import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RateLimiter, RateLimiterPolicy, SlidingWindowCounter, } from '@shared/resilience/Resilience.ts';
 
 const RATE_LIMITER_CACHE_TTL_MS = 10 * 60_000;
+const RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS = 60_000;
 const UNKNOWN_CLIENT_KEY = 'unknown';
 
 type HeaderReader = Readonly<{
@@ -10,6 +11,7 @@ type HeaderReader = Readonly<{
 
 const rateLimiters = new LatestRepository<string, RateLimiter>({
     ttlMs: RATE_LIMITER_CACHE_TTL_MS,
+    deleteExpiredIntervalMs: RATE_LIMITER_CACHE_DELETE_EXPIRED_INTERVAL_MS,
 });
 
 export function readRateLimiter(
@@ -17,8 +19,6 @@ export function readRateLimiter(
     key: string,
     policy: RateLimiterPolicy,
 ): RateLimiter {
-    rateLimiters.deleteExpired();
-
     const limiterKey = toLimiterKey(namespace, key, policy);
     const limiter = rateLimiters.setIfAbsent(
         limiterKey,

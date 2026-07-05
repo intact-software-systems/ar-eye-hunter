@@ -7,6 +7,8 @@ import {
   test,
   type TestInfo,
 } from "@playwright/test";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { openTab } from "./full-stack-helpers.ts";
 
 const SPA_BASE_URL = envValue("VITE_RALLAR_SPA_BASE_URL") ??
@@ -201,6 +203,10 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function stringArrayValue(value: unknown): readonly string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
@@ -213,6 +219,10 @@ function pathSegment(value: string): string {
 
 function transportSlug(transport: TransportUnderTest): string {
   return transport.replace(".", "-");
+}
+
+function safeFileName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_.-]+/g, "-");
 }
 
 function agentAuth(prefix: AgentPrefix): AgentAuth {
@@ -1344,19 +1354,110 @@ async function attachRunSummary(
   runId: string,
 ): Promise<void> {
   const run = await fetchRun(request, runId);
+  const body = JSON.stringify(
+    {
+      runId,
+      agents: run.agents?.map((agent) => agent.agentId),
+      resultCount: run.results?.length ?? 0,
+      eventCount: run.events?.length ?? 0,
+    },
+    null,
+    2,
+  );
   await testInfo.attach("live-rtc-three-browser-run-summary.json", {
-    body: JSON.stringify(
-      {
-        runId,
-        agents: run.agents?.map((agent) => agent.agentId),
-        resultCount: run.results?.length ?? 0,
-        eventCount: run.events?.length ?? 0,
-      },
-      null,
-      2,
-    ),
+    body,
     contentType: "application/json",
   });
+  await writePerfArtifact(
+    `live-rtc-three-browser-run-summary-${safeFileName(runId)}.json`,
+    body,
+  );
+}
+
+async function attachRtcDiagnosticsSnapshot(
+  request: APIRequestContext,
+  testInfo: TestInfo,
+  runId: string,
+  agents: readonly AgentHandle[],
+  label: string,
+): Promise<readonly string[]> {
+  const commandIds: string[] = [];
+  const snapshots = [];
+  for (const agent of agents) {
+    const commandId = `rtc-diagnostics-${agent.prefix.toLowerCase()}-${label}`;
+    commandIds.push(commandId);
+    const result = await executeOk(request, runId, agent.agentId, commandId, {
+      kind: "health",
+      includeRtcDiagnostics: true,
+    }, 30_000);
+    snapshots.push(compactRtcDiagnosticsResult(agent, result));
+  }
+
+  const body = JSON.stringify({
+    runId,
+    label,
+    capturedAtEpochMs: Date.now(),
+    snapshots,
+  }, null, 2);
+  await testInfo.attach(`live-rtc-diagnostics-${label}.json`, {
+    body,
+    contentType: "application/json",
+  });
+  await writePerfArtifact(
+    `live-rtc-diagnostics-${safeFileName(label)}.json`,
+    body,
+  );
+  return commandIds;
+}
+
+async function writePerfArtifact(fileName: string, body: string): Promise<void> {
+  const outDir = envValue("RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR");
+  if (!outDir) {
+    return;
+  }
+  await mkdir(outDir, { recursive: true });
+  await writeFile(join(outDir, fileName), body);
+}
+
+function compactRtcDiagnosticsResult(
+  agent: AgentHandle,
+  result: ControlResult,
+) {
+  const rallar = asRecord(resultValue(result).rallar);
+  const diagnostics = asRecord(rallar.rtcDiagnostics);
+  const peers = Array.isArray(diagnostics.peers) ? diagnostics.peers : [];
+  return {
+    agentId: agent.agentId,
+    prefix: agent.prefix,
+    commandId: result.commandId,
+    sessionId: stringValue(diagnostics.sessionId),
+    generatedAtEpochMs: numberValue(diagnostics.generatedAtEpochMs),
+    peerCount: numberValue(diagnostics.peerCount),
+    connectedPeerCount: numberValue(diagnostics.connectedPeerCount),
+    relayPeerCount: numberValue(diagnostics.relayPeerCount),
+    rtcDiagnosticsError: rallar.rtcDiagnosticsError,
+    peers: peers.map(compactRtcPeerDiagnostics),
+  };
+}
+
+function compactRtcPeerDiagnostics(peerValue: unknown) {
+  const peer = asRecord(peerValue);
+  const connection = asRecord(peer.connection);
+  const candidatePair = asRecord(peer.selectedCandidatePair);
+  const connectionDiagnostics = asRecord(peer.connectionDiagnostics);
+  return {
+    peerId: stringValue(peer.peerId),
+    connectionState: stringValue(connection.connectionState),
+    iceConnectionState: stringValue(connection.iceConnectionState),
+    signalingState: stringValue(connection.signalingState),
+    usesRelay: peer.usesRelay === true,
+    statsAvailable: peer.statsAvailable === true,
+    currentRoundTripTime: numberValue(candidatePair.currentRoundTripTime),
+    connectionDiagnostics:
+      Object.keys(connectionDiagnostics).length > 0
+        ? connectionDiagnostics
+        : undefined,
+  };
 }
 
 test.describe("full-stack live three-browser RTC matrix", () => {
@@ -1444,6 +1545,15 @@ test.describe("full-stack live three-browser RTC matrix", () => {
         );
         commandIds.push(...realtime.commandIds);
         commandIds.push(
+          ...await attachRtcDiagnosticsSnapshot(
+            request,
+            testInfo,
+            runId,
+            realtimeAgents,
+            `realtime-${suffix}`,
+          ),
+        );
+        commandIds.push(
           ...await retireAgents(
             realtimeAgents,
             `${suffix}-after-realtime`,
@@ -1477,6 +1587,15 @@ test.describe("full-stack live three-browser RTC matrix", () => {
             suffix,
             targetSessionId: messages.sessions.B,
           }),
+        );
+        commandIds.push(
+          ...await attachRtcDiagnosticsSnapshot(
+            request,
+            testInfo,
+            runId,
+            messageAgents,
+            `messages-rtc-${suffix}`,
+          ),
         );
         commandIds.push(
           ...await expectClosedTransportFailure(

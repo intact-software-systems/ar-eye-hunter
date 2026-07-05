@@ -196,6 +196,61 @@ Deno.test('state event page routes call paged services instead of full-history l
   });
 });
 
+Deno.test('legacy state event routes call bounded recent services instead of full-history listEvents', async () => {
+  await withStrictReadAuth(false, async () => {
+    const clientEvent = createClientEvent('client-event-2');
+    const groupEvent = createGroupEvent('group-event-2');
+    const clientQueries: unknown[] = [];
+    const groupQueries: unknown[] = [];
+    const clientDeps = createClientRouteDeps({
+      session: createAuthSession('alice'),
+      clientService: {
+        listEvents: () => Promise.reject(new Error('full client history should not be loaded')),
+        listRecentEvents: (_ref, query) => {
+          clientQueries.push(query);
+          return Promise.resolve([clientEvent]);
+        },
+      },
+    });
+    const groupDeps = createGroupRouteDeps({
+      session: createAuthSession('alice'),
+      groupService: {
+        listEvents: () => Promise.reject(new Error('full group history should not be loaded')),
+        listRecentEvents: (_ref, query) => {
+          groupQueries.push(query);
+          return Promise.resolve([groupEvent]);
+        },
+      },
+    });
+    const app = new Hono();
+    installAuthMiddleware(app, clientDeps.requireApiAuthSession);
+    clientStateRoutes.init(app, clientDeps);
+    groupStateRoutes.init(app, groupDeps);
+
+    const clientResponse = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/events?eventType=session-connected&limit=1',
+      { headers: { authorization: 'Bearer token' } },
+    );
+    const groupResponse = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/events?eventType=member-left&limit=1',
+      { headers: { authorization: 'Bearer token' } },
+    );
+
+    assert.equal(clientResponse.status, 200);
+    assert.equal(groupResponse.status, 200);
+    assert.deepEqual(await clientResponse.json(), [clientEvent]);
+    assert.deepEqual(await groupResponse.json(), [groupEvent]);
+    assert.deepEqual(clientQueries, [{
+      eventTypes: ['session-connected'],
+      limit: 1,
+    }]);
+    assert.deepEqual(groupQueries, [{
+      eventTypes: ['member-left'],
+      limit: 1,
+    }]);
+  });
+});
+
 Deno.test('group state routes return stable policy error codes when available', async () => {
   await withStrictReadAuth(false, async () => {
     const deps = createGroupRouteDeps({
@@ -235,9 +290,7 @@ Deno.test('group mutation routes return stable lifecycle policy error codes', as
     const ownerSnapshot: GroupSnapshot = {
       ...snapshot,
       members: snapshot.members.map((member) =>
-        member.principalId === 'alice'
-          ? { ...member, role: 'owner' as const }
-          : member
+        member.principalId === 'alice' ? { ...member, role: 'owner' as const } : member
       ),
     };
     const deps = createGroupRouteDeps({

@@ -155,6 +155,52 @@ describe('WebRtcGroupService', () => {
         expect(service.targetPeerIds()).toEqual(['peer-b']);
     });
 
+    it('selects the latest matching cached snapshot without direct cache hits', () => {
+        const older = createGroupSnapshot(
+            'shared-room',
+            1,
+            ['self', 'peer-old'],
+            {
+                workspaceId: 'workspace-b',
+            },
+        );
+        const latest = createGroupSnapshot(
+            'shared-room',
+            3,
+            ['self', 'peer-latest'],
+            {
+                workspaceId: 'workspace-b',
+            },
+        );
+        const newerWrongScope = createGroupSnapshot(
+            'shared-room',
+            99,
+            ['self', 'peer-wrong'],
+            {
+                workspaceId: 'workspace-a',
+            },
+        );
+        const cache = {
+            read: vi.fn(() => undefined),
+            peek: vi.fn(() => undefined),
+            readAllValues: vi.fn(() => [
+                older,
+                newerWrongScope,
+                latest,
+            ]),
+        };
+        const rtcQBox = createRtcHarness('self');
+        const service = new WebRtcGroupService(
+            rtcQBox as never,
+            latest.group,
+            cache as never,
+        );
+
+        expect(service.readGroup()).toEqual(latest);
+        expect(cache.read).toHaveBeenCalledWith(expect.any(String));
+        expect(cache.readAllValues).toHaveBeenCalledOnce();
+    });
+
     it('rejects updates for the wrong group id', async () => {
         const cache = new LatestRepository<string, GroupSnapshot>();
         const rtcQBox = createRtcHarness('self');

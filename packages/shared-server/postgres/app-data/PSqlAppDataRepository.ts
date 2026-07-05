@@ -3,6 +3,7 @@ import type {
     AppDataConditionalInsertResult,
     AppDataConditionalRepositoryLike,
     AppDataConditionalWriteResult,
+    AppDataEntryPageOptions,
     AppDataEntry,
     AppDataUpsertInput,
     AppDataUpsertIfRevisionInput,
@@ -84,6 +85,97 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
             `;
 
         return rows.map(toEntry);
+    }
+
+    async findEntriesPage(
+        namespace: string,
+        storeName: string,
+        options: AppDataEntryPageOptions,
+    ): Promise<readonly AppDataEntry[]> {
+        const limit = Math.max(1, Math.floor(options.limit));
+        const rows = await this.findEntryPageRows(namespace, storeName, options, limit);
+        return rows.map(toEntry);
+    }
+
+    private async findEntryPageRows(
+        namespace: string,
+        storeName: string,
+        options: AppDataEntryPageOptions,
+        limit: number,
+    ): Promise<AppDataRow[]> {
+        if (options.keyPrefix && options.afterKey !== undefined) {
+            return await this.sql<AppDataRow[]>`
+                select app_namespace,
+                       store_name,
+                       data_key,
+                       data_value,
+                       schema_version,
+                       expire_at_ts,
+                       updated_ts,
+                       revision
+                from app_data_store
+                where app_namespace = ${namespace}
+                  and store_name = ${storeName}
+                  and data_key like ${`${options.keyPrefix}%`}
+                  and data_key > ${options.afterKey}
+                order by data_key
+                limit ${limit}
+            `;
+        }
+
+        if (options.keyPrefix) {
+            return await this.sql<AppDataRow[]>`
+                select app_namespace,
+                       store_name,
+                       data_key,
+                       data_value,
+                       schema_version,
+                       expire_at_ts,
+                       updated_ts,
+                       revision
+                from app_data_store
+                where app_namespace = ${namespace}
+                  and store_name = ${storeName}
+                  and data_key like ${`${options.keyPrefix}%`}
+                order by data_key
+                limit ${limit}
+            `;
+        }
+
+        if (options.afterKey !== undefined) {
+            return await this.sql<AppDataRow[]>`
+                select app_namespace,
+                       store_name,
+                       data_key,
+                       data_value,
+                       schema_version,
+                       expire_at_ts,
+                       updated_ts,
+                       revision
+                from app_data_store
+                where app_namespace = ${namespace}
+                  and store_name = ${storeName}
+                  and data_key > ${options.afterKey}
+                order by data_key
+                limit ${limit}
+            `;
+        }
+
+        return await this.sql<AppDataRow[]>`
+            select app_namespace,
+                   store_name,
+                   data_key,
+                   data_value,
+                   schema_version,
+                   expire_at_ts,
+                   updated_ts,
+                   revision
+            from app_data_store
+            where app_namespace = ${namespace}
+              and store_name = ${storeName}
+            order by data_key
+            limit ${limit}
+        `;
     }
 
     async upsert(input: AppDataUpsertInput): Promise<void> {

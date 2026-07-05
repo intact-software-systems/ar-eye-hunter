@@ -502,10 +502,25 @@ function createFakeWsServer(
             return this;
         },
         send(connectionId: string, data: ALMessage) {
+            this.sendEncoded(connectionId, this.encode(data));
+        },
+        encode(data: ALMessage) {
+            return {
+                text: JSON.stringify(data),
+                data,
+            };
+        },
+        sendEncoded(
+            connectionId: string,
+            encoded: Readonly<{ text: string; data?: ALMessage }>,
+        ) {
             if (failingConnectionIds.has(connectionId)) {
                 throw new Error('send failed');
             }
-            sent.push({ connectionId, data });
+            sent.push({
+                connectionId,
+                data: encoded.data ?? JSON.parse(encoded.text) as ALMessage,
+            });
         },
     };
 }

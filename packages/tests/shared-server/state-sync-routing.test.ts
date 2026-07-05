@@ -10,7 +10,10 @@ import type {
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
+import {
+    resolveStateSyncRecipients,
+    sendStateSyncMessage,
+} from '@shared-server/rallar-system/state-sync-routing.ts';
 
 const NOW = 1_000;
 
@@ -20,6 +23,7 @@ describe('state-sync routing group visibility', () => {
             'alice-session',
             'bob-session',
             'carol-session',
+            'dave-session',
         ]);
         const snapshot = createGroupSnapshot([
             { principalId: 'alice', sessionId: 'alice-session', status: 'active' },
@@ -30,6 +34,7 @@ describe('state-sync routing group visibility', () => {
             createClientSnapshot('alice', 'alice-session'),
             createClientSnapshot('bob', 'bob-session'),
             createClientSnapshot('carol', 'carol-session'),
+            createClientSnapshot('dave', 'dave-session'),
         ];
 
         const snapshotRecipients = resolveStateSyncRecipients(
@@ -95,6 +100,45 @@ describe('state-sync routing group visibility', () => {
 
         expect(connectionIds(recipients)).toEqual(['alice-session']);
     });
+
+    it('sends state-sync messages directly to resolved recipients', () => {
+        const server = createCountingWebSocketServer([
+            'alice-session',
+            'bob-session',
+            'carol-session',
+        ]);
+        const snapshot = createGroupSnapshot([
+            { principalId: 'alice', sessionId: 'alice-session', status: 'active' },
+            { principalId: 'bob', sessionId: 'bob-session', status: 'invited' },
+            { principalId: 'carol', sessionId: 'carol-session', status: 'banned' },
+        ]);
+        const clients = [
+            createClientSnapshot('alice', 'alice-session'),
+            createClientSnapshot('bob', 'bob-session'),
+            createClientSnapshot('carol', 'carol-session'),
+        ];
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALEventRoute(
+                AppTopics.groupStateSnapshot,
+                snapshot.group.groupId,
+                snapshot.group.groupId,
+            ),
+            'all',
+            AppTopics.groupStateSnapshot,
+            snapshot,
+        );
+
+        const sent = sendStateSyncMessage(server, message, {
+            readClientSnapshots: () => clients,
+            now: () => NOW,
+        });
+
+        expect(sent).toBe(1);
+        expect(server.encodeCalls).toBe(1);
+        expect(server.broadcastCalls).toBe(0);
+        expect(server.sentConnectionIds).toEqual(['alice-session']);
+    });
 });
 
 function connectionIds(
@@ -114,6 +158,48 @@ function createWebSocketServer(sessionIds: readonly string[]): JsonWebSocketServ
             ]),
         ),
     } as unknown as JsonWebSocketServer;
+}
+
+type CountingWebSocketServer = JsonWebSocketServer & Readonly<{
+    encodeCalls: number;
+    broadcastCalls: number;
+    sentConnectionIds: readonly string[];
+}>;
+
+function createCountingWebSocketServer(
+    sessionIds: readonly string[],
+): CountingWebSocketServer {
+    const sentConnectionIds: string[] = [];
+    const counters = {
+        encodeCalls: 0,
+        broadcastCalls: 0,
+    };
+    return {
+        connections: new Map(
+            sessionIds.map((sessionId) => [
+                sessionId,
+                { id: sessionId, isOpen: true },
+            ]),
+        ),
+        get encodeCalls() {
+            return counters.encodeCalls;
+        },
+        get broadcastCalls() {
+            return counters.broadcastCalls;
+        },
+        sentConnectionIds,
+        encode: (message: unknown) => {
+            counters.encodeCalls += 1;
+            return { text: JSON.stringify(message) };
+        },
+        sendEncoded: (connectionId: string) => {
+            sentConnectionIds.push(connectionId);
+        },
+        broadcast: () => {
+            counters.broadcastCalls += 1;
+            return 0;
+        },
+    } as unknown as CountingWebSocketServer;
 }
 
 function createClientSnapshot(

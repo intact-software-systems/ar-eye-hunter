@@ -16,8 +16,11 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
+import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { latestRttById } from '@shared/repository/rtt-repository.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
@@ -40,7 +43,10 @@ describe('Rallar system websocket topics RTC topology', () => {
             server,
             'server-1',
         );
-        initRallarSystemWsTopics(service);
+        const topologyService = new RallarRtcTopologyService();
+        initRallarSystemWsTopics(service, {
+            rtcTopologyService: topologyService,
+        });
 
         const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
         clientStateSnapshotsRepository.setClientStateSnapshots([
@@ -81,6 +87,142 @@ describe('Rallar system websocket topics RTC topology', () => {
                 workspaceId: group.group.workspaceId,
                 groupId: group.group.groupId,
             },
+        });
+        expect(topologyService.readMetrics()).toMatchObject({
+            topologyPublishAttemptCount: 1,
+            topologyPublishedCount: 1,
+            topologyPublishSkippedUnchangedCount: 0,
+        });
+
+        const unchangedGroup = {
+            ...group,
+            group: {
+                ...group.group,
+                snapshotVersion: 2,
+            },
+        };
+        await senderSocket.dispatchMessage(
+            newALBroadcastMessage(
+                'session-a',
+                newALEventRoute(
+                    AppTopics.groupStateSnapshot,
+                    unchangedGroup.group.groupId,
+                    'group-snapshot-2',
+                ),
+                'room',
+                AppTopics.groupStateSnapshot,
+                unchangedGroup,
+                {
+                    groupRef: unchangedGroup.group,
+                },
+            ),
+        );
+
+        expect(topologyService.readMetrics()).toMatchObject({
+            topologyPublishAttemptCount: 2,
+            topologyPublishedCount: 1,
+            topologyPublishSkippedUnchangedCount: 1,
+        });
+    });
+
+    it('removes cached topology when a group snapshot becomes inactive', async () => {
+        configureTestCacheRepositories();
+
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const topologyRepository = new RtcTopologySnapshotRepository(
+            runtimeRepository,
+        );
+        const server = new JsonWebSocketServer();
+        const sockets = createSockets([
+            'session-a',
+            'session-b',
+            'session-c',
+            'session-d',
+            'session-e',
+        ]);
+
+        for (const [sessionId, socket] of sockets) {
+            server.addConnection(
+                new ConnectionContext(sessionId, socket as never),
+            );
+        }
+
+        const service = new WsQueueBoxServerService(
+            new InMemoryQueueBox(new Map()),
+            new InMemoryQueueBox(new Map()),
+            server,
+            'server-1',
+        );
+        const topologyService = new RallarRtcTopologyService();
+        initRallarSystemWsTopics(service, {
+            rtcTopologyService: topologyService,
+            rtcTopologyRuntimeState: {
+                repository: runtimeRepository,
+            },
+        });
+
+        const group = createGroupSnapshot('room-1', [...sockets.keys()]);
+        clientStateSnapshotsRepository.setClientStateSnapshots(
+            [...sockets.keys()].map(createClientSnapshot),
+        );
+        const senderSocket = sockets.get('session-a')!;
+
+        await senderSocket.dispatchMessage(
+            newALBroadcastMessage(
+                'session-a',
+                newALEventRoute(
+                    AppTopics.groupStateSnapshot,
+                    group.group.groupId,
+                    'group-snapshot-active',
+                ),
+                'room',
+                AppTopics.groupStateSnapshot,
+                group,
+                {
+                    groupRef: group.group,
+                },
+            ),
+        );
+
+        expect(countSentTopologyMessages(sockets)).toBe(5);
+        expect(topologyService.readSnapshot(group)).toBeDefined();
+        expect(await topologyRepository.findSnapshot(group.group)).toBeDefined();
+        expect(topologyService.readMetrics()).toMatchObject({
+            topologySnapshotCount: 1,
+            topologyRemovalRequestCount: 0,
+        });
+
+        for (const socket of sockets.values()) {
+            socket.sent.length = 0;
+        }
+
+        const archivedGroup = createInactiveGroupSnapshot(group, 'archived');
+        await senderSocket.dispatchMessage(
+            newALBroadcastMessage(
+                'session-a',
+                newALEventRoute(
+                    AppTopics.groupStateSnapshot,
+                    archivedGroup.group.groupId,
+                    'group-snapshot-archived',
+                ),
+                'room',
+                AppTopics.groupStateSnapshot,
+                archivedGroup,
+                {
+                    groupRef: archivedGroup.group,
+                },
+            ),
+        );
+
+        expect(countSentTopologyMessages(sockets)).toBe(0);
+        expect(topologyService.readSnapshot(group)).toBeUndefined();
+        expect(await topologyRepository.findSnapshot(group.group)).toBeUndefined();
+        expect(topologyService.readMetrics()).toMatchObject({
+            topologyRemovalRequestCount: 1,
+            topologyRemovedCount: 1,
+            topologyRemoveMissCount: 0,
+            topologySnapshotCount: 0,
+            pendingRttUpdateCount: 0,
         });
     });
 
@@ -145,6 +287,11 @@ describe('Rallar system websocket topics RTC topology', () => {
                 socket.sent.length = 0;
             }
 
+            const fullSnapshotScan = vi.spyOn(
+                groupStateSnapshotsRepository,
+                'getAllGroupStateSnapshots',
+            );
+
             for (const rtt of createCentralRttMeasurements(
                 [...sockets.keys()],
                 'session-a',
@@ -167,6 +314,8 @@ describe('Rallar system websocket topics RTC topology', () => {
                 );
             }
 
+            expect(fullSnapshotScan).not.toHaveBeenCalled();
+            fullSnapshotScan.mockRestore();
             expect(countSentTopologyMessages(sockets)).toBe(0);
 
             await vi.advanceTimersByTimeAsync(99);
@@ -332,6 +481,11 @@ describe('Rallar system websocket topics RTC topology', () => {
                 socket.sent.length = 0;
             }
 
+            const fullSnapshotScan = vi.spyOn(
+                groupStateSnapshotsRepository,
+                'getAllGroupStateSnapshots',
+            );
+
             for (const rtt of createCentralRttMeasurements(
                 [...sockets.keys()],
                 'session-a',
@@ -354,6 +508,8 @@ describe('Rallar system websocket topics RTC topology', () => {
                 );
             }
 
+            expect(fullSnapshotScan).not.toHaveBeenCalled();
+            fullSnapshotScan.mockRestore();
             expect(wake).toHaveBeenCalled();
             expect(countSentTopologyMessages(sockets)).toBe(0);
 
@@ -750,5 +906,29 @@ function createGroupSnapshot(
         })),
         memberCount: memberSessionIds.length,
         onlineMemberCount: memberSessionIds.length,
+    };
+}
+
+function createInactiveGroupSnapshot(
+    snapshot: GroupSnapshot,
+    status: 'archived' | 'deleted',
+): GroupSnapshot {
+    const audit = {
+        atEpochMs: 2,
+        byPrincipalId: 'owner',
+    };
+
+    return {
+        ...snapshot,
+        group: {
+            ...snapshot.group,
+            status,
+            snapshotVersion: snapshot.group.snapshotVersion + 1,
+            updated: audit,
+            archived: status === 'archived' ? audit : snapshot.group.archived,
+            deleted: status === 'deleted' ? audit : snapshot.group.deleted,
+        },
+        activeSessions: [],
+        onlineMemberCount: 0,
     };
 }

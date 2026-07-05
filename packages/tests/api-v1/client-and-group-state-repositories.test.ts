@@ -117,6 +117,46 @@ describe('ClientStateRepository', () => {
         expect(eventStore.listEventsCalls).toBe(1);
     });
 
+    it('lists client snapshots with scope-wide child reads instead of per-principal fanout', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: new InMemoryClientStateEventStore(),
+        });
+        const now = Date.now();
+        const clientCount = 50;
+
+        for (let index = 0; index < clientCount; index += 1) {
+            const principalId = `principal-${String(index).padStart(4, '0')}`;
+            const instanceId = `instance-${String(index).padStart(4, '0')}`;
+            const sessionId = `session-${String(index).padStart(4, '0')}`;
+
+            await clientRepository.putPrincipal(createClientPrincipal(principalId));
+            await clientRepository.putInstance(
+                createClientInstance(instanceId, principalId),
+            );
+            await clientRepository.putSession(
+                createClientSession(instanceId, sessionId, {
+                    principalId,
+                    expiresAtEpochMs: now + 60_000,
+                }),
+            );
+        }
+
+        repository.resetCounters();
+        const snapshots = await clientRepository.listSnapshots({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+
+        expect(snapshots).toHaveLength(clientCount);
+        expect(snapshots[0].principal.principalId).toBe('principal-0000');
+        expect(snapshots[0].instances).toHaveLength(1);
+        expect(snapshots[0].activeSessions).toHaveLength(1);
+        expect(repository.findEntryCalls).toBe(0);
+        expect(repository.findEntriesByPrefixCalls).toBe(3);
+        expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(clientCount);
+    });
+
     it('lists client event pages with event-type filtering through dedicated event-store paging', async () => {
         const repository = new FakeRuntimeStateRepository();
         const eventStore = new InMemoryClientStateEventStore();
@@ -152,13 +192,20 @@ describe('ClientStateRepository', () => {
             limit: 1,
             after: firstPage.nextCursor,
         });
+        const recentEvents = await clientRepository.listRecentEvents(ref, {
+            eventTypes: ['session-disconnected'],
+            limit: 1,
+            after: firstPage.nextCursor,
+        });
 
         expect(firstPage.events.map((event) => event.eventId)).toEqual(['evt-2']);
         expect(firstPage.hasMore).toBe(true);
         expect(secondPage.events.map((event) => event.eventId)).toEqual(['evt-4']);
         expect(secondPage.hasMore).toBe(false);
+        expect(recentEvents.map((event) => event.eventId)).toEqual(['evt-4']);
         expect(repository.findEntriesByPrefixCalls).toBe(0);
         expect(repository.findEntriesByPrefixPageCalls).toHaveLength(0);
+        expect(eventStore.listRecentEventsCalls).toBe(1);
         expect(eventStore.listEventPageCalls).toBe(2);
     });
 
@@ -277,6 +324,48 @@ describe('GroupStateRepository', () => {
         expect(eventStore.listEventsCalls).toBe(1);
     });
 
+    it('lists group snapshots with scope-wide child reads instead of per-group fanout', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        const now = Date.now();
+        const groupCount = 50;
+
+        for (let index = 0; index < groupCount; index += 1) {
+            const groupId = `group-${String(index).padStart(4, '0')}`;
+            const principalId = `principal-${String(index).padStart(4, '0')}`;
+            const sessionId = `session-${String(index).padStart(4, '0')}`;
+
+            await groupRepository.putGroup(createGroup(groupId));
+            await groupRepository.putMember(
+                createGroupMember(principalId, 'active', groupId),
+            );
+            await groupRepository.putPresenceSession(
+                createGroupSession(principalId, sessionId, {
+                    groupId,
+                    expiresAtEpochMs: now + 60_000,
+                }),
+            );
+        }
+
+        repository.resetCounters();
+        const snapshots = await groupRepository.listSnapshots({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+
+        expect(snapshots).toHaveLength(groupCount);
+        expect(snapshots[0].group.groupId).toBe('group-0000');
+        expect(snapshots[0].members).toHaveLength(1);
+        expect(snapshots[0].activeSessions).toHaveLength(1);
+        expect(snapshots[0].memberCount).toBe(1);
+        expect(snapshots[0].onlineMemberCount).toBe(1);
+        expect(repository.findEntryCalls).toBe(0);
+        expect(repository.findEntriesByPrefixCalls).toBe(3);
+        expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(groupCount);
+    });
+
     it('lists group event pages with cursor order through dedicated event-store paging', async () => {
         const repository = new FakeRuntimeStateRepository();
         const eventStore = new InMemoryGroupStateEventStore();
@@ -300,6 +389,10 @@ describe('GroupStateRepository', () => {
             limit: 2,
             after: firstPage.nextCursor,
         });
+        const recentEvents = await groupRepository.listRecentEvents(ref, {
+            limit: 2,
+            after: firstPage.nextCursor,
+        });
 
         expect(firstPage.events.map((event) => event.eventId)).toEqual([
             'evt-1',
@@ -310,8 +403,13 @@ describe('GroupStateRepository', () => {
             'evt-3',
         ]);
         expect(secondPage.hasMore).toBe(false);
+        expect(recentEvents.map((event) => event.eventId)).toEqual([
+            'evt-2',
+            'evt-3',
+        ]);
         expect(repository.findEntriesByPrefixCalls).toBe(0);
         expect(repository.findEntriesByPrefixPageCalls).toHaveLength(0);
+        expect(eventStore.listRecentEventsCalls).toBe(1);
         expect(eventStore.listEventPageCalls).toBe(2);
     });
 
@@ -353,13 +451,13 @@ describe('GroupStateRepository', () => {
     });
 });
 
-function createClientPrincipal(): ClientPrincipal {
+function createClientPrincipal(principalId = 'principal-1'): ClientPrincipal {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        principalId: 'principal-1',
-        username: 'alice',
-        displayName: 'Alice',
+        principalId,
+        username: principalId,
+        displayName: principalId,
         status: 'active',
         roles: ['member'],
         metadata: {},
@@ -371,11 +469,14 @@ function createClientPrincipal(): ClientPrincipal {
     };
 }
 
-function createClientInstance(clientInstanceId: string): ClientInstance {
+function createClientInstance(
+    clientInstanceId: string,
+    principalId = 'principal-1',
+): ClientInstance {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        principalId: 'principal-1',
+        principalId,
         clientInstanceId,
         status: 'active',
         platform: 'web',
@@ -427,13 +528,13 @@ function createClientEvent(
     };
 }
 
-function createGroup(): Group {
+function createGroup(groupId = 'group-1'): Group {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        groupId: 'group-1',
-        slug: 'party-1',
-        displayName: 'Party 1',
+        groupId,
+        slug: groupId === 'group-1' ? 'party-1' : groupId,
+        displayName: groupId === 'group-1' ? 'Party 1' : groupId,
         kind: 'party',
         status: 'active',
         joinMode: 'invite-only',
@@ -447,11 +548,15 @@ function createGroup(): Group {
     };
 }
 
-function createGroupMember(principalId: string, status: GroupMember['status']): GroupMember {
+function createGroupMember(
+    principalId: string,
+    status: GroupMember['status'],
+    groupId = 'group-1',
+): GroupMember {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        groupId: 'group-1',
+        groupId,
         principalId,
         role: 'member',
         status,
@@ -497,13 +602,17 @@ function createGroupEvent(
 
 class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
+    findEntryCalls = 0;
     findEntriesByPrefixCalls = 0;
-    findEntriesByPrefixPageCalls: Array<Readonly<{
-        namespace: string;
-        keyPrefix: string;
-        afterKey?: string;
-        limit: number;
-    }>> = [];
+    maxRowsReturnedPerFindEntriesByPrefix = 0;
+    findEntriesByPrefixPageCalls: Array<
+        Readonly<{
+            namespace: string;
+            keyPrefix: string;
+            afterKey?: string;
+            limit: number;
+        }>
+    > = [];
 
     async begin<T>(
         fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
@@ -512,6 +621,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     }
 
     async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
+        this.findEntryCalls += 1;
         const entry = this.data.get(this.toKey(namespace, key));
         return entry ? { ...entry } : undefined;
     }
@@ -528,7 +638,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         keyPrefix: string,
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixCalls += 1;
-        return [...this.data.entries()]
+        const rows = [...this.data.entries()]
             .filter(
                 ([compositeKey]) =>
                     this.toNamespace(compositeKey) === namespace &&
@@ -536,6 +646,11 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
             )
             .map(([, entry]) => ({ ...entry }))
             .sort((left, right) => left.key.localeCompare(right.key));
+        this.maxRowsReturnedPerFindEntriesByPrefix = Math.max(
+            this.maxRowsReturnedPerFindEntriesByPrefix,
+            rows.length,
+        );
+        return rows;
     }
 
     async findEntriesByPrefixPage(
@@ -614,6 +729,13 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         return [...this.data.entries()].find(
             ([compositeKey]) => this.toNamespace(compositeKey) === namespace,
         )?.[1];
+    }
+
+    resetCounters(): void {
+        this.findEntryCalls = 0;
+        this.findEntriesByPrefixCalls = 0;
+        this.maxRowsReturnedPerFindEntriesByPrefix = 0;
+        this.findEntriesByPrefixPageCalls.length = 0;
     }
 
     private toKey(namespace: string, key: string): string {

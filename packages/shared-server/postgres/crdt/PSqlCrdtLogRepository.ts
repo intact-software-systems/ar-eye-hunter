@@ -510,7 +510,10 @@ export class PSqlCrdtLogRepository<
             }
 
             await insertDocumentMetadata(tx, bundle.metadata);
+            let restoredUpdateBytes = 0;
             for (const record of bundle.records) {
+                const serializedUpdate = serializeJson(record.update);
+                restoredUpdateBytes += byteLengthOfSerializedJson(serializedUpdate);
                 await tx`
                     insert into crdt_updates (document_key,
                                               append_sequence,
@@ -526,7 +529,7 @@ export class PSqlCrdtLogRepository<
                     values (${bundle.documentKey},
                             ${record.append.appendSequence},
                             ${record.update.updateId},
-                            ${serializeJson(record.update)},
+                            ${serializedUpdate},
                             ${record.append.acceptedUpdateHash},
                             ${record.append.actorId},
                             ${record.append.principalId},
@@ -536,6 +539,11 @@ export class PSqlCrdtLogRepository<
                             ${toPgDate(record.append.acceptedAtEpochMs)})
                 `;
             }
+            await tx`
+                update crdt_documents
+                set stored_update_bytes = ${restoredUpdateBytes}
+                where document_key = ${bundle.documentKey}
+            `;
             if (bundle.snapshot) {
                 await tx`
                     insert into crdt_snapshots (document_key,
@@ -709,10 +717,10 @@ export class PSqlCrdtLogRepository<
                 document: metadata,
             });
         }
+        const updateQuotaBytes = byteLengthOfRallarCrdtJson(input.update);
         if (
             metadata.quota?.maxUpdateBytes !== undefined &&
-            byteLengthOfRallarCrdtJson(input.update) >
-                metadata.quota.maxUpdateBytes
+            updateQuotaBytes > metadata.quota.maxUpdateBytes
         ) {
             return this.recordAppendResult(startedAtEpochMs, {
                 status: 'rejected',
@@ -726,7 +734,7 @@ export class PSqlCrdtLogRepository<
         if (metadata.quota?.maxDocumentBytes !== undefined) {
             const storedBytes = await readStoredDocumentBytes(tx, documentKey);
             if (
-                storedBytes.totalBytes + byteLengthOfRallarCrdtJson(input.update) >
+                storedBytes.totalBytes + updateQuotaBytes >
                 metadata.quota.maxDocumentBytes
             ) {
                 return this.recordAppendResult(startedAtEpochMs, {
@@ -760,6 +768,8 @@ export class PSqlCrdtLogRepository<
         }
 
         const appendSequence = metadata.lastAppendSequence + 1;
+        const serializedUpdate = serializeJson(input.update);
+        const storedUpdateBytes = byteLengthOfSerializedJson(serializedUpdate);
         await tx`
             insert into crdt_updates (document_key,
                                       append_sequence,
@@ -775,7 +785,7 @@ export class PSqlCrdtLogRepository<
             values (${documentKey},
                     ${appendSequence},
                     ${input.update.updateId},
-                    ${serializeJson(input.update)},
+                    ${serializedUpdate},
                     ${acceptedUpdateHash},
                     ${input.trusted.actorId},
                     ${input.trusted.principalId},
@@ -788,6 +798,7 @@ export class PSqlCrdtLogRepository<
             update crdt_documents
             set last_append_sequence = ${appendSequence},
                 update_count         = update_count + 1,
+                stored_update_bytes  = stored_update_bytes + ${storedUpdateBytes},
                 updated_at_ts        = ${toPgDate(acceptedAtEpochMs)}
             where document_key = ${documentKey}
         `;
@@ -1032,16 +1043,15 @@ async function readStoredDocumentBytes(
             snapshot_bytes: number | string | null;
         }>
     >`
-        select coalesce((
-                   select sum(octet_length(update_envelope))
-                   from crdt_updates
-                   where document_key = ${documentKey}
-               ), 0) as update_bytes,
+        select stored_update_bytes as update_bytes,
                coalesce((
                    select max(octet_length(snapshot_envelope))
                    from crdt_snapshots
                    where document_key = ${documentKey}
                ), 0) as snapshot_bytes
+        from crdt_documents
+        where document_key = ${documentKey}
+        limit 1
     `;
     const updateBytes = Number(rows[0]?.update_bytes ?? 0);
     const snapshotBytes = Number(rows[0]?.snapshot_bytes ?? 0);
@@ -1210,6 +1220,10 @@ function serializeJson(value: unknown): string {
         throw new Error('CRDT SQL values must be JSON serializable.');
     }
     return serialized;
+}
+
+function byteLengthOfSerializedJson(serialized: string): number {
+    return new TextEncoder().encode(serialized).byteLength;
 }
 
 function serializeNullableJson(value: unknown): string | null {

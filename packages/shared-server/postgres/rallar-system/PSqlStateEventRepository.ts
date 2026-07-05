@@ -64,6 +64,16 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
         return rows.map(toClientEvent);
     }
 
+    async listRecentClientEvents(
+        ref: ClientPrincipalRef,
+        query: StateEventListQuery = {},
+    ): Promise<readonly ClientEvent[]> {
+        const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
+        const rows = await this.queryRecentClientRows(ref, query, limit);
+
+        return rows.map(toClientEvent);
+    }
+
     async listClientEventPage(
         ref: ClientPrincipalRef,
         query: StateEventListQuery = {},
@@ -143,6 +153,47 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
             limit ${limit}
         `;
     }
+
+    private async queryRecentClientRows(
+        ref: ClientPrincipalRef,
+        query: StateEventListQuery,
+        limit: number,
+    ): Promise<ClientStateEventRow[]> {
+        const eventTypes = query.eventTypes && query.eventTypes.length > 0
+            ? query.eventTypes
+            : undefined;
+
+        if (eventTypes) {
+            return await this.sql<ClientStateEventRow[]>`
+                select event_json
+                from (
+                    select event_json, snapshot_version, occurred_at_epoch_ms, event_id
+                    from client_state_events
+                    where application_id = ${ref.applicationId}
+                      and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                      and principal_id = ${ref.principalId}
+                      and event_type in ${this.sql(eventTypes)}
+                    order by snapshot_version desc, occurred_at_epoch_ms desc, event_id desc
+                    limit ${limit}
+                ) recent_events
+                order by snapshot_version, occurred_at_epoch_ms, event_id
+            `;
+        }
+
+        return await this.sql<ClientStateEventRow[]>`
+            select event_json
+            from (
+                select event_json, snapshot_version, occurred_at_epoch_ms, event_id
+                from client_state_events
+                where application_id = ${ref.applicationId}
+                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and principal_id = ${ref.principalId}
+                order by snapshot_version desc, occurred_at_epoch_ms desc, event_id desc
+                limit ${limit}
+            ) recent_events
+            order by snapshot_version, occurred_at_epoch_ms, event_id
+        `;
+    }
 }
 
 export class PSqlGroupStateEventRepository implements GroupStateEventStore {
@@ -180,6 +231,16 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
               and group_id = ${ref.groupId}
             order by snapshot_version, occurred_at_epoch_ms, event_id
         `;
+
+        return rows.map(toGroupEvent);
+    }
+
+    async listRecentGroupEvents(
+        ref: GroupRef,
+        query: StateEventListQuery = {},
+    ): Promise<readonly GroupEvent[]> {
+        const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
+        const rows = await this.queryRecentGroupRows(ref, query, limit);
 
         return rows.map(toGroupEvent);
     }
@@ -261,6 +322,47 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
               and group_id = ${ref.groupId}
             order by snapshot_version, occurred_at_epoch_ms, event_id
             limit ${limit}
+        `;
+    }
+
+    private async queryRecentGroupRows(
+        ref: GroupRef,
+        query: StateEventListQuery,
+        limit: number,
+    ): Promise<GroupStateEventRow[]> {
+        const eventTypes = query.eventTypes && query.eventTypes.length > 0
+            ? query.eventTypes
+            : undefined;
+
+        if (eventTypes) {
+            return await this.sql<GroupStateEventRow[]>`
+                select event_json
+                from (
+                    select event_json, snapshot_version, occurred_at_epoch_ms, event_id
+                    from group_state_events
+                    where application_id = ${ref.applicationId}
+                      and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                      and group_id = ${ref.groupId}
+                      and event_type in ${this.sql(eventTypes)}
+                    order by snapshot_version desc, occurred_at_epoch_ms desc, event_id desc
+                    limit ${limit}
+                ) recent_events
+                order by snapshot_version, occurred_at_epoch_ms, event_id
+            `;
+        }
+
+        return await this.sql<GroupStateEventRow[]>`
+            select event_json
+            from (
+                select event_json, snapshot_version, occurred_at_epoch_ms, event_id
+                from group_state_events
+                where application_id = ${ref.applicationId}
+                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and group_id = ${ref.groupId}
+                order by snapshot_version desc, occurred_at_epoch_ms desc, event_id desc
+                limit ${limit}
+            ) recent_events
+            order by snapshot_version, occurred_at_epoch_ms, event_id
         `;
     }
 }
