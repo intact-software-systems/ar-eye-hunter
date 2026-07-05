@@ -1,0 +1,14 @@
+name: Branch Release Gate
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  release-gate:
+    name: Release Gate
+    uses: ./.github/workflows/release-gate.yml
