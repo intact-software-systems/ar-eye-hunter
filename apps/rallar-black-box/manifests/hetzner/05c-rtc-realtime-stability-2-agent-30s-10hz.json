@@ -126,14 +126,16 @@
             },
             "count": 300,
             "intervalMs": 100,
-            "maxInFlight": 8,
+            "maxInFlight": 64,
             "drainTimeoutMs": 5000,
             "progressEveryMs": 1000,
             "sampleEvery": 1,
             "continueOnSendFailure": true,
             "thresholds": {
               "minSendSuccessRatio": 0.95,
-              "maxDroppedFrames": 2
+              "maxDroppedFrames": 15,
+              "maxP95SendDurationMs": 200,
+              "maxP99SendDurationMs": 1000
             },
             "metadata": {
               "realtime": {

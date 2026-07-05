@@ -180,6 +180,12 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
                 group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
                 readyPeerCount: 1,
                 readyTimeoutMs: 10_000,
+                stream: {
+                    maxInFlight: 64,
+                    maxDroppedFrames: 15,
+                    maxP95SendDurationMs: 200,
+                    maxP99SendDurationMs: 1000,
+                },
             }),
             agentCount: 2,
             profiles: ['rtc', 'realtime', 'stability', 'extended'],

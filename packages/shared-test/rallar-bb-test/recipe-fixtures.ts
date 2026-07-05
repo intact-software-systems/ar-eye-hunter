@@ -33,6 +33,8 @@ export type RallarBlackBoxRtcRealtimeRecipeOptions = Readonly<{
         progressEveryMs?: number;
         sampleEvery?: number;
         maxDroppedFrames?: number;
+        maxP95SendDurationMs?: number;
+        maxP99SendDurationMs?: number;
         minSendSuccessRatio?: number;
         continueOnSendFailure?: boolean;
     }>;
@@ -437,6 +439,12 @@ export function createRallarBlackBoxRtcRealtimeRecipe(
         thresholds: {
             minSendSuccessRatio: options.stream?.minSendSuccessRatio ?? 0.99,
             maxDroppedFrames: options.stream?.maxDroppedFrames ?? 0,
+            ...(options.stream?.maxP95SendDurationMs === undefined
+                ? {}
+                : { maxP95SendDurationMs: options.stream.maxP95SendDurationMs }),
+            ...(options.stream?.maxP99SendDurationMs === undefined
+                ? {}
+                : { maxP99SendDurationMs: options.stream.maxP99SendDurationMs }),
         },
         metadata: {
             realtime: {

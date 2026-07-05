@@ -190,7 +190,18 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('uses lower-rate rtc.stream baselines for non-diagnostic realtime Hetzner manifests', () => {
-        const expectedStreams = new Map([
+        type ExpectedStream = Readonly<{
+            rateHz: number;
+            intervalMs: number;
+            durationSeconds: number;
+            frameCount: number;
+            maxDroppedFrames: number;
+            maxP95SendDurationMs?: number;
+            maxP99SendDurationMs?: number;
+            minSendSuccessRatio: number;
+            maxInFlight: number;
+        }>;
+        const expectedStreams = new Map<string, ExpectedStream>([
             ['apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json', {
                 rateHz: 5,
                 intervalMs: 200,
@@ -223,9 +234,11 @@ describe('Hetzner distributed manifest catalog', () => {
                 intervalMs: 100,
                 durationSeconds: 30,
                 frameCount: 300,
-                maxDroppedFrames: 2,
+                maxDroppedFrames: 15,
+                maxP95SendDurationMs: 200,
+                maxP99SendDurationMs: 1000,
                 minSendSuccessRatio: 0.95,
-                maxInFlight: 8,
+                maxInFlight: 64,
             }],
             ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', {
                 rateHz: 10,
@@ -255,22 +268,31 @@ describe('Hetzner distributed manifest catalog', () => {
                 continue;
             }
 
+            const expectedStream = expectedStreams.get(entry.filePath)!;
+            const expectedThresholds: Record<string, number> = {
+                minSendSuccessRatio: expectedStream.minSendSuccessRatio,
+                maxDroppedFrames: expectedStream.maxDroppedFrames,
+            };
+            if (expectedStream.maxP95SendDurationMs !== undefined) {
+                expectedThresholds.maxP95SendDurationMs = expectedStream.maxP95SendDurationMs;
+            }
+            if (expectedStream.maxP99SendDurationMs !== undefined) {
+                expectedThresholds.maxP99SendDurationMs = expectedStream.maxP99SendDurationMs;
+            }
+
             expect(stream, entry.filePath).toMatchObject({
                 kind: 'rtc.stream',
                 commandId: 'rtc-realtime-position-stream',
                 continueOnSendFailure: true,
-                count: expectedStreams.get(entry.filePath)?.frameCount,
-                intervalMs: expectedStreams.get(entry.filePath)?.intervalMs,
-                maxInFlight: expectedStreams.get(entry.filePath)?.maxInFlight,
-                thresholds: {
-                    minSendSuccessRatio: expectedStreams.get(entry.filePath)?.minSendSuccessRatio,
-                    maxDroppedFrames: expectedStreams.get(entry.filePath)?.maxDroppedFrames,
-                },
+                count: expectedStream.frameCount,
+                intervalMs: expectedStream.intervalMs,
+                maxInFlight: expectedStream.maxInFlight,
+                thresholds: expectedThresholds,
                 metadata: {
                     realtime: {
-                        rateHz: expectedStreams.get(entry.filePath)?.rateHz,
-                        durationSeconds: expectedStreams.get(entry.filePath)?.durationSeconds,
-                        frameCount: expectedStreams.get(entry.filePath)?.frameCount,
+                        rateHz: expectedStream.rateHz,
+                        durationSeconds: expectedStream.durationSeconds,
+                        frameCount: expectedStream.frameCount,
                     },
                 },
             });

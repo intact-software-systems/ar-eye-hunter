@@ -110,6 +110,8 @@ describe('rallar-bb-test recipe fixtures', () => {
             stream: {
                 minSendSuccessRatio: 0.9,
                 maxDroppedFrames: 4,
+                maxP95SendDurationMs: 200,
+                maxP99SendDurationMs: 1000,
             },
         });
         const stream = recipe.commands.find(command => command.kind === 'rtc.stream');
@@ -121,6 +123,8 @@ describe('rallar-bb-test recipe fixtures', () => {
             thresholds: {
                 minSendSuccessRatio: 0.9,
                 maxDroppedFrames: 4,
+                maxP95SendDurationMs: 200,
+                maxP99SendDurationMs: 1000,
             },
         });
         expect(defaultStream).toMatchObject({
