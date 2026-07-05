@@ -43,3 +43,30 @@ the repo-local Codex plugin under `skills/**`.
 - For game/realtime changes, include the relevant app tests/builds and shared
   package tests.
 - Report commands that passed, failed, or were skipped.
+
+## Performance analysis repo guidance
+
+When using the performance-analysis skill:
+
+- Start static performance audits from these entry points:
+  - `packages/**`
+  - `apps/api-v1`
+  - `apps/rallar-black-box-control-server`
+  - `apps/rallar-black-box-headless`
+  
+- Use these benchmark commands:
+  - `...`
+
+- Use these test commands before accepting optimization changes:
+  - `...`
+
+- Put temporary profiling artifacts under:
+  - `tmp/perf/`
+
+- Do not commit generated profile files unless explicitly requested.
+
+- Treat these as performance-sensitive paths:
+  - `packages/...`
+
+- Treat these as not representative for performance:
+  - `...`

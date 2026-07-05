@@ -22,3 +22,5 @@ apps/web/dist
 
 **.env.local**
 **.env**
+
+/tmp/**
