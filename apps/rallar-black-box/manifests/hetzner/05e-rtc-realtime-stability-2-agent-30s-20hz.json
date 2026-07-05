@@ -98,7 +98,7 @@
             "transport": "realtime",
             "timeoutMs": 10000,
             "readiness": {
-              "minReadyPeers": 2,
+              "minReadyPeers": 1,
               "timeoutMs": 10000,
               "intervalMs": 100
             },
@@ -188,14 +188,173 @@
           }
         ]
       },
+      "role": "sender",
+      "profile": "rtc",
+      "required": true
+    },
+    {
+      "recipeId": "rtc-realtime-stability-receiver",
+      "recipe": {
+        "schemaVersion": 1,
+        "recipeId": "rtc-realtime-stability-receiver",
+        "name": "RTC realtime stability receiver hold",
+        "description": "Connect RTC and keep the receiver alive while the 20 Hz sender stream runs.",
+        "continueOnFailure": false,
+        "metadata": {
+          "profile": "rtc-realtime-stability-receiver",
+          "rateHz": 20,
+          "intervalMs": 50,
+          "durationSeconds": 30,
+          "frameCount": 600,
+          "executionMode": "stream",
+          "group": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "hetzner-headless-room"
+          },
+          "role": "receiver"
+        },
+        "commands": [
+          {
+            "kind": "http.request",
+            "commandId": "rtc-realtime-ensure-group",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the backend group exists before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups",
+              "body": {
+                "requestId": "rtc-realtime:ensure-group:rallar-server:default:hetzner-headless-room",
+                "groupId": "hetzner-headless-room",
+                "displayName": "hetzner-headless-room",
+                "joinMode": "open"
+              }
+            },
+            "response": {
+              "body": "json"
+            }
+          },
+          {
+            "kind": "http.request",
+            "commandId": "rtc-realtime-ensure-member",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "PUT",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}",
+              "body": {
+                "requestId": "rtc-realtime:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}",
+                "status": "active"
+              }
+            },
+            "response": {
+              "body": "json"
+            }
+          },
+          {
+            "kind": "rtc.connect",
+            "commandId": "rtc-realtime-connect",
+            "connection": "rtcRealtime",
+            "actor": "{auth.clientId}",
+            "roomId": "hetzner-headless-room",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "realtime",
+            "timeoutMs": 10000,
+            "readiness": {
+              "minReadyPeers": 1,
+              "timeoutMs": 10000,
+              "intervalMs": 100
+            },
+            "metadata": {
+              "realtime": {
+                "rateHz": 20,
+                "durationSeconds": 30,
+                "frameCount": 600
+              }
+            }
+          },
+          {
+            "kind": "loop",
+            "commandId": "rtc-realtime-receiver-stats-loop",
+            "count": 35,
+            "intervalMs": 1000,
+            "maxCommands": 35,
+            "metadata": {
+              "realtime": {
+                "role": "receiver",
+                "rateHz": 20,
+                "durationSeconds": 30,
+                "frameCount": 600
+              }
+            },
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "rtc-realtime-receiver-stats",
+                "metadata": {
+                  "realtime": {
+                    "role": "receiver",
+                    "rateHz": 20,
+                    "durationSeconds": 30,
+                    "frameCount": 600
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "role": "receiver",
       "profile": "rtc",
       "required": true
     }
   ],
   "targetPolicy": {
-    "mode": "all-online-group-members",
+    "mode": "role-map",
+    "roles": {
+      "sender": [
+        "controller-01"
+      ],
+      "receiver": [
+        "controller-02"
+      ]
+    },
     "expectedParticipantCount": 2
   },
+  "roleAssignments": [
+    {
+      "role": "sender",
+      "agentId": "controller-01",
+      "required": true
+    },
+    {
+      "role": "receiver",
+      "agentId": "controller-02",
+      "required": true
+    }
+  ],
   "ackTimeoutMs": 30000,
   "startMode": "manual",
   "artifactPolicy": {
@@ -207,10 +366,10 @@
   },
   "metadata": {
     "createdBy": "rallar-black-box-spa",
-    "rolePattern": "all-agents",
+    "rolePattern": "sender-receiver",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,
     "expectedFailure": false
   },
-  "description": "Highest-rate 20 Hz RTC realtime stability stream for sustained pacing evidence."
+  "description": "Highest-rate 20 Hz RTC realtime stability stream with one sender and one receiver for sustained pacing evidence."
 }
