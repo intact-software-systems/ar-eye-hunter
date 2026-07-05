@@ -3,6 +3,7 @@ import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
+    listRecentStateEvents,
     listStateEventsPage,
     type StateEventListQuery,
 } from '../state-event-listing.ts';
@@ -10,6 +11,10 @@ import {
 export type ClientStateEventStore = Readonly<{
     appendClientEvent(event: ClientEvent): Promise<void>;
     listClientEvents(ref: ClientPrincipalRef): Promise<readonly ClientEvent[]>;
+    listRecentClientEvents?(
+        ref: ClientPrincipalRef,
+        query: StateEventListQuery,
+    ): Promise<readonly ClientEvent[]>;
     listClientEventPage(
         ref: ClientPrincipalRef,
         query: StateEventListQuery,
@@ -19,6 +24,10 @@ export type ClientStateEventStore = Readonly<{
 export type GroupStateEventStore = Readonly<{
     appendGroupEvent(event: GroupEvent): Promise<void>;
     listGroupEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
+    listRecentGroupEvents?(
+        ref: GroupRef,
+        query: StateEventListQuery,
+    ): Promise<readonly GroupEvent[]>;
     listGroupEventPage(
         ref: GroupRef,
         query: StateEventListQuery,
@@ -29,6 +38,7 @@ export class InMemoryClientStateEventStore implements ClientStateEventStore {
     readonly events: ClientEvent[] = [];
     appendEventCalls = 0;
     listEventsCalls = 0;
+    listRecentEventsCalls = 0;
     listEventPageCalls = 0;
 
     async appendClientEvent(event: ClientEvent): Promise<void> {
@@ -52,6 +62,19 @@ export class InMemoryClientStateEventStore implements ClientStateEventStore {
             .sort(compareStateEventsForReplay);
     }
 
+    async listRecentClientEvents(
+        ref: ClientPrincipalRef,
+        query: StateEventListQuery = {},
+    ): Promise<readonly ClientEvent[]> {
+        this.listRecentEventsCalls += 1;
+        return listRecentStateEvents(
+            this.events
+                .filter((event) => isClientEventForRef(event, ref))
+                .sort(compareStateEventsForReplay),
+            query,
+        );
+    }
+
     async listClientEventPage(
         ref: ClientPrincipalRef,
         query: StateEventListQuery = {},
@@ -70,6 +93,7 @@ export class InMemoryGroupStateEventStore implements GroupStateEventStore {
     readonly events: GroupEvent[] = [];
     appendEventCalls = 0;
     listEventsCalls = 0;
+    listRecentEventsCalls = 0;
     listEventPageCalls = 0;
 
     async appendGroupEvent(event: GroupEvent): Promise<void> {
@@ -91,6 +115,19 @@ export class InMemoryGroupStateEventStore implements GroupStateEventStore {
             .sort(compareStateEventsForReplay);
     }
 
+    async listRecentGroupEvents(
+        ref: GroupRef,
+        query: StateEventListQuery = {},
+    ): Promise<readonly GroupEvent[]> {
+        this.listRecentEventsCalls += 1;
+        return listRecentStateEvents(
+            this.events
+                .filter((event) => isGroupEventForRef(event, ref))
+                .sort(compareStateEventsForReplay),
+            query,
+        );
+    }
+
     async listGroupEventPage(
         ref: GroupRef,
         query: StateEventListQuery = {},
@@ -105,10 +142,14 @@ export class InMemoryGroupStateEventStore implements GroupStateEventStore {
     }
 }
 
-const defaultClientEventStores =
-    new WeakMap<RuntimeStateRepositoryLike, InMemoryClientStateEventStore>();
-const defaultGroupEventStores =
-    new WeakMap<RuntimeStateRepositoryLike, InMemoryGroupStateEventStore>();
+const defaultClientEventStores = new WeakMap<
+    RuntimeStateRepositoryLike,
+    InMemoryClientStateEventStore
+>();
+const defaultGroupEventStores = new WeakMap<
+    RuntimeStateRepositoryLike,
+    InMemoryGroupStateEventStore
+>();
 
 export function defaultClientStateEventStoreFor(
     repository: RuntimeStateRepositoryLike,

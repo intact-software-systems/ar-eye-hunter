@@ -23,6 +23,7 @@ async function withFakeWindow<T>(
 describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('proxies runtime calls to window.__blackBoxRallar', async () => {
         const calls: string[] = [];
+        const healthInputs: unknown[] = [];
         await withFakeWindow({
             __blackBoxRallar: {
                 connect: async () => {
@@ -71,7 +72,8 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     calls.push('close');
                     return { closed: true };
                 },
-                health: async () => {
+                health: async (input?: unknown) => {
+                    healthInputs.push(input);
                     calls.push('health');
                     return { connected: true };
                 },
@@ -93,7 +95,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             await runtime.director?.syncRequest({ handle: 'relay-1' });
             await runtime.director?.relayStop({ handle: 'relay-1' });
             await runtime.director?.resign({ roomId: 'room-1' });
-            await runtime.health();
+            await runtime.health({ includeRtcDiagnostics: true });
             await runtime.close();
         });
 
@@ -111,6 +113,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             'health',
             'close',
         ]);
+        expect(healthInputs).toEqual([{ includeRtcDiagnostics: true }]);
     });
 
     it('bridges browser Rallar events into the shared runtime', async () => {

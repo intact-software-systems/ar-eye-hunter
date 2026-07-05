@@ -35,6 +35,17 @@ describe('Rallar server storage schema docs', () => {
         ]) {
             expect(schema).toContain(`model ${modelName}`);
         }
+
+        expect(schema).toContain('stored_update_bytes');
+    });
+
+    it('keeps CRDT update-byte counter backfill represented in API-v1 migrations', () => {
+        const migration = readWorkspaceFile(
+            'apps/api-v1/prisma/migrations/20260702193000_crdt_stored_update_bytes/migration.sql',
+        );
+
+        expect(migration).toContain('ADD COLUMN IF NOT EXISTS stored_update_bytes');
+        expect(migration).toContain('sum(octet_length(update_envelope))');
     });
 
     it('keeps state event tables represented in the API-v1 Prisma schema', () => {
@@ -66,6 +77,16 @@ describe('Rallar server storage schema docs', () => {
         ]) {
             expect(schema).toContain(indexName);
         }
+    });
+
+    it('keeps QueueBox planner statistics represented in API-v1 migrations', () => {
+        const migration = readWorkspaceFile(
+            'apps/api-v1/prisma/migrations/20260702184500_resource_inbox_type_status_stats/migration.sql',
+        );
+
+        expect(migration).toContain('CREATE STATISTICS IF NOT EXISTS resource_inbox_type_status_stats');
+        expect(migration).toContain('ON ri_type_id, ri_status');
+        expect(migration).toContain('ANALYZE resource_inbox');
     });
 
     it('documents state snapshots and event logs in the architecture notes', () => {

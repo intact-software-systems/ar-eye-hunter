@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
@@ -22,6 +22,179 @@ describe('RallarRtcTopologyService', () => {
             'peer-4',
         ]);
     });
+
+    it('does not build a weighted room graph for star topology', () => {
+        const group = createGroupSnapshot('room-1', createMemberIds(8));
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+            treeMinSize: 9,
+            meshMinSize: 10,
+        });
+        const createRoomGraph = vi.spyOn(service, 'createRoomGraph');
+
+        const result = service.updateGroupTopology(group);
+
+        expect(createRoomGraph).not.toHaveBeenCalled();
+        expect(result.snapshot.topology).toBe('star');
+        expect(result.snapshot.nextHopsBySessionId['peer-1']).toEqual([
+            'peer-2',
+            'peer-3',
+            'peer-4',
+            'peer-5',
+            'peer-6',
+            'peer-7',
+            'peer-8',
+        ]);
+    });
+
+    it('uses fallback graph weights until RTT measurements are available', () => {
+        const group = createGroupSnapshot('room-1', createMemberIds(3));
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+        });
+
+        const fallbackGraph = service.createRoomGraph(group);
+        const fallbackEdge = fallbackGraph.edge('peer-1', 'peer-3');
+        expect(fallbackEdge).toBeDefined();
+        expect(fallbackGraph.getEdgeAttribute(fallbackEdge!, 'weight')).toBe(3);
+
+        const rttGraph = service.createRoomGraph(group, [
+            {
+                sessionIdFrom: 'peer-1',
+                sessionIdTo: 'peer-3',
+                rttMs: 42,
+                createdAtEpochMs: 1,
+                version: 1,
+            },
+        ]);
+        const rttEdge = rttGraph.edge('peer-1', 'peer-3');
+        expect(rttEdge).toBeDefined();
+        expect(rttGraph.getEdgeAttribute(rttEdge!, 'weight')).toBe(42);
+    });
+
+    it('uses the latest RTT measurement for duplicate reverse pairs', () => {
+        const group = createGroupSnapshot('room-1', createMemberIds(3));
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+        });
+
+        const graph = service.createRoomGraph(group, [
+            {
+                sessionIdFrom: 'peer-1',
+                sessionIdTo: 'peer-3',
+                rttMs: 42,
+                createdAtEpochMs: 1,
+                version: 1,
+            },
+            {
+                sessionIdFrom: 'peer-3',
+                sessionIdTo: 'peer-1',
+                rttMs: 7,
+                createdAtEpochMs: 2,
+                version: 2,
+            },
+        ]);
+        const edge = graph.edge('peer-1', 'peer-3');
+
+        expect(edge).toBeDefined();
+        expect(graph.getEdgeAttribute(edge!, 'weight')).toBe(7);
+    });
+
+    it('does not build a weighted room graph for no-RTT mesh topology', () => {
+        const group = createGroupSnapshot('room-1', createMemberIds(16));
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+        });
+        const graphPathService = new RallarRtcTopologyService({
+            now: () => 100,
+        });
+        const createRoomGraph = vi.spyOn(service, 'createRoomGraph');
+
+        const result = service.updateGroupTopology(group);
+        const graphPathResult = graphPathService.updateGroupTopology(group, [
+            {
+                sessionIdFrom: 'outside-a',
+                sessionIdTo: 'outside-b',
+                rttMs: 1,
+                createdAtEpochMs: 1,
+                version: 1,
+            },
+        ]);
+
+        expect(createRoomGraph).not.toHaveBeenCalled();
+        expect(result.snapshot.topology).toBe('mesh');
+        expect(result.snapshot.nextHopsBySessionId).toEqual(
+            graphPathResult.snapshot.nextHopsBySessionId,
+        );
+        expect(result.snapshot.nextHopsBySessionId['peer-1']).toEqual([
+            'peer-2',
+            'peer-3',
+        ]);
+        expect(result.snapshot.nextHopsBySessionId['peer-10']).toEqual([
+            'peer-11',
+            'peer-12',
+            'peer-8',
+            'peer-9',
+        ]);
+    });
+
+    it('uses the weighted room graph for mesh topology with RTT measurements', () => {
+        const memberSessionIds = createMemberIds(16);
+        const group = createGroupSnapshot('room-1', memberSessionIds);
+        const rttMeasurements = createCentralRttMeasurements(
+            memberSessionIds,
+            'peer-1',
+        );
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+        });
+        const createRoomGraph = vi.spyOn(service, 'createRoomGraph');
+
+        const result = service.updateGroupTopology(group, rttMeasurements);
+
+        expect(createRoomGraph).toHaveBeenCalledWith(group, rttMeasurements);
+        expect(result.snapshot.topology).toBe('mesh');
+    });
+
+    it.each([
+        [5, 2],
+        [8, 3],
+        [10, 5],
+        [15, 4],
+    ] as const)(
+        'does not build a weighted room graph for no-RTT %s-member tree topology with degree %s',
+        (memberCount, degreeLimit) => {
+            const group = createGroupSnapshot('room-1', createMemberIds(memberCount));
+            const service = new RallarRtcTopologyService({
+                now: () => 100,
+                degreeLimit,
+                meshMinSize: 999,
+            });
+            const graphPathService = new RallarRtcTopologyService({
+                now: () => 100,
+                degreeLimit,
+                meshMinSize: 999,
+            });
+            const createRoomGraph = vi.spyOn(service, 'createRoomGraph');
+
+            const result = service.updateGroupTopology(group);
+            const graphPathResult = graphPathService.updateGroupTopology(group, [
+                {
+                    sessionIdFrom: 'outside-a',
+                    sessionIdTo: 'outside-b',
+                    rttMs: 1,
+                    createdAtEpochMs: 1,
+                    version: 1,
+                },
+            ]);
+
+            expect(createRoomGraph).not.toHaveBeenCalled();
+            expect(result.snapshot.topology).toBe('tree');
+            expect(result.snapshot.nextHopsBySessionId).toEqual(
+                graphPathResult.snapshot.nextHopsBySessionId,
+            );
+        },
+    );
 
     it.each([
         [5, 'tree'],
@@ -192,6 +365,114 @@ describe('RallarRtcTopologyService', () => {
         expect(second.newlyQueued).toBe(false);
         expect(second.dueAtEpochMs).toBe(first.dueAtEpochMs);
         expect(second.delayMs).toBe(25);
+    });
+
+    it('records topology rebuild, RTT queue, flush, and publish metrics', () => {
+        let now = 1_000;
+        const memberSessionIds = createMemberIds(5);
+        const group = createGroupSnapshot('room-1', memberSessionIds);
+        const service = new RallarRtcTopologyService({
+            now: () => now,
+            rttRebuildDebounceMs: 50,
+        });
+
+        const first = service.updateGroupTopology(group);
+        service.recordTopologyPublishResult(first.changed);
+        const queued = service.queueRttTopologyUpdate(group);
+        now = 1_025;
+        const coalesced = service.queueRttTopologyUpdate(group);
+
+        expect(queued.newlyQueued).toBe(true);
+        expect(coalesced.newlyQueued).toBe(false);
+        expect(
+            service.flushDueRttTopologyUpdate(
+                group,
+                createCentralRttMeasurements(memberSessionIds, 'peer-1'),
+            ),
+        ).toBeUndefined();
+
+        now = 1_050;
+        const second = service.flushDueRttTopologyUpdate(
+            group,
+            createCentralRttMeasurements(memberSessionIds, 'peer-1'),
+        );
+        expect(second?.changed).toBe(true);
+        service.recordTopologyPublishResult(second?.changed ?? false);
+
+        const metrics = service.readMetrics();
+        expect(metrics).toMatchObject({
+            topologyUpdateCount: 2,
+            topologyChangedCount: 2,
+            topologyUnchangedCount: 0,
+            updatesWithRttMeasurementCount: 1,
+            updatesWithoutRttMeasurementCount: 1,
+            noRttTreePlanCount: 1,
+            weightedPlanCount: 1,
+            weightedRoomGraphBuildCount: 1,
+            rttQueueRequestCount: 2,
+            rttQueueNewCount: 1,
+            rttQueueCoalescedCount: 1,
+            rttQueueImmediateCount: 0,
+            rttFlushAttemptCount: 2,
+            rttFlushSkippedCount: 1,
+            rttFlushExecutedCount: 1,
+            topologyPublishAttemptCount: 2,
+            topologyPublishedCount: 2,
+            topologyPublishSkippedUnchangedCount: 0,
+            topologySnapshotCount: 1,
+            pendingRttUpdateCount: 0,
+        });
+        expect(metrics.noRttTreePlanDurationMs).toBeGreaterThanOrEqual(0);
+        expect(metrics.weightedPlanDurationMs).toBeGreaterThanOrEqual(0);
+        expect(metrics.weightedRoomGraphBuildDurationMs).toBeGreaterThanOrEqual(0);
+
+        service.resetMetrics();
+        expect(service.readMetrics()).toMatchObject({
+            topologyUpdateCount: 0,
+            weightedRoomGraphBuildCount: 0,
+            topologyPublishAttemptCount: 0,
+            topologySnapshotCount: 1,
+            pendingRttUpdateCount: 0,
+        });
+    });
+
+    it('removes cached topology snapshots and pending RTT work for inactive groups', () => {
+        let now = 1_000;
+        const group = createGroupSnapshot('room-1', createMemberIds(5));
+        const service = new RallarRtcTopologyService({
+            now: () => now,
+            rttRebuildDebounceMs: 50,
+        });
+
+        service.updateGroupTopology(group);
+        now = 1_010;
+        service.queueRttTopologyUpdate(group);
+
+        expect(service.readSnapshot(group)).toBeDefined();
+        expect(service.readMetrics()).toMatchObject({
+            topologySnapshotCount: 1,
+            pendingRttUpdateCount: 1,
+        });
+
+        expect(service.removeGroupTopology(group)).toBe(true);
+
+        expect(service.readSnapshot(group)).toBeUndefined();
+        expect(service.readMetrics()).toMatchObject({
+            topologyRemovalRequestCount: 1,
+            topologyRemovedCount: 1,
+            topologyRemoveMissCount: 0,
+            topologySnapshotCount: 0,
+            pendingRttUpdateCount: 0,
+        });
+
+        expect(service.removeGroupTopology(group)).toBe(false);
+        expect(service.readMetrics()).toMatchObject({
+            topologyRemovalRequestCount: 2,
+            topologyRemovedCount: 1,
+            topologyRemoveMissCount: 1,
+            topologySnapshotCount: 0,
+            pendingRttUpdateCount: 0,
+        });
     });
 });
 

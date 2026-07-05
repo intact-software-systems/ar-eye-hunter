@@ -100,6 +100,43 @@ describe('shared-graph group graph services', () => {
         expect(snapshot.measured?.graph.hasEdge('peer-a', 'peer-b')).toBe(true);
         expect(findGraphByRef(GLOBAL_GRAPH_REF)).toBe(snapshot);
     });
+
+    it('tolerates partial measured RTT coverage when caching the global graph', () => {
+        setClientStateSnapshotByPrincipalId(
+            'peer-a',
+            createClientStateSnapshot('peer-a', ['peer-a']),
+        );
+        setClientStateSnapshotByPrincipalId(
+            'peer-b',
+            createClientStateSnapshot('peer-b', ['peer-b']),
+        );
+        setClientStateSnapshotByPrincipalId(
+            'peer-c',
+            createClientStateSnapshot('peer-c', ['peer-c']),
+        );
+
+        const rtt = createRtt('peer-a', 'peer-b', 12, 1);
+        setRtt(rtt);
+        observeRtt(rtt);
+
+        const snapshot = computeGlobalGraphAndCacheIt();
+
+        expect(snapshot.predicted.graph.hasNode('peer-a')).toBe(true);
+        expect(snapshot.predicted.graph.hasNode('peer-b')).toBe(true);
+        expect(snapshot.predicted.graph.hasNode('peer-c')).toBe(false);
+        expect(snapshot.predicted.groupGraph.nodes().sort()).toEqual([
+            'peer-a',
+            'peer-b',
+        ]);
+        expect(snapshot.measured?.graph.hasNode('peer-a')).toBe(true);
+        expect(snapshot.measured?.graph.hasNode('peer-b')).toBe(true);
+        expect(snapshot.measured?.graph.hasNode('peer-c')).toBe(false);
+        expect(snapshot.measured?.groupGraph.nodes().sort()).toEqual([
+            'peer-a',
+            'peer-b',
+        ]);
+        expect(findGraphByRef(GLOBAL_GRAPH_REF)).toBe(snapshot);
+    });
 });
 
 function createClientStateSnapshot(

@@ -90,6 +90,7 @@
           "npm:@babylonjs/loaders@^9.6.2"
         ]
       },
+      "npm:rallar-black-box-headless@0.1.0": {},
       "npm:rallar-black-box@0.1.0": {
         "dependencies": [
           "npm:@js-temporal/polyfill@~0.5.1",

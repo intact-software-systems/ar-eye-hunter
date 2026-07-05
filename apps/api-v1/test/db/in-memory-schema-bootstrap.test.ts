@@ -533,6 +533,15 @@ async function smokeCrdtLog(db: PGlite): Promise<void> {
     ],
   );
   await db.query(
+    `update crdt_documents
+         set stored_update_bytes = octet_length($2)
+         where document_key = $1`,
+    [
+      documentKey,
+      JSON.stringify(update),
+    ],
+  );
+  await db.query(
     `insert into crdt_snapshots (document_key,
                                      snapshot_id,
                                      append_sequence,
@@ -549,6 +558,10 @@ async function smokeCrdtLog(db: PGlite): Promise<void> {
   assert.deepEqual(await countRows(db, 'crdt_documents'), 1);
   assert.deepEqual(await countRows(db, 'crdt_updates'), 1);
   assert.deepEqual(await countRows(db, 'crdt_snapshots'), 1);
+  assert.deepEqual(
+    await readStoredUpdateBytes(db, documentKey),
+    new TextEncoder().encode(JSON.stringify(update)).byteLength,
+  );
 
   await db.query('delete from crdt_documents where document_key = $1', [documentKey]);
   assert.deepEqual(await countRows(db, 'crdt_documents'), 0);
@@ -576,4 +589,17 @@ async function countRows(db: PGlite, tableName: string): Promise<number> {
   const result = await db.query<{ count: string }>(`select count(*)
                                                       from ${tableName}`);
   return Number(result.rows[0].count);
+}
+
+async function readStoredUpdateBytes(
+  db: PGlite,
+  documentKey: string,
+): Promise<number> {
+  const result = await db.query<{ stored_update_bytes: string | number }>(
+    `select stored_update_bytes
+         from crdt_documents
+         where document_key = $1`,
+    [documentKey],
+  );
+  return Number(result.rows[0]?.stored_update_bytes ?? 0);
 }

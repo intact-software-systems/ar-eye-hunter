@@ -33,6 +33,10 @@ const facade = vi.hoisted(() => {
                 health: vi.fn(),
                 sendJson: vi.fn(),
             },
+            rtc: {
+                status: vi.fn(),
+                diagnostics: vi.fn(),
+            },
             messages: {
                 rtc: {
                     onMessage: vi.fn(),
@@ -100,7 +104,7 @@ type Runtime = Readonly<{
         destroy(input: unknown): Promise<unknown>;
     };
     close(): Promise<unknown>;
-    health(): Promise<unknown>;
+    health(input?: unknown): Promise<unknown>;
 }>;
 
 type TestWindow = Readonly<{
@@ -127,6 +131,76 @@ function resetFacade(): void {
     facade.rallar.messages.rtc.onMessage.mockReturnValue(facade.unsubscribeMessagesRtc);
     facade.rallar.messages.ws.onMessage.mockReturnValue(facade.unsubscribeMessagesWs);
     facade.rallar.realtime.health.mockReturnValue([]);
+    facade.rallar.rtc.status.mockReturnValue({
+        sessionId: 'session-1',
+        laneId: 'realtime',
+        knownPeerIds: [],
+        activePeerIds: [],
+        peerIdsWithNoReconnectableLanes: [],
+        readyPeerIds: [],
+        peers: [],
+    });
+    facade.rallar.rtc.diagnostics.mockResolvedValue({
+        sessionId: 'session-1',
+        generatedAtEpochMs: 123,
+        peerCount: 1,
+        connectedPeerCount: 1,
+        relayPeerCount: 0,
+        peers: [{
+            peerId: 'peer-1',
+            connection: {
+                hasLocalDescription: true,
+                hasRemoteDescription: true,
+                reconnectAttempts: 0,
+                reconnecting: false,
+                disconnectPending: false,
+                makingOffer: false,
+                ignoreOffer: false,
+                iceCandidateQueueSize: 0,
+                remoteStreamIds: [],
+            },
+            connectionDiagnostics: {
+                connectCallCount: 1,
+                connectIgnoredCount: 0,
+                resetCount: 0,
+                closedPeerConnectionCount: 0,
+                negotiationNeededCount: 0,
+                negotiationSkippedCount: 0,
+                offerCreatedCount: 1,
+                inboundOfferCount: 0,
+                inboundAnswerCount: 1,
+                inboundIceCandidateCount: 0,
+                staleAnswerIgnoredCount: 0,
+                offerCollisionCount: 0,
+                ignoredOfferCollisionCount: 0,
+                politeOfferRollbackCount: 0,
+                outboundOfferCount: 1,
+                outboundAnswerCount: 0,
+                outboundIceCandidateCount: 0,
+                queuedIceCandidateCount: 0,
+                addedIceCandidateCount: 0,
+                flushedIceCandidateCount: 0,
+                ignoredIceCandidateForIgnoredOfferCount: 0,
+                reconnectAttemptCount: 0,
+                reconnectTimerAlreadyActiveCount: 0,
+                reconnectExhaustedCount: 0,
+                iceRestartCount: 0,
+                iceRestartSkippedConnectedCount: 0,
+                disconnectTimerScheduledCount: 0,
+                disconnectTimerAlreadyActiveCount: 0,
+                disconnectTimerClearedCount: 0,
+                disconnectTimerFiredCount: 0,
+                outboundSignalingErrorCount: 0,
+                inboundSignalingErrorCount: 0,
+                pendingIceCandidateQueueLength: 0,
+                reconnectAttemptsInFlight: 0,
+                hasReconnectTimer: false,
+            },
+            lanes: [],
+            usesRelay: false,
+            statsAvailable: false,
+        }],
+    });
     facade.rallar.realtime.sendJson.mockResolvedValue([]);
     facade.rallar.messages.rtc.send.mockResolvedValue({});
     facade.rallar.messages.ws.send.mockResolvedValue({});
@@ -385,6 +459,65 @@ describe('browser Rallar black-box runtime', () => {
                 text: 'hello scoped room',
             },
         }));
+    });
+
+    it('omits browser RTC diagnostics counters from default health snapshots', async () => {
+        const runtime = await loadRuntime();
+
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                transport: 'realtime',
+                laneId: 'control-lane',
+            },
+        });
+
+        const health = await runtime.health();
+
+        expect(facade.rallar.rtc.diagnostics).not.toHaveBeenCalled();
+        expect(health).not.toHaveProperty('rtcDiagnostics');
+        expect(health).not.toHaveProperty('rtcDiagnosticsError');
+    });
+
+    it('includes browser RTC diagnostics counters in health snapshots when requested', async () => {
+        const runtime = await loadRuntime();
+
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                transport: 'realtime',
+                laneId: 'control-lane',
+            },
+        });
+
+        const health = await runtime.health({ includeRtcDiagnostics: true });
+
+        expect(facade.rallar.rtc.diagnostics).toHaveBeenCalledWith({
+            laneIds: ['control-lane'],
+        });
+        expect(health).toMatchObject({
+            rtcDiagnostics: {
+                peerCount: 1,
+                peers: [{
+                    peerId: 'peer-1',
+                    connectionDiagnostics: {
+                        connectCallCount: 1,
+                        outboundOfferCount: 1,
+                        inboundAnswerCount: 1,
+                    },
+                }],
+            },
+        });
     });
 
     it('opens and manages CRDT document handles through the browser facade', async () => {

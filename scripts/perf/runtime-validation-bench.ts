@@ -4,7 +4,16 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
+import {
+    readRuntimeStateEntriesByPrefix,
+    RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+} from '@shared-server/postgres/al-runtime/runtime-state-prefix-reader.ts';
 import { filterStateEventsForList } from '@shared-server/rallar-system/state-event-listing.ts';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
+    RuntimeStateTransactionalRepositoryLike,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 
@@ -63,6 +72,22 @@ async function measure(
     };
 }
 
+async function waitUntil(
+    condition: () => boolean,
+    options: { timeoutMs?: number; pollMs?: number } = {},
+): Promise<void> {
+    const timeoutMs = options.timeoutMs ?? 2_000;
+    const pollMs = options.pollMs ?? 1;
+    const deadline = now() + timeoutMs;
+
+    while (!condition()) {
+        if (now() >= deadline) {
+            throw new Error('Timed out waiting for benchmark condition');
+        }
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+}
+
 function makeEvent(index: number): JsonRecord {
     return {
         eventId: `event-${String(index).padStart(8, '0')}`,
@@ -90,6 +115,186 @@ function runPagedEventPipeline(rowJson: readonly string[], limit: number): numbe
     return parsed.length;
 }
 
+function runRecentEventPipeline(rowJson: readonly string[], limit: number): number {
+    const recentRows = rowJson.slice(-limit);
+    const parsed = recentRows.map((value) => JSON.parse(value));
+    return filterStateEventsForList(parsed as never[], { limit }).length;
+}
+
+function makeRuntimeStateEntries(size: number): readonly RuntimeStateEntry[] {
+    return Array.from({ length: size }, (_, index) => ({
+        key: `prefix:${String(index).padStart(8, '0')}`,
+        value: JSON.stringify({
+            kind: 'runtime',
+            sequence: index,
+            payload: 'x'.repeat(512),
+        }),
+        expireAtTimestamp: Date.now() + 86_400_000,
+        updatedTimestamp: new Date(1_700_000_000_000 + index).toISOString(),
+        revision: 0,
+    }));
+}
+
+class RuntimeStatePrefixBenchRepository
+    implements RuntimeStateTransactionalRepositoryLike {
+    findEntriesByPrefixCalls = 0;
+    findEntriesByPrefixPageCalls = 0;
+    maxRowsReturned = 0;
+
+    public constructor(
+        private readonly entries: readonly RuntimeStateEntry[],
+        private readonly namespace = 'perf-runtime-20260702',
+    ) {}
+
+    async begin<T>(
+        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+    ): Promise<T> {
+        return await fn(this);
+    }
+
+    async findEntry(): Promise<RuntimeStateEntry | undefined> {
+        return undefined;
+    }
+
+    async findAllEntries(): Promise<readonly RuntimeStateEntry[]> {
+        return [];
+    }
+
+    async findEntriesByPrefix(
+        namespace: string,
+        keyPrefix: string,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        this.findEntriesByPrefixCalls += 1;
+        const rows = this.entries
+            .filter((entry) =>
+                namespace === this.namespace && entry.key.startsWith(keyPrefix)
+            )
+            .map((entry) => ({ ...entry }));
+        this.maxRowsReturned = Math.max(this.maxRowsReturned, rows.length);
+        return rows;
+    }
+
+    async findEntriesByPrefixPage(
+        namespace: string,
+        keyPrefix: string,
+        options: RuntimeStateEntryPageOptions,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        this.findEntriesByPrefixPageCalls += 1;
+        const rows: RuntimeStateEntry[] = [];
+        if (namespace !== this.namespace) {
+            return rows;
+        }
+
+        let index = options.afterKey === undefined
+            ? 0
+            : this.findFirstKeyAfter(options.afterKey);
+
+        for (; index < this.entries.length && rows.length < options.limit; index++) {
+            const entry = this.entries[index];
+            if (!entry.key.startsWith(keyPrefix)) {
+                if (rows.length > 0) {
+                    break;
+                }
+                continue;
+            }
+            rows.push({ ...entry });
+        }
+        this.maxRowsReturned = Math.max(this.maxRowsReturned, rows.length);
+        return rows;
+    }
+
+    private findFirstKeyAfter(key: string): number {
+        let low = 0;
+        let high = this.entries.length;
+        while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            if (this.entries[mid].key.localeCompare(key) <= 0) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        return low;
+    }
+
+    async upsert(): Promise<void> {}
+
+    async deleteByKey(): Promise<void> {}
+
+    async deleteExpired(): Promise<number> {
+        return 0;
+    }
+
+    async lockKey(): Promise<void> {}
+}
+
+async function benchRuntimePrefix(results: BenchResult[]): Promise<void> {
+    const sizes = [1_000, 10_000, 100_000];
+    const namespace = 'perf-runtime-20260702';
+    const prefix = 'prefix:';
+
+    for (const size of sizes) {
+        const entries = makeRuntimeStateEntries(size);
+        for (let run = 1; run <= RUNS; run++) {
+            const fullRepo = new RuntimeStatePrefixBenchRepository(entries, namespace);
+            const fullDetails: JsonRecord = {
+                rows: size,
+                pageSize: undefined,
+            };
+            results.push(await measure(
+                'runtime-prefix.full-materialize-and-parse',
+                `${size} rows`,
+                run,
+                fullDetails,
+                async () => {
+                    let parsed = 0;
+                    for (const entry of await fullRepo.findEntriesByPrefix(namespace, prefix)) {
+                        JSON.parse(entry.value);
+                        parsed += 1;
+                    }
+                    if (parsed !== size) {
+                        throw new Error(`Expected ${size} parsed rows, got ${parsed}`);
+                    }
+                    fullDetails.findEntriesByPrefixCalls = fullRepo.findEntriesByPrefixCalls;
+                    fullDetails.findEntriesByPrefixPageCalls = fullRepo.findEntriesByPrefixPageCalls;
+                    fullDetails.maxRowsReturnedPerRepositoryCall = fullRepo.maxRowsReturned;
+                },
+            ));
+
+            const pagedRepo = new RuntimeStatePrefixBenchRepository(entries, namespace);
+            const pagedDetails: JsonRecord = {
+                rows: size,
+                pageSize: RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+            };
+            results.push(await measure(
+                'runtime-prefix.paged-read-and-parse',
+                `${size} rows`,
+                run,
+                pagedDetails,
+                async () => {
+                    let parsed = 0;
+                    for await (
+                        const entry of readRuntimeStateEntriesByPrefix(
+                            pagedRepo,
+                            namespace,
+                            prefix,
+                        )
+                    ) {
+                        JSON.parse(entry.value);
+                        parsed += 1;
+                    }
+                    if (parsed !== size) {
+                        throw new Error(`Expected ${size} parsed rows, got ${parsed}`);
+                    }
+                    pagedDetails.findEntriesByPrefixCalls = pagedRepo.findEntriesByPrefixCalls;
+                    pagedDetails.findEntriesByPrefixPageCalls = pagedRepo.findEntriesByPrefixPageCalls;
+                    pagedDetails.maxRowsReturnedPerRepositoryCall = pagedRepo.maxRowsReturned;
+                },
+            ));
+        }
+    }
+}
+
 async function benchEvents(results: BenchResult[]): Promise<void> {
     const sizes = [100, 10_000, 100_000];
     const limit = 100;
@@ -110,6 +315,13 @@ async function benchEvents(results: BenchResult[]): Promise<void> {
                 run,
                 { rows: size, parsedRows: limit, rowBytes: rows.slice(-limit).join('').length, limit },
                 () => runPagedEventPipeline(rows, limit),
+            ));
+            results.push(await measure(
+                'events.recent.parse-bounded-tail',
+                `${size} rows`,
+                run,
+                { rows: size, parsedRows: limit, rowBytes: rows.slice(-limit).join('').length, limit },
+                () => runRecentEventPipeline(rows, limit),
             ));
         }
     }
@@ -169,6 +381,43 @@ async function benchCacheRetention(results: BenchResult[]): Promise<void> {
                     liveValueCount: repo.readAllValues().length,
                 },
             });
+
+            const autoRepo = new ObservableLatestRepository<string, JsonRecord>({
+                ttlMs: 0,
+                deleteExpiredIntervalMs: 1,
+            });
+            try {
+                results.push(await measure(
+                    'cache.observable-auto-delete-expired',
+                    `${size} keys`,
+                    run,
+                    { keys: size, ttlMs: 0, deleteExpiredIntervalMs: 1 },
+                    async () => {
+                        for (let i = 0; i < size; i++) {
+                            autoRepo.set(`auto-key-${i}`, {
+                                i,
+                                value: `value-${i}`,
+                            });
+                        }
+                        await waitUntil(() => autoRepo.size() === 0);
+                    },
+                ));
+                results.push({
+                    name: 'cache.observable-size-after-auto-delete',
+                    sizeLabel: `${size} keys`,
+                    run,
+                    durationMs: 0,
+                    memoryBefore: memory(),
+                    memoryAfter: memory(),
+                    details: {
+                        keys: size,
+                        retainedEntryCount: autoRepo.size(),
+                        liveValueCount: autoRepo.readAllValues().length,
+                    },
+                });
+            } finally {
+                autoRepo.dispose();
+            }
         }
     }
 }
@@ -211,6 +460,10 @@ class FakeSocket {
         this.sentCount += 1;
     }
 }
+
+type EncodedFakeSocketMessage = Readonly<{
+    text: string;
+}>;
 
 function makeClientSnapshot(index: number, sessionsPerClient: number, liveUntil: number): ClientSnapshot {
     return {
@@ -299,6 +552,8 @@ function makeGroupSnapshot(
 function makeWsServer(connectionIds: readonly string[]): {
     connections: Map<string, { id: string; socket: FakeSocket; isOpen: boolean }>;
     broadcast: (data: unknown, filter?: (ctx: { id: string; isOpen: boolean }) => boolean) => number;
+    encode: (data: unknown) => EncodedFakeSocketMessage;
+    sendEncoded: (connectionId: string, encoded: EncodedFakeSocketMessage) => void;
 } {
     const connections = new Map<string, { id: string; socket: FakeSocket; isOpen: boolean }>();
     for (const id of connectionIds) {
@@ -306,6 +561,18 @@ function makeWsServer(connectionIds: readonly string[]): {
     }
     return {
         connections,
+        encode(data: unknown): EncodedFakeSocketMessage {
+            return {
+                text: JSON.stringify(data),
+            };
+        },
+        sendEncoded(connectionId: string, encoded: EncodedFakeSocketMessage): void {
+            const ctx = connections.get(connectionId);
+            if (!ctx || !ctx.isOpen) {
+                throw new Error(`Connection not open: ${connectionId}`);
+            }
+            ctx.socket.send(encoded.text);
+        },
         broadcast(data: unknown, filter?: (ctx: { id: string; isOpen: boolean }) => boolean): number {
             const encoded = JSON.stringify(data);
             let count = 0;
@@ -412,6 +679,18 @@ async function benchSerialization(results: BenchResult[]): Promise<void> {
                         }
                     },
                 ));
+                results.push(await measure(
+                    'ws.direct-send-encoded-once',
+                    `${recipients} recipients/${payloadBytes} bytes`,
+                    run,
+                    { recipients, payloadBytes },
+                    () => {
+                        const encoded = server.encode(payload);
+                        for (const id of connectionIds) {
+                            server.sendEncoded(id, encoded);
+                        }
+                    },
+                ));
             }
         }
     }
@@ -496,15 +775,66 @@ async function benchCacheLeakChurn(results: BenchResult[]): Promise<void> {
     });
 }
 
+async function benchCacheAutoEvictionChurn(results: BenchResult[]): Promise<void> {
+    const repo = new ObservableLatestRepository<string, JsonRecord>({
+        ttlMs: 0,
+        deleteExpiredIntervalMs: 1,
+    });
+    const batchSize = 10_000;
+    const batches = 10;
+
+    try {
+        for (let batch = 1; batch <= batches; batch++) {
+            const firstKey = (batch - 1) * batchSize;
+            results.push(await measure(
+                'cache.auto-eviction-churn-insert-batch',
+                `${batch * batchSize} cumulative keys`,
+                1,
+                { batch, batchSize, deleteExpiredIntervalMs: 1 },
+                async () => {
+                    for (let i = 0; i < batchSize; i++) {
+                        const keyIndex = firstKey + i;
+                        repo.set(`auto-churn-${keyIndex}`, {
+                            keyIndex,
+                            payload: `payload-${keyIndex}`,
+                        });
+                    }
+                    await waitUntil(() => repo.size() === 0);
+                },
+            ));
+            results.push({
+                name: 'cache.auto-eviction-churn-post-expiry',
+                sizeLabel: `${batch * batchSize} cumulative keys`,
+                run: 1,
+                durationMs: 0,
+                memoryBefore: memory(),
+                memoryAfter: memory(),
+                details: {
+                    batch,
+                    batchSize,
+                    retainedEntryCount: repo.size(),
+                    liveValueCount: repo.readAllValues().length,
+                },
+            });
+        }
+    } finally {
+        repo.dispose();
+    }
+}
+
 async function main(): Promise<void> {
     const results: BenchResult[] = [];
     if (MODE === 'full' || MODE === 'events') await benchEvents(results);
+    if (MODE === 'full' || MODE === 'runtime-prefix') await benchRuntimePrefix(results);
     if (MODE === 'full' || MODE === 'cache') await benchCacheRetention(results);
     if (MODE === 'full' || MODE === 'rate-limit') await benchRateLimiter(results);
     if (MODE === 'full' || MODE === 'state-sync') await benchStateSync(results);
     if (MODE === 'full' || MODE === 'serialization') await benchSerialization(results);
     if (MODE === 'full' || MODE === 'latest-cleanup') await benchLatestRepositoryCleanup(results);
-    if (MODE === 'full' || MODE === 'leak') await benchCacheLeakChurn(results);
+    if (MODE === 'full' || MODE === 'leak') {
+        await benchCacheLeakChurn(results);
+        await benchCacheAutoEvictionChurn(results);
+    }
 
     const payload = {
         generatedAt: new Date().toISOString(),

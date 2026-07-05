@@ -81,6 +81,34 @@ export function toStateSyncConnectionFilter(
     return (ctx) => connectionIds.has(ctx.id);
 }
 
+export function sendStateSyncMessage(
+    webSocketServer: JsonWebSocketServer,
+    message: ALMessage,
+    options: StateSyncRoutingOptions = {},
+): number {
+    const recipients = resolveStateSyncRecipients(webSocketServer, message, options);
+    if (!recipients) {
+        return webSocketServer.broadcast(message);
+    }
+
+    if (recipients.length === 0) {
+        return 0;
+    }
+
+    const encoded = webSocketServer.encode(message);
+    let sent = 0;
+    for (const recipient of recipients) {
+        try {
+            webSocketServer.sendEncoded(recipient.connectionId, encoded);
+            sent += 1;
+        } catch (error) {
+            console.error('State sync send failed:', error);
+        }
+    }
+
+    return sent;
+}
+
 function resolveScopeRecipients(
     webSocketServer: JsonWebSocketServer,
     scope: StateSyncScope,
@@ -110,8 +138,6 @@ function resolveGroupRecipients(
     const now = options.now?.() ?? Date.now();
     const clientSnapshots = options.readClientSnapshots?.() ??
         clientStateSnapshotsRepository.getAllClientStateSnapshots();
-    const scopedClientSnapshots = clientSnapshots
-        .filter((clientSnapshot) => sameScope(clientSnapshot.principal, snapshot.group));
     const fullReadPrincipalIds = new Set(
         snapshot.members
             .filter((member) =>
@@ -123,26 +149,34 @@ function resolveGroupRecipients(
             )
             .map((member) => member.principalId),
     );
-    const scopedSessionIds = new Set(
-        scopedClientSnapshots.flatMap((clientSnapshot) =>
-            clientSnapshot.activeSessions
-                .filter((session) =>
-                    isClientSnapshotSessionLive(session, now)
-                )
-                .map((session) => session.sessionId)
-        ),
-    );
-    const clientRecipients = scopedClientSnapshots
-        .filter((clientSnapshot) =>
-            fullReadPrincipalIds.has(clientSnapshot.principal.principalId)
-        )
-        .flatMap((clientSnapshot) =>
-            toOpenClientSessionRecipients(webSocketServer, clientSnapshot, options)
-        );
+    const scopedFullReadSessionIds = new Set<string>();
+    const clientRecipients: WsServerResolvedRecipient[] = [];
+    for (const clientSnapshot of clientSnapshots) {
+        if (
+            !sameScope(clientSnapshot.principal, snapshot.group) ||
+            !fullReadPrincipalIds.has(clientSnapshot.principal.principalId)
+        ) {
+            continue;
+        }
+
+        for (const session of clientSnapshot.activeSessions) {
+            if (!isClientSnapshotSessionLive(session, now)) {
+                continue;
+            }
+
+            scopedFullReadSessionIds.add(session.sessionId);
+            if (webSocketServer.connections.get(session.sessionId)?.isOpen) {
+                clientRecipients.push({
+                    peerId: clientSnapshot.principal.principalId,
+                    connectionId: session.sessionId,
+                });
+            }
+        }
+    }
     const presenceRecipients = snapshot.activeSessions
         .filter((session) =>
             fullReadPrincipalIds.has(session.principalId) &&
-            scopedSessionIds.has(session.sessionId) &&
+            scopedFullReadSessionIds.has(session.sessionId) &&
             isGroupSnapshotSessionLive(session, now) &&
             webSocketServer.connections.get(session.sessionId)?.isOpen
         )

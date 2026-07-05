@@ -51,6 +51,25 @@ Deno.test('readRateLimiter separates limits by policy', () => {
   assert.notEqual(second, first);
 });
 
+Deno.test('readRateLimiter replaces an expired cached limiter for the same key', () => {
+  const originalNow = Date.now;
+  let nowMs = 1_000;
+  Date.now = () => nowMs;
+  try {
+    const namespace = `test-${crypto.randomUUID()}`;
+    const policy = new RateLimiterPolicy(60_000, 2);
+
+    const first = readRateLimiter(namespace, 'client-1', policy);
+    nowMs += 10 * 60_000 + 1;
+    const second = readRateLimiter(namespace, 'client-1', policy);
+
+    assert.notEqual(second, first);
+    assert.equal(readRateLimiter(namespace, 'client-1', policy), second);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 Deno.test('readRequestClientKey prefers proxy client headers', () => {
   const req = {
     header(name: string): string | undefined {

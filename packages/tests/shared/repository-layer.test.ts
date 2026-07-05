@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LatestMementoRepository } from '@shared/cache/LatestMementoRepository.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
+import { configureLatestRepository } from '@shared/cache/LatestRepositoryHelpers.ts';
 import { LoanedMementoRepository } from '@shared/cache/LoanedMementoRepository.ts';
 import { LoanedRepository } from '@shared/cache/LoanedRepository.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
@@ -44,6 +45,32 @@ describe('LatestRepository', () => {
         expect(repo.takeIfExpired('b')).toBe(2);
         expect(repo.deleteExpired()).toBe(1);
         expect(repo.get('a')).toBe(2);
+    });
+
+    it('evicts expired entries on the configured interval until disposed', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const repo = new LatestRepository<string, number>({
+            ttlMs: 10,
+            deleteExpiredIntervalMs: 20,
+        });
+
+        repo.set('expired', 1);
+
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.011Z'));
+        expect(repo.size()).toBe(1);
+
+        vi.advanceTimersByTime(20);
+        expect(repo.size()).toBe(0);
+
+        repo.set('kept-after-dispose', 2);
+        repo.dispose();
+
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.022Z'));
+        vi.advanceTimersByTime(20);
+
+        expect(repo.size()).toBe(1);
     });
 
     it('readAllValues returns every present value and filters expired entries', () => {
@@ -236,6 +263,21 @@ describe('RepositoryManager', () => {
 
         expect(remaining.dispose).toHaveBeenCalledOnce();
         expect(manager.size()).toBe(0);
+    });
+
+    it('disposes replaced latest repositories configured through helpers', () => {
+        const manager = new RepositoryManager();
+        const token = new RepositoryToken(
+            'latest-replace',
+            () => new LatestRepository<string, number>(),
+        );
+        const first = configureLatestRepository(token, {}, manager);
+        const dispose = vi.spyOn(first, 'dispose');
+
+        const second = configureLatestRepository(token, {}, manager);
+
+        expect(dispose).toHaveBeenCalledOnce();
+        expect(manager.require(token)).toBe(second);
     });
 
     it('validates tokens and creates repository instances from token factories', () => {

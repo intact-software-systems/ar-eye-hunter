@@ -131,6 +131,34 @@ describe('WebRtcHeartbeatService', () => {
 
         expect(channel.sentJsonStrings).toHaveLength(1);
         expect((service as any).status.pingInterval).toBeUndefined();
+        expect(channel.messageCallbackCount).toBe(0);
+    });
+
+    it('removes its message callback when stopped', () => {
+        const channel = createDataChannelHarness();
+        const service = new WebRtcHeartbeatService({
+            sessionId: 'self',
+            peerSessionId: 'peer-1',
+            channel: channel.channel as never,
+            maxMissedPings: 2,
+            pingFrequencyMsecs: 5,
+        });
+
+        service.start({
+            onHeartbeat: async () => {
+            },
+            onMissedHeartbeat: async () => {
+            },
+        });
+
+        expect(channel.messageCallbackCount).toBe(1);
+
+        service.stop();
+
+        expect(channel.removeOnRtcMessageCallbackById).toHaveBeenCalledWith(
+            'peer-1-heartbeat',
+        );
+        expect(channel.messageCallbackCount).toBe(0);
     });
 });
 
@@ -142,6 +170,7 @@ function createDataChannelHarness(initiallyOpen = true) {
         onMessage: (data: unknown) => Promise<void>;
     }
         | undefined;
+    const callbacks = new Map<string, typeof onMessageCallback>();
 
     const sentJsonStrings: string[] = [];
 
@@ -153,7 +182,14 @@ function createDataChannelHarness(initiallyOpen = true) {
         ) {
             onMessageCallback = callback;
             messageType = type;
+            callbacks.set(_id, callback);
             return channel;
+        }),
+        removeOnRtcMessageCallbackById: vi.fn((id: string) => {
+            if (callbacks.get(id) === onMessageCallback) {
+                onMessageCallback = undefined;
+            }
+            return callbacks.delete(id);
         }),
         sendAsJsonString: vi.fn(async (data: string) => {
             sentJsonStrings.push(data);
@@ -172,6 +208,12 @@ function createDataChannelHarness(initiallyOpen = true) {
         },
         get onMessageCallback() {
             return onMessageCallback;
+        },
+        get removeOnRtcMessageCallbackById() {
+            return channel.removeOnRtcMessageCallbackById;
+        },
+        get messageCallbackCount() {
+            return callbacks.size;
         },
     };
 }

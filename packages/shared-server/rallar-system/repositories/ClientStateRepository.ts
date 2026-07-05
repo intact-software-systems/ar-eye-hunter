@@ -11,22 +11,14 @@ import type {
     ClientSessionRef,
     ClientSnapshot,
 } from '@shared/api/client-types.ts';
-import type {
-    StateEventPage,
-} from '@shared/api/state-event-types.ts';
+import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import {
-    isLogicallyActiveSession,
-    toSessionPurgeAfterEpochMs,
-} from './session-expiry.ts';
-import {
-    defaultClientStateEventStoreFor,
-    type ClientStateEventStore,
-} from './StateEventStore.ts';
-import type { StateEventListQuery } from '../state-event-listing.ts';
+import { isLogicallyActiveSession, toSessionPurgeAfterEpochMs } from './session-expiry.ts';
+import { type ClientStateEventStore, defaultClientStateEventStoreFor } from './StateEventStore.ts';
+import { filterStateEventsForList, type StateEventListQuery } from '../state-event-listing.ts';
 
 const PRINCIPALS_NAMESPACE = 'client-state:principals';
 const INSTANCES_NAMESPACE = 'client-state:instances';
@@ -97,6 +89,43 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         return await this.listValues<ClientPrincipal>(
             PRINCIPALS_NAMESPACE,
             this.scopePrefix(scope),
+        );
+    }
+
+    async listSnapshots(
+        scope: ClientScope,
+    ): Promise<readonly ClientSnapshot[]> {
+        const [principals, instances, sessions] = await Promise.all([
+            this.listPrincipals(scope),
+            this.listValues<ClientInstance>(
+                INSTANCES_NAMESPACE,
+                this.scopePrefix(scope),
+            ),
+            this.listValues<ClientSession>(
+                SESSIONS_NAMESPACE,
+                this.scopePrefix(scope),
+            ),
+        ]);
+        const instancesByPrincipalId = new Map<string, ClientInstance[]>();
+        for (const instance of instances) {
+            const current = instancesByPrincipalId.get(instance.principalId) ?? [];
+            current.push(instance);
+            instancesByPrincipalId.set(instance.principalId, current);
+        }
+
+        const activeSessionsByPrincipalId = new Map<string, ClientSession[]>();
+        for (const session of this.toActiveSessions(sessions)) {
+            const current = activeSessionsByPrincipalId.get(session.principalId) ?? [];
+            current.push(session);
+            activeSessionsByPrincipalId.set(session.principalId, current);
+        }
+
+        return principals.map((principal) =>
+            this.toSnapshot(
+                principal,
+                instancesByPrincipalId.get(principal.principalId) ?? [],
+                activeSessionsByPrincipalId.get(principal.principalId) ?? [],
+            )
         );
     }
 
@@ -187,6 +216,18 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         return await this.events.listClientEvents(ref);
     }
 
+    async listRecentEvents(
+        ref: ClientPrincipalRef,
+        query: StateEventListQuery = {},
+    ): Promise<readonly ClientEvent[]> {
+        return this.events.listRecentClientEvents
+            ? await this.events.listRecentClientEvents(ref, query)
+            : filterStateEventsForList(
+                await this.events.listClientEvents(ref),
+                query,
+            );
+    }
+
     async listEventPage(
         ref: ClientPrincipalRef,
         query: StateEventListQuery = {},
@@ -234,6 +275,14 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             await this.listSessionsForPrincipal(ref),
         );
 
+        return this.toSnapshot(principal, instances, activeSessions);
+    }
+
+    private toSnapshot(
+        principal: ClientPrincipal,
+        instances: readonly ClientInstance[],
+        activeSessions: readonly ClientSession[],
+    ): ClientSnapshot {
         return {
             principal,
             instances,
@@ -326,5 +375,4 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             ':',
         );
     }
-
 }

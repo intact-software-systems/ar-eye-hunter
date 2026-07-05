@@ -53,6 +53,7 @@ import {
 import {
   filterStateEventsForList,
   readStateEventListQuery,
+  type StateEventListQuery,
 } from '@shared-server/rallar-system/state-event-listing.ts';
 import {
   hydrateStateSyncSnapshotCaches as defaultHydrateStateSyncSnapshotCaches,
@@ -71,7 +72,7 @@ import {
   type GroupPolicyReasonCode,
 } from '@shared/api/group-policy-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 const GROUP_POLICY_REASON_CODE_SET = new Set<string>(GROUP_POLICY_REASON_CODES);
 
@@ -80,6 +81,7 @@ export type GroupStateRouteService = Pick<
   | 'listSnapshots'
   | 'readSnapshot'
   | 'listEvents'
+  | 'listRecentEvents'
   | 'listEventPage'
 >;
 
@@ -164,17 +166,19 @@ export function init(
           ...toScope(c),
           groupId,
         });
-        const events = await deps.getGroupStateService().listEvents({
+        const ref = {
           ...toScope(c),
           groupId,
-        });
+        };
+        const query = readStateEventListQuery(
+          new URL(c.req.raw.url).searchParams,
+        );
 
         return c.json(
-          filterStateEventsForList(
-            events,
-            readStateEventListQuery(
-              new URL(c.req.raw.url).searchParams,
-            ),
+          await listRecentGroupEventsForLegacyRoute(
+            deps.getGroupStateService(),
+            ref,
+            query,
           ),
         );
       } catch (error) {
@@ -854,6 +858,16 @@ function toGroupStateRouteDependencies(
     hydrateStateSyncSnapshotCaches: dependencies.hydrateStateSyncSnapshotCaches ??
       defaultHydrateStateSyncSnapshotCaches,
   };
+}
+
+async function listRecentGroupEventsForLegacyRoute(
+  service: GroupStateRouteService,
+  ref: GroupRef,
+  query: StateEventListQuery,
+): Promise<readonly GroupEvent[]> {
+  return service.listRecentEvents
+    ? await service.listRecentEvents(ref, query)
+    : filterStateEventsForList(await service.listEvents(ref), query);
 }
 
 async function assertCanReadGroupRef(

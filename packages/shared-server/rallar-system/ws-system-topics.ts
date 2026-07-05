@@ -14,7 +14,7 @@ import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.
 import { computeGlobalGraphAndCacheIt } from '@shared-graph/group-graphs-create-service.ts';
 import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
 import { type DynamicWsTopicRouterOptions, initDynamicWsTopicRouter, } from '../rallar-facade/ws-topic-router.ts';
-import { toStateSyncConnectionFilter } from './state-sync-routing.ts';
+import { sendStateSyncMessage } from './state-sync-routing.ts';
 import { AppInboxType } from './services/AppInboxService.ts';
 import {
     COALESCED_APP_INBOX_WORK_FIELD,
@@ -35,6 +35,7 @@ const RTC_TOPOLOGY_APP_INBOX_TOPIC = 'app-inbox.rtc-topology';
 export type InitRallarSystemWsTopicsOptions = Readonly<{
     initDynamicTopics?: boolean;
     dynamicTopicRouterOptions?: DynamicWsTopicRouterOptions;
+    rtcTopologyService?: RallarRtcTopologyService;
     rtcTopologyOptions?: RallarRtcTopologyServiceOptions;
     rtcTopologyRuntimeState?: Readonly<{
         repository: RuntimeStateRepositoryLike;
@@ -80,9 +81,10 @@ export function initRallarSystemWsTopics(
     wsQBoxServerService: WsQueueBoxServerService,
     options: InitRallarSystemWsTopicsOptions = {},
 ): void {
-    const rtcTopologyService = new RallarRtcTopologyService(
-        options.rtcTopologyOptions,
-    );
+    const rtcTopologyService = options.rtcTopologyService ??
+        new RallarRtcTopologyService(
+            options.rtcTopologyOptions,
+        );
     const rtcTopologyRuntimeState = options.rtcTopologyRuntimeState
         ? createRtcTopologyRuntimeState(
             options.rtcTopologyRuntimeState.repository,
@@ -135,6 +137,16 @@ export function initRallarSystemWsTopics(
         groupStateSnapshotsRepository.setGroupStateSnapshot(data);
     }, async (rawData, _message, server) => {
         const data = rawData as GroupSnapshot;
+        if (data.group.status !== 'active') {
+            await removeRtcOverlayTopology(
+                data,
+                rtcTopologyService,
+                rtcTopologyFlushTimers,
+                rtcTopologyRuntimeState,
+            );
+            return;
+        }
+
         if (rtcTopologyAppInbox) {
             await enqueueRtcTopologyAppInboxWorkForGroupSnapshot(
                 data,
@@ -196,7 +208,7 @@ function initStateBroadcastTopic(
 
             const state = readState(data);
             onState?.(state, data, server);
-            server.broadcast(data, toStateSyncConnectionFilter(server, data));
+            sendStateSyncMessage(server, data);
             await afterBroadcast?.(state, data, server);
         },
     });
@@ -209,7 +221,7 @@ function initStateBroadcastTopic(
 
             const state = readState(data);
             onState?.(state, data, server);
-            server.broadcast(data, toStateSyncConnectionFilter(server, data));
+            sendStateSyncMessage(server, data);
             await afterBroadcast?.(state, data, server);
         },
     });
@@ -246,7 +258,7 @@ function initOverlayTopologyTopic(wsQBoxServerService: WsQueueBoxServerService):
                 return Promise.resolve();
             }
 
-            server.broadcast(data, toStateSyncConnectionFilter(server, data));
+            sendStateSyncMessage(server, data);
             return Promise.resolve();
         },
     });
@@ -257,7 +269,7 @@ function initOverlayTopologyTopic(wsQBoxServerService: WsQueueBoxServerService):
                 return Promise.resolve();
             }
 
-            server.broadcast(data, toStateSyncConnectionFilter(server, data));
+            sendStateSyncMessage(server, data);
             return Promise.resolve();
         },
     });
@@ -285,7 +297,7 @@ async function publishRtcOverlayTopology(
         runtimeState,
     );
 
-    publishRtcOverlayTopologyResult(group, server, result);
+    publishRtcOverlayTopologyResult(group, server, result, rtcTopologyService);
 }
 
 async function publishDueRtcOverlayTopology(
@@ -307,7 +319,7 @@ async function publishDueRtcOverlayTopology(
         return false;
     }
 
-    publishRtcOverlayTopologyResult(group, server, result);
+    publishRtcOverlayTopologyResult(group, server, result, rtcTopologyService);
     return result.changed;
 }
 
@@ -357,11 +369,40 @@ async function readRtcTopologyRttMeasurements(
     );
 }
 
+async function removeRtcOverlayTopology(
+    group: GroupSnapshot,
+    rtcTopologyService: RallarRtcTopologyService,
+    rtcTopologyFlushTimers: Map<string, RtcTopologyFlushTimer>,
+    runtimeState?: RtcTopologyRuntimeState,
+): Promise<void> {
+    const overlayId = toScopedOverlayId(group.group);
+    const timer = rtcTopologyFlushTimers.get(overlayId);
+    if (timer) {
+        clearTimeout(timer);
+        rtcTopologyFlushTimers.delete(overlayId);
+    }
+
+    rtcTopologyService.removeGroupTopology(group);
+
+    if (!runtimeState) {
+        return;
+    }
+
+    await runtimeState.topologySnapshots.withSnapshotLock(
+        group.group,
+        async (repository) => {
+            await repository.removeSnapshot(group.group);
+        },
+    );
+}
+
 function publishRtcOverlayTopologyResult(
     group: GroupSnapshot,
     server: JsonWebSocketServer,
     result: RallarRtcTopologyUpdateResult,
+    rtcTopologyService?: RallarRtcTopologyService,
 ): void {
+    rtcTopologyService?.recordTopologyPublishResult(result.changed);
 
     if (!result.changed) {
         return;
@@ -385,7 +426,7 @@ function publishRtcOverlayTopologyResult(
         },
     );
 
-    server.broadcast(message, toStateSyncConnectionFilter(server, message));
+    sendStateSyncMessage(server, message);
 }
 
 function scheduleRtcOverlayTopologyFlush(
@@ -449,11 +490,7 @@ function scheduleRtcOverlayTopologyFlushesForRtt(
     rtcTopologyFlushTimers: Map<string, RtcTopologyFlushTimer>,
     runtimeState?: RtcTopologyRuntimeState,
 ): void {
-    for (const group of groupStateSnapshotsRepository.getAllGroupStateSnapshots()) {
-        if (!isRttMeasurementInGroup(group, rtt)) {
-            continue;
-        }
-
+    for (const group of findGroupsAffectedByRtt(rtt)) {
         scheduleRtcOverlayTopologyFlush(
             group,
             server,
@@ -464,14 +501,13 @@ function scheduleRtcOverlayTopologyFlushesForRtt(
     }
 }
 
-function isRttMeasurementInGroup(
-    group: GroupSnapshot,
+function findGroupsAffectedByRtt(
     rtt: RttMeasurementInfo,
-): boolean {
-    return group.activeSessions.some((session) =>
-            session.sessionId === rtt.sessionIdFrom
-        ) &&
-        group.activeSessions.some((session) => session.sessionId === rtt.sessionIdTo);
+): readonly GroupSnapshot[] {
+    return groupStateSnapshotsRepository.findGroupStateSnapshotsBySessionIds([
+        rtt.sessionIdFrom,
+        rtt.sessionIdTo,
+    ]);
 }
 
 function initRtcTopologyAppInboxTopic(
@@ -567,11 +603,7 @@ async function enqueueRtcTopologyAppInboxWorkForRttGroups(
     rtcTopologyService: RallarRtcTopologyService,
     rtcTopologyAppInbox: RtcTopologyAppInboxRuntime,
 ): Promise<void> {
-    for (const group of groupStateSnapshotsRepository.getAllGroupStateSnapshots()) {
-        if (!isRttMeasurementInGroup(group, rtt)) {
-            continue;
-        }
-
+    for (const group of findGroupsAffectedByRtt(rtt)) {
         await enqueueRtcTopologyAppInboxWorkForRtt(
             group,
             rtt,

@@ -321,6 +321,29 @@ describe('JsonWebSocketServer', () => {
         expect(closed.sent).toEqual([]);
     });
 
+    it('can pre-encode once and reuse the payload for direct sends', () => {
+        vi.stubGlobal('WebSocket', FakeWebSocket);
+
+        const stringify = vi.spyOn(JSON, 'stringify');
+        const server = new JsonWebSocketServer();
+        const first = new FakeWebSocket('first');
+        const second = new FakeWebSocket('second');
+
+        first.readyState = FakeWebSocket.OPEN;
+        second.readyState = FakeWebSocket.OPEN;
+
+        server.addConnection(new ConnectionContext('one', first as never));
+        server.addConnection(new ConnectionContext('two', second as never));
+
+        const encoded = server.encode({ fanout: true });
+        server.sendEncoded('one', encoded);
+        server.sendEncoded('two', encoded);
+
+        expect(stringify).toHaveBeenCalledOnce();
+        expect(first.sent).toEqual([encoded.text]);
+        expect(second.sent).toEqual([encoded.text]);
+    });
+
     it('replaces duplicate connection ids without letting stale close remove the current socket', async () => {
         vi.stubGlobal('WebSocket', FakeWebSocket);
 

@@ -1,5 +1,9 @@
 import { OnQRtcMessageCallback, QRtcClientCallbacks } from './QRtcClientCallbacks.ts';
 import { QRtcPeerConnection } from './QRtcPeerConnection.ts';
+import {
+    RtcDataChannelSendQueue,
+    type RtcDataChannelQueuedSend,
+} from './RtcDataChannelSendQueue.ts';
 
 enum RtcSessionState {
     Idle = 'Idle',
@@ -101,12 +105,7 @@ type QRtcMessageCallbackDto = {
     readonly type: string
 }
 
-type QueuedSend = {
-    payload: RtcDataChannelPayload;
-    key?: string;
-    maxAgeMs?: number;
-    createdAtEpochMs: number;
-}
+type QueuedSend = RtcDataChannelQueuedSend<RtcDataChannelPayload>;
 
 type RtcDataChannelOpenWaiter = {
     resolve: (isOpen: boolean) => void;
@@ -142,7 +141,7 @@ export class QRtcDataChannel {
     private readonly clientCallbacks = new Map<string, QRtcClientCallbacks>();
     private readonly onMessageCallbacks = new Map<string, QRtcMessageCallbackDto>();
     private readonly onRawMessageCallbacks = new Map<string, RtcRawMessageCallback>();
-    private readonly sendQueue: QueuedSend[] = [];
+    private readonly sendQueue = new RtcDataChannelSendQueue<RtcDataChannelPayload>();
     private readonly openWaiters: RtcDataChannelOpenWaiter[] = [];
     private readonly counters = emptyCounters();
 
@@ -160,7 +159,7 @@ export class QRtcDataChannel {
     reset() {
         this.resolveOpenWaiters(false);
         this.closeDataChannelIfPresent();
-        this.sendQueue.length = 0;
+        this.sendQueue.clear();
         this.status.state = RtcSessionState.Idle;
     }
 
@@ -292,7 +291,7 @@ export class QRtcDataChannel {
             bufferedAmount: dc?.bufferedAmount ?? 0,
             bufferedAmountLowThreshold: dc?.bufferedAmountLowThreshold ??
                 this.flowControl().lowWatermarkBytes,
-            queuedItemCount: this.sendQueue.length,
+            queuedItemCount: this.sendQueue.size,
             rawCallbackCount: this.onRawMessageCallbacks.size,
             messageCallbackCount: this.onMessageCallbacks.size,
             lifecycleCallbackCount: this.clientCallbacks.size,
@@ -462,15 +461,10 @@ export class QRtcDataChannel {
 
             this.status.state = RtcSessionState.Closed;
             this.resolveOpenWaiters(false);
+            this.sendQueue.clear();
             this.clearDataChannelReference(dc);
 
-            for (const callback of this.clientCallbacks.values()) {
-                try {
-                    await callback.onClose?.();
-                } catch (e) {
-                    console.error('Callback onClose failed:', e);
-                }
-            }
+            await this.notifyCloseCallbacks();
         };
 
         dc.onerror = async () => {
@@ -483,14 +477,11 @@ export class QRtcDataChannel {
 
             this.status.state = RtcSessionState.Failed;
             this.resolveOpenWaiters(false);
+            this.sendQueue.clear();
+            this.clearDataChannelReference(dc);
 
-            for (const callback of this.clientCallbacks.values()) {
-                try {
-                    await callback.onError?.();
-                } catch (e) {
-                    console.error('Callback onError failed:', e);
-                }
-            }
+            await this.notifyErrorCallbacks();
+            await this.notifyCloseCallbacks();
         };
     }
 
@@ -530,6 +521,26 @@ export class QRtcDataChannel {
 
         if (this.status.dc === dc) {
             this.status.dc = undefined;
+        }
+    }
+
+    private async notifyCloseCallbacks(): Promise<void> {
+        for (const callback of this.clientCallbacks.values()) {
+            try {
+                await callback.onClose?.();
+            } catch (e) {
+                console.error('Callback onClose failed:', e);
+            }
+        }
+    }
+
+    private async notifyErrorCallbacks(): Promise<void> {
+        for (const callback of this.clientCallbacks.values()) {
+            try {
+                await callback.onError?.();
+            } catch (e) {
+                console.error('Callback onError failed:', e);
+            }
         }
     }
 
@@ -622,51 +633,16 @@ export class QRtcDataChannel {
             createdAtEpochMs,
         };
 
-        switch (policy.overflow) {
-            case 'drop-new':
-                return this.toSendResult('dropped', 'Back pressure', options.key);
-            case 'replace-by-key':
-                if (options.key) {
-                    const index = this.sendQueue.findIndex((item) =>
-                        item.key === options.key
-                    );
-                    if (index >= 0) {
-                        this.sendQueue[index] = queued;
-                        return this.toSendResult(
-                            'replaced',
-                            'Replaced queued payload',
-                            options.key,
-                        );
-                    }
-                }
-
-                return this.enqueueQueuedSend(queued, policy, 'Queued payload');
-            case 'drop-old':
-                if (this.sendQueue.length >= policy.maxQueueItems) {
-                    this.sendQueue.shift();
-                    this.counters.droppedOldest += 1;
-                }
-                return this.enqueueQueuedSend(
-                    queued,
-                    policy,
-                    'Queued payload after dropping oldest',
-                );
-            case 'queue':
-                return this.enqueueQueuedSend(queued, policy, 'Queued payload');
-        }
-    }
-
-    private enqueueQueuedSend(
-        queued: QueuedSend,
-        policy: Required<RtcDataChannelFlowControlPolicy>,
-        reason: string,
-    ): RtcDataChannelSendResult {
-        if (this.sendQueue.length >= policy.maxQueueItems) {
-            return this.toSendResult('dropped', 'Queue full', queued.key);
+        const offerResult = this.sendQueue.offer(queued, policy);
+        if (offerResult.droppedOldest) {
+            this.counters.droppedOldest += 1;
         }
 
-        this.sendQueue.push(queued);
-        return this.toSendResult('queued', reason, queued.key);
+        return this.toSendResult(
+            offerResult.status,
+            offerResult.reason,
+            offerResult.key,
+        );
     }
 
     private flushQueuedSends(): void {
@@ -675,7 +651,7 @@ export class QRtcDataChannel {
             return;
         }
 
-        while (this.sendQueue.length > 0 && !this.isBackPressured(dc)) {
+        while (!this.isBackPressured(dc)) {
             const next = this.sendQueue.shift();
             if (!next) {
                 return;

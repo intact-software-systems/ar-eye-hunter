@@ -7,7 +7,7 @@ import type {
   UpsertClientInstanceRequest,
   UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import {
   type ClientStateService,
   getClientStateService,
@@ -27,6 +27,7 @@ import type { ClientStateWritten } from '@shared-server/rallar-system/services/c
 import {
   filterStateEventsForList,
   readStateEventListQuery,
+  type StateEventListQuery,
 } from '@shared-server/rallar-system/state-event-listing.ts';
 import {
   hydrateStateSyncSnapshotCaches as defaultHydrateStateSyncSnapshotCaches,
@@ -41,6 +42,7 @@ export type ClientStateRouteService = Pick<
   | 'readSnapshot'
   | 'readPresenceSnapshot'
   | 'listEvents'
+  | 'listRecentEvents'
   | 'listEventPage'
 >;
 
@@ -138,17 +140,19 @@ export function init(
       try {
         const principalId = c.req.param('principalId');
         await assertCanReadClientState(c.req, deps, principalId);
-        const events = await deps.getClientStateService().listEvents({
+        const ref = {
           ...toScope(c),
           principalId,
-        });
+        };
+        const query = readStateEventListQuery(
+          new URL(c.req.raw.url).searchParams,
+        );
 
         return c.json(
-          filterStateEventsForList(
-            events,
-            readStateEventListQuery(
-              new URL(c.req.raw.url).searchParams,
-            ),
+          await listRecentClientEventsForLegacyRoute(
+            deps.getClientStateService(),
+            ref,
+            query,
           ),
         );
       } catch (error) {
@@ -369,6 +373,16 @@ function toClientStateRouteDependencies(
     hydrateStateSyncSnapshotCaches: dependencies.hydrateStateSyncSnapshotCaches ??
       defaultHydrateStateSyncSnapshotCaches,
   };
+}
+
+async function listRecentClientEventsForLegacyRoute(
+  service: ClientStateRouteService,
+  ref: ClientPrincipalRef,
+  query: StateEventListQuery,
+): Promise<readonly ClientEvent[]> {
+  return service.listRecentEvents
+    ? await service.listRecentEvents(ref, query)
+    : filterStateEventsForList(await service.listEvents(ref), query);
 }
 
 async function assertCanReadClientState(

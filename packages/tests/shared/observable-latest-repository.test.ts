@@ -87,6 +87,43 @@ describe('ObservableLatestRepository', () => {
         expect(repository.has('a')).toBe(false);
     });
 
+    it('evicts expired entries on the configured interval and emits deletes', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+
+        const repository = new ObservableLatestRepository<string, number>({
+            ttlMs: 10,
+            deleteExpiredIntervalMs: 20,
+        });
+        const events: ObservableValueEventType[] = [];
+
+        repository.onChangeDo((event) => {
+            events.push(event.type);
+        });
+
+        repository.set('a', 1);
+
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.011Z'));
+        expect(repository.size()).toBe(1);
+
+        vi.advanceTimersByTime(20);
+        await repository.whenIdle();
+
+        expect(repository.size()).toBe(0);
+        expect(events).toEqual([
+            ObservableValueEventType.Created,
+            ObservableValueEventType.Deleted,
+        ]);
+
+        repository.set('kept-after-dispose', 2);
+        repository.dispose();
+
+        vi.setSystemTime(new Date('2026-01-01T00:00:00.022Z'));
+        vi.advanceTimersByTime(20);
+
+        expect(repository.size()).toBe(1);
+    });
+
     it('supports type-specific observers and idempotent unsubscribe', async () => {
         const repository = new ObservableLatestRepository<string, number>();
         const created = vi.fn();

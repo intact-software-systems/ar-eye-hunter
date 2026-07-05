@@ -155,3 +155,14 @@ select
     'workspace'
 from generate_series(1, 100000) as g
 on conflict do nothing;
+
+update crdt_documents document
+set stored_update_bytes = updates.update_bytes
+from (
+    select document_key,
+           coalesce(sum(octet_length(update_envelope)), 0)::bigint as update_bytes
+    from crdt_updates
+    where document_key = 'perf-doc-hot'
+    group by document_key
+) updates
+where document.document_key = updates.document_key;

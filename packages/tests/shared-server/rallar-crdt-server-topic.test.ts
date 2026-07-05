@@ -640,7 +640,22 @@ function createFakeWsServer() {
             return this;
         },
         send(connectionId: string, data: ALMessage) {
-            sent.push({ connectionId, data });
+            this.sendEncoded(connectionId, this.encode(data));
+        },
+        encode(data: ALMessage) {
+            return {
+                text: JSON.stringify(data),
+                data,
+            };
+        },
+        sendEncoded(
+            connectionId: string,
+            encoded: Readonly<{ text: string; data?: ALMessage }>,
+        ) {
+            sent.push({
+                connectionId,
+                data: encoded.data ?? JSON.parse(encoded.text) as ALMessage,
+            });
         },
     };
 }

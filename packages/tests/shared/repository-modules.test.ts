@@ -16,9 +16,11 @@ import {
 } from '@shared/repository/client-state-snapshots-repository.ts';
 import {
     findFirstGroupStateSnapshotRefSessionIdIsIn,
+    findGroupStateSnapshotsBySessionIds,
     findGroupStateSnapshotByRef,
     getAllGroupStateSnapshots,
     onGroupStateSnapshotChange,
+    removeGroupStateSnapshotByRef,
     setGroupStateSnapshot,
     setGroupStateSnapshots,
     waitForGroupStateSnapshotChangesIdle,
@@ -142,6 +144,39 @@ describe('repository modules', () => {
 
         expect(setGroupStateSnapshot(stale)).toBe(false);
         expect(findGroupStateSnapshotByRef(first.group)).toEqual(first);
+    });
+
+    it('finds group snapshots by all active session ids using current memberships', () => {
+        const first = createGroupSnapshot('group-1', 'Alpha', 1, [
+            'self',
+            'peer-a',
+        ]);
+        const second = createGroupSnapshot('group-2', 'Beta', 1, [
+            'self',
+            'peer-b',
+        ]);
+        const updatedFirst = createGroupSnapshot('group-1', 'Alpha', 2, [
+            'self',
+            'peer-c',
+        ]);
+
+        expect(setGroupStateSnapshots([first, second])).toBe(true);
+        expect(findGroupStateSnapshotsBySessionIds(['self', 'peer-a']))
+            .toEqual([first]);
+        expect(findGroupStateSnapshotsBySessionIds(['self', 'peer-b']))
+            .toEqual([second]);
+
+        expect(setGroupStateSnapshot(updatedFirst)).toBe(true);
+        expect(findGroupStateSnapshotsBySessionIds(['self', 'peer-a']))
+            .toEqual([]);
+        expect(findGroupStateSnapshotsBySessionIds(['self', 'peer-c']))
+            .toEqual([updatedFirst]);
+
+        expect(removeGroupStateSnapshotByRef(updatedFirst.group)).toBe(true);
+        expect(findGroupStateSnapshotsBySessionIds(['self', 'peer-c']))
+            .toEqual([]);
+        expect(findGroupStateSnapshotsBySessionIds(['self', 'peer-b']))
+            .toEqual([second]);
     });
 
     it('keeps same group id snapshots isolated across workspaces', () => {

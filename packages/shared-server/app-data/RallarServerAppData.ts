@@ -3,6 +3,7 @@ import { RepositoryToken } from '@shared/cache/RepositoryToken.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { AppDataConditionalRepositoryLike, AppDataEntry, AppDataRepositoryLike, } from './AppDataRepository.ts';
 import { isAppDataConditionalRepository } from './AppDataRepository.ts';
+import { readAppDataEntries } from './app-data-entry-reader.ts';
 
 export type RallarServerAppDataMigrationContext = Readonly<{
     key: string;
@@ -196,14 +197,9 @@ export class RallarServerAppDataStore<V> {
     }
 
     async hydrate(): Promise<void> {
-        const entries = await this.repository.findEntries(
-            this.options.namespace,
-            this.name,
-            this.options.keyPrefix || undefined,
-        );
         this.cache.clear();
 
-        for (const entry of entries) {
+        for await (const entry of this.readEntriesFromRepository()) {
             await this.cacheLiveEntry(entry);
         }
 
@@ -243,15 +239,10 @@ export class RallarServerAppDataStore<V> {
     }
 
     async getEntries(): Promise<Array<readonly [string, V]>> {
-        const entries = await this.repository.findEntries(
-            this.options.namespace,
-            this.name,
-            this.options.keyPrefix || undefined,
-        );
         const values: Array<readonly [string, V]> = [];
         this.cache.clear();
 
-        for (const entry of entries) {
+        for await (const entry of this.readEntriesFromRepository()) {
             const value = await this.cacheLiveEntry(entry);
             if (value !== undefined) {
                 values.push([this.toPublicKey(entry.key), value]);
@@ -583,6 +574,15 @@ export class RallarServerAppDataStore<V> {
         return isAppDataConditionalRepository(this.repository)
             ? this.repository
             : undefined;
+    }
+
+    private readEntriesFromRepository(): AsyncGenerator<AppDataEntry> {
+        return readAppDataEntries(
+            this.repository,
+            this.options.namespace,
+            this.name,
+            this.options.keyPrefix || undefined,
+        );
     }
 
     private async withOptimisticRetry<T>(

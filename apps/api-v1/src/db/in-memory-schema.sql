@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS crdt_documents
     last_append_sequence bigint                   NOT NULL DEFAULT 0,
     update_count         bigint                   NOT NULL DEFAULT 0,
     snapshot_count       bigint                   NOT NULL DEFAULT 0,
+    stored_update_bytes  bigint                   NOT NULL DEFAULT 0,
     retention_policy     text,
     quota_policy         text,
     projection_ids       text,

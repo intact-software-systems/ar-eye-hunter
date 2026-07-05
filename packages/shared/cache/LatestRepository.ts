@@ -1,7 +1,12 @@
+import {
+    startExpiredEntryEviction,
+    type ExpiredEntryEvictionHandle,
+    type ExpiredEntryEvictionOptions,
+} from './ExpiredEntryEviction.ts';
 import { LatestValue, LatestValueOptions } from './LatestValue.ts';
 import { PushKeyedValues, type ReadableKeyedValues, type UpdateIfNewerOptions, } from './RepositoryInterfaces.ts';
 
-export interface LatestRepositoryOptions<V> {
+export interface LatestRepositoryOptions<V> extends ExpiredEntryEvictionOptions {
     ttlMs?: number;
     isValid?: (value: V) => boolean;
 }
@@ -9,12 +14,17 @@ export interface LatestRepositoryOptions<V> {
 export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
     private readonly entries = new Map<K, LatestValue<V>>();
     private readonly defaultValueOptions: LatestValueOptions<V>;
+    private readonly expiredEntryEviction?: ExpiredEntryEvictionHandle;
 
     public constructor(options: LatestRepositoryOptions<V> = {}) {
         this.defaultValueOptions = {
             ttlMs: options.ttlMs,
             isValid: options.isValid,
         };
+        this.expiredEntryEviction = startExpiredEntryEviction(
+            options,
+            () => this.deleteExpired(),
+        );
     }
 
     // -------------------------------------------------------
@@ -236,6 +246,10 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
         }
 
         return removed;
+    }
+
+    public dispose(): void {
+        this.expiredEntryEviction?.dispose();
     }
 
     public size(): number {

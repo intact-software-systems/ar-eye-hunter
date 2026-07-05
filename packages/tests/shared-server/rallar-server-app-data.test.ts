@@ -6,6 +6,7 @@ import type {
     AppDataConditionalInsertResult,
     AppDataConditionalRepositoryLike,
     AppDataConditionalWriteResult,
+    AppDataEntryPageOptions,
     AppDataEntry,
     AppDataUpsertInput,
     AppDataUpsertIfRevisionInput,
@@ -321,6 +322,39 @@ describe('Rallar server app data stores', () => {
         expect(await left.get('1')).toEqual(leftValue);
     });
 
+    it('hydrates large stores through bounded repository pages', async () => {
+        const repository = new FakeAppDataRepository();
+        for (let index = 0; index < 1_001; index += 1) {
+            repository.seed({
+                namespace: 'app',
+                storeName: 'todos',
+                key: `bulk:${String(index).padStart(4, '0')}`,
+                value: {
+                    title: `Todo ${index}`,
+                    done: false,
+                },
+                schemaVersion: 1,
+                expireAtTimestamp: Date.now() + 60_000,
+                updatedTimestamp: new Date().toISOString(),
+                revision: 0,
+            });
+        }
+
+        const todos = await new RallarServerDataFacade(
+            new RepositoryManager(),
+            repository,
+        ).open<Todo>('todos', {
+            keyPrefix: 'bulk:',
+        });
+
+        await todos.hydrate();
+
+        expect(todos.readEntries()).toHaveLength(1_001);
+        expect(repository.findEntriesCalls).toBe(0);
+        expect(repository.findEntriesPageCalls).toBe(2);
+        expect(repository.maxRowsReturnedPerFindEntriesPage).toBe(1_000);
+    });
+
     it('retries updateOrCreate after a revision conflict', async () => {
         const repository = new FakeAppDataRepository();
         const counters = await new RallarServerDataFacade(
@@ -350,6 +384,9 @@ describe('Rallar server app data stores', () => {
 class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
     private readonly data = new Map<string, AppDataEntry>();
     private nextUpsertConflict?: AppDataUpsertInput;
+    findEntriesCalls = 0;
+    findEntriesPageCalls = 0;
+    maxRowsReturnedPerFindEntriesPage = 0;
 
     seed(entry: AppDataEntry): void {
         this.data.set(
@@ -375,6 +412,33 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
         storeName: string,
         keyPrefix?: string,
     ): Promise<readonly AppDataEntry[]> {
+        this.findEntriesCalls += 1;
+        return this.listEntries(namespace, storeName, keyPrefix);
+    }
+
+    async findEntriesPage(
+        namespace: string,
+        storeName: string,
+        options: AppDataEntryPageOptions,
+    ): Promise<readonly AppDataEntry[]> {
+        this.findEntriesPageCalls += 1;
+        const rows = this.listEntries(namespace, storeName, options.keyPrefix)
+            .filter((entry) =>
+                options.afterKey === undefined || entry.key > options.afterKey
+            )
+            .slice(0, Math.max(1, Math.floor(options.limit)));
+        this.maxRowsReturnedPerFindEntriesPage = Math.max(
+            this.maxRowsReturnedPerFindEntriesPage,
+            rows.length,
+        );
+        return rows;
+    }
+
+    private listEntries(
+        namespace: string,
+        storeName: string,
+        keyPrefix?: string,
+    ): readonly AppDataEntry[] {
         return [...this.data.values()]
             .filter((entry) =>
                 entry.namespace === namespace &&
