@@ -89,6 +89,7 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json',
             'apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json',
             'apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json',
+            'apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json',
             'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
         ]);
         expect(diagnosticPaths).toEqual([
@@ -171,6 +172,7 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json', 1],
+            ['apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', 2],
         ]);
 
@@ -248,6 +250,17 @@ describe('Hetzner distributed manifest catalog', () => {
                 durationSeconds: 30,
                 frameCount: 450,
                 maxDroppedFrames: 22,
+                maxP95SendDurationMs: 200,
+                maxP99SendDurationMs: 1000,
+                minSendSuccessRatio: 0.95,
+                maxInFlight: 64,
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json', {
+                rateHz: 20,
+                intervalMs: 50,
+                durationSeconds: 30,
+                frameCount: 600,
+                maxDroppedFrames: 30,
                 maxP95SendDurationMs: 200,
                 maxP99SendDurationMs: 1000,
                 minSendSuccessRatio: 0.95,
