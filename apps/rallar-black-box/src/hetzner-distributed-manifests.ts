@@ -6,6 +6,8 @@ import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types
 import {
     buildDistributedRunManifest,
     type DistributedRecipeCatalogItem,
+    type DistributedRecipeRolePattern,
+    type DistributedRecipeTargetPolicyMode,
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import {
     createRallarBlackBoxProviderParityLiveRecipe,
@@ -33,6 +35,8 @@ export const HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
     'apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json',
     'apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json',
+    'apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json',
+    'apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json',
     'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
 ] as const;
 
@@ -51,10 +55,14 @@ type ManifestCatalogInput = Readonly<{
     title: string;
     description: string;
     distributedRunId: string;
-    recipe: RallarBlackBoxTestRecipe;
+    recipe?: RallarBlackBoxTestRecipe;
+    recipes?: readonly RallarBlackBoxTestRecipe[];
     agentCount: number;
     profiles: readonly string[];
     live: boolean;
+    targetAgentIds?: readonly string[];
+    targetPolicyMode?: DistributedRecipeTargetPolicyMode;
+    rolePattern?: DistributedRecipeRolePattern;
     mainline?: boolean;
     diagnostic?: boolean;
     expectedFailure?: boolean;
@@ -193,6 +201,41 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
         }),
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[3],
+            title: 'RTC realtime stability 2-agent 30s 15 Hz',
+            description: 'Higher-rate 15 Hz RTC realtime stability stream for sustained pacing evidence.',
+            distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-30s-15hz',
+            recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+                durationSeconds: 30,
+                rateHz: 15,
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyPeerCount: 1,
+                readyTimeoutMs: 10_000,
+                stream: {
+                    maxInFlight: 64,
+                    maxDroppedFrames: 22,
+                    maxP95SendDurationMs: 200,
+                    maxP99SendDurationMs: 1000,
+                },
+            }),
+            agentCount: 2,
+            profiles: ['rtc', 'realtime', 'stability', 'extended'],
+            live: true,
+        }),
+        buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[4],
+            title: 'RTC realtime stability 2-agent 30s 20 Hz',
+            description: 'Highest-rate 20 Hz RTC realtime stability stream with one sender and one receiver for sustained pacing evidence.',
+            distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-30s-20hz',
+            recipes: createRtcRealtime20HzSenderReceiverRecipes(),
+            agentCount: 2,
+            profiles: ['rtc', 'realtime', 'stability', 'extended'],
+            live: true,
+            targetAgentIds: ['controller-01', 'controller-02'],
+            targetPolicyMode: 'role-map',
+            rolePattern: 'sender-receiver',
+        }),
+        buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[5],
             title: 'RTC realtime 3-agent 15s',
             description: 'Heavier 10 Hz RTC realtime run for three-agent load and percentile baselines.',
             distributedRunId: 'hetzner-rtc-realtime-3-agent-15s',
@@ -267,10 +310,10 @@ function buildManifestEntry(input: ManifestCatalogInput): HetznerDistributedMani
         controlRunId: DEFAULT_CONTROL_RUN_ID,
         displayName: input.title,
         group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-        recipes: [catalogItem(input)],
-        targetAgentIds: [],
-        targetPolicyMode: 'all-online-group-members',
-        rolePattern: 'all-agents',
+        recipes: catalogItems(input),
+        targetAgentIds: input.targetAgentIds ?? [],
+        targetPolicyMode: input.targetPolicyMode ?? 'all-online-group-members',
+        rolePattern: input.rolePattern ?? 'all-agents',
         ackTimeoutMs: DEFAULT_ACK_TIMEOUT_MS,
         barrier: input.barrier
             ? {
@@ -303,12 +346,25 @@ function buildManifestEntry(input: ManifestCatalogInput): HetznerDistributedMani
     };
 }
 
-function catalogItem(input: ManifestCatalogInput): DistributedRecipeCatalogItem {
+function catalogItems(input: ManifestCatalogInput): readonly DistributedRecipeCatalogItem[] {
+    const recipes = input.recipes ?? (input.recipe === undefined ? [] : [input.recipe]);
+    if (recipes.length === 0) {
+        throw new Error(`Manifest ${input.distributedRunId} must define at least one recipe.`);
+    }
+    return recipes.map((recipe, index) => catalogItem(input, recipe, index, recipes.length));
+}
+
+function catalogItem(
+    input: ManifestCatalogInput,
+    recipe: RallarBlackBoxTestRecipe,
+    index: number,
+    total: number,
+): DistributedRecipeCatalogItem {
     return {
-        itemId: input.distributedRunId,
-        title: input.title,
-        description: input.description,
-        recipe: input.recipe,
+        itemId: total > 1 ? `${input.distributedRunId}:${recipe.recipeId}` : input.distributedRunId,
+        title: total > 1 ? `${input.title} ${index + 1}` : input.title,
+        description: recipe.description ?? input.description,
+        recipe,
         providerMode: input.live ? 'browser-rallar' : 'simulated',
         profiles: input.profiles,
         prerequisites: input.live
@@ -321,6 +377,74 @@ function catalogItem(input: ManifestCatalogInput): DistributedRecipeCatalogItem 
         live: input.live,
         source: 'app-local',
     };
+}
+
+function createRtcRealtime20HzSenderReceiverRecipes(): readonly RallarBlackBoxTestRecipe[] {
+    const sender = createRallarBlackBoxRtcRealtimeStabilityRecipe({
+        durationSeconds: 30,
+        rateHz: 20,
+        group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+        readyPeerCount: 1,
+        readyTimeoutMs: 10_000,
+        stream: {
+            maxInFlight: 64,
+            maxDroppedFrames: 30,
+            maxP95SendDurationMs: 2500,
+            maxP99SendDurationMs: 4000,
+        },
+    });
+
+    const receiverSetup = sender.commands.filter(command =>
+        command.kind === 'http.request' || command.kind === 'rtc.connect'
+    );
+
+    return [
+        sender,
+        {
+            schemaVersion: 1,
+            recipeId: 'rtc-realtime-stability-receiver',
+            name: 'RTC realtime stability receiver hold',
+            description: 'Connect RTC and keep the receiver alive while the 20 Hz sender stream runs.',
+            continueOnFailure: false,
+            metadata: {
+                ...sender.metadata,
+                profile: 'rtc-realtime-stability-receiver',
+                role: 'receiver',
+            },
+            commands: [
+                ...receiverSetup,
+                {
+                    kind: 'loop',
+                    commandId: 'rtc-realtime-receiver-stats-loop',
+                    count: 35,
+                    intervalMs: 1_000,
+                    maxCommands: 35,
+                    metadata: {
+                        realtime: {
+                            role: 'receiver',
+                            rateHz: 20,
+                            durationSeconds: 30,
+                            frameCount: 600,
+                        },
+                    },
+                    commands: [
+                        {
+                            kind: 'stats',
+                            commandId: 'rtc-realtime-receiver-stats',
+                            metadata: {
+                                realtime: {
+                                    role: 'receiver',
+                                    rateHz: 20,
+                                    durationSeconds: 30,
+                                    frameCount: 600,
+                                },
+                            },
+                        },
+                    ],
+                },
+            ],
+        },
+    ];
 }
 
 function createHealthRecipe(recipeId = 'hetzner-health-recipe'): RallarBlackBoxTestRecipe {

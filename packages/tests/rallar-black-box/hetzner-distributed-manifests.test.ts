@@ -88,6 +88,8 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json',
             'apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json',
             'apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json',
+            'apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json',
+            'apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json',
             'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
         ]);
         expect(diagnosticPaths).toEqual([
@@ -120,10 +122,26 @@ describe('Hetzner distributed manifest catalog', () => {
                 workspaceId: 'default',
                 groupId: 'hetzner-headless-room',
             });
-            expect(manifest.targetPolicy).toMatchObject({
-                mode: 'all-online-group-members',
-                expectedParticipantCount: entry.agentCount,
-            });
+            if (entry.filePath.endsWith('/05e-rtc-realtime-stability-2-agent-30s-20hz.json')) {
+                expect(manifest.targetPolicy).toMatchObject({
+                    mode: 'role-map',
+                    expectedParticipantCount: entry.agentCount,
+                    roles: {
+                        sender: ['controller-01'],
+                        receiver: ['controller-02'],
+                    },
+                });
+                expect(manifest.roleAssignments).toEqual([
+                    { role: 'sender', agentId: 'controller-01', required: true },
+                    { role: 'receiver', agentId: 'controller-02', required: true },
+                ]);
+                expect(manifest.recipes.map(selection => selection.role)).toEqual(['sender', 'receiver']);
+            } else {
+                expect(manifest.targetPolicy).toMatchObject({
+                    mode: 'all-online-group-members',
+                    expectedParticipantCount: entry.agentCount,
+                });
+            }
             expect(manifest.artifactPolicy).toMatchObject({
                 retainArtifacts: true,
                 includeDistributedMetadata: true,
@@ -169,6 +187,8 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/05b-rtc-realtime-stability-2-agent-30s.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/05c-rtc-realtime-stability-2-agent-30s-10hz.json', 1],
+            ['apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json', 1],
+            ['apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json', 1],
             ['apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json', 2],
         ]);
 
@@ -237,6 +257,28 @@ describe('Hetzner distributed manifest catalog', () => {
                 maxDroppedFrames: 15,
                 maxP95SendDurationMs: 200,
                 maxP99SendDurationMs: 1000,
+                minSendSuccessRatio: 0.95,
+                maxInFlight: 64,
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json', {
+                rateHz: 15,
+                intervalMs: 67,
+                durationSeconds: 30,
+                frameCount: 450,
+                maxDroppedFrames: 22,
+                maxP95SendDurationMs: 200,
+                maxP99SendDurationMs: 1000,
+                minSendSuccessRatio: 0.95,
+                maxInFlight: 64,
+            }],
+            ['apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json', {
+                rateHz: 20,
+                intervalMs: 50,
+                durationSeconds: 30,
+                frameCount: 600,
+                maxDroppedFrames: 30,
+                maxP95SendDurationMs: 2500,
+                maxP99SendDurationMs: 4000,
                 minSendSuccessRatio: 0.95,
                 maxInFlight: 64,
             }],
