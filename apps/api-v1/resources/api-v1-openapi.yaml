@@ -1198,9 +1198,167 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global:
+    get:
+      tags: [Graph]
+      summary: Read scoped global graph diagnostics
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GraphIncludeMeasured'
+        - $ref: '#/components/parameters/GraphRefresh'
+      responses:
+        '200':
+          description: Scoped graph diagnostic response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphDiagnosticReadResponse'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest:
+    get:
+      tags: [Graph]
+      summary: Read latest scoped group graph diagnostics
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/GraphIncludeMeasured'
+        - $ref: '#/components/parameters/GraphRefresh'
+      responses:
+        '200':
+          description: Scoped group graph diagnostic response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphDiagnosticReadResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology:
+    get:
+      tags: [Topology]
+      summary: Read effective group topology
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: Group topology management view.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupTopologyManagementView'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config:
+    get:
+      tags: [Topology]
+      summary: Read durable group topology config
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: Effective topology config.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupTopologyConfigView'
+    put:
+      tags: [Topology]
+      summary: Write durable group topology config
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutGroupTopologyConfigRequest'
+      responses:
+        '200':
+          description: Stored config write result.
+    delete:
+      tags: [Topology]
+      summary: Delete durable group topology config
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/TopologyReconfigure'
+      responses:
+        '200':
+          description: Delete result.
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override:
+    get:
+      tags: [Topology]
+      summary: Read temporary group topology override
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: Temporary override config.
+    put:
+      tags: [Topology]
+      summary: Write temporary group topology override
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutGroupTopologyOverrideRequest'
+      responses:
+        '200':
+          description: Stored override write result.
+    delete:
+      tags: [Topology]
+      summary: Delete temporary group topology override
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/TopologyReconfigure'
+      responses:
+        '200':
+          description: Delete result.
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure:
+    post:
+      tags: [Topology]
+      summary: Recompute and optionally publish group topology
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconfigureGroupTopologyRequest'
+      responses:
+        '200':
+          description: Reconfigure result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconfigureGroupTopologyResponse'
+
   /api/graph:
     get:
       tags: [Graph]
+      deprecated: true
       summary: Read the global graph snapshot
       responses:
         '200':
@@ -1213,6 +1371,7 @@ paths:
   /api/graph/tree/{groupId}:
     get:
       tags: [Graph]
+      deprecated: true
       summary: Read the graph snapshot for a group
       parameters:
         - $ref: '#/components/parameters/GroupId'
@@ -1582,6 +1741,31 @@ components:
       required: true
       schema:
         type: string
+    GraphIncludeMeasured:
+      name: includeMeasured
+      in: query
+      required: false
+      description: Include measured graph diagnostics when they are available.
+      schema:
+        type: boolean
+        default: false
+    GraphRefresh:
+      name: refresh
+      in: query
+      required: false
+      description: Controls whether graph diagnostics may be recomputed before reading.
+      schema:
+        type: string
+        enum: [never, if-missing, always]
+        default: if-missing
+    TopologyReconfigure:
+      name: reconfigure
+      in: query
+      required: false
+      description: Set to false to delete stored topology config without recomputing and publishing the effective topology.
+      schema:
+        type: boolean
+        default: true
     EventType:
       name: eventType
       in: query
@@ -2865,14 +3049,25 @@ components:
     GraphObject:
       type: object
       additionalProperties: true
-      description: Serialized weighted graph payload produced by the graph service.
+      description: Graphology export object for a serialized weighted graph.
+
+    GroupRef:
+      type: object
+      required: [applicationId, workspaceId, groupId]
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+        groupId:
+          type: string
 
     GraphInfo:
       type: object
-      required: [graphId, graph, groupGraph, coreNodes]
+      required: [groupRef, graph, groupGraph, coreNodes]
       properties:
-        graphId:
-          type: string
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
         graph:
           $ref: '#/components/schemas/GraphObject'
         groupGraph:
@@ -2884,10 +3079,10 @@ components:
 
     GraphInfoSnapshot:
       type: object
-      required: [graphId, predicted, createdAtEpochMs, version]
+      required: [groupRef, predicted, createdAtEpochMs, version]
       properties:
-        graphId:
-          type: string
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
         measured:
           $ref: '#/components/schemas/GraphInfo'
         predicted:
@@ -2898,6 +3093,180 @@ components:
         version:
           type: integer
           format: int64
+
+    GraphDiagnosticReadResponse:
+      type: object
+      required: [groupRef, snapshot, cache]
+      properties:
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        snapshot:
+          $ref: '#/components/schemas/GraphInfoSnapshot'
+        cache:
+          type: object
+          required: [hit, refreshed]
+          properties:
+            hit:
+              type: boolean
+            refreshed:
+              type: boolean
+
+    GroupTopologyKindSetting:
+      type: string
+      enum: [auto, star, tree, mesh]
+
+    GroupTopologyPositiveInteger:
+      type: integer
+      minimum: 1
+
+    GroupTopologyConfigPatch:
+      type: object
+      properties:
+        topologyKind:
+          $ref: '#/components/schemas/GroupTopologyKindSetting'
+        degreeLimit:
+          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+        treeMinSize:
+          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+        meshMinSize:
+          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+        meshParamK:
+          $ref: '#/components/schemas/GroupTopologyPositiveInteger'
+
+    GroupTopologyConfigView:
+      type: object
+      properties:
+        serverDefaults:
+          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+        durable:
+          type: object
+          additionalProperties: true
+        temporary:
+          type: object
+          additionalProperties: true
+        requestOptions:
+          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+        effective:
+          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+
+    GroupTopologyManagementView:
+      type: object
+      required: [groupRef, overlayId, config]
+      properties:
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        overlayId:
+          type: string
+        snapshot:
+          $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
+        config:
+          $ref: '#/components/schemas/GroupTopologyConfigView'
+
+    RallarOverlayTopologySnapshot:
+      type: object
+      required:
+        - overlayId
+        - groupRef
+        - name
+        - topology
+        - activeSessionIds
+        - nextHopsBySessionId
+        - degreeLimit
+        - version
+        - createdByClientId
+        - createdAtEpochMs
+        - updatedAtEpochMs
+      properties:
+        overlayId:
+          type: string
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        name:
+          type: string
+        topology:
+          type: string
+          enum: [star, tree, mesh]
+        activeSessionIds:
+          type: array
+          items:
+            type: string
+        nextHopsBySessionId:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        degreeLimit:
+          type: integer
+          minimum: 1
+        version:
+          type: integer
+          format: int64
+        createdByClientId:
+          type: string
+        createdAtEpochMs:
+          type: integer
+          format: int64
+        updatedAtEpochMs:
+          type: integer
+          format: int64
+
+    PutGroupTopologyConfigRequest:
+      type: object
+      required: [config]
+      properties:
+        requestId:
+          type: string
+        config:
+          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+        reconfigure:
+          type: boolean
+
+    PutGroupTopologyOverrideRequest:
+      type: object
+      required: [config]
+      properties:
+        requestId:
+          type: string
+        config:
+          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+        ttlMs:
+          type: integer
+          format: int64
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+        reconfigure:
+          type: boolean
+
+    ReconfigureGroupTopologyRequest:
+      type: object
+      properties:
+        requestId:
+          type: string
+        options:
+          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+        publish:
+          type: boolean
+
+    ReconfigureGroupTopologyResponse:
+      type: object
+      required: [groupRef, overlayId, changed, snapshot, config, published]
+      properties:
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        overlayId:
+          type: string
+        changed:
+          type: boolean
+        snapshot:
+          $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
+        previous:
+          $ref: '#/components/schemas/RallarOverlayTopologySnapshot'
+        config:
+          $ref: '#/components/schemas/GroupTopologyConfigView'
+        published:
+          type: boolean
 
     CrdtRouteErrorResponse:
       type: object

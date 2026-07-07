@@ -219,6 +219,106 @@ describe('RallarRtcTopologyService', () => {
         },
     );
 
+    it('honors request topology kind override for star topology', () => {
+        const group = createGroupSnapshot('room-1', createMemberIds(8));
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+        });
+
+        const result = service.updateGroupTopology(group, [], {
+            topologyOptions: {
+                topologyKind: 'star',
+            },
+        });
+
+        expect(result.snapshot.topology).toBe('star');
+        expect(result.snapshot.nextHopsBySessionId['peer-1']).toEqual([
+            'peer-2',
+            'peer-3',
+            'peer-4',
+            'peer-5',
+            'peer-6',
+            'peer-7',
+            'peer-8',
+        ]);
+    });
+
+    it('honors request topology kind override for tree topology', () => {
+        const group = createGroupSnapshot('room-1', createMemberIds(4));
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+        });
+
+        const result = service.updateGroupTopology(group, [], {
+            topologyOptions: {
+                topologyKind: 'tree',
+            },
+        });
+
+        expect(result.snapshot.topology).toBe('tree');
+        for (const nextHops of Object.values(result.snapshot.nextHopsBySessionId)) {
+            expect(nextHops.length).toBeLessThanOrEqual(5);
+        }
+    });
+
+    it('honors request topology kind override for mesh topology when group size can support mesh', () => {
+        const group = createGroupSnapshot('room-1', createMemberIds(16));
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+            meshMinSize: 999,
+        });
+
+        const result = service.updateGroupTopology(group, [], {
+            topologyOptions: {
+                topologyKind: 'mesh',
+            },
+        });
+
+        expect(result.snapshot.topology).toBe('mesh');
+        expect(result.snapshot.nextHopsBySessionId['peer-1']).toEqual([
+            'peer-2',
+            'peer-3',
+        ]);
+    });
+
+    it('uses per-update degree limit without replacing service-wide defaults', () => {
+        const group = createGroupSnapshot('room-1', createMemberIds(8));
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+            degreeLimit: 5,
+            meshMinSize: 999,
+        });
+
+        const constrained = service.updateGroupTopology(group, [], {
+            topologyOptions: {
+                degreeLimit: 2,
+            },
+        });
+        const defaults = service.updateGroupTopology(group);
+
+        expect(constrained.snapshot.degreeLimit).toBe(2);
+        for (const nextHops of Object.values(constrained.snapshot.nextHopsBySessionId)) {
+            expect(nextHops.length).toBeLessThanOrEqual(2);
+        }
+        expect(defaults.snapshot.degreeLimit).toBe(5);
+    });
+
+    it('keeps default threshold behavior when no per-update topology options are passed', () => {
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+        });
+
+        expect(service.updateGroupTopology(
+            createGroupSnapshot('small-room', createMemberIds(4)),
+        ).snapshot.topology).toBe('star');
+        expect(service.updateGroupTopology(
+            createGroupSnapshot('tree-room', createMemberIds(5)),
+        ).snapshot.topology).toBe('tree');
+        expect(service.updateGroupTopology(
+            createGroupSnapshot('mesh-room', createMemberIds(16)),
+        ).snapshot.topology).toBe('mesh');
+    });
+
     it('does not publish unchanged next-hop maps', () => {
         const group = createGroupSnapshot('room-1', createMemberIds(5));
         const service = new RallarRtcTopologyService({

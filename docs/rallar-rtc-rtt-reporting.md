@@ -224,6 +224,13 @@ The same bounded eligibility helper should be shared by:
 - topology tests that assert max degree;
 - diagnostics that explain why a peer is connected but not reporting RTT.
 
+API-v1 REST reconfigure uses the shared recompute path that WS group-snapshot,
+RTT timer, and app-inbox topology work use. `POST
+/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure`
+can apply request-time topology options for one recompute, while durable config
+and temporary overrides are resolved before the same `RallarRtcTopologyService`
+update, validation, persistence, and overlay publication steps.
+
 ## Suggested Future Tests
 
 Future runtime support should include focused tests for these scenarios:

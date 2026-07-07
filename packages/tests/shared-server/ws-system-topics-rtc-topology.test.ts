@@ -44,6 +44,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             'server-1',
         );
         const topologyService = new RallarRtcTopologyService();
+        const updateGroupTopology = vi.spyOn(topologyService, 'updateGroupTopology');
         initRallarSystemWsTopics(service, {
             rtcTopologyService: topologyService,
         });
@@ -93,6 +94,19 @@ describe('Rallar system websocket topics RTC topology', () => {
             topologyPublishedCount: 1,
             topologyPublishSkippedUnchangedCount: 0,
         });
+        expect(updateGroupTopology).toHaveBeenCalledWith(
+            group,
+            expect.any(Array),
+            expect.objectContaining({
+                topologyOptions: {
+                    topologyKind: 'auto',
+                    degreeLimit: 5,
+                    treeMinSize: 5,
+                    meshMinSize: 16,
+                    meshParamK: 2,
+                },
+            }),
+        );
 
         const unchangedGroup = {
             ...group,

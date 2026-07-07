@@ -1,5 +1,6 @@
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind, } from '@shared/api/overlay-topology.ts';
 import {
@@ -24,6 +25,7 @@ import { insertToMesh } from '@shared-graph/mesh/insert-mesh-algs.ts';
 import { UndirectedGraph } from 'graphology';
 
 export type RallarRtcTopologyServiceOptions = Readonly<{
+    topologyKind?: GroupTopologyKindSetting;
     degreeLimit?: number;
     treeMinSize?: number;
     meshMinSize?: number;
@@ -73,6 +75,7 @@ export type RallarRtcTopologyUpdateResult = Readonly<{
 
 export type RallarRtcTopologyUpdateOptions = Readonly<{
     previous?: RallarOverlayTopologySnapshot;
+    topologyOptions?: RallarRtcTopologyServiceOptions;
 }>;
 
 export type RallarRtcTopologyRttQueueResult = Readonly<{
@@ -175,7 +178,8 @@ export class RallarRtcTopologyService {
 
         const overlayId = toScopedOverlayId(group.group);
         const previous = this.readPreviousSnapshot(overlayId, options);
-        const topology = this.selectTopology(group);
+        const topologyOptions = this.readTopologyOptions(options);
+        const topology = this.selectTopology(group, topologyOptions);
         const activeSessionIds = readGroupMemberSessionIds(group);
         let nextHopsBySessionId: Record<string, readonly string[]>;
 
@@ -189,7 +193,7 @@ export class RallarRtcTopologyService {
             if (topology === 'tree') {
                 nextHopsBySessionId = createNoRttTreeNextHopMap(
                     activeSessionIds,
-                    this.degreeLimit(),
+                    this.degreeLimit(topologyOptions),
                 );
                 this.metrics.noRttTreePlanCount += 1;
                 this.metrics.noRttTreePlanDurationMs +=
@@ -197,6 +201,7 @@ export class RallarRtcTopologyService {
             } else {
                 nextHopsBySessionId = this.createNoRttMeshNextHopMap(
                     activeSessionIds,
+                    topologyOptions,
                 );
                 this.metrics.noRttMeshPlanCount += 1;
                 this.metrics.noRttMeshPlanDurationMs +=
@@ -207,7 +212,14 @@ export class RallarRtcTopologyService {
                 topology,
                 group,
                 activeSessionIds,
-                this.createRoomGraph(group, rttMeasurements),
+                topologyOptions === this.options
+                    ? this.createRoomGraph(group, rttMeasurements)
+                    : this.createRoomGraphWithOptions(
+                        group,
+                        rttMeasurements,
+                        topologyOptions,
+                    ),
+                topologyOptions,
             );
         }
         const changed = previous === undefined ||
@@ -226,7 +238,7 @@ export class RallarRtcTopologyService {
             topology,
             activeSessionIds,
             nextHopsBySessionId,
-            degreeLimit: this.degreeLimit(),
+            degreeLimit: this.degreeLimit(topologyOptions),
             version: changed ? (previous?.version ?? 0) + 1 : previous.version,
             createdByClientId: readGroupCreatedByPrincipalId(group),
             createdAtEpochMs: previous?.createdAtEpochMs ??
@@ -307,6 +319,7 @@ export class RallarRtcTopologyService {
     flushDueRttTopologyUpdate(
         group: GroupSnapshot,
         rttMeasurements: readonly RttMeasurementInfo[] = [],
+        options: RallarRtcTopologyUpdateOptions = {},
     ): RallarRtcTopologyUpdateResult | undefined {
         this.metrics.rttFlushAttemptCount += 1;
         const overlayId = toScopedOverlayId(group.group);
@@ -320,7 +333,7 @@ export class RallarRtcTopologyService {
 
         this.pendingRttUpdateDueAtByOverlayId.delete(overlayId);
         this.metrics.rttFlushExecutedCount += 1;
-        return this.updateGroupTopology(group, rttMeasurements);
+        return this.updateGroupTopology(group, rttMeasurements, options);
     }
 
     readRttTopologyUpdateDelayMs(group: GroupSnapshot): number | undefined {
@@ -338,14 +351,25 @@ export class RallarRtcTopologyService {
         return this.rttRebuildDebounceMs();
     }
 
-    selectTopology(group: GroupSnapshot): RallarRtcTopologyKind {
+    selectTopology(
+        group: GroupSnapshot,
+        options: RallarRtcTopologyServiceOptions = this.options,
+    ): RallarRtcTopologyKind {
+        if (
+            options.topologyKind === 'star' ||
+            options.topologyKind === 'tree' ||
+            options.topologyKind === 'mesh'
+        ) {
+            return options.topologyKind;
+        }
+
         const activeSize = readGroupMemberSessionIds(group).length;
 
-        if (activeSize >= this.meshMinSize()) {
+        if (activeSize >= this.meshMinSize(options)) {
             return 'mesh';
         }
 
-        if (activeSize >= this.treeMinSize()) {
+        if (activeSize >= this.treeMinSize(options)) {
             return 'tree';
         }
 
@@ -367,10 +391,18 @@ export class RallarRtcTopologyService {
         group: GroupSnapshot,
         rttMeasurements: readonly RttMeasurementInfo[] = [],
     ): WeightedGraph {
+        return this.createRoomGraphWithOptions(group, rttMeasurements, this.options);
+    }
+
+    private createRoomGraphWithOptions(
+        group: GroupSnapshot,
+        rttMeasurements: readonly RttMeasurementInfo[],
+        options: RallarRtcTopologyServiceOptions,
+    ): WeightedGraph {
         const startedAtMs = this.durationNowMs();
         this.metrics.weightedRoomGraphBuildCount += 1;
         const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
-        const degreeLimit = this.degreeLimit();
+        const degreeLimit = this.degreeLimit(options);
         const activeSessionIds = readGroupMemberSessionIds(group);
         const rttBySessionId = rttMeasurements.length > 0
             ? createRttWeightLookup(rttMeasurements)
@@ -415,6 +447,7 @@ export class RallarRtcTopologyService {
         group: GroupSnapshot,
         activeSessionIds: readonly string[],
         globalGraph: WeightedGraph,
+        options: RallarRtcTopologyServiceOptions,
     ): Record<string, readonly string[]> {
         const startedAtMs = this.durationNowMs();
         this.metrics.weightedPlanCount += 1;
@@ -422,13 +455,13 @@ export class RallarRtcTopologyService {
             ? createGroupTree({
                 group,
                 globalGraph,
-                maxDegree: this.degreeLimit(),
+                maxDegree: this.degreeLimit(options),
             }).tree
             : createGroupMesh({
                 group,
                 globalGraph,
-                maxDegree: this.degreeLimit(),
-                globalArgs: this.meshArgs(),
+                maxDegree: this.degreeLimit(options),
+                globalArgs: this.meshArgs(options),
                 deps: {
                     insertMeshAlgorithmTimed: insertToMesh,
                 },
@@ -459,9 +492,10 @@ export class RallarRtcTopologyService {
 
     private createNoRttMeshNextHopMap(
         activeSessionIds: readonly string[],
+        options: RallarRtcTopologyServiceOptions,
     ): Record<string, readonly string[]> {
-        const targetEdgeCount = this.meshArgs().meshParamK;
-        const degreeLimit = this.degreeLimit();
+        const targetEdgeCount = this.meshArgs(options).meshParamK;
+        const degreeLimit = this.degreeLimit(options);
         const insertedSessionIds: string[] = [];
         const nextHopsBySessionId = new Map<string, Set<string>>();
 
@@ -513,9 +547,23 @@ export class RallarRtcTopologyService {
         );
     }
 
-    private meshArgs(): GlobalMeshArgs {
+    private readTopologyOptions(
+        updateOptions: RallarRtcTopologyUpdateOptions,
+    ): RallarRtcTopologyServiceOptions {
+        if (updateOptions.topologyOptions === undefined) {
+            return this.options;
+        }
+
         return {
-            meshParamK: this.options.meshParamK ?? DEFAULT_MESH_PARAM_K,
+            ...this.options,
+            ...updateOptions.topologyOptions,
+            rttRebuildDebounceMs: this.options.rttRebuildDebounceMs,
+        };
+    }
+
+    private meshArgs(options: RallarRtcTopologyServiceOptions): GlobalMeshArgs {
+        return {
+            meshParamK: options.meshParamK ?? DEFAULT_MESH_PARAM_K,
             insertAlgo: DynamicMeshAlgo.K_INSERT_MC,
             removeAlgo: DynamicMeshAlgo.K_REMOVE_MC,
             diameterBound: Number.POSITIVE_INFINITY,
@@ -523,16 +571,16 @@ export class RallarRtcTopologyService {
         };
     }
 
-    private degreeLimit(): number {
-        return this.options.degreeLimit ?? DEFAULT_DEGREE_LIMIT;
+    private degreeLimit(options: RallarRtcTopologyServiceOptions): number {
+        return options.degreeLimit ?? DEFAULT_DEGREE_LIMIT;
     }
 
-    private treeMinSize(): number {
-        return this.options.treeMinSize ?? DEFAULT_TREE_MIN_SIZE;
+    private treeMinSize(options: RallarRtcTopologyServiceOptions): number {
+        return options.treeMinSize ?? DEFAULT_TREE_MIN_SIZE;
     }
 
-    private meshMinSize(): number {
-        return this.options.meshMinSize ?? DEFAULT_MESH_MIN_SIZE;
+    private meshMinSize(options: RallarRtcTopologyServiceOptions): number {
+        return options.meshMinSize ?? DEFAULT_MESH_MIN_SIZE;
     }
 
     private rttRebuildDebounceMs(): number {

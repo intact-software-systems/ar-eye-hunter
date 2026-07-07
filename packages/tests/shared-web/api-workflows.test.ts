@@ -8,6 +8,16 @@ import {
     listStateClientEvents,
     listStateGroupEventPage,
     listStateGroupEvents,
+    deleteStateGroupTopologyConfig,
+    deleteStateGroupTopologyOverride,
+    putStateGroupTopologyConfig,
+    putStateGroupTopologyOverride,
+    readStateGroupGraph,
+    readStateGroupTopology,
+    readStateGroupTopologyConfig,
+    readStateGroupTopologyOverride,
+    readStateScopedGlobalGraph,
+    reconfigureStateGroupTopology,
 } from '@shared-web/browser/api-integration.ts';
 import {
     acceptStateGroupInvite,
@@ -214,6 +224,115 @@ describe('state API workflows', () => {
             '/api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/events/page?eventType=member-left&limit=10&afterSnapshotVersion=1&afterOccurredAtEpochMs=1000&afterEventId=group-event-1',
             '/api/state/apps/app%201/workspaces/workspace%2F1/clients/alice%40example.test/events/page?eventType=session-disconnected&limit=5&afterSnapshotVersion=2&afterOccurredAtEpochMs=2000&afterEventId=client-event-1',
         ]);
+    });
+
+    it('reads scoped graph diagnostics and topology views with encoded query paths', async () => {
+        const scope = {
+            applicationId: 'app 1',
+            workspaceId: 'workspace/1',
+        };
+        stubFetch(() => jsonResponse({ ok: true }));
+
+        await readStateScopedGlobalGraph(scope, {
+            includeMeasured: true,
+            refresh: 'always',
+        });
+        await readStateGroupGraph('room /1', scope, {
+            includeMeasured: true,
+            refresh: 'never',
+        });
+        await readStateGroupTopology('room /1', scope);
+        await readStateGroupTopologyConfig('room /1', scope);
+        await readStateGroupTopologyOverride('room /1', scope);
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'GET /api/state/apps/app%201/workspaces/workspace%2F1/graphs/global?includeMeasured=true&refresh=always',
+            'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/graphs/latest?includeMeasured=true&refresh=never',
+            'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology',
+            'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/config',
+            'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/override',
+        ]);
+    });
+
+    it('mutates topology config and overrides with auth-capable methods', async () => {
+        const scope = {
+            applicationId: 'app 1',
+            workspaceId: 'workspace/1',
+        };
+        const authSession = {
+            clientId: 'owner-1',
+            username: 'owner',
+            sessionId: 'owner-session',
+            accessToken: 'token-1',
+            expiresAtEpochMs: Date.now() + 60_000,
+        };
+        stubFetch(() => jsonResponse({ ok: true }));
+
+        await putStateGroupTopologyConfig(
+            'room /1',
+            {
+                requestId: 'config-1',
+                config: { topologyKind: 'mesh', degreeLimit: 3 },
+                reconfigure: false,
+            },
+            scope,
+            { authSession },
+        );
+        await putStateGroupTopologyOverride(
+            'room /1',
+            {
+                requestId: 'override-1',
+                config: { topologyKind: 'star' },
+                ttlMs: 60_000,
+            },
+            scope,
+            { authSession },
+        );
+        await reconfigureStateGroupTopology(
+            'room /1',
+            {
+                requestId: 'reconfigure-1',
+                options: { topologyKind: 'tree' },
+                publish: false,
+            },
+            scope,
+            { authSession },
+        );
+        await deleteStateGroupTopologyConfig('room /1', scope, {
+            reconfigure: false,
+            authSession,
+        });
+        await deleteStateGroupTopologyOverride('room /1', scope, {
+            reconfigure: false,
+            authSession,
+        });
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'PUT /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/config',
+            'PUT /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/override',
+            'POST /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/reconfigure',
+            'DELETE /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/config?reconfigure=false',
+            'DELETE /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/override?reconfigure=false',
+        ]);
+        expect(fetchCalls.every((call) => call.headers.authorization === 'Bearer token-1'))
+            .toBe(true);
+        expect(fetchCalls[0].body).toMatchObject({
+            requestId: 'config-1',
+            config: { topologyKind: 'mesh', degreeLimit: 3 },
+            reconfigure: false,
+        });
+        expect(fetchCalls[1].body).toMatchObject({
+            requestId: 'override-1',
+            config: { topologyKind: 'star' },
+            ttlMs: 60_000,
+        });
+        expect(fetchCalls[2].body).toMatchObject({
+            requestId: 'reconfigure-1',
+            options: { topologyKind: 'tree' },
+            publish: false,
+        });
+        expect(fetchCalls[3].body).toBeUndefined();
+        expect(fetchCalls[4].body).toBeUndefined();
     });
 
     it('creates and joins a state group as a sequential workflow', async () => {

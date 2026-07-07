@@ -11,6 +11,11 @@ workflows, data, CRDT, middleware, transport engines, RallarAI, and game helpers
   `rallar.setup(...)`, then `rallar.rooms.enter(...)`, then room-bound
   `message(...)` or `realtime(...)` channels. New-room flows that should leave
   the previous room use `rallar.rooms.createAndSwitch(...)`.
+- `browser/api-integration.ts` is the low-level browser REST helper layer. It
+  exposes scoped graph diagnostics and topology management helpers for
+  `/api/state/apps/{applicationId}/workspaces/{workspaceId}/...`, returning the
+  serialized DTO contracts from `@shared/api` and supporting authenticated
+  `GET`, `PUT`, `POST`, and bodyless `DELETE` calls.
 - `browser/rallar-core.ts` is the narrow core entry point for browser config,
   connection/startup, auth, rooms, people, message helpers, and WS/RTC message
   facade factories. It exports the room-session/setup types but does not export
@@ -83,7 +88,9 @@ compatible; migration is intentionally gradual.
   Its runtime adapter now maps joins through `rallar.rooms.enter` and keeps the
   rest of the game on a small app-owned `roomId` abstraction.
 - `apps/rallar-black-box` intentionally imports the full facade dynamically as a
-  compatibility and conformance target.
+  compatibility and conformance target. Its Rallar Server REST workbench now
+  lists the scoped graph/topology presets first-class while keeping the legacy
+  `/api/graph` presets visible as deprecated diagnostics.
 - `examples/**` now teach the golden path first: `rallar.setup(...)`,
   `rallar.rooms.enter(...)`, `room.message(...)`, and `room.realtime(...)`.
 

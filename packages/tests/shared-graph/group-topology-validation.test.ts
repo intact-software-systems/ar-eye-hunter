@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { validateGroupTopology } from '@shared-graph/group-topology-validation.ts';
+import {
+    validateGroupTopology,
+    validateGroupTopologyNextHops,
+} from '@shared-graph/group-topology-validation.ts';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
 import { createGraph } from './helpers.ts';
 
@@ -55,6 +58,42 @@ describe('group topology validation', () => {
             'missing-active-session',
             'degree-limit-exceeded',
             'inactive-session-present',
+            'disconnected',
+        ]);
+    });
+
+    it('validates next-hop topology maps without graphology callers', () => {
+        const connected = validateGroupTopologyNextHops({
+            activeSessionIds: new Set(['peer-a', 'peer-b', 'peer-c']),
+            nextHopsBySessionId: {
+                'peer-a': ['peer-b'],
+                'peer-b': ['peer-a', 'peer-c'],
+                'peer-c': ['peer-b'],
+            },
+            maxDegree: 2,
+        });
+
+        expect(connected.valid).toBe(true);
+        expect(connected.issues).toEqual([]);
+
+        const invalid = validateGroupTopologyNextHops({
+            activeSessionIds: new Set(['peer-a', 'peer-b', 'peer-c']),
+            nextHopsBySessionId: {
+                'peer-a': ['peer-b', 'peer-x'],
+                'peer-b': ['peer-a'],
+                'peer-x': ['peer-a'],
+            },
+            maxDegree: 1,
+        });
+
+        expect(invalid.valid).toBe(false);
+        expect(invalid.missingSessionIds).toEqual(['peer-c']);
+        expect(invalid.inactiveSessionIds).toEqual(['peer-x']);
+        expect(invalid.overDegreeSessionIds).toEqual(['peer-a']);
+        expect(invalid.issues.map((issue) => issue.code)).toEqual([
+            'missing-active-session',
+            'inactive-session-present',
+            'degree-limit-exceeded',
             'disconnected',
         ]);
     });

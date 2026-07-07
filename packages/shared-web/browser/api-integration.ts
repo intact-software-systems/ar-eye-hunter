@@ -26,6 +26,18 @@ import type {
     GroupEventType,
     GroupSnapshot as GroupStateSnapshot,
 } from '@shared/api/group-types.ts';
+import type {
+    GraphDiagnosticReadOptions,
+    GraphDiagnosticReadResponse,
+    GroupTopologyConfigView,
+    GroupTopologyManagementView,
+    PutGroupTopologyConfigRequest,
+    PutGroupTopologyOverrideRequest,
+    ReconfigureGroupTopologyRequest,
+    ReconfigureGroupTopologyResponse,
+    StoredGroupTopologyConfig,
+    StoredGroupTopologyOverride,
+} from '@shared/api/graph-topology-management-types.ts';
 import {
     type AcceptGroupInviteRequest,
     type AppointGroupDirectorRequest,
@@ -71,12 +83,39 @@ export type ApiRequestOptions = Readonly<{
     authSession?: AuthSession | null;
 }>;
 
+export type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+
 export type StateEventListRequestOptions<TEventType extends string> =
     & ApiRequestOptions
     & Readonly<{
     eventTypes?: readonly TEventType[];
     limit?: number;
     after?: StateEventCursor;
+}>;
+
+export type StateGraphDiagnosticReadOptions =
+    & ApiRequestOptions
+    & GraphDiagnosticReadOptions;
+
+export type StateGroupTopologyDeleteOptions =
+    & ApiRequestOptions
+    & Readonly<{
+    reconfigure?: boolean;
+}>;
+
+export type PutStateGroupTopologyConfigResponse = Readonly<{
+    config: StoredGroupTopologyConfig;
+    reconfigure?: ReconfigureGroupTopologyResponse;
+}>;
+
+export type PutStateGroupTopologyOverrideResponse = Readonly<{
+    override: StoredGroupTopologyOverride;
+    reconfigure?: ReconfigureGroupTopologyResponse;
+}>;
+
+export type DeleteStateGroupTopologyConfigResponse = Readonly<{
+    deleted: boolean;
+    reconfigure?: ReconfigureGroupTopologyResponse;
 }>;
 
 export type GroupStateEventListRequestOptions =
@@ -89,7 +128,7 @@ export class ApiHttpError extends Error {
     public readonly policyError?: StateErrorResponse & Readonly<{ code: string }>;
 
     public constructor(
-        public readonly method: 'GET' | 'POST' | 'PUT',
+        public readonly method: ApiHttpMethod,
         public readonly path: string,
         public readonly status: number,
         public readonly bodyText: string,
@@ -413,7 +452,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function executeHttpRequest<TReq, TRes>(
     baseUrl: string,
     path: string,
-    method: 'GET' | 'POST' | 'PUT',
+    method: ApiHttpMethod,
     body: TReq | undefined,
     options: ApiRequestOptions = {},
 ): Promise<TRes> {
@@ -437,9 +476,11 @@ async function executeHttpRequest<TReq, TRes>(
     }
 
     if (method === 'POST' || method === 'PUT') {
-        if (!body) {
+        if (body === undefined) {
             throw new Error(`${method} ${path} requires a body`);
         }
+        init.body = JSON.stringify(body);
+    } else if (method === 'DELETE' && body !== undefined) {
         init.body = JSON.stringify(body);
     }
 
@@ -735,6 +776,169 @@ export async function listStateClientEventPage(
         ),
         'GET',
         undefined,
+        options,
+    );
+}
+
+export async function readStateScopedGlobalGraph(
+    scope: StateScope = defaultStateScope(),
+    options?: StateGraphDiagnosticReadOptions,
+): Promise<GraphDiagnosticReadResponse> {
+    return await executeHttpRequest<void, GraphDiagnosticReadResponse>(
+        readApiBaseUrl(),
+        withGraphDiagnosticQuery(
+            `${toStateScopePath(scope)}/graphs/global`,
+            options,
+        ),
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function readStateGroupGraph(
+    groupId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: StateGraphDiagnosticReadOptions,
+): Promise<GraphDiagnosticReadResponse> {
+    return await executeHttpRequest<void, GraphDiagnosticReadResponse>(
+        readApiBaseUrl(),
+        withGraphDiagnosticQuery(
+            `${toStateGroupPath(scope, groupId)}/graphs/latest`,
+            options,
+        ),
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function readStateGroupTopology(
+    groupId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupTopologyManagementView> {
+    return await executeHttpRequest<void, GroupTopologyManagementView>(
+        readApiBaseUrl(),
+        `${toStateGroupPath(scope, groupId)}/topology`,
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function readStateGroupTopologyConfig(
+    groupId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupTopologyConfigView> {
+    return await executeHttpRequest<void, GroupTopologyConfigView>(
+        readApiBaseUrl(),
+        `${toStateGroupPath(scope, groupId)}/topology/config`,
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function putStateGroupTopologyConfig(
+    groupId: string,
+    request: PutGroupTopologyConfigRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<PutStateGroupTopologyConfigResponse> {
+    return await executeHttpRequest<
+        PutGroupTopologyConfigRequest,
+        PutStateGroupTopologyConfigResponse
+    >(
+        readApiBaseUrl(),
+        `${toStateGroupPath(scope, groupId)}/topology/config`,
+        'PUT',
+        request,
+        options,
+    );
+}
+
+export async function deleteStateGroupTopologyConfig(
+    groupId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: StateGroupTopologyDeleteOptions,
+): Promise<DeleteStateGroupTopologyConfigResponse> {
+    return await executeHttpRequest<void, DeleteStateGroupTopologyConfigResponse>(
+        readApiBaseUrl(),
+        withTopologyDeleteQuery(
+            `${toStateGroupPath(scope, groupId)}/topology/config`,
+            options,
+        ),
+        'DELETE',
+        undefined,
+        options,
+    );
+}
+
+export async function readStateGroupTopologyOverride(
+    groupId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<StoredGroupTopologyOverride | Record<string, never>> {
+    return await executeHttpRequest<void, StoredGroupTopologyOverride | Record<string, never>>(
+        readApiBaseUrl(),
+        `${toStateGroupPath(scope, groupId)}/topology/override`,
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function putStateGroupTopologyOverride(
+    groupId: string,
+    request: PutGroupTopologyOverrideRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<PutStateGroupTopologyOverrideResponse> {
+    return await executeHttpRequest<
+        PutGroupTopologyOverrideRequest,
+        PutStateGroupTopologyOverrideResponse
+    >(
+        readApiBaseUrl(),
+        `${toStateGroupPath(scope, groupId)}/topology/override`,
+        'PUT',
+        request,
+        options,
+    );
+}
+
+export async function deleteStateGroupTopologyOverride(
+    groupId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: StateGroupTopologyDeleteOptions,
+): Promise<DeleteStateGroupTopologyConfigResponse> {
+    return await executeHttpRequest<void, DeleteStateGroupTopologyConfigResponse>(
+        readApiBaseUrl(),
+        withTopologyDeleteQuery(
+            `${toStateGroupPath(scope, groupId)}/topology/override`,
+            options,
+        ),
+        'DELETE',
+        undefined,
+        options,
+    );
+}
+
+export async function reconfigureStateGroupTopology(
+    groupId: string,
+    request: ReconfigureGroupTopologyRequest,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<ReconfigureGroupTopologyResponse> {
+    return await executeHttpRequest<
+        ReconfigureGroupTopologyRequest,
+        ReconfigureGroupTopologyResponse
+    >(
+        readApiBaseUrl(),
+        `${toStateGroupPath(scope, groupId)}/topology/reconfigure`,
+        'POST',
+        request,
         options,
     );
 }
@@ -1088,6 +1292,37 @@ function toStateScopePath(scope: StateScope): string {
     }`;
 }
 
+function toStateGroupPath(scope: StateScope, groupId: string): string {
+    return `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}`;
+}
+
+function withGraphDiagnosticQuery(
+    path: string,
+    options?: StateGraphDiagnosticReadOptions,
+): string {
+    const searchParams = new URLSearchParams();
+    if (options?.includeMeasured !== undefined) {
+        searchParams.set('includeMeasured', String(options.includeMeasured));
+    }
+    if (options?.refresh !== undefined) {
+        searchParams.set('refresh', options.refresh);
+    }
+
+    return withSearchParams(path, searchParams);
+}
+
+function withTopologyDeleteQuery(
+    path: string,
+    options?: StateGroupTopologyDeleteOptions,
+): string {
+    const searchParams = new URLSearchParams();
+    if (options?.reconfigure !== undefined) {
+        searchParams.set('reconfigure', String(options.reconfigure));
+    }
+
+    return withSearchParams(path, searchParams);
+}
+
 function withStateEventListQuery<TEventType extends string>(
     path: string,
     options?: StateEventListRequestOptions<TEventType>,
@@ -1111,6 +1346,10 @@ function withStateEventListQuery<TEventType extends string>(
         searchParams.set('afterEventId', options.after.eventId);
     }
 
+    return withSearchParams(path, searchParams);
+}
+
+function withSearchParams(path: string, searchParams: URLSearchParams): string {
     const query = searchParams.toString();
     return query ? `${path}?${query}` : path;
 }
