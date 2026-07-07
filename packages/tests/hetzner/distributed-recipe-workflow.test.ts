@@ -115,6 +115,84 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toContain('name: Fail if distributed recipe failed');
     });
 
+    it('applies manifest-requested RTC topology env during distributed recipe rollout', async () => {
+        const workflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
+        const rolloutScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            'utf8',
+        );
+
+        expect(workflow).toContain(
+            "manifest_rtc_topology_mesh_min_size=\"$(jq -r '.metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE // empty'",
+        );
+        expect(workflow).toContain(
+            'printf \'rtc_topology_mesh_min_size=%s\\n\' "${manifest_rtc_topology_mesh_min_size}" >> "${GITHUB_OUTPUT}"',
+        );
+        expect(workflow).toContain(
+            'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: ${{ steps.manifest_defaults.outputs.rtc_topology_mesh_min_size }}',
+        );
+        expect(workflow).toContain(
+            'printf \'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=%s\\n\' "$(quote "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE}")"',
+        );
+        expect(workflow).toContain('validate_rtc_topology_env');
+        expect(workflow).toContain(
+            'validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT "${manifest_rtc_topology_degree_limit}"',
+        );
+        expect(workflow).toContain(
+            'validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE "${manifest_rtc_topology_tree_min_size}"',
+        );
+        expect(workflow).toContain(
+            'validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE "${manifest_rtc_topology_mesh_min_size}"',
+        );
+        expect(workflow).toContain(
+            'validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_PARAM_K "${manifest_rtc_topology_mesh_param_k}"',
+        );
+        expect(workflow).toContain(
+            'validate_non_negative_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS "${manifest_rtc_topology_rtt_rebuild_debounce_ms}"',
+        );
+        expect(rolloutScript).toContain('update_api_rtc_topology_env');
+        expect(rolloutScript).toContain('RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE');
+        expect(rolloutScript).toContain(
+            'update_env_value "/etc/rallar/api-v1.env" "${key}" "${!key}"',
+        );
+    });
+
+    it('applies manifest-recommended terminal timeout during direct workflow dispatch', async () => {
+        const manualWorkflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
+        const runnerWorkflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
+
+        expect(manualWorkflow).toMatch(/terminal_timeout_seconds:[\s\S]*?default: ''/);
+        expect(runnerWorkflow).toContain(
+            "manifest_terminal_timeout_seconds=\"$(jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty'",
+        );
+        expect(runnerWorkflow).toContain(
+            'resolve_optional_value terminal_timeout_seconds "${INPUT_TERMINAL_TIMEOUT_SECONDS}" "${manifest_terminal_timeout_seconds}" "300"',
+        );
+        expect(runnerWorkflow).toContain(
+            'RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS: ${{ steps.manifest_defaults.outputs.terminal_timeout_seconds }}',
+        );
+    });
+
+    it('allows manifest-derived agent count during direct workflow dispatch', async () => {
+        const manualWorkflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
+        const runnerWorkflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
+
+        expect(manualWorkflow).toMatch(/agent_count:[\s\S]*?required: false[\s\S]*?default: ''/);
+        expect(manualWorkflow).toContain('agent_count: ${{ inputs.agent_count }}');
+        expect(manualWorkflow).not.toContain('agent_count: ${{ format(\'{0}\', inputs.agent_count) }}');
+        expect(runnerWorkflow).toContain(
+            'description: Number of headless browser agents to run; blank derives from manifest targetPolicy.expectedParticipantCount',
+        );
+    });
+
+    it('rejects topology-specific manifests in the reusable workflow when rollout is disabled', async () => {
+        const runnerWorkflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
+
+        expect(runnerWorkflow).toContain('INPUT_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}');
+        expect(runnerWorkflow).toContain('topology_env_requires_rollout');
+        expect(runnerWorkflow).toContain('requires rollout_before_run=true so API RTC topology env can be applied');
+    });
+
     it('runs supported Hetzner manifests on every main push with a serial matrix', async () => {
         const workflow = await readFile(path.join(repoRoot, supportedManifestsWorkflowPath), 'utf8');
         const matrixPaths = [...workflow.matchAll(/manifest_path:\s+(apps\/rallar-black-box\/manifests\/hetzner\/[^\s]+\.json)/g)]
@@ -149,6 +227,7 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(script).toContain('run_artifact_name="$(safe_artifact_dir_name "${distributed_run_id}")"');
         expect(script).toContain('"/distributed-runs/${distributed_run_path_id}"');
         expect(script).toContain('"/runs/${control_run_path_id}/events.jsonl"');
+        expect(script).toContain('Skipping bundle preview ${file_name}; direct artifact fetch is authoritative.');
         expect(script).not.toContain('"/distributed-runs/${distributed_run_id}"');
         expect(script).not.toContain('"/runs/${control_run_id}/events.jsonl"');
     });
@@ -432,6 +511,40 @@ describe('Hetzner distributed recipe workflow', () => {
         );
     });
 
+    it('passes and waits on stable headless worker shard agent ranges', async () => {
+        const workflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+        const runnerWorkflow = await readFile(
+            path.join(repoRoot, distributedRunnerWorkflowPath),
+            'utf8',
+        );
+        const script = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            'utf8',
+        );
+
+        expect(workflow).not.toContain('agent_start_index:');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ vars.RALLAR_BLACK_BOX_AGENT_START_INDEX || \'1\' }}');
+        expect(runnerWorkflow).not.toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ vars.RALLAR_BLACK_BOX_AGENT_START_INDEX || \'1\' }}');
+        expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX: \'1\'');
+        expect(workflow).toContain(
+            'printf \'RALLAR_BLACK_BOX_AGENT_START_INDEX=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_AGENT_START_INDEX}")"',
+        );
+        expect(runnerWorkflow).toContain(
+            'printf \'RALLAR_BLACK_BOX_AGENT_START_INDEX=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_AGENT_START_INDEX}")"',
+        );
+        expect(script).toContain(
+            'RALLAR_BLACK_BOX_AGENT_START_INDEX="${RALLAR_BLACK_BOX_AGENT_START_INDEX:-1}"',
+        );
+        expect(script).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
+        expect(script).toContain('agent_start="${RALLAR_BLACK_BOX_AGENT_START_INDEX}"');
+        expect(script).toContain('agent_end="$((agent_start + expected - 1))"');
+        expect(script).toContain('select(.connected == true and (.agentId | startswith($prefix))');
+        expect(script).toContain('($ordinal >= $start and $ordinal <= $end)');
+    });
+
     it('repairs known Deno lockfile drift before the controlled rollout dirty checkout guard', async () => {
         const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-rollout-lock-drift-'));
         const checkoutDir = path.join(tmp, 'checkout');
@@ -589,10 +702,12 @@ describe('Hetzner distributed recipe workflow', () => {
 
         expect(source).toContain('snapshotPersistenceBounds: ControlRunSnapshotBounds');
         expect(source).toContain("RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_EVENTS");
-        expect(source).toContain('controlService.snapshot(security.snapshotPersistenceBounds)');
+        expect(source).toContain('controlService.snapshotForPersistence(security.snapshotPersistenceBounds)');
+        expect(source).toContain('snapshotPersistDirty');
+        expect(source).toContain('snapshotPersisting');
         expect(source).toContain('let snapshotPersistSequence = 0');
         expect(source).toContain('const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${snapshotPersistSequence += 1}`');
-        expect(source).toContain('Deno.writeTextFile(tempPath, payload)');
+        expect(source).toContain('await Deno.writeTextFile(tempPath, payload)');
         expect(source).toContain('Deno.rename(tempPath, path)');
         expect(source).not.toContain('Deno.writeTextFile(path, payload)');
     });
@@ -1241,6 +1356,187 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(stdout).toContain('Mode     : custom');
         expect(stdout).toContain('Register : false');
         expect(stdout).toContain('Stop headless: false');
+    });
+
+    it('derives terminal timeout and prints load estimate from manifest metadata', async () => {
+        const tmp = await mkdtemp(path.join(tmpdir(), 'rallar-dispatch-manifest-timeout-gh-'));
+        const fakeGh = path.join(tmp, 'gh');
+        const argsFile = path.join(tmp, 'gh-args.txt');
+        await writeFile(fakeGh, [
+            '#!/usr/bin/env bash',
+            'if [[ "$1 $2" == "secret list" ]]; then',
+            '  printf "%s\\t%s\\n" HETZNER_HOST 2026-06-25T00:00:00Z HETZNER_USER 2026-06-25T00:00:00Z HETZNER_SSH_PRIVATE_KEY 2026-06-25T00:00:00Z HETZNER_KNOWN_HOSTS 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_USERNAME 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_PASSWORD 2026-06-25T00:00:00Z',
+            '  exit 0',
+            'fi',
+            'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
+            '',
+        ].join('\n'));
+        await chmod(fakeGh, 0o755);
+
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const { stdout } = await execFileAsync('bash', [
+            scriptPath,
+            'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json',
+            '--allow-diagnostic',
+            '--run-id',
+            'long-principal',
+        ], {
+            cwd: repoRoot,
+            env: {
+                ...process.env,
+                FAKE_GH_ARGS_FILE: argsFile,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+            },
+        });
+
+        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        expect(args).toContain('terminal_timeout_seconds=3900');
+        expect(args).toContain('agent_count=50');
+        expect(stdout).toContain('Timeout  : 3900');
+        expect(stdout).toContain('Topology : RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=51');
+        expect(stdout).toContain('Load     : stream frames=72000, logical fanout=3528000');
+    });
+
+    it('refuses topology-specific manifests when rollout is disabled', async () => {
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+
+        await expect(execFileAsync('bash', [
+            scriptPath,
+            'apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json',
+            '--rollout-before-run',
+            'false',
+            '--run-id',
+            'topology-no-rollout',
+        ], {
+            cwd: repoRoot,
+            env: process.env,
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('requires rollout_before_run=true so API RTC topology env can be applied'),
+        });
+    });
+
+    it('refuses non-mesh topology env manifests when rollout is disabled', async () => {
+        const tmpRoot = path.join(repoRoot, 'tmp');
+        await mkdir(tmpRoot, { recursive: true });
+        const tmp = await mkdtemp(path.join(tmpRoot, 'rallar-dispatch-tree-topology-no-rollout-'));
+        const manifestPath = path.join(tmp, 'tree-topology.json');
+        await writeFile(manifestPath, JSON.stringify({
+            targetPolicy: { expectedParticipantCount: 2 },
+            group: {
+                groupId: 'topology-tree-room',
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+            },
+            metadata: {
+                rtcTopologyEnv: {
+                    RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '2',
+                },
+            },
+        }));
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+
+        await expect(execFileAsync('bash', [
+            scriptPath,
+            manifestPath,
+            '--rollout-before-run',
+            'false',
+            '--run-id',
+            'tree-topology-no-rollout',
+        ], {
+            cwd: repoRoot,
+            env: process.env,
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining('requires rollout_before_run=true so API RTC topology env can be applied'),
+        });
+    });
+
+    it('validates every supported topology env value before dispatching', async () => {
+        const tmpRoot = path.join(repoRoot, 'tmp');
+        await mkdir(tmpRoot, { recursive: true });
+        const tmp = await mkdtemp(path.join(tmpRoot, 'rallar-dispatch-invalid-topology-'));
+        const manifestPath = path.join(tmp, 'invalid-topology.json');
+        await writeFile(manifestPath, JSON.stringify({
+            targetPolicy: { expectedParticipantCount: 2 },
+            group: {
+                groupId: 'invalid-topology-room',
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+            },
+            metadata: {
+                rtcTopologyEnv: {
+                    RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '0',
+                },
+            },
+        }));
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+
+        await expect(execFileAsync('bash', [
+            scriptPath,
+            manifestPath,
+            '--run-id',
+            'invalid-topology',
+        ], {
+            cwd: repoRoot,
+            env: process.env,
+        })).rejects.toMatchObject({
+            stderr: expect.stringContaining(
+                'metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT must be a positive integer',
+            ),
+        });
+    });
+
+    it('prints all supported topology env values before dispatching', async () => {
+        const tmpRoot = path.join(repoRoot, 'tmp');
+        await mkdir(tmpRoot, { recursive: true });
+        const tmp = await mkdtemp(path.join(tmpRoot, 'rallar-dispatch-topology-env-'));
+        const fakeGh = path.join(tmp, 'gh');
+        const argsFile = path.join(tmp, 'gh-args.txt');
+        const manifestPath = path.join(tmp, 'topology-env.json');
+        await writeFile(fakeGh, [
+            '#!/usr/bin/env bash',
+            'if [[ "$1 $2" == "secret list" ]]; then',
+            '  printf "%s\\t%s\\n" HETZNER_HOST 2026-06-25T00:00:00Z HETZNER_USER 2026-06-25T00:00:00Z HETZNER_SSH_PRIVATE_KEY 2026-06-25T00:00:00Z HETZNER_KNOWN_HOSTS 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_USERNAME 2026-06-25T00:00:00Z RALLAR_BLACK_BOX_PASSWORD 2026-06-25T00:00:00Z',
+            '  exit 0',
+            'fi',
+            'printf "%s\\n" "$@" > "${FAKE_GH_ARGS_FILE}"',
+            '',
+        ].join('\n'));
+        await chmod(fakeGh, 0o755);
+        await writeFile(manifestPath, JSON.stringify({
+            targetPolicy: { expectedParticipantCount: 2 },
+            group: {
+                groupId: 'topology-env-room',
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+            },
+            metadata: {
+                rtcTopologyEnv: {
+                    RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '2',
+                    RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS: '0',
+                },
+            },
+        }));
+        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+
+        const { stdout } = await execFileAsync('bash', [
+            scriptPath,
+            manifestPath,
+            '--run-id',
+            'topology-env-values',
+        ], {
+            cwd: repoRoot,
+            env: {
+                ...process.env,
+                FAKE_GH_ARGS_FILE: argsFile,
+                PATH: `${tmp}${path.delimiter}${process.env.PATH ?? ''}`,
+            },
+        });
+
+        const args = (await readFile(argsFile, 'utf8')).trim().split('\n');
+        expect(args).toContain('run_id=topology-env-values');
+        expect(stdout).toContain(
+            'Topology : RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE=2 RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS=0',
+        );
     });
 
     it('supports keep-headless as an explicit debug opt-out from cleanup', async () => {

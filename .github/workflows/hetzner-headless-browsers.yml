@@ -230,6 +230,7 @@ jobs:
           RALLAR_BLACK_BOX_ROOM_ID: ${{ inputs.room_id }}
           RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
           RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.agent_count }}
+          RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ vars.RALLAR_BLACK_BOX_AGENT_START_INDEX || '1' }}
           RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
@@ -269,6 +270,7 @@ jobs:
             printf 'RALLAR_BLACK_BOX_ROOM_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_ROOM_ID}")"
             printf 'RALLAR_BLACK_BOX_AGENT_PREFIX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_PREFIX}")"
             printf 'RALLAR_BLACK_BOX_AGENT_COUNT=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_COUNT}")"
+            printf 'RALLAR_BLACK_BOX_AGENT_START_INDEX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_START_INDEX}")"
             printf 'RALLAR_BLACK_BOX_APPLICATION_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_APPLICATION_ID}")"
             printf 'RALLAR_BLACK_BOX_WORKSPACE_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_WORKSPACE_ID}")"
             printf 'RALLAR_BLACK_BOX_USERNAME=%s\n' "$(quote "${RALLAR_BLACK_BOX_USERNAME}")"

@@ -130,6 +130,334 @@ Deno.test('control server REST API enforces tokens, queues commands, and exports
   }
 });
 
+Deno.test('control server rejects oversized HTTP and WebSocket agent payloads', async () => {
+  if (!(await canBindLoopback())) {
+    return;
+  }
+
+  const server = await startControlServer({
+    RALLAR_BLACK_BOX_MAX_REQUEST_BYTES: '256',
+  });
+  try {
+    const oversizedReport = await fetch(`${server.baseUrl}/runs/run-big/agents/agent-a/report`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'report',
+        protocolVersion: 1,
+        runId: 'run-big',
+        agentId: 'agent-a',
+        atEpochMs: Date.now(),
+        eventId: 'oversized-report',
+        payload: {
+          kind: 'report',
+          payload: {
+            reportId: 'oversized-report',
+            results: [{ value: 'x'.repeat(512) }],
+          },
+        },
+      }),
+    });
+    assertEquals(oversizedReport.status, 413);
+
+    const socket = new WebSocket(`${server.baseUrl.replace(/^http/, 'ws')}/control`);
+    await waitForSocketOpen(socket);
+    const closed = waitForSocketClose(socket);
+    socket.send(JSON.stringify({
+      kind: 'event',
+      protocolVersion: 1,
+      runId: 'run-big',
+      agentId: 'agent-a',
+      atEpochMs: Date.now(),
+      eventId: 'oversized-ws',
+      payload: {
+        value: 'x'.repeat(512),
+      },
+    }));
+    assertEquals((await closed).code, 1009);
+  } finally {
+    await server.stop();
+  }
+});
+
+Deno.test('control server stores full artifact JSONL on disk after runtime trimming', async () => {
+  if (!(await canBindLoopback())) {
+    return;
+  }
+
+  const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-artifacts-' });
+  const server = await startControlServer({
+    RALLAR_BLACK_BOX_STORAGE_DIR: storageDir,
+    RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS: '0',
+    RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: '0',
+  });
+  let socket: WebSocket | undefined;
+  try {
+    socket = await registerAgent(server.baseUrl, 'trim-run', 'agent-a');
+    socket.send(JSON.stringify({
+      kind: 'result',
+      protocolVersion: 1,
+      runId: 'trim-run',
+      agentId: 'agent-a',
+      commandId: 'heavy-result',
+      ok: false,
+      error: {
+        code: 'HEAVY_FAILURE',
+        message: 'The full result remains in artifact JSONL.',
+        details: {
+          value: 'x'.repeat(1024),
+        },
+      },
+    }));
+    socket.send(JSON.stringify({
+      kind: 'event',
+      protocolVersion: 1,
+      runId: 'trim-run',
+      agentId: 'agent-a',
+      atEpochMs: Date.now(),
+      eventId: 'heavy-event',
+      payload: {
+        topic: 'rallar.bb.heavy',
+        value: 'y'.repeat(1024),
+      },
+    }));
+    socket.send(JSON.stringify({
+      kind: 'report',
+      protocolVersion: 1,
+      runId: 'trim-run',
+      agentId: 'agent-a',
+      atEpochMs: Date.now(),
+      eventId: 'heavy-report',
+      payload: {
+        kind: 'report',
+        topic: 'rallar.bb.report.final',
+        payload: {
+          reportId: 'heavy-report',
+          summary: { reason: 'legacy-agent' },
+          events: [{ eventId: 'legacy-report-heavy', value: 'z'.repeat(1024) }],
+        },
+      },
+    }));
+
+    await waitForJsonl(server.baseUrl, '/runs/trim-run/results.jsonl', 'HEAVY_FAILURE');
+    await waitForJsonl(server.baseUrl, '/runs/trim-run/events.jsonl', 'heavy-event');
+    await waitForJsonl(server.baseUrl, '/runs/trim-run/events.jsonl', 'legacy-report-heavy');
+    const artifactResults = await fetch(
+      `${server.baseUrl}/runs/trim-run/artifacts/results.jsonl`,
+    );
+    assertEquals(artifactResults.status, 200);
+    assert(
+      (await artifactResults.text()).includes('HEAVY_FAILURE'),
+      'per-file results artifact should stream the stored JSONL evidence',
+    );
+
+    const snapshot = await getJson(server.baseUrl, '/runs/trim-run') as {
+      results?: readonly unknown[];
+      events?: readonly unknown[];
+      reports?: readonly unknown[];
+    };
+    assertEquals(snapshot.results?.length, 0);
+    assertEquals(snapshot.events?.length, 0);
+    assertEquals(snapshot.reports?.length, 1);
+    assertEquals(JSON.stringify(snapshot.reports).includes('legacy-report-heavy'), false);
+  } finally {
+    socket?.close();
+    await server.stop();
+    await Deno.remove(storageDir, { recursive: true });
+  }
+});
+
+Deno.test('control server stores command metadata in disk-backed JSONL rows', async () => {
+  if (!(await canBindLoopback())) {
+    return;
+  }
+
+  const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-artifact-metadata-' });
+  const server = await startControlServer({
+    RALLAR_BLACK_BOX_STORAGE_DIR: storageDir,
+    RALLAR_BLACK_BOX_RUNTIME_RETAIN_COMMANDS: '0',
+    RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS: '0',
+    RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: '0',
+  });
+  let socket: WebSocket | undefined;
+  try {
+    const commandResponse = await fetch(
+      `${server.baseUrl}/runs/metadata-run/agents/agent-a/commands`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          commandId: 'rtc-send-1',
+          command: {
+            kind: 'rtc.send',
+            commandId: 'rtc-send-1',
+            connection: 'rtc-connection-1',
+            transport: 'messages.rtc',
+            send: { text: 'hello' },
+          },
+        }),
+      },
+    );
+    assertEquals(commandResponse.status, 202);
+
+    socket = await registerAgent(server.baseUrl, 'metadata-run', 'agent-a');
+    socket.send(JSON.stringify({
+      kind: 'result',
+      protocolVersion: 1,
+      runId: 'metadata-run',
+      agentId: 'agent-a',
+      commandId: 'rtc-send-1',
+      ok: true,
+      result: {
+        commandId: 'rtc-send-1',
+        kind: 'rtc.send',
+        status: 'ok',
+        ok: true,
+        value: { delivered: true },
+      },
+    }));
+
+    const resultsText = await waitForJsonl(
+      server.baseUrl,
+      '/runs/metadata-run/results.jsonl',
+      'rtc-send-1',
+    );
+    const resultRow = JSON.parse(resultsText.trim().split(/\r?\n/g)[0]) as {
+      action?: string;
+      transport?: string;
+      connection?: string;
+    };
+    assertEquals(resultRow.action, 'rtc.send');
+    assertEquals(resultRow.transport, 'messages.rtc');
+    assertEquals(resultRow.connection, 'rtc-connection-1');
+
+    const eventsText = await waitForJsonl(
+      server.baseUrl,
+      '/runs/metadata-run/events.jsonl',
+      'rtc-send-1',
+    );
+    const stepResult = eventsText
+      .trim()
+      .split(/\r?\n/g)
+      .map((line) => JSON.parse(line) as { kind?: string; action?: string; transport?: string })
+      .find((row) => row.kind === 'step-result');
+    assert(stepResult);
+    assertEquals(stepResult.action, 'rtc.send');
+    assertEquals(stepResult.transport, 'messages.rtc');
+  } finally {
+    socket?.close();
+    await server.stop();
+    await Deno.remove(storageDir, { recursive: true });
+  }
+});
+
+Deno.test('control server waits for queued artifact JSONL writes before responding', async () => {
+  if (!(await canBindLoopback())) {
+    return;
+  }
+
+  const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-artifact-flush-' });
+  const server = await startControlServer({
+    RALLAR_BLACK_BOX_STORAGE_DIR: storageDir,
+    RALLAR_BLACK_BOX_MAX_REQUEST_BYTES: '2000000',
+    RALLAR_BLACK_BOX_RUNTIME_RETAIN_REPORTS: '0',
+  });
+  try {
+    const seedMarker = 'artifact-flush-seed';
+    const seedResponse = await fetch(`${server.baseUrl}/runs/flush-run/agents/agent-a/report`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(reportEnvelope('flush-run', 'agent-a', 'seed-report', seedMarker)),
+    });
+    assertEquals(seedResponse.status, 202);
+    await waitForJsonl(server.baseUrl, '/runs/flush-run/events.jsonl', seedMarker);
+
+    const backlogResponses = await Promise.all(
+      Array.from(
+        { length: 6 },
+        (_, index) =>
+          fetch(`${server.baseUrl}/runs/flush-run/agents/agent-a/report`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(
+              reportEnvelope(
+                'flush-run',
+                'agent-a',
+                `backlog-report-${index}`,
+                `artifact-flush-backlog-${index}`,
+                'x'.repeat(1_500_000),
+              ),
+            ),
+          }),
+      ),
+    );
+    for (const response of backlogResponses) {
+      assertEquals(response.status, 202);
+    }
+
+    const targetMarker = 'artifact-flush-target';
+    const targetResponse = await fetch(`${server.baseUrl}/runs/flush-run/agents/agent-a/report`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(reportEnvelope('flush-run', 'agent-a', 'target-report', targetMarker)),
+    });
+    assertEquals(targetResponse.status, 202);
+
+    const jsonlResponse = await fetch(`${server.baseUrl}/runs/flush-run/events.jsonl`);
+    assertEquals(jsonlResponse.status, 200);
+    assert(
+      (await jsonlResponse.text()).includes(targetMarker),
+      'direct JSONL response should include a report after its upload has been accepted',
+    );
+  } finally {
+    await server.stop();
+    await Deno.remove(storageDir, { recursive: true });
+  }
+});
+
+Deno.test('control server dedupes final report artifact JSONL rows across WS and HTTP', async () => {
+  if (!(await canBindLoopback())) {
+    return;
+  }
+
+  const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-artifact-dedupe-' });
+  const server = await startControlServer({
+    RALLAR_BLACK_BOX_STORAGE_DIR: storageDir,
+    RALLAR_BLACK_BOX_RUNTIME_RETAIN_REPORTS: '0',
+  });
+  let socket: WebSocket | undefined;
+  try {
+    socket = await registerAgent(server.baseUrl, 'dedupe-run', 'agent-a');
+    const report = reportEnvelope(
+      'dedupe-run',
+      'agent-a',
+      'final-report-duplicate',
+      'artifact-report-dedupe-marker',
+    );
+    socket.send(JSON.stringify(report));
+    await waitForJsonl(server.baseUrl, '/runs/dedupe-run/events.jsonl', 'final-report-duplicate');
+
+    const uploadResponse = await fetch(`${server.baseUrl}/runs/dedupe-run/agents/agent-a/report`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(report),
+    });
+    assertEquals(uploadResponse.status, 202);
+
+    const eventsResponse = await fetch(`${server.baseUrl}/runs/dedupe-run/events.jsonl`);
+    assertEquals(eventsResponse.status, 200);
+    const reportRows = (await eventsResponse.text())
+      .trim()
+      .split(/\r?\n/g)
+      .filter((line) => line.includes('final-report-duplicate'));
+    assertEquals(reportRows.length, 1);
+  } finally {
+    socket?.close();
+    await server.stop();
+    await Deno.remove(storageDir, { recursive: true });
+  }
+});
+
 Deno.test('control server read token mode protects run, fleet, and distributed GET routes', async () => {
   if (!(await canBindLoopback())) {
     return;
@@ -223,6 +551,38 @@ Deno.test('control server distributed and fleet APIs validate auth, artifacts, f
     assertEquals(wrongScopeCreate.status, 401);
 
     const signedOperatorToken = await operatorToken();
+    const previewResponse = await fetch(`${server.baseUrl}/distributed-runs/resolve-targets`, {
+      method: 'POST',
+      headers: bearerJsonHeaders(signedOperatorToken),
+      body: JSON.stringify({
+        manifest: {
+          ...distributedManifest(),
+          targetPolicy: {
+            mode: 'all-online-group-members',
+            expectedParticipantCount: 1,
+          },
+          roleAssignmentPolicy: {
+            mode: 'ordered-targets',
+            pattern: 'one-sender-many-receivers',
+            orderBy: 'agent-id',
+          },
+        },
+      }),
+    });
+    assertEquals(previewResponse.status, 200);
+    const preview = await previewResponse.json() as {
+      targetAgentIds: readonly string[];
+      summary: {
+        selected: number;
+        expectedParticipantCount?: number;
+        roleCounts: Record<string, number>;
+      };
+    };
+    assertEquals(preview.targetAgentIds, ['agent-a']);
+    assertEquals(preview.summary.selected, 1);
+    assertEquals(preview.summary.expectedParticipantCount, 1);
+    assertEquals(preview.summary.roleCounts, { sender: 1 });
+
     const createdResponse = await fetch(`${server.baseUrl}/distributed-runs`, {
       method: 'POST',
       headers: bearerJsonHeaders(signedOperatorToken),
@@ -479,6 +839,23 @@ function waitForSocketOpen(socket: WebSocket): Promise<void> {
   });
 }
 
+function waitForSocketClose(socket: WebSocket): Promise<CloseEvent> {
+  if (socket.readyState === WebSocket.CLOSED) {
+    return Promise.resolve(new CloseEvent('close', { code: 1000 }));
+  }
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('WebSocket did not close.')), 5_000);
+    socket.addEventListener('close', (event) => {
+      clearTimeout(timeout);
+      resolve(event);
+    }, { once: true });
+    socket.addEventListener('error', () => {
+      clearTimeout(timeout);
+      reject(new Error('WebSocket failed before close.'));
+    }, { once: true });
+  });
+}
+
 async function waitForAgent(baseUrl: string, runId: string, agentId: string): Promise<void> {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
@@ -494,6 +871,22 @@ async function waitForAgent(baseUrl: string, runId: string, agentId: string): Pr
     await delay(50);
   }
   throw new Error(`Agent ${agentId} did not register for ${runId}.`);
+}
+
+async function waitForJsonl(baseUrl: string, path: string, marker: string): Promise<string> {
+  const deadline = Date.now() + 5_000;
+  let lastText = '';
+  while (Date.now() < deadline) {
+    const response = await fetch(`${baseUrl}${path}`);
+    if (response.ok) {
+      lastText = await response.text();
+      if (lastText.includes(marker)) {
+        return lastText;
+      }
+    }
+    await delay(50);
+  }
+  throw new Error(`JSONL ${path} did not include ${marker}. Last body: ${lastText}`);
 }
 
 async function getJson<TValue = unknown>(baseUrl: string, path: string): Promise<TValue> {
@@ -534,6 +927,32 @@ async function waitForPersistedSnapshot(storageDir: string, marker: string): Pro
     await delay(50);
   }
   throw new Error(`Persisted snapshot did not include ${marker}.`);
+}
+
+function reportEnvelope(
+  runId: string,
+  agentId: string,
+  eventId: string,
+  marker: string,
+  padding = '',
+): unknown {
+  return {
+    kind: 'report',
+    protocolVersion: 1,
+    runId,
+    agentId,
+    atEpochMs: Date.now(),
+    eventId,
+    payload: {
+      kind: 'report',
+      topic: 'rallar.bb.report.final',
+      payload: {
+        reportId: eventId,
+        summary: { reason: marker },
+        stats: { padding },
+      },
+    },
+  };
 }
 
 function delay(ms: number): Promise<void> {

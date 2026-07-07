@@ -9,6 +9,12 @@ Use this for remote Hetzner controller work involving `rallar-black-box`,
 headless browser agents, distributed run manifests, GitHub Actions, and
 artifact analysis.
 
+For already-running worldwide agents, keep the workflow distinct from Hetzner
+VM lifecycle management. Use checked-in manifests under
+`apps/rallar-black-box/manifests/world-fleet` and the no-spawn runner
+`apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts`; do not
+start, stop, install, or restart headless agents for that flow.
+
 ## Start Here
 
 - For workflow usage and operator commands, read
@@ -21,6 +27,8 @@ artifact analysis.
 ## Rules
 
 - Prefer the GitHub workflow `Run Hetzner Distributed Recipe` for remote runs.
+- Prefer the no-spawn world-fleet runner when agents are already connected to a
+  shared control server/control run.
 - Use checked-in distributed manifest JSON files. Do not paste secrets or admin
   tokens into prompts, manifests, workflow inputs, or URLs.
 - Treat `scripts/hetzner/controller/*.sh` as the source of truth for VM service
@@ -43,3 +51,16 @@ artifact analysis.
 6. For success, read `analysis/performance.md`.
 7. Propose the smallest code, recipe, config, or infra fix that matches the
    evidence.
+
+## World-Fleet No-Spawn Flow
+
+1. Confirm all agents are already connected to the same control server and
+   `controlRunId`.
+2. Select a manifest under `apps/rallar-black-box/manifests/world-fleet`.
+3. Run `npx tsx apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts --control <url> --manifest <path> --control-run-id <live-control-run-id> --token "$RALLAR_CONTROL_ADMIN_TOKEN"`.
+4. Inspect the exported `artifact-bundle.json`, `target-resolution.json`,
+   `distributed-run.json`, `report.json`, `failures.json`, and
+   `metadata.json`.
+5. Run the distributed artifact analyzer separately before expecting
+   `analysis/analysis.json`, `analysis/fix-proposal.md`, or
+   `analysis/performance.md`.

@@ -16,9 +16,11 @@ import {
   RallarServerSystemFacade,
 } from '@shared-server/rallar-facade/RallarServer.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
+import type { RallarRtcTopologyServiceOptions } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware.ts';
 import { getMiddleware, initialiseMiddleware } from './middleware.ts';
+import { getApiRtcTopologyServiceOptions } from './services/rtc-topology-config.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
 import * as configRoutes from './routes/config-route.ts';
 import * as wsRoutes from './routes/ws-routes.ts';
@@ -41,6 +43,7 @@ export type CreateRallarServerOptions = Readonly<{
   crdtLogRepository?: RallarCrdtAdminLogRepository;
   crdtAuditSink?: RallarCrdtAuditSink;
   ws?: RallarServerWsFacadeOptions;
+  rtcTopologyOptions?: RallarRtcTopologyServiceOptions;
 }>;
 
 export function createRallarServer(
@@ -70,6 +73,8 @@ export function createRallarServer(
       installDefaultMiddlewareTopics: (runtime, ws) => {
         initRallarSystemWsTopics(runtime.wsQBoxServerService, {
           initDynamicTopics: false,
+          rtcTopologyOptions: options.rtcTopologyOptions ??
+            getApiRtcTopologyServiceOptions(),
         });
         installRallarCrdtWsTopics(ws, {
           logRepository: crdtLogRepository,

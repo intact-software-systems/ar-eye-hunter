@@ -1,0 +1,376 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "world-fleet-diagnostic-rtc-messages-all-peer-50-agent-30s-20hz-tree",
+  "controlRunId": "world-fleet-template-control-run",
+  "displayName": "RTC messages all-peer 50-agent 30s 20 Hz tree diagnostic",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "world-fleet-room"
+  },
+  "recipes": [
+    {
+      "recipeId": "rtc-messages-all-peer-multicast",
+      "recipe": {
+        "schemaVersion": 1,
+        "recipeId": "rtc-messages-all-peer-multicast",
+        "name": "RTC messages all-peer multicast",
+        "description": "Connect RTC messages and multicast from every peer at 20 Hz for 30s.",
+        "continueOnFailure": false,
+        "metadata": {
+          "profile": "rtc-messages-all-peer-multicast",
+          "transport": "messages.rtc",
+          "participantCount": 50,
+          "senderCount": 50,
+          "receiverCount": 50,
+          "rateHz": 20,
+          "intervalMs": 50,
+          "durationSeconds": 30,
+          "frameCount": 600,
+          "expectedInboundMessages": 29400,
+          "minExpectedInboundMessages": 23520,
+          "minReceiveRatio": 0.8,
+          "logicalFanoutMessages": 1470000
+        },
+        "commands": [
+          {
+            "kind": "http.request",
+            "commandId": "rtc-messages-all-peer-ensure-group",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the backend group exists before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "world-fleet-room"
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups",
+              "body": {
+                "requestId": "rtc-messages-all-peer:ensure-group:rallar-server:default:world-fleet-room",
+                "groupId": "world-fleet-room",
+                "displayName": "world-fleet-room",
+                "joinMode": "open"
+              }
+            },
+            "response": {
+              "body": "json"
+            }
+          },
+          {
+            "kind": "http.request",
+            "commandId": "rtc-messages-all-peer-ensure-member",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "world-fleet-room"
+              }
+            },
+            "request": {
+              "method": "PUT",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/world-fleet-room/members/{auth.clientId}",
+              "body": {
+                "requestId": "rtc-messages-all-peer:ensure-member:rallar-server:default:world-fleet-room:{auth.clientId}",
+                "status": "active"
+              }
+            },
+            "response": {
+              "body": "json"
+            }
+          },
+          {
+            "kind": "rtc.connect",
+            "commandId": "rtc-messages-all-peer-connect",
+            "connection": "rtcMessagesAllPeer",
+            "actor": "{auth.clientId}",
+            "roomId": "world-fleet-room",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "world-fleet-room"
+            },
+            "transport": "messages.rtc",
+            "timeoutMs": 45000,
+            "readiness": {
+              "minReadyPeers": 1,
+              "timeoutMs": 45000,
+              "intervalMs": 100
+            },
+            "metadata": {
+              "profile": "rtc-messages-all-peer-multicast",
+              "transport": "messages.rtc",
+              "participantCount": 50,
+              "senderCount": 50,
+              "receiverCount": 50,
+              "rateHz": 20,
+              "intervalMs": 50,
+              "durationSeconds": 30,
+              "frameCount": 600,
+              "expectedInboundMessages": 29400,
+              "minExpectedInboundMessages": 23520,
+              "minReceiveRatio": 0.8,
+              "logicalFanoutMessages": 1470000
+            }
+          },
+          {
+            "kind": "loop",
+            "commandId": "rtc-messages-all-peer-settle-stats-loop",
+            "count": 6,
+            "intervalMs": 1000,
+            "maxCommands": 6,
+            "metadata": {
+              "profile": "rtc-messages-all-peer-multicast",
+              "transport": "messages.rtc",
+              "participantCount": 50,
+              "senderCount": 50,
+              "receiverCount": 50,
+              "rateHz": 20,
+              "intervalMs": 50,
+              "durationSeconds": 30,
+              "frameCount": 600,
+              "logicalFanoutMessages": 1470000,
+              "purpose": "post-connect-topology-settle",
+              "settleDurationMs": 5000
+            },
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "rtc-messages-all-peer-settle-stats",
+                "metadata": {
+                  "profile": "rtc-messages-all-peer-multicast",
+                  "transport": "messages.rtc",
+                  "participantCount": 50,
+                  "senderCount": 50,
+                  "receiverCount": 50,
+                  "rateHz": 20,
+                  "intervalMs": 50,
+                  "durationSeconds": 30,
+                  "frameCount": 600,
+                  "logicalFanoutMessages": 1470000
+                }
+              }
+            ]
+          },
+          {
+            "kind": "rtc.stream",
+            "commandId": "rtc-messages-all-peer-multicast-stream",
+            "connection": "rtcMessagesAllPeer",
+            "actor": "{auth.clientId}",
+            "transport": "messages.rtc",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomId": "world-fleet-room",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "world-fleet-room"
+            },
+            "count": 600,
+            "intervalMs": 50,
+            "maxInFlight": 64,
+            "drainTimeoutMs": 5000,
+            "progressEveryMs": 1000,
+            "sampleEvery": 1,
+            "continueOnSendFailure": true,
+            "thresholds": {
+              "minSendSuccessRatio": 0.95,
+              "maxDroppedFrames": 30,
+              "maxP95SendDurationMs": 2500,
+              "maxP99SendDurationMs": 4000
+            },
+            "metadata": {
+              "profile": "rtc-messages-all-peer-multicast",
+              "transport": "messages.rtc",
+              "rateHz": 20,
+              "intervalMs": 50,
+              "durationSeconds": 30,
+              "frameCount": 600,
+              "participantCount": 50,
+              "senderCount": 50,
+              "receiverCount": 50,
+              "logicalFanoutMessages": 1470000,
+              "receiverDelivery": {
+                "expectedInboundMessages": 29400,
+                "minExpectedInboundMessages": 23520,
+                "minReceiveRatio": 0.8
+              }
+            },
+            "send": {
+              "roomId": "world-fleet-room",
+              "roomRef": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "world-fleet-room"
+              },
+              "deliveryMode": "multicast",
+              "typeId": "black-box.group.multicast.position",
+              "topicId": "black-box.group.multicast.position",
+              "payload": {
+                "topic": "black-box.group.multicast.position",
+                "typeId": "black-box.group.multicast.position",
+                "actor": "{auth.clientId}",
+                "seq": "{stream.index}",
+                "rateHz": 20,
+                "intervalMs": 50,
+                "durationSeconds": 30,
+                "totalFrames": 600,
+                "tMs": "{stream.elapsedMs}",
+                "position": {
+                  "frame": "{stream.iteration}",
+                  "x": "{stream.index}",
+                  "y": 0,
+                  "z": "{stream.index}",
+                  "headingDeg": "{stream.index}",
+                  "velocityMps": 4
+                }
+              }
+            }
+          },
+          {
+            "kind": "loop",
+            "commandId": "rtc-messages-all-peer-receiver-stats-loop",
+            "count": 5,
+            "intervalMs": 1000,
+            "maxCommands": 5,
+            "metadata": {
+              "profile": "rtc-messages-all-peer-multicast",
+              "transport": "messages.rtc",
+              "participantCount": 50,
+              "senderCount": 50,
+              "receiverCount": 50,
+              "rateHz": 20,
+              "intervalMs": 50,
+              "durationSeconds": 30,
+              "frameCount": 600,
+              "expectedInboundMessages": 29400,
+              "minExpectedInboundMessages": 23520,
+              "minReceiveRatio": 0.8,
+              "logicalFanoutMessages": 1470000
+            },
+            "commands": [
+              {
+                "kind": "stats",
+                "commandId": "rtc-messages-all-peer-receiver-stats",
+                "metadata": {
+                  "profile": "rtc-messages-all-peer-multicast",
+                  "transport": "messages.rtc",
+                  "participantCount": 50,
+                  "senderCount": 50,
+                  "receiverCount": 50,
+                  "rateHz": 20,
+                  "intervalMs": 50,
+                  "durationSeconds": 30,
+                  "frameCount": 600,
+                  "expectedInboundMessages": 29400,
+                  "minExpectedInboundMessages": 23520,
+                  "minReceiveRatio": 0.8,
+                  "logicalFanoutMessages": 1470000
+                }
+              }
+            ]
+          },
+          {
+            "kind": "stats",
+            "commandId": "rtc-messages-all-peer-final-stats",
+            "metadata": {
+              "profile": "rtc-messages-all-peer-multicast",
+              "transport": "messages.rtc",
+              "participantCount": 50,
+              "senderCount": 50,
+              "receiverCount": 50,
+              "rateHz": 20,
+              "intervalMs": 50,
+              "durationSeconds": 30,
+              "frameCount": 600,
+              "expectedInboundMessages": 29400,
+              "minExpectedInboundMessages": 23520,
+              "minReceiveRatio": 0.8,
+              "logicalFanoutMessages": 1470000
+            }
+          },
+          {
+            "kind": "assert",
+            "commandId": "rtc-messages-all-peer-delivery-threshold",
+            "source": "stats.counters.messages",
+            "operator": "gte",
+            "expected": 23520,
+            "metadata": {
+              "profile": "rtc-messages-all-peer-multicast",
+              "transport": "messages.rtc",
+              "participantCount": 50,
+              "senderCount": 50,
+              "receiverCount": 50,
+              "rateHz": 20,
+              "intervalMs": 50,
+              "durationSeconds": 30,
+              "frameCount": 600,
+              "expectedInboundMessages": 29400,
+              "minExpectedInboundMessages": 23520,
+              "minReceiveRatio": 0.8,
+              "logicalFanoutMessages": 1470000,
+              "receiverDelivery": {
+                "expectedInboundMessages": 29400,
+                "minExpectedInboundMessages": 23520,
+                "minReceiveRatio": 0.8
+              }
+            }
+          }
+        ]
+      },
+      "profile": "rtc",
+      "required": true
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 50
+  },
+  "ackTimeoutMs": 45000,
+  "barrier": {
+    "enabled": true,
+    "timeoutMs": 45000
+  },
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeDistributedMetadata": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true
+  },
+  "metadata": {
+    "createdBy": "rallar-black-box-spa",
+    "rolePattern": "all-agents",
+    "topologyProfile": "tree",
+    "transport": "messages.rtc",
+    "participantCount": 50,
+    "senderCount": 50,
+    "receiverCount": 50,
+    "rateHz": 20,
+    "expectedDurationSeconds": 30,
+    "recommendedTerminalTimeoutSeconds": 330,
+    "rtcTopologyEnv": {
+      "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "51"
+    },
+    "receiverDelivery": {
+      "expectedInboundMessages": 29400,
+      "minExpectedInboundMessages": 23520,
+      "minReceiveRatio": 0.8
+    },
+    "loadEstimate": {
+      "streamFrames": 30000,
+      "logicalFanoutMessages": 1470000
+    },
+    "worldFleet": true,
+    "noSpawn": true
+  }
+}

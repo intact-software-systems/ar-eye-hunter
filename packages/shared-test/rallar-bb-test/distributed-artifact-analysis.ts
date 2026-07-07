@@ -102,12 +102,47 @@ export type DistributedRunPerformanceAnalysis = Readonly<{
             maxMs?: number;
         }>[];
     }>;
+    receiverDelivery?: Readonly<{
+        sampleCount: number;
+        expectedInboundMessages?: number;
+        minExpectedInboundMessages?: number;
+        minReceiveRatio?: number;
+        minReceivedMessages?: number;
+        medianReceivedMessages?: number;
+        p95ReceivedMessages?: number;
+        maxReceivedMessages?: number;
+        minDeliveryRatio?: number;
+        medianDeliveryRatio?: number;
+        p95DeliveryRatio?: number;
+        lowestAgents: readonly Readonly<{
+            agentId: string;
+            receivedMessages: number;
+            expectedInboundMessages?: number;
+            deliveryRatio?: number;
+        }>[];
+    }>;
     slowestAgents: readonly Readonly<{
         agentId: string;
         commandCount: number;
         averageMs?: number;
         maxMs?: number;
     }>[];
+}>;
+
+export type DistributedRunTargetResolutionAnalysis = Readonly<{
+    selected: number;
+    expectedParticipantCount?: number;
+    missingExpectedParticipants: number;
+    blockers: number;
+    staleAgents: number;
+    offlineAgents: number;
+    wrongGroupAgents: number;
+    agentsWithoutIdentity: number;
+    roleCounts: Readonly<Record<string, number>>;
+    regions: Readonly<Record<string, number>>;
+    providers: Readonly<Record<string, number>>;
+    targetAgentIds: readonly string[];
+    blockingAgentIds: readonly string[];
 }>;
 
 export type DistributedRunAnalysis = Readonly<{
@@ -130,6 +165,7 @@ export type DistributedRunAnalysis = Readonly<{
     parseWarnings: readonly DistributedRunArtifactParseWarning[];
     failure?: DistributedRunFailureAnalysis;
     performance?: DistributedRunPerformanceAnalysis;
+    targetResolution?: DistributedRunTargetResolutionAnalysis;
     spa?: Readonly<{
         report: DistributedRunAnalysisReport;
         verdict: RunVerdictView;
@@ -155,11 +191,24 @@ type ControlPostFailureArtifact = Readonly<{
     body: Record<string, unknown>;
 }>;
 
+type ReceiverDeliverySpec = Readonly<{
+    expectedInboundMessages?: number;
+    minExpectedInboundMessages?: number;
+    minReceiveRatio?: number;
+}>;
+
+type ReceiverDeliverySample = ReceiverDeliverySpec & Readonly<{
+    agentId?: string;
+    commandId?: string;
+    receivedMessages: number;
+}>;
+
 const TERMINAL_FAILURE_STATES = new Set(['failed', 'timed-out', 'cancelled']);
 
 const DISTRIBUTED_ARTIFACT_FILE_NAMES = new Set([
     'distributed-run.json',
     'manifest.json',
+    'target-resolution.json',
     'runner-summary.json',
     'control-post-create-error.json',
     'control-post-stage-error.json',
@@ -202,6 +251,7 @@ export function analyzeDistributedRunArtifactFiles(
         controlPostFailure,
         results,
         events,
+        targetResolutionRecord,
     } = parseDistributedRunArtifactFiles(input.files);
     const distributedRun = normalizeDistributedRunRecord(distributedRunRecord, results);
     const controlRun = normalizeControlRunRecord(controlRunRecord, distributedRun.controlRunId, results, events);
@@ -223,6 +273,7 @@ export function analyzeDistributedRunArtifactFiles(
         status === 'passed';
     const group = groupFromArtifacts(distributedRun, fleetReport);
     const performance = derivePerformance(distributedRun, controlRun, fleetReport, results, events);
+    const targetResolution = targetResolutionAnalysis(targetResolutionRecord, distributedRun);
     const failure = ok
         ? undefined
         : deriveFailure({
@@ -254,6 +305,7 @@ export function analyzeDistributedRunArtifactFiles(
         parseWarnings,
         failure,
         performance,
+        targetResolution,
         spa,
     };
     const summaryMarkdown = renderSummaryMarkdown(base);
@@ -421,6 +473,11 @@ function deriveFailure(input: Readonly<{
         return streamPerformance;
     }
 
+    const receiverDeliveryFailure = receiverDeliveryThresholdFailure(input.results);
+    if (receiverDeliveryFailure) {
+        return receiverDeliveryFailure;
+    }
+
     const fleetSignature = arrayRecords(input.fleetReport.failureSignatures)[0];
     if (fleetSignature) {
         const failedResult = firstFailedResult(input.results);
@@ -578,6 +635,13 @@ function derivePerformance(
         events,
     );
     const streamTiming = streamTimingFromSamples(streamSamples);
+    const receiverDelivery = receiverDeliveryFromSamples(
+        receiverDeliverySamplesFromResults(
+            distributedRun,
+            arrayRecords(controlRun.results),
+            results,
+        ),
+    );
     const diagnosticCounts = diagnosticCountsFromEvents(events);
     const runDurationMs = durationFromFields(distributedRun, 'startedAtEpochMs', 'completedAtEpochMs') ??
         numberValue(readPath(fleetReport, ['timing', 'run', 'p50Ms']));
@@ -602,6 +666,7 @@ function derivePerformance(
         flakyAgentCount: numberValue(readPath(fleetReport, ['summary', 'flaky'])) ?? 0,
         commandTiming,
         streamTiming,
+        receiverDelivery,
         slowestAgents: slowestAgentRows(commandTimingSamples),
     };
 }
@@ -617,6 +682,12 @@ function renderSummaryMarkdown(
         analysis.controlRunId ? `Control run: ${analysis.controlRunId}` : undefined,
         analysis.group?.groupId ? `Group: ${analysis.group.groupId}` : undefined,
         `Agents: ${analysis.summary.agents}`,
+        analysis.targetResolution
+            ? `Targets: ${analysis.targetResolution.selected}/${analysis.targetResolution.expectedParticipantCount ?? 'unspecified'} resolved`
+            : undefined,
+        analysis.targetResolution
+            ? `Target blockers: ${analysis.targetResolution.blockers}`
+            : undefined,
         `Pass rate: ${percent(analysis.summary.passRate)}`,
         `Failure groups: ${analysis.summary.failureGroups}`,
         `Artifact warnings: ${analysis.parseWarnings.length}`,
@@ -686,11 +757,25 @@ function renderPerformanceMarkdown(
         performance.streamTiming && performance.streamTiming.slowestAgents.length > 0
             ? `Slowest stream agents: ${performance.streamTiming.slowestAgents.map((agent) => `${agent.agentId} max=${formatMs(agent.maxMs)} p99=${formatMs(agent.p99Ms)}`).join(', ')}`
             : undefined,
+        performance.receiverDelivery
+            ? `Receiver delivery: receivers=${performance.receiverDelivery.sampleCount}, expected=${performance.receiverDelivery.expectedInboundMessages ?? 'unknown'}, min required=${performance.receiverDelivery.minExpectedInboundMessages ?? 'unknown'}, min=${performance.receiverDelivery.minReceivedMessages ?? 'unknown'}, median=${performance.receiverDelivery.medianReceivedMessages ?? 'unknown'}, p95=${performance.receiverDelivery.p95ReceivedMessages ?? 'unknown'}, lowest=${formatLowestReceiverDelivery(performance.receiverDelivery.lowestAgents[0])}`
+            : undefined,
         performance.slowestAgents.length > 0
             ? `Slowest agents: ${performance.slowestAgents.map((agent) => `${agent.agentId} max=${formatMs(agent.maxMs)} avg=${formatMs(agent.averageMs)}`).join(', ')}`
             : undefined,
         '',
     ].filter((line): line is string => line !== undefined).join('\n');
+}
+
+function formatLowestReceiverDelivery(
+    agent: NonNullable<DistributedRunPerformanceAnalysis['receiverDelivery']>['lowestAgents'][number] | undefined,
+): string {
+    if (!agent) {
+        return 'none';
+    }
+    const expected = agent.expectedInboundMessages ?? 'unknown';
+    const ratio = agent.deliveryRatio === undefined ? 'unknown' : percent(agent.deliveryRatio);
+    return `${agent.agentId} ${agent.receivedMessages}/${expected} (${ratio})`;
 }
 
 function firstFailedResult(
@@ -699,6 +784,44 @@ function firstFailedResult(
     return results.find((result) =>
         firstString(result.status)?.toUpperCase() === 'FAILURE' || booleanValue(result.ok) === false
     );
+}
+
+function receiverDeliveryThresholdFailure(
+    results: readonly Record<string, unknown>[],
+): DistributedRunFailureAnalysis | undefined {
+    const failedResult = results.find((result) => {
+        if (firstString(result.status)?.toUpperCase() !== 'FAILURE' && booleanValue(result.ok) !== false) {
+            return false;
+        }
+        const actual = asRecord(result.actual ?? result.error ?? result.value);
+        const text = [
+            firstString(actual.source),
+            firstString(actual.message),
+            firstString(actual.code),
+            firstString(readPath(actual, ['details', 'source'])),
+            firstString(readPath(actual, ['details', 'message'])),
+        ].filter(Boolean).join(' ').toLowerCase();
+        return text.includes('stats.counters.messages') ||
+            (text.includes('receiver') && text.includes('delivery'));
+    });
+    if (!failedResult) {
+        return undefined;
+    }
+
+    const minimalFix = 'RTC receiver delivery';
+    return {
+        category: 'receiver-delivery',
+        title: 'Receiver delivery threshold failed.',
+        likelyCause: 'A receiver observed fewer RTC messages than the recipe threshold required.',
+        nextAction:
+            'Inspect receiver stats, topology profile, stream fanout, and lowest receiver delivery counts before changing thresholds.',
+        minimalFixArea: minimalFix,
+        verificationCommand: verificationCommand(minimalFix),
+        affectedAgents: maybeStringArray(firstString(failedResult.agentId)),
+        affectedRegions: [],
+        commandId: commandIdFromResult(failedResult),
+        evidenceFile: 'results.jsonl',
+    };
 }
 
 function streamPerformanceFailure(
@@ -862,6 +985,38 @@ function groupFromArtifacts(
     };
 }
 
+function targetResolutionAnalysis(
+    targetResolutionRecord: Record<string, unknown>,
+    distributedRun: ControlDistributedRunSnapshot,
+): DistributedRunTargetResolutionAnalysis | undefined {
+    const source = Object.keys(targetResolutionRecord).length > 0
+        ? targetResolutionRecord
+        : asRecord(distributedRun.targetResolution);
+    if (Object.keys(source).length === 0) {
+        return undefined;
+    }
+
+    const summary = asRecord(source.summary);
+    const blockers = arrayRecords(source.blockers);
+    return {
+        selected: numberValue(summary.selected) ?? stringArray(source.targetAgentIds).length,
+        expectedParticipantCount: numberValue(summary.expectedParticipantCount),
+        missingExpectedParticipants: numberValue(summary.missingExpectedParticipants) ?? 0,
+        blockers: blockers.length,
+        staleAgents: numberValue(summary.staleAgents) ?? 0,
+        offlineAgents: numberValue(summary.offlineAgents) ?? 0,
+        wrongGroupAgents: numberValue(summary.wrongGroupAgents) ?? 0,
+        agentsWithoutIdentity: numberValue(summary.agentsWithoutIdentity) ?? 0,
+        roleCounts: numberRecord(summary.roleCounts),
+        regions: numberRecord(summary.regions),
+        providers: numberRecord(summary.providers),
+        targetAgentIds: stringArray(source.targetAgentIds),
+        blockingAgentIds: blockers
+            .map(blocker => firstString(blocker.agentId))
+            .filter((agentId): agentId is string => Boolean(agentId)),
+    };
+}
+
 type ParsedDistributedRunArtifactFiles = Readonly<{
     parseWarnings: DistributedRunArtifactParseWarning[];
     distributedRunRecord: Record<string, unknown>;
@@ -870,6 +1025,7 @@ type ParsedDistributedRunArtifactFiles = Readonly<{
     failureBundle: Record<string, unknown>;
     runnerSummary: Record<string, unknown>;
     manifestRecord: Record<string, unknown>;
+    targetResolutionRecord: Record<string, unknown>;
     controlPostFailure?: ControlPostFailureArtifact;
     results: readonly Record<string, unknown>[];
     events: readonly Record<string, unknown>[];
@@ -893,6 +1049,11 @@ function parseDistributedRunArtifactFiles(
         controlRunRecord: parseJsonRecord(files['control-run.json'], 'control-run.json', parseWarnings),
         fleetReport: parseJsonRecord(files['fleet-report.json'], 'fleet-report.json', parseWarnings),
         failureBundle: parseJsonRecord(files['failures.json'], 'failures.json', parseWarnings),
+        targetResolutionRecord: parseJsonRecord(
+            files['target-resolution.json'],
+            'target-resolution.json',
+            parseWarnings,
+        ),
         runnerSummary,
         manifestRecord,
         controlPostFailure,
@@ -1230,6 +1391,186 @@ function streamEventPriority(event: Record<string, unknown>): number {
         return 1;
     }
     return 0;
+}
+
+function receiverDeliverySamplesFromResults(
+    distributedRun: ControlDistributedRunSnapshot,
+    controlResults: readonly Record<string, unknown>[],
+    jsonlResults: readonly Record<string, unknown>[],
+): readonly ReceiverDeliverySample[] {
+    const specsByCommandId = receiverDeliverySpecsByCommandId(distributedRun);
+    const samples = new Map<string, ReceiverDeliverySample>();
+    for (const result of [...controlResults, ...jsonlResults]) {
+        for (const sample of receiverDeliverySamplesFromResult(result, specsByCommandId)) {
+            const key = [
+                sample.agentId ?? 'unknown-agent',
+                sample.expectedInboundMessages ?? 'unknown-expected',
+                sample.minExpectedInboundMessages ?? 'unknown-minimum',
+            ].join(':');
+            samples.set(key, sample);
+        }
+    }
+    return [...samples.values()];
+}
+
+function receiverDeliverySpecsByCommandId(
+    distributedRun: ControlDistributedRunSnapshot,
+): ReadonlyMap<string, ReceiverDeliverySpec> {
+    const specs = new Map<string, ReceiverDeliverySpec>();
+    const walkCommands = (commands: readonly Record<string, unknown>[]): void => {
+        for (const command of commands) {
+            const commandId = firstString(command.commandId);
+            const spec = receiverDeliverySpecFromMetadata(asRecord(command.metadata));
+            if (commandId && spec) {
+                specs.set(commandId, spec);
+            }
+            walkCommands(arrayRecords(command.commands));
+            for (const group of arrayRecords(command.groups)) {
+                walkCommands(arrayRecords(group.commands));
+            }
+        }
+    };
+
+    for (const selection of arrayRecords(readPath(distributedRun, ['manifest', 'recipes']))) {
+        const recipe = asRecord(selection.recipe);
+        walkCommands(arrayRecords(recipe.commands));
+    }
+    return specs;
+}
+
+function receiverDeliverySamplesFromResult(
+    result: Record<string, unknown>,
+    specsByCommandId: ReadonlyMap<string, ReceiverDeliverySpec>,
+    inheritedAgentId?: string,
+): readonly ReceiverDeliverySample[] {
+    const samples: ReceiverDeliverySample[] = [];
+    const stats = statsSummaryRecord(result.result) ??
+        statsSummaryRecord(result.value) ??
+        statsSummaryRecord(result.actual) ??
+        statsSummaryRecord(result.error);
+    const action = firstString(result.action, result.kind, readPath(result, ['result', 'kind']));
+    const agentId = firstString(result.agentId, inheritedAgentId);
+    const commandId = firstString(
+        stats?.commandId,
+        readPath(result, ['result', 'commandId']),
+        commandIdFromResult(result),
+    );
+    const receivedMessages = numberValue(readPath(stats, ['counters', 'messages']));
+    const inlineSpec = receiverDeliverySpecFromMetadata(asRecord(result.metadata)) ??
+        receiverDeliverySpecFromMetadata(asRecord(readPath(result, ['result', 'metadata']))) ??
+        receiverDeliverySpecFromMetadata(asRecord(readPath(result, ['value', 'metadata']))) ??
+        receiverDeliverySpecFromMetadata(asRecord(stats?.metadata));
+    const spec = inlineSpec ?? (commandId ? specsByCommandId.get(commandId) : undefined);
+
+    if ((stats || action === 'stats') && receivedMessages !== undefined && spec) {
+        samples.push({
+            agentId,
+            commandId,
+            receivedMessages,
+            ...spec,
+        });
+    }
+
+    nestedRecipeResultRecords(result).forEach(nestedResult => {
+        samples.push(...receiverDeliverySamplesFromResult(
+            nestedResult,
+            specsByCommandId,
+            agentId,
+        ));
+    });
+    return samples;
+}
+
+function statsSummaryRecord(value: unknown): Record<string, unknown> | undefined {
+    const record = asRecord(value);
+    if (numberValue(readPath(record, ['counters', 'messages'])) !== undefined) {
+        return record;
+    }
+    const nestedCandidates = [
+        asRecord(record.value),
+        asRecord(record.result),
+        asRecord(record.actual),
+    ];
+    return nestedCandidates.find(candidate =>
+        numberValue(readPath(candidate, ['counters', 'messages'])) !== undefined
+    );
+}
+
+function receiverDeliverySpecFromMetadata(
+    metadata: Record<string, unknown>,
+): ReceiverDeliverySpec | undefined {
+    const nested = asRecord(metadata.receiverDelivery);
+    const source = Object.keys(nested).length > 0 ? nested : metadata;
+    const expectedInboundMessages = numberValue(source.expectedInboundMessages);
+    const minExpectedInboundMessages = numberValue(source.minExpectedInboundMessages);
+    const minReceiveRatio = numberValue(source.minReceiveRatio);
+    if (
+        expectedInboundMessages === undefined &&
+        minExpectedInboundMessages === undefined &&
+        minReceiveRatio === undefined
+    ) {
+        return undefined;
+    }
+    return {
+        expectedInboundMessages,
+        minExpectedInboundMessages,
+        minReceiveRatio,
+    };
+}
+
+function receiverDeliveryFromSamples(
+    samples: readonly ReceiverDeliverySample[],
+): DistributedRunPerformanceAnalysis['receiverDelivery'] {
+    if (samples.length === 0) {
+        return undefined;
+    }
+
+    const receivedMessages = samples.map(sample => sample.receivedMessages);
+    const expectedInboundMessages = firstDefinedNumber(samples.map(sample => sample.expectedInboundMessages));
+    const minExpectedInboundMessages = firstDefinedNumber(samples.map(sample => sample.minExpectedInboundMessages));
+    const minReceiveRatio = firstDefinedNumber(samples.map(sample => sample.minReceiveRatio));
+    const deliveryRatios = samples
+        .map(sample => sample.expectedInboundMessages && sample.expectedInboundMessages > 0
+            ? roundMetric(sample.receivedMessages / sample.expectedInboundMessages)
+            : undefined)
+        .filter((value): value is number => value !== undefined);
+
+    return {
+        sampleCount: samples.length,
+        expectedInboundMessages,
+        minExpectedInboundMessages,
+        minReceiveRatio,
+        minReceivedMessages: Math.min(...receivedMessages),
+        medianReceivedMessages: percentile(receivedMessages, 0.5),
+        p95ReceivedMessages: percentile(receivedMessages, 0.95),
+        maxReceivedMessages: Math.max(...receivedMessages),
+        minDeliveryRatio: deliveryRatios.length > 0 ? Math.min(...deliveryRatios) : undefined,
+        medianDeliveryRatio: percentile(deliveryRatios, 0.5),
+        p95DeliveryRatio: percentile(deliveryRatios, 0.95),
+        lowestAgents: samples
+            .filter((sample): sample is ReceiverDeliverySample & Readonly<{ agentId: string }> =>
+                typeof sample.agentId === 'string' && sample.agentId.length > 0
+            )
+            .map(sample => ({
+                agentId: sample.agentId,
+                receivedMessages: sample.receivedMessages,
+                expectedInboundMessages: sample.expectedInboundMessages,
+                deliveryRatio: sample.expectedInboundMessages && sample.expectedInboundMessages > 0
+                    ? roundMetric(sample.receivedMessages / sample.expectedInboundMessages)
+                    : undefined,
+            }))
+            .sort((left, right) =>
+                left.receivedMessages - right.receivedMessages ||
+                (left.deliveryRatio ?? Number.POSITIVE_INFINITY) -
+                    (right.deliveryRatio ?? Number.POSITIVE_INFINITY) ||
+                left.agentId.localeCompare(right.agentId)
+            )
+            .slice(0, 5),
+    };
+}
+
+function firstDefinedNumber(values: readonly (number | undefined)[]): number | undefined {
+    return values.find((value): value is number => typeof value === 'number' && Number.isFinite(value));
 }
 
 function streamTimingFromSamples(
@@ -1996,6 +2337,14 @@ function optionalRecord(value: unknown): Record<string, unknown> | undefined {
 
 function arrayRecords(value: unknown): readonly Record<string, unknown>[] {
     return Array.isArray(value) ? value.map(asRecord) : [];
+}
+
+function numberRecord(value: unknown): Readonly<Record<string, number>> {
+    return Object.fromEntries(
+        Object.entries(asRecord(value))
+            .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
+            .sort(([left], [right]) => left.localeCompare(right)),
+    );
 }
 
 function firstString(...values: readonly unknown[]): string | undefined {

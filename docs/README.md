@@ -38,6 +38,9 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
 - [Rallar API-v1 In-Memory Performance Mode](./rallar-api-v1-in-memory-performance-mode.md)
   How to run API-v1 with PGlite memory persistence and local queue pub/sub for
   single-server performance tests, including black-box SPA and RTC validation.
+- [Rallar RTC RTT Reporting](./rallar-rtc-rtt-reporting.md) Current browser to
+  server RTC RTT reporting flow, server topology use, and analysis for bounded
+  per-client RTT reporting degree.
 
 ## Repo Codex Skills
 

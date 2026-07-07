@@ -18,6 +18,7 @@ import {
     fetchControlRunSnapshot,
     fetchControlServerSnapshot,
     rebuildFleetReports,
+    resolveDistributedTargets,
     stageDistributedRun,
     startDistributedRun,
     cancelDistributedRun,
@@ -287,6 +288,31 @@ describe('rallar-black-box control run manager', () => {
         const fetchFn = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
             const url = String(input);
             requests.push({ url, init });
+            if (url.endsWith('/distributed-runs/resolve-targets')) {
+                return new Response(JSON.stringify({
+                    group: distributedRun.manifest.group,
+                    resolvedAtEpochMs: 2_000,
+                    staleAfterMs: 30_000,
+                    targetPolicyMode: 'all-online-group-members',
+                    targetAgentIds: ['agent-a'],
+                    roleAssignments: [{ role: 'sender', agentId: 'agent-a', required: true }],
+                    blockers: [],
+                    summary: {
+                        agents: 1,
+                        targetable: 1,
+                        selected: 1,
+                        expectedParticipantCount: 1,
+                        missingExpectedParticipants: 0,
+                        staleAgents: 0,
+                        offlineAgents: 0,
+                        wrongGroupAgents: 0,
+                        agentsWithoutIdentity: 0,
+                        roleCounts: { sender: 1 },
+                        regions: {},
+                        providers: {},
+                    },
+                }), { status: 200 });
+            }
             if (url.endsWith('/distributed-runs')) {
                 if (init?.method === 'POST') {
                     return new Response(JSON.stringify(distributedRun), { status: 201 });
@@ -317,6 +343,23 @@ describe('rallar-black-box control run manager', () => {
             distributedRunId: 'dist-1',
             fetchFn,
         });
+        const targetResolution = await resolveDistributedTargets({
+            baseUrl: 'http://control.test',
+            token: 'admin-token',
+            manifest: {
+                ...distributedRun.manifest,
+                targetPolicy: {
+                    mode: 'all-online-group-members',
+                    expectedParticipantCount: 1,
+                },
+                roleAssignmentPolicy: {
+                    mode: 'ordered-targets',
+                    pattern: 'one-sender-many-receivers',
+                    orderBy: 'agent-id',
+                },
+            },
+            fetchFn,
+        });
         await createDistributedRun({
             baseUrl: 'http://control.test',
             token: 'admin-token',
@@ -340,6 +383,7 @@ describe('rallar-black-box control run manager', () => {
         expect(requests.map(request => request.url)).toEqual([
             'http://control.test/distributed-runs',
             'http://control.test/distributed-runs/dist-1',
+            'http://control.test/distributed-runs/resolve-targets',
             'http://control.test/distributed-runs',
             'http://control.test/distributed-runs/dist-1/stage',
             'http://control.test/distributed-runs/dist-1/start',
@@ -347,10 +391,26 @@ describe('rallar-black-box control run manager', () => {
             'http://control.test/distributed-runs/dist-1/artifacts',
         ]);
         expect(JSON.parse(String(requests[2].init?.body))).toEqual({
+            manifest: {
+                ...distributedRun.manifest,
+                targetPolicy: {
+                    mode: 'all-online-group-members',
+                    expectedParticipantCount: 1,
+                },
+                roleAssignmentPolicy: {
+                    mode: 'ordered-targets',
+                    pattern: 'one-sender-many-receivers',
+                    orderBy: 'agent-id',
+                },
+            },
+        });
+        expect(JSON.parse(String(requests[3].init?.body))).toEqual({
             manifest: distributedRun.manifest,
         });
-        expect(JSON.parse(String(requests[5].init?.body))).toEqual({ reason: 'stop' });
+        expect(JSON.parse(String(requests[6].init?.body))).toEqual({ reason: 'stop' });
         expect((requests[0].init?.headers as Record<string, string>).Authorization).toBe('Bearer admin-token');
+        expect((requests[2].init?.headers as Record<string, string>).Authorization).toBe('Bearer admin-token');
+        expect(targetResolution.summary.roleCounts).toEqual({ sender: 1 });
         expect(artifact.files['manifest.json']).toBe('{}');
     });
 

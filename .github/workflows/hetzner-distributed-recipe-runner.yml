@@ -80,9 +80,9 @@ on:
         type: string
         default: '120'
       terminal_timeout_seconds:
-        description: Distributed recipe terminal-state wait timeout in seconds
+        description: Distributed recipe terminal-state wait timeout in seconds; blank derives from manifest metadata or defaults to 300
         type: string
-        default: '300'
+        default: ''
       stop_after_run:
         description: Stop the headless worker service after artifacts and analysis are collected
         type: boolean
@@ -147,6 +147,8 @@ jobs:
           INPUT_ROOM_ID: ${{ inputs.room_id }}
           INPUT_APPLICATION_ID: ${{ inputs.application_id }}
           INPUT_WORKSPACE_ID: ${{ inputs.workspace_id }}
+          INPUT_TERMINAL_TIMEOUT_SECONDS: ${{ inputs.terminal_timeout_seconds }}
+          INPUT_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}
         run: |
           set -euo pipefail
 
@@ -154,6 +156,12 @@ jobs:
           manifest_room_id="$(jq -r '.group.groupId // empty' "${MANIFEST_PATH}")"
           manifest_application_id="$(jq -r '.group.applicationId // empty' "${MANIFEST_PATH}")"
           manifest_workspace_id="$(jq -r '.group.workspaceId // empty' "${MANIFEST_PATH}")"
+          manifest_terminal_timeout_seconds="$(jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty' "${MANIFEST_PATH}")"
+          manifest_rtc_topology_degree_limit="$(jq -r '.metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT // empty' "${MANIFEST_PATH}")"
+          manifest_rtc_topology_tree_min_size="$(jq -r '.metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE // empty' "${MANIFEST_PATH}")"
+          manifest_rtc_topology_mesh_min_size="$(jq -r '.metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE // empty' "${MANIFEST_PATH}")"
+          manifest_rtc_topology_mesh_param_k="$(jq -r '.metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_PARAM_K // empty' "${MANIFEST_PATH}")"
+          manifest_rtc_topology_rtt_rebuild_debounce_ms="$(jq -r '.metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS // empty' "${MANIFEST_PATH}")"
 
           resolve_value() {
             local output_name="$1"
@@ -167,13 +175,76 @@ jobs:
             printf '%s=%s\n' "${output_name}" "${value}" >> "${GITHUB_OUTPUT}"
           }
 
+          resolve_optional_value() {
+            local output_name="$1"
+            local input_value="$2"
+            local manifest_value="$3"
+            local fallback_value="$4"
+            local value="${input_value:-${manifest_value:-${fallback_value}}}"
+            printf '%s=%s\n' "${output_name}" "${value}" >> "${GITHUB_OUTPUT}"
+          }
+
+          bool_enabled() {
+            local value="${1:-0}"
+            [[ "${value}" == "1" || "${value}" == "true" || "${value}" == "yes" || "${value}" == "on" ]]
+          }
+
+          validate_positive_integer() {
+            local name="$1"
+            local value="$2"
+            if [[ -n "${value}" && ! "${value}" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::${name} must be a positive integer." >&2
+              exit 1
+            fi
+          }
+
+          validate_non_negative_integer() {
+            local name="$1"
+            local value="$2"
+            if [[ -n "${value}" && ! "${value}" =~ ^[0-9]+$ ]]; then
+              echo "::error::${name} must be a non-negative integer." >&2
+              exit 1
+            fi
+          }
+
+          validate_rtc_topology_env() {
+            validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT "${manifest_rtc_topology_degree_limit}"
+            validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE "${manifest_rtc_topology_tree_min_size}"
+            validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE "${manifest_rtc_topology_mesh_min_size}"
+            validate_positive_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_PARAM_K "${manifest_rtc_topology_mesh_param_k}"
+            validate_non_negative_integer metadata.rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS "${manifest_rtc_topology_rtt_rebuild_debounce_ms}"
+          }
+
+          topology_env_requires_rollout() {
+            [[ -n "${manifest_rtc_topology_degree_limit}" ||
+              -n "${manifest_rtc_topology_tree_min_size}" ||
+              -n "${manifest_rtc_topology_mesh_min_size}" ||
+              -n "${manifest_rtc_topology_mesh_param_k}" ||
+              -n "${manifest_rtc_topology_rtt_rebuild_debounce_ms}" ]]
+          }
+
           resolve_value agent_count "${INPUT_AGENT_COUNT}" "${manifest_agent_count}"
           resolve_value room_id "${INPUT_ROOM_ID}" "${manifest_room_id}"
           resolve_value application_id "${INPUT_APPLICATION_ID}" "${manifest_application_id}"
           resolve_value workspace_id "${INPUT_WORKSPACE_ID}" "${manifest_workspace_id}"
+          resolve_optional_value terminal_timeout_seconds "${INPUT_TERMINAL_TIMEOUT_SECONDS}" "${manifest_terminal_timeout_seconds}" "300"
+          printf 'rtc_topology_degree_limit=%s\n' "${manifest_rtc_topology_degree_limit}" >> "${GITHUB_OUTPUT}"
+          printf 'rtc_topology_tree_min_size=%s\n' "${manifest_rtc_topology_tree_min_size}" >> "${GITHUB_OUTPUT}"
+          printf 'rtc_topology_mesh_min_size=%s\n' "${manifest_rtc_topology_mesh_min_size}" >> "${GITHUB_OUTPUT}"
+          printf 'rtc_topology_mesh_param_k=%s\n' "${manifest_rtc_topology_mesh_param_k}" >> "${GITHUB_OUTPUT}"
+          printf 'rtc_topology_rtt_rebuild_debounce_ms=%s\n' "${manifest_rtc_topology_rtt_rebuild_debounce_ms}" >> "${GITHUB_OUTPUT}"
 
           if ! [[ "${INPUT_AGENT_COUNT:-${manifest_agent_count}}" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::agent_count must be a positive integer." >&2
+            exit 1
+          fi
+          if ! [[ "${INPUT_TERMINAL_TIMEOUT_SECONDS:-${manifest_terminal_timeout_seconds:-300}}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::terminal_timeout_seconds must be a positive integer." >&2
+            exit 1
+          fi
+          validate_rtc_topology_env
+          if topology_env_requires_rollout && ! bool_enabled "${INPUT_ROLLOUT_BEFORE_RUN}"; then
+            echo "::error::Manifest ${MANIFEST_PATH} requires rollout_before_run=true so API RTC topology env can be applied." >&2
             exit 1
           fi
 
@@ -258,6 +329,7 @@ jobs:
           RALLAR_BLACK_BOX_ROOM_ID: ${{ steps.manifest_defaults.outputs.room_id }}
           RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
           RALLAR_BLACK_BOX_AGENT_COUNT: ${{ steps.manifest_defaults.outputs.agent_count }}
+          RALLAR_BLACK_BOX_AGENT_START_INDEX: '1'
           RALLAR_BLACK_BOX_APPLICATION_ID: ${{ steps.manifest_defaults.outputs.application_id }}
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ steps.manifest_defaults.outputs.workspace_id }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
@@ -271,11 +343,16 @@ jobs:
           RALLAR_WAIT_FOR_HEADLESS_WORKERS: ${{ inputs.wait_for_agents }}
           RALLAR_HEADLESS_READY_TIMEOUT_SECONDS: ${{ inputs.ready_timeout_seconds }}
           RALLAR_DISTRIBUTED_READY_TIMEOUT_SECONDS: ${{ inputs.ready_timeout_seconds }}
-          RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS: ${{ inputs.terminal_timeout_seconds }}
+          RALLAR_DISTRIBUTED_TERMINAL_TIMEOUT_SECONDS: ${{ steps.manifest_defaults.outputs.terminal_timeout_seconds }}
           RALLAR_DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
           RALLAR_DISTRIBUTED_CONTROL_RUN_ID: ${{ steps.ids.outputs.run_id }}
           RALLAR_DISTRIBUTED_MANIFEST_PATH: /tmp/rallar-distributed-manifest.json
           RALLAR_DISTRIBUTED_ARTIFACT_DIR: /tmp/rallar-distributed-runs
+          RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: ${{ steps.manifest_defaults.outputs.rtc_topology_degree_limit }}
+          RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: ${{ steps.manifest_defaults.outputs.rtc_topology_tree_min_size }}
+          RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: ${{ steps.manifest_defaults.outputs.rtc_topology_mesh_min_size }}
+          RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: ${{ steps.manifest_defaults.outputs.rtc_topology_mesh_param_k }}
+          RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS: ${{ steps.manifest_defaults.outputs.rtc_topology_rtt_rebuild_debounce_ms }}
         run: |
           set -euo pipefail
           quote() { printf '%q' "$1"; }
@@ -294,6 +371,7 @@ jobs:
             printf 'RALLAR_BLACK_BOX_ROOM_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_ROOM_ID}")"
             printf 'RALLAR_BLACK_BOX_AGENT_PREFIX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_PREFIX}")"
             printf 'RALLAR_BLACK_BOX_AGENT_COUNT=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_COUNT}")"
+            printf 'RALLAR_BLACK_BOX_AGENT_START_INDEX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_START_INDEX}")"
             printf 'RALLAR_BLACK_BOX_APPLICATION_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_APPLICATION_ID}")"
             printf 'RALLAR_BLACK_BOX_WORKSPACE_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_WORKSPACE_ID}")"
             printf 'RALLAR_BLACK_BOX_USERNAME=%s\n' "$(quote "${RALLAR_BLACK_BOX_USERNAME}")"
@@ -314,6 +392,11 @@ jobs:
             printf 'RALLAR_DISTRIBUTED_CONTROL_RUN_ID=%s\n' "$(quote "${RALLAR_DISTRIBUTED_CONTROL_RUN_ID}")"
             printf 'RALLAR_DISTRIBUTED_MANIFEST_PATH=%s\n' "$(quote "${RALLAR_DISTRIBUTED_MANIFEST_PATH}")"
             printf 'RALLAR_DISTRIBUTED_ARTIFACT_DIR=%s\n' "$(quote "${RALLAR_DISTRIBUTED_ARTIFACT_DIR}")"
+            printf 'RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT}")"
+            printf 'RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE}")"
+            printf 'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE}")"
+            printf 'RALLAR_RTC_TOPOLOGY_MESH_PARAM_K=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K}")"
+            printf 'RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS}")"
           } > "${env_file}"
           chmod 600 "${env_file}"
 

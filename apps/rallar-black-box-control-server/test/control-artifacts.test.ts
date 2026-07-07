@@ -1,4 +1,6 @@
 import {
+  controlResultArtifactJsonl,
+  controlResultEventArtifactJsonl,
   controlRunEventsJsonl,
   controlRunFailureBundle,
   controlRunResultsJsonl,
@@ -206,6 +208,30 @@ Deno.test('control artifacts export event, result, and failure bundles', () => {
   assertEquals(controlRunFailureBundle(run).failures.length, 1);
 });
 
+Deno.test('control artifact JSONL helpers preserve queued command metadata', () => {
+  const resultJsonl = controlResultArtifactJsonl(run.results[2], run.commands[1]);
+  const resultRow = JSON.parse(resultJsonl) as {
+    action?: string;
+    transport?: string;
+    connection?: string;
+  };
+  assertEquals(resultRow.action, 'crdt.wait');
+  assertEquals(resultRow.transport, 'CRDT');
+  assertEquals(resultRow.connection, 'checklist');
+
+  const eventJsonl = controlResultEventArtifactJsonl(run.results[2], run.commands[1]);
+  const eventRow = JSON.parse(eventJsonl) as {
+    kind?: string;
+    action?: string;
+    transport?: string;
+    connection?: string;
+  };
+  assertEquals(eventRow.kind, 'step-result');
+  assertEquals(eventRow.action, 'crdt.wait');
+  assertEquals(eventRow.transport, 'CRDT');
+  assertEquals(eventRow.connection, 'checklist');
+});
+
 Deno.test('control distributed artifacts export filtered v2 analysis files', () => {
   const distributedRun: ControlDistributedRunSnapshot = {
     distributedRunId: 'dist-artifact',
@@ -301,9 +327,10 @@ Deno.test('control distributed artifacts export filtered v2 analysis files', () 
   assertEquals(report.summary.commandCount, 1);
   assertEquals(failures.failures.length, 2);
   assertEquals(metadata.generatedAtEpochMs, 4_000);
-  assert((bundle.files['results.jsonl'] ?? '').includes('"commandId":"http-1"'));
-  assert(!(bundle.files['results.jsonl'] ?? '').includes('"commandId":"crdt-wait-1"'));
-  assert((bundle.files['events.jsonl'] ?? '').includes('dist-ref-event'));
+  assertEquals('results.jsonl' in bundle.files, false);
+  assertEquals('events.jsonl' in bundle.files, false);
+  assertEquals(metadata.artifactRefs.resultsJsonl, '/runs/artifact-run/results.jsonl');
+  assertEquals(metadata.artifactRefs.eventsJsonl, '/runs/artifact-run/events.jsonl');
   assert(!JSON.stringify(bundle).includes('secret-token'));
   assert(JSON.stringify(bundle).includes('<redacted>'));
 });

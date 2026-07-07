@@ -24,6 +24,7 @@ import type {
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetResolution,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 
@@ -48,6 +49,7 @@ export type {
     ControlRunSnapshot,
     ControlServerSnapshot,
     ControlSnapshotBounds,
+    RallarBlackBoxDistributedTargetResolution,
 };
 
 export type ControlRunManagerStats = Readonly<{
@@ -427,6 +429,28 @@ export async function createDistributedRun(input: Readonly<{
         },
     );
     return readJsonResponse<ControlDistributedRunSnapshot>(response);
+}
+
+export async function resolveDistributedTargets(input: Readonly<{
+    baseUrl: string;
+    manifest: RallarBlackBoxDistributedRunManifest;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<RallarBlackBoxDistributedTargetResolution> {
+    const response = await (input.fetchFn ?? fetch)(
+        new URL('/distributed-runs/resolve-targets', normalizedBaseUrl(input.baseUrl)),
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authorizationHeaders(input.token),
+            },
+            body: JSON.stringify({
+                manifest: input.manifest,
+            }),
+        },
+    );
+    return readJsonResponse<RallarBlackBoxDistributedTargetResolution>(response);
 }
 
 export async function stageDistributedRun(input: Readonly<{

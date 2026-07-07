@@ -89,6 +89,7 @@ describe('Hetzner SPA public env wiring', () => {
         expect(workflow).toContain('default: controller');
         expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}');
         expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_COUNT: ${{ inputs.agent_count }}');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ vars.RALLAR_BLACK_BOX_AGENT_START_INDEX || \'1\' }}');
         expect(workflow).toContain('application_id:');
         expect(workflow).toContain('workspace_id:');
         expect(workflow).toContain('rallar_black_box_username:');
@@ -97,12 +98,16 @@ describe('Hetzner SPA public env wiring', () => {
         expect(workflow).toContain('RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}');
         expect(workflow).toContain('RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}');
         expect(workflow).toContain('RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}');
+        expect(workflow).toContain('printf \'RALLAR_BLACK_BOX_AGENT_START_INDEX=%s\\n\'');
         expect(workflow).toContain('printf \'RALLAR_BLACK_BOX_REGISTER=%s\\n\'');
         expect(startScript).toContain(
             'RALLAR_BLACK_BOX_APPLICATION_ID="${RALLAR_BLACK_BOX_APPLICATION_ID:-${RALLAR_APPLICATION_ID:-rallar-server}}"',
         );
         expect(startScript).toContain(
             'RALLAR_BLACK_BOX_WORKSPACE_ID="${RALLAR_BLACK_BOX_WORKSPACE_ID:-${RALLAR_WORKSPACE_ID:-default}}"',
+        );
+        expect(startScript).toContain(
+            'RALLAR_BLACK_BOX_AGENT_START_INDEX="${RALLAR_BLACK_BOX_AGENT_START_INDEX:-1}"',
         );
     });
 

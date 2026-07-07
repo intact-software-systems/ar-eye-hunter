@@ -234,6 +234,69 @@ describe("rallar-black-box headless worker config", () => {
     expect(secondUrl.searchParams.get("rallarLeaveRoomOnClose")).toBe("1");
   });
 
+  it("supports stable multi-worker agent id shards", () => {
+    const config = readHeadlessWorkerConfig({
+      env: {
+        RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
+        RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+        RALLAR_API_BASE_URL: "https://api.example.test",
+        RALLAR_BLACK_BOX_RUN_ID: "run-sharded",
+        RALLAR_BLACK_BOX_ROOM_ID: "room-sharded",
+        RALLAR_BLACK_BOX_AGENT_PREFIX: "controller",
+        RALLAR_BLACK_BOX_AGENT_COUNT: "25",
+        RALLAR_BLACK_BOX_AGENT_START_INDEX: "26",
+        RALLAR_BLACK_BOX_USERNAME: "shared-worker-user",
+        RALLAR_BLACK_BOX_PASSWORD: "shared-secret",
+        RALLAR_BLACK_BOX_AGENT_1_USERNAME: "worker-local-first",
+        RALLAR_BLACK_BOX_AGENT_1_PASSWORD: "first-secret",
+        RALLAR_BLACK_BOX_AGENT_25_USERNAME: "worker-local-last",
+        RALLAR_BLACK_BOX_AGENT_25_PASSWORD: "last-secret",
+      },
+    });
+
+    expect(config.agentStartIndex).toBe(26);
+    expect(config.agents.map((agent) => agent.agentId)).toEqual([
+      "controller-26",
+      "controller-27",
+      "controller-28",
+      "controller-29",
+      "controller-30",
+      "controller-31",
+      "controller-32",
+      "controller-33",
+      "controller-34",
+      "controller-35",
+      "controller-36",
+      "controller-37",
+      "controller-38",
+      "controller-39",
+      "controller-40",
+      "controller-41",
+      "controller-42",
+      "controller-43",
+      "controller-44",
+      "controller-45",
+      "controller-46",
+      "controller-47",
+      "controller-48",
+      "controller-49",
+      "controller-50",
+    ]);
+    expect(config.agents[0].credentials.username).toBe("worker-local-first");
+    expect(config.agents[24].credentials.username).toBe("worker-local-last");
+
+    const firstUrl = new URL(config.agents[0].url);
+    const lastUrl = new URL(config.agents[24].url);
+    expect(firstUrl.searchParams.get("agentId")).toBe("controller-26");
+    expect(firstUrl.searchParams.get("rallarUsername")).toBe(
+      "worker-local-first",
+    );
+    expect(lastUrl.searchParams.get("agentId")).toBe("controller-50");
+    expect(lastUrl.searchParams.get("rallarUsername")).toBe(
+      "worker-local-last",
+    );
+  });
+
   it("parses browser log levels for headless worker page events", () => {
     const baseEnv = {
       RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
@@ -412,6 +475,7 @@ describe("rallar-black-box headless worker config", () => {
       runId: "run-direct",
       agentPrefix: "direct",
       agentCount: 1,
+      agentStartIndex: 1,
       roomId: "room-direct",
       browserEngine: "chromium",
       transport: "realtime",

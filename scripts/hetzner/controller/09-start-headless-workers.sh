@@ -157,6 +157,7 @@ apply_default_worker_env() {
   RALLAR_BLACK_BOX_ROOM_ID="${RALLAR_BLACK_BOX_ROOM_ID:-hetzner-headless-room}"
   RALLAR_BLACK_BOX_AGENT_PREFIX="${RALLAR_BLACK_BOX_AGENT_PREFIX:-controller}"
   RALLAR_BLACK_BOX_AGENT_COUNT="${RALLAR_BLACK_BOX_AGENT_COUNT:-1}"
+  RALLAR_BLACK_BOX_AGENT_START_INDEX="${RALLAR_BLACK_BOX_AGENT_START_INDEX:-1}"
   RALLAR_BLACK_BOX_APPLICATION_ID="${RALLAR_BLACK_BOX_APPLICATION_ID:-${RALLAR_APPLICATION_ID:-rallar-server}}"
   RALLAR_BLACK_BOX_WORKSPACE_ID="${RALLAR_BLACK_BOX_WORKSPACE_ID:-${RALLAR_WORKSPACE_ID:-default}}"
   RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL="${RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL:-warning}"
@@ -171,7 +172,9 @@ validate_worker_env() {
   validate_required_value RALLAR_BLACK_BOX_ROOM_ID
   validate_required_value RALLAR_BLACK_BOX_AGENT_PREFIX
   validate_required_value RALLAR_BLACK_BOX_AGENT_COUNT
+  validate_required_value RALLAR_BLACK_BOX_AGENT_START_INDEX
   validate_positive_integer RALLAR_BLACK_BOX_AGENT_COUNT "${RALLAR_BLACK_BOX_AGENT_COUNT}"
+  validate_positive_integer RALLAR_BLACK_BOX_AGENT_START_INDEX "${RALLAR_BLACK_BOX_AGENT_START_INDEX}"
   validate_browser_engine RALLAR_BLACK_BOX_BROWSER_ENGINE
   validate_credentials
 }
@@ -194,6 +197,7 @@ EOF_ENV
     RALLAR_BLACK_BOX_ROOM_ID
     RALLAR_BLACK_BOX_AGENT_PREFIX
     RALLAR_BLACK_BOX_AGENT_COUNT
+    RALLAR_BLACK_BOX_AGENT_START_INDEX
   )
   local optional_vars=(
     RALLAR_BLACK_BOX_USERNAME
@@ -316,13 +320,15 @@ wait_for_workers() {
   require_command jq
   validate_positive_integer RALLAR_HEADLESS_READY_TIMEOUT_SECONDS "${RALLAR_HEADLESS_READY_TIMEOUT_SECONDS}"
 
-  local snapshot_url expected prefix connected total snapshot last_state
+  local snapshot_url expected prefix agent_start agent_end connected total snapshot last_state
   snapshot_url="$(control_run_snapshot_url "${RALLAR_BLACK_BOX_CONTROL_URL}" "${RALLAR_BLACK_BOX_RUN_ID}")"
   expected="${RALLAR_BLACK_BOX_AGENT_COUNT}"
   prefix="${RALLAR_BLACK_BOX_AGENT_PREFIX}-"
+  agent_start="${RALLAR_BLACK_BOX_AGENT_START_INDEX}"
+  agent_end="$((agent_start + expected - 1))"
   last_state="no snapshot yet"
 
-  echo "==> Waiting for ${expected} connected headless agent(s) in ${snapshot_url}"
+  echo "==> Waiting for ${expected} connected headless agent(s) ${prefix}${agent_start}..${prefix}${agent_end} in ${snapshot_url}"
   for _ in $(seq 1 "${RALLAR_HEADLESS_READY_TIMEOUT_SECONDS}"); do
     if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
       echo "${SERVICE_NAME} is not active." >&2
@@ -332,7 +338,7 @@ wait_for_workers() {
 
     snapshot="$(curl -fsS "${snapshot_url}" 2>/dev/null || true)"
     if [[ -n "${snapshot}" ]]; then
-      connected="$(jq --arg prefix "${prefix}" '[.agents[]? | select(.connected == true and (.agentId | startswith($prefix)))] | length' <<<"${snapshot}" 2>/dev/null || echo 0)"
+      connected="$(jq --arg prefix "${prefix}" --argjson start "${agent_start}" --argjson end "${agent_end}" '[.agents[]? | select(.connected == true and (.agentId | startswith($prefix)) and ((.agentId[$prefix | length:] | tonumber?) as $ordinal | ($ordinal >= $start and $ordinal <= $end)))] | length' <<<"${snapshot}" 2>/dev/null || echo 0)"
       total="$(jq '[.agents[]?] | length' <<<"${snapshot}" 2>/dev/null || echo 0)"
       last_state="connected=${connected}/${expected}, totalAgents=${total}"
       if [[ "${connected}" -ge "${expected}" ]]; then
@@ -366,7 +372,10 @@ else
   validate_required_value RALLAR_BLACK_BOX_RUN_ID
   validate_required_value RALLAR_BLACK_BOX_AGENT_PREFIX
   validate_required_value RALLAR_BLACK_BOX_AGENT_COUNT
+  RALLAR_BLACK_BOX_AGENT_START_INDEX="${RALLAR_BLACK_BOX_AGENT_START_INDEX:-1}"
+  validate_required_value RALLAR_BLACK_BOX_AGENT_START_INDEX
   validate_positive_integer RALLAR_BLACK_BOX_AGENT_COUNT "${RALLAR_BLACK_BOX_AGENT_COUNT}"
+  validate_positive_integer RALLAR_BLACK_BOX_AGENT_START_INDEX "${RALLAR_BLACK_BOX_AGENT_START_INDEX}"
   validate_browser_engine RALLAR_BLACK_BOX_BROWSER_ENGINE
 fi
 
@@ -378,6 +387,7 @@ echo "==> Starting ${SERVICE_NAME}"
 echo "Run id      : ${RALLAR_BLACK_BOX_RUN_ID}"
 echo "Agent prefix: ${RALLAR_BLACK_BOX_AGENT_PREFIX}"
 echo "Agent count : ${RALLAR_BLACK_BOX_AGENT_COUNT}"
+echo "Agent start : ${RALLAR_BLACK_BOX_AGENT_START_INDEX}"
 echo "Entry      : ${RALLAR_BLACK_BOX_HEADLESS_ENTRY:-headless}"
 echo "Browser eng.: ${RALLAR_BLACK_BOX_BROWSER_ENGINE}"
 echo "SPA URL     : ${RALLAR_BLACK_BOX_SPA_URL:-from ${ENV_FILE}}"

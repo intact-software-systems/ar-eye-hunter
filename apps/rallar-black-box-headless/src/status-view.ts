@@ -41,6 +41,12 @@ export function renderHeadlessStatus(
 ): void {
     const latestCommand = snapshot.state.commandHistory.at(-1);
     const latestEvent = snapshot.state.events.at(-1);
+    const identity = snapshot.control.identity;
+    const applicationId = identity?.applicationId ?? snapshot.bootstrap.applicationId;
+    const workspaceId = identity?.workspaceId ?? snapshot.bootstrap.workspaceId;
+    const groupId = identity?.groupId ?? snapshot.bootstrap.roomId;
+    const region = identity?.region ?? snapshot.bootstrap.fleetRegion;
+    const provider = identity?.provider ?? snapshot.bootstrap.fleetProvider;
 
     root.replaceChildren();
 
@@ -57,12 +63,33 @@ export function renderHeadlessStatus(
         const error = appendText(section, 'p', snapshot.lastError, 'data-last-error');
         error.className = 'error';
     }
+    if (!applicationId || !workspaceId || !groupId || !region || !provider) {
+        const warning = appendText(
+            section,
+            'p',
+            'Missing global fleet identity; this browser may not be targetable by world-fleet recipes.',
+            'data-fleet-identity-warning',
+        );
+        warning.className = 'warning';
+    }
 
     const list = document.createElement('dl');
     appendRow(list, 'Agent', snapshot.bootstrap.agentId, 'data-agent-id');
     appendRow(list, 'Run', snapshot.bootstrap.runId, 'data-run-id');
     appendRow(list, 'Control', snapshot.control.state, 'data-control-state');
     appendRow(list, 'Runtime', snapshot.state.status, 'data-runtime-state');
+    appendRow(list, 'Application', applicationId, 'data-application-id');
+    appendRow(list, 'Workspace', workspaceId, 'data-workspace-id');
+    appendRow(list, 'Group', groupId, 'data-group-id');
+    appendRow(list, 'Principal', identity?.principalId ?? snapshot.bootstrap.actor, 'data-principal-id');
+    appendRow(list, 'Client', identity?.clientId ?? snapshot.bootstrap.actor, 'data-client-id');
+    appendRow(list, 'Session', identity?.sessionId ?? snapshot.bootstrap.sessionId, 'data-session-id');
+    appendRow(list, 'Region', region, 'data-fleet-region');
+    appendRow(list, 'Fleet provider', provider, 'data-fleet-provider');
+    appendRow(list, 'Datacenter', identity?.datacenter ?? snapshot.bootstrap.fleetDatacenter, 'data-fleet-datacenter');
+    appendRow(list, 'Host', identity?.hostId ?? snapshot.bootstrap.fleetHostId, 'data-fleet-host');
+    appendRow(list, 'Last heartbeat', snapshot.control.lastHeartbeatAtEpochMs, 'data-last-heartbeat');
+    appendRow(list, 'Reconnect count', snapshot.control.reconnectAttempt, 'data-reconnect-count');
     appendRow(list, 'Provider', snapshot.bootstrap.providerMode, 'data-provider');
     appendRow(list, 'Transport', snapshot.bootstrap.transport, 'data-transport');
     appendRow(list, 'Room', snapshot.bootstrap.roomId, 'data-room-id');

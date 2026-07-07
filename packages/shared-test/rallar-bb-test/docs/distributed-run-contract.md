@@ -35,6 +35,10 @@ Important optional fields:
 - `targetPolicy.mode`: `all-online-group-members`, `selected-agents`, or
   `role-map`.
 - `roleAssignments`: per-agent role and recipe assignment.
+- `roleAssignmentPolicy`: optional dynamic role derivation. The first policy is
+  `{ mode: "ordered-targets", orderBy: "agent-id" }` with patterns
+  `all-agents`, `sender-receiver`, `one-sender-many-receivers`, or
+  `three-browser-matrix`.
 - `ackTimeoutMs`: readiness/ACK timeout before the run is considered failed or
   timed out.
 - `barrier`: optional start-synchronization phase. When `enabled` is true, the
@@ -112,8 +116,10 @@ and artifact export.
 
 ## Target Resolution
 
-Iteration 45 adds the shared target-resolution contract used before a
-distributed run is staged.
+The shared target-resolution contract is used before a distributed run is
+created or staged. It supports both fixed local/Hetzner agent IDs and
+already-running world-fleet agents that must be resolved from live control
+server state.
 
 Control agents report `RallarBlackBoxControlAgentIdentity` on register and
 heartbeat:
@@ -153,12 +159,27 @@ The helper deliberately filters out stale, offline, unmatched, and duplicate
 agents so the UI/control server can show the operator why a browser is not safe
 to run.
 
+`resolveDistributedRunTargets(...)` is the richer resolver used by the control
+server and operator SPA. It returns `targetResolution` with:
+
+- resolved `targetAgentIds`
+- derived `roleAssignments`
+- expected/actual participant counts
+- stale/offline/wrong-group/missing-identity blocker totals
+- blocking agent IDs and reasons
+- role, region, and provider counts
+
+For `roleAssignmentPolicy.mode === "ordered-targets"`, target IDs are sorted by
+`agentId` before roles are derived. For principal multicast, the first resolved
+agent becomes `sender` and the remaining agents become `receiver`.
+
 ## Control Server Orchestration
 
 `apps/rallar-black-box-control-server` exposes distributed-run lifecycle APIs on
 top of the existing `/runs` command/result store:
 
 - `POST /distributed-runs`
+- `POST /distributed-runs/resolve-targets`
 - `GET /distributed-runs`
 - `GET /distributed-runs/{distributedRunId}`
 - `POST /distributed-runs/{distributedRunId}/stage`
@@ -166,8 +187,20 @@ top of the existing `/runs` command/result store:
 - `POST /distributed-runs/{distributedRunId}/cancel`
 - `GET /distributed-runs/{distributedRunId}/artifacts`
 
-The distributed-run resource links to a lower-level `controlRunId`. Staging
-queues `recipe.load` commands when the manifest contains inline recipes. For
+`POST /distributed-runs/resolve-targets` accepts `{ "manifest": ... }` or a raw
+manifest and returns only target-resolution preview. It does not create a
+distributed run and queues no commands.
+
+The artifact endpoint is a bounded metadata bundle. CI/export tooling should
+write the full artifact directory by downloading `/runs/{controlRunId}/results.jsonl`
+and `/runs/{controlRunId}/events.jsonl` directly, then combining those files with
+the distributed-run bundle metadata. Distributed bundles include
+`target-resolution.json` when target resolution has been performed.
+
+The distributed-run resource links to a lower-level `controlRunId`. Creating a
+run records a target preview. Staging re-resolves immediately, freezes
+`targetAgentIds` and derived roles on the distributed-run snapshot, then queues
+`recipe.load` commands when the manifest contains inline recipes. For
 recipe references without an inline recipe, staging queues a `health` preflight
 so the target agent can ACK readiness without the server reimplementing a
 recipe catalog. Starting queues `recipe.run`; scheduled manifests pass

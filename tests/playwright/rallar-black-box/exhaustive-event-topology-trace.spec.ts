@@ -47,7 +47,7 @@ test.describe('exhaustive events topology trace and diagnostics', () => {
 
       await openTab(page, 'event-stream');
       const eventPanel = page.locator('#panel-event-stream');
-      await eventPanel.getByRole('button', { name: 'message' }).click();
+      await eventPanel.getByRole('button', { name: 'message', exact: true }).click();
       await eventPanel.getByLabel('Topic').fill('rallar');
       await eventPanel.getByLabel('Window').selectOption('40');
       await expect(eventPanel).toContainText(/visible|rallar|message/i);

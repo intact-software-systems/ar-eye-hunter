@@ -1,15 +1,22 @@
 import {
+  type ControlClientEnvelope,
   type ControlCommandEnvelope,
+  type ControlEventEnvelope,
+  type ControlResultEnvelope,
   parseControlClientMessage,
   validateRallarBlackBoxTestCommand,
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
+  ControlQueuedCommandSnapshot,
   ControlRunSnapshotBounds,
   ControlServerSnapshot,
   EnqueueControlCommandInput,
 } from './control-service.ts';
 import { createRallarBlackBoxControlService } from './control-service.ts';
 import {
+  controlEventArtifactJsonl,
+  controlResultArtifactJsonl,
+  controlResultEventArtifactJsonl,
   controlRunArtifactContentType,
   controlRunArtifactFileNameFromValue,
   controlRunEventsJsonl,
@@ -42,6 +49,15 @@ import { assertBlackBoxControlProductionEnv } from '@shared-server/http/producti
 
 const DEFAULT_PORT = 5180;
 const OPEN_STATE = 1;
+const SNAPSHOT_PERSIST_DEBOUNCE_MS = 100;
+const ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS: ControlRunSnapshotBounds = {
+  commands: 200,
+  results: 200,
+  events: 200,
+  stats: 100,
+  reports: 20,
+  heartbeats: 100,
+};
 
 type SecurityOptions = Readonly<{
   allowedOrigins: readonly string[];
@@ -62,6 +78,7 @@ type SecurityOptions = Readonly<{
   storageDir?: string;
   retentionMaxRuns: number;
   snapshotPersistenceBounds: ControlRunSnapshotBounds;
+  runtimeRetentionBounds: ControlRunSnapshotBounds;
 }>;
 
 assertBlackBoxControlProductionEnv(Deno.env);
@@ -72,10 +89,17 @@ const controlService = createRallarBlackBoxControlService({
   commandRateLimitMax: security.commandRateLimitMax,
   commandRateLimitWindowMs: security.commandRateLimitWindowMs,
   runTokenTtlMs: security.runTokenTtlMs,
+  runtimeRetentionBounds: security.runtimeRetentionBounds,
+});
+const artifactRecorder = createArtifactRecorder(security.storageDir, {
+  commandSnapshot: (runId, commandId) => controlService.snapshotCommand(runId, commandId),
 });
 const agentSockets = new Map<string, WebSocket>();
 const socketAgents = new WeakMap<WebSocket, { runId: string; agentId: string }>();
 let snapshotPersistSequence = 0;
+let snapshotPersistScheduled = false;
+let snapshotPersisting = false;
+let snapshotPersistDirty = false;
 
 const port = Number(Deno.env.get('PORT') ?? DEFAULT_PORT);
 const corsOrigins = corsOriginsFromAllowedOrigins(security.allowedOrigins);
@@ -166,6 +190,13 @@ async function handleRequest(request: Request): Promise<Response> {
     return await createDistributedRun(request);
   }
 
+  if (request.method === 'POST' && url.pathname === '/distributed-runs/resolve-targets') {
+    if (!(await authorizeAdminRequest(request, url))) {
+      return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
+    }
+    return await resolveDistributedTargets(request);
+  }
+
   const distributedRunMatch = url.pathname.match(/^\/distributed-runs\/([^/]+)$/);
   if (isRead && distributedRunMatch) {
     const distributedRunId = decodeURIComponent(distributedRunMatch[1]);
@@ -194,7 +225,10 @@ async function handleRequest(request: Request): Promise<Response> {
   );
   if (isRead && distributedRunArtifactsMatch) {
     const distributedRunId = decodeURIComponent(distributedRunArtifactsMatch[1]);
-    const bundle = controlService.distributedRunArtifactBundle(distributedRunId);
+    const bundle = controlService.distributedRunArtifactBundle(
+      distributedRunId,
+      ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS,
+    );
     return bundle
       ? jsonResponse(bundle)
       : jsonResponse({ error: 'Distributed run not found.' }, 404);
@@ -231,6 +265,9 @@ async function handleRequest(request: Request): Promise<Response> {
     }
     closeRunSockets(runId);
     const deleted = controlService.deleteRun(runId);
+    if (deleted) {
+      artifactRecorder.deleteRun(runId);
+    }
     persistControlSnapshot();
     return deleted
       ? jsonResponse({ deleted: true, runId })
@@ -244,6 +281,9 @@ async function handleRequest(request: Request): Promise<Response> {
       return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
     }
     const run = controlService.resetRun(runId);
+    if (run) {
+      artifactRecorder.deleteRun(runId);
+    }
     persistControlSnapshot();
     return run
       ? jsonResponse({ reset: true, run })
@@ -262,7 +302,7 @@ async function handleRequest(request: Request): Promise<Response> {
   const runArtifactsMatch = url.pathname.match(/^\/runs\/([^/]+)\/artifacts$/);
   if (isRead && runArtifactsMatch) {
     const runId = decodeURIComponent(runArtifactsMatch[1]);
-    const run = controlService.snapshotRun(runId);
+    const run = controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
     return run
       ? jsonResponse(createControlRunArtifactBundle(run))
       : jsonResponse({ error: 'Run not found.' }, 404);
@@ -277,9 +317,16 @@ async function handleRequest(request: Request): Promise<Response> {
     if (!fileName) {
       return jsonResponse({ error: 'Artifact file not found.' }, 404);
     }
-    const run = controlService.snapshotRun(runId);
+    const run = controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
     if (!run) {
       return jsonResponse({ error: 'Run not found.' }, 404);
+    }
+    if (fileName === 'events.jsonl' || fileName === 'results.jsonl') {
+      return await artifactJsonlResponse(
+        runId,
+        fileName === 'events.jsonl' ? 'events' : 'results',
+        run,
+      );
     }
     const bundle = createControlRunArtifactBundle(run);
     return textResponse(bundle.files[fileName], 200, controlRunArtifactContentType(fileName));
@@ -288,25 +335,25 @@ async function handleRequest(request: Request): Promise<Response> {
   const runEventsJsonlMatch = url.pathname.match(/^\/runs\/([^/]+)\/events\.jsonl$/);
   if (isRead && runEventsJsonlMatch) {
     const runId = decodeURIComponent(runEventsJsonlMatch[1]);
-    const run = controlService.snapshotRun(runId);
+    const run = controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
     return run
-      ? textResponse(controlRunEventsJsonl(run), 200, 'application/x-ndjson; charset=utf-8')
+      ? await artifactJsonlResponse(runId, 'events', run)
       : jsonResponse({ error: 'Run not found.' }, 404);
   }
 
   const runResultsJsonlMatch = url.pathname.match(/^\/runs\/([^/]+)\/results\.jsonl$/);
   if (isRead && runResultsJsonlMatch) {
     const runId = decodeURIComponent(runResultsJsonlMatch[1]);
-    const run = controlService.snapshotRun(runId);
+    const run = controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
     return run
-      ? textResponse(controlRunResultsJsonl(run), 200, 'application/x-ndjson; charset=utf-8')
+      ? await artifactJsonlResponse(runId, 'results', run)
       : jsonResponse({ error: 'Run not found.' }, 404);
   }
 
   const runFailureBundleMatch = url.pathname.match(/^\/runs\/([^/]+)\/failure-bundle$/);
   if (isRead && runFailureBundleMatch) {
     const runId = decodeURIComponent(runFailureBundleMatch[1]);
-    const run = controlService.snapshotRun(runId);
+    const run = controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
     return run
       ? jsonResponse(controlRunFailureBundle(run))
       : jsonResponse({ error: 'Run not found.' }, 404);
@@ -357,30 +404,7 @@ function handleControlSocket(request: Request): Response {
   const { socket, response } = Deno.upgradeWebSocket(request);
 
   socket.onmessage = (event) => {
-    const parsed = parseControlClientMessage(event.data);
-    if (!parsed.ok) {
-      socket.close(1003, parsed.error);
-      return;
-    }
-
-    if (
-      parsed.envelope.kind === 'register' &&
-      !authorizeRunToken(
-        parsed.envelope.runId,
-        parsed.envelope.agentId,
-        parsed.envelope.token ?? socketToken,
-      )
-    ) {
-      socket.close(1008, 'Run token is required or invalid.');
-      return;
-    }
-
-    const received = controlService.receiveClientEnvelope(parsed.envelope);
-    if (received.kind === 'register') {
-      registerSocket(socket, received.runId, received.agentId);
-    }
-    sendDispatchableCommandsForRun(received.runId);
-    persistControlSnapshot();
+    void handleControlSocketMessage(socket, socketToken, event.data);
   };
 
   socket.onclose = () => {
@@ -400,18 +424,98 @@ function handleControlSocket(request: Request): Response {
   return response;
 }
 
+async function handleControlSocketMessage(
+  socket: WebSocket,
+  socketToken: string | undefined,
+  data: unknown,
+): Promise<void> {
+  let message: unknown;
+  try {
+    message = await controlSocketMessageData(data);
+  } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      socket.close(1009, error.message);
+      return;
+    }
+    socket.close(1003, errorMessage(error));
+    return;
+  }
+
+  const parsed = parseControlClientMessage(message);
+  if (!parsed.ok) {
+    socket.close(1003, parsed.error);
+    return;
+  }
+
+  if (
+    parsed.envelope.kind === 'register' &&
+    !authorizeRunToken(
+      parsed.envelope.runId,
+      parsed.envelope.agentId,
+      parsed.envelope.token ?? socketToken,
+    )
+  ) {
+    socket.close(1008, 'Run token is required or invalid.');
+    return;
+  }
+
+  if (parsed.envelope.kind !== 'report') {
+    artifactRecorder.record(parsed.envelope);
+  }
+  const received = controlService.receiveClientEnvelope(parsed.envelope);
+  if (parsed.envelope.kind === 'report' && received.accepted) {
+    artifactRecorder.record(parsed.envelope);
+  }
+  if (received.kind === 'register') {
+    registerSocket(socket, received.runId, received.agentId);
+  }
+  sendDispatchableCommandsForRun(received.runId);
+  persistControlSnapshot();
+}
+
+async function controlSocketMessageData(data: unknown): Promise<unknown> {
+  if (typeof data === 'string') {
+    assertPayloadByteLength(new TextEncoder().encode(data).byteLength);
+    return data;
+  }
+  if (data instanceof ArrayBuffer) {
+    assertPayloadByteLength(data.byteLength);
+    return new TextDecoder().decode(data);
+  }
+  if (data instanceof Blob) {
+    assertPayloadByteLength(data.size);
+    return await data.text();
+  }
+  return data;
+}
+
 async function createDistributedRun(request: Request): Promise<Response> {
   let manifest: RallarBlackBoxDistributedRunManifest;
   try {
     manifest = await readDistributedRunManifest(request);
   } catch (error) {
-    return jsonResponse({ error: errorMessage(error) }, 400);
+    return jsonErrorResponse(error);
   }
 
   try {
     const distributedRun = controlService.createDistributedRun(manifest);
     persistControlSnapshot();
     return jsonResponse(distributedRun, 201);
+  } catch (error) {
+    return distributedRunErrorResponse(error);
+  }
+}
+
+async function resolveDistributedTargets(request: Request): Promise<Response> {
+  let manifest: RallarBlackBoxDistributedRunManifest;
+  try {
+    manifest = await readDistributedRunManifest(request);
+  } catch (error) {
+    return jsonErrorResponse(error);
+  }
+
+  try {
+    return jsonResponse(controlService.resolveDistributedRunTargets(manifest));
   } catch (error) {
     return distributedRunErrorResponse(error);
   }
@@ -430,7 +534,7 @@ async function mutateDistributedRun(
         reason = body.reason.trim();
       }
     } catch (error) {
-      return jsonResponse({ error: errorMessage(error) }, 400);
+      return jsonErrorResponse(error);
     }
   }
 
@@ -499,9 +603,7 @@ async function enqueueCommand(
   try {
     body = await readJsonBody(request) as Omit<EnqueueControlCommandInput, 'runId' | 'agentId'>;
   } catch (error) {
-    return jsonResponse({
-      error: error instanceof Error ? error.message : String(error),
-    }, 400);
+    return jsonErrorResponse(error);
   }
 
   if (!body || typeof body !== 'object' || !('command' in body)) {
@@ -548,9 +650,7 @@ async function enqueueBulkCommand(
   try {
     body = await readJsonBody(request);
   } catch (error) {
-    return jsonResponse({
-      error: error instanceof Error ? error.message : String(error),
-    }, 400);
+    return jsonErrorResponse(error);
   }
 
   if (!body || typeof body !== 'object' || !('command' in body)) {
@@ -641,9 +741,7 @@ async function uploadReport(
   try {
     body = await readJsonBody(request);
   } catch (error) {
-    return jsonResponse({
-      error: error instanceof Error ? error.message : String(error),
-    }, 400);
+    return jsonErrorResponse(error);
   }
 
   const parsed = parseControlClientMessage(body);
@@ -663,7 +761,10 @@ async function uploadReport(
     }, 400);
   }
 
-  controlService.receiveClientEnvelope(parsed.envelope);
+  const received = controlService.receiveClientEnvelope(parsed.envelope);
+  if (received.accepted) {
+    artifactRecorder.record(parsed.envelope);
+  }
   persistControlSnapshot();
   return jsonResponse({
     accepted: true,
@@ -679,9 +780,7 @@ async function issueRunToken(
   try {
     body = await readJsonBody(request, true);
   } catch (error) {
-    return jsonResponse({
-      error: error instanceof Error ? error.message : String(error),
-    }, 400);
+    return jsonErrorResponse(error);
   }
 
   const ttlMs = body && typeof body === 'object' && 'ttlMs' in body
@@ -729,6 +828,14 @@ function resolveSecurityOptions(): SecurityOptions {
       stats: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_STATS', 200),
       reports: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_REPORTS', 100),
       heartbeats: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_HEARTBEATS', 100),
+    },
+    runtimeRetentionBounds: {
+      commands: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_COMMANDS', 1_000),
+      results: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS', 1_000),
+      events: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS', 2_000),
+      stats: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_STATS', 500),
+      reports: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_REPORTS', 20),
+      heartbeats: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_HEARTBEATS', 500),
     },
   };
 }
@@ -869,19 +976,50 @@ function tokenFromRequest(request: Request, url: URL): string | undefined {
 }
 
 async function readJsonBody(request: Request, allowEmpty = false): Promise<unknown> {
-  const text = await request.text();
+  const text = await readTextBody(request);
   if (text.length === 0 && allowEmpty) {
     return {};
   }
 
-  const byteLength = new TextEncoder().encode(text).length;
+  return JSON.parse(text);
+}
+
+async function readTextBody(request: Request): Promise<string> {
+  const declaredLength = request.headers.get('content-length');
+  if (declaredLength) {
+    const parsed = Number.parseInt(declaredLength, 10);
+    if (Number.isFinite(parsed)) {
+      assertPayloadByteLength(parsed);
+    }
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) {
+    return '';
+  }
+
+  const decoder = new TextDecoder();
+  let byteLength = 0;
+  let text = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    byteLength += value.byteLength;
+    assertPayloadByteLength(byteLength);
+    text += decoder.decode(value, { stream: true });
+  }
+  text += decoder.decode();
+  return text;
+}
+
+function assertPayloadByteLength(byteLength: number): void {
   if (byteLength > security.maxRequestBytes) {
-    throw new Error(
+    throw new PayloadTooLargeError(
       `Request payload is too large: ${byteLength} bytes exceeds ${security.maxRequestBytes} bytes.`,
     );
   }
-
-  return JSON.parse(text);
 }
 
 function validateBrowserCommandDestination(command: RallarBlackBoxTestCommand): string | undefined {
@@ -950,6 +1088,7 @@ function registerSocket(socket: WebSocket, runId: string, agentId: string): void
   const key = agentKey(runId, agentId);
   const existing = agentSockets.get(key);
   if (existing && existing !== socket) {
+    controlService.recordDuplicateAgentSocketReplacement(runId, agentId);
     existing.close(4000, 'agent re-registered');
   }
 
@@ -1030,6 +1169,129 @@ function limitParam(url: URL, key: string): number | undefined {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
+type ArtifactJsonlKind = 'events' | 'results';
+
+type ArtifactRecorder = Readonly<{
+  record(envelope: ControlClientEnvelope): void;
+  flush(): Promise<void>;
+  jsonlPath(runId: string, kind: ArtifactJsonlKind): string | undefined;
+  deleteRun(runId: string): void;
+}>;
+
+type ArtifactRecorderOptions = Readonly<{
+  commandSnapshot?: (
+    runId: string,
+    commandId: string,
+  ) => ControlQueuedCommandSnapshot | undefined;
+}>;
+
+function createArtifactRecorder(
+  storageDir: string | undefined,
+  options: ArtifactRecorderOptions = {},
+): ArtifactRecorder {
+  let writeQueue: Promise<void> = Promise.resolve();
+  return {
+    record(envelope) {
+      const commandId = commandIdFromArtifactEnvelope(envelope);
+      const command = commandId ? options.commandSnapshot?.(envelope.runId, commandId) : undefined;
+      const writes = artifactJsonlWrites(envelope, command);
+      if (!storageDir || writes.length === 0) {
+        return;
+      }
+      const runDir = artifactRunDir(storageDir, envelope.runId);
+      writeQueue = writeQueue
+        .then(async () => {
+          await Deno.mkdir(runDir, { recursive: true });
+          for (const write of writes) {
+            await Deno.writeTextFile(`${runDir}/${write.fileName}`, write.text, {
+              append: true,
+              create: true,
+            });
+          }
+        })
+        .catch((error) => {
+          console.warn(
+            `Could not append control artifact JSONL for ${envelope.runId}: ${errorMessage(error)}`,
+          );
+        });
+    },
+    flush() {
+      return writeQueue;
+    },
+    jsonlPath(runId, kind) {
+      return storageDir ? `${artifactRunDir(storageDir, runId)}/${kind}.jsonl` : undefined;
+    },
+    deleteRun(runId) {
+      if (!storageDir) {
+        return;
+      }
+      writeQueue = writeQueue
+        .then(() => Deno.remove(artifactRunDir(storageDir, runId), { recursive: true }))
+        .catch(() => undefined);
+    },
+  };
+}
+
+function artifactJsonlWrites(
+  envelope: ControlClientEnvelope,
+  command?: ControlQueuedCommandSnapshot,
+): readonly { fileName: 'events.jsonl' | 'results.jsonl'; text: string }[] {
+  if (envelope.kind === 'result') {
+    return [
+      { fileName: 'results.jsonl', text: controlResultArtifactJsonl(envelope, command) },
+      { fileName: 'events.jsonl', text: controlResultEventArtifactJsonl(envelope, command) },
+    ];
+  }
+  if (
+    envelope.kind === 'event' || envelope.kind === 'diagnostic' || envelope.kind === 'stats' ||
+    envelope.kind === 'report'
+  ) {
+    return [{ fileName: 'events.jsonl', text: controlEventArtifactJsonl(envelope, command) }];
+  }
+  return [];
+}
+
+function commandIdFromArtifactEnvelope(envelope: ControlClientEnvelope): string | undefined {
+  return 'commandId' in envelope && typeof envelope.commandId === 'string'
+    ? envelope.commandId
+    : undefined;
+}
+
+function artifactRunDir(storageDir: string, runId: string): string {
+  return `${storageDir.replace(/\/+$/, '')}/runs/${safePathSegment(runId)}`;
+}
+
+function safePathSegment(value: string): string {
+  return encodeURIComponent(value).replace(/%/g, '_');
+}
+
+async function artifactJsonlResponse(
+  runId: string,
+  kind: ArtifactJsonlKind,
+  fallbackRun: NonNullable<ReturnType<typeof controlService.snapshotRun>>,
+): Promise<Response> {
+  const storedPath = artifactRecorder.jsonlPath(runId, kind);
+  if (storedPath) {
+    try {
+      await artifactRecorder.flush();
+      const file = await Deno.open(storedPath, { read: true });
+      return new Response(file.readable, {
+        status: 200,
+        headers: responseHeaders('application/x-ndjson; charset=utf-8'),
+      });
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) {
+        console.warn(`Could not read control artifact ${storedPath}: ${errorMessage(error)}`);
+      }
+    }
+  }
+
+  const text = kind === 'events'
+    ? controlRunEventsJsonl(fallbackRun)
+    : controlRunResultsJsonl(fallbackRun);
+  return textResponse(text, 200, 'application/x-ndjson; charset=utf-8');
+}
+
 function persistedSnapshotPath(): string | undefined {
   if (!security.storageDir) {
     return undefined;
@@ -1065,13 +1327,44 @@ function persistControlSnapshot(): void {
     closeDeletedRunSockets(deletedRunIds);
   }
 
+  if (!persistedSnapshotPath()) {
+    return;
+  }
+  snapshotPersistDirty = true;
+  if (snapshotPersistScheduled || snapshotPersisting) {
+    return;
+  }
+  snapshotPersistScheduled = true;
+  setTimeout(() => {
+    void flushPersistedSnapshot();
+  }, SNAPSHOT_PERSIST_DEBOUNCE_MS);
+}
+
+async function flushPersistedSnapshot(): Promise<void> {
+  snapshotPersistScheduled = false;
+  if (!snapshotPersistDirty || snapshotPersisting) {
+    return;
+  }
+  snapshotPersistDirty = false;
+  snapshotPersisting = true;
+  try {
+    await writePersistedSnapshot();
+  } finally {
+    snapshotPersisting = false;
+    if (snapshotPersistDirty) {
+      persistControlSnapshot();
+    }
+  }
+}
+
+async function writePersistedSnapshot(): Promise<void> {
   const path = persistedSnapshotPath();
   if (!path) {
     return;
   }
   const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${snapshotPersistSequence += 1}`;
 
-  const snapshot = controlService.snapshot(security.snapshotPersistenceBounds);
+  const snapshot = controlService.snapshotForPersistence(security.snapshotPersistenceBounds);
   const payload = JSON.stringify(
     {
       schemaVersion: 1,
@@ -1081,22 +1374,24 @@ function persistControlSnapshot(): void {
     null,
     2,
   );
-  void Deno.mkdir(security.storageDir!, { recursive: true })
-    .then(async () => {
-      await Deno.writeTextFile(tempPath, payload);
-      await Deno.rename(tempPath, path);
-    })
-    .catch((error) => {
-      Deno.remove(tempPath).catch(() => undefined);
-      console.warn(`Could not persist control snapshot to ${path}: ${errorMessage(error)}`);
-    });
+  try {
+    await Deno.mkdir(security.storageDir!, { recursive: true });
+    await Deno.writeTextFile(tempPath, payload);
+    await Deno.rename(tempPath, path);
+  } catch (error) {
+    Deno.remove(tempPath).catch(() => undefined);
+    console.warn(`Could not persist control snapshot to ${path}: ${errorMessage(error)}`);
+  }
 }
 
 function closeDeletedRunSockets(runIds: readonly string[]): void {
   for (const runId of runIds) {
     closeRunSockets(runId);
+    artifactRecorder.deleteRun(runId);
   }
 }
+
+class PayloadTooLargeError extends Error {}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -1111,6 +1406,13 @@ function jsonResponse(value: unknown, status = 200): Response {
     status,
     headers: responseHeaders('application/json'),
   });
+}
+
+function jsonErrorResponse(error: unknown, fallbackStatus = 400): Response {
+  return jsonResponse(
+    { error: errorMessage(error) },
+    error instanceof PayloadTooLargeError ? 413 : fallbackStatus,
+  );
 }
 
 function textResponse(

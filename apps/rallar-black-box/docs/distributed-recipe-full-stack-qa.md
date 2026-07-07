@@ -20,8 +20,10 @@ The simulated part runs whenever `RALLAR_BLACK_BOX_FULL_STACK=1` is set:
 
 - opens three browser contexts as connected control agents
 - resolves targets from the reported application/workspace/group identity
+- previews targets through `POST /distributed-runs/resolve-targets`
+- verifies ordered-target dynamic role assignment on a three-agent run
 - stages and starts an all-agent ACK recipe
-- verifies distributed-run artifacts and historical run display
+- verifies distributed-run artifacts, including `target-resolution.json`, and historical run display
 - covers schema failure, missing target count, ACK timeout, disconnect-after-stage, and one-agent failure rollup
 
 ## Live Real-Data Coverage

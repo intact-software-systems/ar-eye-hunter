@@ -10,6 +10,7 @@ type OpenApiSchema = Readonly<{
   items?: OpenApiSchema;
   properties?: Record<string, OpenApiSchema>;
   required?: readonly string[];
+  schema?: OpenApiSchema;
 }>;
 
 function assert(condition: unknown, message = 'Assertion failed.'): asserts condition {
@@ -39,6 +40,7 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
   assert(spec.paths?.['/health']);
   assert(spec.paths?.['/retention/cleanup']);
   assert(spec.paths?.['/distributed-runs']);
+  assert(spec.paths?.['/distributed-runs/resolve-targets']);
   assert(spec.paths?.['/distributed-runs/{distributedRunId}']);
   assert(spec.paths?.['/distributed-runs/{distributedRunId}/stage']);
   assert(spec.paths?.['/distributed-runs/{distributedRunId}/start']);
@@ -58,8 +60,11 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
   assert(spec.paths?.['/control']);
   const schemas = (spec as { components?: { schemas?: Record<string, OpenApiSchema> } }).components
     ?.schemas;
+  const parameters = (spec as { components?: { parameters?: Record<string, OpenApiSchema> } })
+    .components?.parameters;
   const crdtCapability = schemas?.ControlAgentIdentity?.properties?.capabilities
     ?.properties?.crdt;
+  const runArtifact = schemas?.ControlRunArtifactBundle;
   const distributedArtifact = schemas?.ControlDistributedRunArtifactBundle;
   const fleetReport = schemas?.ControlFleetRunReport;
   const fleetBundle = schemas?.ControlFleetReportBundle;
@@ -76,6 +81,18 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
   assert(
     Boolean(distributedArtifact?.properties?.files?.properties?.['failures.json']),
     'Distributed artifact schema should document failures.json.',
+  );
+  assert(
+    parameters?.ArtifactFileName?.schema?.enum?.includes('results.jsonl'),
+    'Artifact file-name parameter should document results.jsonl.',
+  );
+  assert(
+    runArtifact?.properties?.files?.required?.includes('results.jsonl'),
+    'Run artifact schema should require results.jsonl.',
+  );
+  assert(
+    Boolean(runArtifact?.properties?.files?.properties?.['results.jsonl']),
+    'Run artifact schema should document results.jsonl.',
   );
   assert(
     Boolean(schemas?.ControlAgentIdentity?.properties?.region),
