@@ -68,7 +68,10 @@ test.describe('exhaustive shell navigation and persistence', () => {
       await expect(page.locator('#panel-advanced')).toContainText('Manual Rallar');
       await page.locator('#panel-advanced').getByLabel('Group').fill(groupId);
       await openTab(page, 'event-stream', 'black-box-runner');
-      await page.locator('#panel-event-stream').getByRole('button', { name: 'message' }).click();
+      await page
+        .locator('#panel-event-stream')
+        .getByRole('button', { name: 'message', exact: true })
+        .click();
 
       const reloadQuery = new URLSearchParams({
         provider: 'browser-rallar',
@@ -82,7 +85,9 @@ test.describe('exhaustive shell navigation and persistence', () => {
         'aria-selected',
         'true',
       );
-      await expect(page.locator('#panel-event-stream').getByRole('button', { name: 'message' }))
+      await expect(page
+        .locator('#panel-event-stream')
+        .getByRole('button', { name: 'message', exact: true }))
         .toHaveClass(/selected/);
 
       const storageText = await page.evaluate(() => JSON.stringify({

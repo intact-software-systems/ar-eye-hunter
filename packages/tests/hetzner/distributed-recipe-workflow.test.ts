@@ -227,6 +227,7 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(script).toContain('run_artifact_name="$(safe_artifact_dir_name "${distributed_run_id}")"');
         expect(script).toContain('"/distributed-runs/${distributed_run_path_id}"');
         expect(script).toContain('"/runs/${control_run_path_id}/events.jsonl"');
+        expect(script).toContain('Skipping bundle preview ${file_name}; direct artifact fetch is authoritative.');
         expect(script).not.toContain('"/distributed-runs/${distributed_run_id}"');
         expect(script).not.toContain('"/runs/${control_run_id}/events.jsonl"');
     });
@@ -701,10 +702,12 @@ describe('Hetzner distributed recipe workflow', () => {
 
         expect(source).toContain('snapshotPersistenceBounds: ControlRunSnapshotBounds');
         expect(source).toContain("RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_EVENTS");
-        expect(source).toContain('controlService.snapshot(security.snapshotPersistenceBounds)');
+        expect(source).toContain('controlService.snapshotForPersistence(security.snapshotPersistenceBounds)');
+        expect(source).toContain('snapshotPersistDirty');
+        expect(source).toContain('snapshotPersisting');
         expect(source).toContain('let snapshotPersistSequence = 0');
         expect(source).toContain('const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${snapshotPersistSequence += 1}`');
-        expect(source).toContain('Deno.writeTextFile(tempPath, payload)');
+        expect(source).toContain('await Deno.writeTextFile(tempPath, payload)');
         expect(source).toContain('Deno.rename(tempPath, path)');
         expect(source).not.toContain('Deno.writeTextFile(path, payload)');
     });

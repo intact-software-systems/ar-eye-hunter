@@ -31,6 +31,7 @@ export type {
 
 const CONTROL_ARTIFACT_FILE_NAMES: readonly ControlRunArtifactFileName[] = [
   'report.json',
+  'results.jsonl',
   'events.jsonl',
   'failures.json',
   'metadata.json',
@@ -124,21 +125,47 @@ function resultRows(
   results: readonly ControlResultEnvelope[] = run.results,
 ): readonly Record<string, unknown>[] {
   const commands = commandById(run);
-  return results.map((result) => {
-    const command = commands.get(result.commandId);
-    return redact({
-      resultKey: `${result.agentId}:${result.commandId}`,
-      name: result.commandId,
-      status: resultStatus(result),
-      transport: commandTransport(command),
-      action: commandAction(command),
-      connection: commandConnection(command) ?? result.agentId,
-      agentId: result.agentId,
-      commandId: result.commandId,
-      replayed: result.replayed,
-      actual: resultActual(result),
-    });
+  return results.map((result) => controlResultArtifactRow(result, commands.get(result.commandId)));
+}
+
+export function controlResultArtifactRow(
+  result: ControlResultEnvelope,
+  command?: ControlQueuedCommandSnapshot,
+): Record<string, unknown> {
+  return redact({
+    resultKey: `${result.agentId}:${result.commandId}`,
+    name: result.commandId,
+    status: resultStatus(result),
+    transport: commandTransport(command),
+    action: commandAction(command),
+    connection: commandConnection(command) ?? result.agentId,
+    agentId: result.agentId,
+    commandId: result.commandId,
+    replayed: result.replayed,
+    ok: result.ok,
+    actual: resultActual(result),
   });
+}
+
+export function controlResultArtifactJsonl(
+  result: ControlResultEnvelope,
+  command?: ControlQueuedCommandSnapshot,
+): string {
+  return `${JSON.stringify(controlResultArtifactRow(result, command))}\n`;
+}
+
+export function controlResultEventArtifactJsonl(
+  result: ControlResultEnvelope,
+  command?: ControlQueuedCommandSnapshot,
+): string {
+  return `${JSON.stringify(artifactEventFromResult(controlResultArtifactRow(result, command)))}\n`;
+}
+
+export function controlEventArtifactJsonl(
+  event: ControlEventEnvelope,
+  command?: ControlQueuedCommandSnapshot,
+): string {
+  return `${JSON.stringify(artifactEventFromControlEvent(event, command))}\n`;
 }
 
 function artifactEventFromResult(row: Record<string, unknown>): Record<string, unknown> {
@@ -262,6 +289,10 @@ export function createControlRunArtifactBundle(
     config: 'rallar-black-box-control-server',
     execution: 'run',
     summary,
+    artifactRefs: {
+      eventsJsonl: `/runs/${encodeURIComponent(run.runId)}/events.jsonl`,
+      resultsJsonl: `/runs/${encodeURIComponent(run.runId)}/results.jsonl`,
+    },
     command: [
       'rallar-black-box-control-server',
       'export-run-artifact',
@@ -275,6 +306,7 @@ export function createControlRunArtifactBundle(
     generatedAtEpochMs,
     files: {
       'report.json': JSON.stringify(report, null, 2),
+      'results.jsonl': controlRunResultsJsonl(run),
       'events.jsonl': controlRunEventsJsonl(run),
       'failures.json': JSON.stringify(controlRunFailureBundle(run), null, 2),
       'metadata.json': JSON.stringify(metadata, null, 2),
@@ -373,6 +405,10 @@ export function createControlDistributedRunArtifactBundle(
     config: 'rallar-black-box-control-server',
     execution: 'distributed-run',
     summary,
+    artifactRefs: {
+      eventsJsonl: `/runs/${encodeURIComponent(distributedRun.controlRunId)}/events.jsonl`,
+      resultsJsonl: `/runs/${encodeURIComponent(distributedRun.controlRunId)}/results.jsonl`,
+    },
     command: [
       'rallar-black-box-control-server',
       'export-distributed-run-artifact',
@@ -389,13 +425,6 @@ export function createControlDistributedRunArtifactBundle(
       'manifest.json': JSON.stringify(redact(distributedRun.manifest), null, 2),
       'control-run.json': JSON.stringify(redact(controlRun ?? null), null, 2),
       'report.json': JSON.stringify(report, null, 2),
-      'results.jsonl': controlRun ? jsonl(resultList) : '',
-      'events.jsonl': controlRun
-        ? controlRunEventsJsonlFromSlices(controlRun, {
-          results: linkedResults,
-          events: linkedEvents,
-        })
-        : '',
       'failures.json': JSON.stringify(failures, null, 2),
       'metadata.json': JSON.stringify(metadata, null, 2),
     },

@@ -238,11 +238,12 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
     '/distributed-runs/{distributedRunId}/artifacts': {
       get: {
         tags: ['Distributed Runs'],
-        summary: 'Export a distributed run artifact bundle',
+        summary: 'Export a bounded distributed run artifact metadata bundle',
         parameters: [{ $ref: '#/components/parameters/DistributedRunId' }],
         responses: {
           '200': {
-            description: 'Distributed run artifact bundle.',
+            description:
+              'Bounded distributed run artifact metadata. Download full events/results evidence from the linked control-run JSONL endpoints.',
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/ControlDistributedRunArtifactBundle' },
@@ -496,7 +497,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
         tags: ['Reports'],
         summary: 'Export a run artifact bundle',
         description:
-          'Returns redacted report.json, events.jsonl, failures.json, and metadata.json strings for attaching failed runs to issues or importing into the SPA artifact browser.',
+          'Returns bounded redacted report.json, events.jsonl preview, failures.json, and metadata.json strings for attaching failed runs to issues or importing into the SPA artifact browser. Download full events/results evidence from the JSONL endpoints.',
         parameters: [{ $ref: '#/components/parameters/RunId' }],
         responses: {
           '200': {
@@ -805,7 +806,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
         required: true,
         schema: {
           type: 'string',
-          enum: ['report.json', 'events.jsonl', 'failures.json', 'metadata.json'],
+          enum: ['report.json', 'results.jsonl', 'events.jsonl', 'failures.json', 'metadata.json'],
         },
       },
       LimitCommands: {
@@ -1266,9 +1267,16 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
           generatedAtEpochMs: { type: 'integer' },
           files: {
             type: 'object',
-            required: ['report.json', 'events.jsonl', 'failures.json', 'metadata.json'],
+            required: [
+              'report.json',
+              'results.jsonl',
+              'events.jsonl',
+              'failures.json',
+              'metadata.json',
+            ],
             properties: {
               'report.json': { type: 'string' },
+              'results.jsonl': { type: 'string' },
               'events.jsonl': { type: 'string' },
               'failures.json': { type: 'string' },
               'metadata.json': { type: 'string' },

@@ -350,6 +350,12 @@ write_bundle_files() {
     return 0
   fi
   jq -r '.files | keys[]' "${bundle_file}" | while IFS= read -r file_name; do
+    case "${file_name}" in
+      control-run.json|events.jsonl|results.jsonl)
+        echo "Skipping bundle preview ${file_name}; direct artifact fetch is authoritative." >&2
+        continue
+        ;;
+    esac
     if ! safe_name="$(safe_bundle_file_name "${file_name}")"; then
       echo "Skipping unsafe bundle file name: ${file_name}" >&2
       continue

@@ -51,6 +51,15 @@ import type {
 } from '@shared-test/rallar-bb-test/fleet-report.ts';
 
 const DEFAULT_DISTRIBUTED_BARRIER_TIMEOUT_MS = 15_000;
+const DEFAULT_RUNTIME_RETENTION_BOUNDS: Required<ControlRunSnapshotBounds> = {
+  commands: 1_000,
+  results: 1_000,
+  events: 2_000,
+  stats: 500,
+  reports: 20,
+  heartbeats: 500,
+};
+const REPORT_DEDUPE_KEY_LIMIT = 1_000;
 
 export type EnqueueControlCommandInput = Readonly<{
   runId: string;
@@ -68,6 +77,7 @@ export type RallarBlackBoxControlServiceOptions = Readonly<{
   commandRateLimitMax?: number;
   commandRateLimitWindowMs?: number;
   runTokenTtlMs?: number;
+  runtimeRetentionBounds?: ControlRunSnapshotBounds;
 }>;
 
 export type ControlRunToken = Readonly<{
@@ -94,6 +104,7 @@ export type RallarBlackBoxControlServiceReceiveResult = Readonly<{
   kind: ControlClientEnvelope['kind'];
   runId: string;
   agentId: string;
+  accepted: boolean;
 }>;
 
 type StoredCommand = {
@@ -143,6 +154,7 @@ type StoredRun = {
   events: ControlEventEnvelope[];
   stats: ControlEventEnvelope[];
   reports: ControlEventEnvelope[];
+  reportKeys: Set<string>;
   heartbeats: ControlHeartbeatEnvelope[];
   tokens: Map<string, StoredToken>;
 };
@@ -152,6 +164,7 @@ type StoredDistributedRun = {
   controlRunId: string;
   manifest: RallarBlackBoxDistributedRunManifest;
   state: RallarBlackBoxDistributedRunState;
+  rollup?: RallarBlackBoxDistributedRunRollup;
   createdAtEpochMs: number;
   updatedAtEpochMs: number;
   stagedAtEpochMs?: number;
@@ -173,6 +186,7 @@ export class RallarBlackBoxControlService {
   private readonly commandRateLimitMax: number;
   private readonly commandRateLimitWindowMs: number;
   private readonly runTokenTtlMs: number;
+  private readonly runtimeRetentionBounds: ControlRunSnapshotBounds;
   private readonly runs = new Map<string, StoredRun>();
   private readonly distributedRuns = new Map<string, StoredDistributedRun>();
   private readonly fleetReports = new Map<string, ControlFleetRunReport>();
@@ -187,11 +201,16 @@ export class RallarBlackBoxControlService {
     this.commandRateLimitMax = options.commandRateLimitMax ?? 120;
     this.commandRateLimitWindowMs = options.commandRateLimitWindowMs ?? 60_000;
     this.runTokenTtlMs = options.runTokenTtlMs ?? 15 * 60_000;
+    this.runtimeRetentionBounds = {
+      ...DEFAULT_RUNTIME_RETENTION_BOUNDS,
+      ...options.runtimeRetentionBounds,
+    };
   }
 
   receiveClientEnvelope(
     envelope: ControlClientEnvelope,
   ): RallarBlackBoxControlServiceReceiveResult {
+    let accepted = true;
     switch (envelope.kind) {
       case 'register':
         this.register(envelope);
@@ -206,7 +225,7 @@ export class RallarBlackBoxControlService {
       case 'diagnostic':
       case 'stats':
       case 'report':
-        this.receiveEvent(envelope);
+        accepted = this.receiveEvent(envelope);
         break;
     }
 
@@ -214,6 +233,7 @@ export class RallarBlackBoxControlService {
       kind: envelope.kind,
       runId: envelope.runId,
       agentId: envelope.agentId,
+      accepted,
     };
   }
 
@@ -248,6 +268,7 @@ export class RallarBlackBoxControlService {
       dispatchCount: 0,
     });
     this.touch(run);
+    this.trimRunToRuntimeBounds(run);
     return envelope;
   }
 
@@ -491,6 +512,7 @@ export class RallarBlackBoxControlService {
 
   distributedRunArtifactBundle(
     distributedRunId: string,
+    bounds: ControlRunSnapshotBounds = {},
   ): ControlDistributedRunArtifactBundle | undefined {
     const distributedRun = this.distributedRuns.get(distributedRunId);
     if (!distributedRun) {
@@ -498,7 +520,7 @@ export class RallarBlackBoxControlService {
     }
 
     const snapshot = this.snapshotDistributedRunValue(distributedRun);
-    const controlRun = this.snapshotRun(distributedRun.controlRunId);
+    const controlRun = this.snapshotRun(distributedRun.controlRunId, bounds);
     return createControlDistributedRunArtifactBundle(snapshot, controlRun, this.now());
   }
 
@@ -594,6 +616,7 @@ export class RallarBlackBoxControlService {
     run.events = [];
     run.stats = [];
     run.reports = [];
+    run.reportKeys.clear();
     run.heartbeats = [];
     for (const agent of run.agents.values()) {
       agent.receivedResultCount = 0;
@@ -659,9 +682,14 @@ export class RallarBlackBoxControlService {
         agents: new Map(),
         commands: new Map(),
         results: new Map(),
-        events: [...runSnapshot.events],
+        events: runSnapshot.events.map((event) =>
+          event.kind === 'report' ? this.compactReportEnvelope(event) : event
+        ),
         stats: [...runSnapshot.stats],
-        reports: [...runSnapshot.reports],
+        reports: runSnapshot.reports.map((event) => this.compactReportEnvelope(event)),
+        reportKeys: new Set(
+          runSnapshot.reports.map((report) => this.reportDedupeKey(report)),
+        ),
         heartbeats: [...runSnapshot.heartbeats],
         tokens: new Map(),
       };
@@ -696,7 +724,7 @@ export class RallarBlackBoxControlService {
         });
       }
       for (const result of runSnapshot.results) {
-        run.results.set(result.commandId, result);
+        run.results.set(result.commandId, this.compactResultEnvelope(result));
       }
       this.runs.set(run.runId, run);
     }
@@ -716,6 +744,7 @@ export class RallarBlackBoxControlService {
         completedAtEpochMs: distributedRunSnapshot.completedAtEpochMs,
         targetAgentIds: [...distributedRunSnapshot.targetAgentIds],
         commandLinks: [...distributedRunSnapshot.commandLinks],
+        rollup: distributedRunSnapshot.rollup,
         error: distributedRunSnapshot.error,
       });
     }
@@ -732,12 +761,28 @@ export class RallarBlackBoxControlService {
     };
   }
 
+  snapshotForPersistence(bounds: ControlRunSnapshotBounds = {}): ControlServerSnapshot {
+    return {
+      runs: Array.from(this.runs.values(), (run) => this.snapshotRunValue(run, bounds)),
+      distributedRuns: this.listDistributedRuns(),
+      fleetReports: Array.from(this.fleetReports.values()),
+    };
+  }
+
   snapshotRun(
     runId: string,
     bounds: ControlRunSnapshotBounds = {},
   ): ControlRunSnapshot | undefined {
     const run = this.runs.get(runId);
     return run ? this.snapshotRunValue(run, bounds) : undefined;
+  }
+
+  snapshotCommand(
+    runId: string,
+    commandId: string,
+  ): ControlQueuedCommandSnapshot | undefined {
+    const command = this.runs.get(runId)?.commands.get(commandId);
+    return command ? this.snapshotCommandValue(command) : undefined;
   }
 
   private register(envelope: ControlRegisterEnvelope): void {
@@ -766,6 +811,7 @@ export class RallarBlackBoxControlService {
     agent.identity = envelope.identity ?? agent.identity;
     run.heartbeats.push(envelope);
     this.touch(run);
+    this.trimRunToRuntimeBounds(run);
     this.refreshDistributedRunsForControlRun(run.runId);
   }
 
@@ -776,22 +822,31 @@ export class RallarBlackBoxControlService {
     agent.lastSeenAtEpochMs = this.now();
     agent.completedCommandIds.add(envelope.commandId);
     agent.resumeCompletedCommandIds.delete(envelope.commandId);
-    run.results.set(envelope.commandId, envelope);
+    run.results.set(envelope.commandId, this.compactResultEnvelope(envelope));
 
     const command = run.commands.get(envelope.commandId);
     if (command) {
       command.completedAtEpochMs = this.now();
     }
     this.touch(run);
+    this.trimRunToRuntimeBounds(run);
     this.refreshDistributedRunsForControlRun(run.runId);
   }
 
-  private receiveEvent(envelope: ControlEventEnvelope): void {
+  private receiveEvent(envelope: ControlEventEnvelope): boolean {
     const run = this.ensureRun(envelope.runId);
     const agent = this.ensureAgent(run, envelope.agentId);
     const storedEnvelope = envelope.kind === 'report'
-      ? this.redactReportEnvelope(envelope)
+      ? this.compactReportEnvelope(envelope)
       : envelope;
+    if (storedEnvelope.kind === 'report') {
+      const reportKey = this.reportDedupeKey(storedEnvelope);
+      if (run.reportKeys.has(reportKey)) {
+        return false;
+      }
+      run.reportKeys.add(reportKey);
+      this.trimReportDedupeKeys(run);
+    }
     agent.receivedEventCount += 1;
     agent.lastSeenAtEpochMs = this.now();
     run.events.push(storedEnvelope);
@@ -802,13 +857,98 @@ export class RallarBlackBoxControlService {
       run.reports.push(storedEnvelope);
     }
     this.touch(run);
+    this.trimRunToRuntimeBounds(run);
+    return true;
   }
 
-  private redactReportEnvelope(envelope: ControlEventEnvelope): ControlEventEnvelope {
+  private compactReportEnvelope(envelope: ControlEventEnvelope): ControlEventEnvelope {
     return {
       ...envelope,
-      payload: redactRallarBlackBoxValue(envelope.payload, this.redaction),
+      payload: redactRallarBlackBoxValue(compactReportPayload(envelope.payload), this.redaction),
     };
+  }
+
+  private compactResultEnvelope(envelope: ControlResultEnvelope): ControlResultEnvelope {
+    return compactResultEnvelope(envelope);
+  }
+
+  private reportDedupeKey(envelope: ControlEventEnvelope): string {
+    const payload = isRecord(envelope.payload) ? envelope.payload : undefined;
+    const report = payload && isRecord(payload.payload) ? payload.payload : payload;
+    const reportId = report && typeof report.reportId === 'string' ? report.reportId : undefined;
+    return [
+      envelope.runId,
+      envelope.agentId,
+      envelope.eventId ?? reportId ?? envelope.atEpochMs,
+    ].join('\u0000');
+  }
+
+  private trimRunToRuntimeBounds(run: StoredRun): void {
+    const protectedCommandIds = this.protectedRuntimeCommandIds(run.runId);
+    for (const command of run.commands.values()) {
+      if (command.completedAtEpochMs === undefined) {
+        protectedCommandIds.add(command.envelope.commandId);
+      }
+    }
+    this.trimMapByInsertion(
+      run.commands,
+      this.runtimeRetentionBounds.commands,
+      protectedCommandIds,
+    );
+    this.trimMapByInsertion(run.results, this.runtimeRetentionBounds.results, protectedCommandIds);
+    run.events = this.trimArray(run.events, this.runtimeRetentionBounds.events);
+    run.stats = this.trimArray(run.stats, this.runtimeRetentionBounds.stats);
+    run.reports = this.trimArray(run.reports, this.runtimeRetentionBounds.reports);
+    run.heartbeats = this.trimArray(run.heartbeats, this.runtimeRetentionBounds.heartbeats);
+  }
+
+  private trimReportDedupeKeys(run: StoredRun): void {
+    for (const key of run.reportKeys) {
+      if (run.reportKeys.size <= REPORT_DEDUPE_KEY_LIMIT) {
+        return;
+      }
+      run.reportKeys.delete(key);
+    }
+  }
+
+  private protectedRuntimeCommandIds(runId: string): Set<string> {
+    const commandIds = new Set<string>();
+    for (const distributedRun of this.distributedRuns.values()) {
+      if (
+        distributedRun.controlRunId !== runId || isDistributedRunTerminalState(distributedRun.state)
+      ) {
+        continue;
+      }
+      distributedRun.commandLinks.forEach((link) => commandIds.add(link.commandId));
+    }
+    return commandIds;
+  }
+
+  private trimMapByInsertion<T>(
+    values: Map<string, T>,
+    limit: number | undefined,
+    protectedKeys: ReadonlySet<string>,
+  ): void {
+    if (limit === undefined || !Number.isFinite(limit) || limit < 0 || values.size <= limit) {
+      return;
+    }
+
+    for (const key of values.keys()) {
+      if (values.size <= limit) {
+        return;
+      }
+      if (protectedKeys.has(key)) {
+        continue;
+      }
+      values.delete(key);
+    }
+  }
+
+  private trimArray<T>(values: readonly T[], limit: number | undefined): T[] {
+    if (limit === undefined || !Number.isFinite(limit) || limit < 0) {
+      return [...values];
+    }
+    return values.slice(Math.max(0, values.length - Math.floor(limit)));
   }
 
   private assertCommandAllowed(kind: RallarBlackBoxTestCommandKind): void {
@@ -1386,6 +1526,10 @@ export class RallarBlackBoxControlService {
   private refreshDistributedRunState(
     distributedRun: StoredDistributedRun,
   ): RallarBlackBoxDistributedRunRollup {
+    if (isDistributedRunTerminalState(distributedRun.state) && distributedRun.rollup) {
+      return distributedRun.rollup;
+    }
+
     this.reconcileDistributedCommandLinks(distributedRun);
     this.advanceDistributedRunOrchestration(distributedRun);
     const evaluated = this.evaluateDistributedRun(distributedRun);
@@ -1395,6 +1539,9 @@ export class RallarBlackBoxControlService {
       if (isDistributedRunTerminalState(evaluated.state)) {
         distributedRun.completedAtEpochMs ??= this.now();
       }
+    }
+    if (isDistributedRunTerminalState(distributedRun.state)) {
+      distributedRun.rollup = evaluated;
     }
     return evaluated;
   }
@@ -1664,6 +1811,12 @@ export class RallarBlackBoxControlService {
     ) {
       return (value as { results: readonly unknown[] }).results.length;
     }
+    if (
+      value && typeof value === 'object' &&
+      typeof (value as { resultCount?: unknown }).resultCount === 'number'
+    ) {
+      return (value as { resultCount: number }).resultCount;
+    }
     return result.result ? 1 : 0;
   }
 
@@ -1698,6 +1851,7 @@ export class RallarBlackBoxControlService {
       events: [],
       stats: [],
       reports: [],
+      reportKeys: new Set(),
       heartbeats: [],
       tokens: new Map(),
     };
@@ -1740,17 +1894,24 @@ export class RallarBlackBoxControlService {
     return values.slice(Math.max(0, values.length - Math.floor(limit)));
   }
 
-  private snapshotRunValue(
-    run: StoredRun,
-    bounds: ControlRunSnapshotBounds = {},
-  ): ControlRunSnapshot {
-    const commands = Array.from(run.commands.values(), (command) => ({
+  private snapshotCommandValue(command: StoredCommand): ControlQueuedCommandSnapshot {
+    return {
       envelope: command.envelope,
       queuedAtEpochMs: command.queuedAtEpochMs,
       dispatchedAtEpochMs: command.dispatchedAtEpochMs,
       completedAtEpochMs: command.completedAtEpochMs,
       dispatchCount: command.dispatchCount,
-    }));
+    };
+  }
+
+  private snapshotRunValue(
+    run: StoredRun,
+    bounds: ControlRunSnapshotBounds = {},
+  ): ControlRunSnapshot {
+    const commands = Array.from(
+      run.commands.values(),
+      (command) => this.snapshotCommandValue(command),
+    );
     const results = Array.from(run.results.values());
     return {
       runId: run.runId,
@@ -1787,6 +1948,113 @@ export function createRallarBlackBoxControlService(
   options: RallarBlackBoxControlServiceOptions = {},
 ): RallarBlackBoxControlService {
   return new RallarBlackBoxControlService(options);
+}
+
+function compactReportPayload(payload: unknown): unknown {
+  if (!isRecord(payload)) {
+    return payload;
+  }
+
+  const compactedPayload = compactReportValue(payload);
+  if (!isRecord(compactedPayload) || !isRecord(compactedPayload.payload)) {
+    return compactedPayload;
+  }
+
+  const nestedPayload = compactReportValue(compactedPayload.payload);
+  return nestedPayload === compactedPayload.payload ? compactedPayload : {
+    ...compactedPayload,
+    payload: nestedPayload,
+  };
+}
+
+function compactReportValue(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const resultCount = Array.isArray(value.results) ? value.results.length : undefined;
+  const eventCount = Array.isArray(value.events) ? value.events.length : undefined;
+  if (resultCount === undefined && eventCount === undefined) {
+    return value;
+  }
+
+  const { results: _results, events: _events, ...rest } = value;
+  const summary = isRecord(rest.summary) ? rest.summary : {};
+  return {
+    ...rest,
+    summary: {
+      ...summary,
+      ...(resultCount === undefined ? {} : { omittedResultCount: resultCount }),
+      ...(eventCount === undefined ? {} : { omittedEventCount: eventCount }),
+    },
+  };
+}
+
+function compactResultEnvelope(envelope: ControlResultEnvelope): ControlResultEnvelope {
+  const result = envelope.result;
+  if (!result || !isRecord(result.value) || !Array.isArray(result.value.results)) {
+    return envelope;
+  }
+
+  return {
+    ...envelope,
+    result: {
+      ...result,
+      value: compactRecipeRunValue(result.value),
+    },
+  };
+}
+
+function compactRecipeRunValue(value: Record<string, unknown>): Record<string, unknown> {
+  const childResults = Array.isArray(value.results) ? value.results : [];
+  const failedChildren = childResults.filter(isFailedCompositeChild);
+  const failures = failedChildren.slice(0, 20).map(compactChildFailure);
+  const { results: _results, ...rest } = value;
+  return {
+    ...rest,
+    resultCount: childResults.length,
+    failureCount: failedChildren.length,
+    ...(failures.length > 0 ? { failures } : {}),
+    resultsOmitted: true,
+  };
+}
+
+function isFailedCompositeChild(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.ok === false) {
+    return true;
+  }
+  return isRecord(value.result) && value.result.ok === false;
+}
+
+function compactChildFailure(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) {
+    return { value };
+  }
+  const result = isRecord(value.result) ? value.result : undefined;
+  const error = isRecord(value.error)
+    ? value.error
+    : result && isRecord(result.error)
+    ? result.error
+    : undefined;
+  return {
+    commandId: value.commandId ?? result?.commandId,
+    kind: value.kind ?? result?.kind,
+    status: value.status ?? result?.status,
+    ok: value.ok ?? result?.ok,
+    error: error
+      ? {
+        code: error.code,
+        message: error.message,
+      }
+      : undefined,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function cleanSegment(value: unknown): string | undefined {

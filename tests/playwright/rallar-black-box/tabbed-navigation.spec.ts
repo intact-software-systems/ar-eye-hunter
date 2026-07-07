@@ -968,7 +968,10 @@ test('keeps manual form and event filters mounted across tab changes', async ({ 
     await expect(eventPanel.getByLabel('Group')).toBeVisible();
     await expect(eventPanel.getByLabel('Peer')).toBeVisible();
     await expect(eventPanel.getByLabel('Selector')).toBeVisible();
-    const messageFilter = eventPanel.getByRole('button', { name: 'message' });
+    const messageFilter = eventPanel.getByRole('button', {
+        name: 'message',
+        exact: true,
+    });
     await messageFilter.click();
     await eventPanel.getByLabel('Window').selectOption('100');
     await expect(messageFilter).toHaveClass(/selected/);
@@ -1749,7 +1752,7 @@ test('runs the RTC delivery matrix with scoped addressing and NACK diagnostics',
     await panel.getByLabel('Workspace').fill('playwright-workspace');
     await panel.getByLabel('Group').fill('playwright-rtc-matrix');
     await panel.getByLabel('Target Client').fill('bob-peer');
-    await panel.getByRole('button', { name: 'multicast' }).click();
+    await panel.getByRole('button', { name: 'multicast', exact: true }).click();
     await panel.getByLabel('Multicast Clients').fill('bob-peer, charlie-peer');
     await panel.getByLabel('Scope JSON').fill(JSON.stringify({ tenant: 'playwright' }));
     await panel.getByLabel('Room Ref JSON').fill(JSON.stringify({
@@ -2558,7 +2561,10 @@ test('restores selected tab and redacted UI drafts after a fresh load', async ({
     }));
 
     await page.getByRole('tab', { name: 'Event Stream' }).click();
-    await page.locator('#panel-event-stream').getByRole('button', { name: 'message' }).click();
+    await page
+        .locator('#panel-event-stream')
+        .getByRole('button', { name: 'message', exact: true })
+        .click();
 
     await page.goto('/?provider=simulated');
 
@@ -2566,7 +2572,9 @@ test('restores selected tab and redacted UI drafts after a fresh load', async ({
         'aria-selected',
         'true',
     );
-    await expect(page.locator('#panel-event-stream').getByRole('button', { name: 'message' }))
+    await expect(page
+        .locator('#panel-event-stream')
+        .getByRole('button', { name: 'message', exact: true }))
         .toHaveClass(/selected/);
 
     await openRunnerSurface(page, 'manual-rallar');

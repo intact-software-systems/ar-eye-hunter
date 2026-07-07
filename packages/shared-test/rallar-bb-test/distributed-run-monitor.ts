@@ -2152,6 +2152,9 @@ export function deriveDistributedRunWarningRegressionReport(input: Readonly<{
     const artifactEvidenceText = input.artifactBundle
         ? Object.values(input.artifactBundle.files).join('\n')
         : '';
+    const artifactHasEmbeddedEvidence = Boolean(
+        input.artifactBundle?.files['events.jsonl'] || input.artifactBundle?.files['results.jsonl'],
+    );
     const monitorMessageEvidence = expectedMessageEvidence
         .filter(value => monitorEvidenceText.includes(value));
     const artifactMessageEvidence = expectedMessageEvidence
@@ -2171,7 +2174,7 @@ export function deriveDistributedRunWarningRegressionReport(input: Readonly<{
             .filter(value => !monitorMessageEvidence.includes(value))
             .map(value => `Monitor evidence is missing expected message payload token: ${value}`),
         ...(
-            input.artifactBundle
+            input.artifactBundle && artifactHasEmbeddedEvidence
                 ? expectedMessageEvidence
                     .filter(value => !artifactMessageEvidence.includes(value))
                     .map(value => `Artifact evidence is missing expected message payload token: ${value}`)
@@ -3657,8 +3660,6 @@ function validateDistributedRunArtifact(
     ];
     const v2RequiredFiles: ReadonlyArray<keyof ControlDistributedRunArtifactBundle['files']> = [
         'report.json',
-        'results.jsonl',
-        'events.jsonl',
         'failures.json',
         'metadata.json',
     ];

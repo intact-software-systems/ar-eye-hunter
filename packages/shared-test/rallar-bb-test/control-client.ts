@@ -708,8 +708,6 @@ export class RallarBlackBoxControlClient {
                 ...asRecord(toReportSummary(state)),
                 reason,
             },
-            results: state.commandHistory,
-            events: state.events,
             stats: toStatsSnapshot(state, atEpochMs),
         };
 

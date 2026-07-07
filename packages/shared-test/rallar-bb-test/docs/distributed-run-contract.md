@@ -166,6 +166,11 @@ top of the existing `/runs` command/result store:
 - `POST /distributed-runs/{distributedRunId}/cancel`
 - `GET /distributed-runs/{distributedRunId}/artifacts`
 
+The artifact endpoint is a bounded metadata bundle. CI/export tooling should
+write the full artifact directory by downloading `/runs/{controlRunId}/results.jsonl`
+and `/runs/{controlRunId}/events.jsonl` directly, then combining those files with
+the distributed-run bundle metadata.
+
 The distributed-run resource links to a lower-level `controlRunId`. Staging
 queues `recipe.load` commands when the manifest contains inline recipes. For
 recipe references without an inline recipe, staging queues a `health` preflight

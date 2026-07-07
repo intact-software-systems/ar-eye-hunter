@@ -116,6 +116,7 @@ export type ControlRunSnapshotBounds = ControlSnapshotBounds;
 
 export type ControlRunArtifactFileName =
     | 'report.json'
+    | 'results.jsonl'
     | 'events.jsonl'
     | 'failures.json'
     | 'metadata.json';
