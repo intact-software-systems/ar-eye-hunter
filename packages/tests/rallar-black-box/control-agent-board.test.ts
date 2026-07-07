@@ -272,6 +272,62 @@ describe('control agent board derivation', () => {
         expect(summarizeControlAgentBoardRows(rows).active).toBe(1);
     });
 
+    it('uses server target-resolution roles before command links exist', () => {
+        const baseRun = distributedRun('draft', ['agent-a', 'agent-b']);
+        const selectedDistributedRun: ControlDistributedRunSnapshot = {
+            ...baseRun,
+            commandLinks: [],
+            manifest: {
+                ...baseRun.manifest,
+                targetPolicy: {
+                    mode: 'all-online-group-members',
+                    expectedParticipantCount: 2,
+                },
+                roleAssignments: undefined,
+                roleAssignmentPolicy: {
+                    mode: 'ordered-targets',
+                    pattern: 'one-sender-many-receivers',
+                    orderBy: 'agent-id',
+                },
+            },
+            targetResolution: {
+                group,
+                resolvedAtEpochMs: 2_000,
+                staleAfterMs: 30_000,
+                targetPolicyMode: 'all-online-group-members',
+                targetAgentIds: ['agent-a', 'agent-b'],
+                roleAssignments: [
+                    { agentId: 'agent-a', role: 'sender', required: true },
+                    { agentId: 'agent-b', role: 'receiver', required: true },
+                ],
+                blockers: [],
+                summary: {
+                    agents: 2,
+                    targetable: 2,
+                    selected: 2,
+                    expectedParticipantCount: 2,
+                    missingExpectedParticipants: 0,
+                    staleAgents: 0,
+                    offlineAgents: 0,
+                    wrongGroupAgents: 0,
+                    agentsWithoutIdentity: 0,
+                    roleCounts: { receiver: 1, sender: 1 },
+                    regions: {},
+                    providers: {},
+                },
+            },
+        };
+
+        const rows = deriveControlAgentBoardRows({
+            run: controlRun([agent('agent-a'), agent('agent-b')]),
+            group,
+            selectedDistributedRun,
+            nowEpochMs: 2_500,
+        });
+
+        expect(rows.map((row) => row.selectedRun?.role)).toEqual(['sender', 'receiver']);
+    });
+
     it('includes synthetic rows for selected run targets missing from the control run', () => {
         const selectedDistributedRun = distributedRun('running', ['agent-a', 'ghost-agent']);
         const progress: DistributedRunAgentProgressRow = {

@@ -633,6 +633,33 @@ Main workflow:
 - start or cancel it
 - export the distributed-run artifact bundle
 
+For already-running worldwide agents, choose `All online group members`, set
+`Expected Participants` to the fleet size, and click `Resolve targets`. The SPA
+calls the control server's `POST /distributed-runs/resolve-targets` endpoint and
+shows the server-selected count, derived roles, blocker count, and
+region/provider distribution. Stage and Start stay disabled for world-fleet
+runs until the server preview or created run resolves exactly the expected
+participant count.
+
+World-fleet manifests live under `apps/rallar-black-box/manifests/world-fleet`.
+They are no-spawn manifests: they assume agents are already connected to the
+same control server and `controlRunId`. Run them from a terminal with:
+
+```sh
+npx tsx apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts \
+  --control http://127.0.0.1:5180 \
+  --manifest apps/rallar-black-box/manifests/world-fleet/01-rtc-messages-principal-50-agent-30s-20hz-tree.json \
+  --control-run-id live-world-fleet-control-run \
+  --token "$RALLAR_CONTROL_ADMIN_TOKEN" \
+  --timeout-ms 3900000
+```
+
+That runner never starts, stops, installs, or restarts headless agents. It only
+preflights targets, creates the distributed run, stages, starts, polls terminal
+state, and exports artifacts. Pass `--control-run-id` or set
+`RALLAR_CONTROL_RUN_ID` when the live agents use a run ID different from the
+checked-in template manifest.
+
 `Generate With AI` is the schema-aware authoring surface for assisted recipe writing. Choose a prompt template for live
 group ACK, WS send/receive, RTC position streaming, looped RTC load, parallel WS/RTC smoke, or wait/assert evidence.
 Copy the prompt or schema context into any AI assistant, then paste the generated JSON back into the panel. The SPA
@@ -673,6 +700,10 @@ The monitor section appears after a distributed run is selected. It shows:
 - linked control-run events for the distributed run, including compact payload summaries for received-message evidence
 - lifecycle timeline
 - artifact validation status after `Export artifact`
+
+Distributed artifact bundles include `target-resolution.json` after preview or
+stage. Artifact analysis summarizes selected/expected target counts, blockers,
+role counts, and region/provider breakdown.
 
 Use `Composite Drilldowns` when a recipe-run parent failed but the interesting evidence is nested inside a loop,
 parallel group, wait, or assert child result. The drilldown opens failed composites by default, shows the first failed

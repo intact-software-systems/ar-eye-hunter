@@ -357,6 +357,7 @@ export function createControlDistributedRunArtifactBundle(
     state: distributedRun.state,
     ok: distributedRun.rollup.ok,
     targetAgentIds: distributedRun.targetAgentIds,
+    targetResolution: distributedRun.targetResolution,
     commandLinkCount: distributedRun.commandLinks.length,
     linkedCommandCount: linkedCommands.length,
     generatedFrom: 'rallar-black-box-control-server',
@@ -370,6 +371,7 @@ export function createControlDistributedRunArtifactBundle(
     state: distributedRun.state,
     ok: distributedRun.rollup.ok,
     summary,
+    targetResolution: distributedRun.targetResolution,
     distributedSummary: distributedRun.rollup.summary,
     failures: distributedRun.rollup.failures,
     results: Object.fromEntries(resultList.map((row) => [String(row.resultKey), row])),
@@ -408,6 +410,7 @@ export function createControlDistributedRunArtifactBundle(
     artifactRefs: {
       eventsJsonl: `/runs/${encodeURIComponent(distributedRun.controlRunId)}/events.jsonl`,
       resultsJsonl: `/runs/${encodeURIComponent(distributedRun.controlRunId)}/results.jsonl`,
+      targetResolution: 'target-resolution.json',
     },
     command: [
       'rallar-black-box-control-server',
@@ -423,6 +426,7 @@ export function createControlDistributedRunArtifactBundle(
     files: {
       'distributed-run.json': JSON.stringify(redact(distributedRun), null, 2),
       'manifest.json': JSON.stringify(redact(distributedRun.manifest), null, 2),
+      'target-resolution.json': JSON.stringify(redact(distributedRun.targetResolution ?? null), null, 2),
       'control-run.json': JSON.stringify(redact(controlRun ?? null), null, 2),
       'report.json': JSON.stringify(report, null, 2),
       'failures.json': JSON.stringify(failures, null, 2),

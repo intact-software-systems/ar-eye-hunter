@@ -4,6 +4,9 @@ import {
     type RallarBlackBoxTestCommand,
 } from './types.ts';
 import {
+    RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS,
+    RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES,
+    RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS,
     RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES,
     RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
 } from './distributed-run.ts';
@@ -1810,6 +1813,25 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
                 },
                 additionalProperties: false,
             },
+        },
+        roleAssignmentPolicy: {
+            type: 'object',
+            required: ['mode', 'pattern'],
+            properties: {
+                mode: {
+                    type: 'string',
+                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES,
+                },
+                pattern: {
+                    type: 'string',
+                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS,
+                },
+                orderBy: {
+                    type: 'string',
+                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS,
+                },
+            },
+            additionalProperties: false,
         },
         ackTimeoutMs: { type: 'integer', minimum: 1 },
         barrier: {

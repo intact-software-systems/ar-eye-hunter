@@ -7,6 +7,7 @@ import {
     deriveDistributedRunMonitor,
     deriveRunVerdictView,
     deriveDistributedRunWarningRegressionReport,
+    deriveDistributedWorldFleetTargetGate,
     distributedRecipeCommandKinds,
     distributedRecipeCommandPreview,
     distributedRecipePreflight,
@@ -1222,11 +1223,162 @@ describe('distributed recipes helpers', () => {
         ]);
     });
 
+    it('builds all-online world-fleet manifests with ordered server role assignment', () => {
+        const manifest = buildDistributedRunManifest({
+            distributedRunId: 'dist-world-1',
+            controlRunId: 'run-world-1',
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'bb-group',
+            },
+            recipes: [recipe, { ...recipe, itemId: 'health-2', recipe: { ...recipe.recipe, recipeId: 'health-two' } }],
+            targetAgentIds: [],
+            targetPolicyMode: 'all-online-group-members',
+            rolePattern: 'one-sender-many-receivers',
+            ackTimeoutMs: 5_000,
+            startMode: 'manual',
+            expectedParticipantCount: 50,
+        });
+
+        expect(manifest.targetPolicy).toEqual({
+            mode: 'all-online-group-members',
+            expectedParticipantCount: 50,
+        });
+        expect(manifest.roleAssignments).toBeUndefined();
+        expect(manifest.roleAssignmentPolicy).toEqual({
+            mode: 'ordered-targets',
+            pattern: 'one-sender-many-receivers',
+            orderBy: 'agent-id',
+        });
+        expect(manifest.recipes.map(selection => selection.role)).toEqual(['sender', 'receiver']);
+    });
+
     it('maps distributed states to UI tones', () => {
         expect(distributedRecipeStateTone('ready')).toBe('good');
         expect(distributedRecipeStateTone('running')).toBe('active');
         expect(distributedRecipeStateTone('timed-out')).toBe('bad');
         expect(distributedRecipeStateTone('cancelled')).toBe('warn');
+    });
+
+    it('derives monitor roles from server target resolution', () => {
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun: {
+                ...distributedRun,
+                manifest: {
+                    ...distributedRun.manifest,
+                    roleAssignments: undefined,
+                    roleAssignmentPolicy: {
+                        mode: 'ordered-targets',
+                        pattern: 'one-sender-many-receivers',
+                        orderBy: 'agent-id',
+                    },
+                },
+                targetResolution: {
+                    group: distributedRun.manifest.group,
+                    resolvedAtEpochMs: 1_050,
+                    staleAfterMs: 30_000,
+                    targetPolicyMode: 'all-online-group-members',
+                    targetAgentIds: ['agent-a', 'agent-b'],
+                    roleAssignments: [
+                        { agentId: 'agent-a', role: 'sender', required: true },
+                        { agentId: 'agent-b', role: 'receiver', required: true },
+                    ],
+                    blockers: [],
+                    summary: {
+                        agents: 2,
+                        targetable: 2,
+                        selected: 2,
+                        expectedParticipantCount: 2,
+                        missingExpectedParticipants: 0,
+                        staleAgents: 0,
+                        offlineAgents: 0,
+                        wrongGroupAgents: 0,
+                        agentsWithoutIdentity: 0,
+                        roleCounts: { receiver: 1, sender: 1 },
+                        regions: {},
+                        providers: {},
+                    },
+                },
+            },
+            controlRun: distributedControlRun,
+        });
+
+        expect(monitor.agentProgress.map(row => [row.agentId, row.role])).toEqual([
+            ['agent-a', 'sender'],
+            ['agent-b', 'receiver'],
+        ]);
+    });
+
+    it('uses fresh world-fleet target previews before loaded run resolutions', () => {
+        const loadedRunResolution = {
+            group: distributedRun.manifest.group,
+            resolvedAtEpochMs: 1_050,
+            staleAfterMs: 30_000,
+            targetPolicyMode: 'all-online-group-members' as const,
+            targetAgentIds: ['agent-a', 'agent-b'],
+            roleAssignments: [
+                { agentId: 'agent-a', role: 'sender', required: true },
+                { agentId: 'agent-b', role: 'receiver', required: true },
+            ],
+            blockers: [],
+            summary: {
+                agents: 2,
+                targetable: 2,
+                selected: 2,
+                expectedParticipantCount: 2,
+                missingExpectedParticipants: 0,
+                staleAgents: 0,
+                offlineAgents: 0,
+                wrongGroupAgents: 0,
+                agentsWithoutIdentity: 0,
+                roleCounts: { receiver: 1, sender: 1 },
+                regions: {},
+                providers: {},
+            },
+        };
+        const freshPreview = {
+            ...loadedRunResolution,
+            resolvedAtEpochMs: 2_000,
+            targetAgentIds: Array.from({ length: 50 }, (_, index) => `agent-${String(index + 1).padStart(2, '0')}`),
+            roleAssignments: [
+                { agentId: 'agent-01', role: 'sender', required: true },
+                ...Array.from({ length: 49 }, (_, index) => ({
+                    agentId: `agent-${String(index + 2).padStart(2, '0')}`,
+                    role: 'receiver',
+                    required: true,
+                })),
+            ],
+            summary: {
+                ...loadedRunResolution.summary,
+                agents: 50,
+                targetable: 50,
+                selected: 50,
+                expectedParticipantCount: 50,
+                roleCounts: { receiver: 49, sender: 1 },
+            },
+        };
+
+        const gate = deriveDistributedWorldFleetTargetGate({
+            usesWorldFleetTargets: true,
+            expectedParticipantCount: 50,
+            targetResolutionPreview: freshPreview,
+            selectedDistributedRun: {
+                ...distributedRun,
+                manifest: {
+                    ...distributedRun.manifest,
+                    targetPolicy: {
+                        mode: 'all-online-group-members',
+                        expectedParticipantCount: 2,
+                    },
+                },
+                targetResolution: loadedRunResolution,
+            },
+        });
+
+        expect(gate.targetResolution).toBe(freshPreview);
+        expect(gate.previewSelected).toBe(50);
+        expect(gate.blockReason).toBeUndefined();
     });
 
     it('derives distributed run monitor evidence from command links and control run snapshots', () => {

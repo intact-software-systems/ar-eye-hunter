@@ -100,6 +100,7 @@ import {
     fetchControlRunJsonl,
     fetchControlServerSnapshot,
     rebuildFleetReports,
+    resolveDistributedTargets,
     resetControlRun,
     stageDistributedRun,
     startDistributedRun,
@@ -117,6 +118,7 @@ import {
     type ControlRunCommandRow,
     type ControlRunSnapshot,
     type ControlServerSnapshot,
+    type RallarBlackBoxDistributedTargetResolution,
 } from './control-run-manager.ts';
 import {
     deriveControlAgentBoardRows,
@@ -223,6 +225,7 @@ import {
     defaultDistributedRecipeTargetIds,
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
+    deriveDistributedWorldFleetTargetGate,
     deriveRunVerdictView,
     distributedRecipeCommandKinds,
     distributedRecipeCommandPreview,
@@ -14367,6 +14370,7 @@ function DistributedRecipesPanel({
         useState<DistributedRecipeTargetPolicyMode>('selected-agents');
     const [rolePattern, setRolePattern] =
         useState<DistributedRecipeRolePattern>('all-agents');
+    const [expectedParticipantCount, setExpectedParticipantCount] = useState(50);
     const [ackTimeoutMs, setAckTimeoutMs] = useState(15_000);
     const [barrierEnabled, setBarrierEnabled] = useState(false);
     const [barrierTimeoutMs, setBarrierTimeoutMs] = useState(15_000);
@@ -14385,6 +14389,9 @@ function DistributedRecipesPanel({
     >([]);
     const [selectedDistributedRun, setSelectedDistributedRun] = useState<
         ControlDistributedRunSnapshot | undefined
+    >();
+    const [targetResolutionPreview, setTargetResolutionPreview] = useState<
+        RallarBlackBoxDistributedTargetResolution | undefined
     >();
     const [artifactBundle, setArtifactBundle] = useState<
         ControlDistributedRunArtifactBundle | undefined
@@ -14500,6 +14507,7 @@ function DistributedRecipesPanel({
         [selectedAgentIds],
     );
     const targetableRows = targetRows.filter((row) => row.targetable);
+    const usesWorldFleetTargets = targetPolicyMode === 'all-online-group-members';
     const manifest = useMemo(() => {
         if (
             !selectedRunId ||
@@ -14514,7 +14522,7 @@ function DistributedRecipesPanel({
             displayName: `Distributed ${selectedRecipes.map((item) => item.title).join(', ')}`,
             group: groupRef,
             recipes: selectedRecipes,
-            targetAgentIds: selectedAgentIds,
+            targetAgentIds: usesWorldFleetTargets ? [] : selectedAgentIds,
             targetPolicyMode,
             rolePattern,
             ackTimeoutMs,
@@ -14530,7 +14538,9 @@ function DistributedRecipesPanel({
                     ? Date.now() + Math.max(1, startDelayMs)
                     : undefined,
             expectedParticipantCount:
-                selectedAgentIds.length > 0
+                usesWorldFleetTargets
+                    ? expectedParticipantCount
+                    : selectedAgentIds.length > 0
                     ? selectedAgentIds.length
                     : undefined,
         });
@@ -14540,6 +14550,7 @@ function DistributedRecipesPanel({
         barrierTimeoutMs,
         distributedRunId,
         groupRef,
+        expectedParticipantCount,
         rolePattern,
         selectedAgentIds,
         selectedRecipes,
@@ -14547,6 +14558,7 @@ function DistributedRecipesPanel({
         startDelayMs,
         startMode,
         targetPolicyMode,
+        usesWorldFleetTargets,
     ]);
     const manifestValidation = useMemo(
         () =>
@@ -14555,6 +14567,17 @@ function DistributedRecipesPanel({
                 : 'Select a run, group, and at least one recipe.',
         [manifest],
     );
+    const worldFleetTargetGate = deriveDistributedWorldFleetTargetGate({
+        usesWorldFleetTargets,
+        expectedParticipantCount,
+        targetResolutionPreview,
+        selectedDistributedRun,
+        distributedRunId,
+    });
+    const activeTargetResolution = worldFleetTargetGate.targetResolution;
+    const worldFleetPreviewSelected = worldFleetTargetGate.previewSelected;
+    const worldFleetStageStartBlocked = worldFleetTargetGate.blocked;
+    const worldFleetBlockReason = worldFleetTargetGate.blockReason;
     const manifestAuthoringValidation = useMemo(
         () =>
             manifest
@@ -14886,6 +14909,19 @@ function DistributedRecipesPanel({
     }, []);
 
     useEffect(() => {
+        setTargetResolutionPreview(undefined);
+    }, [
+        distributedRunId,
+        expectedParticipantCount,
+        groupRef.applicationId,
+        groupRef.groupId,
+        groupRef.workspaceId,
+        rolePattern,
+        selectedRunId,
+        targetPolicyMode,
+    ]);
+
+    useEffect(() => {
         const defaults = defaultDistributedRecipeTargetIds(targetRows);
         setSelectedAgentIds((previous) => {
             const kept = previous.filter((agentId) =>
@@ -14923,10 +14959,32 @@ function DistributedRecipesPanel({
     };
 
     const resolveTargets = async (): Promise<void> => {
-        await loadRun(selectedRunId);
-        const defaults = defaultDistributedRecipeTargetIds(targetRows);
-        setSelectedAgentIds(defaults);
-        setLastAction(`Resolved ${defaults.length} target agent(s).`);
+        setBusyAction('resolve-targets');
+        setError(undefined);
+        try {
+            await loadRun(selectedRunId);
+            if (usesWorldFleetTargets && manifest) {
+                const resolution = await resolveDistributedTargets({
+                    baseUrl,
+                    token,
+                    manifest,
+                });
+                setTargetResolutionPreview(resolution);
+                setSelectedAgentIds(resolution.targetAgentIds);
+                setLastAction(
+                    `Server resolved ${resolution.summary.selected}/${resolution.summary.expectedParticipantCount ?? expectedParticipantCount} world-fleet target(s).`,
+                );
+                return;
+            }
+            const defaults = defaultDistributedRecipeTargetIds(targetRows);
+            setTargetResolutionPreview(undefined);
+            setSelectedAgentIds(defaults);
+            setLastAction(`Resolved ${defaults.length} target agent(s).`);
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : String(caught));
+        } finally {
+            setBusyAction(undefined);
+        }
     };
 
     const ensureCreatedDistributedRun =
@@ -14979,6 +15037,9 @@ function DistributedRecipesPanel({
         setBusyAction('stage');
         setError(undefined);
         try {
+            if (worldFleetBlockReason) {
+                throw new Error(worldFleetBlockReason);
+            }
             const created = await ensureCreatedDistributedRun();
             const staged = await stageDistributedRun({
                 baseUrl,
@@ -14996,6 +15057,10 @@ function DistributedRecipesPanel({
     };
 
     const startRun = async (): Promise<void> => {
+        if (worldFleetBlockReason) {
+            setError(worldFleetBlockReason);
+            return;
+        }
         const target =
             selectedDistributedRun ??
             distributedRuns.find(
@@ -15150,7 +15215,10 @@ function DistributedRecipesPanel({
 
     const selectRolePattern = (value: DistributedRecipeRolePattern): void => {
         setRolePattern(value);
-        if (value !== 'all-agents') {
+        if (
+            value !== 'all-agents' &&
+            targetPolicyMode !== 'all-online-group-members'
+        ) {
             setTargetPolicyMode('role-map');
         } else if (targetPolicyMode === 'role-map') {
             setTargetPolicyMode('selected-agents');
@@ -15234,8 +15302,12 @@ function DistributedRecipesPanel({
                 />
                 <Metric
                     label="Targets"
-                    value={`${selectedAgentIds.length}/${targetableRows.length}`}
-                    tone={selectedAgentIds.length > 0 ? 'active' : 'bad'}
+                    value={usesWorldFleetTargets
+                        ? `${worldFleetPreviewSelected ?? 0}/${expectedParticipantCount}`
+                        : `${selectedAgentIds.length}/${targetableRows.length}`}
+                    tone={usesWorldFleetTargets
+                        ? worldFleetStageStartBlocked ? 'bad' : 'active'
+                        : selectedAgentIds.length > 0 ? 'active' : 'bad'}
                 />
                 <Metric
                     label="Live recipes"
@@ -15545,6 +15617,24 @@ function DistributedRecipesPanel({
                                 )}
                             </select>
                         </label>
+                        {usesWorldFleetTargets && (
+                            <label className="field">
+                                <span>Expected Participants</span>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={expectedParticipantCount}
+                                    onChange={(event) =>
+                                        setExpectedParticipantCount(
+                                            Number.parseInt(
+                                                event.target.value,
+                                                10,
+                                            ) || 1,
+                                        )
+                                    }
+                                />
+                            </label>
+                        )}
                         <label className="field">
                             <span>ACK Timeout Ms</span>
                             <input
@@ -15630,6 +15720,13 @@ function DistributedRecipesPanel({
                             </label>
                         )}
                     </div>
+                    {usesWorldFleetTargets && (
+                        <div className="distributed-warning" role="status">
+                            {activeTargetResolution
+                                ? `Server preview selected ${activeTargetResolution.summary.selected}/${expectedParticipantCount}; roles ${Object.entries(activeTargetResolution.summary.roleCounts).map(([role, count]) => `${role}:${count}`).join(', ') || 'none'}; blockers ${activeTargetResolution.blockers.length}.`
+                                : 'Resolve targets to preview online world-fleet participants and derived roles.'}
+                        </div>
+                    )}
                     <ControlAgentBoardPanel
                         title="Resolved Targets"
                         subtitle={`${selectedAgentIds.length}/${targetableRows.length} selected for ${groupRef.groupId || 'missing group'}`}
@@ -15686,7 +15783,8 @@ function DistributedRecipesPanel({
                             type="button"
                             disabled={
                                 Boolean(busyAction) ||
-                                Boolean(manifestValidation)
+                                Boolean(manifestValidation) ||
+                                Boolean(worldFleetBlockReason)
                             }
                             onClick={() => void stageRun()}
                         >
@@ -15695,7 +15793,9 @@ function DistributedRecipesPanel({
                         <button
                             type="button"
                             disabled={
-                                Boolean(busyAction) || !selectedDistributedRun
+                                Boolean(busyAction) ||
+                                !selectedDistributedRun ||
+                                Boolean(worldFleetBlockReason)
                             }
                             onClick={() => void startRun()}
                         >

@@ -129,6 +129,22 @@ export type DistributedRunPerformanceAnalysis = Readonly<{
     }>[];
 }>;
 
+export type DistributedRunTargetResolutionAnalysis = Readonly<{
+    selected: number;
+    expectedParticipantCount?: number;
+    missingExpectedParticipants: number;
+    blockers: number;
+    staleAgents: number;
+    offlineAgents: number;
+    wrongGroupAgents: number;
+    agentsWithoutIdentity: number;
+    roleCounts: Readonly<Record<string, number>>;
+    regions: Readonly<Record<string, number>>;
+    providers: Readonly<Record<string, number>>;
+    targetAgentIds: readonly string[];
+    blockingAgentIds: readonly string[];
+}>;
+
 export type DistributedRunAnalysis = Readonly<{
     generatedAtEpochMs: number;
     distributedRunId: string;
@@ -149,6 +165,7 @@ export type DistributedRunAnalysis = Readonly<{
     parseWarnings: readonly DistributedRunArtifactParseWarning[];
     failure?: DistributedRunFailureAnalysis;
     performance?: DistributedRunPerformanceAnalysis;
+    targetResolution?: DistributedRunTargetResolutionAnalysis;
     spa?: Readonly<{
         report: DistributedRunAnalysisReport;
         verdict: RunVerdictView;
@@ -191,6 +208,7 @@ const TERMINAL_FAILURE_STATES = new Set(['failed', 'timed-out', 'cancelled']);
 const DISTRIBUTED_ARTIFACT_FILE_NAMES = new Set([
     'distributed-run.json',
     'manifest.json',
+    'target-resolution.json',
     'runner-summary.json',
     'control-post-create-error.json',
     'control-post-stage-error.json',
@@ -233,6 +251,7 @@ export function analyzeDistributedRunArtifactFiles(
         controlPostFailure,
         results,
         events,
+        targetResolutionRecord,
     } = parseDistributedRunArtifactFiles(input.files);
     const distributedRun = normalizeDistributedRunRecord(distributedRunRecord, results);
     const controlRun = normalizeControlRunRecord(controlRunRecord, distributedRun.controlRunId, results, events);
@@ -254,6 +273,7 @@ export function analyzeDistributedRunArtifactFiles(
         status === 'passed';
     const group = groupFromArtifacts(distributedRun, fleetReport);
     const performance = derivePerformance(distributedRun, controlRun, fleetReport, results, events);
+    const targetResolution = targetResolutionAnalysis(targetResolutionRecord, distributedRun);
     const failure = ok
         ? undefined
         : deriveFailure({
@@ -285,6 +305,7 @@ export function analyzeDistributedRunArtifactFiles(
         parseWarnings,
         failure,
         performance,
+        targetResolution,
         spa,
     };
     const summaryMarkdown = renderSummaryMarkdown(base);
@@ -661,6 +682,12 @@ function renderSummaryMarkdown(
         analysis.controlRunId ? `Control run: ${analysis.controlRunId}` : undefined,
         analysis.group?.groupId ? `Group: ${analysis.group.groupId}` : undefined,
         `Agents: ${analysis.summary.agents}`,
+        analysis.targetResolution
+            ? `Targets: ${analysis.targetResolution.selected}/${analysis.targetResolution.expectedParticipantCount ?? 'unspecified'} resolved`
+            : undefined,
+        analysis.targetResolution
+            ? `Target blockers: ${analysis.targetResolution.blockers}`
+            : undefined,
         `Pass rate: ${percent(analysis.summary.passRate)}`,
         `Failure groups: ${analysis.summary.failureGroups}`,
         `Artifact warnings: ${analysis.parseWarnings.length}`,
@@ -958,6 +985,38 @@ function groupFromArtifacts(
     };
 }
 
+function targetResolutionAnalysis(
+    targetResolutionRecord: Record<string, unknown>,
+    distributedRun: ControlDistributedRunSnapshot,
+): DistributedRunTargetResolutionAnalysis | undefined {
+    const source = Object.keys(targetResolutionRecord).length > 0
+        ? targetResolutionRecord
+        : asRecord(distributedRun.targetResolution);
+    if (Object.keys(source).length === 0) {
+        return undefined;
+    }
+
+    const summary = asRecord(source.summary);
+    const blockers = arrayRecords(source.blockers);
+    return {
+        selected: numberValue(summary.selected) ?? stringArray(source.targetAgentIds).length,
+        expectedParticipantCount: numberValue(summary.expectedParticipantCount),
+        missingExpectedParticipants: numberValue(summary.missingExpectedParticipants) ?? 0,
+        blockers: blockers.length,
+        staleAgents: numberValue(summary.staleAgents) ?? 0,
+        offlineAgents: numberValue(summary.offlineAgents) ?? 0,
+        wrongGroupAgents: numberValue(summary.wrongGroupAgents) ?? 0,
+        agentsWithoutIdentity: numberValue(summary.agentsWithoutIdentity) ?? 0,
+        roleCounts: numberRecord(summary.roleCounts),
+        regions: numberRecord(summary.regions),
+        providers: numberRecord(summary.providers),
+        targetAgentIds: stringArray(source.targetAgentIds),
+        blockingAgentIds: blockers
+            .map(blocker => firstString(blocker.agentId))
+            .filter((agentId): agentId is string => Boolean(agentId)),
+    };
+}
+
 type ParsedDistributedRunArtifactFiles = Readonly<{
     parseWarnings: DistributedRunArtifactParseWarning[];
     distributedRunRecord: Record<string, unknown>;
@@ -966,6 +1025,7 @@ type ParsedDistributedRunArtifactFiles = Readonly<{
     failureBundle: Record<string, unknown>;
     runnerSummary: Record<string, unknown>;
     manifestRecord: Record<string, unknown>;
+    targetResolutionRecord: Record<string, unknown>;
     controlPostFailure?: ControlPostFailureArtifact;
     results: readonly Record<string, unknown>[];
     events: readonly Record<string, unknown>[];
@@ -989,6 +1049,11 @@ function parseDistributedRunArtifactFiles(
         controlRunRecord: parseJsonRecord(files['control-run.json'], 'control-run.json', parseWarnings),
         fleetReport: parseJsonRecord(files['fleet-report.json'], 'fleet-report.json', parseWarnings),
         failureBundle: parseJsonRecord(files['failures.json'], 'failures.json', parseWarnings),
+        targetResolutionRecord: parseJsonRecord(
+            files['target-resolution.json'],
+            'target-resolution.json',
+            parseWarnings,
+        ),
         runnerSummary,
         manifestRecord,
         controlPostFailure,
@@ -2272,6 +2337,14 @@ function optionalRecord(value: unknown): Record<string, unknown> | undefined {
 
 function arrayRecords(value: unknown): readonly Record<string, unknown>[] {
     return Array.isArray(value) ? value.map(asRecord) : [];
+}
+
+function numberRecord(value: unknown): Readonly<Record<string, number>> {
+    return Object.fromEntries(
+        Object.entries(asRecord(value))
+            .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]))
+            .sort(([left], [right]) => left.localeCompare(right)),
+    );
 }
 
 function firstString(...values: readonly unknown[]): string | undefined {

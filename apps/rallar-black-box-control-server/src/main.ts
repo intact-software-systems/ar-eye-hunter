@@ -190,6 +190,13 @@ async function handleRequest(request: Request): Promise<Response> {
     return await createDistributedRun(request);
   }
 
+  if (request.method === 'POST' && url.pathname === '/distributed-runs/resolve-targets') {
+    if (!(await authorizeAdminRequest(request, url))) {
+      return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
+    }
+    return await resolveDistributedTargets(request);
+  }
+
   const distributedRunMatch = url.pathname.match(/^\/distributed-runs\/([^/]+)$/);
   if (isRead && distributedRunMatch) {
     const distributedRunId = decodeURIComponent(distributedRunMatch[1]);
@@ -494,6 +501,21 @@ async function createDistributedRun(request: Request): Promise<Response> {
     const distributedRun = controlService.createDistributedRun(manifest);
     persistControlSnapshot();
     return jsonResponse(distributedRun, 201);
+  } catch (error) {
+    return distributedRunErrorResponse(error);
+  }
+}
+
+async function resolveDistributedTargets(request: Request): Promise<Response> {
+  let manifest: RallarBlackBoxDistributedRunManifest;
+  try {
+    manifest = await readDistributedRunManifest(request);
+  } catch (error) {
+    return jsonErrorResponse(error);
+  }
+
+  try {
+    return jsonResponse(controlService.resolveDistributedRunTargets(manifest));
   } catch (error) {
     return distributedRunErrorResponse(error);
   }
@@ -1066,6 +1088,7 @@ function registerSocket(socket: WebSocket, runId: string, agentId: string): void
   const key = agentKey(runId, agentId);
   const existing = agentSockets.get(key);
   if (existing && existing !== socket) {
+    controlService.recordDuplicateAgentSocketReplacement(runId, agentId);
     existing.close(4000, 'agent re-registered');
   }
 

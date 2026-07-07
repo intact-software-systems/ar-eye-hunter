@@ -2033,6 +2033,181 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
     await expect(selectedPreflight).toContainText('Composite Evidence preflight');
 });
 
+test('uses fresh world-fleet target previews after loading an older distributed run', async ({ page }) => {
+    const run = {
+        runId: 'demo-run',
+        createdAtEpochMs: Date.now() - 10_000,
+        updatedAtEpochMs: Date.now() - 1_000,
+        agents: [],
+        commands: [],
+        results: [],
+        events: [],
+        stats: [],
+        reports: [],
+        heartbeats: [],
+    };
+    const group = {
+        applicationId: 'rallar-server',
+        workspaceId: 'default',
+        groupId: 'bb-group',
+    };
+    const staleResolution = {
+        group,
+        resolvedAtEpochMs: Date.now() - 5_000,
+        staleAfterMs: 30_000,
+        targetPolicyMode: 'all-online-group-members',
+        targetAgentIds: ['agent-a', 'agent-b'],
+        roleAssignments: [],
+        blockers: [],
+        summary: {
+            agents: 2,
+            targetable: 2,
+            selected: 2,
+            expectedParticipantCount: 2,
+            missingExpectedParticipants: 0,
+            staleAgents: 0,
+            offlineAgents: 0,
+            wrongGroupAgents: 0,
+            agentsWithoutIdentity: 0,
+            roleCounts: {},
+            regions: {},
+            providers: {},
+        },
+    };
+    const freshResolution = {
+        ...staleResolution,
+        resolvedAtEpochMs: Date.now(),
+        targetAgentIds: Array.from({ length: 50 }, (_, index) => `agent-${String(index + 1).padStart(2, '0')}`),
+        summary: {
+            ...staleResolution.summary,
+            agents: 50,
+            targetable: 50,
+            selected: 50,
+            expectedParticipantCount: 50,
+        },
+    };
+    const staleDistributedRun = {
+        distributedRunId: 'dist-stale-world',
+        controlRunId: 'demo-run',
+        state: 'draft',
+        createdAtEpochMs: Date.now() - 6_000,
+        updatedAtEpochMs: Date.now() - 5_000,
+        targetAgentIds: staleResolution.targetAgentIds,
+        targetResolution: staleResolution,
+        manifest: {
+            schemaVersion: 1,
+            distributedRunId: 'dist-stale-world',
+            controlRunId: 'demo-run',
+            displayName: 'Stale world fleet run',
+            group,
+            recipes: [{
+                recipeId: 'stale-health',
+                required: true,
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: 'stale-health',
+                    commands: [{ kind: 'health', commandId: 'stale-health' }],
+                },
+            }],
+            targetPolicy: {
+                mode: 'all-online-group-members',
+                expectedParticipantCount: 2,
+            },
+            ackTimeoutMs: 30_000,
+            startMode: 'manual',
+        },
+        commandLinks: [],
+        rollup: {
+            state: 'draft',
+            ok: false,
+            summary: {
+                participants: 2,
+                requiredParticipants: 2,
+                readyParticipants: 0,
+                passedParticipants: 0,
+                failedParticipants: 0,
+                recipes: 1,
+                requiredRecipes: 1,
+                passedRecipes: 0,
+                failedRecipes: 0,
+                blockingFailures: 0,
+            },
+            failures: [],
+        },
+    };
+
+    await page.route(/https?:\/\/(localhost|127\.0\.0\.1):5180\/.*/, async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (request.method() === 'GET' && url.pathname === '/runs') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ runs: [run] }),
+            });
+            return;
+        }
+        if (request.method() === 'GET' && url.pathname === '/runs/demo-run') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(run),
+            });
+            return;
+        }
+        if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ distributedRuns: [staleDistributedRun] }),
+            });
+            return;
+        }
+        if (request.method() === 'GET' && url.pathname === '/distributed-runs/dist-stale-world') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(staleDistributedRun),
+            });
+            return;
+        }
+        if (request.method() === 'POST' && url.pathname === '/distributed-runs/resolve-targets') {
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(freshResolution),
+            });
+            return;
+        }
+        await route.fulfill({
+            status: 404,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'not found' }),
+        });
+    });
+
+    await page.goto('/?provider=simulated&workspace=black-box-runner&tab=distributed-recipes&roomId=bb-group');
+
+    const panel = page.locator('#panel-distributed-recipes');
+    await panel.getByRole('button', { name: 'Refresh' }).click();
+    await panel.locator('.distributed-run-list .distributed-run-row')
+        .filter({ hasText: 'dist-stale-world' })
+        .first()
+        .click();
+    const catalog = panel.locator('.distributed-recipes-catalog');
+    await catalog.getByLabel('Search').fill('composite');
+    await catalog.locator('.distributed-recipe-row')
+        .filter({ hasText: 'Composite Evidence' })
+        .getByRole('checkbox')
+        .check();
+    await panel.getByLabel('Target Policy').selectOption('all-online-group-members');
+    await panel.getByRole('button', { name: 'Resolve targets' }).click();
+
+    await expect(panel).toContainText('Server preview selected 50/50');
+    await expect(panel).not.toContainText('Server preview selected 2/50');
+    await expect(panel.getByRole('button', { name: 'Stage' })).toBeEnabled();
+});
+
 test('shows distributed WS and RTC runtime diagnostics in the run monitor', async ({ page }) => {
     const now = Date.now();
     const controlRun = {

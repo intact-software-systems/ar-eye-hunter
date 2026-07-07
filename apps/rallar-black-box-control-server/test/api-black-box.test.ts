@@ -551,6 +551,38 @@ Deno.test('control server distributed and fleet APIs validate auth, artifacts, f
     assertEquals(wrongScopeCreate.status, 401);
 
     const signedOperatorToken = await operatorToken();
+    const previewResponse = await fetch(`${server.baseUrl}/distributed-runs/resolve-targets`, {
+      method: 'POST',
+      headers: bearerJsonHeaders(signedOperatorToken),
+      body: JSON.stringify({
+        manifest: {
+          ...distributedManifest(),
+          targetPolicy: {
+            mode: 'all-online-group-members',
+            expectedParticipantCount: 1,
+          },
+          roleAssignmentPolicy: {
+            mode: 'ordered-targets',
+            pattern: 'one-sender-many-receivers',
+            orderBy: 'agent-id',
+          },
+        },
+      }),
+    });
+    assertEquals(previewResponse.status, 200);
+    const preview = await previewResponse.json() as {
+      targetAgentIds: readonly string[];
+      summary: {
+        selected: number;
+        expectedParticipantCount?: number;
+        roleCounts: Record<string, number>;
+      };
+    };
+    assertEquals(preview.targetAgentIds, ['agent-a']);
+    assertEquals(preview.summary.selected, 1);
+    assertEquals(preview.summary.expectedParticipantCount, 1);
+    assertEquals(preview.summary.roleCounts, { sender: 1 });
+
     const createdResponse = await fetch(`${server.baseUrl}/distributed-runs`, {
       method: 'POST',
       headers: bearerJsonHeaders(signedOperatorToken),

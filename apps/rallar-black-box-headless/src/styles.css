@@ -31,6 +31,10 @@ p {
     color: #ffb4a8;
 }
 
+.warning {
+    color: #ffd27d;
+}
+
 dl {
     display: grid;
     grid-template-columns: minmax(130px, 0.35fr) minmax(0, 1fr);

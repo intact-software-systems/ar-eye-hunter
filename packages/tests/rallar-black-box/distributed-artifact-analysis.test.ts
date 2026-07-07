@@ -14,6 +14,68 @@ import {
 import { deriveDistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 
 describe('Hetzner distributed run artifact analysis', () => {
+    it('includes target-resolution evidence in analysis summaries', () => {
+        const files: DistributedRunArtifactFiles = {
+            'distributed-run.json': JSON.stringify({
+                distributedRunId: 'dist-world-fleet',
+                controlRunId: 'run-world-fleet',
+                state: 'failed',
+                targetAgentIds: ['agent-01', 'agent-02'],
+                commandLinks: [],
+                rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
+                manifest: {
+                    recipes: [],
+                    group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
+                },
+            }),
+            'control-run.json': JSON.stringify({
+                runId: 'run-world-fleet',
+                agents: [],
+                commands: [],
+                results: [],
+                events: [],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+            }),
+            'target-resolution.json': JSON.stringify({
+                targetAgentIds: ['agent-01', 'agent-02'],
+                roleAssignments: [
+                    { agentId: 'agent-01', role: 'sender', required: true },
+                    { agentId: 'agent-02', role: 'receiver', required: true },
+                ],
+                blockers: [
+                    { agentId: 'agent-03', status: 'stale-agent', reason: 'stale' },
+                ],
+                summary: {
+                    selected: 2,
+                    expectedParticipantCount: 3,
+                    missingExpectedParticipants: 1,
+                    staleAgents: 1,
+                    offlineAgents: 0,
+                    wrongGroupAgents: 0,
+                    agentsWithoutIdentity: 0,
+                    roleCounts: { receiver: 1, sender: 1 },
+                    regions: { 'eu-north': 2 },
+                    providers: { hetzner: 2 },
+                },
+            }),
+        };
+
+        const analysis = analyzeDistributedRunArtifactFiles({ files });
+
+        expect(analysis.targetResolution).toMatchObject({
+            selected: 2,
+            expectedParticipantCount: 3,
+            missingExpectedParticipants: 1,
+            blockers: 1,
+            blockingAgentIds: ['agent-03'],
+            roleCounts: { receiver: 1, sender: 1 },
+        });
+        expect(analysis.summaryMarkdown).toContain('Targets: 2/3 resolved');
+        expect(analysis.summaryMarkdown).toContain('Target blockers: 1');
+    });
+
     it('uses JSONL fallback evidence consistently for CLI analysis and SPA snapshots', () => {
         const files: DistributedRunArtifactFiles = {
             'distributed-run.json': JSON.stringify({

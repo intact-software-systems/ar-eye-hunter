@@ -130,6 +130,46 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
         },
       },
     },
+    '/distributed-runs/resolve-targets': {
+      post: {
+        tags: ['Distributed Runs'],
+        summary: 'Preview distributed run target resolution',
+        description:
+          'Resolves target agents and derived roles for a distributed manifest without creating a run or queueing commands.',
+        security: [{ bearerAuth: [] }, { queryToken: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                oneOf: [
+                  { $ref: '#/components/schemas/DistributedRunManifest' },
+                  {
+                    type: 'object',
+                    required: ['manifest'],
+                    properties: {
+                      manifest: { $ref: '#/components/schemas/DistributedRunManifest' },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'Resolved target preview.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/DistributedTargetResolution' },
+              },
+            },
+          },
+          '400': { $ref: '#/components/responses/BadRequest' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+        },
+      },
+    },
     '/distributed-runs/{distributedRunId}': {
       get: {
         tags: ['Distributed Runs'],
@@ -1000,6 +1040,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
           cancelledAtEpochMs: { type: 'integer' },
           completedAtEpochMs: { type: 'integer' },
           targetAgentIds: { type: 'array', items: { type: 'string' } },
+          targetResolution: { $ref: '#/components/schemas/DistributedTargetResolution' },
           commandLinks: {
             type: 'array',
             items: { $ref: '#/components/schemas/ControlDistributedRunCommandLink' },
@@ -1031,6 +1072,35 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
             type: 'array',
             items: { type: 'object', additionalProperties: true },
           },
+        },
+      },
+      DistributedTargetResolution: {
+        type: 'object',
+        required: [
+          'group',
+          'resolvedAtEpochMs',
+          'staleAfterMs',
+          'targetPolicyMode',
+          'targetAgentIds',
+          'roleAssignments',
+          'blockers',
+          'summary',
+        ],
+        properties: {
+          group: { type: 'object', additionalProperties: true },
+          resolvedAtEpochMs: { type: 'integer' },
+          staleAfterMs: { type: 'integer' },
+          targetPolicyMode: { type: 'string' },
+          targetAgentIds: { type: 'array', items: { type: 'string' } },
+          roleAssignments: {
+            type: 'array',
+            items: { type: 'object', additionalProperties: true },
+          },
+          blockers: {
+            type: 'array',
+            items: { type: 'object', additionalProperties: true },
+          },
+          summary: { type: 'object', additionalProperties: true },
         },
       },
       ControlRunSnapshot: {
@@ -1297,6 +1367,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
             properties: {
               'distributed-run.json': { type: 'string' },
               'manifest.json': { type: 'string' },
+              'target-resolution.json': { type: 'string' },
               'control-run.json': { type: 'string' },
               'report.json': { type: 'string' },
               'results.jsonl': { type: 'string' },

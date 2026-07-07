@@ -158,6 +158,68 @@ function distributedManifest(
   };
 }
 
+function fleetIdentity(
+  agentId: string,
+  overrides: Partial<RallarBlackBoxControlAgentIdentity> = {},
+): RallarBlackBoxControlAgentIdentity {
+  return {
+    principalId: agentId,
+    clientId: agentId,
+    sessionId: `${agentId}-session`,
+    applicationId: 'rallar-server',
+    workspaceId: 'default',
+    groupId: 'bb-group',
+    ...overrides,
+  };
+}
+
+function registerFleetAgents(
+  service: ReturnType<typeof createRallarBlackBoxControlService>,
+  count: number,
+): void {
+  for (let index = 1; index <= count; index += 1) {
+    const agentId = `agent-${String(index).padStart(2, '0')}`;
+    service.receiveClientEnvelope(registerEnvelopeFor('run-1', agentId, [], fleetIdentity(agentId, {
+      region: index <= Math.ceil(count / 2) ? 'eu-north' : 'us-east',
+      provider: index % 2 === 0 ? 'fly' : 'hetzner',
+    })));
+  }
+}
+
+function principalWorldFleetManifest(
+  expectedParticipantCount: number,
+): RallarBlackBoxDistributedRunManifest {
+  return distributedManifest({
+    recipes: [
+      {
+        recipeId: 'sender-recipe',
+        role: 'sender',
+        recipe: {
+          recipeId: 'sender-recipe',
+          commands: [{ kind: 'health', commandId: 'sender-health' }],
+        },
+      },
+      {
+        recipeId: 'receiver-recipe',
+        role: 'receiver',
+        recipe: {
+          recipeId: 'receiver-recipe',
+          commands: [{ kind: 'health', commandId: 'receiver-health' }],
+        },
+      },
+    ],
+    targetPolicy: {
+      mode: 'all-online-group-members',
+      expectedParticipantCount,
+    },
+    roleAssignmentPolicy: {
+      mode: 'ordered-targets',
+      pattern: 'one-sender-many-receivers',
+      orderBy: 'agent-id',
+    },
+  });
+}
+
 Deno.test('control service queues and dispatches commands to a registered agent', () => {
   const service = createRallarBlackBoxControlService({
     now: (() => {
@@ -925,6 +987,8 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
   const bundle = service.distributedRunArtifactBundle('dist-1');
   assert(bundle);
   assertEquals(bundle.files['manifest.json'].includes('"distributedRunId": "dist-1"'), true);
+  assert(typeof bundle.files['target-resolution.json'] === 'string');
+  assertEquals(bundle.files['target-resolution.json'].includes('"targetAgentIds"'), true);
   assertEquals(bundle.files['control-run.json'].includes('"runId": "run-1"'), true);
 
   const snapshot = service.snapshot();
@@ -1378,6 +1442,169 @@ Deno.test('control service resolves all-online distributed targets from Rallar i
   assertEquals(created.targetAgentIds, ['agent-1']);
   const staged = service.stageDistributedRun('dist-1');
   assertEquals(staged.commandLinks.map((link) => link.agentId), ['agent-1']);
+});
+
+Deno.test('control service keeps explicit role-map target resolution aligned without fleet identity', () => {
+  const service = createRallarBlackBoxControlService();
+  service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-1'));
+  service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-2'));
+
+  const created = service.createDistributedRun(distributedManifest({
+    recipes: [
+      {
+        recipeId: 'sender-recipe',
+        role: 'sender',
+        recipe: {
+          recipeId: 'sender-recipe',
+          commands: [{ kind: 'health', commandId: 'sender-health' }],
+        },
+      },
+      {
+        recipeId: 'receiver-recipe',
+        role: 'receiver',
+        recipe: {
+          recipeId: 'receiver-recipe',
+          commands: [{ kind: 'health', commandId: 'receiver-health' }],
+        },
+      },
+    ],
+    targetPolicy: {
+      mode: 'role-map',
+      expectedParticipantCount: 2,
+      roles: {
+        sender: ['agent-1'],
+        receiver: ['agent-2'],
+      },
+    },
+    roleAssignments: [
+      { role: 'sender', agentId: 'agent-1', required: true },
+      { role: 'receiver', agentId: 'agent-2', required: true },
+    ],
+  }));
+
+  assertEquals(created.targetAgentIds, ['agent-1', 'agent-2']);
+  assertEquals(created.targetResolution?.targetAgentIds, ['agent-1', 'agent-2']);
+  assertEquals(created.targetResolution?.roleAssignments, [
+    { role: 'sender', agentId: 'agent-1', required: true },
+    { role: 'receiver', agentId: 'agent-2', required: true },
+  ]);
+  assertEquals(created.targetResolution?.summary.selected, 2);
+
+  const staged = service.stageDistributedRun('dist-1');
+  assertEquals(staged.commandLinks.filter((link) => link.phase === 'stage').map((link) => [
+    link.agentId,
+    link.recipeId,
+    link.role,
+  ]), [
+    ['agent-1', 'sender-recipe', 'sender'],
+    ['agent-2', 'receiver-recipe', 'receiver'],
+  ]);
+});
+
+Deno.test('control service resolves 50 global fleet targets and routes derived roles', () => {
+  const service = createRallarBlackBoxControlService();
+  registerFleetAgents(service, 50);
+
+  const created = service.createDistributedRun(principalWorldFleetManifest(50));
+
+  assertEquals(created.targetAgentIds.length, 50);
+  assertEquals(created.targetAgentIds[0], 'agent-01');
+  assertEquals(created.targetAgentIds[49], 'agent-50');
+  assertEquals(created.targetResolution?.summary.selected, 50);
+  assertEquals(created.targetResolution?.summary.roleCounts, {
+    receiver: 49,
+    sender: 1,
+  });
+  assertEquals(created.targetResolution?.summary.regions, {
+    'eu-north': 25,
+    'us-east': 25,
+  });
+
+  const staged = service.stageDistributedRun('dist-1');
+
+  assertEquals(staged.state, 'waiting-for-ack');
+  assertEquals(staged.commandLinks.filter((link) => link.phase === 'stage').length, 50);
+  assertEquals(staged.commandLinks.filter((link) => link.role === 'sender').map((link) => link.agentId), [
+    'agent-01',
+  ]);
+  assertEquals(staged.commandLinks.filter((link) => link.role === 'receiver').length, 49);
+
+  const senderStageCommands = service.takeDispatchableCommands('run-1', 'agent-01');
+  const receiverStageCommands = service.takeDispatchableCommands('run-1', 'agent-02');
+
+  assertEquals(senderStageCommands[0].command.kind, 'recipe.load');
+  assertEquals(senderStageCommands[0].command.kind === 'recipe.load'
+    ? senderStageCommands[0].command.recipe.recipeId
+    : undefined, 'sender-recipe');
+  assertEquals(receiverStageCommands[0].command.kind, 'recipe.load');
+  assertEquals(receiverStageCommands[0].command.kind === 'recipe.load'
+    ? receiverStageCommands[0].command.recipe.recipeId
+    : undefined, 'receiver-recipe');
+});
+
+Deno.test('control service records duplicate agent socket replacement diagnostics', () => {
+  const service = createRallarBlackBoxControlService({
+    now: () => 2_000,
+  });
+  service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-1'));
+
+  service.recordDuplicateAgentSocketReplacement('run-1', 'agent-1');
+
+  const run = service.snapshotRun('run-1');
+  assert(run);
+  assertEquals(run.events[0].kind, 'diagnostic');
+  assertEquals((run.events[0].payload as { topic?: string }).topic, 'rallar.bb.control.duplicate-agent-socket');
+});
+
+Deno.test('control service fails global fleet mismatch before queueing commands', () => {
+  const service = createRallarBlackBoxControlService();
+  registerFleetAgents(service, 49);
+
+  service.createDistributedRun(principalWorldFleetManifest(50));
+  const staged = service.stageDistributedRun('dist-1');
+
+  assertEquals(staged.state, 'failed');
+  assertEquals(staged.error?.code, 'RALLAR_BB_DISTRIBUTED_TARGET_COUNT_MISMATCH');
+  assertEquals(staged.commandLinks.length, 0);
+  assertEquals(staged.targetResolution?.summary.selected, 49);
+  assertEquals(staged.targetResolution?.summary.expectedParticipantCount, 50);
+  assertEquals(staged.targetResolution?.summary.missingExpectedParticipants, 1);
+  assertEquals(service.takeDispatchableCommands('run-1', 'agent-01'), []);
+});
+
+Deno.test('control service freezes global fleet target roles after staging', () => {
+  const service = createRallarBlackBoxControlService();
+  registerFleetAgents(service, 3);
+
+  const staged = service.stageDistributedRun(
+    service.createDistributedRun(principalWorldFleetManifest(3)).distributedRunId,
+  );
+  assertEquals(staged.targetAgentIds, ['agent-01', 'agent-02', 'agent-03']);
+  assertEquals(staged.targetResolution?.roleAssignments, [
+    { role: 'sender', agentId: 'agent-01', required: true },
+    { role: 'receiver', agentId: 'agent-02', required: true },
+    { role: 'receiver', agentId: 'agent-03', required: true },
+  ]);
+
+  for (const agentId of staged.targetAgentIds) {
+    const [stageCommand] = service.takeDispatchableCommands('run-1', agentId);
+    service.receiveClientEnvelope(commandResultEnvelope('run-1', agentId, stageCommand));
+  }
+  service.receiveClientEnvelope(registerEnvelopeFor('run-1', 'agent-00', [], fleetIdentity('agent-00')));
+
+  const started = service.startDistributedRun('dist-1');
+  assertEquals(started.state, 'running');
+  assertEquals(started.targetAgentIds, ['agent-01', 'agent-02', 'agent-03']);
+  assertEquals(started.targetResolution?.roleAssignments, [
+    { role: 'sender', agentId: 'agent-01', required: true },
+    { role: 'receiver', agentId: 'agent-02', required: true },
+    { role: 'receiver', agentId: 'agent-03', required: true },
+  ]);
+  assertEquals(started.commandLinks.filter((link) => link.phase === 'start').map((link) => link.agentId), [
+    'agent-01',
+    'agent-02',
+    'agent-03',
+  ]);
 });
 
 Deno.test('control service reports distributed target mismatch and ACK timeout', () => {

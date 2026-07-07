@@ -766,6 +766,24 @@ The recipe step may fail, but the workflow still uploads artifacts before the
 final job failure. Read `analysis/fix-proposal.md` for failed runs and
 `analysis/performance.md` for passed runs.
 
+Already-running global-fleet agents use a separate no-spawn flow. Do not use
+the Hetzner lifecycle workflow when the browsers are already running around the
+world. Use manifests under `apps/rallar-black-box/manifests/world-fleet` and
+run:
+
+```bash
+npx tsx apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts \
+  --control http://127.0.0.1:5180 \
+  --manifest apps/rallar-black-box/manifests/world-fleet/01-rtc-messages-principal-50-agent-30s-20hz-tree.json \
+  --control-run-id live-world-fleet-control-run \
+  --token "$RALLAR_CONTROL_ADMIN_TOKEN"
+```
+
+That script only preflights, creates, stages, starts, polls, and exports
+artifacts against an existing control server. Use `--control-run-id` or
+`RALLAR_CONTROL_RUN_ID` when the connected agents are registered under a live
+control run ID rather than the template ID in the checked-in manifest.
+
 ## Defaults
 
 The deploy script defaults to:

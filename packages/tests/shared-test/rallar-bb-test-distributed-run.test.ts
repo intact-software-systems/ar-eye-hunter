@@ -9,9 +9,11 @@ import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES,
     isDistributedRunTerminalState,
     resolveDistributedTargetAgentIds,
+    resolveDistributedRunTargets,
     resolveGroupMemberControlAgentMatches,
     rollupDistributedRunResult,
     validateDistributedRunManifestContract,
+    type RallarBlackBoxControlAgentCandidate,
     type RallarBlackBoxDistributedRunManifest,
 } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 
@@ -75,6 +77,34 @@ function validManifest(overrides: Partial<RallarBlackBoxDistributedRunManifest> 
     };
 }
 
+function targetAgent(
+    agentId: string,
+    options: Readonly<{
+        connected?: boolean;
+        groupId?: string;
+        lastHeartbeatAtEpochMs?: number;
+        region?: string;
+        provider?: string;
+    }> = {},
+): RallarBlackBoxControlAgentCandidate {
+    return {
+        agentId,
+        connected: options.connected ?? true,
+        lastHeartbeatAtEpochMs: options.lastHeartbeatAtEpochMs ?? 9_900,
+        identity: {
+            principalId: agentId,
+            clientId: agentId,
+            username: agentId,
+            sessionId: `${agentId}-session`,
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: options.groupId ?? 'bb-group',
+            region: options.region,
+            provider: options.provider,
+        },
+    };
+}
+
 describe('rallar-bb-test distributed run contract', () => {
     it('defines stable lifecycle and terminal states', () => {
         expect(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES).toEqual([
@@ -102,6 +132,32 @@ describe('rallar-bb-test distributed run contract', () => {
 
     it('validates a complete manifest as JSON and domain contract', () => {
         const manifest = validManifest();
+        const schemaResult = validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, manifest);
+        expect(
+            schemaResult.ok,
+            schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors),
+        ).toBe(true);
+
+        expect(validateDistributedRunManifestContract(manifest)).toEqual({
+            ok: true,
+            errors: [],
+        });
+    });
+
+    it('accepts ordered target role policy for global fleet manifests', () => {
+        const manifest = validManifest({
+            targetPolicy: {
+                mode: 'all-online-group-members',
+                expectedParticipantCount: 50,
+            },
+            roleAssignments: undefined,
+            roleAssignmentPolicy: {
+                mode: 'ordered-targets',
+                pattern: 'one-sender-many-receivers',
+                orderBy: 'agent-id',
+            },
+        });
+
         const schemaResult = validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, manifest);
         expect(
             schemaResult.ok,
@@ -161,6 +217,26 @@ describe('rallar-bb-test distributed run contract', () => {
                 '$.targetPolicy.roles',
                 '$.startDeadlineEpochMs',
             ]));
+        }
+    });
+
+    it('does not treat dynamic role assignment policy as role-map targets', () => {
+        const result = validateDistributedRunManifestContract(validManifest({
+            targetPolicy: {
+                mode: 'role-map',
+                expectedParticipantCount: 2,
+            },
+            roleAssignments: [],
+            roleAssignmentPolicy: {
+                mode: 'ordered-targets',
+                pattern: 'one-sender-many-receivers',
+                orderBy: 'agent-id',
+            },
+        }));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+            expect(result.errors.map(error => error.path)).toContain('$.targetPolicy.roles');
         }
     });
 
@@ -353,6 +429,76 @@ describe('rallar-bb-test distributed run contract', () => {
                 },
             },
         })).toEqual(['alice-agent', 'bob-agent']);
+    });
+
+    it('resolves global fleet targets and derives deterministic sender receiver roles', () => {
+        const agents: RallarBlackBoxControlAgentCandidate[] = [
+            targetAgent('agent-03'),
+            targetAgent('agent-01', { region: 'eu-north', provider: 'hetzner' }),
+            targetAgent('agent-02', { region: 'us-east', provider: 'fly' }),
+            targetAgent('stale-agent', { lastHeartbeatAtEpochMs: 1_000 }),
+            targetAgent('offline-agent', { connected: false }),
+            targetAgent('wrong-group', { groupId: 'other-group' }),
+            {
+                agentId: 'missing-identity',
+                connected: true,
+                lastHeartbeatAtEpochMs: 9_900,
+            },
+        ];
+
+        const resolution = resolveDistributedRunTargets({
+            manifest: validManifest({
+                targetPolicy: {
+                    mode: 'all-online-group-members',
+                    expectedParticipantCount: 3,
+                },
+                roleAssignments: undefined,
+                roleAssignmentPolicy: {
+                    mode: 'ordered-targets',
+                    pattern: 'one-sender-many-receivers',
+                    orderBy: 'agent-id',
+                },
+            }),
+            agents,
+            nowEpochMs: 10_000,
+            staleAfterMs: 1_000,
+        });
+
+        expect(resolution.targetAgentIds).toEqual(['agent-01', 'agent-02', 'agent-03']);
+        expect(resolution.roleAssignments).toEqual([
+            { role: 'sender', agentId: 'agent-01', required: true },
+            { role: 'receiver', agentId: 'agent-02', required: true },
+            { role: 'receiver', agentId: 'agent-03', required: true },
+        ]);
+        expect(resolution.summary).toMatchObject({
+            agents: 7,
+            targetable: 3,
+            selected: 3,
+            expectedParticipantCount: 3,
+            missingExpectedParticipants: 0,
+            staleAgents: 1,
+            offlineAgents: 1,
+            wrongGroupAgents: 1,
+            agentsWithoutIdentity: 1,
+            roleCounts: {
+                sender: 1,
+                receiver: 2,
+            },
+            regions: {
+                'eu-north': 1,
+                'us-east': 1,
+            },
+            providers: {
+                fly: 1,
+                hetzner: 1,
+            },
+        });
+        expect(resolution.blockers.map(blocker => [blocker.agentId, blocker.status])).toEqual([
+            ['stale-agent', 'stale-agent'],
+            ['offline-agent', 'offline-agent'],
+            ['wrong-group', 'different-group'],
+            ['missing-identity', 'agent-without-identity'],
+        ]);
     });
 
     it('rolls participant readiness and recipe results into one distributed state', () => {

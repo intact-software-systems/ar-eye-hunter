@@ -9,6 +9,7 @@ import type {
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRollup,
     RallarBlackBoxDistributedRunState,
+    RallarBlackBoxDistributedTargetResolution,
 } from './distributed-run.ts';
 import type {
     ControlFleetAgentRunOutcome,
@@ -84,6 +85,7 @@ export type ControlDistributedRunSnapshot = Readonly<{
     cancelledAtEpochMs?: number;
     completedAtEpochMs?: number;
     targetAgentIds: readonly string[];
+    targetResolution?: RallarBlackBoxDistributedTargetResolution;
     commandLinks: readonly ControlDistributedRunCommandLink[];
     rollup: RallarBlackBoxDistributedRunRollup;
     error?: Readonly<{
@@ -131,6 +133,7 @@ export type ControlRunArtifactBundle = Readonly<{
 export type ControlDistributedRunArtifactFileName =
     | 'distributed-run.json'
     | 'manifest.json'
+    | 'target-resolution.json'
     | 'control-run.json'
     | 'report.json'
     | 'results.jsonl'

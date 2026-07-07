@@ -16,13 +16,17 @@ import type {
 } from '@shared-test/rallar-bb-test/types.ts';
 import {
   isDistributedRunTerminalState,
+  resolveDistributedRunTargets,
+  type RallarBlackBoxControlAgentCandidate,
   type RallarBlackBoxControlAgentIdentity,
   type RallarBlackBoxDistributedParticipantResult,
   type RallarBlackBoxDistributedRecipeResult,
+  type RallarBlackBoxDistributedRoleAssignment,
   type RallarBlackBoxDistributedRunManifest,
   type RallarBlackBoxDistributedRunRecipeSelection,
   type RallarBlackBoxDistributedRunRollup,
   type RallarBlackBoxDistributedRunState,
+  type RallarBlackBoxDistributedTargetResolution,
   rollupDistributedRunResult,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
@@ -174,6 +178,7 @@ type StoredDistributedRun = {
   cancelledAtEpochMs?: number;
   completedAtEpochMs?: number;
   targetAgentIds: string[];
+  targetResolution?: RallarBlackBoxDistributedTargetResolution;
   commandLinks: ControlDistributedRunCommandLink[];
   error?: ControlDistributedRunSnapshot['error'];
 };
@@ -349,9 +354,24 @@ export class RallarBlackBoxControlService {
       targetAgentIds: [],
       commandLinks: [],
     };
-    stored.targetAgentIds = this.resolveDistributedTargetAgentIds(stored);
+    this.refreshDistributedTargetResolution(stored);
     this.distributedRuns.set(stored.distributedRunId, stored);
     return this.snapshotDistributedRunValue(stored);
+  }
+
+  resolveDistributedRunTargets(
+    manifest: RallarBlackBoxDistributedRunManifest,
+  ): RallarBlackBoxDistributedTargetResolution {
+    const controlRunId = cleanSegment(manifest.controlRunId) ?? manifest.distributedRunId;
+    return resolveDistributedRunTargets({
+      manifest: {
+        ...manifest,
+        schemaVersion: manifest.schemaVersion ?? 1,
+        controlRunId,
+      },
+      agents: this.controlAgentCandidates(controlRunId),
+      nowEpochMs: this.now(),
+    });
   }
 
   listDistributedRuns(): readonly ControlDistributedRunSnapshot[] {
@@ -371,7 +391,7 @@ export class RallarBlackBoxControlService {
   stageDistributedRun(distributedRunId: string): ControlDistributedRunSnapshot {
     const distributedRun = this.requireDistributedRun(distributedRunId);
     this.assertDistributedRunCanMutate(distributedRun, 'stage');
-    distributedRun.targetAgentIds = this.resolveDistributedTargetAgentIds(distributedRun);
+    this.refreshDistributedTargetResolution(distributedRun);
     distributedRun.updatedAtEpochMs = this.now();
 
     if (distributedRun.targetAgentIds.length === 0) {
@@ -407,7 +427,7 @@ export class RallarBlackBoxControlService {
     }
 
     for (const agentId of distributedRun.targetAgentIds) {
-      for (const selection of this.recipeSelectionsForAgent(distributedRun.manifest, agentId)) {
+      for (const selection of this.recipeSelectionsForAgent(distributedRun, agentId)) {
         this.enqueueLinkedDistributedCommand(
           distributedRun,
           'stage',
@@ -429,7 +449,7 @@ export class RallarBlackBoxControlService {
     this.refreshDistributedRunState(distributedRun);
     this.assertDistributedRunCanMutate(distributedRun, 'start');
     if (distributedRun.targetAgentIds.length === 0) {
-      distributedRun.targetAgentIds = this.resolveDistributedTargetAgentIds(distributedRun);
+      this.refreshDistributedTargetResolution(distributedRun);
     }
     if (distributedRun.targetAgentIds.length === 0) {
       distributedRun.state = 'failed';
@@ -743,6 +763,7 @@ export class RallarBlackBoxControlService {
         cancelledAtEpochMs: distributedRunSnapshot.cancelledAtEpochMs,
         completedAtEpochMs: distributedRunSnapshot.completedAtEpochMs,
         targetAgentIds: [...distributedRunSnapshot.targetAgentIds],
+        targetResolution: distributedRunSnapshot.targetResolution,
         commandLinks: [...distributedRunSnapshot.commandLinks],
         rollup: distributedRunSnapshot.rollup,
         error: distributedRunSnapshot.error,
@@ -783,6 +804,31 @@ export class RallarBlackBoxControlService {
   ): ControlQueuedCommandSnapshot | undefined {
     const command = this.runs.get(runId)?.commands.get(commandId);
     return command ? this.snapshotCommandValue(command) : undefined;
+  }
+
+  recordDuplicateAgentSocketReplacement(runId: string, agentId: string): void {
+    const run = this.ensureRun(runId);
+    const agent = this.ensureAgent(run, agentId);
+    const atEpochMs = this.now();
+    agent.receivedEventCount += 1;
+    agent.lastSeenAtEpochMs = atEpochMs;
+    run.events.push({
+      kind: 'diagnostic',
+      protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+      runId,
+      agentId,
+      atEpochMs,
+      eventId: `duplicate-agent-socket-${safeCommandIdSegment(agentId)}-${atEpochMs}`,
+      payload: {
+        topic: 'rallar.bb.control.duplicate-agent-socket',
+        severity: 'warning',
+        message: 'Another websocket registered with the same runId and agentId; replacing the previous socket.',
+        runId,
+        agentId,
+      },
+    });
+    this.touch(run);
+    this.trimRunToRuntimeBounds(run);
   }
 
   private register(envelope: ControlRegisterEnvelope): void {
@@ -1003,6 +1049,101 @@ export class RallarBlackBoxControlService {
     );
   }
 
+  private refreshDistributedTargetResolution(
+    distributedRun: StoredDistributedRun,
+  ): RallarBlackBoxDistributedTargetResolution {
+    const resolution = this.shouldUseResolvedTargetIds(distributedRun.manifest)
+      ? this.resolveDistributedRunTargets(distributedRun.manifest)
+      : this.explicitDistributedTargetResolution(distributedRun);
+    distributedRun.targetResolution = resolution;
+    distributedRun.targetAgentIds = [...resolution.targetAgentIds];
+    return resolution;
+  }
+
+  private shouldUseResolvedTargetIds(manifest: RallarBlackBoxDistributedRunManifest): boolean {
+    return manifest.targetPolicy.mode === 'all-online-group-members' ||
+      manifest.roleAssignmentPolicy !== undefined;
+  }
+
+  private controlAgentCandidates(
+    controlRunId: string,
+  ): readonly RallarBlackBoxControlAgentCandidate[] {
+    const run = this.runs.get(controlRunId);
+    if (!run) {
+      return [];
+    }
+    return Array.from(run.agents.values(), (agent) => ({
+      agentId: agent.agentId,
+      connected: agent.connected,
+      lastSeenAtEpochMs: agent.lastSeenAtEpochMs,
+      lastHeartbeatAtEpochMs: agent.lastHeartbeatAtEpochMs,
+      identity: agent.identity,
+    }));
+  }
+
+  private explicitDistributedTargetResolution(
+    distributedRun: StoredDistributedRun,
+  ): RallarBlackBoxDistributedTargetResolution {
+    const targetAgentIds = this.resolveDistributedTargetAgentIds(distributedRun);
+    const roleAssignments = this.explicitRoleAssignmentsForTargets(
+      distributedRun.manifest,
+      targetAgentIds,
+    );
+    const roleCounts = countStrings(roleAssignments.map((assignment) => assignment.role));
+    const candidates = this.controlAgentCandidates(distributedRun.controlRunId);
+    const candidateById = new Map(candidates.map((candidate) => [candidate.agentId, candidate]));
+    const selectedCandidates = targetAgentIds
+      .map((agentId) => candidateById.get(agentId))
+      .filter((candidate): candidate is RallarBlackBoxControlAgentCandidate => Boolean(candidate));
+    const expected = distributedRun.manifest.targetPolicy.expectedParticipantCount;
+
+    return {
+      group: distributedRun.manifest.group,
+      resolvedAtEpochMs: this.now(),
+      staleAfterMs: 30_000,
+      targetPolicyMode: distributedRun.manifest.targetPolicy.mode,
+      targetAgentIds,
+      roleAssignments,
+      blockers: [],
+      summary: {
+        agents: candidates.length,
+        targetable: targetAgentIds.length,
+        selected: targetAgentIds.length,
+        expectedParticipantCount: expected,
+        missingExpectedParticipants: expected === undefined
+          ? 0
+          : Math.max(0, expected - targetAgentIds.length),
+        staleAgents: 0,
+        offlineAgents: 0,
+        wrongGroupAgents: 0,
+        agentsWithoutIdentity: 0,
+        roleCounts,
+        regions: countStrings(selectedCandidates.map((candidate) => candidate.identity?.region)),
+        providers: countStrings(selectedCandidates.map((candidate) => candidate.identity?.provider)),
+      },
+    };
+  }
+
+  private explicitRoleAssignmentsForTargets(
+    manifest: RallarBlackBoxDistributedRunManifest,
+    targetAgentIds: readonly string[],
+  ): readonly RallarBlackBoxDistributedRoleAssignment[] {
+    const selected = new Set(targetAgentIds);
+    const explicitAssignments = manifest.roleAssignments ?? [];
+    if (explicitAssignments.length > 0) {
+      return explicitAssignments
+        .filter((assignment) => selected.has(assignment.agentId))
+        .map((assignment) => ({ ...assignment }));
+    }
+
+    return Object.entries(manifest.targetPolicy.roles ?? {})
+      .flatMap(([role, agentIds]) =>
+        agentIds
+          .filter((agentId) => selected.has(agentId))
+          .map((agentId) => ({ role, agentId, required: true }))
+      );
+  }
+
   private resolveDistributedTargetAgentIds(distributedRun: StoredDistributedRun): string[] {
     const policy = distributedRun.manifest.targetPolicy;
     const unique = (values: readonly string[]) => [
@@ -1045,12 +1186,12 @@ export class RallarBlackBoxControlService {
   }
 
   private recipeSelectionsForAgent(
-    manifest: RallarBlackBoxDistributedRunManifest,
+    distributedRun: StoredDistributedRun,
     agentId: string,
   ): readonly RallarBlackBoxDistributedRunRecipeSelection[] {
-    const roles = this.rolesForAgent(manifest, agentId);
-    const assignments = (manifest.roleAssignments ?? [])
-      .filter((assignment) => assignment.agentId === agentId);
+    const manifest = distributedRun.manifest;
+    const roles = this.rolesForAgent(distributedRun, agentId);
+    const assignments = this.roleAssignmentsForAgent(distributedRun, agentId);
     const assignedRecipeIds = new Set(
       assignments.flatMap((assignment) => assignment.recipeIds ?? []),
     );
@@ -1071,10 +1212,21 @@ export class RallarBlackBoxControlService {
   }
 
   private rolesForAgent(
-    manifest: RallarBlackBoxDistributedRunManifest,
+    distributedRun: StoredDistributedRun,
     agentId: string,
   ): Set<string> {
+    const manifest = distributedRun.manifest;
     const roles = new Set<string>();
+    const resolvedAssignments = distributedRun.targetResolution?.roleAssignments;
+    if (resolvedAssignments) {
+      for (const assignment of resolvedAssignments) {
+        if (assignment.agentId === agentId) {
+          roles.add(assignment.role);
+        }
+      }
+      return roles;
+    }
+
     for (const [role, agentIds] of Object.entries(manifest.targetPolicy.roles ?? {})) {
       if (agentIds.includes(agentId)) {
         roles.add(role);
@@ -1086,6 +1238,16 @@ export class RallarBlackBoxControlService {
       }
     }
     return roles;
+  }
+
+  private roleAssignmentsForAgent(
+    distributedRun: StoredDistributedRun,
+    agentId: string,
+  ): readonly RallarBlackBoxDistributedRoleAssignment[] {
+    const assignments = distributedRun.targetResolution?.roleAssignments ??
+      distributedRun.manifest.roleAssignments ??
+      [];
+    return assignments.filter((assignment) => assignment.agentId === agentId);
   }
 
   private advanceDistributedRunOrchestration(distributedRun: StoredDistributedRun): void {
@@ -1184,7 +1346,7 @@ export class RallarBlackBoxControlService {
 
   private queueDistributedStartCommands(distributedRun: StoredDistributedRun): void {
     for (const agentId of distributedRun.targetAgentIds) {
-      for (const selection of this.recipeSelectionsForAgent(distributedRun.manifest, agentId)) {
+      for (const selection of this.recipeSelectionsForAgent(distributedRun, agentId)) {
         this.enqueueLinkedDistributedCommand(
           distributedRun,
           'start',
@@ -1207,7 +1369,7 @@ export class RallarBlackBoxControlService {
     }
 
     for (const agentId of distributedRun.targetAgentIds) {
-      for (const selection of this.recipeSelectionsForAgent(distributedRun.manifest, agentId)) {
+      for (const selection of this.recipeSelectionsForAgent(distributedRun, agentId)) {
         this.reconcileDistributedCommandLink(distributedRun, run, 'stage', agentId, selection);
         this.reconcileDistributedCommandLink(distributedRun, run, 'start', agentId, selection);
       }
@@ -1479,6 +1641,7 @@ export class RallarBlackBoxControlService {
       cancelledAtEpochMs: distributedRun.cancelledAtEpochMs,
       completedAtEpochMs: distributedRun.completedAtEpochMs,
       targetAgentIds: [...distributedRun.targetAgentIds],
+      targetResolution: distributedRun.targetResolution,
       commandLinks: [...distributedRun.commandLinks],
       rollup,
       error: distributedRun.error,
@@ -1588,7 +1751,7 @@ export class RallarBlackBoxControlService {
     const failedResult = [...stageResults, ...barrierResults, ...startResults].find((result) =>
       !result.ok
     );
-    const roles = Array.from(this.rolesForAgent(distributedRun.manifest, agentId));
+    const roles = Array.from(this.rolesForAgent(distributedRun, agentId));
     const ackTimedOut = this.distributedRunAckTimedOut(distributedRun);
     const barrierTimedOut = this.distributedRunBarrierTimedOut(distributedRun);
 
@@ -2059,6 +2222,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function cleanSegment(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function countStrings(values: readonly unknown[]): Readonly<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  for (const value of values) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      continue;
+    }
+    const key = value.trim();
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return Object.fromEntries(
+    Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)),
+  );
 }
 
 function safeCommandIdSegment(value: string): string {

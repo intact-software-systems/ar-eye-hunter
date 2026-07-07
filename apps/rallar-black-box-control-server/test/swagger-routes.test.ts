@@ -40,6 +40,7 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
   assert(spec.paths?.['/health']);
   assert(spec.paths?.['/retention/cleanup']);
   assert(spec.paths?.['/distributed-runs']);
+  assert(spec.paths?.['/distributed-runs/resolve-targets']);
   assert(spec.paths?.['/distributed-runs/{distributedRunId}']);
   assert(spec.paths?.['/distributed-runs/{distributedRunId}/stage']);
   assert(spec.paths?.['/distributed-runs/{distributedRunId}/start']);

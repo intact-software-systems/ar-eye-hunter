@@ -326,7 +326,10 @@ function roleForAgent(
     run: ControlDistributedRunSnapshot,
     agentId: string,
 ): string | undefined {
-    return run.manifest.roleAssignments?.find((assignment) =>
+    return run.targetResolution?.roleAssignments.find((assignment) =>
+        assignment.agentId === agentId
+    )?.role ??
+        run.manifest.roleAssignments?.find((assignment) =>
         assignment.agentId === agentId
     )?.role ??
         run.commandLinks.find((link) => link.agentId === agentId)?.role;

@@ -2,8 +2,10 @@ import type {
     RallarBlackBoxDistributedBarrierPolicy,
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRoleAssignment,
+    RallarBlackBoxDistributedRoleAssignmentPolicy,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRecipeSelection,
+    RallarBlackBoxDistributedTargetResolution,
     RallarBlackBoxDistributedTargetPolicy,
 } from './distributed-run.ts';
 import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from './schema.ts';
@@ -164,6 +166,15 @@ export type DistributedRecipeTargetRow = Readonly<{
     crdtTransports?: readonly string[];
     lastHeartbeatAtEpochMs?: number;
     lastSeenAtEpochMs?: number;
+}>;
+
+export type DistributedWorldFleetTargetGate = Readonly<{
+    usesWorldFleetTargets: boolean;
+    targetResolution?: RallarBlackBoxDistributedTargetResolution;
+    expectedParticipantCount?: number;
+    previewSelected?: number;
+    blocked: boolean;
+    blockReason?: string;
 }>;
 
 export type BuildDistributedRunManifestInput = Readonly<{
@@ -693,6 +704,59 @@ export function defaultDistributedRecipeTargetIds(
     return rows
         .filter(row => row.targetable)
         .map(row => row.agentId);
+}
+
+export function deriveDistributedWorldFleetTargetGate(input: Readonly<{
+    usesWorldFleetTargets: boolean;
+    expectedParticipantCount?: number;
+    targetResolutionPreview?: RallarBlackBoxDistributedTargetResolution;
+    selectedDistributedRun?: ControlDistributedRunSnapshot;
+    distributedRunId?: string;
+}>): DistributedWorldFleetTargetGate {
+    const selectedRunUsesWorldFleetTargets =
+        input.selectedDistributedRun?.manifest.targetPolicy.mode === 'all-online-group-members';
+    const selectedRunMatchesDraft =
+        input.distributedRunId === undefined ||
+        input.selectedDistributedRun?.distributedRunId === input.distributedRunId;
+    const useSelectedRunResolution = selectedRunUsesWorldFleetTargets &&
+        (!input.usesWorldFleetTargets || selectedRunMatchesDraft);
+    const targetResolution = input.usesWorldFleetTargets
+        ? input.targetResolutionPreview ??
+            (useSelectedRunResolution ? input.selectedDistributedRun?.targetResolution : undefined)
+        : useSelectedRunResolution
+        ? input.selectedDistributedRun?.targetResolution
+        : undefined;
+    const usesWorldFleetTargets = input.usesWorldFleetTargets || useSelectedRunResolution;
+    const expectedParticipantCount = input.usesWorldFleetTargets
+        ? input.expectedParticipantCount
+        : useSelectedRunResolution
+        ? input.selectedDistributedRun?.manifest.targetPolicy.expectedParticipantCount
+        : undefined;
+    const previewSelected = usesWorldFleetTargets
+        ? targetResolution?.summary.selected
+        : undefined;
+    const resolutionExpected = targetResolution?.summary.expectedParticipantCount;
+    const blocked = usesWorldFleetTargets &&
+        (
+            targetResolution === undefined ||
+            expectedParticipantCount === undefined ||
+            resolutionExpected !== expectedParticipantCount ||
+            previewSelected !== expectedParticipantCount
+        );
+    const blockReason = blocked
+        ? targetResolution === undefined
+            ? 'Resolve world-fleet targets before staging or starting.'
+            : `Resolved ${previewSelected ?? 0}/${expectedParticipantCount ?? 'unknown'} world-fleet target(s).`
+        : undefined;
+
+    return {
+        usesWorldFleetTargets,
+        targetResolution,
+        expectedParticipantCount,
+        previewSelected,
+        blocked,
+        blockReason,
+    };
 }
 
 export function distributedRecipeCommandPreview(
@@ -1460,7 +1524,14 @@ export function buildDistributedRunManifest(
         roles,
         expectedParticipantCount: input.expectedParticipantCount,
     });
-    const roleAssignments = roleAssignmentsForPattern(input.rolePattern, input.targetAgentIds);
+    const useOrderedTargetRoles = input.targetPolicyMode === 'all-online-group-members' &&
+        input.rolePattern !== 'all-agents';
+    const roleAssignments = useOrderedTargetRoles
+        ? undefined
+        : roleAssignmentsForPattern(input.rolePattern, input.targetAgentIds);
+    const roleAssignmentPolicy = useOrderedTargetRoles
+        ? orderedTargetRoleAssignmentPolicy(input.rolePattern)
+        : undefined;
 
     return {
         schemaVersion: 1,
@@ -1471,6 +1542,7 @@ export function buildDistributedRunManifest(
         recipes: recipeSelections,
         targetPolicy,
         roleAssignments,
+        roleAssignmentPolicy,
         ackTimeoutMs: input.ackTimeoutMs,
         barrier: input.barrier,
         startMode: input.startMode,
@@ -2354,6 +2426,16 @@ function roleAssignmentsForPattern(
         }))
     );
     return assignments.length > 0 ? assignments : undefined;
+}
+
+function orderedTargetRoleAssignmentPolicy(
+    pattern: DistributedRecipeRolePattern,
+): RallarBlackBoxDistributedRoleAssignmentPolicy {
+    return {
+        mode: 'ordered-targets',
+        pattern,
+        orderBy: 'agent-id',
+    };
 }
 
 function rolesForPattern(
@@ -3707,7 +3789,7 @@ function agentRole(
     run: ControlDistributedRunSnapshot,
     agentId: string,
 ): string | undefined {
-    const roles = run.manifest.roleAssignments
+    const roles = (run.targetResolution?.roleAssignments ?? run.manifest.roleAssignments)
         ?.filter(assignment => assignment.agentId === agentId)
         .map(assignment => assignment.role) ?? [];
     return roles.length > 0 ? roles.join(', ') : undefined;
