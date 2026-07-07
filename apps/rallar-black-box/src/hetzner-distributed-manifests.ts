@@ -10,6 +10,8 @@ import {
     type DistributedRecipeTargetPolicyMode,
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import {
+    createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
+    createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
     createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
     createRallarBlackBoxRtcRealtimeStabilityRecipe,
@@ -38,6 +40,9 @@ export const HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/05d-rtc-realtime-stability-2-agent-30s-15hz.json',
     'apps/rallar-black-box/manifests/hetzner/05e-rtc-realtime-stability-2-agent-30s-20hz.json',
     'apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json',
+    'apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json',
+    'apps/rallar-black-box/manifests/hetzner/08-rtc-messages-principal-50-agent-30s-20hz-mesh.json',
+    'apps/rallar-black-box/manifests/hetzner/09-rtc-messages-all-peer-50-agent-30s-5hz-tree.json',
 ] as const;
 
 export type HetznerDistributedManifestEntry = Readonly<{
@@ -68,10 +73,15 @@ type ManifestCatalogInput = Readonly<{
     expectedFailure?: boolean;
     stress?: boolean;
     barrier?: boolean;
+    metadata?: Readonly<Record<string, unknown>>;
 }>;
 
 const DEFAULT_ACK_TIMEOUT_MS = 30_000;
 const DEFAULT_CONTROL_RUN_ID = 'hetzner-manifest-template-control-run';
+const RTC_MESSAGES_MATRIX_AGENT_COUNTS = [10, 15, 20, 30] as const;
+const RTC_MESSAGES_MATRIX_DURATION_SECONDS = [30, 300] as const;
+const RTC_MESSAGES_MATRIX_RATE_HZ = [10, 20] as const;
+const RTC_MESSAGES_MATRIX_PROFILES = ['principal', 'all-peer'] as const;
 
 export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistributedManifestEntry[] {
     return [
@@ -255,6 +265,108 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             live: true,
         }),
         buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[6],
+            title: 'RTC messages principal 50-agent 30s 20 Hz tree',
+            description: 'One principal headless sender multicasts RTC messages at 20 Hz to 49 receivers through a forced tree topology.',
+            distributedRunId: 'hetzner-rtc-messages-principal-50-agent-30s-20hz-tree',
+            recipes: createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({
+                participantCount: 50,
+                durationSeconds: 30,
+                rateHz: 20,
+                minReceiveRatio: 0.95,
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyTimeoutMs: 45_000,
+                stream: {
+                    maxP95SendDurationMs: 2_500,
+                    maxP99SendDurationMs: 4_000,
+                },
+            }),
+            agentCount: 50,
+            profiles: ['rtc', 'messages.rtc', 'principal', 'multicast', 'tree', 'extended'],
+            live: true,
+            targetAgentIds: controllerAgentIds(50),
+            targetPolicyMode: 'role-map',
+            rolePattern: 'one-sender-many-receivers',
+            barrier: true,
+            metadata: multicastManifestMetadata({
+                topologyProfile: 'tree',
+                participantCount: 50,
+                senderCount: 1,
+                durationSeconds: 30,
+                rateHz: 20,
+                minReceiveRatio: 0.95,
+                receiverExpectedFrames: 600,
+                recommendedTerminalTimeoutSeconds: 330,
+            }),
+        }),
+        buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[7],
+            title: 'RTC messages principal 50-agent 30s 20 Hz mesh',
+            description: 'One principal headless sender multicasts RTC messages at 20 Hz to 49 receivers through the default mesh topology.',
+            distributedRunId: 'hetzner-rtc-messages-principal-50-agent-30s-20hz-mesh',
+            recipes: createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({
+                participantCount: 50,
+                durationSeconds: 30,
+                rateHz: 20,
+                minReceiveRatio: 0.95,
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyTimeoutMs: 45_000,
+                stream: {
+                    maxP95SendDurationMs: 2_500,
+                    maxP99SendDurationMs: 4_000,
+                },
+            }),
+            agentCount: 50,
+            profiles: ['rtc', 'messages.rtc', 'principal', 'multicast', 'mesh', 'extended'],
+            live: true,
+            targetAgentIds: controllerAgentIds(50),
+            targetPolicyMode: 'role-map',
+            rolePattern: 'one-sender-many-receivers',
+            barrier: true,
+            metadata: multicastManifestMetadata({
+                topologyProfile: 'mesh',
+                participantCount: 50,
+                senderCount: 1,
+                durationSeconds: 30,
+                rateHz: 20,
+                minReceiveRatio: 0.95,
+                receiverExpectedFrames: 600,
+                recommendedTerminalTimeoutSeconds: 330,
+            }),
+        }),
+        buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[8],
+            title: 'RTC messages all-peer 50-agent 30s 5 Hz tree',
+            description: 'All 50 headless peers multicast RTC messages at 5 Hz through a forced tree topology.',
+            distributedRunId: 'hetzner-rtc-messages-all-peer-50-agent-30s-5hz-tree',
+            recipe: createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe({
+                participantCount: 50,
+                durationSeconds: 30,
+                rateHz: 5,
+                minReceiveRatio: 0.9,
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyTimeoutMs: 45_000,
+                stream: {
+                    maxP95SendDurationMs: 2_500,
+                    maxP99SendDurationMs: 4_000,
+                },
+            }),
+            agentCount: 50,
+            profiles: ['rtc', 'messages.rtc', 'all-peer', 'multicast', 'tree', 'extended'],
+            live: true,
+            barrier: true,
+            metadata: multicastManifestMetadata({
+                topologyProfile: 'tree',
+                participantCount: 50,
+                senderCount: 50,
+                durationSeconds: 30,
+                rateHz: 5,
+                minReceiveRatio: 0.9,
+                receiverExpectedFrames: 7_350,
+                recommendedTerminalTimeoutSeconds: 330,
+            }),
+        }),
+        buildManifestEntry({
             filePath: 'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
             title: 'Barrier health 2-agent',
             description: 'Diagnostic run that validates synchronized barrier orchestration before start.',
@@ -301,6 +413,118 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             expectedFailure: false,
             stress: true,
         }),
+        buildManifestEntry({
+            filePath: 'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-30s-20hz-tree.json',
+            title: 'RTC messages all-peer 50-agent 30s 20 Hz tree diagnostic',
+            description: 'Diagnostic 50-agent all-peer RTC messages multicast at 20 Hz through a forced tree topology.',
+            distributedRunId: 'hetzner-diagnostic-rtc-messages-all-peer-50-agent-30s-20hz-tree',
+            recipe: createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe({
+                participantCount: 50,
+                durationSeconds: 30,
+                rateHz: 20,
+                minReceiveRatio: 0.8,
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyTimeoutMs: 45_000,
+            }),
+            agentCount: 50,
+            profiles: ['rtc', 'messages.rtc', 'all-peer', 'multicast', 'tree', 'diagnostic'],
+            live: true,
+            diagnostic: true,
+            stress: true,
+            barrier: true,
+            metadata: multicastManifestMetadata({
+                topologyProfile: 'tree',
+                participantCount: 50,
+                senderCount: 50,
+                durationSeconds: 30,
+                rateHz: 20,
+                minReceiveRatio: 0.8,
+                receiverExpectedFrames: 29_400,
+                recommendedTerminalTimeoutSeconds: 330,
+            }),
+        }),
+        buildManifestEntry({
+            filePath: 'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-principal-50-agent-60m-20hz-tree.json',
+            title: 'RTC messages principal 50-agent 60m 20 Hz tree diagnostic',
+            description: 'Long diagnostic principal RTC messages multicast run for 60-minute tree soak validation.',
+            distributedRunId: 'hetzner-diagnostic-rtc-messages-principal-50-agent-60m-20hz-tree',
+            recipes: createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({
+                participantCount: 50,
+                durationSeconds: 3_600,
+                rateHz: 20,
+                minReceiveRatio: 0.95,
+                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                readyTimeoutMs: 45_000,
+                stream: {
+                    progressEveryMs: 30_000,
+                    sampleEvery: 100,
+                    drainTimeoutMs: 30_000,
+                    maxDroppedFrames: 3_600,
+                    maxP95SendDurationMs: 2_500,
+                    maxP99SendDurationMs: 4_000,
+                },
+            }),
+            agentCount: 50,
+            profiles: ['rtc', 'messages.rtc', 'principal', 'multicast', 'tree', 'long', 'diagnostic'],
+            live: true,
+            targetAgentIds: controllerAgentIds(50),
+            targetPolicyMode: 'role-map',
+            rolePattern: 'one-sender-many-receivers',
+            diagnostic: true,
+            stress: true,
+            barrier: true,
+            metadata: multicastManifestMetadata({
+                topologyProfile: 'tree',
+                participantCount: 50,
+                senderCount: 1,
+                durationSeconds: 3_600,
+                rateHz: 20,
+                minReceiveRatio: 0.95,
+                receiverExpectedFrames: 72_000,
+                recommendedTerminalTimeoutSeconds: 3_900,
+            }),
+        }),
+        ...[5, 10, 20].map(rateHz =>
+            buildManifestEntry({
+                filePath: `apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-${rateHz}hz-tree.json`,
+                title: `RTC messages all-peer 50-agent 60m ${rateHz} Hz tree diagnostic`,
+                description: `Long diagnostic all-peer RTC messages multicast run at ${rateHz} Hz for 60-minute tree soak validation.`,
+                distributedRunId: `hetzner-diagnostic-rtc-messages-all-peer-50-agent-60m-${rateHz}hz-tree`,
+                recipe: createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe({
+                    participantCount: 50,
+                    durationSeconds: 3_600,
+                    rateHz,
+                    minReceiveRatio: rateHz === 20 ? 0.8 : rateHz === 10 ? 0.85 : 0.9,
+                    group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+                    readyTimeoutMs: 45_000,
+                    stream: {
+                        progressEveryMs: 30_000,
+                        sampleEvery: 100,
+                        drainTimeoutMs: 30_000,
+                        maxDroppedFrames: Math.ceil(3_600 * rateHz * 0.05),
+                        maxP95SendDurationMs: 2_500,
+                        maxP99SendDurationMs: 4_000,
+                    },
+                }),
+                agentCount: 50,
+                profiles: ['rtc', 'messages.rtc', 'all-peer', 'multicast', 'tree', 'long', 'diagnostic'],
+                live: true,
+                diagnostic: true,
+                stress: true,
+                barrier: true,
+                metadata: multicastManifestMetadata({
+                    topologyProfile: 'tree',
+                    participantCount: 50,
+                    senderCount: 50,
+                    durationSeconds: 3_600,
+                    rateHz,
+                    minReceiveRatio: rateHz === 20 ? 0.8 : rateHz === 10 ? 0.85 : 0.9,
+                    receiverExpectedFrames: 49 * 3_600 * rateHz,
+                    recommendedTerminalTimeoutSeconds: 4_200,
+                }),
+            })
+        ),
+        ...buildRtcMessagesMediumScaleMatrixEntries(),
     ];
 }
 
@@ -341,9 +565,162 @@ function buildManifestEntry(input: ManifestCatalogInput): HetznerDistributedMani
                 diagnostic: input.diagnostic === true,
                 expectedFailure: input.expectedFailure === true,
                 ...(input.stress === true ? { stress: true } : {}),
+                ...(input.metadata ?? {}),
             },
         },
     };
+}
+
+function controllerAgentIds(count: number): readonly string[] {
+    return Array.from({ length: count }, (_value, index) =>
+        `controller-${String(index + 1).padStart(2, '0')}`
+    );
+}
+
+function multicastManifestMetadata(input: Readonly<{
+    topologyProfile: 'tree' | 'mesh';
+    participantCount: number;
+    senderCount: number;
+    durationSeconds: number;
+    rateHz: number;
+    minReceiveRatio: number;
+    receiverExpectedFrames: number;
+    recommendedTerminalTimeoutSeconds: number;
+}>): Readonly<Record<string, unknown>> {
+    const streamFrames = input.durationSeconds * input.rateHz * input.senderCount;
+    return {
+        topologyProfile: input.topologyProfile,
+        transport: 'messages.rtc',
+        participantCount: input.participantCount,
+        senderCount: input.senderCount,
+        receiverCount: input.senderCount === input.participantCount
+            ? input.participantCount
+            : input.participantCount - input.senderCount,
+        rateHz: input.rateHz,
+        expectedDurationSeconds: input.durationSeconds,
+        recommendedTerminalTimeoutSeconds: input.recommendedTerminalTimeoutSeconds,
+        rtcTopologyEnv: {
+            RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: input.topologyProfile === 'tree' ? '51' : '16',
+        },
+        receiverDelivery: {
+            expectedInboundMessages: input.receiverExpectedFrames,
+            minExpectedInboundMessages: Math.floor(input.receiverExpectedFrames * input.minReceiveRatio),
+            minReceiveRatio: input.minReceiveRatio,
+        },
+        loadEstimate: {
+            streamFrames,
+            logicalFanoutMessages: streamFrames * (input.participantCount - 1),
+        },
+    };
+}
+
+function buildRtcMessagesMediumScaleMatrixEntries(): readonly HetznerDistributedManifestEntry[] {
+    return RTC_MESSAGES_MATRIX_AGENT_COUNTS.flatMap(participantCount =>
+        RTC_MESSAGES_MATRIX_DURATION_SECONDS.flatMap(durationSeconds =>
+            RTC_MESSAGES_MATRIX_RATE_HZ.flatMap(rateHz =>
+                RTC_MESSAGES_MATRIX_PROFILES.map(profile =>
+                    buildRtcMessagesMatrixEntry({
+                        profile,
+                        participantCount,
+                        durationSeconds,
+                        rateHz,
+                    })
+                )
+            )
+        )
+    );
+}
+
+function buildRtcMessagesMatrixEntry(input: Readonly<{
+    profile: typeof RTC_MESSAGES_MATRIX_PROFILES[number];
+    participantCount: number;
+    durationSeconds: number;
+    rateHz: number;
+}>): HetznerDistributedManifestEntry {
+    const label = durationLabel(input.durationSeconds);
+    const minReceiveRatio = input.profile === 'principal'
+        ? 0.95
+        : input.rateHz === 20
+            ? 0.8
+            : 0.85;
+    const senderCount = input.profile === 'principal' ? 1 : input.participantCount;
+    const receiverExpectedFrames = input.profile === 'principal'
+        ? input.durationSeconds * input.rateHz
+        : (input.participantCount - 1) * input.durationSeconds * input.rateHz;
+    const stream = streamOptionsForRtcMessagesMatrix(input.durationSeconds, input.rateHz);
+    const baseInput = {
+        participantCount: input.participantCount,
+        durationSeconds: input.durationSeconds,
+        rateHz: input.rateHz,
+        minReceiveRatio,
+        group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+        readyTimeoutMs: 45_000,
+        stream,
+    };
+    const roleFields = input.profile === 'principal'
+        ? {
+              recipes: createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes(baseInput),
+              targetAgentIds: controllerAgentIds(input.participantCount),
+              targetPolicyMode: 'role-map' as const,
+              rolePattern: 'one-sender-many-receivers' as const,
+          }
+        : {
+              recipe: createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe(baseInput),
+          };
+
+    return buildManifestEntry({
+        filePath:
+            `apps/rallar-black-box/manifests/hetzner/diagnostic/matrix/rtc-messages-${input.profile}-${input.participantCount}-agent-${label}-${input.rateHz}hz-tree.json`,
+        title:
+            `RTC messages ${input.profile} ${input.participantCount}-agent ${label} ${input.rateHz} Hz tree diagnostic`,
+        description:
+            `Diagnostic ${input.participantCount}-agent ${input.profile} RTC messages multicast run at ${input.rateHz} Hz for ${label} through a forced tree topology.`,
+        distributedRunId:
+            `hetzner-diagnostic-rtc-messages-${input.profile}-${input.participantCount}-agent-${label}-${input.rateHz}hz-tree`,
+        ...roleFields,
+        agentCount: input.participantCount,
+        profiles: ['rtc', 'messages.rtc', input.profile, 'multicast', 'tree', 'matrix', 'diagnostic'],
+        live: true,
+        diagnostic: true,
+        stress: true,
+        barrier: true,
+        metadata: multicastManifestMetadata({
+            topologyProfile: 'tree',
+            participantCount: input.participantCount,
+            senderCount,
+            durationSeconds: input.durationSeconds,
+            rateHz: input.rateHz,
+            minReceiveRatio,
+            receiverExpectedFrames,
+            recommendedTerminalTimeoutSeconds: input.durationSeconds + 300,
+        }),
+    });
+}
+
+function streamOptionsForRtcMessagesMatrix(
+    durationSeconds: number,
+    rateHz: number,
+): RallarBlackBoxRtcMessagesMatrixStreamOptions {
+    return {
+        ...(durationSeconds >= 300
+            ? {
+                  progressEveryMs: 30_000,
+                  sampleEvery: 100,
+                  drainTimeoutMs: 30_000,
+              }
+            : {}),
+        maxDroppedFrames: Math.ceil(durationSeconds * rateHz * 0.05),
+        maxP95SendDurationMs: 2_500,
+        maxP99SendDurationMs: 4_000,
+    };
+}
+
+type RallarBlackBoxRtcMessagesMatrixStreamOptions = NonNullable<
+    Parameters<typeof createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe>[0]
+>['stream'];
+
+function durationLabel(seconds: number): string {
+    return seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`;
 }
 
 function catalogItems(input: ManifestCatalogInput): readonly DistributedRecipeCatalogItem[] {

@@ -9,6 +9,7 @@ NPM_CI="false"
 WAIT_FOR_AGENTS="true"
 READY_TIMEOUT_SECONDS="120"
 TERMINAL_TIMEOUT_SECONDS="300"
+TERMINAL_TIMEOUT_SECONDS_EXPLICIT="0"
 REGISTER_BEFORE_LOGIN="true"
 STOP_AFTER_RUN="true"
 HEADLESS_ENTRY="headless"
@@ -25,6 +26,13 @@ REQUIRED_GITHUB_SECRETS=(
   HETZNER_KNOWN_HOSTS
   RALLAR_BLACK_BOX_USERNAME
   RALLAR_BLACK_BOX_PASSWORD
+)
+RTC_TOPOLOGY_ENV_KEYS=(
+  RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT
+  RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
+  RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
+  RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
+  RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS
 )
 
 usage() {
@@ -94,6 +102,24 @@ validate_positive_integer() {
   local value="$2"
   if ! [[ "${value}" =~ ^[1-9][0-9]*$ ]]; then
     fail "${key} must be a positive integer. Received: ${value}"
+  fi
+}
+
+validate_non_negative_integer() {
+  local key="$1"
+  local value="$2"
+  if ! [[ "${value}" =~ ^[0-9]+$ ]]; then
+    fail "${key} must be a non-negative integer. Received: ${value}"
+  fi
+}
+
+validate_rtc_topology_env_value() {
+  local key="$1"
+  local value="$2"
+  if [[ "${key}" == "RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS" ]]; then
+    validate_non_negative_integer "metadata.rtcTopologyEnv.${key}" "${value}"
+  else
+    validate_positive_integer "metadata.rtcTopologyEnv.${key}" "${value}"
   fi
 }
 
@@ -210,6 +236,7 @@ while [[ $# -gt 0 ]]; do
     --terminal-timeout-seconds)
       [[ $# -ge 2 ]] || fail "--terminal-timeout-seconds requires a value."
       TERMINAL_TIMEOUT_SECONDS="$2"
+      TERMINAL_TIMEOUT_SECONDS_EXPLICIT="1"
       shift 2
       ;;
     --fast)
@@ -220,6 +247,7 @@ while [[ $# -gt 0 ]]; do
       WAIT_FOR_AGENTS="true"
       READY_TIMEOUT_SECONDS="60"
       TERMINAL_TIMEOUT_SECONDS="180"
+      TERMINAL_TIMEOUT_SECONDS_EXPLICIT="1"
       shift
       ;;
     --keep-headless)
@@ -300,6 +328,38 @@ if [[ "${manifest_path}" == */diagnostic/* || "${diagnostic}" == "true" ]]; then
   fi
 fi
 
+recommended_terminal_timeout_seconds="$(jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty' "${manifest_absolute}")"
+if [[ -n "${recommended_terminal_timeout_seconds}" ]]; then
+  validate_positive_integer metadata.recommendedTerminalTimeoutSeconds "${recommended_terminal_timeout_seconds}"
+  if [[ "${TERMINAL_TIMEOUT_SECONDS_EXPLICIT}" != "1" ]]; then
+    TERMINAL_TIMEOUT_SECONDS="${recommended_terminal_timeout_seconds}"
+  fi
+fi
+load_stream_frames="$(jq -r '.metadata.loadEstimate.streamFrames // empty' "${manifest_absolute}")"
+load_logical_fanout_messages="$(jq -r '.metadata.loadEstimate.logicalFanoutMessages // empty' "${manifest_absolute}")"
+if [[ -n "${load_stream_frames}" ]]; then
+  validate_positive_integer metadata.loadEstimate.streamFrames "${load_stream_frames}"
+fi
+if [[ -n "${load_logical_fanout_messages}" ]]; then
+  validate_positive_integer metadata.loadEstimate.logicalFanoutMessages "${load_logical_fanout_messages}"
+fi
+rtc_topology_env_lines=()
+for rtc_topology_env_key in "${RTC_TOPOLOGY_ENV_KEYS[@]}"; do
+  rtc_topology_env_value="$(
+    jq -r --arg key "${rtc_topology_env_key}" '.metadata.rtcTopologyEnv[$key] // empty' "${manifest_absolute}"
+  )"
+  if [[ -n "${rtc_topology_env_value}" ]]; then
+    validate_rtc_topology_env_value "${rtc_topology_env_key}" "${rtc_topology_env_value}"
+    rtc_topology_env_lines+=("${rtc_topology_env_key}=${rtc_topology_env_value}")
+  fi
+done
+if [[ "${#rtc_topology_env_lines[@]}" -gt 0 ]]; then
+  if [[ "${ROLLOUT_BEFORE_RUN}" != "true" ]]; then
+    fail "Manifest ${manifest_path} requires rollout_before_run=true so API RTC topology env can be applied."
+  fi
+fi
+validate_positive_integer terminal_timeout_seconds "${TERMINAL_TIMEOUT_SECONDS}"
+
 require_command gh
 require_github_secrets
 
@@ -332,6 +392,13 @@ echo "Entry    : ${HEADLESS_ENTRY}"
 echo "Browser  : ${BROWSER_ENGINE}"
 echo "Register : ${REGISTER_BEFORE_LOGIN}"
 echo "Stop headless: ${STOP_AFTER_RUN}"
+echo "Timeout  : ${TERMINAL_TIMEOUT_SECONDS}"
+if [[ -n "${load_stream_frames}" && -n "${load_logical_fanout_messages}" ]]; then
+  echo "Load     : stream frames=${load_stream_frames}, logical fanout=${load_logical_fanout_messages}"
+fi
+if [[ "${#rtc_topology_env_lines[@]}" -gt 0 ]]; then
+  echo "Topology : ${rtc_topology_env_lines[*]}"
+fi
 
 gh workflow run "${WORKFLOW_NAME}" \
   --ref "${REF}" \

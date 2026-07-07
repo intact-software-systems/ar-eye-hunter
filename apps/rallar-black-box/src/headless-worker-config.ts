@@ -25,6 +25,7 @@ export type HeadlessWorkerConfig = Readonly<{
   runId: string;
   agentPrefix: string;
   agentCount: number;
+  agentStartIndex: number;
   roomId: string;
   applicationId?: string;
   workspaceId?: string;
@@ -71,6 +72,7 @@ export type HeadlessWorkerAgentUrlInput =
   & Omit<HeadlessWorkerAgentConfig, "url">;
 
 const DEFAULT_AGENT_COUNT = 1;
+const DEFAULT_AGENT_START_INDEX = 1;
 const DEFAULT_AGENT_PREFIX = "hetzner-agent";
 const DEFAULT_TRANSPORT: HeadlessWorkerTransport = "realtime";
 const DEFAULT_BROWSER_LOG_LEVEL: HeadlessWorkerBrowserLogLevel = "warning";
@@ -102,6 +104,11 @@ export function readHeadlessWorkerConfig(
     "RALLAR_BLACK_BOX_AGENT_COUNT",
     DEFAULT_AGENT_COUNT,
   );
+  const agentStartIndex = positiveIntegerEnv(
+    env,
+    "RALLAR_BLACK_BOX_AGENT_START_INDEX",
+    DEFAULT_AGENT_START_INDEX,
+  );
   const browserEngine = browserEngineEnv(env);
   const agentCredentials = readAgentCredentials(env, agentCount);
   const baseConfig = {
@@ -114,6 +121,7 @@ export function readHeadlessWorkerConfig(
     agentPrefix: envValue(env, "RALLAR_BLACK_BOX_AGENT_PREFIX") ??
       DEFAULT_AGENT_PREFIX,
     agentCount,
+    agentStartIndex,
     roomId: requireEnv(env, "RALLAR_BLACK_BOX_ROOM_ID"),
     applicationId: envValue(env, "RALLAR_APPLICATION_ID") ??
       envValue(env, "RALLAR_BLACK_BOX_APPLICATION_ID"),
@@ -209,7 +217,7 @@ export function createHeadlessWorkerAgents(
   config: Omit<HeadlessWorkerConfig, "agents">,
 ): readonly HeadlessWorkerAgentConfig[] {
   return Array.from({ length: config.agentCount }, (_, index) => {
-    const ordinal = index + 1;
+    const ordinal = config.agentStartIndex + index;
     const agentId = `${config.agentPrefix}-${String(ordinal).padStart(2, "0")}`;
     const actor = agentId;
     return {

@@ -16,7 +16,17 @@ export const RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS =
     Math.round(1_000 / RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ);
 export const RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS = 5;
 export const RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS = 1;
-export const RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS = 60;
+export const RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS = 3_600;
+export const RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID =
+    'rtc-messages-principal-multicast-sender';
+export const RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID =
+    'rtc-messages-principal-multicast-receiver';
+export const RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID =
+    'rtc-messages-all-peer-multicast';
+const RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS = 5_000;
+const RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_INTERVAL_MS = 1_000;
+const RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_DURATION_MS = 5_000;
+const RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_INTERVAL_MS = 1_000;
 const RALLAR_BLACK_BOX_LIVE_API_BASE_URL = 'https://api.rallar.intactss.com';
 
 export type RallarBlackBoxRtcRealtimeRecipeOptions = Readonly<{
@@ -49,6 +59,27 @@ export type RallarBlackBoxLiveRecipeOptions = Readonly<{
     readyTimeoutMs?: number;
 }>;
 
+export type RallarBlackBoxRtcMessagesMulticastRecipeOptions = Readonly<{
+    participantCount?: number;
+    durationSeconds?: number;
+    rateHz?: number;
+    minReceiveRatio?: number;
+    group?: RallarBlackBoxDistributedGroupRef;
+    connection?: string;
+    readyTimeoutMs?: number;
+    stream?: Readonly<{
+        maxInFlight?: number;
+        drainTimeoutMs?: number;
+        progressEveryMs?: number;
+        sampleEvery?: number;
+        maxDroppedFrames?: number;
+        minSendSuccessRatio?: number;
+        maxP95SendDurationMs?: number;
+        maxP99SendDurationMs?: number;
+        continueOnSendFailure?: boolean;
+    }>;
+}>;
+
 export function normalizeRallarBlackBoxRtcRealtimeDurationSeconds(value: unknown): number {
     const numeric = typeof value === 'number'
         ? value
@@ -75,6 +106,30 @@ function normalizeRallarBlackBoxRtcRealtimeRateHz(value: unknown): number {
         return RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
     }
     return numeric;
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number, minimum = 1): number {
+    const numeric = typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+            ? Number.parseFloat(value)
+            : fallback;
+    if (!Number.isFinite(numeric)) {
+        return fallback;
+    }
+    return Math.max(minimum, Math.round(numeric));
+}
+
+function normalizeRatio(value: unknown, fallback: number): number {
+    const numeric = typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+            ? Number.parseFloat(value)
+            : fallback;
+    if (!Number.isFinite(numeric)) {
+        return fallback;
+    }
+    return Math.max(0, Math.min(1, numeric));
 }
 
 function stateApiPathSegment(value: string): string {
@@ -122,6 +177,214 @@ function rtcConnectReadiness(
             : 5_000,
         intervalMs: 100,
     };
+}
+
+function multicastDeliveryPlan(options: Readonly<{
+    participantCount?: number;
+    senderCount: number;
+    durationSeconds?: number;
+    rateHz?: number;
+    minReceiveRatio?: number;
+}>): Readonly<{
+    participantCount: number;
+    senderCount: number;
+    receiverCount: number;
+    rateHz: number;
+    intervalMs: number;
+    durationSeconds: number;
+    frameCount: number;
+    expectedInboundMessages: number;
+    minExpectedInboundMessages: number;
+    minReceiveRatio: number;
+    logicalFanoutMessages: number;
+}> {
+    const participantCount = normalizePositiveInteger(options.participantCount, 50, 2);
+    const senderCount = Math.min(participantCount, normalizePositiveInteger(options.senderCount, 1, 1));
+    const rateHz = normalizeRallarBlackBoxRtcRealtimeRateHz(options.rateHz);
+    const intervalMs = Math.max(1, Math.round(1_000 / rateHz));
+    const durationSeconds = normalizeRallarBlackBoxRtcRealtimeDurationSeconds(options.durationSeconds);
+    const frameCount = Math.max(1, Math.round(durationSeconds * rateHz));
+    const receiverCount = senderCount === participantCount
+        ? participantCount
+        : Math.max(0, participantCount - senderCount);
+    const expectedInboundMessages = frameCount * Math.max(0, senderCount === participantCount
+        ? participantCount - 1
+        : senderCount);
+    const minReceiveRatio = normalizeRatio(options.minReceiveRatio, senderCount === participantCount ? 0.9 : 0.95);
+    const minExpectedInboundMessages = Math.floor(expectedInboundMessages * minReceiveRatio);
+    const logicalFanoutMessages = frameCount * senderCount * Math.max(0, participantCount - 1);
+
+    return {
+        participantCount,
+        senderCount,
+        receiverCount,
+        rateHz,
+        intervalMs,
+        durationSeconds,
+        frameCount,
+        expectedInboundMessages,
+        minExpectedInboundMessages,
+        minReceiveRatio,
+        logicalFanoutMessages,
+    };
+}
+
+function messagesRtcConnectCommand(options: Readonly<{
+    commandId: string;
+    connection: string;
+    group: RallarBlackBoxDistributedGroupRef;
+    minReadyPeers: number;
+    readyTimeoutMs?: number;
+    metadata: Readonly<Record<string, unknown>>;
+}>): RallarBlackBoxTestCommand {
+    const roomRef = groupRoomRef(options.group);
+    return {
+        kind: 'rtc.connect',
+        commandId: options.commandId,
+        connection: options.connection,
+        actor: '{auth.clientId}',
+        roomId: options.group.groupId,
+        applicationId: options.group.applicationId,
+        workspaceId: options.group.workspaceId,
+        roomRef,
+        transport: 'messages.rtc',
+        timeoutMs: options.readyTimeoutMs ?? 45_000,
+        readiness: {
+            minReadyPeers: options.minReadyPeers,
+            timeoutMs: options.readyTimeoutMs ?? 45_000,
+            intervalMs: 100,
+        },
+        metadata: options.metadata,
+    };
+}
+
+function messagesRtcStreamCommand(options: Readonly<{
+    commandId: string;
+    connection: string;
+    group: RallarBlackBoxDistributedGroupRef;
+    plan: ReturnType<typeof multicastDeliveryPlan>;
+    profile: string;
+    stream?: RallarBlackBoxRtcMessagesMulticastRecipeOptions['stream'];
+}>): RallarBlackBoxTestCommand {
+    const roomRef = groupRoomRef(options.group);
+    const continueOnSendFailure = options.stream?.continueOnSendFailure ?? true;
+    const receiverDelivery = options.plan.expectedInboundMessages > 0
+        ? {
+              receiverDelivery: {
+                  expectedInboundMessages: options.plan.expectedInboundMessages,
+                  minExpectedInboundMessages: options.plan.minExpectedInboundMessages,
+                  minReceiveRatio: options.plan.minReceiveRatio,
+              },
+          }
+        : {};
+    return {
+        kind: 'rtc.stream',
+        commandId: options.commandId,
+        connection: options.connection,
+        actor: '{auth.clientId}',
+        transport: 'messages.rtc',
+        applicationId: options.group.applicationId,
+        workspaceId: options.group.workspaceId,
+        roomId: options.group.groupId,
+        roomRef,
+        count: options.plan.frameCount,
+        intervalMs: options.plan.intervalMs,
+        maxInFlight: options.stream?.maxInFlight ?? 64,
+        drainTimeoutMs: options.stream?.drainTimeoutMs ?? 5_000,
+        progressEveryMs: options.stream?.progressEveryMs ?? 1_000,
+        sampleEvery: options.stream?.sampleEvery ?? 1,
+        continueOnSendFailure,
+        thresholds: {
+            minSendSuccessRatio: options.stream?.minSendSuccessRatio ?? 0.95,
+            maxDroppedFrames: options.stream?.maxDroppedFrames ??
+                Math.ceil(options.plan.frameCount * 0.05),
+            ...(options.stream?.maxP95SendDurationMs === undefined
+                ? {}
+                : { maxP95SendDurationMs: options.stream.maxP95SendDurationMs }),
+            ...(options.stream?.maxP99SendDurationMs === undefined
+                ? {}
+                : { maxP99SendDurationMs: options.stream.maxP99SendDurationMs }),
+        },
+        metadata: {
+            profile: options.profile,
+            transport: 'messages.rtc',
+            rateHz: options.plan.rateHz,
+            intervalMs: options.plan.intervalMs,
+            durationSeconds: options.plan.durationSeconds,
+            frameCount: options.plan.frameCount,
+            participantCount: options.plan.participantCount,
+            senderCount: options.plan.senderCount,
+            receiverCount: options.plan.receiverCount,
+            logicalFanoutMessages: options.plan.logicalFanoutMessages,
+            ...receiverDelivery,
+        },
+        send: {
+            roomId: options.group.groupId,
+            roomRef,
+            deliveryMode: 'multicast',
+            typeId: 'black-box.group.multicast.position',
+            topicId: 'black-box.group.multicast.position',
+            payload: {
+                topic: 'black-box.group.multicast.position',
+                typeId: 'black-box.group.multicast.position',
+                actor: '{auth.clientId}',
+                seq: '{stream.index}',
+                rateHz: options.plan.rateHz,
+                intervalMs: options.plan.intervalMs,
+                durationSeconds: options.plan.durationSeconds,
+                totalFrames: options.plan.frameCount,
+                tMs: '{stream.elapsedMs}',
+                position: {
+                    frame: '{stream.iteration}',
+                    x: '{stream.index}',
+                    y: 0,
+                    z: '{stream.index}',
+                    headingDeg: '{stream.index}',
+                    velocityMps: 4,
+                },
+            },
+        },
+    };
+}
+
+function receiverDeliveryMetadata(
+    plan: ReturnType<typeof multicastDeliveryPlan>,
+    profile: string,
+): Readonly<Record<string, unknown>> {
+    return {
+        profile,
+        transport: 'messages.rtc',
+        participantCount: plan.participantCount,
+        senderCount: plan.senderCount,
+        receiverCount: plan.receiverCount,
+        rateHz: plan.rateHz,
+        intervalMs: plan.intervalMs,
+        durationSeconds: plan.durationSeconds,
+        frameCount: plan.frameCount,
+        expectedInboundMessages: plan.expectedInboundMessages,
+        minExpectedInboundMessages: plan.minExpectedInboundMessages,
+        minReceiveRatio: plan.minReceiveRatio,
+        logicalFanoutMessages: plan.logicalFanoutMessages,
+    };
+}
+
+function multicastRunShapeMetadata(
+    plan: ReturnType<typeof multicastDeliveryPlan>,
+    profile: string,
+): Readonly<Record<string, unknown>> {
+    const {
+        expectedInboundMessages: _expectedInboundMessages,
+        minExpectedInboundMessages: _minExpectedInboundMessages,
+        minReceiveRatio: _minReceiveRatio,
+        ...metadata
+    } = receiverDeliveryMetadata(plan, profile);
+    return metadata;
+}
+
+function topologySafeRtcReadyPeerCount(
+    plan: ReturnType<typeof multicastDeliveryPlan>,
+): number {
+    return plan.participantCount > 1 ? 1 : 0;
 }
 
 function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
@@ -361,6 +624,286 @@ export function createRallarBlackBoxProviderParityLiveRecipe(
     };
 }
 
+export function createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes(
+    options: RallarBlackBoxRtcMessagesMulticastRecipeOptions = {},
+): readonly [RallarBlackBoxTestRecipe, RallarBlackBoxTestRecipe] {
+    const group = options.group ?? defaultRallarBlackBoxGroup();
+    const connection = options.connection ?? 'rtcMessagesPrincipal';
+    const receiverPlan = multicastDeliveryPlan({
+        participantCount: options.participantCount,
+        senderCount: 1,
+        durationSeconds: options.durationSeconds ?? 30,
+        rateHz: options.rateHz ?? 20,
+        minReceiveRatio: options.minReceiveRatio ?? 0.95,
+    });
+    const senderPlan = {
+        ...receiverPlan,
+        expectedInboundMessages: 0,
+        minExpectedInboundMessages: 0,
+    };
+    const roomRef = groupRoomRef(group);
+    const baseSetupCommands = createRallarBlackBoxEnsureGroupCommands({
+        commandPrefix: 'rtc-messages-principal',
+        requestPrefix: 'rtc-messages-principal',
+        group,
+        actor: '{auth.clientId}',
+    });
+    const {
+        expectedInboundMessages: _senderExpectedInboundMessages,
+        minExpectedInboundMessages: _senderMinExpectedInboundMessages,
+        minReceiveRatio: _senderMinReceiveRatio,
+        ...senderMetadata
+    } = receiverDeliveryMetadata(
+        senderPlan,
+        'rtc-messages-principal-multicast-sender',
+    );
+    const receiverMetadata = receiverDeliveryMetadata(
+        receiverPlan,
+        'rtc-messages-principal-multicast-receiver',
+    );
+
+    const sender: RallarBlackBoxTestRecipe = {
+        schemaVersion: 1,
+        recipeId: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
+        name: 'RTC messages principal multicast sender',
+        description:
+            `Connect RTC messages and multicast ${receiverPlan.frameCount} principal frames at ${receiverPlan.rateHz} Hz.`,
+        continueOnFailure: false,
+        metadata: senderMetadata,
+        commands: [
+            ...baseSetupCommands,
+            messagesRtcConnectCommand({
+                commandId: 'rtc-messages-principal-sender-connect',
+                connection,
+                group,
+                minReadyPeers: topologySafeRtcReadyPeerCount(receiverPlan),
+                readyTimeoutMs: options.readyTimeoutMs,
+                metadata: senderMetadata,
+            }),
+            {
+                kind: 'loop',
+                commandId: 'rtc-messages-principal-sender-warmup-stats-loop',
+                count: Math.ceil(
+                    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS /
+                        RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_INTERVAL_MS,
+                ) + 1,
+                intervalMs: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_INTERVAL_MS,
+                maxCommands: Math.ceil(
+                    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS /
+                        RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_INTERVAL_MS,
+                ) + 1,
+                metadata: {
+                    ...senderMetadata,
+                    purpose: 'post-connect-receiver-settle',
+                    warmupDurationMs: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS,
+                },
+                commands: [
+                    {
+                        kind: 'stats',
+                        commandId: 'rtc-messages-principal-sender-warmup-stats',
+                        metadata: senderMetadata,
+                    },
+                ],
+            },
+            messagesRtcStreamCommand({
+                commandId: 'rtc-messages-principal-multicast-stream',
+                connection,
+                group,
+                plan: senderPlan,
+                profile: 'rtc-messages-principal-multicast-sender',
+                stream: {
+                    maxP95SendDurationMs: 2_500,
+                    maxP99SendDurationMs: 4_000,
+                    ...options.stream,
+                },
+            }),
+            {
+                kind: 'stats',
+                commandId: 'rtc-messages-principal-sender-final-stats',
+                metadata: senderMetadata,
+            },
+        ],
+    };
+
+    const receiverHoldSeconds = Math.max(1, receiverPlan.durationSeconds + 5);
+    const receiverHoldMs = receiverHoldSeconds * 1_000;
+    const receiverStatsIntervalMs = receiverHoldMs > 2_000 ? 5_000 : 1_000;
+    const receiverStatsLoopCount = Math.ceil(receiverHoldMs / receiverStatsIntervalMs) + 1;
+    const receiver: RallarBlackBoxTestRecipe = {
+        schemaVersion: 1,
+        recipeId: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
+        name: 'RTC messages principal multicast receiver',
+        description:
+            `Connect RTC messages, hold for ${receiverPlan.durationSeconds}s, and assert principal multicast delivery.`,
+        continueOnFailure: false,
+        metadata: receiverMetadata,
+        commands: [
+            ...baseSetupCommands,
+            messagesRtcConnectCommand({
+                commandId: 'rtc-messages-principal-receiver-connect',
+                connection,
+                group,
+                minReadyPeers: 1,
+                readyTimeoutMs: options.readyTimeoutMs,
+                metadata: receiverMetadata,
+            }),
+            {
+                kind: 'loop',
+                commandId: 'rtc-messages-principal-receiver-stats-loop',
+                count: receiverStatsLoopCount,
+                intervalMs: receiverStatsIntervalMs,
+                maxCommands: receiverStatsLoopCount,
+                metadata: receiverMetadata,
+                commands: [
+                    {
+                        kind: 'stats',
+                        commandId: 'rtc-messages-principal-receiver-stats',
+                        metadata: receiverMetadata,
+                    },
+                ],
+            },
+            {
+                kind: 'stats',
+                commandId: 'rtc-messages-principal-receiver-final-stats',
+                metadata: receiverMetadata,
+            },
+            {
+                kind: 'assert',
+                commandId: 'rtc-messages-principal-receiver-delivery-threshold',
+                source: 'stats.counters.messages',
+                operator: 'gte',
+                expected: receiverPlan.minExpectedInboundMessages,
+                metadata: {
+                    ...receiverMetadata,
+                    receiverDelivery: {
+                        expectedInboundMessages: receiverPlan.expectedInboundMessages,
+                        minExpectedInboundMessages: receiverPlan.minExpectedInboundMessages,
+                        minReceiveRatio: receiverPlan.minReceiveRatio,
+                    },
+                    roomRef,
+                },
+            },
+        ],
+    };
+
+    return [sender, receiver];
+}
+
+export function createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe(
+    options: RallarBlackBoxRtcMessagesMulticastRecipeOptions = {},
+): RallarBlackBoxTestRecipe {
+    const group = options.group ?? defaultRallarBlackBoxGroup();
+    const connection = options.connection ?? 'rtcMessagesAllPeer';
+    const participantCount = normalizePositiveInteger(options.participantCount, 50, 2);
+    const plan = multicastDeliveryPlan({
+        participantCount,
+        senderCount: participantCount,
+        durationSeconds: options.durationSeconds ?? 30,
+        rateHz: options.rateHz ?? 5,
+        minReceiveRatio: options.minReceiveRatio ?? 0.9,
+    });
+    const metadata = receiverDeliveryMetadata(plan, 'rtc-messages-all-peer-multicast');
+    const settleMetadata = multicastRunShapeMetadata(plan, 'rtc-messages-all-peer-multicast');
+
+    return {
+        schemaVersion: 1,
+        recipeId: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
+        name: 'RTC messages all-peer multicast',
+        description:
+            `Connect RTC messages and multicast from every peer at ${plan.rateHz} Hz for ${plan.durationSeconds}s.`,
+        continueOnFailure: false,
+        metadata,
+        commands: [
+            ...createRallarBlackBoxEnsureGroupCommands({
+                commandPrefix: 'rtc-messages-all-peer',
+                requestPrefix: 'rtc-messages-all-peer',
+                group,
+                actor: '{auth.clientId}',
+            }),
+            messagesRtcConnectCommand({
+                commandId: 'rtc-messages-all-peer-connect',
+                connection,
+                group,
+                minReadyPeers: topologySafeRtcReadyPeerCount(plan),
+                readyTimeoutMs: options.readyTimeoutMs,
+                metadata,
+            }),
+            {
+                kind: 'loop',
+                commandId: 'rtc-messages-all-peer-settle-stats-loop',
+                count: Math.ceil(
+                    RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_DURATION_MS /
+                        RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_INTERVAL_MS,
+                ) + 1,
+                intervalMs: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_INTERVAL_MS,
+                maxCommands: Math.ceil(
+                    RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_DURATION_MS /
+                        RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_INTERVAL_MS,
+                ) + 1,
+                metadata: {
+                    ...settleMetadata,
+                    purpose: 'post-connect-topology-settle',
+                    settleDurationMs: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_SETTLE_DURATION_MS,
+                },
+                commands: [
+                    {
+                        kind: 'stats',
+                        commandId: 'rtc-messages-all-peer-settle-stats',
+                        metadata: settleMetadata,
+                    },
+                ],
+            },
+            messagesRtcStreamCommand({
+                commandId: 'rtc-messages-all-peer-multicast-stream',
+                connection,
+                group,
+                plan,
+                profile: 'rtc-messages-all-peer-multicast',
+                stream: {
+                    maxP95SendDurationMs: 2_500,
+                    maxP99SendDurationMs: 4_000,
+                    ...options.stream,
+                },
+            }),
+            {
+                kind: 'loop',
+                commandId: 'rtc-messages-all-peer-receiver-stats-loop',
+                count: 5,
+                intervalMs: 1_000,
+                maxCommands: 5,
+                metadata,
+                commands: [
+                    {
+                        kind: 'stats',
+                        commandId: 'rtc-messages-all-peer-receiver-stats',
+                        metadata,
+                    },
+                ],
+            },
+            {
+                kind: 'stats',
+                commandId: 'rtc-messages-all-peer-final-stats',
+                metadata,
+            },
+            {
+                kind: 'assert',
+                commandId: 'rtc-messages-all-peer-delivery-threshold',
+                source: 'stats.counters.messages',
+                operator: 'gte',
+                expected: plan.minExpectedInboundMessages,
+                metadata: {
+                    ...metadata,
+                    receiverDelivery: {
+                        expectedInboundMessages: plan.expectedInboundMessages,
+                        minExpectedInboundMessages: plan.minExpectedInboundMessages,
+                        minReceiveRatio: plan.minReceiveRatio,
+                    },
+                },
+            },
+        ],
+    };
+}
+
 export function createRallarBlackBoxRtcRealtimeRecipe(
     options: RallarBlackBoxRtcRealtimeRecipeOptions = {},
 ): RallarBlackBoxTestRecipe {
@@ -586,6 +1129,24 @@ export function createRallarBlackBoxRtcRealtimeStabilityRecipe(
 }
 
 export const RALLAR_BLACK_BOX_RECIPE_FIXTURES: readonly RallarBlackBoxRecipeFixture[] = [
+    {
+        fixtureId: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
+        label: 'RTC Messages Principal Sender',
+        description: 'Principal headless authority multicasts RTC messages to a larger group.',
+        recipe: createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes()[0],
+    },
+    {
+        fixtureId: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
+        label: 'RTC Messages Principal Receiver',
+        description: 'Receiver role for principal RTC messages multicast delivery checks.',
+        recipe: createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes()[1],
+    },
+    {
+        fixtureId: RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
+        label: 'RTC Messages All-Peer Multicast',
+        description: 'Every peer multicasts RTC messages and asserts inbound delivery.',
+        recipe: createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe(),
+    },
     {
         fixtureId: 'rtc-smoke',
         label: 'RTC Smoke',

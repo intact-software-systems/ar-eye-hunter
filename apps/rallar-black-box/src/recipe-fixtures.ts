@@ -1,6 +1,8 @@
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 
 export {
+    createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
+    createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
     createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
     createRallarBlackBoxRtcRealtimeStabilityRecipe,
@@ -14,11 +16,15 @@ export {
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
     RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
     recipeFixtureText,
 } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 export type {
     RallarBlackBoxLiveRecipeOptions,
     RallarBlackBoxRecipeFixture,
+    RallarBlackBoxRtcMessagesMulticastRecipeOptions,
     RallarBlackBoxRtcRealtimeRecipeOptions,
 } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 

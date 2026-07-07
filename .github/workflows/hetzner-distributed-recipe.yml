@@ -12,9 +12,9 @@ on:
         type: boolean
         default: true
       agent_count:
-        description: Number of headless browser agents to run
-        type: number
-        default: 2
+        description: Number of headless browser agents to run; blank derives from manifest targetPolicy.expectedParticipantCount
+        required: false
+        default: ''
       run_id:
         description: Control run id; leave blank to derive one from the GitHub run
         required: false
@@ -80,8 +80,8 @@ on:
         default: 120
       terminal_timeout_seconds:
         description: Distributed recipe terminal-state wait timeout in seconds
-        type: number
-        default: 300
+        required: false
+        default: ''
       stop_after_run:
         description: Stop the headless worker service after artifacts and analysis are collected
         type: boolean
@@ -97,7 +97,7 @@ jobs:
     with:
       ref: ${{ inputs.ref }}
       rollout_before_run: ${{ inputs.rollout_before_run }}
-      agent_count: ${{ format('{0}', inputs.agent_count) }}
+      agent_count: ${{ inputs.agent_count }}
       run_id: ${{ inputs.run_id }}
       room_id: ${{ inputs.room_id }}
       agent_prefix: ${{ inputs.agent_prefix }}
@@ -112,6 +112,6 @@ jobs:
       npm_ci: ${{ inputs.npm_ci }}
       wait_for_agents: ${{ inputs.wait_for_agents }}
       ready_timeout_seconds: ${{ format('{0}', inputs.ready_timeout_seconds) }}
-      terminal_timeout_seconds: ${{ format('{0}', inputs.terminal_timeout_seconds) }}
+      terminal_timeout_seconds: ${{ inputs.terminal_timeout_seconds }}
       stop_after_run: ${{ inputs.stop_after_run }}
     secrets: inherit

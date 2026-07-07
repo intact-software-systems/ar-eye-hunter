@@ -1,0 +1,658 @@
+# Rallar Black Box SPA Reimplementation Plan
+
+Date: 2026-07-06
+
+## Goal
+
+Reimplement `apps/rallar-black-box` as a lean operator SPA for distributed recipe execution and analysis. The finished SPA should let a user:
+
+- choose a recipe and target browser agents safely
+- stage, start, cancel, and monitor distributed runs
+- see pass/fail status without reading raw JSON
+- diagnose failed runs from correlated evidence
+- compare runs and tune recipe timing, especially RTC stream cadence, drift, latency, drops, and backpressure
+- import/export artifact bundles for CI, bug reports, and offline analysis
+
+This is not a plan for a generic Rallar admin console. Direct Auth, Groups, WS, RTC, Data, CRDT, Media, REST, and manual workbench tools remain useful, but they should become supporting diagnostics or advanced tools instead of the main product surface.
+
+## Current Findings
+
+The existing SPA is capable but too broad for the distributed-recipe job:
+
+- `apps/rallar-black-box/src/App.tsx` is about 28k lines and owns shell, fetching, execution, monitoring, artifact import, recipe authoring, fleet views, direct Rallar tools, and many forms in one file.
+- `apps/rallar-black-box/src/styles.css` is also large, about 7k lines, so a new look and feel should not be achieved by layering more global selectors onto the existing CSS. The rewrite needs an isolated design system and stylesheet boundary.
+- `apps/rallar-black-box/src/app-tabs.ts` already has a runner-facing top-level model with `recipes`, `runs`, `fleet`, `builder`, `event-stream`, and `advanced`, which is a good migration foothold.
+- The current Distributed Recipes surface already implements the hard backend workflow: create/list/read/stage/start/cancel/export through the control server.
+- `packages/shared-test/rallar-bb-test` already owns the right contracts: schemas, distributed-run manifest, target resolution, rollups, monitor derivation, composite result normalization, fleet reports, artifact analysis, and runtime diagnostics.
+- `apps/rallar-black-box/src/distributed-recipes.ts` is now only a re-export of `@shared-test/rallar-bb-test/distributed-run-monitor.ts`, which confirms the direction: keep analysis logic in `packages/shared-test`; make the SPA a tidy client.
+- Remaining product gaps called out by the repo docs are exactly the rewrite's focus: retention UI, saved filters, artifact search, large-run virtualization, and large-run UX/accessibility.
+
+## Recommended Approach
+
+Use a strangler rewrite inside `apps/rallar-black-box`, not a new app.
+
+Reasoning:
+
+- It preserves existing dev scripts, Playwright config, app URL, control-agent bootstrap links, and full-stack test harnesses.
+- It avoids duplicating control-server and shared-test client code.
+- It lets the new SPA run beside legacy panels behind a route or workspace flag until it is proven.
+- It gives a clear rollback path while gradually shrinking `App.tsx`.
+
+Alternatives:
+
+- A separate `apps/rallar-black-box-next` would be cleaner at first, but it would duplicate bootstrap/config/test setup and risk drift.
+- A pure refactor of the existing UI would preserve behavior, but it would not force the product simplification needed here.
+
+## Proposal Analysis: Modern UI And Legacy Strangling
+
+The proposed direction is doable and desirable: new UI elements can have a new, more modern, more interactive look and feel while existing UI elements remain available. The key is to make "new" and "legacy" explicit product and code boundaries.
+
+Recommended policy:
+
+- Build the Recipe Console as a new UI surface with its own shell, tokens, components, CSS namespace, and interaction model.
+- Preserve existing UI elements as `Legacy` or `Advanced Legacy` surfaces. Do not delete them during the rewrite.
+- Hide legacy panels from the primary path by default. They should remain reachable through explicit advanced navigation, deep links, or contextual "open legacy diagnostic" actions.
+- Do not restyle all legacy panels as part of the first rewrite. That would spend effort on surfaces that are no longer primary and would increase regression risk.
+- Do not mix new and legacy components in one view unless the legacy component is inside a clearly framed compatibility slot.
+- Keep old query aliases working. Existing `tab=distributed-recipes`, `tab=run-manager`, and `advancedSurface=...` links should redirect or open the matching legacy/advanced surface.
+- New bug fixes should land in extracted modules or shared helpers, not as more code inside `App.tsx`.
+
+This means the user-facing product gets a fresh interaction layer, while the operational escape hatches stay available. It also avoids the risky "big bang redesign" failure mode where the old UI is removed before the new workflow proves itself.
+
+## Look And Feel Direction
+
+The new Recipe Console should feel like a modern operational cockpit: fast, compact, direct, and tactile. It should not inherit the current whole-app visual language by default.
+
+Visual direction:
+
+- Calm dark-on-light or neutral-on-light workspace, with strong semantic colors for pass, fail, warning, stale, selected, and running states.
+- Dense but tidy layout: thin rails, clear dividers, compact tables, stable row heights, and a persistent status/command bar.
+- A dominant central work surface for run execution, monitoring, artifact evidence, and timing analysis.
+- Inspector rail for selected agent/recipe/command/failure/diagnostic details.
+- Modern interactive controls: segmented view switches, searchable command palettes or comboboxes, drawer/bottom-sheet filters, selectable matrix cells, copy-link buttons, and inline diff/timing inspectors.
+- Smooth but restrained motion for live updates, row selection, drawer transitions, and status changes. Respect reduced motion.
+- No marketing hero, no decorative card pile, no purely atmospheric gradients, no 3D, and no map-first UI unless geography is the evidence.
+
+Implementation direction:
+
+- Create a new token layer, for example `recipe-console/tokens.css`, and a namespaced stylesheet, for example `.recipe-console`.
+- Keep component radii modest, around 6-8px, matching an operational tool rather than a playful landing page.
+- Use icon buttons for common actions where possible: refresh, copy, export, cancel, start, filter, search, open inspector, close drawer.
+- Keep text code-native and selectable. Do not bake labels into SVG or images.
+- Make row/cell selection obvious and persistent. Hover can preview, but click/tap commits selection and updates the inspector plus URL state.
+- Treat mobile as a sibling state: command bar first, verdict next, then primary action and evidence. Move filters/inspector to drawers.
+
+## Legacy UI Policy
+
+Existing UI elements should be kept, but progressively isolated:
+
+- First: hide existing runner panels behind `Advanced Legacy` while the new Recipe Console handles the main path.
+- Second: extract legacy panels from `App.tsx` into `src/legacy/...` without changing behavior.
+- Third: route contextual diagnostic links from the new UI into the relevant legacy panel with current run/group/agent context.
+- Fourth: preserve legacy panels until the new UI covers the workflow, tests prove parity, and a separate explicit retirement task says a panel is no longer needed.
+
+Legacy mounting rule:
+
+- Legacy panels that preserve drafts or long-running local state may stay mounted while hidden during the transition.
+- Heavy legacy panels should be mounted lazily when opened if they do not need background state.
+- New panels should not rely on legacy component internals. They should consume shared helpers and control-server APIs directly.
+
+`App.tsx` rule:
+
+- `App.tsx` should become routing and provider glue only.
+- No new primary product panel should be added directly to `App.tsx`.
+- New work goes under `src/recipe-console/**`.
+- Legacy extraction goes under `src/legacy/**`.
+- Shared deterministic behavior goes under `packages/shared-test/**` when it is useful outside the SPA.
+
+## Product Shape
+
+The first screen should be the actual operator workflow, not a landing page:
+
+1. Top command bar: control-server state, selected control run, selected distributed run, group/application/workspace, targetable agents, live/stale/offline status, first failure.
+2. Left navigation: `Execute`, `Monitor`, `Analyze`, `Tune`, `Fleet`, `Advanced`.
+3. Center work surface: the selected run or workflow, with failures and current status visible first.
+4. Right inspector: selected recipe, agent, command, failure, diagnostic, artifact, or timing sample.
+
+The default route should open `Execute` with a meaningful current run if available. If a selected distributed run is active, the SPA should prefer `Monitor`. If an artifact is imported, it should prefer `Analyze`.
+
+### Primary Workflows
+
+`Execute`
+
+- Pick recipe profile: ACK, WS receive, RTC stream, parallel smoke, wait/assert, custom.
+- Resolve targets from current group and control-agent identity.
+- Explain missing/stale/offline/duplicate/wrong-group agents before staging.
+- Show a compact manifest preview and preflight tree.
+- Provide `Stage`, `Start`, `Cancel`, `Export`, and `Copy link` as the main commands.
+- Keep raw JSON available, but not central.
+
+`Monitor`
+
+- Show verdict first: running, passed, failed, timed out, cancelled.
+- Show failures before timeline noise.
+- Show agent x phase matrix: target, stage ACK, barrier, run, result, diagnostics.
+- Show per-recipe progress and composite drilldowns for `loop`, `parallel`, `wait`, `assert`, and `rtc.stream`.
+- Correlate runtime diagnostics with failures by agent, command, recipe, and near-time evidence.
+- Keep last-known-good data visible during reconnects.
+
+`Analyze`
+
+- Load distributed-run artifacts from the control server or from local files.
+- Validate required files: `distributed-run.json`, `manifest.json`, `control-run.json`, `report.json`, `results.jsonl`, `events.jsonl`, `failures.json`, `metadata.json`.
+- Render the failure verdict, likely cause, next action, minimal fix area, affected agents/regions, evidence file, and verification command.
+- Provide artifact search by agent, command, topic, diagnostic type, payload summary, failure category, and time window.
+- Produce issue-ready summaries from `analysis.summaryMarkdown`, `fixProposalMarkdown`, and `performanceMarkdown`.
+
+`Tune`
+
+- Treat timing as a first-class recipe design loop, not a buried metric.
+- Compare selected run against a baseline or previous run.
+- Surface command timing: min, p50, p95, p99, max, average, spread, outliers.
+- Surface stream timing: planned/completed/failed/dropped frames, in-flight drops, backpressure, achieved Hz, max drift, late frames, p50/p95/p99/max send duration, slowest stream agents.
+- Suggest likely recipe knobs:
+  - dropped frames or in-flight drops: lower `rateHz`, raise `maxInFlight` carefully, or shorten payloads
+  - high drift but few drops: lower cadence, inspect scheduler pressure, reduce concurrent work
+  - high p95/p99 on one agent: inspect region/browser/network, do not blindly loosen global thresholds
+  - stage or barrier timeouts: tune `ackTimeoutMs` or `barrier.timeoutMs` only after target identity/staleness is clean
+  - no peers/no route: fix target resolution/readiness before changing stream thresholds
+
+`Fleet`
+
+- Keep fleet as a scale analysis view, not the main execution flow.
+- Show live agents, historical run matrix, repeated failure signatures, region summaries, timing distributions, and the current deterministic SVG world map.
+- Use map layers only when geography explains failures or latency. Do not make the map the default evidence for non-spatial problems.
+
+`Advanced`
+
+- Keep direct Rallar tools here: Auth, Groups/Clients, WebSocket, RTC/Realtimes, RTC Diagnostics, Rallar Data, CRDT, Media, Rallar Server, Flow Builder, Local Workbench, Shared Test.
+- Make these diagnostics discoverable from failures: e.g. a WS ticket failure can link to Auth/WS diagnostics with the current context.
+- Do not let advanced tools dominate first-run navigation.
+
+## Visualization Strategy
+
+Analytical jobs:
+
+- monitoring: current run state, stale/offline agents, active failures
+- comparison: run A vs run B, baseline vs candidate, recipe profile deltas
+- time change: lifecycle timeline, command duration, stream cadence
+- distribution: latency percentiles, outliers, jitter, drift
+- matrix: agent x phase, agent x run, recipe x agent
+- artifact/reporting: issue-ready evidence and replayable artifacts
+- geography: fleet region/agent only when location is evidence-bearing
+
+Chart and artifact families:
+
+- Verdict strip: semantic HTML, always visible, no hover dependency.
+- Agent phase matrix: table/grid with colored cells and in-cell counts.
+- Lifecycle timeline: compact SVG or CSS grid timeline; use labels and direct annotations.
+- Latency distribution: percentile strips, box/whisker-like rows, and small multiples by agent/recipe.
+- Stream frame disposition: stacked bar for completed/failed/dropped/in-flight-dropped frames.
+- Drift/jitter over time: SVG line/scatter for normal runs; Canvas only if event counts become too dense.
+- Compare runs: delta table plus direct labels for changed recipes, participants, failures, timing, and received messages.
+- Fleet map: existing deterministic SVG; keep labels code-native and use explicit coordinates or documented lookup only.
+
+Renderer choices:
+
+- Use React/HTML/CSS for tables, metrics, inspectors, forms, and low-density charts.
+- Use SVG for timelines, percentile strips, compact maps, route summaries, and annotated distributions.
+- Use Canvas only for large event streams or dense timing plots after profiling.
+- Avoid WebGL/3D. It adds little analytical value for recipe execution and would make the SPA heavier.
+
+Mobile behavior:
+
+- Mobile opens with verdict plus the selected run summary, then primary action.
+- Put target filters, recipe filters, and inspectors in drawers/bottom sheets.
+- Replace hover with tap/focus selection and step-through controls.
+- Preserve active filters, selected run, source status, and stale/live indicator outside closed panels.
+- Provide mobile landscape support for timelines, matrices, and fleet map.
+
+## Architecture
+
+Keep reusable behavior in packages and app code thin:
+
+```text
+packages/shared-test/rallar-bb-test/
+  distributed-run.ts
+  distributed-run-monitor.ts
+  distributed-artifact-analysis.ts
+  control-snapshots.ts
+  fleet-report.ts
+  schema.ts
+
+apps/rallar-black-box/src/recipe-console/
+  app/RecipeConsoleApp.tsx
+  app/RecipeConsoleShell.tsx
+  app/navigation.ts
+  app/url-state.ts
+  design/tokens.css
+  design/recipe-console.css
+  control/control-api.ts
+  control/control-query.ts
+  execute/
+  monitor/
+  analyze/
+  tune/
+  fleet/
+  advanced/
+  ui/
+
+apps/rallar-black-box/src/legacy/
+  LegacyRunnerSurfaces.tsx
+  LegacyDirectRallarSurfaces.tsx
+  legacy-navigation.ts
+```
+
+Proposed app responsibilities:
+
+- `control-api.ts`: typed fetch wrappers around existing control server endpoints. It can start by wrapping functions from `src/control-run-manager.ts`.
+- `control-query.ts`: polling, stale state, refresh cadence, and snapshot bounds.
+- `url-state.ts`: URL-backed workspace state: view, run IDs, filters, selected agent, selected command, compare IDs, timing metric.
+- `design/tokens.css`: new Recipe Console design tokens. Keep it independent from existing app-wide panel styles.
+- `design/recipe-console.css`: namespaced layout/component styling under `.recipe-console`.
+- `execute/`: recipe catalog, target resolution, manifest builder, stage/start/cancel actions.
+- `monitor/`: verdict, progress matrix, timeline, diagnostics, composite drilldowns, selected-inspector routing.
+- `analyze/`: artifact import, artifact validation, failure analysis, issue summary, artifact search.
+- `tune/`: timing distributions, stream disposition, baseline comparison, recipe tuning hints.
+- `fleet/`: fleet board, heatmap, region summaries, map, report export.
+- `advanced/`: compatibility bridge to legacy direct Rallar tools while they are hidden, extracted, or moved behind contextual diagnostics.
+- `ui/`: compact reusable primitives: button, segmented control, metric, status pill, table, empty/error/stale state, disclosure, drawer, toolbar, inspector.
+- `legacy/`: extracted current UI panels that remain available but are not primary surfaces.
+
+Target ownership:
+
+- `App.tsx`: app bootstrap, providers, auth gate, high-level routing. Target below 1,500 lines before default flip, then below 800 lines when legacy extraction is complete.
+- `RecipeConsoleApp.tsx`: compose new console routes and shared providers. Target below 400 lines.
+- Feature route files: own orchestration for one workflow. Target below 700 lines.
+- Component files: presentational and focused. Target below 300 lines unless a table/chart renderer needs more.
+- Shared helpers: pure functions with tests; move to `packages/shared-test` when both live UI and artifact/CI analysis need them.
+
+Keep these in `packages/shared-test` or move them there if currently app-local:
+
+- timing sample derivation and percentiles
+- stream timing summaries
+- failure classification and next-action suggestions
+- artifact parsing and validation
+- target resolution and stale/offline/duplicate explanations
+- compare-run derivation
+- fleet aggregation and failure signatures
+
+Do not import legacy React panels into new Recipe Console views except through `advanced/LegacyBridge` or equivalent compatibility boundary.
+
+## State Contract
+
+Use the URL for shareable operational state:
+
+- `view`
+- `controlRunId`
+- `distributedRunId`
+- `agentId`
+- `recipeId`
+- `commandId`
+- `diagnosticSeverity`
+- `transport`
+- `historyQuery`
+- `status`
+- `from`
+- `to`
+- `compareLeft`
+- `compareRight`
+- `timingMetric`
+- `fleetRegion`
+- `fleetMapLayers`
+
+Use local storage only for personal defaults:
+
+- collapsed panels
+- last control URL
+- preferred page density
+- recent recipe profile
+- theme if added later
+
+Do not persist secrets, raw credentials, large artifact payloads, transient hover state, pointer positions, or animation state in the URL or local storage.
+
+## Iterative Plan
+
+### Iteration 0: Product Cut And Evidence Map
+
+Goal: lock the lean scope before code movement.
+
+Work:
+
+- Inventory current runner surfaces in `App.tsx` and map each one to `Execute`, `Monitor`, `Analyze`, `Tune`, `Fleet`, or `Advanced`.
+- Mark top-level hiding/re-homing: direct Rallar tabs no longer appear in primary runner navigation, but they remain reachable through `Advanced Legacy` or contextual diagnostic links.
+- Write acceptance stories for:
+  - create and run ACK recipe
+  - run RTC stream recipe
+  - diagnose failed target resolution
+  - import artifact and find first failure
+  - compare two runs and tune stream cadence
+- Define the first URL-state schema.
+
+Exit criteria:
+
+- A short product spec exists and every current runner feature is kept in the new primary flow, moved to advanced, or preserved as legacy.
+
+Validation:
+
+- No behavior change.
+- Review against `apps/rallar-black-box/docs/current-state.md` and `apps/rallar-black-box/docs/distributed-recipe-execution-iterations.md`.
+
+### Iteration 1: Extract Pure App Helpers
+
+Goal: reduce rewrite risk by moving derivation out of React before changing UI, and establish that `App.tsx` will not receive new primary surfaces.
+
+Work:
+
+- Add an explicit code comment or module boundary note near the top-level route composition: new Recipe Console work belongs under `src/recipe-console/**`; old UI extraction belongs under `src/legacy/**`.
+- Move app-local derivations still buried in `App.tsx` into focused modules:
+  - history filters
+  - diagnostic filters
+  - artifact import status
+  - timing format helpers
+  - fleet filters
+  - share-link builders
+- Identify the first legacy extraction candidates that can move with minimal behavior risk:
+  - `RunnerAdvancedPanel`
+  - `RunManagerPanel`
+  - `DistributedRecipesPanel`
+  - `DistributedRunMonitorPanel`
+  - `ImportedDistributedArtifactAnalysisPanel`
+- Keep imports stable through temporary barrels.
+- Add or expand Vitest coverage in `packages/tests/rallar-black-box`.
+
+Exit criteria:
+
+- `App.tsx` becomes visibly thinner without UI changes.
+- There is a documented rule that no new Recipe Console panel is added directly to `App.tsx`.
+- The first extracted helper modules have tests or are covered by existing tests.
+- Existing runner and distributed recipe tests still pass.
+
+Validation:
+
+- `npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts`
+- `npm --workspace rallar-black-box run typecheck`
+
+### Iteration 2: New Recipe Console Shell
+
+Goal: add the lean shell beside the legacy UI with a distinct modern look and isolated styling.
+
+Work:
+
+- Create `src/recipe-console/app/RecipeConsoleApp.tsx`.
+- Create `RecipeConsoleShell` with top command bar, left navigation, main work surface, and inspector rail.
+- Create `src/recipe-console/design/tokens.css` and `src/recipe-console/design/recipe-console.css` with `.recipe-console` namespacing.
+- Add a small component set for the new visual system: icon button, command bar item, status pill, metric strip, selectable row, matrix cell, drawer, inspector, empty/stale/error state.
+- Add `view` routing for `execute`, `monitor`, `analyze`, `tune`, `fleet`, and `advanced`.
+- Bridge from existing `App.tsx` with a feature flag or workspace route, for example `workspace=recipe-console`, without removing existing tabs.
+- Add compact UI primitives with stable dimensions and explicit control typography.
+- Add a visual comparison checklist for the new shell: desktop, mobile portrait, mobile landscape, reduced motion, keyboard focus, stale state.
+
+Exit criteria:
+
+- The new shell renders with seeded/sample state and no backend dependency.
+- Legacy runner surfaces remain reachable.
+- The new shell is visually distinct from the old panels without CSS leakage into legacy UI.
+- No new shell styling depends on broad `.panel`, `.metric`, `.workspace-grid`, or legacy tab selectors.
+
+Validation:
+
+- `npm --workspace rallar-black-box run typecheck`
+- Playwright smoke: load the new shell, switch views, verify no overflow at desktop and mobile widths.
+
+### Iteration 3: Control Connection And Agent Board
+
+Goal: make live/stale/offline control-server state the backbone.
+
+Work:
+
+- Wrap existing control APIs into `recipe-console/control/control-api.ts`.
+- Add polling with last-updated, live/stale/offline/partial states.
+- Render top command bar with control server, selected control run, group, connected agents, targetable agents, and active distributed run.
+- Render agent board from `deriveControlAgentBoardRows(...)` and `summarizeControlAgentBoardRows(...)`.
+- Add URL state for selected control run and agent.
+
+Exit criteria:
+
+- A user can tell whether the control server is reachable and which agents are safe to target before selecting a recipe.
+
+Validation:
+
+- `npx vitest run packages/tests/rallar-black-box/control-client.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts`
+- `cd apps/rallar-black-box-control-server && deno task test`
+- UI Playwright test for stale/offline/connected states using mocked or seeded snapshots.
+
+### Iteration 4: Execute Workflow MVP
+
+Goal: replace raw distributed-run operation with a guided execution path.
+
+Work:
+
+- Add recipe catalog with profile search, live-service badges, schema-valid badges, and preflight summary.
+- Add target resolution panel with matched, stale, offline, duplicate, missing identity, wrong group, and missing capability states.
+- Add manifest builder using existing `buildDistributedRunManifest(...)` and shared manifest validation.
+- Add `Create`, `Stage`, `Start`, `Cancel`, `Refresh`, `Export` actions.
+- Keep raw manifest JSON in a disclosure panel.
+- Dangerous live actions require clear state, not a decorative warning.
+
+Exit criteria:
+
+- A user can select a recipe, resolve targets, stage, and start without editing JSON.
+
+Validation:
+
+- `npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts packages/tests/rallar-black-box/schema-authoring.test.ts`
+- `npm --workspace rallar-black-box run typecheck`
+- Playwright: execute simulated distributed ACK through visible controls.
+
+### Iteration 5: Monitor MVP
+
+Goal: make active run status readable in under five seconds.
+
+Work:
+
+- Use `deriveDistributedRunMonitor(...)`.
+- Render verdict, failures, agent progress matrix, recipe progress, ACK readiness, barrier readiness, runtime diagnostic counts, and artifact validation.
+- Add timeline and event list as secondary evidence, not the first thing on screen.
+- Add selected inspector for agent, recipe, command, diagnostic, and failure rows.
+- Preserve last-known-good evidence during refresh failures.
+
+Exit criteria:
+
+- For a running or failed distributed run, the first visible region answers: what happened, who is affected, and what to inspect next.
+
+Validation:
+
+- `npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts`
+- Playwright: controlled one-agent failure rolls up visibly and links to diagnostic/event evidence.
+
+### Iteration 6: Artifact Analysis
+
+Goal: make CI/offline artifacts as useful as live runs.
+
+Work:
+
+- Add file import for distributed artifact bundles.
+- Add control-server artifact load/export.
+- Use `analyzeDistributedRunArtifactFiles(...)` and `distributedArtifactSnapshotsFromFiles(...)`.
+- Render failure analysis, causal trail, evidence quality, missing-file warnings, and issue-ready markdown.
+- Add artifact search over events/results/failures by agent, command, topic, diagnostic type, payload summary, and time window.
+
+Exit criteria:
+
+- A user can drop a CI artifact bundle into the SPA and identify the first actionable failure without opening raw JSON.
+
+Validation:
+
+- `npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts`
+- Playwright: import fixture artifact and verify failure focus plus performance summary.
+
+### Iteration 7: Timing And Recipe Tuning Lab
+
+Goal: turn performance artifacts into recipe tuning decisions.
+
+Work:
+
+- Render command timing percentile strips and slowest-agent rows.
+- Render stream frame disposition, achieved Hz, drift, late frames, backpressure, and slowest stream agent rows.
+- Add baseline comparison against previous run or selected run.
+- Add rule-based tuning hints sourced from shared-test analysis categories.
+- Add a recipe knob inspector for `rateHz`, `durationMs`, `intervalMs`, `maxInFlight`, `ackTimeoutMs`, `barrier.timeoutMs`, and stream thresholds.
+- Support copyable "candidate recipe changes" as JSON patch or manifest diff, but do not auto-mutate recipes silently.
+
+Exit criteria:
+
+- A user can answer whether a recipe should lower rate, raise timeout, adjust stream thresholds, fix target readiness, or investigate a specific agent.
+
+Validation:
+
+- Vitest for timing derivation and tuning hint rules.
+- Playwright: loaded stream artifact shows frame disposition, p95/p99, drift, drops, and a tuning hint.
+
+### Iteration 8: History, Compare, Saved Filters, Retention
+
+Goal: make repeated distributed work organized.
+
+Work:
+
+- Add history table with URL-backed filters: group, recipe, profile, status, failure category, date range, text.
+- Add saved filter presets stored locally first; leave room for remote saved views later.
+- Add compare view using `compareDistributedRuns(...)`.
+- Add retention preview and cleanup controls against `POST /retention/cleanup`.
+- Add copy/share link for current filtered or compared view.
+
+Exit criteria:
+
+- A user can find a past failure, compare it to a candidate fix, and clean old local runs with previewed impact.
+
+Validation:
+
+- `cd apps/rallar-black-box-control-server && deno task test`
+- `npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts`
+- Playwright: filter history, compare two seeded runs, run retention preview/cleanup path.
+
+### Iteration 9: Large-Run Scale And Virtualization
+
+Goal: keep the SPA responsive for large distributed artifacts.
+
+Work:
+
+- Add cursor/windowed event and result browsing.
+- Virtualize large tables and artifact search results.
+- Respect artifact index compaction summaries.
+- Move dense timing plots to Canvas only when SVG/DOM profiling shows real pressure.
+- Add bounded snapshot controls by default.
+- Add performance telemetry for render counts, rows, and artifact parse duration.
+
+Exit criteria:
+
+- Large artifacts remain searchable and readable without freezing the browser.
+
+Validation:
+
+- Synthetic large artifact fixture.
+- Browser performance smoke with event/result counts above current defaults.
+- `npm --workspace rallar-black-box run typecheck`
+
+### Iteration 10: Fleet And Geographic Evidence
+
+Goal: keep fleet analysis useful without turning the SPA into a map app.
+
+Work:
+
+- Move current Fleet panel into `recipe-console/fleet`.
+- Keep live board, heatmap, region summaries, repeated failure signatures, timing distributions, and deterministic SVG map.
+- Add links from failure signatures to filtered history and affected agents.
+- Add route evidence only when source/target locations are explicit or documented.
+
+Exit criteria:
+
+- Fleet answers: which agents/regions repeatedly fail, whether it is timing-related, and which run/artifact proves it.
+
+Validation:
+
+- Existing fleet report tests.
+- Playwright: fleet filters and map layer URL state restore.
+
+### Iteration 11: Advanced Diagnostics Bridge
+
+Goal: preserve powerful direct tools without letting them clutter the core flow.
+
+Work:
+
+- Move legacy direct Rallar tabs under `Advanced Legacy` or behind contextual links.
+- Add deep links from failures to relevant diagnostics:
+  - auth/ticket failures to Auth and WebSocket
+  - no peer/no route to RTC Diagnostics
+  - missing group/member to Groups/Clients
+  - server status failures to Rallar Server
+- Keep legacy UI mounted only when opened if practical.
+- Preserve existing query aliases and old tab links. A link that used to open `tab=distributed-recipes` should still open the legacy distributed recipe surface or redirect to the matching Recipe Console view with a visible legacy fallback.
+
+Exit criteria:
+
+- The core SPA is lean, but no important diagnostic path disappears.
+- Legacy surfaces are hidden from the primary path but still findable and testable.
+
+Validation:
+
+- Existing app-tabs and mode-boundary tests.
+- Playwright: advanced links open with context and return to selected run.
+
+### Iteration 12: Polish, Accessibility, And Default Flip
+
+Goal: make the new SPA the default.
+
+Work:
+
+- Desktop, mobile portrait, and mobile landscape QA.
+- Keyboard paths for navigation, tables, disclosures, filters, and dialogs.
+- Reduced-motion handling for live updates.
+- Contrast and semantic color audit for pass/fail/warn/stale/selected states.
+- Empty, partial, stale, offline, loading, permission, schema-error, and artifact-missing states.
+- Replace default runner workspace with Recipe Console.
+- Keep old runner UI under `Advanced Legacy`. Any future retirement requires a separate explicit plan after parity and usage review.
+
+Exit criteria:
+
+- Opening `apps/rallar-black-box` gives a tidy SPA ready to execute and analyze distributed recipes.
+
+Validation:
+
+- `npm --workspace rallar-black-box run typecheck`
+- `npm run build:rallar-black-box`
+- `npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts packages/tests/rallar-black-box/schema-authoring.test.ts`
+- `cd apps/rallar-black-box-control-server && deno task check`
+- `cd apps/rallar-black-box-control-server && deno task test`
+- `npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts`
+- `npm run test:e2e:rallar-black-box:full-stack:real:distributed` when live services are available
+
+## Ready-State Definition
+
+The SPA is ready when these are true:
+
+- The default first screen is distributed recipe execution, not a general command center.
+- A simulated distributed ACK run can be completed from visible controls.
+- A live distributed run can be staged, started, monitored, cancelled, and exported when services are configured.
+- Failures are listed before raw event streams.
+- Every failure row links to agent, command, recipe, diagnostic, timeline, and artifact evidence when available.
+- Artifact import works without a control server connection.
+- Timing analysis surfaces command percentiles and RTC stream-specific health.
+- Compare mode shows changed recipes, participants, failures, timings, and received-message deltas.
+- URL state restores selected view, run, filters, comparison, and timing metric.
+- Large event/result lists are bounded or virtualized.
+- Direct Rallar tools exist as advanced diagnostics, not primary navigation.
+- Existing legacy UI elements remain reachable through advanced/contextual routes, even when hidden from the main flow.
+- Desktop and mobile views are usable without hidden hover-only evidence.
+
+## Risks And Guardrails
+
+- Do not reimplement runner logic in React. Recipes, rollups, target resolution, schemas, artifacts, and timing derivation belong in `packages/shared-test`.
+- Do not turn the SPA into a shell executor. Browser agents should be orchestrated through the control server.
+- Do not make raw JSON the success path. JSON is an escape hatch and artifact format.
+- Do not hide stale/offline/partial states. Operational users need last-known-good evidence.
+- Do not loosen recipe thresholds before target readiness and transport diagnostics are clean.
+- Do not use maps or 3D unless location or depth is real evidence.
+- Do not remove existing UI elements as part of the strangler rewrite unless a separate explicit retirement task says so.
+- Do not let `App.tsx` continue to grow. New surfaces go under `src/recipe-console/**`; old surfaces move toward `src/legacy/**`.
+- Preserve public exports and existing control-server endpoints unless a later task explicitly introduces a breaking migration.

@@ -369,6 +369,23 @@ update_api_cors_origins() {
   update_env_value "/etc/rallar/api-v1.env" "CORS_ORIGINS" "${RALLAR_API_CORS_ORIGINS}"
 }
 
+update_api_rtc_topology_env() {
+  local key
+  local keys=(
+    RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT
+    RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE
+    RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE
+    RALLAR_RTC_TOPOLOGY_MESH_PARAM_K
+    RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS
+  )
+
+  for key in "${keys[@]}"; do
+    if [[ "${!key+x}" == "x" ]]; then
+      update_env_value "/etc/rallar/api-v1.env" "${key}" "${!key}"
+    fi
+  done
+}
+
 update_control_allowed_origins() {
   apply_rallar_public_cors_defaults
   update_env_value "/etc/rallar/control-server.env" "RALLAR_BLACK_BOX_ALLOWED_ORIGINS" "${RALLAR_BLACK_BOX_ALLOWED_ORIGINS}"
@@ -478,6 +495,9 @@ write_rallar_black_box_spa_env_file
 
 echo "==> Updating API CORS origins"
 update_api_cors_origins
+
+echo "==> Updating API RTC topology env"
+update_api_rtc_topology_env
 
 echo "==> Updating control-server browser origins"
 update_control_allowed_origins
