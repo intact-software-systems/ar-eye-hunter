@@ -1,0 +1,480 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "scopeAApplicationId": {
+      "env": "RALLAR_BB_SCOPE_A_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-a"
+    },
+    "scopeAWorkspaceId": {
+      "env": "RALLAR_BB_SCOPE_A_WORKSPACE_ID",
+      "default": "workspace-a-{runId}"
+    },
+    "scopeBApplicationId": {
+      "env": "RALLAR_BB_SCOPE_B_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-b"
+    },
+    "scopeBWorkspaceId": {
+      "env": "RALLAR_BB_SCOPE_B_WORKSPACE_ID",
+      "default": "workspace-b-{runId}"
+    },
+    "sharedGroupId": {
+      "env": "RALLAR_BB_SHARED_GROUP_ID",
+      "default": "shared-group-{runId}"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "aliceSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "username": "{aliceUsername}",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "bobSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "username": "{bobUsername}",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createScopeAGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "create-scope-a-{sharedGroupId}-{runId}",
+          "groupId": "{sharedGroupId}",
+          "displayName": "Scope A {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "statusCode": [
+          201,
+          409
+        ],
+        "bodyAnyOf": [
+          {
+            "group": {
+              "applicationId": "{scopeAApplicationId}",
+              "workspaceId": "{scopeAWorkspaceId}",
+              "groupId": "{sharedGroupId}"
+            }
+          },
+          {
+            "error": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "joinAliceScopeAGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/{sharedGroupId}/members/{aliceClientId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "join-scope-a-{sharedGroupId}-{aliceClientId}-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "applicationId": "{scopeAApplicationId}",
+            "workspaceId": "{scopeAWorkspaceId}",
+            "groupId": "{sharedGroupId}"
+          },
+          "members": [
+            {
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "createScopeBGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "create-scope-b-{sharedGroupId}-{runId}",
+          "groupId": "{sharedGroupId}",
+          "displayName": "Scope B {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "statusCode": [
+          201,
+          409
+        ],
+        "bodyAnyOf": [
+          {
+            "group": {
+              "applicationId": "{scopeBApplicationId}",
+              "workspaceId": "{scopeBWorkspaceId}",
+              "groupId": "{sharedGroupId}"
+            }
+          },
+          {
+            "error": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "joinBobScopeBGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/{sharedGroupId}/members/{bobClientId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "join-scope-b-{sharedGroupId}-{bobClientId}-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "applicationId": "{scopeBApplicationId}",
+            "workspaceId": "{scopeBWorkspaceId}",
+            "groupId": "{sharedGroupId}"
+          },
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "readScopeAGroupAsAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/{sharedGroupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "applicationId": "{scopeAApplicationId}",
+            "workspaceId": "{scopeAWorkspaceId}",
+            "groupId": "{sharedGroupId}"
+          },
+          "members": [
+            {
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "readScopeBGroupAsBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/{sharedGroupId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "applicationId": "{scopeBApplicationId}",
+            "workspaceId": "{scopeBWorkspaceId}",
+            "groupId": "{sharedGroupId}"
+          },
+          "members": [
+            {
+              "principalId": "{bobClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "rejectBobReadScopeAGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/{sharedGroupId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "Forbidden: Only active group members can read full group state.",
+          "code": "group-policy-denied",
+          "message": "Only active group members can read full group state.",
+          "details": {
+            "visibility": "directory"
+          }
+        }
+      }
+    },
+    {
+      "name": "rejectAliceReadScopeBGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/{sharedGroupId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "Forbidden: Only active group members can read full group state.",
+          "code": "group-policy-denied",
+          "message": "Only active group members can read full group state.",
+          "details": {
+            "visibility": "directory"
+          }
+        }
+      }
+    },
+    {
+      "name": "listScopeAEventsAsAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{scopeAApplicationId}/workspaces/{scopeAWorkspaceId}/groups/{sharedGroupId}/events",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "listScopeBEventsAsBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{scopeBApplicationId}/workspaces/{scopeBWorkspaceId}/groups/{sharedGroupId}/events",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "logoutAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    },
+    {
+      "name": "logoutBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    }
+  ]
+}

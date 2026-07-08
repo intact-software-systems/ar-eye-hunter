@@ -1,0 +1,380 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "default-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "api-v1-bb-ws-group-{runId}"
+    },
+    "groupName": {
+      "env": "RALLAR_BB_GROUP_NAME",
+      "default": "API v1 black-box WS {runId}"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    },
+    "rallarWs": {
+      "type": "ws",
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "aliceSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "username": "{aliceUsername}",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "create-ws-{groupId}-{runId}",
+          "groupId": "{groupId}",
+          "displayName": "{groupName}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "statusCode": [
+          201,
+          409
+        ],
+        "bodyAnyOf": [
+          {
+            "group": {
+              "groupId": "{groupId}",
+              "displayName": "{groupName}",
+              "kind": "room"
+            }
+          },
+          {
+            "error": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "joinAliceToGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "join-ws-{groupId}-{aliceClientId}-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "members": [
+            {
+              "principalId": "{aliceClientId}",
+              "status": "active"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "connectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "presence-ws-{aliceSessionId}-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}",
+              "principalId": "{aliceClientId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "createWebSocketTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "wsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{aliceSessionId}",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveWebSocketUrl",
+      "type": "set",
+      "output": "wsUrl",
+      "secret": true,
+      "redactAs": "wsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.wsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openWebSocket",
+      "type": "ws.open",
+      "connection": "rallarWs",
+      "request": {
+        "url": "{wsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "sendSelfAddressedMessage",
+      "type": "ws.send",
+      "connection": "rallarWs",
+      "request": {
+        "send": {
+          "id": {
+            "v": 2,
+            "msgId": "api-v1-bb-ws-{runId}",
+            "ts": 0,
+            "senderId": "{aliceSessionId}",
+            "sessionId": "{aliceSessionId}",
+            "traceId": "api-v1-bb-ws-trace-{runId}"
+          },
+          "route": {
+            "topicId": "app.black-box.echo",
+            "resourceId": "api-v1-bb-ws-resource-{runId}",
+            "contextId": "{applicationId}:{workspaceId}"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{aliceSessionId}"
+          },
+          "delivery": {
+            "reliability": "best-effort",
+            "ack": "none"
+          },
+          "payload": {
+            "typeId": "app.black-box.echo",
+            "contentType": "application/json",
+            "resource": "{\"text\":\"hello over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
+          }
+        },
+        "outputs": {
+          "echoMessageId": "matchedMessage.data.id.msgId",
+          "echoTopic": "matchedMessage.data.route.topicId"
+        }
+      },
+      "expect": {
+        "connection": "rallarWs",
+        "withinMs": 10000,
+        "message": {
+          "id": {
+            "msgId": "api-v1-bb-ws-{runId}",
+            "traceId": "api-v1-bb-ws-trace-{runId}"
+          },
+          "route": {
+            "topicId": "app.black-box.echo",
+            "resourceId": "api-v1-bb-ws-resource-{runId}"
+          },
+          "payload": {
+            "typeId": "app.black-box.echo",
+            "resource": "{\"text\":\"hello over api-v1 ws\",\"groupId\":\"{groupId}\",\"runId\":\"{runId}\"}"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeWebSocket",
+      "type": "ws.close",
+      "connection": "rallarWs",
+      "request": {
+        "code": 1000,
+        "reason": "api-v1 black-box recipe done"
+      }
+    },
+    {
+      "name": "disconnectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}/disconnect",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "disconnect-ws-{aliceSessionId}-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "logoutAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    }
+  ]
+}

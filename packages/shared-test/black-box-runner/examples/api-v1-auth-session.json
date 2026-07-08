@@ -1,0 +1,201 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "default-{runId}"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "setDisposableUsername",
+      "type": "set",
+      "output": "disposableUsername",
+      "value": "api-v1-bb-user-{runId}"
+    },
+    {
+      "name": "registerDisposableUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "{disposableUsername}",
+          "password": "api-v1-bb-password-{runId}",
+          "displayName": "API v1 black-box user {runId}"
+        },
+        "outputs": {
+          "disposableRegisteredClientId": "body.clientId"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string",
+          "username": "{disposableUsername}",
+          "registeredAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "loginDisposableUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{disposableUsername}",
+          "password": "api-v1-bb-password-{runId}"
+        },
+        "outputs": {
+          "disposableClientId": "body.clientId",
+          "disposableAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "disposableSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "{disposableRegisteredClientId}",
+          "accessToken": "string",
+          "username": "{disposableUsername}",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveDisposableAuthHeader",
+      "type": "set",
+      "output": "disposableAuthHeader",
+      "secret": true,
+      "redactAs": "disposableAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.disposableAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "logoutDisposableUser",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "Authorization": "{disposableAuthHeader}",
+          "x-client-id": "{disposableClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    },
+    {
+      "name": "rejectWrongPassword",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{disposableUsername}",
+          "password": "wrong-password-{runId}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Invalid username or password"
+        }
+      }
+    },
+    {
+      "name": "rejectMissingBearerToken",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    },
+    {
+      "name": "rejectMissingClientIdHeader",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{disposableAuthHeader}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing x-client-id header"
+        }
+      }
+    },
+    {
+      "name": "rejectWebSocketTicketWithoutAuth",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    }
+  ]
+}

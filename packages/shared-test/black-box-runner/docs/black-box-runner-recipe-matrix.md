@@ -35,6 +35,7 @@ packages/shared-test/black-box-runner/recipe-matrix.mts
 | `live-parallel` | Gated live browser and remote-browser bounded parallel recipes. |
 | `live-crdt` | Gated CRDT live validation for WS convergence, RTC fallback, durable catch-up, local persistence, and admin integrity. |
 | `rallar-server-live` | Live Rallar Server REST/WS recipes. Skips when the configured API is unavailable. |
+| `api-v1-black-box` | No-browser `apps/api-v1` REST/WS black-box recipes. Requires a running Rallar API and no Playwright/browser gate. |
 | `browser-live` | Live browser-backed Rallar recipes. Requires credentials, Rallar API, and Playwright. |
 | `remote-live` | Live control-server-backed browser provider recipes. Requires Rallar API, control server, and an agent. |
 | `signaling-live` | Live signaling-only provider recipes. Requires `RALLAR_SIGNALING_URL`. |
