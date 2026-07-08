@@ -1295,7 +1295,7 @@ rg -n 'T''BD|TO''DO|FIX''ME|fi''ll in|im''plement later' plans/github-actions-ra
 
 Expected: test PASS; `rg` exits 1 with no matches.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add plans/github-actions-rallar-black-box-headless-runbook.md packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts
@@ -1398,6 +1398,14 @@ Do not commit generated artifacts. Commit only the human-written outcome note wh
 git add playground/FREE_TIER_HEADLESS_BROWSER_DISTRIBUTED_RECIPES.md
 git commit -m "docs: record github free distributed run outcome"
 ```
+
+Task 9 status note (2026-07-08T11:36:50Z): not dispatched from this local
+environment. Live acceptance would consume GitHub Actions minutes and Hetzner
+resources, and this environment is not explicitly configured for that remote
+execution. `gh auth status` reports the default GitHub token for
+`intact-software-systems` is invalid, so workflow dispatch is not available.
+Task 9 checkboxes remain unchecked until the remote smoke sequence is run from
+an authenticated environment with the required production secrets.
 
 ## Cross-Iteration Validation Commands
 
@@ -1519,7 +1527,7 @@ For live acceptance, use the GitHub Actions workflow dispatch sequence in Task 9
 
 ### Iteration 5 - 2026-07-08T11:35:03Z
 
-- Completed steps: Task 8 steps 1-4.
+- Completed steps: Task 8 steps 1-5.
 - Files changed: `plans/github-actions-rallar-black-box-headless-runbook.md`, `packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`, `docs/environment-variables.md`, `plans/github-actions-rallar-black-box-headless-implementation-plan.md`.
 - Commands run:
   - `npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts` after adding the runbook existence test: FAIL as expected because the runbook did not exist.
@@ -1528,4 +1536,20 @@ For live acceptance, use the GitHub Actions workflow dispatch sequence in Task 9
   - `rg -n 'T''BD|TO''DO|FIX''ME|fi''ll in|im''plement later' plans/github-actions-rallar-black-box-headless-runbook.md`: PASS by returning exit 1 with no matches.
 - Blockers: none for Task 8 local documentation.
 - Notes: The new runbook is linked from `docs/environment-variables.md` because it is the closest canonical Rallar Black Box workflow reference.
-- Follow-up validation still required: Task 8 commit, Task 9 live GitHub Actions/Hetzner acceptance, and cross-iteration validation.
+- Follow-up validation still required: Task 9 live GitHub Actions/Hetzner acceptance.
+- Commit: `5336df3` (`docs: add github free distributed runbook`).
+
+### Final Local Validation - 2026-07-08T11:36:50Z
+
+- Completed steps: cross-iteration local validation matrix.
+- Files changed: `plans/github-actions-rallar-black-box-headless-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/rallar-black-box/headless-worker-config.test.ts packages/tests/rallar-black-box/headless-worker-script.test.ts packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts packages/tests/hetzner/distributed-recipe-workflow.test.ts`: PASS, 106 tests.
+  - `npm --workspace rallar-black-box run typecheck`: PASS.
+  - `node scripts/github-actions/plan-github-free-headless-matrix.mjs --target-agent-count=50 --agents-per-job=3 --max-parallel-jobs=17 --run-id=gh-free-validation`: PASS, 17 shards with final shard starting at agent 49 and `estimatedSixtyMinuteRunMinutes=1080`.
+  - `git diff --check -- .github/workflows/github-free-distributed-recipe.yml .github/workflows/hetzner-distributed-recipe.yml .github/workflows/hetzner-distributed-recipe-runner.yml apps/rallar-black-box packages/tests/rallar-black-box packages/tests/hetzner scripts/github-actions scripts/hetzner/controller docs/environment-variables.md plans/github-actions-rallar-black-box-headless-runbook.md plans/github-actions-rallar-black-box-headless-implementation-plan.md`: PASS.
+  - `command -v actionlint`: skipped optional workflow lint because `actionlint` is not installed locally.
+  - `gh auth status`: FAIL for live acceptance because the default GitHub token is invalid.
+- Blockers: Task 9 live GitHub Actions/Hetzner acceptance was not run because the local `gh` token is invalid and remote dispatch would consume external CI minutes/resources.
+- Notes: Task 9 checkboxes remain unchecked. Generated profile/run artifacts were not created.
+- Follow-up validation still required: run the Task 9 dispatch sequence from an authenticated environment with the required GitHub and Hetzner secrets, then record the outcome note if requested.
