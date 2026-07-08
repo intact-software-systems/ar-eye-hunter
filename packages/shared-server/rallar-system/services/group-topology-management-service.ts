@@ -1,6 +1,7 @@
 import { AppTopics, type RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type {
+    EffectiveGroupTopologyConfig,
     GroupTopologyConfigPatch,
     GroupTopologyConfigView,
     GroupTopologyManagementView,
@@ -26,6 +27,9 @@ import {
     RallarRtcTopologyService,
     type RallarRtcTopologyUpdateResult,
 } from './rallar-rtc-topology-service.ts';
+import {
+    filterRtcRttMeasurementsForGroup,
+} from './rtc-rtt-measurement-policy.ts';
 
 export class GroupTopologyValidationError extends Error {
     readonly status = 422;
@@ -289,15 +293,21 @@ export class GroupTopologyManagementService {
             temporary: await this.options.configRepository?.findOverride(input.groupRef),
             requestOptions: input.requestOptions,
         });
-        const rttMeasurements = await this.readRttMeasurements(group);
+        const rttMeasurements = await this.readRawRttMeasurements(group);
         const result = this.options.topologySnapshotRepository
             ? await this.options.topologySnapshotRepository.withSnapshotLock(
                 input.groupRef,
                 async (repository) => {
                     const previous = await repository.findSnapshot(input.groupRef);
-                    const update = this.options.topologyService.updateGroupTopology(
+                    const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
                         group,
                         rttMeasurements,
+                        config.effective,
+                        previous,
+                    );
+                    const update = this.options.topologyService.updateGroupTopology(
+                        group,
+                        filteredRttMeasurements,
                         {
                             previous,
                             topologyOptions: config.effective,
@@ -307,13 +317,23 @@ export class GroupTopologyManagementService {
                     return update;
                 },
             )
-            : this.options.topologyService.updateGroupTopology(
-                group,
-                rttMeasurements,
-                {
-                    topologyOptions: config.effective,
-                },
-            );
+            : (() => {
+                const previous = this.options.topologyService.readSnapshot(group);
+                const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
+                    group,
+                    rttMeasurements,
+                    config.effective,
+                    previous,
+                );
+                return this.options.topologyService.updateGroupTopology(
+                    group,
+                    filteredRttMeasurements,
+                    {
+                        previous,
+                        topologyOptions: config.effective,
+                    },
+                );
+            })();
 
         if (!this.options.topologySnapshotRepository) {
             this.validateTopology(result.snapshot);
@@ -347,15 +367,21 @@ export class GroupTopologyManagementService {
         }
 
         const config = await this.readConfig(input.groupRef);
-        const rttMeasurements = await this.readRttMeasurements(group);
+        const rttMeasurements = await this.readRawRttMeasurements(group);
         const result = this.options.topologySnapshotRepository
             ? await this.options.topologySnapshotRepository.withSnapshotLock(
                 input.groupRef,
                 async (repository) => {
                     const previous = await repository.findSnapshot(input.groupRef);
-                    const update = this.options.topologyService.flushDueRttTopologyUpdate(
+                    const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
                         group,
                         rttMeasurements,
+                        config.effective,
+                        previous,
+                    );
+                    const update = this.options.topologyService.flushDueRttTopologyUpdate(
+                        group,
+                        filteredRttMeasurements,
                         {
                             previous,
                             topologyOptions: config.effective,
@@ -370,13 +396,23 @@ export class GroupTopologyManagementService {
                     return update;
                 },
             )
-            : this.options.topologyService.flushDueRttTopologyUpdate(
-                group,
-                rttMeasurements,
-                {
-                    topologyOptions: config.effective,
-                },
-            );
+            : (() => {
+                const previous = this.options.topologyService.readSnapshot(group);
+                const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
+                    group,
+                    rttMeasurements,
+                    config.effective,
+                    previous,
+                );
+                return this.options.topologyService.flushDueRttTopologyUpdate(
+                    group,
+                    filteredRttMeasurements,
+                    {
+                        previous,
+                        topologyOptions: config.effective,
+                    },
+                );
+            })();
         if (!result) {
             return undefined;
         }
@@ -471,7 +507,29 @@ export class GroupTopologyManagementService {
         return true;
     }
 
-    private async readRttMeasurements(
+    private filterRttMeasurementsForGroup(
+        group: GroupSnapshot,
+        rttMeasurements: readonly RttMeasurementInfo[],
+        topologyOptions: EffectiveGroupTopologyConfig,
+        overlaySnapshot: RallarOverlayTopologySnapshot | undefined,
+    ): readonly RttMeasurementInfo[] {
+        if (rttMeasurements.length === 0) {
+            return rttMeasurements;
+        }
+
+        return filterRtcRttMeasurementsForGroup({
+            group,
+            rttMeasurements,
+            overlaySnapshot,
+            degreeLimit: this.options.topologyService.readRttReportingDegreeLimit({
+                ...topologyOptions,
+                rttReportingDegreeLimit:
+                    this.options.serverDefaults?.rttReportingDegreeLimit,
+            }),
+        });
+    }
+
+    private async readRawRttMeasurements(
         group: GroupSnapshot,
     ): Promise<readonly RttMeasurementInfo[]> {
         if (this.options.rttRepository) {

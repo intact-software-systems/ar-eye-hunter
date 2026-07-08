@@ -121,7 +121,7 @@ Reasons:
 - Consumes existing `observeRtt`, `toPredictedGraphFromIds`, `createPredictedGraph`, and `RallarRtcTopologyService.createRoomGraph`.
 - Produces tests that protect the analysis: sparse measured RTTs can still lead to dense graphs.
 
-- [ ] **Step 1: Add a Vivaldi sparse-input characterization test**
+- [x] **Step 1: Add a Vivaldi sparse-input characterization test**
 
 Add this test to `packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts`:
 
@@ -153,7 +153,7 @@ it('builds a complete predicted graph among Vivaldi-known nodes after sparse obs
 });
 ```
 
-- [ ] **Step 2: Add a room graph characterization test**
+- [x] **Step 2: Add a room graph characterization test**
 
 Add this test to `packages/tests/shared-server/rallar-rtc-topology-service.test.ts`:
 
@@ -179,7 +179,7 @@ it('documents complete weighted room graph materialization with partial RTT inpu
 });
 ```
 
-- [ ] **Step 3: Run focused characterization tests**
+- [x] **Step 3: Run focused characterization tests**
 
 Run:
 
@@ -204,7 +204,7 @@ Expected: PASS. These tests document current behavior before the degree-limit wo
 - Produces `selectRttReportingPeers(input)`.
 - Consumed by browser group manager and server acceptance policy.
 
-- [ ] **Step 1: Write policy tests**
+- [x] **Step 1: Write policy tests**
 
 Create `packages/tests/shared/rtc-rtt-reporting-policy.test.ts`:
 
@@ -254,7 +254,7 @@ describe('RTT reporting policy', () => {
 });
 ```
 
-- [ ] **Step 2: Implement the policy helper**
+- [x] **Step 2: Implement the policy helper**
 
 Create `packages/shared/rtc/rtt-reporting-policy.ts`:
 
@@ -341,7 +341,7 @@ function hashString(value: string): number {
 }
 ```
 
-- [ ] **Step 3: Run shared policy tests**
+- [x] **Step 3: Run shared policy tests**
 
 Run:
 
@@ -351,7 +351,7 @@ npx vitest run packages/tests/shared/rtc-rtt-reporting-policy.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 4: Export the policy helper**
+- [x] **Step 4: Export the policy helper**
 
 Add this export to `packages/shared/mod.ts` near the other shared service/API exports:
 
@@ -384,7 +384,7 @@ export * from './rtc/rtt-reporting-policy.ts';
 - Produces `WebRtcGroupManager.rttReportingPeerIds(options?)`.
 - Produces `WebRtcRxStreamerService.setRttReportingPeerIds(peerIds)`.
 
-- [ ] **Step 1: Add failing group-manager selection tests**
+- [x] **Step 1: Add failing group-manager selection tests**
 
 Add tests to `packages/tests/shared/webrtc-group-manager.test.ts`:
 
@@ -486,7 +486,7 @@ it('uses overlay degree limit as RTT reporting fallback', async () => {
 });
 ```
 
-- [ ] **Step 2: Add failing RX streamer heartbeat tests**
+- [x] **Step 2: Add failing RX streamer heartbeat tests**
 
 Add tests to `packages/tests/shared/webrtc-rx-streamer-service.test.ts`:
 
@@ -557,7 +557,7 @@ it('starts RTT heartbeat for an already-open peer when it enters the reporting s
 });
 ```
 
-- [ ] **Step 3: Add browser option plumbing tests**
+- [x] **Step 3: Add browser option plumbing tests**
 
 Extend the existing defaults test in `packages/tests/shared-web/rallar-runtime-context.test.ts` so `rtc.rttReportingDegreeLimit` is cloned and resolved beside `maxPeerConnections`:
 
@@ -595,7 +595,7 @@ expect(
 });
 ```
 
-- [ ] **Step 4: Carry topology degree into browser overlay info**
+- [x] **Step 4: Carry topology degree into browser overlay info**
 
 Add `degreeLimit?: number` to `OverlayInfo` in `packages/shared/api/api-config.ts`:
 
@@ -636,7 +636,7 @@ export function toOverlayInfoForSession(
 }
 ```
 
-- [ ] **Step 5: Implement browser defaults and middleware options**
+- [x] **Step 5: Implement browser defaults and middleware options**
 
 Add `rttReportingDegreeLimit?: number` to:
 
@@ -698,7 +698,7 @@ Add it to `toRefreshOptions(...)` in `packages/shared-web/browser/rallar.ts`:
     : {}),
 ```
 
-- [ ] **Step 6: Implement group-manager RTT selection**
+- [x] **Step 6: Implement group-manager RTT selection**
 
 In `WebRtcGroupManager`, add:
 
@@ -749,7 +749,7 @@ private overlayRttReportingDegreeLimit(): number | undefined {
 
 Build `activePeerSessionIds` from every joined group's raw `group.targetPeerIds()`, not from `peerOwners()`. `peerOwners()` already follows overlay next hops, and using it here would prevent the policy from filling unused K capacity with deterministic bootstrap peers when an overlay has fewer than K next hops.
 
-- [ ] **Step 7: Implement RX streamer heartbeat reconciliation**
+- [x] **Step 7: Implement RX streamer heartbeat reconciliation**
 
 In `WebRtcRxStreamerService`, add a selected-peer set:
 
@@ -789,7 +789,7 @@ private shouldReportRttForPeer(peerId: PeerId): boolean {
 
 At the start of `startRtcHeartbeats(peerId)`, return without constructing `WebRtcHeartbeatService` when `shouldReportRttForPeer(peerId)` is false.
 
-- [ ] **Step 8: Connect middleware reconciliation**
+- [x] **Step 8: Connect middleware reconciliation**
 
 After `WebRtcGroupManager` is created in `packages/shared-web/browser/middleware.ts`, update the RX streamer selection whenever group/overlay reconciliation can change desired peers:
 
@@ -805,7 +805,7 @@ const refreshRttReportingPeers = () => {
 
 Call `refreshRttReportingPeers()` after the group manager is constructed. Add a narrow `onDesiredPeerIdsChanged` callback to `WebRtcGroupManagerOptions` and call it at the end of `reconcileAllGroups()` after connect/disconnect reconciliation has finished; wire that callback to `refreshRttReportingPeers()` from middleware.
 
-- [ ] **Step 9: Run focused browser/shared tests**
+- [x] **Step 9: Run focused browser/shared tests**
 
 Run:
 
@@ -832,7 +832,7 @@ Expected: PASS.
 - Produces `resolveRttReportingDegreeLimit(options)`, defaulting to `degreeLimit`.
 - Produces `acceptRtcRttMeasurement` result with explicit rejection reasons.
 
-- [ ] **Step 1: Add config tests**
+- [x] **Step 1: Add config tests**
 
 Extend `apps/api-v1/test/rtc-topology-config.test.ts`:
 
@@ -850,7 +850,7 @@ Deno.test('API RTC topology options read RTT reporting degree from environment',
 
 Also extend the invalid-value test with `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT: '0'` and keep the expected output `{}`.
 
-- [ ] **Step 2: Add server rejection tests**
+- [x] **Step 2: Add server rejection tests**
 
 Add to `packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`:
 
@@ -893,7 +893,7 @@ it('rejects RTT measurements from a mismatched AL sender', async () => {
 
 Add equivalent tests for self-pair, invalid RTT, no shared active group, stale version, non-eligible pair, and over-degree pair. The stale-version test should assert the older measurement is ignored by latest-pair storage and does not trigger Vivaldi or topology recompute; it should not expect a `stale-version` policy reason.
 
-- [ ] **Step 3: Implement server option**
+- [x] **Step 3: Implement server option**
 
 Extend `RallarRtcTopologyServiceOptions`:
 
@@ -925,7 +925,7 @@ readRttReportingDegreeLimit(
 
 Keep `degreeLimit(...)` private. Expose only `readRttReportingDegreeLimit(...)` as the public method needed by the RTT topic handler.
 
-- [ ] **Step 4: Read API-v1 env var**
+- [x] **Step 4: Read API-v1 env var**
 
 In `apps/api-v1/src/services/rtc-topology-config.ts`, read:
 
@@ -936,7 +936,7 @@ rttReportingDegreeLimit: readPositiveIntegerEnv(
 ),
 ```
 
-- [ ] **Step 5: Implement acceptance policy helper**
+- [x] **Step 5: Implement acceptance policy helper**
 
 Create `packages/shared-server/rallar-system/services/rtc-rtt-measurement-policy.ts` with:
 
@@ -983,7 +983,7 @@ Behavior:
 - Reject when adding the unordered pair would make either endpoint exceed `degreeLimit` in any shared active group.
 - Accept otherwise and return all shared active groups as `affectedGroups`.
 
-- [ ] **Step 6: Use acceptance before storage**
+- [x] **Step 6: Use acceptance before storage**
 
 In `initRttTopic(...)`, replace direct storage with:
 
@@ -1039,7 +1039,7 @@ async function readOverlaySnapshotsForGroups(
 
 Import `toWebRtcGroupKey(...)` from `@shared/api/api-type-utils.ts` and use the same scoped key on both producer and consumer sides of the map.
 
-- [ ] **Step 7: Run focused server tests**
+- [x] **Step 7: Run focused server tests**
 
 Run:
 
@@ -1064,7 +1064,7 @@ Expected: PASS.
 - Consumes `evaluateRtcRttMeasurement`.
 - Produces identical acceptance behavior for runtime-state and process-local RTT storage.
 
-- [ ] **Step 1: Add paired mode tests**
+- [x] **Step 1: Add paired mode tests**
 
 In `packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`, add two tests with the same invalid over-degree input:
 
@@ -1083,7 +1083,7 @@ expect(await durableRtts.findMeasurement('session-a', 'session-b')).toBeDefined(
 expect(await durableRtts.findMeasurement('session-a', 'session-c')).toBeUndefined();
 ```
 
-- [ ] **Step 2: Refactor acceptance call sites until both tests pass**
+- [x] **Step 2: Refactor acceptance call sites until both tests pass**
 
 Keep all validation before both:
 
@@ -1094,7 +1094,7 @@ runtimeState.rtts.putMeasurementIfNewer(rtt);
 
 Do not add a second validation path inside only one repository.
 
-- [ ] **Step 3: Run paired storage tests**
+- [x] **Step 3: Run paired storage tests**
 
 Run:
 
@@ -1119,7 +1119,7 @@ Expected: PASS.
 - Keeps output overlay connected and degree-limited.
 - Adds edge-count scale tests rather than wall-clock assertions, because CI timing noise would make runtime duration checks brittle.
 
-- [ ] **Step 1: Add sparse graph target tests**
+- [x] **Step 1: Add sparse graph target tests**
 
 Add to `packages/tests/shared-server/rallar-rtc-topology-service.test.ts`:
 
@@ -1172,7 +1172,7 @@ it('keeps RTT-weighted candidate graph edge count linear in room size', () => {
 });
 ```
 
-- [ ] **Step 2: Implement a sparse candidate graph**
+- [x] **Step 2: Implement a sparse candidate graph**
 
 Change `createRoomGraphWithOptions(...)` so it no longer adds every missing fallback edge when `rttMeasurements.length > 0`.
 
@@ -1187,7 +1187,7 @@ Use this construction:
 Use the existing `fallbackWeight(i, j)` for fallback edges so behavior remains deterministic.
 If the sparse candidate graph cannot be made connected under the configured `degreeLimit`, return the existing no-RTT tree or mesh plan for that update and increment an explicit fallback metric. Do not silently build a complete graph as the fallback for large rooms.
 
-- [ ] **Step 3: Keep topology output bounded**
+- [x] **Step 3: Keep topology output bounded**
 
 Run existing topology creation tests and add:
 
@@ -1199,7 +1199,7 @@ for (const nextHops of Object.values(result.snapshot.nextHopsBySessionId)) {
 
 to every new sparse-RTT topology case.
 
-- [ ] **Step 4: Run topology tests**
+- [x] **Step 4: Run topology tests**
 
 Run:
 
@@ -1226,7 +1226,7 @@ Expected: PASS.
 - Adds a sparse or capped predicted graph path for RTT-triggered recompute.
 - Prevents unbounded all-pairs global graph work on every accepted RTT update.
 
-- [ ] **Step 1: Add a capped predicted graph test**
+- [x] **Step 1: Add a capped predicted graph test**
 
 Add to `packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts`:
 
@@ -1250,7 +1250,7 @@ it('can build a degree-capped predicted graph for Vivaldi-known nodes', () => {
 });
 ```
 
-- [ ] **Step 2: Add sparse predicted graph implementation**
+- [x] **Step 2: Add sparse predicted graph implementation**
 
 Add:
 
@@ -1264,7 +1264,7 @@ export function createDegreeCappedPredictedGraph(
 
 Initial implementation should scan all pairs to choose low predicted RTT candidates, because the immediate goal is output size and API separation. Add a performance note in code comments that true large-N CPU improvement needs spatial indexing or candidate sampling.
 
-- [ ] **Step 3: Debounce complete global recompute after accepted RTT**
+- [x] **Step 3: Debounce complete global recompute after accepted RTT**
 
 In `ws-system-topics.ts`, replace unconditional `computeGlobalGraphAndCacheItIfPossible()` with a single coalesced timer scoped inside `initRallarSystemWsTopics(...)`, next to `rtcTopologyFlushTimers`. Do not use a module-level timer, because tests and multiple in-process servers can initialize this topic set more than once.
 
@@ -1300,7 +1300,7 @@ if (rtcTopologyService.readRttRebuildDebounceMs() === 0) {
 }
 ```
 
-- [ ] **Step 4: Run graph tests**
+- [x] **Step 4: Run graph tests**
 
 Run:
 
@@ -1323,7 +1323,7 @@ Expected: PASS.
 - Documents actual runtime behavior after implementation.
 - Keeps old analysis clear: Vivaldi and topology graph densification are separate from RTT reporting degree.
 
-- [ ] **Step 1: Update RTT reporting docs**
+- [x] **Step 1: Update RTT reporting docs**
 
 Update `docs/rallar-rtc-rtt-reporting.md` sections:
 
@@ -1334,7 +1334,7 @@ Update `docs/rallar-rtc-rtt-reporting.md` sections:
 - Document server rejection reasons and stale-version ignore behavior.
 - Keep the Vivaldi complete-graph caveat.
 
-- [ ] **Step 2: Run markdown and API snapshot checks**
+- [x] **Step 2: Run markdown and API snapshot checks**
 
 Run:
 
@@ -1380,3 +1380,186 @@ npm run test:unit
 - Topology recompute continues to tolerate sparse RTT measurements.
 - Sparse RTT input no longer automatically implies complete room graph output after Iteration 6.
 - Vivaldi complete predicted graph behavior is documented and guarded by explicit sparse/capped APIs after Iteration 7.
+
+## Implementation Progress
+
+### 2026-07-08 12:44:53 CEST - Stored RTT Topology Filtering Review Comment Fix
+
+- Completed steps: verified the review comment against the runtime-state topology recompute path, added a red management-service regression for a stored pair-global RTT leaking into a later group where the pair is not a reporting edge, exported a narrow server-side RTT filter from the acceptance policy, filtered stored RTTs per target group before reconfigure and due-flush topology planning, documented the pair-global storage/per-group recompute filtering behavior, and reran the full local validation matrix.
+- Files changed: `packages/tests/shared-server/group-topology-management-service.test.ts`, `packages/shared-server/rallar-system/services/rtc-rtt-measurement-policy.ts`, `packages/shared-server/rallar-system/services/group-topology-management-service.ts`, `docs/rallar-rtc-rtt-reporting.md`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared-server/group-topology-management-service.test.ts` - FAIL as expected before implementation: the stored `session-a::session-c` RTT was passed into `updateGroupTopology` even though the seeded overlay rejected that pair under K=1.
+  - `npx vitest run packages/tests/shared-server/group-topology-management-service.test.ts` - PASS after implementation, 1 file and 9 tests passed.
+  - `npx vitest run packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts` - PASS, 4 files and 58 tests passed.
+  - `npx vitest run packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared/rtc-rtt-reporting-policy.test.ts packages/tests/shared/webrtc-rx-streamer-service.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared-web/rallar-runtime-context.test.ts packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared-web/browser-middleware-rtt.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts packages/tests/shared-graph/group-graph-services.test.ts` - PASS, 12 files and 101 tests passed.
+  - `npx tsc -p packages/shared/tsconfig.json --noEmit` - PASS.
+  - `npx tsc -p packages/shared-web/tsconfig.json --noEmit` - PASS.
+  - `npx tsc -p packages/shared-server/tsconfig.json --noEmit` - PASS.
+  - `git diff --check` - PASS.
+  - `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles` - PASS, browser bundle budgets passed.
+  - `deno test --allow-env --allow-read test/rtc-topology-config.test.ts` from `apps/api-v1` - PASS, 3 tests passed.
+  - `deno task check` from `apps/api-v1` - PASS, `deno check src/main.ts` completed.
+  - `npm run test:unit` - PASS, 288 files and 2099 tests passed; 1 existing test was skipped.
+- Blockers: none.
+- Notes: latest-pair RTT storage remains unordered and pair-global. Recompute now reuses the same reporting-edge policy for each target group, using the previous overlay snapshot when available and deterministic bootstrap eligibility otherwise.
+- Follow-up validation still required: manual or remote live RTC rollout validation was not part of the local plan and has not been run.
+
+### 2026-07-08 12:33:55 CEST - Overlapping-Room Review Comment Fix
+
+- Completed steps: verified the browser/server RTT eligibility review comment against current code, added a red browser manager regression for a peer selected in one shared room but rejected by another, changed browser RTT reporting selection to keep a candidate only when every shared active group passes the reporting-edge policy, and updated RTT reporting docs for overlapping-room behavior.
+- Files changed: `packages/tests/shared/webrtc-group-manager.test.ts`, `packages/shared/services/WebRtcGroupManager.ts`, `docs/rallar-rtc-rtt-reporting.md`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared/webrtc-group-manager.test.ts` - FAIL as expected before implementation: overlapping shared rooms returned `peer-c` instead of no reportable peers.
+  - `npx vitest run packages/tests/shared/webrtc-group-manager.test.ts` - PASS after implementation, 1 file and 17 tests passed.
+  - `npx vitest run packages/tests/shared/rtc-rtt-reporting-policy.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/webrtc-rx-streamer-service.test.ts packages/tests/shared-web/browser-middleware-rtt.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts` - PASS, 5 files and 44 tests passed.
+  - `npx tsc -p packages/shared/tsconfig.json --noEmit` - PASS.
+  - `npx tsc -p packages/shared-web/tsconfig.json --noEmit` - PASS.
+  - `npx tsc -p packages/shared-server/tsconfig.json --noEmit` - PASS.
+  - `git diff --check` - PASS.
+- Blockers: none.
+- Notes: the browser remains conservative for published overlays because it only receives its own per-session overlay view; bootstrap shared-room checks can mirror the server's undirected deterministic policy.
+- Follow-up validation still required: manual or remote live RTC rollout validation was not part of the local plan and has not been run.
+
+### 2026-07-08 12:17:28 CEST - Review Comment Fix
+
+- Completed steps: verified the browser/server RTT eligibility review comment, added red browser manager regressions for provisional-overlay bootstrap and manager-wide bootstrap key mismatch, changed browser RTT reporting selection to derive candidates per scoped group with server-compatible group keys, and kept the final browser reporting set globally capped.
+- Files changed: `packages/tests/shared/webrtc-group-manager.test.ts`, `packages/shared/services/WebRtcGroupManager.ts`, `docs/rallar-rtc-rtt-reporting.md`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared/webrtc-group-manager.test.ts` - FAIL as expected before implementation: provisional overlays selected `peer-a`, and manager-wide bootstrap selected `peer-cx`.
+  - `npx vitest run packages/tests/shared/webrtc-group-manager.test.ts` - PASS after implementation, 1 file and 16 tests passed.
+  - `npx vitest run packages/tests/shared/rtc-rtt-reporting-policy.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/webrtc-rx-streamer-service.test.ts packages/tests/shared-web/browser-middleware-rtt.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts` - PASS, 5 files and 43 tests passed.
+  - `npx tsc -p packages/shared/tsconfig.json --noEmit` - PASS.
+  - `npx tsc -p packages/shared-web/tsconfig.json --noEmit` - PASS.
+  - `npx tsc -p packages/shared-server/tsconfig.json --noEmit` - PASS.
+  - `git diff --check` - PASS after doc/progress update.
+- Blockers: none.
+- Notes: browser RTT reporting now ignores local provisional star overlays for eligibility and uses per-group bootstrap candidates before applying the global K cap, matching the server's acceptance inputs more closely while leaving RTC peer retention unchanged.
+- Follow-up validation still required: manual or remote live RTC rollout validation was not part of the local plan and has not been run.
+
+### 2026-07-08 11:59:07 CEST - Post-Review Fixes
+
+- Completed steps: verified the review feedback, added red regression tests for multi-room global endpoint degree and runtime-state endpoint locking, changed server over-degree evaluation to count accepted latest RTT pairs per endpoint across groups, and changed durable RTT acceptance to recheck policy inside deterministic endpoint and pair locks before writing.
+- Files changed: `packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`, `packages/shared-server/rallar-system/services/rtc-rtt-measurement-policy.ts`, `packages/shared-server/rallar-system/repositories/RtcRttRepository.ts`, `packages/shared-server/rallar-system/ws-system-topics.ts`, `docs/rallar-rtc-rtt-reporting.md`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts` - FAIL as expected before implementation: multi-room endpoint degree was accepted and runtime-state endpoint locks were missing.
+  - `npx vitest run packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts` - PASS after implementation, 1 file and 17 tests passed.
+  - `npx vitest run packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts packages/tests/shared-graph/group-graph-services.test.ts` - PASS, 5 files and 61 tests passed.
+  - `npx tsc -p packages/shared-server/tsconfig.json --noEmit` - PASS.
+  - `npx tsc -p packages/shared/tsconfig.json --noEmit` - PASS.
+  - `npx vitest run packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts packages/tests/shared-graph/group-graph-services.test.ts` - PASS after doc/import cleanup, 5 files and 61 tests passed.
+  - `npx tsc -p packages/shared-server/tsconfig.json --noEmit` - PASS after doc/import cleanup.
+  - `npx tsc -p packages/shared/tsconfig.json --noEmit` - PASS after doc/import cleanup.
+  - `git diff --check` - PASS after doc/import cleanup.
+- Blockers: none.
+- Notes: the server cap is now global per endpoint across accepted latest RTT pairs. Runtime-state acceptance uses endpoint and pair locks; non-runtime in-memory acceptance remains synchronous in process. The server can still materialize a complete group graph from sparse RTT inputs when the configured reporting cap is high enough for dense output; the degree-limited group graph path uses accepted RTT edges plus deterministic fallback edges, not RTT measurements only.
+- Follow-up validation still required: manual or remote live RTC rollout validation was not part of the local plan and has not been run.
+
+### 2026-07-08 10:14:22 CEST - Final Validation Matrix
+
+- Completed steps: ran the final focused suite, package type-checks, browser bundle-boundary check, API-v1 Deno checks, broader unit suite, and full diff whitespace check.
+- Files changed: final validation fixed `packages/shared/services/WebRtcGroupManager.ts` by cloning `groupIds()` before sorting for the RTT bootstrap group key; progress notes updated in this plan.
+- Commands run:
+  - `npx vitest run packages/tests/shared/rtc-rtt-reporting-policy.test.ts packages/tests/shared/webrtc-rx-streamer-service.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared-web/rallar-runtime-context.test.ts packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared-web/browser-middleware-rtt.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts packages/tests/shared-graph/group-graph-services.test.ts` - PASS, 11 files and 86 tests passed.
+  - `npx tsc -p packages/shared/tsconfig.json --noEmit` - FAIL before the final fix because `WebRtcGroupManager` called `.sort()` on a readonly `groupIds()` result.
+  - `npx tsc -p packages/shared-web/tsconfig.json --noEmit` - FAIL before the final fix for the same readonly sort issue.
+  - `npx tsc -p packages/shared-server/tsconfig.json --noEmit` - PASS.
+  - `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles` - PASS, browser bundle budgets passed.
+  - `deno test --allow-env --allow-read test/rtc-topology-config.test.ts` from `apps/api-v1` - PASS, 3 tests passed.
+  - `deno task check` from `apps/api-v1` - PASS, `deno check src/main.ts` completed.
+  - `npx tsc -p packages/shared/tsconfig.json --noEmit` - PASS after cloning before sort.
+  - `npx tsc -p packages/shared-web/tsconfig.json --noEmit` - PASS after cloning before sort.
+  - `npx vitest run packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/rtc-rtt-reporting-policy.test.ts` - PASS after the fix, 2 files and 17 tests passed.
+  - `npm run test:unit` - PASS, 288 files and 2092 tests passed; 1 existing test was skipped.
+  - `git diff --check` - PASS, no whitespace errors.
+- Blockers: none.
+- Notes: no local verification command from the plan remains unrun.
+- Follow-up validation still required: manual or remote live RTC rollout validation was not part of the local plan and has not been run.
+
+### 2026-07-08 10:12:28 CEST - Iteration 8
+
+- Completed steps: updated RTT reporting docs to describe implemented bounded reporting behavior, added `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` to canonical env docs, updated browser API default examples and built-in topic notes, confirmed the docs index already links to the RTT document and adjusted its summary, and ran markdown/API surface checks.
+- Files changed: `docs/rallar-rtc-rtt-reporting.md`, `docs/environment-variables.md`, `docs/rallar-api-reference.md`, `docs/README.md`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `git diff --check -- docs/rallar-rtc-rtt-reporting.md docs/README.md docs/environment-variables.md docs/rallar-api-reference.md plans/rallar-rtc-rtt-degree-limit-implementation-plan.md` - PASS, no whitespace errors.
+  - `npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-entrypoints.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts` - PASS, 3 files and 17 tests passed.
+- Blockers: none.
+- Notes: public API snapshots did not require updates.
+- Follow-up validation still required: final focused suite, package type-checks, browser bundle check, API-v1 Deno checks, and broader unit suite.
+
+### 2026-07-08 10:07:09 CEST - Iteration 7
+
+- Completed steps: added capped predicted graph test, implemented degree-capped Vivaldi predicted graph API, added service/group-graph wrappers for capped predicted output, debounced RTT-triggered global graph recompute inside each topic initialization, and ran graph/server checks.
+- Files changed: `packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts`, `packages/shared-graph/graph/vivaldi.ts`, `packages/shared-graph/vivaldi-service.ts`, `packages/shared-graph/group-graphs-create-service.ts`, `packages/shared-server/rallar-system/ws-system-topics.ts`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts packages/tests/shared-graph/group-graph-services.test.ts` - FAIL as expected before implementation because `createDegreeCappedPredictedGraph` was missing.
+  - `npx vitest run packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts packages/tests/shared-graph/group-graph-services.test.ts` - PASS, 2 files and 12 tests passed.
+  - `npx vitest run packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts` - PASS, 1 file and 14 tests passed.
+- Blockers: none.
+- Notes: complete predicted graphs remain the default; RTT-triggered global recompute now uses the capped path and is coalesced by `rttRebuildDebounceMs`.
+- Follow-up validation still required: docs, public API/bundle checks, type-checks, and final validation matrix.
+
+### 2026-07-08 10:03:23 CEST - Iteration 6
+
+- Completed steps: added sparse graph edge-count tests, implemented sparse RTT-weighted candidate graph construction, kept unrelated RTTs on the no-RTT optimized path, added topology next-hop degree assertion, and ran topology tests.
+- Files changed: `packages/tests/shared-server/rallar-rtc-topology-service.test.ts`, `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts` - FAIL as expected before implementation because complete graph edge counts exceeded sparse bounds.
+  - `npx vitest run packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts` - FAIL after first implementation because unrelated outside-room RTTs were still forcing the weighted path and the old dense characterization needed an explicit high reporting cap.
+  - `npx vitest run packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts` - PASS, 2 files and 43 tests passed.
+  - `npx vitest run packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts` - PASS after adding topology output degree assertion, 2 files and 44 tests passed.
+- Blockers: none.
+- Notes: the earlier complete-graph characterization now sets `rttReportingDegreeLimit: 8` for an 8-member room, making dense materialization explicit when K can cover every peer.
+- Follow-up validation still required: Vivaldi/global recompute guardrails, docs, type-checks, and final validation matrix.
+
+### 2026-07-08 09:58:53 CEST - Iteration 5
+
+- Completed steps: added runtime-state paired over-degree test to match the in-memory over-degree test, confirmed the shared acceptance call site covers both `rttRepository.setRtt(...)` and `runtimeState.rtts.putMeasurementIfNewer(...)`, and ran paired storage tests.
+- Files changed: `packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts` - PASS, 2 files and 16 tests passed.
+- Blockers: none.
+- Notes: the paired runtime-state test passed immediately because Iteration 4 already refactored the acceptance policy ahead of both storage paths as required by that iteration's Step 6.
+- Follow-up validation still required: sparse graph work, Vivaldi/global recompute guardrails, docs, type-checks, and final validation matrix.
+
+### 2026-07-08 09:57:16 CEST - Iteration 4
+
+- Completed steps: added API config tests, added server RTT rejection tests, added `rttReportingDegreeLimit` server option, read `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT`, implemented shared server acceptance policy, used acceptance before latest-pair storage/Vivaldi/topology scheduling, and ran focused server checks.
+- Files changed: `apps/api-v1/test/rtc-topology-config.test.ts`, `apps/api-v1/src/services/rtc-topology-config.ts`, `packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`, `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`, `packages/shared-server/rallar-system/services/rtc-rtt-measurement-policy.ts`, `packages/shared-server/rallar-system/ws-system-topics.ts`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts` - FAIL as expected before implementation because invalid/over-policy RTTs were still stored.
+  - `deno test --allow-env --allow-read test/rtc-topology-config.test.ts` from `apps/api-v1` - FAIL as expected before implementation because the RTT reporting env var was not read.
+  - `npx vitest run packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts` - PASS, 2 files and 15 tests passed.
+  - `deno test --allow-env --allow-read test/rtc-topology-config.test.ts` from `apps/api-v1` - PASS, 3 tests passed.
+- Blockers: none.
+- Notes: existing topology tests now log expected `sender-mismatch` rejections for synthetic RTTs sent through one socket; accepted central reports still satisfy the tested topology behavior.
+- Follow-up validation still required: paired runtime-state/in-memory acceptance tests, sparse graph work, docs, type-checks, and final validation matrix.
+
+### 2026-07-08 09:49:53 CEST - Iteration 3
+
+- Completed steps: added failing group-manager RTT peer selection tests, added failing RX streamer heartbeat reconciliation tests, added browser option plumbing tests, carried topology degree into `OverlayInfo`, implemented browser/runtime option plumbing, implemented group-manager RTT peer selection, implemented RX streamer heartbeat limiting, wired middleware reconciliation, and ran the focused browser/shared tests.
+- Files changed: `packages/tests/shared/webrtc-group-manager.test.ts`, `packages/tests/shared/webrtc-rx-streamer-service.test.ts`, `packages/tests/shared-web/rallar-runtime-context.test.ts`, `packages/tests/shared-web/rallar-operation-options.test.ts`, `packages/tests/shared-web/rallar-facade-defaults.test.ts`, `packages/shared/api/api-config.ts`, `packages/shared/api/overlay-topology.ts`, `packages/shared/services/WebRtcGroupManager.ts`, `packages/shared/services/WebRtcRxStreamerService.ts`, `packages/shared-web/browser/rallar-runtime-context.ts`, `packages/shared-web/browser/rallar-operation-options.ts`, `packages/shared-web/browser/middleware.ts`, `packages/shared-web/browser/rallar.ts`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared/rtc-rtt-reporting-policy.test.ts packages/tests/shared/webrtc-rx-streamer-service.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared-web/rallar-runtime-context.test.ts packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared-web/rallar-facade-defaults.test.ts` - FAIL as expected before implementation for missing RTT reporting methods/options.
+  - `npx vitest run packages/tests/shared/rtc-rtt-reporting-policy.test.ts packages/tests/shared/webrtc-rx-streamer-service.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared-web/rallar-runtime-context.test.ts packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared-web/rallar-facade-defaults.test.ts` - PASS, 6 files and 32 tests passed.
+- Blockers: none.
+- Follow-up validation still required: server-side authoritative acceptance, type-checks, public API/bundle checks, and final validation matrix.
+
+### 2026-07-08 09:46:05 CEST - Iteration 2
+
+- Completed steps: added shared RTT reporting policy tests, confirmed red failure for missing `@shared/rtc/rtt-reporting-policy.ts`, implemented deterministic peer selection helper, exported it from `packages/shared/mod.ts`, reran focused policy tests.
+- Files changed: `packages/tests/shared/rtc-rtt-reporting-policy.test.ts`, `packages/shared/rtc/rtt-reporting-policy.ts`, `packages/shared/mod.ts`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared/rtc-rtt-reporting-policy.test.ts` - FAIL as expected before implementation because the policy module did not exist.
+  - `npx vitest run packages/tests/shared/rtc-rtt-reporting-policy.test.ts` - PASS, 1 file and 3 tests passed after implementation.
+  - `npx vitest run packages/tests/shared/rtc-rtt-reporting-policy.test.ts` - PASS, 1 file and 3 tests passed after barrel export.
+- Blockers: none.
+- Follow-up validation still required: downstream browser/server integrations and final shared package type-check.
+
+### 2026-07-08 09:44:30 CEST - Iteration 1
+
+- Completed steps: added Vivaldi sparse-input characterization, added room graph partial-RTT materialization characterization, ran focused characterization tests.
+- Files changed: `packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts`, `packages/tests/shared-server/rallar-rtc-topology-service.test.ts`, `plans/rallar-rtc-rtt-degree-limit-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/shared-graph/vivaldi-and-predicted-graph.test.ts packages/tests/shared-server/rallar-rtc-topology-service.test.ts` - PASS, 2 files and 32 tests passed.
+- Blockers: none.
+- Follow-up validation still required: remaining iterations and final validation matrix.

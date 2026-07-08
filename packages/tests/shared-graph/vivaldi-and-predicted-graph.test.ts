@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
 import {
+    createDegreeCappedPredictedGraph,
     createPredictedGraph,
     predictedRttMs,
     upsertPredictedEdge,
@@ -120,6 +121,54 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
         expect(graphFromIds.getEdgeAttribute(edgeKey!, 'weight')).toSatisfy(
             (weight: number) => Number.isFinite(weight) && weight > 0,
         );
+    });
+
+    it('builds a complete predicted graph among Vivaldi-known nodes after sparse observations', () => {
+        observeRtt({
+            sessionIdFrom: 'peer-a',
+            sessionIdTo: 'peer-b',
+            rttMs: 10,
+            createdAtEpochMs: 1,
+            version: 1,
+        });
+        observeRtt({
+            sessionIdFrom: 'peer-b',
+            sessionIdTo: 'peer-c',
+            rttMs: 20,
+            createdAtEpochMs: 2,
+            version: 2,
+        });
+
+        const graph = toPredictedGraphFromIds(
+            ['peer-a', 'peer-b', 'peer-c'],
+            DEFAULT_GRAPH_PROP,
+        );
+
+        expect(graph.order).toBe(3);
+        expect(graph.size).toBe(3);
+        expect(graph.hasEdge('peer-a', 'peer-c')).toBe(true);
+    });
+
+    it('can build a degree-capped predicted graph for Vivaldi-known nodes', () => {
+        const nodeDataById = new Map<string, VivaldiNodeData>(
+            Array.from({ length: 10 }, (_value, index) => {
+                const id = `peer-${index + 1}`;
+                return [id, { id, coords: [index, 0], err: 0.1, rttMs: 0 }];
+            }),
+        );
+
+        const graph = createDegreeCappedPredictedGraph(
+            nodeDataById,
+            DEFAULT_GRAPH_PROP,
+            {
+                degreeLimit: 3,
+            },
+        );
+
+        expect(graph.order).toBe(10);
+        for (const node of graph.nodes()) {
+            expect(graph.degree(node)).toBeLessThanOrEqual(3);
+        }
     });
 
     it('ignores invalid remote data during direct Vivaldi node updates', () => {

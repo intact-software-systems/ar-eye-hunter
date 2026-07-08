@@ -121,6 +121,7 @@ export type OverlayInfo = {
     readonly createdByClientId: string;
     readonly createdAtEpochMs: number;
     readonly nextHopSessionIds: readonly string[];
+    readonly degreeLimit?: number;
     readonly overlayVersion: number;
     readonly updatedAtEpochMs: number;
 };

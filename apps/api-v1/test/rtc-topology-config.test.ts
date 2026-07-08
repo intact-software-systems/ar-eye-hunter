@@ -4,6 +4,7 @@ import { getApiRtcTopologyServiceOptions } from '../src/services/rtc-topology-co
 Deno.test('API RTC topology options are read from environment', () => {
   const env = fakeEnv({
     RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '7',
+    RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT: '3',
     RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: '3',
     RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '51',
     RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '4',
@@ -12,6 +13,7 @@ Deno.test('API RTC topology options are read from environment', () => {
 
   assert.deepEqual(getApiRtcTopologyServiceOptions(env), {
     degreeLimit: 7,
+    rttReportingDegreeLimit: 3,
     treeMinSize: 3,
     meshMinSize: 51,
     meshParamK: 4,
@@ -19,9 +21,20 @@ Deno.test('API RTC topology options are read from environment', () => {
   });
 });
 
+Deno.test('API RTC topology options read RTT reporting degree from environment', () => {
+  const env = fakeEnv({
+    RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT: '3',
+  });
+
+  assert.deepEqual(getApiRtcTopologyServiceOptions(env), {
+    rttReportingDegreeLimit: 3,
+  });
+});
+
 Deno.test('API RTC topology options ignore unset and invalid values', () => {
   const env = fakeEnv({
     RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: '0',
+    RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT: '0',
     RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: 'nope',
     RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '-1',
     RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: '',

@@ -13,6 +13,10 @@ import {
     toScopedOverlayId,
     toWebRtcGroupKey,
 } from '@shared/api/api-type-utils.ts';
+import {
+    normalizeRttReportingDegreeLimit,
+    selectRttReportingPeers,
+} from '../rtc/rtt-reporting-policy.ts';
 
 export type WebRtcGroupManagerState = {
     readonly groupIds: readonly GroupId[];
@@ -29,10 +33,15 @@ export const MIN_WEBRTC_MAX_PEER_CONNECTIONS = 5;
 
 export type WebRtcGroupManagerOptions = Readonly<{
     maxPeerConnections?: number;
+    onDesiredPeerIdsChanged?: () => void;
 }>;
 
 export type WebRtcGroupManagerDeleteOptions = Readonly<{
     retainConnections?: boolean;
+}>;
+
+export type WebRtcRttReportingPeerOptions = Readonly<{
+    degreeLimit?: number;
 }>;
 
 type RetainedPeerConnection = Readonly<{
@@ -207,6 +216,19 @@ export class WebRtcGroupManager {
         };
     }
 
+    rttReportingPeerIds(
+        options: WebRtcRttReportingPeerOptions = {},
+    ): readonly PeerId[] {
+        const degreeLimit = normalizeRttReportingDegreeLimit(
+            options.degreeLimit,
+            this.overlayRttReportingDegreeLimit(),
+        );
+        const onlinePeerIds = this.onlinePeerIds();
+
+        return this.rttReportingCandidatePeerIds(onlinePeerIds, degreeLimit)
+            .slice(0, degreeLimit);
+    }
+
     async acceptGroupUpdate(
         snapshot: AnyGroupPresence,
     ): Promise<WebRtcGroupService> {
@@ -291,6 +313,8 @@ export class WebRtcGroupManager {
                     console.error(`Failed to disconnect retained peer ${peerId}`, error);
                 }
             }
+
+            this.options.onDesiredPeerIdsChanged?.();
         })();
 
         this.reconcileInFlight = run;
@@ -349,6 +373,124 @@ export class WebRtcGroupManager {
         return group.targetPeerIds();
     }
 
+    private rttReportingCandidatePeerIds(
+        onlinePeerIds: ReadonlySet<PeerId>,
+        degreeLimit: number,
+    ): readonly PeerId[] {
+        const selectedPeerIds: PeerId[] = [];
+        const seen = new Set<PeerId>([this.rtcQBox.input.sessionId]);
+        const groups = [...this.groupsByKey.values()]
+            .sort((left, right) => left.groupKey.localeCompare(right.groupKey));
+
+        for (const group of groups) {
+            const overlay = this.readAuthoritativeOverlayForGroup(group.groupRef);
+            const activePeerSessionIds = group.targetPeerIds()
+                .filter((peerId) => onlinePeerIds.has(peerId));
+            const selection = selectRttReportingPeers({
+                localSessionId: this.rtcQBox.input.sessionId,
+                degreeLimit,
+                overlayNextHopSessionIds: overlay?.nextHopSessionIds ?? [],
+                activePeerSessionIds,
+                groupKey: group.groupKey,
+            });
+
+            for (const peerId of selection.selectedPeerIds) {
+                if (seen.has(peerId)) {
+                    continue;
+                }
+
+                if (
+                    !this.isRttReportingPeerEligibleAcrossSharedGroups(
+                        peerId,
+                        groups,
+                        onlinePeerIds,
+                        degreeLimit,
+                    )
+                ) {
+                    continue;
+                }
+
+                seen.add(peerId);
+                selectedPeerIds.push(peerId);
+            }
+        }
+
+        return selectedPeerIds;
+    }
+
+    private isRttReportingPeerEligibleAcrossSharedGroups(
+        peerId: PeerId,
+        groups: readonly WebRtcGroupService[],
+        onlinePeerIds: ReadonlySet<PeerId>,
+        degreeLimit: number,
+    ): boolean {
+        let hasSharedGroup = false;
+
+        for (const group of groups) {
+            const activePeerSessionIds = group.targetPeerIds()
+                .filter((candidateId) => onlinePeerIds.has(candidateId));
+            if (!activePeerSessionIds.includes(peerId)) {
+                continue;
+            }
+
+            hasSharedGroup = true;
+            if (
+                !this.isRttReportingPairEligibleForGroup(
+                    group,
+                    peerId,
+                    activePeerSessionIds,
+                    degreeLimit,
+                )
+            ) {
+                return false;
+            }
+        }
+
+        return hasSharedGroup;
+    }
+
+    private isRttReportingPairEligibleForGroup(
+        group: WebRtcGroupService,
+        peerId: PeerId,
+        activePeerSessionIds: readonly PeerId[],
+        degreeLimit: number,
+    ): boolean {
+        const overlay = this.readAuthoritativeOverlayForGroup(group.groupRef);
+        const localSelection = selectRttReportingPeers({
+            localSessionId: this.rtcQBox.input.sessionId,
+            degreeLimit,
+            overlayNextHopSessionIds: overlay?.nextHopSessionIds ?? [],
+            activePeerSessionIds,
+            groupKey: group.groupKey,
+        });
+        if (localSelection.selectedPeerIds.includes(peerId)) {
+            return true;
+        }
+
+        if (overlay) {
+            return false;
+        }
+
+        const peerSelection = selectRttReportingPeers({
+            localSessionId: peerId,
+            degreeLimit,
+            activePeerSessionIds: [
+                this.rtcQBox.input.sessionId,
+                ...activePeerSessionIds,
+            ],
+            groupKey: group.groupKey,
+        });
+
+        return peerSelection.selectedPeerIds.includes(this.rtcQBox.input.sessionId);
+    }
+
+    private overlayRttReportingDegreeLimit(): number | undefined {
+        const limits = this.groups()
+            .map((group) => this.readOverlayForGroup(group.groupRef)?.degreeLimit)
+            .filter((value): value is number => value !== undefined);
+        return limits.length > 0 ? Math.min(...limits) : undefined;
+    }
+
     private readOverlayForGroup(groupRef: GroupRef): OverlayInfo | undefined {
         if (!this.overlayCache) {
             return undefined;
@@ -366,6 +508,11 @@ export class WebRtcGroupManager {
         return legacy && isOverlayForGroupRef(legacy, groupRef)
             ? legacy
             : undefined;
+    }
+
+    private readAuthoritativeOverlayForGroup(groupRef: GroupRef): OverlayInfo | undefined {
+        const overlay = this.readOverlayForGroup(groupRef);
+        return overlay?.degreeLimit !== undefined ? overlay : undefined;
     }
 
     private retainKnownPeersForGroup(

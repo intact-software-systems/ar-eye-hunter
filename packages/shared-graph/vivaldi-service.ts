@@ -1,5 +1,10 @@
 import { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import { createPredictedGraph, VivaldiConfig, VivaldiNodeData } from './graph/vivaldi.ts';
+import {
+    createDegreeCappedPredictedGraph,
+    createPredictedGraph,
+    VivaldiConfig,
+    VivaldiNodeData,
+} from './graph/vivaldi.ts';
 import { GraphProp } from './graph/graph-props.ts';
 import * as vivaldiRepository from './repository/vivaldi-repository.ts';
 
@@ -56,5 +61,17 @@ export function toPredictedGraphFromIds(
         vivaldiRepository.getNodeDataById(ids),
         graphProp,
         cfg
+    );
+}
+
+export function toDegreeCappedPredictedGraphFromIds(
+    ids: readonly string[],
+    graphProp: GraphProp,
+    options: Readonly<{ degreeLimit: number }> & Partial<VivaldiConfig>,
+) {
+    return createDegreeCappedPredictedGraph(
+        vivaldiRepository.getNodeDataById(ids),
+        graphProp,
+        options,
     );
 }

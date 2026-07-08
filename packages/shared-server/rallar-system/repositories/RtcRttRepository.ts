@@ -11,6 +11,11 @@ export const RTC_RTT_LATEST_NAMESPACE = 'rtc-rtt:latest';
 
 const DEFAULT_RTC_RTT_TTL_MS = 60_000;
 
+export type RtcRttRepositoryAcceptance<Result> = Readonly<{
+    result: Result;
+    updated: boolean;
+}>;
+
 export type RtcRttRepositoryOptions = Readonly<{
     ttlMs?: number;
     now?: () => number;
@@ -29,17 +34,33 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         purgeAfterEpochMs: number = this.defaultPurgeAfterEpochMs(),
     ): Promise<boolean> {
         return await this.withMeasurementLock(measurement, async (repository) => {
-            const current = await repository.findMeasurement(
-                measurement.sessionIdFrom,
-                measurement.sessionIdTo,
+            return await repository.putMeasurementIfNewerWithoutLock(
+                measurement,
+                purgeAfterEpochMs,
             );
+        });
+    }
 
-            if (current !== undefined && current.version >= measurement.version) {
-                return false;
+    async putMeasurementIfNewerWithEndpointLocks<
+        Result extends Readonly<{ accepted: boolean }>,
+    >(
+        measurement: RttMeasurementInfo,
+        evaluate: (existingMeasurements: readonly RttMeasurementInfo[]) => Result,
+        purgeAfterEpochMs: number = this.defaultPurgeAfterEpochMs(),
+    ): Promise<RtcRttRepositoryAcceptance<Result>> {
+        return await this.withEndpointPairLock(measurement, async (repository) => {
+            const result = evaluate(await repository.listMeasurements());
+            if (!result.accepted) {
+                return { result, updated: false };
             }
 
-            await repository.putMeasurement(measurement, purgeAfterEpochMs);
-            return true;
+            return {
+                result,
+                updated: await repository.putMeasurementIfNewerWithoutLock(
+                    measurement,
+                    purgeAfterEpochMs,
+                ),
+            };
         });
     }
 
@@ -100,6 +121,23 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         );
     }
 
+    private async putMeasurementIfNewerWithoutLock(
+        measurement: RttMeasurementInfo,
+        purgeAfterEpochMs: number,
+    ): Promise<boolean> {
+        const current = await this.findMeasurement(
+            measurement.sessionIdFrom,
+            measurement.sessionIdTo,
+        );
+
+        if (current !== undefined && current.version >= measurement.version) {
+            return false;
+        }
+
+        await this.putMeasurement(measurement, purgeAfterEpochMs);
+        return true;
+    }
+
     private async withMeasurementLock<T>(
         measurement: RttMeasurementInfo,
         fn: (repository: RtcRttRepository) => Promise<T>,
@@ -120,10 +158,45 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         });
     }
 
+    private async withEndpointPairLock<T>(
+        measurement: RttMeasurementInfo,
+        fn: (repository: RtcRttRepository) => Promise<T>,
+    ): Promise<T> {
+        if (!isRuntimeStateTransactionalRepositoryLike(this.repository)) {
+            return await fn(this);
+        }
+
+        return await this.repository.begin(async (repository) => {
+            for (
+                const sessionId of [...new Set([
+                    measurement.sessionIdFrom,
+                    measurement.sessionIdTo,
+                ])].sort()
+            ) {
+                await repository.lockKey(
+                    RTC_RTT_LATEST_NAMESPACE,
+                    this.endpointLockKey(sessionId),
+                );
+            }
+            await repository.lockKey(
+                RTC_RTT_LATEST_NAMESPACE,
+                this.measurementKey(
+                    measurement.sessionIdFrom,
+                    measurement.sessionIdTo,
+                ),
+            );
+            return await fn(this.withRepository(repository));
+        });
+    }
+
     private withRepository(
         repository: RuntimeStateTransactionalRepositoryLike,
     ): RtcRttRepository {
         return new RtcRttRepository(repository, this.options);
+    }
+
+    private endpointLockKey(sessionId: string): string {
+        return this.idKey('endpoint', sessionId);
     }
 
     private defaultPurgeAfterEpochMs(): number {

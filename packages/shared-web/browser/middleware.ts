@@ -62,6 +62,7 @@ export type MiddlewareInitOptions = Readonly<{
     timeoutMs?: number;
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     maxPeerConnections?: number;
+    rttReportingDegreeLimit?: number;
     scope?: StateScope;
     onAuthInvalid?: (error: unknown) => void | Promise<void>;
     outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
@@ -262,8 +263,22 @@ export async function initialiseMiddleware(
         groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
         clientStateSnapshotsRepository.readableClientStateSnapshotCache(),
         overlaysRepository.readableOverlayCache(),
-        { maxPeerConnections: options.maxPeerConnections },
+        {
+            maxPeerConnections: options.maxPeerConnections,
+            onDesiredPeerIdsChanged: refreshRttReportingPeers,
+        },
     );
+
+    function refreshRttReportingPeers(): void {
+        rtcRxStreamer.setRttReportingPeerIds(
+            webRtcGroupManager.rttReportingPeerIds({
+                degreeLimit: options.rttReportingDegreeLimit,
+            }),
+        );
+    }
+
+    refreshRttReportingPeers();
+
     webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
         toBrowserRtcInboundPeerCreationDecision(
             webRtcGroupManager.isPeerOwnedByAnyGroup(peerId),

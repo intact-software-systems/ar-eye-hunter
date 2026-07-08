@@ -7485,6 +7485,9 @@ class BrowserRallarFacade implements RallarFacade {
             ...(operationOptions.maxPeerConnections !== undefined
                 ? { maxPeerConnections: operationOptions.maxPeerConnections }
                 : {}),
+            ...(operationOptions.rttReportingDegreeLimit !== undefined
+                ? { rttReportingDegreeLimit: operationOptions.rttReportingDegreeLimit }
+                : {}),
         };
     }
 

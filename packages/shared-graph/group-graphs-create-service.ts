@@ -21,6 +21,10 @@ export const GLOBAL_GRAPH_REF: GroupRef = {
 
 export const SCOPED_GLOBAL_GRAPH_GROUP_ID = '__global__';
 
+export type PredictedGraphComputeOptions = Readonly<{
+    predictedDegreeLimit?: number;
+}>;
+
 export function toScopedGlobalGraphRef(scope: StateScope): GroupRef {
     return {
         applicationId: scope.applicationId,
@@ -71,7 +75,9 @@ function computeGroupGraphFromSnapshot(
     );
 }
 
-export function computeGlobalGraphAndCacheIt() {
+export function computeGlobalGraphAndCacheIt(
+    options: PredictedGraphComputeOptions = {},
+) {
     const graphInfoSnapshot = computeGlobalGraph(
         [
             ...new Set(
@@ -80,6 +86,7 @@ export function computeGlobalGraphAndCacheIt() {
             ),
         ],
         true,
+        options,
     );
 
     graphsRepository.setGraph(graphInfoSnapshot);
@@ -89,6 +96,7 @@ export function computeGlobalGraphAndCacheIt() {
 export function computeScopedGlobalGraphAndCacheIt(
     scope: StateScope,
     isIncludeMeasured: boolean = false,
+    options: PredictedGraphComputeOptions = {},
 ): GraphInfoSnapshot {
     const graphInfoSnapshot = computeScopedGlobalGraph(
         scope,
@@ -107,6 +115,7 @@ export function computeScopedGlobalGraphAndCacheIt(
             ),
         ],
         isIncludeMeasured,
+        options,
     );
 
     graphsRepository.setGraph(graphInfoSnapshot);
@@ -116,10 +125,11 @@ export function computeScopedGlobalGraphAndCacheIt(
 export function computeGlobalGraph(
     allNodes: readonly string[],
     isIncludeMeasured: boolean = false,
+    options: PredictedGraphComputeOptions = {},
 ): GraphInfoSnapshot {
     return {
         groupRef: GLOBAL_GRAPH_REF,
-        predicted: toPredictedGroupGraph(allNodes, GLOBAL_GRAPH_REF),
+        predicted: toPredictedGroupGraph(allNodes, GLOBAL_GRAPH_REF, options),
         measured: isIncludeMeasured ? toMeasuredGroupGraph(allNodes, GLOBAL_GRAPH_REF) : undefined,
         createdAtEpochMs: Date.now(),
         version: 1,
@@ -130,11 +140,12 @@ export function computeScopedGlobalGraph(
     scope: StateScope,
     allNodes: readonly string[],
     isIncludeMeasured: boolean = false,
+    options: PredictedGraphComputeOptions = {},
 ): GraphInfoSnapshot {
     const groupRef = toScopedGlobalGraphRef(scope);
     return {
         groupRef,
-        predicted: toPredictedGroupGraph(allNodes, groupRef),
+        predicted: toPredictedGroupGraph(allNodes, groupRef, options),
         measured: isIncludeMeasured ? toMeasuredGroupGraph(allNodes, groupRef) : undefined,
         createdAtEpochMs: Date.now(),
         version: 1,
@@ -160,8 +171,18 @@ function toMeasuredGroupGraph(nodes: readonly string[], groupRef: GroupRef): Gra
     };
 }
 
-function toPredictedGroupGraph(nodes: readonly string[], groupRef: GroupRef): GraphInfo {
-    const predictedGraph = vivaldiService.toPredictedGraphFromIds(nodes, DEFAULT_GRAPH_PROP);
+function toPredictedGroupGraph(
+    nodes: readonly string[],
+    groupRef: GroupRef,
+    options: PredictedGraphComputeOptions = {},
+): GraphInfo {
+    const predictedGraph = options.predictedDegreeLimit !== undefined
+        ? vivaldiService.toDegreeCappedPredictedGraphFromIds(
+            nodes,
+            DEFAULT_GRAPH_PROP,
+            { degreeLimit: options.predictedDegreeLimit },
+        )
+        : vivaldiService.toPredictedGraphFromIds(nodes, DEFAULT_GRAPH_PROP);
     const coreNodes = coreAlgorithms.kBestLocatedNodesFromGraphAverage(
         predictedGraph,
         DEFAULT_K_CORE_NODES,
@@ -170,10 +191,7 @@ function toPredictedGroupGraph(nodes: readonly string[], groupRef: GroupRef): Gr
     return {
         groupRef,
         graph: predictedGraph,
-        coreNodes: coreAlgorithms.kBestLocatedNodesFromGraphAverage(
-            predictedGraph,
-            DEFAULT_K_CORE_NODES,
-        ),
+        coreNodes,
         groupGraph: createAvailableNodeGroupTree(
             predictedGraph,
             nodes,

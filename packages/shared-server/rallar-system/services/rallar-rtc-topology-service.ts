@@ -3,6 +3,7 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind, } from '@shared/api/overlay-topology.ts';
+import { normalizeRttReportingDegreeLimit } from '@shared/rtc/rtt-reporting-policy.ts';
 import {
     readGroupCreatedAtEpochMs,
     readGroupCreatedByPrincipalId,
@@ -27,6 +28,7 @@ import { UndirectedGraph } from 'graphology';
 export type RallarRtcTopologyServiceOptions = Readonly<{
     topologyKind?: GroupTopologyKindSetting;
     degreeLimit?: number;
+    rttReportingDegreeLimit?: number;
     treeMinSize?: number;
     meshMinSize?: number;
     meshParamK?: number;
@@ -50,6 +52,7 @@ export type RallarRtcTopologyMetrics = Readonly<{
     weightedPlanDurationMs: number;
     weightedRoomGraphBuildCount: number;
     weightedRoomGraphBuildDurationMs: number;
+    weightedRoomGraphSparseFallbackCount: number;
     rttQueueRequestCount: number;
     rttQueueNewCount: number;
     rttQueueCoalescedCount: number;
@@ -115,6 +118,7 @@ const emptyTopologyMetrics = (): MutableRallarRtcTopologyMetrics => ({
     weightedPlanDurationMs: 0,
     weightedRoomGraphBuildCount: 0,
     weightedRoomGraphBuildDurationMs: 0,
+    weightedRoomGraphSparseFallbackCount: 0,
     rttQueueRequestCount: 0,
     rttQueueNewCount: 0,
     rttQueueCoalescedCount: 0,
@@ -170,7 +174,12 @@ export class RallarRtcTopologyService {
         options: RallarRtcTopologyUpdateOptions = {},
     ): RallarRtcTopologyUpdateResult {
         this.metrics.topologyUpdateCount += 1;
-        if (rttMeasurements.length > 0) {
+        const activeSessionIds = readGroupMemberSessionIds(group);
+        const relevantRttMeasurements = filterRttMeasurementsForActiveSessions(
+            rttMeasurements,
+            activeSessionIds,
+        );
+        if (relevantRttMeasurements.length > 0) {
             this.metrics.updatesWithRttMeasurementCount += 1;
         } else {
             this.metrics.updatesWithoutRttMeasurementCount += 1;
@@ -180,7 +189,6 @@ export class RallarRtcTopologyService {
         const previous = this.readPreviousSnapshot(overlayId, options);
         const topologyOptions = this.readTopologyOptions(options);
         const topology = this.selectTopology(group, topologyOptions);
-        const activeSessionIds = readGroupMemberSessionIds(group);
         let nextHopsBySessionId: Record<string, readonly string[]>;
 
         if (topology === 'star') {
@@ -188,7 +196,7 @@ export class RallarRtcTopologyService {
             nextHopsBySessionId = this.createStarNextHopMap(activeSessionIds);
             this.metrics.starPlanCount += 1;
             this.metrics.starPlanDurationMs += this.durationNowMs() - startedAtMs;
-        } else if (rttMeasurements.length === 0) {
+        } else if (relevantRttMeasurements.length === 0) {
             const startedAtMs = this.durationNowMs();
             if (topology === 'tree') {
                 nextHopsBySessionId = createNoRttTreeNextHopMap(
@@ -213,10 +221,10 @@ export class RallarRtcTopologyService {
                 group,
                 activeSessionIds,
                 topologyOptions === this.options
-                    ? this.createRoomGraph(group, rttMeasurements)
+                    ? this.createRoomGraph(group, relevantRttMeasurements)
                     : this.createRoomGraphWithOptions(
                         group,
-                        rttMeasurements,
+                        relevantRttMeasurements,
                         topologyOptions,
                     ),
                 topologyOptions,
@@ -351,6 +359,15 @@ export class RallarRtcTopologyService {
         return this.rttRebuildDebounceMs();
     }
 
+    readRttReportingDegreeLimit(
+        options: RallarRtcTopologyServiceOptions = this.options,
+    ): number {
+        return normalizeRttReportingDegreeLimit(
+            options.rttReportingDegreeLimit,
+            this.degreeLimit(options),
+        );
+    }
+
     selectTopology(
         group: GroupSnapshot,
         options: RallarRtcTopologyServiceOptions = this.options,
@@ -403,6 +420,7 @@ export class RallarRtcTopologyService {
         this.metrics.weightedRoomGraphBuildCount += 1;
         const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
         const degreeLimit = this.degreeLimit(options);
+        const rttReportingDegreeLimit = this.readRttReportingDegreeLimit(options);
         const activeSessionIds = readGroupMemberSessionIds(group);
         const rttBySessionId = rttMeasurements.length > 0
             ? createRttWeightLookup(rttMeasurements)
@@ -424,22 +442,100 @@ export class RallarRtcTopologyService {
             });
         }
 
-        for (let i = 0; i < activeSessionIds.length; i++) {
-            for (let j = i + 1; j < activeSessionIds.length; j++) {
-                const from = activeSessionIds[i];
-                const to = activeSessionIds[j];
-                graph.addEdge(from, to, {
-                    from,
-                    to,
-                    weight: readRttWeight(rttBySessionId, from, to) ??
-                        fallbackWeight(i, j),
-                });
+        if (rttMeasurements.length === 0) {
+            addCompleteFallbackRoomEdges(graph, activeSessionIds, rttBySessionId);
+        } else {
+            const fallbackNextHops = this.createNoRttNextHopMap(
+                group,
+                activeSessionIds,
+                options,
+            );
+            const sparse = this.populateSparseRoomGraph(
+                graph,
+                activeSessionIds,
+                rttMeasurements,
+                fallbackNextHops,
+                rttReportingDegreeLimit,
+            );
+
+            if (!sparse.connected) {
+                this.metrics.weightedRoomGraphSparseFallbackCount += 1;
+                this.metrics.weightedRoomGraphBuildDurationMs +=
+                    this.durationNowMs() - startedAtMs;
+                return createFallbackRoomGraph(
+                    group,
+                    activeSessionIds,
+                    fallbackNextHops,
+                    degreeLimit,
+                );
             }
         }
 
         this.metrics.weightedRoomGraphBuildDurationMs +=
             this.durationNowMs() - startedAtMs;
         return graph;
+    }
+
+    private populateSparseRoomGraph(
+        graph: WeightedGraph,
+        activeSessionIds: readonly string[],
+        rttMeasurements: readonly RttMeasurementInfo[],
+        fallbackNextHops: Readonly<Record<string, readonly string[]>>,
+        degreeLimit: number,
+    ): Readonly<{ connected: boolean }> {
+        const maxEdges = Math.floor((activeSessionIds.length * degreeLimit) / 2);
+        const indexBySessionId = new Map(
+            activeSessionIds.map((sessionId, index) => [sessionId, index]),
+        );
+
+        for (const edge of createSortedRttEdges(rttMeasurements, activeSessionIds)) {
+            addBoundedRoomEdge(
+                graph,
+                edge.from,
+                edge.to,
+                edge.weight,
+                degreeLimit,
+                maxEdges,
+            );
+        }
+
+        for (const [from, nextHops] of Object.entries(fallbackNextHops)) {
+            for (const to of nextHops) {
+                addBoundedRoomEdge(
+                    graph,
+                    from,
+                    to,
+                    fallbackWeight(
+                        indexBySessionId.get(from) ?? 0,
+                        indexBySessionId.get(to) ?? 0,
+                    ),
+                    degreeLimit,
+                    maxEdges,
+                );
+            }
+        }
+
+        if (!isConnectedRoomGraph(graph, activeSessionIds)) {
+            return { connected: false };
+        }
+
+        for (let i = 0; i < activeSessionIds.length; i++) {
+            for (let j = i + 1; j < activeSessionIds.length; j++) {
+                if (graph.size >= maxEdges) {
+                    return { connected: true };
+                }
+                addBoundedRoomEdge(
+                    graph,
+                    activeSessionIds[i],
+                    activeSessionIds[j],
+                    fallbackWeight(i, j),
+                    degreeLimit,
+                    maxEdges,
+                );
+            }
+        }
+
+        return { connected: true };
     }
 
     private createNextHopMap(
@@ -547,6 +643,24 @@ export class RallarRtcTopologyService {
         );
     }
 
+    private createNoRttNextHopMap(
+        group: GroupSnapshot,
+        activeSessionIds: readonly string[],
+        options: RallarRtcTopologyServiceOptions,
+    ): Record<string, readonly string[]> {
+        const topology = this.selectTopology(group, options);
+        if (topology === 'mesh') {
+            return this.createNoRttMeshNextHopMap(activeSessionIds, options);
+        }
+        if (topology === 'tree') {
+            return createNoRttTreeNextHopMap(
+                activeSessionIds,
+                this.degreeLimit(options),
+            );
+        }
+        return this.createStarNextHopMap(activeSessionIds);
+    }
+
     private readTopologyOptions(
         updateOptions: RallarRtcTopologyUpdateOptions,
     ): RallarRtcTopologyServiceOptions {
@@ -602,6 +716,191 @@ export class RallarRtcTopologyService {
 
 function fallbackWeight(i: number, j: number): number {
     return Math.abs(i - j) + 1;
+}
+
+function filterRttMeasurementsForActiveSessions(
+    rttMeasurements: readonly RttMeasurementInfo[],
+    activeSessionIds: readonly string[],
+): readonly RttMeasurementInfo[] {
+    if (rttMeasurements.length === 0) {
+        return rttMeasurements;
+    }
+
+    const activeSessionIdSet = new Set(activeSessionIds);
+    return rttMeasurements.filter((rtt) =>
+        activeSessionIdSet.has(rtt.sessionIdFrom) &&
+        activeSessionIdSet.has(rtt.sessionIdTo)
+    );
+}
+
+function addCompleteFallbackRoomEdges(
+    graph: WeightedGraph,
+    activeSessionIds: readonly string[],
+    rttBySessionId: RttWeightLookup | undefined,
+): void {
+    for (let i = 0; i < activeSessionIds.length; i++) {
+        for (let j = i + 1; j < activeSessionIds.length; j++) {
+            const from = activeSessionIds[i];
+            const to = activeSessionIds[j];
+            graph.addEdge(from, to, {
+                from,
+                to,
+                weight: readRttWeight(rttBySessionId, from, to) ??
+                    fallbackWeight(i, j),
+            });
+        }
+    }
+}
+
+function createFallbackRoomGraph(
+    group: GroupSnapshot,
+    activeSessionIds: readonly string[],
+    nextHopsBySessionId: Readonly<Record<string, readonly string[]>>,
+    degreeLimit: number,
+): WeightedGraph {
+    const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
+    const indexBySessionId = new Map(
+        activeSessionIds.map((sessionId, index) => [sessionId, index]),
+    );
+    graph.replaceAttributes({
+        id: toScopedOverlayId(group.group),
+        version: group.group.snapshotVersion,
+        degreeLimitMember: degreeLimit,
+        degreeLimitSteiner: degreeLimit,
+    });
+
+    for (const sessionId of activeSessionIds) {
+        graph.addNode(sessionId, {
+            id: sessionId,
+            type: VertexType.CLIENT,
+            state: VertexState.MEMBER,
+            degreeLimit,
+        });
+    }
+
+    for (const [from, nextHops] of Object.entries(nextHopsBySessionId)) {
+        for (const to of nextHops) {
+            addRoomEdgeIfAbsent(
+                graph,
+                from,
+                to,
+                fallbackWeight(
+                    indexBySessionId.get(from) ?? 0,
+                    indexBySessionId.get(to) ?? 0,
+                ),
+            );
+        }
+    }
+
+    return graph;
+}
+
+type WeightedRoomEdge = Readonly<{
+    from: string;
+    to: string;
+    weight: number;
+    version: number;
+}>;
+
+function createSortedRttEdges(
+    rttMeasurements: readonly RttMeasurementInfo[],
+    activeSessionIds: readonly string[],
+): readonly WeightedRoomEdge[] {
+    const activeSessionIdSet = new Set(activeSessionIds);
+    const edgeByPair = new Map<string, WeightedRoomEdge>();
+
+    for (const rtt of rttMeasurements) {
+        if (
+            !activeSessionIdSet.has(rtt.sessionIdFrom) ||
+            !activeSessionIdSet.has(rtt.sessionIdTo) ||
+            !Number.isFinite(rtt.rttMs) ||
+            rtt.rttMs <= 0
+        ) {
+            continue;
+        }
+
+        const [from, to] = rtt.sessionIdFrom <= rtt.sessionIdTo
+            ? [rtt.sessionIdFrom, rtt.sessionIdTo]
+            : [rtt.sessionIdTo, rtt.sessionIdFrom];
+        const key = `${from}::${to}`;
+        const current = edgeByPair.get(key);
+        if (current && current.version >= rtt.version) {
+            continue;
+        }
+
+        edgeByPair.set(key, {
+            from,
+            to,
+            weight: rtt.rttMs,
+            version: rtt.version,
+        });
+    }
+
+    return [...edgeByPair.values()].sort((left, right) =>
+        left.weight - right.weight ||
+        left.from.localeCompare(right.from) ||
+        left.to.localeCompare(right.to)
+    );
+}
+
+function addBoundedRoomEdge(
+    graph: WeightedGraph,
+    from: string,
+    to: string,
+    weight: number,
+    degreeLimit: number,
+    maxEdges: number,
+): boolean {
+    if (graph.size >= maxEdges || graph.hasEdge(from, to)) {
+        return false;
+    }
+    if (graph.degree(from) >= degreeLimit || graph.degree(to) >= degreeLimit) {
+        return false;
+    }
+
+    addRoomEdgeIfAbsent(graph, from, to, weight);
+    return true;
+}
+
+function addRoomEdgeIfAbsent(
+    graph: WeightedGraph,
+    from: string,
+    to: string,
+    weight: number,
+): void {
+    if (from === to || graph.hasEdge(from, to)) {
+        return;
+    }
+    graph.addEdge(from, to, {
+        from,
+        to,
+        weight,
+    });
+}
+
+function isConnectedRoomGraph(
+    graph: WeightedGraph,
+    activeSessionIds: readonly string[],
+): boolean {
+    if (activeSessionIds.length <= 1) {
+        return true;
+    }
+
+    const [first] = activeSessionIds;
+    const seen = new Set<string>([first]);
+    const queue = [first];
+
+    for (let index = 0; index < queue.length; index++) {
+        for (const neighbor of graph.neighbors(queue[index]) as string[]) {
+            if (seen.has(neighbor)) {
+                continue;
+            }
+            seen.add(neighbor);
+            queue.push(neighbor);
+        }
+    }
+
+    return seen.size === activeSessionIds.length;
 }
 
 type RttWeightLookup = ReadonlyMap<string, ReadonlyMap<string, number>>;

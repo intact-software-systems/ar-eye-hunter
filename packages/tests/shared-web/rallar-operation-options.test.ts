@@ -16,6 +16,7 @@ describe('Rallar operation options compatibility', () => {
                 shouldRetry,
                 dataChannelLanes: lanes,
                 maxPeerConnections: 12,
+                rttReportingDegreeLimit: 3,
             }),
         ).toEqual({
             signal,
@@ -24,6 +25,14 @@ describe('Rallar operation options compatibility', () => {
             shouldRetry,
             dataChannelLanes: lanes,
             maxPeerConnections: 12,
+            rttReportingDegreeLimit: 3,
+        });
+        expect(
+            toRallarOperationOptions({
+                rttReportingDegreeLimit: 3,
+            }),
+        ).toEqual({
+            rttReportingDegreeLimit: 3,
         });
     });
 });

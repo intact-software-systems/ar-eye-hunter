@@ -9,6 +9,10 @@ export function getApiRtcTopologyServiceOptions(
 ): RallarRtcTopologyServiceOptions {
   return compactOptions({
     degreeLimit: readPositiveIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT'),
+    rttReportingDegreeLimit: readPositiveIntegerEnv(
+      env,
+      'RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT',
+    ),
     treeMinSize: readPositiveIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE'),
     meshMinSize: readPositiveIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE'),
     meshParamK: readPositiveIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_MESH_PARAM_K'),

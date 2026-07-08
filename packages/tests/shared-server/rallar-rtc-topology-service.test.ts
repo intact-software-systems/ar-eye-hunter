@@ -100,6 +100,91 @@ describe('RallarRtcTopologyService', () => {
         expect(graph.getEdgeAttribute(edge!, 'weight')).toBe(7);
     });
 
+    it('documents complete weighted room graph materialization with partial RTT input', () => {
+        const memberSessionIds = createMemberIds(8);
+        const group = createGroupSnapshot('room-1', memberSessionIds);
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+            rttReportingDegreeLimit: 8,
+        });
+
+        const graph = service.createRoomGraph(group, [
+            {
+                sessionIdFrom: 'peer-1',
+                sessionIdTo: 'peer-2',
+                rttMs: 5,
+                createdAtEpochMs: 1,
+                version: 1,
+            },
+        ]);
+
+        expect(graph.order).toBe(8);
+        expect(graph.size).toBe((8 * 7) / 2);
+        expect(graph.hasEdge('peer-1', 'peer-8')).toBe(true);
+    });
+
+    it('builds a sparse weighted candidate graph when RTT reporting is degree bounded', () => {
+        const memberSessionIds = createMemberIds(32);
+        const group = createGroupSnapshot('room-1', memberSessionIds);
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+            degreeLimit: 5,
+            rttReportingDegreeLimit: 5,
+        });
+
+        const measurements = createCentralRttMeasurements(memberSessionIds, 'peer-1')
+            .filter((rtt) =>
+                rtt.sessionIdFrom === 'peer-1' || rtt.sessionIdTo === 'peer-1'
+            )
+            .slice(0, 5);
+
+        const graph = service.createRoomGraph(group, measurements);
+
+        expect(graph.order).toBe(32);
+        expect(graph.size).toBeLessThanOrEqual((32 * 5) / 2);
+    });
+
+    it('keeps RTT-weighted candidate graph edge count linear in room size', () => {
+        const memberSessionIds = createMemberIds(200);
+        const group = createGroupSnapshot('room-1', memberSessionIds);
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+            degreeLimit: 5,
+            rttReportingDegreeLimit: 5,
+        });
+        const measurements = createCentralRttMeasurements(memberSessionIds, 'peer-1')
+            .filter((rtt) =>
+                rtt.sessionIdFrom === 'peer-1' || rtt.sessionIdTo === 'peer-1'
+            )
+            .slice(0, 5);
+
+        const graph = service.createRoomGraph(group, measurements);
+
+        expect(graph.order).toBe(200);
+        expect(graph.size).toBeLessThanOrEqual((200 * 5) / 2);
+    });
+
+    it('keeps sparse RTT topology output degree-limited', () => {
+        const memberSessionIds = createMemberIds(32);
+        const group = createGroupSnapshot('room-1', memberSessionIds);
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+            degreeLimit: 5,
+            rttReportingDegreeLimit: 5,
+        });
+        const measurements = createCentralRttMeasurements(memberSessionIds, 'peer-1')
+            .filter((rtt) =>
+                rtt.sessionIdFrom === 'peer-1' || rtt.sessionIdTo === 'peer-1'
+            )
+            .slice(0, 5);
+
+        const result = service.updateGroupTopology(group, measurements);
+
+        for (const nextHops of Object.values(result.snapshot.nextHopsBySessionId)) {
+            expect(nextHops.length).toBeLessThanOrEqual(5);
+        }
+    });
+
     it('does not build a weighted room graph for no-RTT mesh topology', () => {
         const group = createGroupSnapshot('room-1', createMemberIds(16));
         const service = new RallarRtcTopologyService({

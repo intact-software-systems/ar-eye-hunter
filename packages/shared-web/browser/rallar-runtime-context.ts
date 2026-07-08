@@ -37,6 +37,7 @@ export type RallarBrowserRuntimeDefaults = Readonly<{
         connectOnWait?: boolean;
         dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
         maxPeerConnections?: number;
+        rttReportingDegreeLimit?: number;
     }>;
     messages?: Readonly<{
         maxPayloadBytes?: number;
@@ -213,13 +214,17 @@ export function createRallarBrowserFacadeRuntimeContext(
             const maxPeerConnections = options.maxPeerConnections !== undefined
                 ? options.maxPeerConnections
                 : state.defaults?.rtc?.maxPeerConnections;
+            const rttReportingDegreeLimit = options.rttReportingDegreeLimit !== undefined
+                ? options.rttReportingDegreeLimit
+                : state.defaults?.rtc?.rttReportingDegreeLimit;
 
             if (
                 timeoutMs === undefined &&
                 maxAttempts === undefined &&
                 shouldRetry === undefined &&
                 dataChannelLanes === undefined &&
-                maxPeerConnections === undefined
+                maxPeerConnections === undefined &&
+                rttReportingDegreeLimit === undefined
             ) {
                 return options;
             }
@@ -231,6 +236,9 @@ export function createRallarBrowserFacadeRuntimeContext(
                 ...(shouldRetry !== undefined ? { shouldRetry } : {}),
                 ...(dataChannelLanes !== undefined ? { dataChannelLanes } : {}),
                 ...(maxPeerConnections !== undefined ? { maxPeerConnections } : {}),
+                ...(rttReportingDegreeLimit !== undefined
+                    ? { rttReportingDegreeLimit }
+                    : {}),
             };
         },
         readAuthExpiryTimer: () => state.authExpiryTimer,
