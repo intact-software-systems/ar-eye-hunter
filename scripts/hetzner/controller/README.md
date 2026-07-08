@@ -324,6 +324,21 @@ RALLAR_INSTALL_PLAYWRIGHT=1 \
 ./09-start-headless-workers.sh
 ```
 
+### External GitHub Agent Pools
+
+When browser workers are started outside the VM, the operator can wait for
+those control agents without touching the Hetzner systemd worker service:
+
+```sh
+RALLAR_BLACK_BOX_CONTROL_URL=wss://control.rallar.intactss.com/control \
+RALLAR_BLACK_BOX_RUN_ID=gh-123 \
+RALLAR_BLACK_BOX_AGENT_PREFIX=controller \
+RALLAR_BLACK_BOX_AGENT_COUNT=50 \
+RALLAR_BLACK_BOX_AGENT_START_INDEX=1 \
+RALLAR_HEADLESS_READY_TIMEOUT_SECONDS=240 \
+./16-wait-for-control-agents.sh
+```
+
 Headless browser login uses the same visible Rallar Kit login flow as a human
 browser. The worker opens the public SPA with `provider=browser-rallar`,
 `rallarUsername`, `rallarPassword`, `apiBaseUrl`, `applicationId`,

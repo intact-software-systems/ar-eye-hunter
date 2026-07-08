@@ -340,7 +340,7 @@ RALLAR_HEADLESS_READY_TIMEOUT_SECONDS
 
 - Produces exit code 0 when at least `RALLAR_BLACK_BOX_AGENT_COUNT` connected agents match the prefix and ordinal range.
 
-- [ ] **Step 1: Write source test**
+- [x] **Step 1: Write source test**
 
 Extend `packages/tests/hetzner/distributed-recipe-workflow.test.ts` to assert:
 
@@ -352,7 +352,7 @@ expect(script).toContain("Timed out waiting for external control agents");
 expect(script).not.toContain("systemctl is-active");
 ```
 
-- [ ] **Step 2: Run test and verify failure**
+- [x] **Step 2: Run test and verify failure**
 
 Run:
 
@@ -362,7 +362,7 @@ npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts
 
 Expected before implementation: FAIL because the script does not exist.
 
-- [ ] **Step 3: Implement script**
+- [x] **Step 3: Implement script**
 
 Extract the control snapshot URL and connected-agent counting logic from `09-start-headless-workers.sh`, but remove systemd checks. Keep the same prefix/start-index semantics:
 
@@ -373,7 +373,7 @@ agent_end="$((agent_start + expected - 1))"
 
 Use `jq` to count connected agents whose `agentId` starts with `${RALLAR_BLACK_BOX_AGENT_PREFIX}-` and whose numeric suffix is within the expected range.
 
-- [ ] **Step 4: Document script**
+- [x] **Step 4: Document script**
 
 In `scripts/hetzner/controller/README.md`, add a short section "External GitHub agent pools" showing:
 
@@ -387,7 +387,7 @@ RALLAR_HEADLESS_READY_TIMEOUT_SECONDS=240 \
 ./16-wait-for-control-agents.sh
 ```
 
-- [ ] **Step 5: Run verification**
+- [x] **Step 5: Run verification**
 
 Run:
 
@@ -398,7 +398,7 @@ git diff --check -- scripts/hetzner/controller/16-wait-for-control-agents.sh scr
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/hetzner/controller/16-wait-for-control-agents.sh scripts/hetzner/controller/README.md packages/tests/hetzner/distributed-recipe-workflow.test.ts
@@ -442,7 +442,7 @@ Allowed `operator_phase` values:
 - `prepare`: copy scripts/manifest, render remote env, apply `rollout_before_run` and `metadata.rtcTopologyEnv`, verify control/API readiness, then exit without waiting for agents or starting a recipe.
 - `run`: copy scripts/manifest, render remote env, skip API rollout, wait for agents according to `agent_source`, run recipe, and collect artifacts.
 
-- [ ] **Step 1: Write workflow tests**
+- [x] **Step 1: Write workflow tests**
 
 Add assertions:
 
@@ -465,7 +465,7 @@ Assert that existing `hetzner` behavior still contains:
 expect(runnerWorkflow).toContain("RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh");
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run:
 
@@ -475,7 +475,7 @@ npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts
 
 Expected before implementation: FAIL because `agent_source` is missing.
 
-- [ ] **Step 3: Add workflow inputs**
+- [x] **Step 3: Add workflow inputs**
 
 Add `agent_source` and `operator_phase` to the manual wrapper and reusable runner. Pass through:
 
@@ -497,7 +497,7 @@ case "${RALLAR_HETZNER_OPERATOR_PHASE}" in
 esac
 ```
 
-- [ ] **Step 4: Check out the selected ref**
+- [x] **Step 4: Check out the selected ref**
 
 Update the reusable runner checkout step so `inputs.ref` controls the scripts, manifests, and analysis code used by the operator:
 
@@ -510,7 +510,7 @@ Update the reusable runner checkout step so `inputs.ref` controls the scripts, m
 
 Keep the manual wrapper passing `ref: ${{ inputs.ref }}` into the reusable runner. Without this, a dispatch can roll out one ref on Hetzner while copying a manifest or controller script from the workflow's current branch.
 
-- [ ] **Step 5: Split prepare and run behavior**
+- [x] **Step 5: Split prepare and run behavior**
 
 Keep existing behavior in `operator_phase=full`. In `operator_phase=prepare`, run the existing checkout/copy/env/render/rollout/readiness setup and exit before the headless-agent wait or distributed recipe start. This phase is what the GitHub Free workflow uses before starting any external browser jobs, so topology env changes are applied while no GitHub agents are connected.
 
@@ -527,7 +527,7 @@ if topology_env_requires_rollout &&
 fi
 ```
 
-- [ ] **Step 6: Add prepare marker validation**
+- [x] **Step 6: Add prepare marker validation**
 
 Render a marker path into the remote env:
 
@@ -598,7 +598,7 @@ if remote_topology_env_requires_rollout && [[ "${RALLAR_HETZNER_OPERATOR_PHASE}"
 fi
 ```
 
-- [ ] **Step 7: Change remote execution branch**
+- [x] **Step 7: Change remote execution branch**
 
 In the remote `Run distributed recipe` step:
 
@@ -626,7 +626,7 @@ esac
 
 Keep `stop_after_run` from stopping GitHub-hosted agents in `external` mode. Only call `./10-stop-headless-workers.sh` on cleanup when `agent_source` is `hetzner` or `mixed`.
 
-- [ ] **Step 8: Skip recipe artifacts during prepare phase**
+- [x] **Step 8: Skip recipe artifacts during prepare phase**
 
 Guard artifact copy/upload, analysis, and failure propagation steps so `operator_phase=prepare` does not upload empty distributed-run artifacts or analyze a run that was intentionally not started. Use concrete conditions:
 
@@ -658,7 +658,7 @@ Use that condition on:
 - `Upload distributed analysis`
 - `Fail if distributed recipe failed`
 
-- [ ] **Step 9: Run verification**
+- [x] **Step 9: Run verification**
 
 Run:
 
@@ -669,7 +669,7 @@ git diff --check -- .github/workflows/hetzner-distributed-recipe.yml .github/wor
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add .github/workflows/hetzner-distributed-recipe.yml .github/workflows/hetzner-distributed-recipe-runner.yml packages/tests/hetzner/distributed-recipe-workflow.test.ts
@@ -1464,4 +1464,20 @@ For live acceptance, use the GitHub Actions workflow dispatch sequence in Task 9
 - Blockers: none for Iteration 1 local implementation.
 - Notes: The worker source test checks the dynamic log template `Distributed run ${runId} is not created yet` rather than forcing production code to contain the sample id `dist-run-1`.
 - Follow-up validation still required: none for Iteration 1 local implementation.
-- Implementation detail: Task 1 and Task 2 changes were grouped into one Iteration 1 commit (`3e52bb1`, `feat: add headless worker exit config`) instead of split into two commits.
+- Implementation detail: Task 1 and Task 2 changes were grouped into one Iteration 1 commit (`99ae9a4`, `feat: add headless worker exit config`) instead of split into two commits.
+
+### Iteration 2 - 2026-07-08T11:18:25Z
+
+- Completed steps: Task 3 steps 1-6; Task 4 steps 1-10.
+- Files changed: `.github/workflows/hetzner-distributed-recipe.yml`, `.github/workflows/hetzner-distributed-recipe-runner.yml`, `scripts/hetzner/controller/16-wait-for-control-agents.sh`, `scripts/hetzner/controller/README.md`, `packages/tests/hetzner/distributed-recipe-workflow.test.ts`, `plans/github-actions-rallar-black-box-headless-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts` before Task 3 tests: PASS, 61 tests.
+  - `npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts` after adding Task 3 test: FAIL as expected because `scripts/hetzner/controller/16-wait-for-control-agents.sh` did not exist.
+  - `npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts` after implementing Task 3: PASS, 62 tests.
+  - `git diff --check -- scripts/hetzner/controller/16-wait-for-control-agents.sh scripts/hetzner/controller/README.md`: PASS.
+  - `npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts` after adding Task 4 tests: FAIL as expected because `agent_source` and `operator_phase` were missing.
+  - `npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts` after implementing Task 4: PASS, 63 tests.
+  - `git diff --check -- .github/workflows/hetzner-distributed-recipe.yml .github/workflows/hetzner-distributed-recipe-runner.yml scripts/hetzner/controller/16-wait-for-control-agents.sh scripts/hetzner/controller/README.md`: PASS.
+- Blockers: none for Iteration 2 local implementation.
+- Notes: The previous topology-rollout source assertion was updated to the new prepare-marker-aware error text.
+- Follow-up validation still required: none for Iteration 2 local implementation.

@@ -12,6 +12,16 @@ on:
         description: Roll out the selected ref before starting browsers and running the recipe
         type: boolean
         default: true
+      agent_source:
+        description: Agent source for the distributed run
+        required: false
+        type: string
+        default: hetzner
+      operator_phase:
+        description: Hetzner distributed recipe runner phase
+        required: false
+        type: string
+        default: full
       agent_count:
         description: Number of headless browser agents to run; blank derives from manifest targetPolicy.expectedParticipantCount
         required: false
@@ -104,6 +114,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Resolve run identifiers
         id: ids
@@ -149,6 +161,8 @@ jobs:
           INPUT_WORKSPACE_ID: ${{ inputs.workspace_id }}
           INPUT_TERMINAL_TIMEOUT_SECONDS: ${{ inputs.terminal_timeout_seconds }}
           INPUT_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}
+          INPUT_AGENT_SOURCE: ${{ inputs.agent_source }}
+          INPUT_OPERATOR_PHASE: ${{ inputs.operator_phase }}
         run: |
           set -euo pipefail
 
@@ -223,6 +237,15 @@ jobs:
               -n "${manifest_rtc_topology_rtt_rebuild_debounce_ms}" ]]
           }
 
+          case "${INPUT_AGENT_SOURCE}" in
+            hetzner|external|mixed) ;;
+            *) echo "::error::agent_source must be hetzner, external, or mixed." >&2; exit 1 ;;
+          esac
+          case "${INPUT_OPERATOR_PHASE}" in
+            full|prepare|run) ;;
+            *) echo "::error::operator_phase must be full, prepare, or run." >&2; exit 1 ;;
+          esac
+
           resolve_value agent_count "${INPUT_AGENT_COUNT}" "${manifest_agent_count}"
           resolve_value room_id "${INPUT_ROOM_ID}" "${manifest_room_id}"
           resolve_value application_id "${INPUT_APPLICATION_ID}" "${manifest_application_id}"
@@ -243,8 +266,10 @@ jobs:
             exit 1
           fi
           validate_rtc_topology_env
-          if topology_env_requires_rollout && ! bool_enabled "${INPUT_ROLLOUT_BEFORE_RUN}"; then
-            echo "::error::Manifest ${MANIFEST_PATH} requires rollout_before_run=true so API RTC topology env can be applied." >&2
+          if topology_env_requires_rollout &&
+            [[ "${INPUT_OPERATOR_PHASE}" != "run" ]] &&
+            ! bool_enabled "${INPUT_ROLLOUT_BEFORE_RUN}"; then
+            echo "::error::Manifest ${MANIFEST_PATH} requires rollout_before_run=true unless operator_phase=run validates a prepare marker." >&2
             exit 1
           fi
 
@@ -325,6 +350,8 @@ jobs:
         env:
           RALLAR_REPO_REF: ${{ inputs.ref }}
           RALLAR_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}
+          RALLAR_BLACK_BOX_AGENT_SOURCE: ${{ inputs.agent_source }}
+          RALLAR_HETZNER_OPERATOR_PHASE: ${{ inputs.operator_phase }}
           RALLAR_BLACK_BOX_RUN_ID: ${{ steps.ids.outputs.run_id }}
           RALLAR_BLACK_BOX_ROOM_ID: ${{ steps.manifest_defaults.outputs.room_id }}
           RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
@@ -348,6 +375,7 @@ jobs:
           RALLAR_DISTRIBUTED_CONTROL_RUN_ID: ${{ steps.ids.outputs.run_id }}
           RALLAR_DISTRIBUTED_MANIFEST_PATH: /tmp/rallar-distributed-manifest.json
           RALLAR_DISTRIBUTED_ARTIFACT_DIR: /tmp/rallar-distributed-runs
+          RALLAR_DISTRIBUTED_PREPARE_MARKER: /tmp/rallar-distributed-prepare-${{ steps.ids.outputs.distributed_run_id }}.json
           RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: ${{ steps.manifest_defaults.outputs.rtc_topology_degree_limit }}
           RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: ${{ steps.manifest_defaults.outputs.rtc_topology_tree_min_size }}
           RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: ${{ steps.manifest_defaults.outputs.rtc_topology_mesh_min_size }}
@@ -367,6 +395,8 @@ jobs:
           {
             printf 'RALLAR_REPO_REF=%s\n' "$(quote "${RALLAR_REPO_REF}")"
             printf 'RALLAR_ROLLOUT_BEFORE_RUN=%s\n' "$(quote "${RALLAR_ROLLOUT_BEFORE_RUN}")"
+            printf 'RALLAR_BLACK_BOX_AGENT_SOURCE=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_SOURCE}")"
+            printf 'RALLAR_HETZNER_OPERATOR_PHASE=%s\n' "$(quote "${RALLAR_HETZNER_OPERATOR_PHASE}")"
             printf 'RALLAR_BLACK_BOX_RUN_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_RUN_ID}")"
             printf 'RALLAR_BLACK_BOX_ROOM_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_ROOM_ID}")"
             printf 'RALLAR_BLACK_BOX_AGENT_PREFIX=%s\n' "$(quote "${RALLAR_BLACK_BOX_AGENT_PREFIX}")"
@@ -392,6 +422,7 @@ jobs:
             printf 'RALLAR_DISTRIBUTED_CONTROL_RUN_ID=%s\n' "$(quote "${RALLAR_DISTRIBUTED_CONTROL_RUN_ID}")"
             printf 'RALLAR_DISTRIBUTED_MANIFEST_PATH=%s\n' "$(quote "${RALLAR_DISTRIBUTED_MANIFEST_PATH}")"
             printf 'RALLAR_DISTRIBUTED_ARTIFACT_DIR=%s\n' "$(quote "${RALLAR_DISTRIBUTED_ARTIFACT_DIR}")"
+            printf 'RALLAR_DISTRIBUTED_PREPARE_MARKER=%s\n' "$(quote "${RALLAR_DISTRIBUTED_PREPARE_MARKER}")"
             printf 'RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT}")"
             printf 'RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE}")"
             printf 'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=%s\n' "$(quote "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE}")"
@@ -436,7 +467,85 @@ jobs:
             [[ "${value}" == "1" || "${value}" == "true" || "${value}" == "yes" || "${value}" == "on" ]]
           }
 
-          if bool_enabled "${RALLAR_ROLLOUT_BEFORE_RUN:-0}"; then
+          case "${RALLAR_BLACK_BOX_AGENT_SOURCE}" in
+            hetzner|external|mixed) ;;
+            *) echo "::error::agent_source must be hetzner, external, or mixed." >&2; exit 1 ;;
+          esac
+          case "${RALLAR_HETZNER_OPERATOR_PHASE}" in
+            full|prepare|run) ;;
+            *) echo "::error::operator_phase must be full, prepare, or run." >&2; exit 1 ;;
+          esac
+
+          remote_topology_env_requires_rollout() {
+            [[ -n "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT:-}" ||
+              -n "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE:-}" ||
+              -n "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE:-}" ||
+              -n "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K:-}" ||
+              -n "${RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS:-}" ]]
+          }
+
+          write_prepare_marker() {
+            local manifest_sha
+            manifest_sha="$(sha256sum "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" | awk '{print $1}')"
+            jq -n \
+              --arg runId "${RALLAR_DISTRIBUTED_RUN_ID}" \
+              --arg ref "${RALLAR_REPO_REF}" \
+              --arg manifestSha "${manifest_sha}" \
+              --arg degreeLimit "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT:-}" \
+              --arg treeMinSize "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE:-}" \
+              --arg meshMinSize "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE:-}" \
+              --arg meshParamK "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K:-}" \
+              --arg rttRebuildDebounceMs "${RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS:-}" \
+              '{
+                runId: $runId,
+                ref: $ref,
+                manifestSha: $manifestSha,
+                rtcTopologyEnv: {
+                  RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: $degreeLimit,
+                  RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: $treeMinSize,
+                  RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: $meshMinSize,
+                  RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: $meshParamK,
+                  RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS: $rttRebuildDebounceMs
+                }
+              }' > "${RALLAR_DISTRIBUTED_PREPARE_MARKER}"
+          }
+
+          validate_prepare_marker() {
+            if [[ ! -s "${RALLAR_DISTRIBUTED_PREPARE_MARKER}" ]]; then
+              echo "Missing prepare marker ${RALLAR_DISTRIBUTED_PREPARE_MARKER}; run prepare phase before external agents." >&2
+              exit 1
+            fi
+            local expected_manifest_sha
+            expected_manifest_sha="$(sha256sum "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" | awk '{print $1}')"
+            jq -e \
+              --arg ref "${RALLAR_REPO_REF}" \
+              --arg manifestSha "${expected_manifest_sha}" \
+              --arg degreeLimit "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT:-}" \
+              --arg treeMinSize "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE:-}" \
+              --arg meshMinSize "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE:-}" \
+              --arg meshParamK "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K:-}" \
+              --arg rttRebuildDebounceMs "${RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS:-}" \
+              '.ref == $ref and
+                .manifestSha == $manifestSha and
+                .rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT == $degreeLimit and
+                .rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE == $treeMinSize and
+                .rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE == $meshMinSize and
+                .rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_PARAM_K == $meshParamK and
+                .rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS == $rttRebuildDebounceMs' \
+              "${RALLAR_DISTRIBUTED_PREPARE_MARKER}" >/dev/null
+          }
+
+          wait_for_external_agents_if_requested() {
+            if bool_enabled "${RALLAR_WAIT_FOR_HEADLESS_WORKERS:-1}"; then
+              ./16-wait-for-control-agents.sh
+            else
+              echo "Skipping external control-agent wait because RALLAR_WAIT_FOR_HEADLESS_WORKERS is disabled."
+            fi
+          }
+
+          if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" ]]; then
+            echo "Run phase skips API/control rollout; prepare phase must already be complete when required."
+          elif bool_enabled "${RALLAR_ROLLOUT_BEFORE_RUN:-0}"; then
             ./10-stop-headless-workers.sh || true
             ./08-rollout-controller.sh
             echo "Rollout completed; skipping duplicate Playwright install during headless worker start."
@@ -444,13 +553,34 @@ jobs:
             export RALLAR_INSTALL_PLAYWRIGHT
           fi
 
-          ./10-stop-headless-workers.sh || true
-          RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh
+          if [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "prepare" ]]; then
+            write_prepare_marker
+            echo "Hetzner prepare phase complete; skipping agent wait and distributed run."
+            exit 0
+          fi
+
+          if remote_topology_env_requires_rollout && [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" ]]; then
+            validate_prepare_marker
+          fi
+
+          case "${RALLAR_BLACK_BOX_AGENT_SOURCE}" in
+            hetzner)
+              ./10-stop-headless-workers.sh || true
+              RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh
+              ;;
+            external)
+              wait_for_external_agents_if_requested
+              ;;
+            mixed)
+              RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh
+              wait_for_external_agents_if_requested
+              ;;
+          esac
           ./14-run-distributed-recipe.sh
           REMOTE
 
       - name: Copy distributed artifacts
-        if: always()
+        if: always() && inputs.operator_phase != 'prepare'
         shell: bash
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -464,7 +594,7 @@ jobs:
             ".artifacts/hetzner-distributed/" || true
 
       - name: Upload distributed artifacts
-        if: always()
+        if: always() && inputs.operator_phase != 'prepare'
         uses: actions/upload-artifact@v4
         with:
           name: hetzner-distributed-${{ steps.ids.outputs.distributed_run_id }}
@@ -473,7 +603,7 @@ jobs:
 
       - name: Check distributed artifact availability
         id: artifact_status
-        if: always()
+        if: always() && inputs.operator_phase != 'prepare'
         shell: bash
         env:
           DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
@@ -487,18 +617,18 @@ jobs:
           echo "available=true" >> "${GITHUB_OUTPUT}"
 
       - name: Setup Node for analysis
-        if: always() && steps.artifact_status.outputs.available == 'true'
+        if: always() && inputs.operator_phase != 'prepare' && steps.artifact_status.outputs.available == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies for analysis
-        if: always() && steps.artifact_status.outputs.available == 'true'
+        if: always() && inputs.operator_phase != 'prepare' && steps.artifact_status.outputs.available == 'true'
         run: npm ci
 
       - name: Analyze distributed artifacts
-        if: always() && steps.artifact_status.outputs.available == 'true'
+        if: always() && inputs.operator_phase != 'prepare' && steps.artifact_status.outputs.available == 'true'
         shell: bash
         env:
           DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
@@ -514,7 +644,7 @@ jobs:
             --out-dir "${artifact_dir}/analysis"
 
       - name: Publish distributed analysis summary
-        if: always() && steps.artifact_status.outputs.available == 'true'
+        if: always() && inputs.operator_phase != 'prepare' && steps.artifact_status.outputs.available == 'true'
         shell: bash
         env:
           DISTRIBUTED_RUN_ID: ${{ steps.ids.outputs.distributed_run_id }}
@@ -538,7 +668,7 @@ jobs:
           fi
 
       - name: Upload distributed analysis
-        if: always()
+        if: always() && inputs.operator_phase != 'prepare'
         uses: actions/upload-artifact@v4
         with:
           name: hetzner-distributed-analysis-${{ steps.ids.outputs.distributed_run_id }}
@@ -546,7 +676,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Stop headless browsers
-        if: always() && inputs.stop_after_run
+        if: always() && inputs.stop_after_run && inputs.agent_source != 'external'
         shell: bash
         env:
           HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
@@ -557,7 +687,7 @@ jobs:
             'cd "${HOME}/rallar-controller" && ./10-stop-headless-workers.sh'
 
       - name: Fail if distributed recipe failed
-        if: always() && steps.run_recipe.outcome != 'success'
+        if: always() && inputs.operator_phase != 'prepare' && steps.run_recipe.outcome != 'success'
         run: |
           echo "Distributed recipe failed. Artifacts and analysis were uploaded when available." >&2
           exit 1

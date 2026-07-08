@@ -185,12 +185,33 @@ describe('Hetzner distributed recipe workflow', () => {
         );
     });
 
+    it('supports external-agent and split prepare/run operator modes', async () => {
+        const manualWorkflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
+        const runnerWorkflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
+
+        expect(manualWorkflow).toContain('agent_source:');
+        expect(manualWorkflow).toContain('operator_phase:');
+        expect(manualWorkflow).toContain('agent_source: ${{ inputs.agent_source }}');
+        expect(manualWorkflow).toContain('operator_phase: ${{ inputs.operator_phase }}');
+        expect(runnerWorkflow).toContain('agent_source:');
+        expect(runnerWorkflow).toContain('operator_phase:');
+        expect(runnerWorkflow).toContain('ref: ${{ inputs.ref }}');
+        expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_AGENT_SOURCE');
+        expect(runnerWorkflow).toContain('RALLAR_HETZNER_OPERATOR_PHASE');
+        expect(runnerWorkflow).toContain('RALLAR_DISTRIBUTED_PREPARE_MARKER');
+        expect(runnerWorkflow).toContain('./16-wait-for-control-agents.sh');
+        expect(runnerWorkflow).toContain('case "${RALLAR_BLACK_BOX_AGENT_SOURCE}" in');
+        expect(runnerWorkflow).toContain('case "${RALLAR_HETZNER_OPERATOR_PHASE}" in');
+        expect(runnerWorkflow).toContain("inputs.operator_phase != 'prepare'");
+        expect(runnerWorkflow).toContain('RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh');
+    });
+
     it('rejects topology-specific manifests in the reusable workflow when rollout is disabled', async () => {
         const runnerWorkflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
 
         expect(runnerWorkflow).toContain('INPUT_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}');
         expect(runnerWorkflow).toContain('topology_env_requires_rollout');
-        expect(runnerWorkflow).toContain('requires rollout_before_run=true so API RTC topology env can be applied');
+        expect(runnerWorkflow).toContain('requires rollout_before_run=true unless operator_phase=run validates a prepare marker');
     });
 
     it('runs supported Hetzner manifests on every main push with a serial matrix', async () => {
@@ -283,6 +304,18 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toMatch(
             /if bool_enabled "\$\{RALLAR_ROLLOUT_BEFORE_RUN:-0\}"; then[\s\S]*\.\/08-rollout-controller\.sh[\s\S]*fi[\s\S]*\.\/10-stop-headless-workers\.sh \|\| true[\s\S]*RALLAR_WRITE_HEADLESS_ENV=1 \.\/09-start-headless-workers\.sh/,
         );
+    });
+
+    it('provides a provider-neutral wait script for externally started control agents', async () => {
+        const script = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/16-wait-for-control-agents.sh'),
+            'utf8',
+        );
+
+        expect(script).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
+        expect(script).toContain('control_run_snapshot_url');
+        expect(script).toContain('Timed out waiting for external control agents');
+        expect(script).not.toContain('systemctl is-active');
     });
 
     it('writes workflow-provided headless env values when restarting browsers', async () => {

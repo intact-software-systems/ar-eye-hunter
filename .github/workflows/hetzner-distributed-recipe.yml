@@ -11,6 +11,14 @@ on:
         description: Roll out the selected ref before starting browsers and running the recipe
         type: boolean
         default: true
+      agent_source:
+        description: Agent source for the distributed run
+        required: false
+        default: hetzner
+      operator_phase:
+        description: Hetzner distributed recipe runner phase
+        required: false
+        default: full
       agent_count:
         description: Number of headless browser agents to run; blank derives from manifest targetPolicy.expectedParticipantCount
         required: false
@@ -97,6 +105,8 @@ jobs:
     with:
       ref: ${{ inputs.ref }}
       rollout_before_run: ${{ inputs.rollout_before_run }}
+      agent_source: ${{ inputs.agent_source }}
+      operator_phase: ${{ inputs.operator_phase }}
       agent_count: ${{ inputs.agent_count }}
       run_id: ${{ inputs.run_id }}
       room_id: ${{ inputs.room_id }}
