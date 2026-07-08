@@ -1,0 +1,103 @@
+name: API v1 Black-Box
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_memory:
+        description: Run optional pglite-memory backend after Postgres.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  postgres:
+    name: API v1 black-box Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_ICE_MODE: local
+      RALLAR_LOGIN_USER_RATE_LIMIT: "100"
+      RALLAR_STATE_STRICT_READ_AUTH: "1"
+      AUTH_STATIC_CLIENTS_MODE: demo
+      AUTH_REGISTRATION_MODE: public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: npm ci
+      - name: Run API v1 black-box recipes
+        uses: ./.github/actions/api-v1-black-box-test
+        with:
+          backend: postgres
+          api-port: "18080"
+          artifact-dir: .artifacts/api-v1-black-box/postgres
+          run-id: "${{ github.run_id }}-${{ github.run_attempt }}-postgres"
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-v1-black-box-postgres
+          path: .artifacts/api-v1-black-box/postgres
+          if-no-files-found: warn
+
+  memory:
+    name: API v1 black-box pglite-memory
+    if: ${{ inputs.include_memory }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RALLAR_ICE_MODE: local
+      RALLAR_LOGIN_USER_RATE_LIMIT: "100"
+      RALLAR_STATE_STRICT_READ_AUTH: "1"
+      AUTH_STATIC_CLIENTS_MODE: demo
+      AUTH_REGISTRATION_MODE: public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: npm ci
+      - name: Run API v1 black-box recipes
+        uses: ./.github/actions/api-v1-black-box-test
+        with:
+          backend: pglite-memory
+          api-port: "18081"
+          artifact-dir: .artifacts/api-v1-black-box/memory
+          run-migrations: "false"
+          run-id: "${{ github.run_id }}-${{ github.run_attempt }}-memory"
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-v1-black-box-memory
+          path: .artifacts/api-v1-black-box/memory
+          if-no-files-found: warn

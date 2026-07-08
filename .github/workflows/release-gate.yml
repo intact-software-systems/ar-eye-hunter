@@ -80,6 +80,24 @@ jobs:
       - name: Run Postgres migrations
         run: npm run db:migrate
 
+      - name: Run API v1 black-box recipes
+        uses: ./.github/actions/api-v1-black-box-test
+        with:
+          backend: postgres
+          api-port: "18080"
+          artifact-dir: .artifacts/api-v1-black-box/postgres
+          profile: api-v1-black-box
+          run-migrations: "false"
+          run-id: "${{ github.run_id }}-${{ github.run_attempt }}-postgres"
+
+      - name: Upload API v1 black-box artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-v1-black-box-postgres
+          path: .artifacts/api-v1-black-box/postgres
+          if-no-files-found: warn
+
       - name: Run Postgres full-stack smoke tests
         run: |
           npm run test:postgres:presence-expiry

@@ -11,6 +11,14 @@ on:
         description: Roll out the selected ref before starting browsers and running the recipe
         type: boolean
         default: true
+      agent_source:
+        description: Agent source for the distributed run
+        required: false
+        default: hetzner
+      operator_phase:
+        description: Hetzner distributed recipe runner phase
+        required: false
+        default: full
       agent_count:
         description: Number of headless browser agents to run; blank derives from manifest targetPolicy.expectedParticipantCount
         required: false
@@ -27,6 +35,14 @@ on:
         description: Agent id prefix for headless agents
         required: true
         default: controller
+      control_url:
+        description: Public black-box control WebSocket URL
+        required: true
+        default: wss://control.rallar.intactss.com/control
+      control_http_url:
+        description: Public black-box control HTTP URL
+        required: true
+        default: https://control.rallar.intactss.com
       manifest_path:
         description: Repo path to a distributed run manifest JSON file
         required: true
@@ -97,10 +113,14 @@ jobs:
     with:
       ref: ${{ inputs.ref }}
       rollout_before_run: ${{ inputs.rollout_before_run }}
+      agent_source: ${{ inputs.agent_source }}
+      operator_phase: ${{ inputs.operator_phase }}
       agent_count: ${{ inputs.agent_count }}
       run_id: ${{ inputs.run_id }}
       room_id: ${{ inputs.room_id }}
       agent_prefix: ${{ inputs.agent_prefix }}
+      control_url: ${{ inputs.control_url }}
+      control_http_url: ${{ inputs.control_http_url }}
       manifest_path: ${{ inputs.manifest_path }}
       application_id: ${{ inputs.application_id }}
       workspace_id: ${{ inputs.workspace_id }}

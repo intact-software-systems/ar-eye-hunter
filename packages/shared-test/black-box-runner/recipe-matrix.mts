@@ -86,7 +86,7 @@ function usage(): string {
         '  deno run -A packages/shared-test/black-box-runner/recipe-matrix.mts [options]',
         '',
         'Options:',
-        '  --profile=<name>              quick, dry, deterministic, validation, soak, traffic, parallel, failure-diagnostics, live, live-soak, live-traffic, live-parallel, rallar-server-live, browser-live, remote-live, signaling-live. Default: quick',
+        '  --profile=<name>              quick, dry, deterministic, validation, soak, traffic, parallel, failure-diagnostics, live, live-soak, live-traffic, live-parallel, live-crdt, rallar-server-live, api-v1-black-box, browser-live, remote-live, signaling-live. Default: quick',
         '  --id=<entry-id>               Run one entry. Can be repeated.',
         '  --artifact-dir=<dir>          Write per-entry scenario artifacts and matrix-summary.json.',
         '  --list                        Print the selected matrix entries and exit.',

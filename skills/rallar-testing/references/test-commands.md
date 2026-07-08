@@ -34,6 +34,21 @@ npx vitest run packages/tests/rallar-black-box-headless/headless-status-view.tes
 cd apps/rallar-black-box-control-server && deno test --allow-run --allow-net --allow-env --allow-read --allow-write test/api-black-box.test.ts
 ```
 
+## REST API Black-Box Practice
+
+When adding or changing REST API behavior, add or adjust Rallar black-box
+recipes/tests in `packages/shared-test/black-box-runner` as part of the same
+change. For `apps/api-v1`, use the no-browser black-box scripts:
+
+```bash
+npm run test:api-v1:black-box:memory
+npm run test:api-v1:black-box:postgres
+npm run test:api-v1:black-box:recipes
+```
+
+Use `memory` for fast local feedback, `postgres` when Postgres is available,
+and `recipes` when validating against an already-running API.
+
 ## Broader Suites
 
 ```bash

@@ -1,0 +1,50 @@
+name: API v1 black-box test
+description: Start apps/api-v1 and run no-browser black-box-runner recipes.
+inputs:
+  backend:
+    description: "Backend to use: postgres or pglite-memory."
+    required: false
+    default: postgres
+  api-port:
+    description: Local API port.
+    required: false
+    default: "18080"
+  artifact-dir:
+    description: Directory for runner artifacts and API logs.
+    required: false
+    default: .artifacts/api-v1-black-box/postgres
+  profile:
+    description: Black-box runner matrix profile.
+    required: false
+    default: api-v1-black-box
+  run-migrations:
+    description: Run Postgres migrations before starting API.
+    required: false
+    default: "true"
+  run-id:
+    description: Stable run id for test data isolation.
+    required: false
+    default: local
+runs:
+  using: composite
+  steps:
+    - name: Run API v1 black-box recipes
+      shell: bash
+      env:
+        RALLAR_BB_RUN_ID: "${{ inputs.run-id }}"
+      run: |
+        set -euo pipefail
+
+        args=(
+          "--backend=${{ inputs.backend }}"
+          "--port=${{ inputs.api-port }}"
+          "--artifact-dir=${{ inputs.artifact-dir }}"
+          "--profile=${{ inputs.profile }}"
+          "--run-id=${{ inputs.run-id }}"
+        )
+
+        if [ "${{ inputs.run-migrations }}" != "true" ]; then
+          args+=("--no-migrate")
+        fi
+
+        deno run -A packages/shared-test/black-box-runner/api-v1-black-box-run.mts "${args[@]}"

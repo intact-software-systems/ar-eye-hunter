@@ -282,7 +282,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
                 },
             }),
             agentCount: 50,
-            profiles: ['rtc', 'messages.rtc', 'principal', 'multicast', 'tree', 'extended'],
+            profiles: ['rtc', 'messages.rtc', 'principal', 'multicast', 'tree', '50-agent', 'github-free-smoke', 'extended'],
             live: true,
             targetAgentIds: controllerAgentIds(50),
             targetPolicyMode: 'role-map',
@@ -297,6 +297,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
                 minReceiveRatio: 0.95,
                 receiverExpectedFrames: 600,
                 recommendedTerminalTimeoutSeconds: 330,
+                catalogProfiles: ['github-free-smoke', '50-agent', 'tree'],
             }),
         }),
         buildManifestEntry({
@@ -586,6 +587,7 @@ function multicastManifestMetadata(input: Readonly<{
     minReceiveRatio: number;
     receiverExpectedFrames: number;
     recommendedTerminalTimeoutSeconds: number;
+    catalogProfiles?: readonly string[];
 }>): Readonly<Record<string, unknown>> {
     const streamFrames = input.durationSeconds * input.rateHz * input.senderCount;
     return {
@@ -599,6 +601,7 @@ function multicastManifestMetadata(input: Readonly<{
         rateHz: input.rateHz,
         expectedDurationSeconds: input.durationSeconds,
         recommendedTerminalTimeoutSeconds: input.recommendedTerminalTimeoutSeconds,
+        ...(input.catalogProfiles ? { catalogProfiles: input.catalogProfiles } : {}),
         rtcTopologyEnv: {
             RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: input.topologyProfile === 'tree' ? '51' : '16',
         },

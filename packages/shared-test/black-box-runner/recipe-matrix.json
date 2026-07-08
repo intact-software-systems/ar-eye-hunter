@@ -831,6 +831,120 @@
       "description": "Live WS versus RTC payload parity."
     },
     {
+      "id": "api-v1-auth-session",
+      "recipe": "examples/api-v1-auth-session.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-auth-session",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 auth/session black-box recipe."
+    },
+    {
+      "id": "api-v1-group-presence",
+      "recipe": "examples/api-v1-group-presence.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-presence",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 group lifecycle and presence recipe."
+    },
+    {
+      "id": "api-v1-client-state",
+      "recipe": "examples/api-v1-client-state.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-client-state",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 client principal, instance, and session recipe."
+    },
+    {
+      "id": "api-v1-websocket-topic-routing",
+      "recipe": "examples/api-v1-websocket-topic-routing.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-websocket-topic-routing",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 authenticated raw WebSocket routing recipe."
+    },
+    {
+      "id": "api-v1-scope-isolation",
+      "recipe": "examples/api-v1-scope-isolation.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-scope-isolation",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 scoped application/workspace isolation recipe."
+    },
+    {
+      "id": "api-v1-openapi-topology-auth",
+      "recipe": "examples/api-v1-openapi-topology-auth.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-openapi-topology-auth",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 OpenAPI auth contract for scoped graph and topology management endpoints."
+    },
+    {
       "id": "rallar-signaling-two-peer-chat-dry",
       "recipe": "examples/rtc-rallar-two-peer-chat.json",
       "category": "rallar-signaling",

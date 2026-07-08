@@ -46,7 +46,10 @@ Postgres is the default and required CI backend.
 - Run migrations before starting `apps/api-v1`.
 - Start `apps/api-v1` with `DATABASE_URL`, `RALLAR_ICE_MODE=local`, and a raised
   login rate limit for deterministic test accounts.
-- Run the `api-v1-black-box` recipe profile in strict mode.
+- Set `AUTH_STATIC_CLIENTS_MODE=demo` and `AUTH_REGISTRATION_MODE=public` for
+  this test job unless a later hardened profile provisions real users.
+- Run the `api-v1-black-box` recipe profile with `--require-gates` so skipped
+  required entries fail CI.
 
 This path proves the externally observable API contract against the durable
 database path used by deployment gates.
@@ -59,10 +62,31 @@ Pglite-memory is optional and default off.
   `RALLAR_PGLITE_DATA_DIR=memory://`, `RALLAR_PGLITE_SCHEMA_INIT=auto`,
   `RALLAR_DB_PUBSUB=local`, `RALLAR_ICE_MODE=local`, and a raised login rate
   limit.
+- Set `AUTH_STATIC_CLIENTS_MODE=demo` and `AUTH_REGISTRATION_MODE=public` to
+  match the default Postgres test identity model.
 - Use the same recipes and profile as Postgres.
 - Expose as a local convenience command and optional manual workflow input.
 
 This path gives quick local feedback without requiring Postgres.
+
+## Test Identity And Data Isolation
+
+Recipes should use bundled static demo users for login-driven flows:
+
+- `alice` / `secret`
+- `bob` / `secret`
+- `charlie` / `secret` only when a future recipe needs a third actor
+
+Registration coverage should use a generated disposable username derived from a
+run identifier, not a bundled static username. The action should provide
+`RALLAR_BB_RUN_ID`, using `github.run_id`/`github.run_attempt` in CI and a
+timestamp or UUID locally. Recipe variables should derive group IDs,
+application IDs, workspace IDs, request IDs, and disposable usernames from that
+run ID.
+
+Persistent Postgres runs must avoid collisions with prior artifacts. Recipes
+can accept idempotent statuses such as `201` or `409` only where the API
+contract intentionally allows reuse; otherwise they should use run-scoped IDs.
 
 ## Recipe Catalog
 
@@ -70,7 +94,7 @@ Create a no-browser API recipe profile named `api-v1-black-box`. The first
 catalog should be small and focused:
 
 - `api-v1-auth-session.json`
-  - Register or tolerate an existing test user.
+  - Register a run-scoped disposable test user.
   - Login, derive redacted bearer auth, logout.
   - Reject invalid login, missing bearer token, and missing `x-client-id`.
 
@@ -102,6 +126,13 @@ CRDT admin HTTP coverage is intentionally excluded from the required first
 profile unless deterministic admin credentials are provisioned. It can be added
 later as a separate optional profile.
 
+Each matrix entry should declare the Rallar API service requirement with
+`requires.httpServices` and should avoid `requires.playwright`. Entries that
+exercise auth, group state, or WebSocket setup should let the existing runner
+preflight check `/api/config`, login, group create/join permission, WS ticket,
+and WS upgrade. Those preflight checks become required in CI through
+`--require-gates`.
+
 ## Scripts
 
 Add root/package convenience commands with clear boundaries:
@@ -120,6 +151,12 @@ Add root/package convenience commands with clear boundaries:
 
 Shared-test workspace scripts may wrap the recipe matrix directly, while root
 scripts should be the discoverable entry points for local use.
+
+Matrix profile execution should use `--require-gates` for CI strictness.
+Recipe authoring validation should run each new recipe through
+`scenario-black-box.ts --validate --strict`; if the matrix wrapper needs to
+validate a whole profile in strict schema mode, add explicit wrapper support
+instead of assuming `--require-gates` performs schema validation.
 
 ## GitHub Action
 
@@ -142,21 +179,28 @@ Responsibilities:
 
 1. Build environment variables for the selected backend.
 2. Run migrations when the backend is Postgres.
-3. Start `apps/api-v1` in the background and capture logs.
+3. Start `apps/api-v1` in the background, capture logs, and install a shell
+   trap that stops the server on success, failure, or cancellation.
 4. Wait until `/api/config` responds.
-5. Run the black-box runner matrix profile in strict mode.
+5. Run the black-box runner matrix profile with `--require-gates`.
 6. Stop the server process.
 7. Leave runner artifacts and server logs in the artifact directory for workflow
    upload.
 
+The action should not install Playwright or browser dependencies. It may leave
+artifact upload to the calling workflow because composite actions cannot define
+workflow-level services and are easier to reuse when they only prepare files.
+
 ## GitHub Workflow
 
-Add the required Postgres black-box job to the existing reusable
+Add a required Postgres black-box job to the existing reusable
 `.github/workflows/release-gate.yml`. This makes branch builds inherit the job
 through `branch-release-gate.yml` and makes main builds inherit it through
 `deploy.yml`.
 
 - Default job: Postgres backend only.
+- The job owns or reuses the Postgres service, installs Node and Deno, runs
+  migrations, calls the composite action, and uploads artifacts.
 - Optional manual workflow input on a dedicated helper workflow:
   `include_memory`.
 - When `include_memory` is true, run a second job or matrix entry with
@@ -193,7 +237,7 @@ artifacts remain redacted.
 
 Before landing the implementation:
 
-1. Run recipe validation with strict mode for the new profile.
+1. Run each new recipe with `scenario-black-box.ts --validate --strict`.
 2. Run `npm run check:shared-test`.
 3. Run the pglite-memory black-box command as a fast smoke.
 4. Run the Postgres black-box command locally when Postgres is available, and

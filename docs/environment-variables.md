@@ -272,6 +272,70 @@ safe values to browser agents as URL parameters.
 | `RALLAR_AGENT_LONGITUDE` / `RALLAR_BLACK_BOX_AGENT_LONGITUDE` | No | None | Explicit fleet longitude forwarded as `fleetLongitude`; invalid values fail startup.    |
 | `RALLAR_AGENT_LOCATION_LABEL` / `RALLAR_BLACK_BOX_AGENT_LOCATION_LABEL` | No | None | Human label forwarded as `fleetLocationLabel`.                                         |
 | `RALLAR_AGENT_TAGS` / `RALLAR_BLACK_BOX_AGENT_TAGS` | No | None | Comma-separated fleet tags forwarded as `fleetTags`.                                   |
+| `RALLAR_BLACK_BOX_EXIT_MODE` | No | `signal` | Worker shutdown policy. Use `after-target-distributed-run-terminal` in GitHub Actions so a headless shard exits when the target distributed run reaches `passed`, `failed`, `cancelled`, or `timed-out`; use `after-idle-ms` for a fixed lease. |
+| `RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID` | Required when `RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal` | None | Distributed run id polled by GitHub-hosted headless workers before exiting. |
+| `RALLAR_CONTROL_HTTP_URL` | No | Derived from `RALLAR_BLACK_BOX_CONTROL_URL` by converting `ws:` to `http:` and `wss:` to `https:` | Control-server HTTP base URL used for distributed-run polling. In GitHub Actions this should point at the public Hetzner control URL, for example `https://control.rallar.intactss.com`. |
+| `RALLAR_BLACK_BOX_CONTROL_TOKEN` | No | None | Legacy shared bearer token used as the browser-agent registration fallback and, when no read token is configured, Node-side control-server read polling fallback. Do not set this to a permanent admin token for public browser agents. |
+| `RALLAR_BLACK_BOX_CONTROL_READ_TOKEN` | No | None | Bearer token used only by the Node-side headless worker and controller wait scripts for protected control-server reads. Use an admin/operator token here when `RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN=1`. |
+| `RALLAR_BLACK_BOX_AGENT_<N>_CONTROL_TOKEN` | No | Falls back to `RALLAR_BLACK_BOX_CONTROL_TOKEN` | Per-local-agent run token forwarded as the browser `controlToken` URL parameter. GitHub-hosted shards and the Hetzner headless browser workflow mint these automatically before launch. |
+| `RALLAR_BLACK_BOX_IDLE_EXIT_MS` | Required when `RALLAR_BLACK_BOX_EXIT_MODE=after-idle-ms`; optional fallback for distributed-run polling | None | Positive millisecond timeout for fixed-lease workers. When supplied with distributed-run polling, it bounds how long a GitHub shard can wait for the operator-created run to become terminal. |
+| `RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS` | No | `5000` | Positive millisecond interval between distributed-run status polls. GitHub Actions may lower this for faster shard shutdown after a short smoke run. |
+
+### GitHub Free Distributed Recipe Workflow
+
+`.github/workflows/github-free-distributed-recipe.yml` runs GitHub-hosted
+headless browser shards against the existing public Hetzner control plane. The
+default 50-agent smoke sizing is:
+
+```text
+target_agent_count=50
+agents_per_job=3
+max_parallel_jobs=17
+agent_prefix=controller
+```
+
+The operator runbook is
+[`plans/github-actions-rallar-black-box-headless-runbook.md`](../plans/github-actions-rallar-black-box-headless-runbook.md).
+
+Keep `max_parallel_jobs` at or below `19` for this GitHub Free workflow because
+the concurrent Hetzner operator job reserves the 20th standard hosted-job slot.
+The default `agent_prefix=controller` matches the existing 50-agent role-map
+manifests, which target `controller-01` through `controller-50`. Changing the
+prefix requires a matching manifest or a manifest rewrite before dispatch.
+
+Recommended GitHub Free rollout progression:
+
+1. 2-agent health.
+2. 10-agent 30-second tree.
+3. 20-agent 30-second tree.
+4. 50-agent 30-second tree using `target_agent_count=50`, `agents_per_job=3`,
+   and `max_parallel_jobs=17`.
+5. 50-agent 60-minute tree only after the 30-second run is stable.
+
+The default GitHub Free smoke candidate is
+`apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json`.
+It preserves the existing role map for `controller-01` through
+`controller-50` and currently uses `barrier.timeoutMs=15000`. If any 10+ agent
+run reaches the staged command but misses the barrier, create a
+GitHub-specific manifest copy that preserves the same command payloads,
+topology metadata, role map, and expected participant count, but changes only
+`distributedRunId`, display/catalog labels, and `barrier.timeoutMs` to
+`60000`.
+
+When the control server has `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1`, each GitHub
+agent shard mints short-lived per-agent run tokens with
+`POST /runs/{runId}/agents/{agentId}/tokens` and exposes them as
+`RALLAR_BLACK_BOX_AGENT_<N>_CONTROL_TOKEN` before launching the headless worker.
+Set the GitHub secret `RALLAR_BLACK_BOX_CONTROL_READ_TOKEN` to an admin/operator
+token when protected reads or token minting require authorization. The workflow
+falls back to the legacy `RALLAR_BLACK_BOX_CONTROL_TOKEN` secret for older
+deployments, but that token is no longer passed directly into browser-agent
+URLs by the GitHub Free workflow.
+
+The regular `.github/workflows/hetzner-headless-browsers.yml` workflow uses the
+same token endpoint for `action=start` and `action=restart`, including when the
+dispatch leaves `run_id` blank and the workflow generates one before copying the
+remote worker environment.
 
 ### Full-Stack Playwright Startup
 

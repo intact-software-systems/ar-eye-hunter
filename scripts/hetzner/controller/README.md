@@ -324,6 +324,21 @@ RALLAR_INSTALL_PLAYWRIGHT=1 \
 ./09-start-headless-workers.sh
 ```
 
+### External GitHub Agent Pools
+
+When browser workers are started outside the VM, the operator can wait for
+those control agents without touching the Hetzner systemd worker service:
+
+```sh
+RALLAR_BLACK_BOX_CONTROL_URL=wss://control.rallar.intactss.com/control \
+RALLAR_BLACK_BOX_RUN_ID=gh-123 \
+RALLAR_BLACK_BOX_AGENT_PREFIX=controller \
+RALLAR_BLACK_BOX_AGENT_COUNT=50 \
+RALLAR_BLACK_BOX_AGENT_START_INDEX=1 \
+RALLAR_HEADLESS_READY_TIMEOUT_SECONDS=240 \
+./16-wait-for-control-agents.sh
+```
+
 Headless browser login uses the same visible Rallar Kit login flow as a human
 browser. The worker opens the public SPA with `provider=browser-rallar`,
 `rallarUsername`, `rallarPassword`, `apiBaseUrl`, `applicationId`,
@@ -360,10 +375,21 @@ useful for temporary runs, but GitHub workflow inputs are not repository
 secrets.
 
 If `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1` is enabled on the control server,
-also pass:
+the GitHub Actions headless browser workflow mints per-agent run tokens for
+`action=start` and `action=restart` before copying the remote worker env. For
+direct script usage, pass per-agent run tokens to the headless worker rather
+than a permanent admin token:
 
 ```sh
-RALLAR_BLACK_BOX_CONTROL_TOKEN=<run-or-agent-token>
+RALLAR_BLACK_BOX_AGENT_1_CONTROL_TOKEN=<issued-run-token-for-local-agent-1>
+RALLAR_BLACK_BOX_AGENT_2_CONTROL_TOKEN=<issued-run-token-for-local-agent-2>
+```
+
+If `RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN=1` is enabled, also pass an
+admin/operator token for Node-side control-server reads:
+
+```sh
+RALLAR_BLACK_BOX_CONTROL_READ_TOKEN=<admin-or-operator-token>
 ```
 
 Useful options:
@@ -699,11 +725,22 @@ the dispatch inputs `rallar_black_box_username` and `rallar_black_box_password`
 are provided for the run. For `action=start`, the workflow fails before opening
 SSH if neither inputs nor production secrets provide both values.
 
-Optional GitHub secret when run tokens are enabled for headless worker links:
+Optional GitHub secrets when control-server hardening is enabled:
 
 ```text
+RALLAR_BLACK_BOX_CONTROL_READ_TOKEN
 RALLAR_BLACK_BOX_CONTROL_TOKEN
 ```
+
+Prefer `RALLAR_BLACK_BOX_CONTROL_READ_TOKEN` for the admin/operator token used
+by GitHub workflows to mint short-lived per-agent run tokens and poll protected
+read endpoints. `RALLAR_BLACK_BOX_CONTROL_TOKEN` remains a legacy fallback for
+older deployments.
+
+For `action=start` and `action=restart`, the headless browser workflow appends
+`RALLAR_BLACK_BOX_AGENT_<N>_CONTROL_TOKEN` values to the remote worker env. When
+the `run_id` input is blank, the workflow generates a stable run id before token
+minting so the issued tokens match the worker registration run.
 
 For normal browser operation, do not paste the permanent
 `RALLAR_BLACK_BOX_ADMIN_TOKEN` into public Black Box URLs. The Recipes tab now
@@ -761,6 +798,12 @@ Use `manifest_path` for the repo-relative distributed manifest file. Leave
 `run_id` blank to derive a unique control run id from the GitHub run. The
 workflow sets the distributed `controlRunId` to the same value so target
 resolution uses the newly connected headless agents.
+
+Use `control_url` and `control_http_url` to point the workflow at a staging
+control server or another public Hetzner control plane. The reusable runner
+forwards them to the remote `RALLAR_BLACK_BOX_CONTROL_URL` and
+`RALLAR_CONTROL_HTTP_URL` values used by the headless workers and
+distributed-run admin calls.
 
 The recipe step may fail, but the workflow still uploads artifacts before the
 final job failure. Read `analysis/fix-proposal.md` for failed runs and
