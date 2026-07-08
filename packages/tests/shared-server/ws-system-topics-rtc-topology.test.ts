@@ -20,7 +20,9 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import { latestRttById } from '@shared/repository/rtt-repository.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
@@ -238,6 +240,315 @@ describe('Rallar system websocket topics RTC topology', () => {
             topologySnapshotCount: 0,
             pendingRttUpdateCount: 0,
         });
+    });
+
+    it('rejects RTT measurements from a mismatched AL sender', async () => {
+        configureTestCacheRepositories();
+        const { sockets } = createRttHarness(['session-a', 'session-b']);
+        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-b',
+            sessionIdTo: 'session-a',
+            rttMs: 12,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, group);
+
+        expect(latestRttById().read('session-a::session-b')).toBeUndefined();
+    });
+
+    it('rejects RTT measurements for self pairs', async () => {
+        configureTestCacheRepositories();
+        const { sockets } = createRttHarness(['session-a']);
+        const group = createGroupSnapshot('room-1', ['session-a']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-a',
+            rttMs: 12,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, group);
+
+        expect(latestRttById().read('session-a::session-a')).toBeUndefined();
+    });
+
+    it('rejects invalid RTT measurements', async () => {
+        configureTestCacheRepositories();
+        const { sockets } = createRttHarness(['session-a', 'session-b']);
+        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 0,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, group);
+
+        expect(latestRttById().read('session-a::session-b')).toBeUndefined();
+    });
+
+    it('rejects RTT measurements without a shared active group', async () => {
+        configureTestCacheRepositories();
+        const { sockets } = createRttHarness(['session-a', 'session-b', 'session-c']);
+        const group = createGroupSnapshot('room-1', ['session-a', 'session-c']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 12,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, group);
+
+        expect(latestRttById().read('session-a::session-b')).toBeUndefined();
+    });
+
+    it('rejects RTT measurements outside the reporting edge policy', async () => {
+        configureTestCacheRepositories();
+        const { sockets, topologyService } = createRttHarness(
+            ['session-a', 'session-b', 'session-c', 'session-d'],
+            {
+                rtcTopologyOptions: {
+                    rttReportingDegreeLimit: 1,
+                },
+            },
+        );
+        const group = createGroupSnapshot('room-1', [
+            'session-a',
+            'session-b',
+            'session-c',
+            'session-d',
+        ]);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        topologyService.updateGroupTopology(group);
+
+        await dispatchRtt(sockets.get('session-c')!, 'session-c', {
+            sessionIdFrom: 'session-c',
+            sessionIdTo: 'session-d',
+            rttMs: 12,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, group);
+
+        expect(latestRttById().read('session-c::session-d')).toBeUndefined();
+    });
+
+    it('ignores stale RTT measurements before Vivaldi or topology work', async () => {
+        configureTestCacheRepositories();
+        const { sockets, topologyService } = createRttHarness(
+            ['session-a', 'session-b'],
+            {
+                rtcTopologyOptions: {
+                    rttRebuildDebounceMs: 0,
+                },
+            },
+        );
+        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        const observeRtt = vi.spyOn(vivaldiService, 'observeRtt');
+        const queueRttTopologyUpdate = vi.spyOn(
+            topologyService,
+            'queueRttTopologyUpdate',
+        );
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 12,
+            createdAtEpochMs: 2,
+            version: 2,
+        }, group);
+
+        observeRtt.mockClear();
+        queueRttTopologyUpdate.mockClear();
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 4,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, group);
+
+        expect(latestRttById().read('session-a::session-b')?.rttMs).toBe(12);
+        expect(observeRtt).not.toHaveBeenCalled();
+        expect(queueRttTopologyUpdate).not.toHaveBeenCalled();
+    });
+
+    it('rejects RTT measurements that would exceed the reporting degree', async () => {
+        configureTestCacheRepositories();
+        const { sockets } = createRttHarness(['session-a', 'session-b', 'session-c'], {
+            rtcTopologyOptions: {
+                rttReportingDegreeLimit: 1,
+            },
+        });
+        const group = createGroupSnapshot('room-1', [
+            'session-a',
+            'session-b',
+            'session-c',
+        ]);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 12,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, group);
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-c',
+            rttMs: 13,
+            createdAtEpochMs: 2,
+            version: 2,
+        }, group);
+
+        expect(latestRttById().read('session-a::session-b')).toBeDefined();
+        expect(latestRttById().read('session-a::session-c')).toBeUndefined();
+    });
+
+    it('rejects over-degree RTT measurements across active groups', async () => {
+        configureTestCacheRepositories();
+        const { sockets } = createRttHarness(['session-a', 'session-b', 'session-c'], {
+            rtcTopologyOptions: {
+                rttReportingDegreeLimit: 1,
+            },
+        });
+        const groupOne = createGroupSnapshot('room-1', ['session-a', 'session-b']);
+        const groupTwo = createGroupSnapshot('room-2', ['session-a', 'session-c']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(groupOne);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(groupTwo);
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 12,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, groupOne);
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-c',
+            rttMs: 13,
+            createdAtEpochMs: 2,
+            version: 2,
+        }, groupTwo);
+
+        expect(latestRttById().read('session-a::session-b')).toBeDefined();
+        expect(latestRttById().read('session-a::session-c')).toBeUndefined();
+    });
+
+    it('rejects over-degree RTT measurements with runtime-state storage', async () => {
+        configureTestCacheRepositories();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const { sockets } = createRttHarness(['session-a', 'session-b', 'session-c'], {
+            rtcTopologyOptions: {
+                rttReportingDegreeLimit: 1,
+            },
+            runtimeRepository,
+        });
+        const group = createGroupSnapshot('room-1', [
+            'session-a',
+            'session-b',
+            'session-c',
+        ]);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 12,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, group);
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-c',
+            rttMs: 13,
+            createdAtEpochMs: 2,
+            version: 2,
+        }, group);
+
+        const durableRtts = new RtcRttRepository(runtimeRepository);
+        expect(await durableRtts.findMeasurement('session-a', 'session-b'))
+            .toBeDefined();
+        expect(await durableRtts.findMeasurement('session-a', 'session-c'))
+            .toBeUndefined();
+    });
+
+    it('rejects runtime-state over-degree RTT measurements across active groups', async () => {
+        configureTestCacheRepositories();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const { sockets } = createRttHarness(['session-a', 'session-b', 'session-c'], {
+            rtcTopologyOptions: {
+                rttReportingDegreeLimit: 1,
+            },
+            runtimeRepository,
+        });
+        const groupOne = createGroupSnapshot('room-1', ['session-a', 'session-b']);
+        const groupTwo = createGroupSnapshot('room-2', ['session-a', 'session-c']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(groupOne);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(groupTwo);
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 12,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, groupOne);
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-c',
+            rttMs: 13,
+            createdAtEpochMs: 2,
+            version: 2,
+        }, groupTwo);
+
+        const durableRtts = new RtcRttRepository(runtimeRepository);
+        expect(await durableRtts.findMeasurement('session-a', 'session-b'))
+            .toBeDefined();
+        expect(await durableRtts.findMeasurement('session-a', 'session-c'))
+            .toBeUndefined();
+    });
+
+    it('locks RTT endpoints before accepting runtime-state measurements', async () => {
+        configureTestCacheRepositories();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const { sockets } = createRttHarness(['session-a', 'session-b'], {
+            runtimeRepository,
+        });
+        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+
+        await dispatchRtt(sockets.get('session-a')!, 'session-a', {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 12,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, group);
+
+        expect(runtimeRepository.locks).toEqual(
+            expect.arrayContaining([
+                {
+                    namespace: 'rtc-rtt:latest',
+                    key: 'endpoint=session-a',
+                },
+                {
+                    namespace: 'rtc-rtt:latest',
+                    key: 'endpoint=session-b',
+                },
+            ]),
+        );
     });
 
     it('debounces and coalesces RTT-triggered overlay topology broadcasts', async () => {
@@ -701,6 +1012,69 @@ function createSocketsFrom(
     sockets: readonly FakeSocket[],
 ): Map<string, FakeSocket> {
     return new Map(sockets.map((socket, index) => [`socket-${index}`, socket]));
+}
+
+function createRttHarness(
+    sessionIds: readonly string[],
+    options: Readonly<{
+        rtcTopologyOptions?: ConstructorParameters<typeof RallarRtcTopologyService>[0];
+        runtimeRepository?: FakeRuntimeStateRepository;
+    }> = {},
+): {
+    readonly sockets: Map<string, FakeSocket>;
+    readonly topologyService: RallarRtcTopologyService;
+} {
+    const server = new JsonWebSocketServer();
+    const sockets = createSockets(sessionIds);
+    for (const [sessionId, socket] of sockets) {
+        server.addConnection(new ConnectionContext(sessionId, socket as never));
+    }
+
+    const service = new WsQueueBoxServerService(
+        new InMemoryQueueBox(new Map()),
+        new InMemoryQueueBox(new Map()),
+        server,
+        'server-1',
+    );
+    const topologyService = new RallarRtcTopologyService(
+        options.rtcTopologyOptions,
+    );
+    initRallarSystemWsTopics(service, {
+        rtcTopologyService: topologyService,
+        ...(options.runtimeRepository
+            ? { rtcTopologyRuntimeState: { repository: options.runtimeRepository } }
+            : {}),
+    });
+
+    return { sockets, topologyService };
+}
+
+async function dispatchRtt(
+    socket: FakeSocket,
+    senderId: string,
+    rtt: Readonly<{
+        sessionIdFrom: string;
+        sessionIdTo: string;
+        rttMs: number;
+        createdAtEpochMs: number;
+        version: number;
+    }>,
+    group?: GroupSnapshot,
+): Promise<void> {
+    await socket.dispatchMessage(
+        newALBroadcastMessage(
+            senderId,
+            newALEventRoute(
+                AppTopics.rtt,
+                group?.group.groupId ?? 'room-1',
+                `rtt-${rtt.version}`,
+            ),
+            'room',
+            AppTopics.rtt,
+            rtt,
+            group ? { groupRef: group.group } : undefined,
+        ),
+    );
 }
 
 function countSentTopologyMessages(

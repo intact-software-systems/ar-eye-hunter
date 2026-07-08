@@ -63,6 +63,7 @@ export class WebRtcRxStreamerService {
     private readonly heartbeatByPeerId = new Map<PeerId, WebRtcHeartbeatService>();
     private readonly peerDtoByPeerId = new Map<PeerId, QRtcPeerDto>();
     private readonly inboundRuntime: ALInboundMessageRuntime;
+    private rttReportingPeerIds: ReadonlySet<PeerId> | undefined;
 
     constructor(
         public readonly inbox: QueueBoxResourceEntryRepository,
@@ -185,6 +186,28 @@ export class WebRtcRxStreamerService {
         this.heartbeatByPeerId.clear();
     }
 
+    setRttReportingPeerIds(peerIds: readonly PeerId[]): void {
+        this.rttReportingPeerIds = new Set(peerIds);
+        for (const [peerId, heartbeat] of this.heartbeatByPeerId.entries()) {
+            if (!this.shouldReportRttForPeer(peerId)) {
+                heartbeat.stop();
+                this.heartbeatByPeerId.delete(peerId);
+            }
+        }
+
+        for (const peerId of peerIds) {
+            const dto = this.peerDtoByPeerId.get(peerId);
+            if (
+                dto?.channel?.isOpen?.() &&
+                !this.heartbeatByPeerId.has(peerId)
+            ) {
+                this.startRtcHeartbeats(peerId).catch((error) =>
+                    console.error(`Failed to start RTT heartbeat for ${peerId}`, error)
+                );
+            }
+        }
+    }
+
     enableDefaultCallbacks(): WebRtcRxStreamerService {
         this.onOutboxMessageDo(
             this.input.sessionId + '-rtc-outbox',
@@ -222,6 +245,10 @@ export class WebRtcRxStreamerService {
     }
 
     private startRtcHeartbeats(peerId: string): Promise<void> {
+        if (!this.shouldReportRttForPeer(peerId)) {
+            return Promise.resolve();
+        }
+
         console.log(`Data channel to ${peerId} opened. Starting heartbeat`);
 
         {
@@ -277,6 +304,11 @@ export class WebRtcRxStreamerService {
         this.heartbeatByPeerId.set(peerId, heartbeat);
 
         return Promise.resolve();
+    }
+
+    private shouldReportRttForPeer(peerId: PeerId): boolean {
+        return this.rttReportingPeerIds === undefined ||
+            this.rttReportingPeerIds.has(peerId);
     }
 
     private toRtcMediaSubscriptionId(peerId: PeerId) {

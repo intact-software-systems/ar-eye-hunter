@@ -18,6 +18,8 @@ export * from './rallar-ai/mod.ts';
 export * from './rallar-game/mod.ts';
 export * from './rallar-motion/mod.ts';
 
+export * from './rtc/rtt-reporting-policy.ts';
+
 export * from './queuebox/QueueBoxTypes.ts';
 export * from './queuebox/ResourceEntry.ts';
 export * from './queuebox/InMemoryQueueBox.ts';

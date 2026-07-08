@@ -34,7 +34,12 @@ rallar.setDefaults({
     workspaceId: 'default',
     room: { roomId: 'lobby' },
     realtime: { laneId: 'realtime', openTimeoutMs: 1000 },
-    rtc: { waitTimeoutMs: 1000, connectOnWait: true, maxPeerConnections: 10 },
+    rtc: {
+        waitTimeoutMs: 1000,
+        connectOnWait: true,
+        maxPeerConnections: 10,
+        rttReportingDegreeLimit: 5,
+    },
     messages: { maxPayloadBytes: 64 * 1024 },
     operations: { timeoutMs: 5000, maxAttempts: 3 },
 });
@@ -52,7 +57,7 @@ const started = await rallar.setup({
     apiBaseUrl: 'http://localhost:8080',
     applicationId: 'game',
     workspaceId: 'default',
-    rtc: { maxPeerConnections: 10 },
+    rtc: { maxPeerConnections: 10, rttReportingDegreeLimit: 5 },
 });
 ```
 
@@ -80,7 +85,7 @@ try {
 
 User WebSocket topics must start with `app.` or `room.`. RTC topics only need to be route-safe.
 
-Active RTC topology keeps the server graph degree limit at `5`. Browser room transitions may retain old inactive RTC peer connections up to `rtc.maxPeerConnections`, default `10`, so changing rooms can be smooth without increasing active graph degree. This is a connect-time setting; reconnect to apply changes after middleware exists.
+Active RTC topology keeps the server graph degree limit at `5` by default. Browser room transitions may retain old inactive RTC peer connections up to `rtc.maxPeerConnections`, default `10`, so changing rooms can be smooth without increasing active graph degree. RTT heartbeat measurement is separately capped by `rtc.rttReportingDegreeLimit`, defaulting to the published overlay degree limit or `5` before an overlay arrives. These are connect-time settings; reconnect to apply changes after middleware exists.
 
 ### Lifecycle
 
@@ -943,6 +948,11 @@ multi-worker topology continuity. Rallar stores published topology snapshots in
 continue overlay versioning from the previous durable snapshot and compute with
 durable RTT inputs even if another worker accepted the triggering RTT message.
 `rttTtlMs` can override the durable RTT retention window.
+
+Accepted RTC RTT measurements are capped by the topology service
+`rttReportingDegreeLimit`, which falls back to the effective topology
+`degreeLimit`. API-v1 reads this from
+`RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT`.
 
 ### Scoped Graph And Topology REST
 

@@ -29,8 +29,8 @@ export function toOverlayInfoForSession(
         createdByClientId: snapshot.createdByClientId,
         createdAtEpochMs: snapshot.createdAtEpochMs,
         nextHopSessionIds: snapshot.nextHopsBySessionId[sessionId] ?? [],
+        degreeLimit: snapshot.degreeLimit,
         overlayVersion: snapshot.version,
         updatedAtEpochMs: snapshot.updatedAtEpochMs,
     };
 }
-

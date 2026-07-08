@@ -333,6 +333,190 @@ describe('WebRtcGroupManager', () => {
         ]);
     });
 
+    it('selects at most the configured RTT reporting peers from bootstrap room peers', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            undefined,
+            { maxPeerConnections: 10 },
+        );
+        for (const peerId of ['peer-a', 'peer-b', 'peer-c', 'peer-d']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot(
+                'group-1',
+                1,
+                ['self', 'peer-a', 'peer-b', 'peer-c', 'peer-d'],
+            ),
+        );
+
+        const selected = manager.rttReportingPeerIds({ degreeLimit: 2 });
+
+        expect(selected).toHaveLength(2);
+        expect(selected).not.toContain('self');
+    });
+
+    it('prefers overlay next hops for RTT reporting selection', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const overlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            overlayCache,
+            { maxPeerConnections: 10 },
+        );
+        const group = createGroupSnapshot('group-1', 1, [
+            'self',
+            'peer-a',
+            'peer-b',
+            'peer-c',
+        ]);
+        for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        overlayCache.set(toScopedOverlayId(group.group), {
+            ...createOverlayInfo(group, ['peer-c']),
+            degreeLimit: 1,
+        });
+        await manager.acceptGroupUpdate(group);
+
+        expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual(['peer-c']);
+    });
+
+    it('ignores provisional star overlays for RTT bootstrap selection', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const overlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            overlayCache,
+            { maxPeerConnections: 10 },
+        );
+        const group = createGroupSnapshot('group-1', 1, [
+            'self',
+            'peer-a',
+            'peer-b',
+            'peer-c',
+        ]);
+        for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        overlayCache.set(toScopedOverlayId(group.group), createOverlayInfo(group, ['peer-a']));
+        await manager.acceptGroupUpdate(group);
+
+        expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual(['peer-c']);
+    });
+
+    it('uses server-compatible per-group bootstrap candidates for RTT reporting', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            undefined,
+            { maxPeerConnections: 10 },
+        );
+        for (
+            const peerId of [
+                'peer-a',
+                'peer-b',
+                'peer-c',
+                'peer-ax',
+                'peer-bx',
+                'peer-cx',
+            ]
+        ) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, ['self', 'peer-a', 'peer-b', 'peer-c']),
+        );
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-2', 1, ['self', 'peer-ax', 'peer-bx', 'peer-cx']),
+        );
+
+        const selected = manager.rttReportingPeerIds({ degreeLimit: 1 });
+
+        expect(selected).toHaveLength(1);
+        expect(selected).not.toContain('peer-cx');
+        expect(['peer-c', 'peer-bx']).toContain(selected[0]);
+    });
+
+    it('does not report RTT peers rejected by another shared active group', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            undefined,
+            { maxPeerConnections: 10 },
+        );
+        for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, ['self', 'peer-a', 'peer-b', 'peer-c']),
+        );
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-2', 1, ['self', 'peer-a', 'peer-b', 'peer-c']),
+        );
+
+        expect(manager.rttReportingPeerIds({ degreeLimit: 1 })).toEqual([]);
+    });
+
+    it('uses overlay degree limit as RTT reporting fallback', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const overlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            overlayCache,
+        );
+        const group = createGroupSnapshot('group-1', 1, [
+            'self',
+            'peer-a',
+            'peer-b',
+            'peer-c',
+        ]);
+        for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        overlayCache.set(
+            toScopedOverlayId(group.group),
+            {
+                ...createOverlayInfo(group, ['peer-a', 'peer-b', 'peer-c']),
+                degreeLimit: 2,
+            },
+        );
+        await manager.acceptGroupUpdate(group);
+
+        expect(manager.rttReportingPeerIds()).toHaveLength(2);
+    });
+
     it('uses overlay next hops as desired RTC peers when topology is available', async () => {
         const groupCache = new LatestRepository<string, GroupSnapshot>();
         const clientCache = new LatestRepository<string, ClientInfo>();

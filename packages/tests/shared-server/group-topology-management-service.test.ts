@@ -125,6 +125,61 @@ describe('GroupTopologyManagementService', () => {
         expect(publisher.mock.calls[0][0].payload.typeId).toBe(AppTopics.overlayTopology);
     });
 
+    it('filters stored RTTs that are not reporting edges for the recomputed group', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        await new RtcTopologySnapshotRepository(runtimeRepository).putSnapshot(
+            createTopologySnapshot(
+                group.group,
+                {
+                    'session-a': ['session-b'],
+                    'session-b': ['session-a'],
+                    'session-c': ['session-d'],
+                    'session-d': ['session-c'],
+                    'session-e': [],
+                },
+                1,
+            ),
+        );
+        const rttRepository = new RtcRttRepository(runtimeRepository);
+        await rttRepository.putMeasurementIfNewer({
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-c',
+            rttMs: 7,
+            createdAtEpochMs: 1,
+            version: 1,
+        }, Date.now() + 60_000);
+        const topologyService = new RallarRtcTopologyService({
+            now: () => 2_000,
+        });
+        const updateGroupTopology = vi.spyOn(topologyService, 'updateGroupTopology');
+        const service = createService({
+            runtimeRepository,
+            group,
+            rttRepository,
+            topologyService,
+            serverDefaults: {
+                degreeLimit: 5,
+                rttReportingDegreeLimit: 1,
+            },
+        });
+
+        await service.reconfigureGroupTopology({
+            groupRef: group.group,
+            publish: false,
+        });
+
+        expect(updateGroupTopology).toHaveBeenCalledWith(
+            group,
+            [],
+            expect.objectContaining({
+                topologyOptions: expect.objectContaining({
+                    degreeLimit: 5,
+                }),
+            }),
+        );
+    });
+
     it('does not publish when publish is false and reports unchanged snapshots', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
@@ -490,6 +545,7 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
 function createTopologySnapshot(
     groupRef: GroupRef,
     nextHopsBySessionId: Record<string, readonly string[]>,
+    degreeLimit = 5,
 ): RallarOverlayTopologySnapshot {
     return {
         overlayId: JSON.stringify([
@@ -502,7 +558,7 @@ function createTopologySnapshot(
         topology: 'tree',
         activeSessionIds: ['session-a', 'session-b', 'session-c', 'session-d', 'session-e'],
         nextHopsBySessionId,
-        degreeLimit: 5,
+        degreeLimit,
         version: 1,
         createdByClientId: 'owner',
         createdAtEpochMs: 1,

@@ -1,7 +1,8 @@
 import { AppTopics, type RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import { toScopedOverlayId, toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -28,6 +29,10 @@ import {
 import {
     GroupTopologyManagementService,
 } from './services/group-topology-management-service.ts';
+import {
+    evaluateRtcRttMeasurement,
+    type RtcRttAcceptanceResult,
+} from './services/rtc-rtt-measurement-policy.ts';
 import { GroupTopologyConfigRepository } from './repositories/GroupTopologyConfigRepository.ts';
 import { RtcRttRepository, type RtcRttRepositoryOptions, } from './repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from './repositories/RtcTopologySnapshotRepository.ts';
@@ -100,6 +105,30 @@ export function initRallarSystemWsTopics(
         )
         : undefined;
     const rtcTopologyFlushTimers = new Map<string, RtcTopologyFlushTimer>();
+    let globalGraphRttRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleGlobalGraphRttRecompute = (): void => {
+        const delayMs = rtcTopologyService.readRttRebuildDebounceMs();
+        const recompute = (): void => {
+            computeGlobalGraphAndCacheItIfPossible(
+                rtcTopologyService.readRttReportingDegreeLimit(),
+            );
+        };
+
+        if (delayMs === 0) {
+            recompute();
+            return;
+        }
+
+        if (globalGraphRttRecomputeTimer) {
+            return;
+        }
+
+        globalGraphRttRecomputeTimer = setTimeout(() => {
+            globalGraphRttRecomputeTimer = undefined;
+            recompute();
+        }, delayMs);
+        (globalGraphRttRecomputeTimer as { unref?: () => void }).unref?.();
+    };
     const rtcTopologyAppInboxOptions = options.rtcTopologyAppInbox;
     const findGroupSnapshotByRef =
         rtcTopologyAppInboxOptions?.findGroupSnapshotByRef ??
@@ -192,6 +221,7 @@ export function initRallarSystemWsTopics(
         rtcTopologyAppInbox,
         rtcTopologyManagement,
         rtcTopologyRuntimeState,
+        scheduleGlobalGraphRttRecompute,
     );
     initRtcSignalingTopic(wsQBoxServerService);
     if (options.initDynamicTopics ?? true) {
@@ -404,13 +434,13 @@ function scheduleRtcOverlayTopologyFlush(
 }
 
 function scheduleRtcOverlayTopologyFlushesForRtt(
-    rtt: RttMeasurementInfo,
+    groups: readonly GroupSnapshot[],
     server: JsonWebSocketServer,
     rtcTopologyService: RallarRtcTopologyService,
     rtcTopologyFlushTimers: Map<string, RtcTopologyFlushTimer>,
     topologyManagement: GroupTopologyManagementService,
 ): void {
-    for (const group of findGroupsAffectedByRtt(rtt)) {
+    for (const group of groups) {
         scheduleRtcOverlayTopologyFlush(
             group,
             server,
@@ -519,10 +549,11 @@ async function enqueueRtcTopologyAppInboxWorkForRtt(
 
 async function enqueueRtcTopologyAppInboxWorkForRttGroups(
     rtt: RttMeasurementInfo,
+    groups: readonly GroupSnapshot[],
     rtcTopologyService: RallarRtcTopologyService,
     rtcTopologyAppInbox: RtcTopologyAppInboxRuntime,
 ): Promise<void> {
-    for (const group of findGroupsAffectedByRtt(rtt)) {
+    for (const group of groups) {
         await enqueueRtcTopologyAppInboxWorkForRtt(
             group,
             rtt,
@@ -593,6 +624,8 @@ function initRttTopic(
     rtcTopologyAppInbox?: RtcTopologyAppInboxRuntime,
     topologyManagement?: GroupTopologyManagementService,
     runtimeState?: RtcTopologyRuntimeState,
+    scheduleGlobalGraphRttRecompute: () => void = () => {
+    },
 ): void {
     wsQBoxServerService.onInboxMessageDo(AppTopics.rtt, {
         onMessage: async (data: ALMessage, _: ResourceEntry, server: JsonWebSocketServer) => {
@@ -604,49 +637,120 @@ function initRttTopic(
 
             console.log(`Received RTT message: ${data.payload.resource}`);
 
-            const isUpdated = await acceptRtcRttMeasurement(rtt, runtimeState);
-            if (isUpdated) {
-                vivaldiService.observeRtt(rtt);
-                computeGlobalGraphAndCacheItIfPossible();
-                if (rtcTopologyAppInbox) {
-                    await enqueueRtcTopologyAppInboxWorkForRttGroups(
-                        rtt,
-                        rtcTopologyService,
-                        rtcTopologyAppInbox,
-                    );
-                } else {
-                    scheduleRtcOverlayTopologyFlushesForRtt(
-                        rtt,
-                        server,
-                        rtcTopologyService,
-                        rtcTopologyFlushTimers,
-                        topologyManagement!,
-                    );
-                }
+            const candidateGroups = findGroupsAffectedByRtt(rtt);
+            const overlaySnapshotsByGroupKey = await readOverlaySnapshotsForGroups(
+                candidateGroups,
+                rtcTopologyService,
+                runtimeState,
+            );
+            const acceptance = await acceptRtcRttMeasurementWithPolicy({
+                rtt,
+                alSenderId: data.id.senderId,
+                candidateGroups,
+                overlaySnapshotsByGroupKey,
+                degreeLimit: rtcTopologyService.readRttReportingDegreeLimit(),
+                runtimeState,
+            });
+            if (!acceptance.accepted) {
+                console.warn(`Rejected RTC RTT measurement: ${acceptance.reason}`);
+                return;
+            }
+            if (!acceptance.updated) {
+                return;
+            }
+
+            vivaldiService.observeRtt(rtt);
+            scheduleGlobalGraphRttRecompute();
+            if (rtcTopologyAppInbox) {
+                await enqueueRtcTopologyAppInboxWorkForRttGroups(
+                    rtt,
+                    acceptance.affectedGroups,
+                    rtcTopologyService,
+                    rtcTopologyAppInbox,
+                );
+            } else {
+                scheduleRtcOverlayTopologyFlushesForRtt(
+                    acceptance.affectedGroups,
+                    server,
+                    rtcTopologyService,
+                    rtcTopologyFlushTimers,
+                    topologyManagement!,
+                );
             }
         },
     });
 }
 
-async function acceptRtcRttMeasurement(
-    rtt: RttMeasurementInfo,
-    runtimeState?: RtcTopologyRuntimeState,
-): Promise<boolean> {
-    if (!runtimeState) {
-        return rttRepository.setRtt(rtt);
+type StoredRtcRttAcceptanceResult = RtcRttAcceptanceResult & Readonly<{
+    updated: boolean;
+}>;
+
+async function acceptRtcRttMeasurementWithPolicy(input: {
+    readonly rtt: RttMeasurementInfo;
+    readonly alSenderId: string;
+    readonly candidateGroups: readonly GroupSnapshot[];
+    readonly overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
+    readonly degreeLimit: number;
+    readonly runtimeState?: RtcTopologyRuntimeState;
+}): Promise<StoredRtcRttAcceptanceResult> {
+    const evaluate = (
+        existingMeasurements: readonly RttMeasurementInfo[],
+    ): RtcRttAcceptanceResult =>
+        evaluateRtcRttMeasurement({
+            rtt: input.rtt,
+            alSenderId: input.alSenderId,
+            candidateGroups: input.candidateGroups,
+            overlaySnapshotsByGroupKey: input.overlaySnapshotsByGroupKey,
+            existingMeasurements,
+            degreeLimit: input.degreeLimit,
+        });
+
+    if (!input.runtimeState) {
+        const result = evaluate(rttRepository.getAllRtt());
+        return {
+            ...result,
+            updated: result.accepted ? rttRepository.setRtt(input.rtt) : false,
+        };
     }
 
-    const accepted = await runtimeState.rtts.putMeasurementIfNewer(rtt);
-    if (accepted) {
-        rttRepository.setRtt(rtt);
+    const stored = await input.runtimeState.rtts
+        .putMeasurementIfNewerWithEndpointLocks(input.rtt, evaluate);
+    if (stored.updated) {
+        rttRepository.setRtt(input.rtt);
     }
 
-    return accepted;
+    return {
+        ...stored.result,
+        updated: stored.updated,
+    };
 }
 
-function computeGlobalGraphAndCacheItIfPossible(): void {
+async function readOverlaySnapshotsForGroups(
+    groups: readonly GroupSnapshot[],
+    rtcTopologyService: RallarRtcTopologyService,
+    runtimeState?: RtcTopologyRuntimeState,
+): Promise<ReadonlyMap<string, RallarOverlayTopologySnapshot>> {
+    const snapshots = new Map<string, RallarOverlayTopologySnapshot>();
+    for (const group of groups) {
+        const snapshot = runtimeState
+            ? await runtimeState.topologySnapshots.findSnapshot(group.group)
+            : rtcTopologyService.readSnapshot(group);
+        if (snapshot) {
+            snapshots.set(toWebRtcGroupKey(group.group), snapshot);
+        }
+    }
+    return snapshots;
+}
+
+function computeGlobalGraphAndCacheItIfPossible(
+    predictedDegreeLimit?: number,
+): void {
     try {
-        computeGlobalGraphAndCacheIt();
+        computeGlobalGraphAndCacheIt(
+            predictedDegreeLimit !== undefined
+                ? { predictedDegreeLimit }
+                : {},
+        );
     } catch (error) {
         console.warn(
             `Skipping global graph cache recompute after partial RTT update: ${

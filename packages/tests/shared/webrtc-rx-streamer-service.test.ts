@@ -183,6 +183,67 @@ describe('WebRtcRxStreamerService', () => {
             'self-peer-1-rtc-datachannel-lifecycle',
         );
     });
+
+    it('does not start RTT heartbeats for peers outside the reporting set', async () => {
+        const service = new WebRtcRxStreamerService(
+            new InMemoryQueueBox(new Map()),
+            createFakeMulticastManager() as never,
+            { sessionId: 'self' },
+        );
+        service.setRttReportingPeerIds(['peer-1']);
+
+        const peer1 = createPeerDto('peer-1');
+        const peer2 = createPeerDto('peer-2');
+        service.addPeer(peer1 as never);
+        service.addPeer(peer2 as never);
+
+        await peer1.channel.lifecycleCallbacks
+            .get('self-peer-1-rtc-datachannel-lifecycle')?.onOpen?.();
+        await peer2.channel.lifecycleCallbacks
+            .get('self-peer-2-rtc-datachannel-lifecycle')?.onOpen?.();
+
+        expect(mockState.heartbeats).toHaveLength(1);
+        expect((mockState.heartbeats[0].input as { peerSessionId: string }).peerSessionId)
+            .toBe('peer-1');
+    });
+
+    it('stops RTT heartbeats when a peer leaves the reporting set', async () => {
+        const service = new WebRtcRxStreamerService(
+            new InMemoryQueueBox(new Map()),
+            createFakeMulticastManager() as never,
+            { sessionId: 'self' },
+        );
+        service.setRttReportingPeerIds(['peer-1']);
+
+        const peer = createPeerDto('peer-1');
+        service.addPeer(peer as never);
+        await peer.channel.lifecycleCallbacks
+            .get('self-peer-1-rtc-datachannel-lifecycle')?.onOpen?.();
+
+        service.setRttReportingPeerIds([]);
+
+        expect(mockState.heartbeats[0].stop).toHaveBeenCalledOnce();
+    });
+
+    it('starts RTT heartbeat for an already-open peer when it enters the reporting set', async () => {
+        const service = new WebRtcRxStreamerService(
+            new InMemoryQueueBox(new Map()),
+            createFakeMulticastManager() as never,
+            { sessionId: 'self' },
+        );
+        service.setRttReportingPeerIds([]);
+
+        const peer = createPeerDto('peer-1');
+        service.addPeer(peer as never);
+        await peer.channel.lifecycleCallbacks
+            .get('self-peer-1-rtc-datachannel-lifecycle')?.onOpen?.();
+
+        expect(mockState.heartbeats).toHaveLength(0);
+
+        service.setRttReportingPeerIds(['peer-1']);
+
+        expect(mockState.heartbeats).toHaveLength(1);
+    });
 });
 
 class FakeRtcChannel {

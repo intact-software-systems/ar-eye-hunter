@@ -326,6 +326,7 @@ describe('Rallar facade defaults compatibility', () => {
             rtc: {
                 dataChannelLanes: lanes,
                 maxPeerConnections: 12,
+                rttReportingDegreeLimit: 3,
             },
             messages: {
                 maxPayloadBytes: 2048,
@@ -346,6 +347,7 @@ describe('Rallar facade defaults compatibility', () => {
             timeoutMs: 321,
             dataChannelLanes: lanes,
             maxPeerConnections: 12,
+            rttReportingDegreeLimit: 3,
         });
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             {
