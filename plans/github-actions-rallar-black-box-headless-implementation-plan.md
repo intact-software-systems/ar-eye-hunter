@@ -1229,6 +1229,7 @@ Goal: document and verify the first real GitHub Free execution path without requ
 
 - Create: `plans/github-actions-rallar-black-box-headless-runbook.md`
 - Modify: `packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`
+- Modify: `docs/environment-variables.md`
 
 **Interfaces:**
 
@@ -1244,7 +1245,7 @@ ready_timeout_seconds=300
 terminal_timeout_seconds=900
 ```
 
-- [ ] **Step 1: Write runbook existence test**
+- [x] **Step 1: Write runbook existence test**
 
 Assert the runbook contains:
 
@@ -1259,7 +1260,7 @@ expect(runbook).toContain("RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-r
 expect(runbook).toContain("2,000 included minutes");
 ```
 
-- [ ] **Step 2: Run test and verify failure**
+- [x] **Step 2: Run test and verify failure**
 
 Run:
 
@@ -1269,7 +1270,7 @@ npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-work
 
 Expected before implementation: FAIL because the runbook does not exist.
 
-- [ ] **Step 3: Write runbook**
+- [x] **Step 3: Write runbook**
 
 Cover:
 
@@ -1283,7 +1284,7 @@ Cover:
 - common failures: Actions concurrency, monthly minute exhaustion, registration timeout, TURN/ICE issues, manifest count mismatch, role-map prefix mismatch, topology prepare marker failure, short barrier timeout;
 - cleanup: no Hetzner headless systemd worker stop is needed in `external` mode.
 
-- [ ] **Step 4: Run documentation verification**
+- [x] **Step 4: Run documentation verification**
 
 Run:
 
@@ -1514,3 +1515,17 @@ For live acceptance, use the GitHub Actions workflow dispatch sequence in Task 9
 - Blockers: none for Iteration 4 local implementation.
 - Notes: The existing 50-agent 30-second tree manifest keeps its command payloads, role map, participant count, topology metadata, and `barrier.timeoutMs=15000`; only catalog/smoke metadata changed.
 - Follow-up validation still required: none for Iteration 4 local implementation.
+- Commit: `9b96ae2` (`feat: guard github free distributed manifests`).
+
+### Iteration 5 - 2026-07-08T11:35:03Z
+
+- Completed steps: Task 8 steps 1-4.
+- Files changed: `plans/github-actions-rallar-black-box-headless-runbook.md`, `packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`, `docs/environment-variables.md`, `plans/github-actions-rallar-black-box-headless-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts` after adding the runbook existence test: FAIL as expected because the runbook did not exist.
+  - `npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts` after writing the runbook: FAIL because the required phrase `2,000 included minutes` was split across a Markdown line wrap.
+  - `npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`: PASS, 5 tests.
+  - `rg -n 'T''BD|TO''DO|FIX''ME|fi''ll in|im''plement later' plans/github-actions-rallar-black-box-headless-runbook.md`: PASS by returning exit 1 with no matches.
+- Blockers: none for Task 8 local documentation.
+- Notes: The new runbook is linked from `docs/environment-variables.md` because it is the closest canonical Rallar Black Box workflow reference.
+- Follow-up validation still required: Task 8 commit, Task 9 live GitHub Actions/Hetzner acceptance, and cross-iteration validation.

@@ -120,4 +120,22 @@ describe("GitHub Free distributed recipe workflow", () => {
     );
     expect(workflow).toContain("requires_topology_prepare=true");
   });
+
+  it("documents the GitHub Free operator runbook", async () => {
+    const runbook = await readFile(
+      path.join(repoRoot, "plans/github-actions-rallar-black-box-headless-runbook.md"),
+      "utf8",
+    );
+
+    expect(runbook).toContain("GitHub Free");
+    expect(runbook).toContain("17 shards with agents_per_job=3");
+    expect(runbook).toContain("Do not set max_parallel_jobs above 19");
+    expect(runbook).toContain("agent_prefix=controller");
+    expect(runbook).toContain("prepare-hetzner");
+    expect(runbook).toContain("agent_source=external");
+    expect(runbook).toContain(
+      "RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal",
+    );
+    expect(runbook).toContain("2,000 included minutes");
+  });
 });

@@ -291,6 +291,9 @@ max_parallel_jobs=17
 agent_prefix=controller
 ```
 
+The operator runbook is
+[`plans/github-actions-rallar-black-box-headless-runbook.md`](../plans/github-actions-rallar-black-box-headless-runbook.md).
+
 Keep `max_parallel_jobs` at or below `19` for this GitHub Free workflow because
 the concurrent Hetzner operator job reserves the 20th standard hosted-job slot.
 The default `agent_prefix=controller` matches the existing 50-agent role-map
