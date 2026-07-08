@@ -297,6 +297,25 @@ The default `agent_prefix=controller` matches the existing 50-agent role-map
 manifests, which target `controller-01` through `controller-50`. Changing the
 prefix requires a matching manifest or a manifest rewrite before dispatch.
 
+Recommended GitHub Free rollout progression:
+
+1. 2-agent health.
+2. 10-agent 30-second tree.
+3. 20-agent 30-second tree.
+4. 50-agent 30-second tree using `target_agent_count=50`, `agents_per_job=3`,
+   and `max_parallel_jobs=17`.
+5. 50-agent 60-minute tree only after the 30-second run is stable.
+
+The default GitHub Free smoke candidate is
+`apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json`.
+It preserves the existing role map for `controller-01` through
+`controller-50` and currently uses `barrier.timeoutMs=15000`. If any 10+ agent
+run reaches the staged command but misses the barrier, create a
+GitHub-specific manifest copy that preserves the same command payloads,
+topology metadata, role map, and expected participant count, but changes only
+`distributedRunId`, display/catalog labels, and `barrier.timeoutMs` to
+`60000`.
+
 ### Full-Stack Playwright Startup
 
 | Variable                      | Required | Default                 | Usage                                                                                                                                  |

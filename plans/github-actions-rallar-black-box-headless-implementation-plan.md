@@ -1038,7 +1038,7 @@ Goal: make accidental non-barrier, wrong-participant-count, or wrong-agent-prefi
   - `.metadata.rtcTopologyEnv` is allowed only when the workflow includes the `prepare-hetzner` phase before `github-agents`.
 - Warns when `.barrier.timeoutMs < 60000` for GitHub-hosted runs with 10+ agents. The current 50-agent Hetzner smoke manifest uses 15000 ms, which may still work after the operator waits for all agents but is tight for staged command delivery across GitHub-hosted browsers.
 
-- [ ] **Step 1: Write tests**
+- [x] **Step 1: Write tests**
 
 Add assertions that the workflow reads:
 
@@ -1054,7 +1054,7 @@ jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty'
 
 and emits clear `::error::` messages for mismatches.
 
-- [ ] **Step 2: Run test and verify failure**
+- [x] **Step 2: Run test and verify failure**
 
 Run:
 
@@ -1064,7 +1064,7 @@ npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-work
 
 Expected before implementation: FAIL because preflight checks are missing.
 
-- [ ] **Step 3: Implement preflight in the plan job**
+- [x] **Step 3: Implement preflight in the plan job**
 
 Before emitting the matrix, validate:
 
@@ -1126,7 +1126,7 @@ fi
 
 If `metadata.rtcTopologyEnv` is present, set an output such as `requires_topology_prepare=true` and assert that `prepare-hetzner` is present in the workflow. The default 50-agent tree manifest has `RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE`, so this must pass through the prepare job before agents connect.
 
-- [ ] **Step 4: Run verification**
+- [x] **Step 4: Run verification**
 
 Run:
 
@@ -1137,7 +1137,7 @@ git diff --check -- .github/workflows/github-free-distributed-recipe.yml
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .github/workflows/github-free-distributed-recipe.yml packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts
@@ -1161,7 +1161,7 @@ git commit -m "feat: guard github free distributed manifests"
 - Produces documentation that labels the 30-second tree manifest as the default GitHub Free smoke candidate.
 - Produces documentation that calls out the manifest's current `barrier.timeoutMs=15000` and recommends creating a GitHub-specific copy with `barrier.timeoutMs=60000` if staged command delivery misses the barrier in 10+ agent runs.
 
-- [ ] **Step 1: Write tests**
+- [x] **Step 1: Write tests**
 
 Add assertions that manifest metadata or catalog documentation identifies:
 
@@ -1173,7 +1173,7 @@ Add assertions that manifest metadata or catalog documentation identifies:
 
 for the 30-second principal tree manifest.
 
-- [ ] **Step 2: Run test and verify failure**
+- [x] **Step 2: Run test and verify failure**
 
 Run:
 
@@ -1183,13 +1183,13 @@ npx vitest run packages/tests/rallar-black-box/hetzner-distributed-manifests.tes
 
 Expected before implementation: FAIL if the tag/label does not exist yet.
 
-- [ ] **Step 3: Add label/tag without changing recipe semantics**
+- [x] **Step 3: Add label/tag without changing recipe semantics**
 
 Add a catalog profile/tag such as `github-free-smoke` to the existing 50-agent 30-second tree manifest descriptor. Do not change command payloads, topology metadata, or expected participant count.
 
 Also document why the default workflow uses `agent_prefix=controller`: the existing manifest role map targets `controller-01` through `controller-50`. Do not change the prefix label unless the manifest role map is changed at the same time.
 
-- [ ] **Step 4: Document run progression**
+- [x] **Step 4: Document run progression**
 
 In `docs/environment-variables.md`, document the recommended progression:
 
@@ -1201,7 +1201,7 @@ In `docs/environment-variables.md`, document the recommended progression:
 
 Add a note after step 3: if any 10+ agent run reaches the staged command but misses the barrier, create a GitHub-specific manifest copy that preserves the same command payloads, topology metadata, role map, and expected participant count, but changes only `distributedRunId`, display/catalog labels, and `barrier.timeoutMs` to `60000`.
 
-- [ ] **Step 5: Run verification**
+- [x] **Step 5: Run verification**
 
 Run:
 
@@ -1212,7 +1212,7 @@ npm --workspace rallar-black-box run typecheck
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/rallar-black-box/src/hetzner-distributed-manifests.ts packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts docs/environment-variables.md
@@ -1495,3 +1495,22 @@ For live acceptance, use the GitHub Actions workflow dispatch sequence in Task 9
 - Blockers: none for Iteration 3 local implementation.
 - Notes: The workflow reserves one GitHub-hosted concurrency slot for the Hetzner operator and rejects `max_parallel_jobs > 19`.
 - Follow-up validation still required: none for Iteration 3 local implementation.
+- Commit: `d4a44b0` (`feat: add github free headless agent workflow`).
+
+### Iteration 4 - 2026-07-08T11:28:48Z
+
+- Completed steps: Task 6 steps 1-5; Task 7 steps 1-6.
+- Files changed: `.github/workflows/github-free-distributed-recipe.yml`, `apps/rallar-black-box/src/hetzner-distributed-manifests.ts`, `apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json`, `packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`, `packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts`, `docs/environment-variables.md`, `plans/github-actions-rallar-black-box-headless-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts` after adding Task 6 tests: FAIL as expected because workflow preflight checks were missing.
+  - `npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`: PASS, 4 tests.
+  - `git diff --check -- .github/workflows/github-free-distributed-recipe.yml`: PASS.
+  - `npx vitest run packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts` after adding Task 7 tests: FAIL as expected because the GitHub Free smoke label was missing.
+  - `npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts`: initially failed in the sandbox with `listen EPERM` for the `tsx` IPC pipe; rerun with approved escalation and exited 0, rewriting only the intended changed manifest.
+  - `npx vitest run packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts`: PASS, 14 tests.
+  - `npm --workspace rallar-black-box run typecheck`: PASS.
+  - `npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts`: PASS, 18 tests.
+  - `git diff --check -- .github/workflows/github-free-distributed-recipe.yml apps/rallar-black-box/src/hetzner-distributed-manifests.ts apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json packages/tests/rallar-black-box docs/environment-variables.md`: PASS.
+- Blockers: none for Iteration 4 local implementation.
+- Notes: The existing 50-agent 30-second tree manifest keeps its command payloads, role map, participant count, topology metadata, and `barrier.timeoutMs=15000`; only catalog/smoke metadata changed.
+- Follow-up validation still required: none for Iteration 4 local implementation.

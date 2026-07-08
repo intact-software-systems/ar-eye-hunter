@@ -89,4 +89,35 @@ describe("GitHub Free distributed recipe workflow", () => {
       "max_parallel_jobs must be between 1 and 19 for GitHub Free",
     );
   });
+
+  it("preflights free-tier manifests before planning the matrix", async () => {
+    const workflow = await readFile(
+      path.join(repoRoot, ".github/workflows/github-free-distributed-recipe.yml"),
+      "utf8",
+    );
+
+    expect(workflow).toContain("jq -r '.targetPolicy.expectedParticipantCount // empty'");
+    expect(workflow).toContain("jq -r '.targetPolicy.mode // empty'");
+    expect(workflow).toContain("jq -r '[.targetPolicy.roles[]?[]?, .roleAssignments[]?.agentId] | unique | @json'");
+    expect(workflow).toContain("jq -r '.barrier.enabled // false'");
+    expect(workflow).toContain("jq -r '.barrier.timeoutMs // empty'");
+    expect(workflow).toContain("jq -r '.metadata.rtcTopologyEnv // empty'");
+    expect(workflow).toContain("jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty'");
+    expect(workflow).toContain(
+      "::error::Manifest expectedParticipantCount",
+    );
+    expect(workflow).toContain(
+      "::error::GitHub free multi-agent runs require barrier.enabled=true.",
+    );
+    expect(workflow).toContain(
+      "::error::Role-map unique agent count",
+    );
+    expect(workflow).toContain(
+      "::error::Role-map agent ${agent_id} must match selected agent_prefix",
+    );
+    expect(workflow).toContain(
+      "::error::Manifest startMode must be manual, auto-after-ready, or scheduled.",
+    );
+    expect(workflow).toContain("requires_topology_prepare=true");
+  });
 });

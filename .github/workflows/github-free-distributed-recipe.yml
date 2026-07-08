@@ -106,6 +106,7 @@ jobs:
       distributed_run_id: ${{ steps.plan.outputs.distributed_run_id }}
       estimated_setup_minutes: ${{ steps.plan.outputs.estimated_setup_minutes }}
       estimated_sixty_minute_run_minutes: ${{ steps.plan.outputs.estimated_sixty_minute_run_minutes }}
+      requires_topology_prepare: ${{ steps.plan.outputs.requires_topology_prepare }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -120,6 +121,8 @@ jobs:
           TARGET_AGENT_COUNT: ${{ inputs.target_agent_count }}
           AGENTS_PER_JOB: ${{ inputs.agents_per_job }}
           MAX_PARALLEL_JOBS: ${{ inputs.max_parallel_jobs }}
+          AGENT_PREFIX: ${{ inputs.agent_prefix }}
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
         run: |
           set -euo pipefail
           sanitize() {
@@ -136,6 +139,73 @@ jobs:
             echo "::error::max_parallel_jobs must be between 1 and 19 for GitHub Free" >&2
             exit 1
           fi
+          if ! [[ "${TARGET_AGENT_COUNT}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::target_agent_count must be a positive integer." >&2
+            exit 1
+          fi
+          if [[ ! -r "${MANIFEST_PATH}" ]]; then
+            echo "::error::Manifest path does not exist: ${MANIFEST_PATH}" >&2
+            exit 1
+          fi
+
+          manifest_count="$(jq -r '.targetPolicy.expectedParticipantCount // empty' "${MANIFEST_PATH}")"
+          manifest_target_mode="$(jq -r '.targetPolicy.mode // empty' "${MANIFEST_PATH}")"
+          manifest_barrier="$(jq -r '.barrier.enabled // false' "${MANIFEST_PATH}")"
+          manifest_barrier_timeout_ms="$(jq -r '.barrier.timeoutMs // empty' "${MANIFEST_PATH}")"
+          manifest_start_mode="$(jq -r '.startMode // empty' "${MANIFEST_PATH}")"
+          manifest_terminal_timeout_seconds="$(jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty' "${MANIFEST_PATH}")"
+          manifest_rtc_topology_env="$(jq -r '.metadata.rtcTopologyEnv // empty' "${MANIFEST_PATH}")"
+          role_agent_ids_json="$(jq -r '[.targetPolicy.roles[]?[]?, .roleAssignments[]?.agentId] | unique | @json' "${MANIFEST_PATH}")"
+          role_agent_ids="$(jq -r '.[]' <<<"${role_agent_ids_json}")"
+
+          if [[ "${manifest_count}" != "${TARGET_AGENT_COUNT}" ]]; then
+            echo "::error::Manifest expectedParticipantCount (${manifest_count}) must match target_agent_count (${TARGET_AGENT_COUNT})." >&2
+            exit 1
+          fi
+          case "${manifest_start_mode}" in
+            manual|auto-after-ready|scheduled) ;;
+            *) echo "::error::Manifest startMode must be manual, auto-after-ready, or scheduled." >&2; exit 1 ;;
+          esac
+          if [[ "${TARGET_AGENT_COUNT}" -ge 10 && "${manifest_barrier}" != "true" ]]; then
+            echo "::error::GitHub free multi-agent runs require barrier.enabled=true." >&2
+            exit 1
+          fi
+          role_agent_count="$(printf '%s\n' "${role_agent_ids}" | sed '/^$/d' | wc -l | tr -d ' ')"
+          if [[ "${manifest_target_mode}" == "role-map" && "${role_agent_count}" != "${TARGET_AGENT_COUNT}" ]]; then
+            echo "::error::Role-map unique agent count (${role_agent_count}) must match target_agent_count (${TARGET_AGENT_COUNT})." >&2
+            exit 1
+          fi
+          while IFS= read -r agent_id; do
+            [[ -z "${agent_id}" ]] && continue
+            if [[ ! "${agent_id}" =~ ^${AGENT_PREFIX}-[0-9][0-9]$ ]]; then
+              echo "::error::Role-map agent ${agent_id} must match selected agent_prefix ${AGENT_PREFIX}." >&2
+              exit 1
+            fi
+            ordinal="${agent_id##*-}"
+            ordinal_number="$((10#${ordinal}))"
+            if [[ "${ordinal_number}" -lt 1 || "${ordinal_number}" -gt "${TARGET_AGENT_COUNT}" ]]; then
+              echo "::error::Role-map agent ${agent_id} is outside expected range 1..${TARGET_AGENT_COUNT}." >&2
+              exit 1
+            fi
+          done <<< "${role_agent_ids}"
+
+          manifest_barrier_timeout_ms="${manifest_barrier_timeout_ms:-0}"
+          if ! [[ "${manifest_barrier_timeout_ms}" =~ ^[0-9]+$ ]]; then
+            manifest_barrier_timeout_ms=0
+          fi
+          if [[ "${TARGET_AGENT_COUNT}" -ge 10 && "${manifest_barrier_timeout_ms}" -lt 60000 ]]; then
+            echo "::warning::GitHub free multi-agent runs should prefer barrier.timeoutMs >= 60000 or a GitHub-specific manifest override; current manifest uses ${manifest_barrier_timeout_ms} ms." >&2
+          fi
+          if [[ "${MANIFEST_PATH}" == *60m* && -z "${manifest_terminal_timeout_seconds}" ]]; then
+            echo "::error::60-minute manifests must set metadata.recommendedTerminalTimeoutSeconds." >&2
+            exit 1
+          fi
+
+          requires_topology_prepare=false
+          if [[ -n "${manifest_rtc_topology_env}" ]]; then
+            requires_topology_prepare=true
+          fi
+          printf 'requires_topology_prepare=%s\n' "${requires_topology_prepare}" >> "${GITHUB_OUTPUT}"
 
           plan_json="$(node scripts/github-actions/plan-github-free-headless-matrix.mjs \
             --target-agent-count="${TARGET_AGENT_COUNT}" \

@@ -680,6 +680,16 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER).not.toContain(principalLong?.filePath);
     });
 
+    it('labels the short 50-agent principal tree manifest as the GitHub Free smoke candidate', () => {
+        const entry = buildHetznerDistributedManifestCatalog()
+            .find(candidate => candidate.filePath.endsWith('/07-rtc-messages-principal-50-agent-30s-20hz-tree.json'));
+
+        expect(entry).toBeDefined();
+        expect(entry?.manifest.metadata?.catalogProfiles).toEqual(
+            expect.arrayContaining(['github-free-smoke', '50-agent', 'tree']),
+        );
+    });
+
     it('adds medium-scale messages.rtc multicast matrix manifests for 10 to 30 agents', () => {
         const catalog = buildHetznerDistributedManifestCatalog();
         const matrix = catalog.filter(entry => entry.filePath.includes('/diagnostic/matrix/rtc-messages-'));

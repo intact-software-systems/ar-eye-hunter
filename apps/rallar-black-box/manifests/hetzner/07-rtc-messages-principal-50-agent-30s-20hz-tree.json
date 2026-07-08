@@ -798,6 +798,11 @@
     "rateHz": 20,
     "expectedDurationSeconds": 30,
     "recommendedTerminalTimeoutSeconds": 330,
+    "catalogProfiles": [
+      "github-free-smoke",
+      "50-agent",
+      "tree"
+    ],
     "rtcTopologyEnv": {
       "RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE": "51"
     },
