@@ -1202,6 +1202,9 @@ paths:
     get:
       tags: [Graph]
       summary: Read scoped global graph diagnostics
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -1214,11 +1217,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GraphDiagnosticReadResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest:
     get:
       tags: [Graph]
       summary: Read latest scoped group graph diagnostics
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -1232,6 +1240,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GraphDiagnosticReadResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1239,6 +1251,9 @@ paths:
     get:
       tags: [Topology]
       summary: Read effective group topology
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -1250,11 +1265,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GroupTopologyManagementView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config:
     get:
       tags: [Topology]
       summary: Read durable group topology config
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -1266,9 +1290,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GroupTopologyConfigView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     put:
       tags: [Topology]
       summary: Write durable group topology config
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -1282,9 +1315,18 @@ paths:
       responses:
         '200':
           description: Stored config write result.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
       tags: [Topology]
       summary: Delete durable group topology config
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -1293,11 +1335,20 @@ paths:
       responses:
         '200':
           description: Delete result.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override:
     get:
       tags: [Topology]
       summary: Read temporary group topology override
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -1305,9 +1356,18 @@ paths:
       responses:
         '200':
           description: Temporary override config.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     put:
       tags: [Topology]
       summary: Write temporary group topology override
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -1321,9 +1381,18 @@ paths:
       responses:
         '200':
           description: Stored override write result.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
       tags: [Topology]
       summary: Delete temporary group topology override
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -1332,11 +1401,20 @@ paths:
       responses:
         '200':
           description: Delete result.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure:
     post:
       tags: [Topology]
       summary: Recompute and optionally publish group topology
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
       parameters:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
@@ -1354,6 +1432,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReconfigureGroupTopologyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/graph:
     get:

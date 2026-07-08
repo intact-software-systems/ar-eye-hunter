@@ -185,12 +185,42 @@ describe('Hetzner distributed recipe workflow', () => {
         );
     });
 
+    it('supports external-agent and split prepare/run operator modes', async () => {
+        const manualWorkflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
+        const runnerWorkflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
+
+        expect(manualWorkflow).toContain('agent_source:');
+        expect(manualWorkflow).toContain('operator_phase:');
+        expect(manualWorkflow).toContain('agent_source: ${{ inputs.agent_source }}');
+        expect(manualWorkflow).toContain('operator_phase: ${{ inputs.operator_phase }}');
+        expect(runnerWorkflow).toContain('agent_source:');
+        expect(runnerWorkflow).toContain('operator_phase:');
+        expect(runnerWorkflow).toContain('ref: ${{ inputs.ref }}');
+        expect(runnerWorkflow).toContain('control_url:');
+        expect(runnerWorkflow).toContain('control_http_url:');
+        expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}');
+        expect(runnerWorkflow).toContain('RALLAR_CONTROL_HTTP_URL: ${{ inputs.control_http_url }}');
+        expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}');
+        expect(runnerWorkflow).toContain('printf \'RALLAR_BLACK_BOX_CONTROL_URL=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"');
+        expect(runnerWorkflow).toContain('printf \'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN}")"');
+        expect(manualWorkflow).toContain('control_url: ${{ inputs.control_url }}');
+        expect(manualWorkflow).toContain('control_http_url: ${{ inputs.control_http_url }}');
+        expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_AGENT_SOURCE');
+        expect(runnerWorkflow).toContain('RALLAR_HETZNER_OPERATOR_PHASE');
+        expect(runnerWorkflow).toContain('RALLAR_DISTRIBUTED_PREPARE_MARKER');
+        expect(runnerWorkflow).toContain('./16-wait-for-control-agents.sh');
+        expect(runnerWorkflow).toContain('case "${RALLAR_BLACK_BOX_AGENT_SOURCE}" in');
+        expect(runnerWorkflow).toContain('case "${RALLAR_HETZNER_OPERATOR_PHASE}" in');
+        expect(runnerWorkflow).toContain("inputs.operator_phase != 'prepare'");
+        expect(runnerWorkflow).toContain('RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh');
+    });
+
     it('rejects topology-specific manifests in the reusable workflow when rollout is disabled', async () => {
         const runnerWorkflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
 
         expect(runnerWorkflow).toContain('INPUT_ROLLOUT_BEFORE_RUN: ${{ inputs.rollout_before_run }}');
         expect(runnerWorkflow).toContain('topology_env_requires_rollout');
-        expect(runnerWorkflow).toContain('requires rollout_before_run=true so API RTC topology env can be applied');
+        expect(runnerWorkflow).toContain('requires rollout_before_run=true unless operator_phase=run validates a prepare marker');
     });
 
     it('runs supported Hetzner manifests on every main push with a serial matrix', async () => {
@@ -285,6 +315,20 @@ describe('Hetzner distributed recipe workflow', () => {
         );
     });
 
+    it('provides a provider-neutral wait script for externally started control agents', async () => {
+        const script = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/16-wait-for-control-agents.sh'),
+            'utf8',
+        );
+
+        expect(script).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
+        expect(script).toContain('control_run_snapshot_url');
+        expect(script).toContain('RALLAR_BLACK_BOX_CONTROL_READ_TOKEN="${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN:-${RALLAR_BLACK_BOX_CONTROL_TOKEN:-}}"');
+        expect(script).toContain('Authorization: Bearer ${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN}');
+        expect(script).toContain('Timed out waiting for external control agents');
+        expect(script).not.toContain('systemctl is-active');
+    });
+
     it('writes workflow-provided headless env values when restarting browsers', async () => {
         const workflow = await readFile(
             path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
@@ -294,10 +338,28 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toMatch(
             /restart\)[\s\S]*RALLAR_WRITE_HEADLESS_ENV=1 \.\/09-start-headless-workers\.sh/,
         );
+        expect(workflow).toContain('RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}');
+        expect(workflow).toContain('printf \'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN}")"');
         expect(workflow).not.toContain('RALLAR_WRITE_HEADLESS_ENV=0 ./11-restart-headless-workers.sh');
     });
 
-    it('uses a TLS control URL for distributed-run admin API calls', async () => {
+    it('mints per-agent run tokens for regular headless browser starts', async () => {
+        const workflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+
+        expect(workflow).toContain('name: Mint per-agent control run tokens');
+        expect(workflow).toContain("if: inputs.action == 'start' || inputs.action == 'restart'");
+        expect(workflow).toContain('RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}');
+        expect(workflow).toContain('control_http_url_from_control_url()');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_RUN_ID="${RALLAR_BLACK_BOX_RUN_ID:-hetzner-headless-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}"');
+        expect(workflow).toContain('/runs/${encoded_run_id}/agents/${encoded_agent_id}/tokens');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN');
+        expect(workflow).toContain('printf \'%s=%s\\n\' "${env_key}" "$(quote "${token}")" >> "${env_file}"');
+    });
+
+    it('defaults to a TLS control URL for distributed-run admin API calls', async () => {
         const workflow = await readFile(
             path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
@@ -311,7 +373,9 @@ describe('Hetzner distributed recipe workflow', () => {
             'RALLAR_CONTROL_HTTP_URL="${RALLAR_CONTROL_HTTP_URL:-https://control.rallar.intactss.com}"',
         );
         expect(script).not.toContain('RALLAR_CONTROL_HTTP_URL="${RALLAR_CONTROL_HTTP_URL:-http://127.0.0.1:5180}"');
-        expect(workflow).toContain('RALLAR_CONTROL_HTTP_URL: https://control.rallar.intactss.com');
+        expect(workflow).toContain('control_http_url:');
+        expect(workflow).toContain('default: https://control.rallar.intactss.com');
+        expect(workflow).toContain('RALLAR_CONTROL_HTTP_URL: ${{ inputs.control_http_url }}');
         expect(workflow).toContain('printf \'RALLAR_CONTROL_HTTP_URL=%s\\n\' "$(quote "${RALLAR_CONTROL_HTTP_URL}")"');
     });
 
@@ -538,6 +602,10 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(script).toContain(
             'RALLAR_BLACK_BOX_AGENT_START_INDEX="${RALLAR_BLACK_BOX_AGENT_START_INDEX:-1}"',
         );
+        expect(script).toContain('RALLAR_BLACK_BOX_CONTROL_READ_TOKEN');
+        expect(script).toContain('read_token="${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN:-${RALLAR_BLACK_BOX_CONTROL_TOKEN:-}}"');
+        expect(script).toContain('curl "${curl_args[@]}" "${snapshot_url}"');
+        expect(script).toContain("^RALLAR_BLACK_BOX_AGENT_[0-9]+_(USERNAME|PASSWORD|CONTROL_TOKEN)$");
         expect(script).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
         expect(script).toContain('agent_start="${RALLAR_BLACK_BOX_AGENT_START_INDEX}"');
         expect(script).toContain('agent_end="$((agent_start + expected - 1))"');

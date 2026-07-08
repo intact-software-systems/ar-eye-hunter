@@ -220,4 +220,56 @@ describe('black-box runner recipe matrix', () => {
         expect(adminEntry?.requires?.env).toContain('RALLAR_ADMIN_ACCESS_TOKEN');
         expect(adminEntry?.requires?.env).toContain('RALLAR_CRDT_DOCUMENT_KEY');
     });
+
+    it('defines a no-browser API-v1 black-box profile', () => {
+        const { entries } = readMatrix();
+        const apiEntries = entries.filter(entry => entry.profiles.includes('api-v1-black-box'));
+
+        expect(apiEntries.map(entry => entry.id).sort()).toEqual([
+            'api-v1-auth-session',
+            'api-v1-client-state',
+            'api-v1-group-presence',
+            'api-v1-openapi-topology-auth',
+            'api-v1-scope-isolation',
+            'api-v1-websocket-topic-routing',
+        ]);
+
+        apiEntries.forEach(entry => {
+            expect(entry.category).toBe('api-v1-black-box');
+            expect(entry.mode).toBe('run');
+            expect(entry.expectedExitCode).toBe(0);
+            expect(entry.profiles).toContain('api-v1-black-box');
+            expect(entry.profiles).not.toContain('browser-live');
+            expect(entry.profiles).not.toContain('remote-live');
+            expect(entry.requires?.playwright).not.toBe(true);
+            expect(entry.requires?.httpServices).toEqual([
+                {
+                    name: 'Rallar API',
+                    env: 'RALLAR_API_BASE_URL',
+                    default: 'http://127.0.0.1:18080',
+                },
+            ]);
+        });
+    });
+
+    it('keeps API-v1 black-box recipes free of RTC connections', () => {
+        const { entries } = readMatrix();
+        const apiEntries = entries.filter(entry => entry.profiles.includes('api-v1-black-box'));
+
+        apiEntries.forEach(entry => {
+            const recipe = readRecipe(entry.recipe);
+            const connections = recipe.connections as Record<string, { type?: string }> | undefined;
+            const connectionTypes = Object.values(connections ?? {}).map(connection => connection.type);
+
+            expect(connectionTypes).not.toContain('rtc');
+            expect(JSON.stringify(recipe)).not.toContain('rallar-browser');
+            expect(JSON.stringify(recipe)).not.toContain('rallar-remote-browser');
+        });
+    });
+
+    it('advertises the API-v1 profile in recipe-matrix CLI usage', () => {
+        const source = readFileSync(path.join(runnerRoot, 'recipe-matrix.mts'), 'utf8');
+
+        expect(source).toContain('api-v1-black-box');
+    });
 });

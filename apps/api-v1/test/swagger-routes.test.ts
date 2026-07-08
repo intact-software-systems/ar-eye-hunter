@@ -101,6 +101,73 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     json.components.schemas.ReconfigureGroupTopologyResponse.properties?.config,
   );
 
+  assertAuthContract(
+    'GET scoped global graph',
+    json.paths['/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global']
+      .get,
+    ['200', '401'],
+  );
+  for (
+    const [label, operation] of [
+      [
+        'GET latest scoped group graph',
+        json.paths[
+          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest'
+        ].get,
+      ],
+      [
+        'GET effective group topology',
+        json.paths[
+          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology'
+        ].get,
+      ],
+      [
+        'GET durable group topology config',
+        json.paths[
+          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
+        ].get,
+      ],
+      [
+        'PUT durable group topology config',
+        json.paths[
+          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
+        ].put,
+      ],
+      [
+        'DELETE durable group topology config',
+        json.paths[
+          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config'
+        ].delete,
+      ],
+      [
+        'GET temporary group topology override',
+        json.paths[
+          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
+        ].get,
+      ],
+      [
+        'PUT temporary group topology override',
+        json.paths[
+          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
+        ].put,
+      ],
+      [
+        'DELETE temporary group topology override',
+        json.paths[
+          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override'
+        ].delete,
+      ],
+      [
+        'POST group topology reconfigure',
+        json.paths[
+          '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure'
+        ].post,
+      ],
+    ] satisfies readonly (readonly [string, OpenApiOperation | undefined])[]
+  ) {
+    assertAuthContract(label, operation, ['200', '401', '403', '404']);
+  }
+
   assert.deepEqual(
     parameterRefs(
       json.paths['/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global']
@@ -168,8 +235,31 @@ Deno.test('graph topology product docs describe implemented REST and recompute b
 type OpenApiOperation = {
   deprecated?: boolean;
   parameters?: readonly { $ref?: string }[];
+  security?: readonly Record<string, readonly string[]>[];
+  responses?: Record<string, unknown>;
 };
 
 function parameterRefs(operation: OpenApiOperation | undefined): string[] {
   return operation?.parameters?.map((parameter) => parameter.$ref ?? '') ?? [];
+}
+
+function assertAuthContract(
+  label: string,
+  operation: OpenApiOperation | undefined,
+  expectedResponseCodes: readonly string[],
+): void {
+  assert.deepEqual(
+    operation?.security,
+    [
+      {
+        bearerAuth: [],
+        clientIdHeader: [],
+      },
+    ],
+    `${label} security contract`,
+  );
+
+  for (const code of expectedResponseCodes) {
+    assert.ok(operation?.responses?.[code], `${label} missing response ${code}`);
+  }
 }

@@ -234,6 +234,39 @@ describe("rallar-black-box headless worker config", () => {
     expect(secondUrl.searchParams.get("rallarLeaveRoomOnClose")).toBe("1");
   });
 
+  it("keeps read auth separate from per-agent registration tokens", () => {
+    const config = readHeadlessWorkerConfig({
+      env: {
+        RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
+        RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+        RALLAR_API_BASE_URL: "https://api.example.test",
+        RALLAR_BLACK_BOX_RUN_ID: "run-hardened",
+        RALLAR_BLACK_BOX_ROOM_ID: "room-hardened",
+        RALLAR_BLACK_BOX_AGENT_COUNT: "2",
+        RALLAR_BLACK_BOX_USERNAME: "alice",
+        RALLAR_BLACK_BOX_PASSWORD: "secret",
+        RALLAR_BLACK_BOX_CONTROL_TOKEN: "legacy-registration-token",
+        RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: "operator-read-token",
+        RALLAR_BLACK_BOX_AGENT_1_CONTROL_TOKEN: "agent-run-token-1",
+        RALLAR_BLACK_BOX_AGENT_2_CONTROL_TOKEN: "agent-run-token-2",
+      },
+    });
+
+    expect(config.controlToken).toBe("legacy-registration-token");
+    expect(config.controlReadToken).toBe("operator-read-token");
+    expect(config.agents.map((agent) => agent.controlToken)).toEqual([
+      "agent-run-token-1",
+      "agent-run-token-2",
+    ]);
+
+    const firstUrl = new URL(config.agents[0].url);
+    const secondUrl = new URL(config.agents[1].url);
+    expect(firstUrl.searchParams.get("controlToken")).toBe("agent-run-token-1");
+    expect(secondUrl.searchParams.get("controlToken")).toBe("agent-run-token-2");
+    expect(firstUrl.toString()).not.toContain("operator-read-token");
+    expect(secondUrl.toString()).not.toContain("operator-read-token");
+  });
+
   it("supports stable multi-worker agent id shards", () => {
     const config = readHeadlessWorkerConfig({
       env: {
@@ -334,6 +367,58 @@ describe("rallar-black-box headless worker config", () => {
     ).toThrow(
       /RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL must be warning, info, or debug/,
     );
+  });
+
+  it("parses worker exit mode and distributed-run polling options", () => {
+    const config = readHeadlessWorkerConfig({
+      env: {
+        RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
+        RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+        RALLAR_API_BASE_URL: "https://api.example.test",
+        RALLAR_BLACK_BOX_RUN_ID: "run-1",
+        RALLAR_BLACK_BOX_ROOM_ID: "room-1",
+        RALLAR_BLACK_BOX_USERNAME: "alice",
+        RALLAR_BLACK_BOX_PASSWORD: "secret",
+        RALLAR_BLACK_BOX_EXIT_MODE: "after-target-distributed-run-terminal",
+        RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID: "dist-run-1",
+        RALLAR_CONTROL_HTTP_URL: "https://control.example.test",
+        RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS: "2500",
+      },
+    });
+
+    expect(config.exitMode).toBe("after-target-distributed-run-terminal");
+    expect(config.targetDistributedRunId).toBe("dist-run-1");
+    expect(config.controlHttpUrl).toBe("https://control.example.test");
+    expect(config.distributedPollIntervalMs).toBe(2500);
+  });
+
+  it("defaults and validates worker exit controls", () => {
+    const baseEnv = {
+      RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
+      RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+      RALLAR_API_BASE_URL: "https://api.example.test",
+      RALLAR_BLACK_BOX_RUN_ID: "run-exit-defaults",
+      RALLAR_BLACK_BOX_ROOM_ID: "room-exit-defaults",
+      RALLAR_BLACK_BOX_USERNAME: "alice",
+      RALLAR_BLACK_BOX_PASSWORD: "secret",
+    };
+
+    expect(readHeadlessWorkerConfig({ env: baseEnv }).exitMode).toBe("signal");
+    expect(() =>
+      readHeadlessWorkerConfig({
+        env: Object.assign({}, baseEnv, { RALLAR_BLACK_BOX_EXIT_MODE: "forever" }),
+      })
+    ).toThrow(
+      "RALLAR_BLACK_BOX_EXIT_MODE must be signal, after-target-distributed-run-terminal, or after-idle-ms",
+    );
+    expect(() =>
+      readHeadlessWorkerConfig({
+        env: Object.assign({}, baseEnv, {
+          RALLAR_BLACK_BOX_EXIT_MODE: "after-idle-ms",
+          RALLAR_BLACK_BOX_IDLE_EXIT_MS: "0",
+        }),
+      })
+    ).toThrow("RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer");
   });
 
   it("defaults the Playwright browser engine to chromium", () => {

@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "bb:api-v1:recipes": "deno run -A black-box-runner/api-v1-black-box-run.mts --recipes-only --artifact-dir=../../.artifacts/api-v1-black-box/recipes",
+    "bb:api-v1:postgres": "deno run -A black-box-runner/api-v1-black-box-run.mts --backend=postgres --artifact-dir=../../.artifacts/api-v1-black-box/postgres",
+    "bb:api-v1:memory": "deno run -A black-box-runner/api-v1-black-box-run.mts --backend=pglite-memory --artifact-dir=../../.artifacts/api-v1-black-box/memory",
     "bb:matrix:deterministic": "deno run -A black-box-runner/recipe-matrix.mts --profile=deterministic --artifact-dir=../../.artifacts/shared-test/recipe-matrix/deterministic",
     "bb:matrix:dry": "deno run -A black-box-runner/recipe-matrix.mts --profile=dry --artifact-dir=../../.artifacts/shared-test/recipe-matrix/dry",
     "bb:matrix:list": "deno run -A black-box-runner/recipe-matrix.mts --list",
@@ -28,7 +31,7 @@
     "bb:remote:provider-parity:dry": "RALLAR_BB_RTC_PROVIDER=rallar-remote-browser deno run -A black-box-runner/scenario-black-box.ts -c black-box-runner/examples/rtc-rallar-browser-provider-mode-parity.json --dry-run --artifact-dir=../../.artifacts/shared-test/provider-mode-parity-remote-dry",
     "build": "npm run check:ts",
     "check": "npm run check:ts && npm run check:deno",
-    "check:deno": "deno check black-box-runner/scenario-black-box.ts black-box-runner/recipe-matrix.mts black-box-runner/live-preflight.ts black-box-runner/rallar-browser-live-validation.mts black-box-runner/artifact-reader.ts black-box-runner/traffic-plan-reducer.ts",
+    "check:deno": "deno check black-box-runner/scenario-black-box.ts black-box-runner/recipe-matrix.mts black-box-runner/live-preflight.ts black-box-runner/rallar-browser-live-validation.mts black-box-runner/artifact-reader.ts black-box-runner/traffic-plan-reducer.ts black-box-runner/api-v1-black-box-run.mts",
     "check:ts": "tsc -p tsconfig.json --noEmit",
     "lint": "npm run check:ts",
     "rtc:browser:validate": "deno run -A black-box-runner/rallar-browser-live-validation.mts",

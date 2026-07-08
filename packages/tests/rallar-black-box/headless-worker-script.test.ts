@@ -33,4 +33,43 @@ describe("rallar-black-box headless worker script", () => {
     expect(source).toContain("rallarPassword");
     expect(source).toContain("controlToken");
   });
+
+  it("waits for configured worker exit modes and terminal distributed runs", async () => {
+    const script = await readFile(
+      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
+      "utf8",
+    );
+
+    expect(script).toContain(
+      'const TERMINAL_DISTRIBUTED_RUN_STATES = new Set(["passed", "failed", "cancelled", "timed-out"]);',
+    );
+    expect(script).toContain("await waitForWorkerExit(config, shutdown);");
+    expect(script).toContain("Distributed run ${runId} is not created yet");
+    expect(script).toContain("response.status === 404");
+  });
+
+  it("redacts URL secrets by known key and sensitive key pattern", async () => {
+    const script = await readFile(
+      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
+      "utf8",
+    );
+
+    expect(script).toContain("controlToken");
+    expect(script).toContain("rallarPassword");
+    expect(script).toContain("rallarToken");
+    expect(script).toContain("/(token|password|secret)/i");
+  });
+
+  it("authenticates Node-side control-server reads when a control token is configured", async () => {
+    const script = await readFile(
+      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
+      "utf8",
+    );
+
+    expect(script).toContain("controlReadHeaders(config)");
+    expect(script).toContain("config.controlReadToken ?? config.controlToken");
+    expect(script).toContain('Authorization: `Bearer ${token}`');
+    expect(script).toContain("fetchControlRunSnapshot(config)");
+    expect(script).toContain("fetch(url, { headers: controlReadHeaders(config) })");
+  });
 });

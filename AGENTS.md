@@ -38,6 +38,10 @@ the repo-local Codex plugin under `skills/**`.
 ## Validation
 
 - Run focused tests for the touched package or app before broader suites.
+- When adding or changing REST API behavior, add or adjust Rallar black-box
+  recipes/tests in `packages/shared-test/black-box-runner` as part of the same
+  change, and run the focused black-box command when the required services are
+  available.
 - For shared-web public surface work, include public API snapshots and browser
   bundle-boundary checks when exports or entry points change.
 - For game/realtime changes, include the relevant app tests/builds and shared

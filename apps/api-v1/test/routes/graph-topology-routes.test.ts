@@ -93,6 +93,25 @@ Deno.test('strict read auth allows active members and rejects non-members', asyn
   });
 });
 
+Deno.test('strict read auth rejects unauthenticated scoped global graph diagnostics', async () => {
+  await withStrictReadAuth(true, async () => {
+    let authCalls = 0;
+    const app = createRouteApp({
+      requireApiAuthSession: () => {
+        authCalls += 1;
+        throw new Error('Unauthorized: missing auth session');
+      },
+    });
+
+    const denied = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/graphs/global',
+    );
+
+    assert.equal(denied.status, 401);
+    assert.equal(authCalls, 1);
+  });
+});
+
 Deno.test('topology writes require group manager or platform admin auth', async () => {
   const memberApp = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner', 'member']),
@@ -351,6 +370,7 @@ function createRouteApp(options: {
   readonly group?: GroupSnapshot;
   readonly session?: { clientId: string; sessionId: string };
   readonly adminClientIds?: readonly string[];
+  readonly requireApiAuthSession?: GraphTopologyRouteRequireApiAuthSession;
   readonly graphDiagnostics?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['graphDiagnostics']>;
   readonly topologyManagement?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyManagement']>;
 }): Hono {
@@ -367,8 +387,8 @@ function createRouteApp(options: {
             : undefined,
         ),
     }),
-    requireApiAuthSession: () =>
-      Promise.resolve(options.session ?? { clientId: 'owner', sessionId: 'owner-session' }),
+    requireApiAuthSession: options.requireApiAuthSession ??
+      (() => Promise.resolve(options.session ?? { clientId: 'owner', sessionId: 'owner-session' })),
     adminClientIds: options.adminClientIds ?? [],
     graphDiagnostics: {
       readScopedGlobalGraphDiagnostic: options.graphDiagnostics?.readScopedGlobalGraphDiagnostic ??
@@ -397,6 +417,9 @@ function createRouteApp(options: {
   });
   return app;
 }
+
+type GraphTopologyRouteRequireApiAuthSession =
+  graphTopologyRoutes.GraphTopologyRouteDependencies['requireApiAuthSession'];
 
 function createGraphResponse(groupRef: GroupRef): GraphDiagnosticReadResponse {
   return {
