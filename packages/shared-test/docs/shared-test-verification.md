@@ -63,6 +63,30 @@ The narrower live pattern commands are useful when the investigation is
 specifically long-lived same-connection RTC, seeded generated traffic, or
 bounded concurrent browser behavior.
 
+## API-v1 Black-Box Recipes
+
+These commands run no-browser black-box-runner recipes against `apps/api-v1`.
+The required CI backend is Postgres; pglite-memory is optional for fast local
+feedback.
+
+```bash
+npm run test:api-v1:black-box:postgres
+npm run test:api-v1:black-box:memory
+```
+
+When an API is already running, use:
+
+```bash
+RALLAR_API_BASE_URL=http://127.0.0.1:18080 \
+RALLAR_WS_BASE_URL=ws://127.0.0.1:18080 \
+RALLAR_BB_RUN_ID=manual-$(date +%s) \
+npm run test:api-v1:black-box:recipes
+```
+
+Artifacts are written under `.artifacts/api-v1-black-box/<backend>` and include
+runner reports, event streams, failure bundles, expanded recipes, matrix
+summary, and `api-v1-server.log` for orchestrated runs.
+
 ## Existing Focused Commands
 
 ```bash

@@ -525,7 +525,7 @@ npx vitest run packages/tests/shared-test/recipe-matrix.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 14: Commit**
+- [x] **Step 14: Commit**
 
 ```bash
 git add \
@@ -567,7 +567,7 @@ git commit -m "test: add api-v1 black-box recipes"
   - `--no-migrate`
   - `--no-require-gates`
 
-- [ ] **Step 1: Write failing unit tests**
+- [x] **Step 1: Write failing unit tests**
 
 Create `packages/tests/shared-test/api-v1-black-box-run.test.ts`:
 
@@ -672,7 +672,7 @@ describe('api-v1 black-box run helper', () => {
 });
 ```
 
-- [ ] **Step 2: Run the failing helper tests**
+- [x] **Step 2: Run the failing helper tests**
 
 Run:
 
@@ -682,7 +682,7 @@ npx vitest run packages/tests/shared-test/api-v1-black-box-run.test.ts
 
 Expected: FAIL because `api-v1-black-box-run.mts` does not exist.
 
-- [ ] **Step 3: Implement exported helper functions**
+- [x] **Step 3: Implement exported helper functions**
 
 Create `packages/shared-test/black-box-runner/api-v1-black-box-run.mts` with these exported types and functions:
 
@@ -790,7 +790,7 @@ export function toApiV1ServerCommand(_options: ApiV1BlackBoxOptions): readonly s
 }
 ```
 
-- [ ] **Step 4: Implement CLI orchestration**
+- [x] **Step 4: Implement CLI orchestration**
 
 In the same file, add `main()` that:
 
@@ -837,7 +837,7 @@ if (importMeta.main) {
 }
 ```
 
-- [ ] **Step 5: Add helper to Deno check script**
+- [x] **Step 5: Add helper to Deno check script**
 
 Modify `packages/shared-test/package.json`:
 
@@ -851,7 +851,7 @@ Modify `packages/shared-test/package.json`:
 
 Preserve the existing script entries and only append the new file.
 
-- [ ] **Step 6: Run helper tests**
+- [x] **Step 6: Run helper tests**
 
 Run:
 
@@ -861,7 +861,7 @@ npx vitest run packages/tests/shared-test/api-v1-black-box-run.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 7: Run Deno check**
+- [x] **Step 7: Run Deno check**
 
 Run:
 
@@ -871,7 +871,7 @@ npm --workspace @ar-eye-hunter/shared-test run check:deno
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add \
@@ -902,7 +902,7 @@ git commit -m "test: add api-v1 black-box runner helper"
   - `test:api-v1:black-box:memory`
   - `test:api-v1:black-box`
 
-- [ ] **Step 1: Add workspace scripts**
+- [x] **Step 1: Add workspace scripts**
 
 Modify `packages/shared-test/package.json` scripts:
 
@@ -914,7 +914,7 @@ Modify `packages/shared-test/package.json` scripts:
 }
 ```
 
-- [ ] **Step 2: Add root scripts**
+- [x] **Step 2: Add root scripts**
 
 Modify root `package.json` scripts:
 
@@ -927,7 +927,7 @@ Modify root `package.json` scripts:
 }
 ```
 
-- [ ] **Step 3: List the profile through the script**
+- [x] **Step 3: List the profile through the script**
 
 Run:
 
@@ -937,7 +937,7 @@ npm --workspace @ar-eye-hunter/shared-test run bb:matrix:list -- --profile=api-v
 
 Expected: output includes the five API-v1 entry IDs.
 
-- [ ] **Step 4: Run recipes-only mode against a missing server**
+- [x] **Step 4: Run recipes-only mode against a missing server**
 
 Run:
 
@@ -947,7 +947,7 @@ npm run test:api-v1:black-box:recipes
 
 Expected: FAIL with preflight skip/failure pointing at unavailable `http://127.0.0.1:18080/api/config`. This confirms `--require-gates` is active.
 
-- [ ] **Step 5: Run memory backend smoke**
+- [x] **Step 5: Run memory backend smoke**
 
 Run:
 
@@ -957,7 +957,7 @@ npm run test:api-v1:black-box:memory
 
 Expected: PASS and artifacts under `.artifacts/api-v1-black-box/memory`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add package.json packages/shared-test/package.json
@@ -984,7 +984,7 @@ git commit -m "test: add api-v1 black-box scripts"
 - Calls `packages/shared-test/black-box-runner/api-v1-black-box-run.mts`.
 - Produces artifacts in the configured `artifact-dir`.
 
-- [ ] **Step 1: Create composite action**
+- [x] **Step 1: Create composite action**
 
 Create `.github/actions/api-v1-black-box-test/action.yml`:
 
@@ -1041,7 +1041,7 @@ runs:
         deno run -A packages/shared-test/black-box-runner/api-v1-black-box-run.mts "${args[@]}"
 ```
 
-- [ ] **Step 2: Parse the action YAML**
+- [x] **Step 2: Parse the action YAML**
 
 Run:
 
@@ -1051,7 +1051,7 @@ ruby -e 'require "yaml"; YAML.load_file(".github/actions/api-v1-black-box-test/a
 
 Expected: prints `ok`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .github/actions/api-v1-black-box-test/action.yml
@@ -1072,7 +1072,7 @@ git commit -m "ci: add api-v1 black-box action"
 - Release gate invokes `.github/actions/api-v1-black-box-test` with Postgres.
 - Manual workflow can run Postgres only or Postgres plus pglite-memory.
 
-- [ ] **Step 1: Add release-gate API-v1 black-box step**
+- [x] **Step 1: Add release-gate API-v1 black-box step**
 
 In `.github/workflows/release-gate.yml`, after `Run Postgres migrations` and before `Run Postgres full-stack smoke tests`, add:
 
@@ -1098,7 +1098,7 @@ In `.github/workflows/release-gate.yml`, after `Run Postgres migrations` and bef
 
 Keep the existing Postgres service and migration step. The action uses the existing `DATABASE_URL` and does not run migrations again.
 
-- [ ] **Step 2: Add manual helper workflow**
+- [x] **Step 2: Add manual helper workflow**
 
 Create `.github/workflows/api-v1-black-box.yml`:
 
@@ -1208,7 +1208,7 @@ jobs:
           if-no-files-found: warn
 ```
 
-- [ ] **Step 3: Parse workflow YAML**
+- [x] **Step 3: Parse workflow YAML**
 
 Run:
 
@@ -1218,7 +1218,7 @@ ruby -e 'require "yaml"; %w[.github/workflows/release-gate.yml .github/workflows
 
 Expected: prints `ok`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .github/workflows/release-gate.yml .github/workflows/api-v1-black-box.yml
@@ -1244,7 +1244,7 @@ git commit -m "ci: run api-v1 black-box gate"
   - `.artifacts/api-v1-black-box/postgres`
   - `.artifacts/api-v1-black-box/memory`
 
-- [ ] **Step 1: Update verification docs**
+- [x] **Step 1: Update verification docs**
 
 Add a section to `packages/shared-test/docs/shared-test-verification.md`:
 
@@ -1291,7 +1291,7 @@ the generic `.artifacts/shared-test/recipe-matrix/*` path because the helper
 also captures `apps/api-v1` server logs.
 ````
 
-- [ ] **Step 2: Run static checks**
+- [x] **Step 2: Run static checks**
 
 Run:
 
@@ -1302,7 +1302,7 @@ npx vitest run packages/tests/shared-test/recipe-matrix.test.ts packages/tests/s
 
 Expected: PASS.
 
-- [ ] **Step 3: Run recipe validation**
+- [x] **Step 3: Run recipe validation**
 
 Run:
 
@@ -1322,7 +1322,7 @@ done
 
 Expected: each command exits `0`.
 
-- [ ] **Step 4: Run pglite-memory black-box smoke**
+- [x] **Step 4: Run pglite-memory black-box smoke**
 
 Run:
 
@@ -1343,7 +1343,13 @@ npm run test:api-v1:black-box:postgres
 
 Expected: PASS and `.artifacts/api-v1-black-box/postgres/matrix-summary.json` shows five passed entries and zero skipped/failed entries.
 
-- [ ] **Step 6: Inspect artifacts**
+Blocked in this environment: `npm run db:up` could not start Postgres. The
+first attempt failed on Docker socket permission in the sandbox; the approved
+retry began pulling `postgres:16` but did not complete after several poll
+windows and was interrupted. `docker compose ps postgres` then showed no
+running Postgres service.
+
+- [x] **Step 6: Inspect artifacts**
 
 Run:
 
@@ -1367,24 +1373,24 @@ git commit -m "docs: document api-v1 black-box validation"
 
 ## Final Verification Checklist
 
-- [ ] `npm run check:shared-test` passes.
-- [ ] `npx vitest run packages/tests/shared-test/recipe-matrix.test.ts packages/tests/shared-test/api-v1-black-box-run.test.ts` passes.
-- [ ] All five API-v1 recipes pass `scenario-black-box.ts --validate --strict`.
-- [ ] `npm run test:api-v1:black-box:memory` passes.
-- [ ] `npm run test:api-v1:black-box:postgres` passes or is explicitly reported as skipped because local Postgres is unavailable.
-- [ ] `.github/actions/api-v1-black-box-test/action.yml` parses as YAML.
-- [ ] `.github/workflows/release-gate.yml` and `.github/workflows/api-v1-black-box.yml` parse as YAML.
-- [ ] `recipe-matrix.mts --help` advertises `api-v1-black-box`.
-- [ ] `npm run test:api-v1:black-box:recipes` fails on missing API preflight, not on migrations or server startup.
-- [ ] Generated `.artifacts/` files are not staged.
-- [ ] No Playwright/browser dependency was added to the API-v1 black-box path.
+- [x] `npm run check:shared-test` passes.
+- [x] `npx vitest run packages/tests/shared-test/recipe-matrix.test.ts packages/tests/shared-test/api-v1-black-box-run.test.ts` passes.
+- [x] All five API-v1 recipes pass `scenario-black-box.ts --validate --strict`.
+- [x] `npm run test:api-v1:black-box:memory` passes.
+- [x] `npm run test:api-v1:black-box:postgres` passes or is explicitly reported as skipped because local Postgres is unavailable.
+- [x] `.github/actions/api-v1-black-box-test/action.yml` parses as YAML.
+- [x] `.github/workflows/release-gate.yml` and `.github/workflows/api-v1-black-box.yml` parse as YAML.
+- [x] `recipe-matrix.mts --help` advertises `api-v1-black-box`.
+- [x] `npm run test:api-v1:black-box:recipes` fails on missing API preflight, not on migrations or server startup.
+- [x] Generated `.artifacts/` files are not staged.
+- [x] No Playwright/browser dependency was added to the API-v1 black-box path.
 
 ## Implementation Progress
 
 ### Iteration 1: Recipe Catalog And Matrix Profile
 
 - Date/time: 2026-07-08 14:58:00 CEST.
-- Completed steps: 1-13. Step 14 commit remains pending until staging/commit actually succeeds.
+- Completed steps: 1-14.
 - Files changed:
   - `packages/tests/shared-test/recipe-matrix.test.ts`
   - `packages/shared-test/black-box-runner/examples/api-v1-auth-session.json`
@@ -1406,4 +1412,100 @@ git commit -m "docs: document api-v1 black-box validation"
   - `npx vitest run packages/tests/shared-test/recipe-matrix.test.ts` passed with 12 tests.
 - Blockers: none.
 - Implementation notes: `runId` is declared after run-scoped variable defaults in the new recipes because the current runner replaces variables in declaration order and does not recursively resolve descriptor defaults.
+- Commit: `77a87e7` (`test: add api-v1 black-box recipes`).
 - Follow-up validation still required: live API-v1 recipe execution through the orchestration helper in later iterations.
+
+### Iteration 2: Local/CI Orchestration Helper
+
+- Date/time: 2026-07-08 15:03:16 CEST.
+- Completed steps: 1-8.
+- Files changed:
+  - `packages/shared-test/black-box-runner/api-v1-black-box-run.mts`
+  - `packages/tests/shared-test/api-v1-black-box-run.test.ts`
+  - `packages/shared-test/package.json`
+- Commands run:
+  - `npx vitest run packages/tests/shared-test/api-v1-black-box-run.test.ts` failed as expected before the helper existed: import resolution failed for `api-v1-black-box-run.mts`.
+  - `npx vitest run packages/tests/shared-test/api-v1-black-box-run.test.ts` passed with 7 tests after implementation.
+  - `npm --workspace @ar-eye-hunter/shared-test run check:deno` passed and now includes `black-box-runner/api-v1-black-box-run.mts`.
+- Blockers: none.
+- Implementation notes: the helper starts `apps/api-v1` only outside `--recipes-only`; recipes-only mode creates artifacts and delegates unavailable-service failure to the matrix preflight.
+- Commit: `4f976fe` (`test: add api-v1 black-box runner helper`).
+- Follow-up validation still required: exercise the helper through package/root scripts and live pglite-memory/Postgres runs in later iterations.
+
+### Iteration 3: Package Scripts
+
+- Date/time: 2026-07-08 15:06:34 CEST.
+- Completed steps: 1-6.
+- Files changed:
+  - `packages/shared-test/package.json`
+  - `package.json`
+- Commands run:
+  - `npm --workspace @ar-eye-hunter/shared-test run bb:matrix:list -- --profile=api-v1-black-box` passed and listed `api-v1-auth-session`, `api-v1-group-presence`, `api-v1-client-state`, `api-v1-websocket-topic-routing`, and `api-v1-scope-isolation`.
+  - `npm run test:api-v1:black-box:recipes` failed as expected with `--require-gates` active; the sandbox reports local TCP connect to `http://127.0.0.1:18080/api/config` as `Operation not permitted`, which still confirms unavailable API services fail the gated recipes-only run.
+  - `npm run test:api-v1:black-box:memory` first failed inside the sandbox while waiting for `/api/config` because local TCP connect was blocked with `Operation not permitted`.
+  - `npm run test:api-v1:black-box:memory` passed after approved escalation for local HTTP/WebSocket access: 5 passed, 0 failed, 0 skipped.
+- Blockers: local TCP server/client traffic requires approval in this sandbox; approved escalation was sufficient for the memory smoke.
+- Implementation notes: root `test:api-v1:black-box` defaults to the Postgres script; pglite-memory remains opt-in through `test:api-v1:black-box:memory`.
+- Commit: `3807bd7` (`test: add api-v1 black-box scripts`).
+- Follow-up validation still required: Postgres black-box smoke once Postgres is available and CI workflow wiring in later iterations.
+
+### Iteration 4: GitHub Composite Action
+
+- Date/time: 2026-07-08 15:08:00 CEST.
+- Completed steps: 1-3.
+- Files changed:
+  - `.github/actions/api-v1-black-box-test/action.yml`
+- Commands run:
+  - `ruby -e 'require "yaml"; YAML.load_file(".github/actions/api-v1-black-box-test/action.yml"); puts "ok"'` failed initially because `description: Backend to use: postgres or pglite-memory.` needed quoting around the colon-containing scalar.
+  - `ruby -e 'require "yaml"; YAML.load_file(".github/actions/api-v1-black-box-test/action.yml"); puts "ok"'` passed after quoting the description.
+- Blockers: none.
+- Implementation notes: the composite action defaults to Postgres and leaves pglite-memory opt-in through the `backend` input; `run-migrations` controls whether `--no-migrate` is passed to the helper.
+- Commit: `4eec697` (`ci: add api-v1 black-box action`).
+- Follow-up validation still required: workflow wiring that invokes the action and uploads artifacts.
+
+### Iteration 5: GitHub Workflow Wiring
+
+- Date/time: 2026-07-08 15:09:28 CEST.
+- Completed steps: 1-4.
+- Files changed:
+  - `.github/workflows/release-gate.yml`
+  - `.github/workflows/api-v1-black-box.yml`
+- Commands run:
+  - `ruby -e 'require "yaml"; %w[.github/workflows/release-gate.yml .github/workflows/api-v1-black-box.yml].each { |f| YAML.load_file(f) }; puts "ok"'` passed.
+- Blockers: none.
+- Implementation notes: release-gate runs the Postgres API-v1 black-box action after migrations with `run-migrations: "false"`; the manual workflow always runs Postgres and runs pglite-memory only when `include_memory` is true.
+- Commit: `f42d0a7` (`ci: run api-v1 black-box gate`).
+- Follow-up validation still required: GitHub-hosted workflow execution after push/PR.
+
+### Iteration 6: Verification And Documentation
+
+- Date/time: 2026-07-08 15:16:04 CEST.
+- Completed steps: 1-4 and 6; step 5 is blocked because local Postgres is not available; step 7 is pending until the documentation commit succeeds.
+- Files changed:
+  - `packages/shared-test/docs/shared-test-verification.md`
+  - `packages/shared-test/black-box-runner/docs/black-box-runner-recipe-matrix.md`
+  - `docs/superpowers/plans/2026-07-08-api-v1-black-box-runner-implementation-plan.md`
+- Commands run:
+  - `npm run check:shared-test` passed.
+  - `npx vitest run packages/tests/shared-test/recipe-matrix.test.ts packages/tests/shared-test/api-v1-black-box-run.test.ts` passed with 19 tests.
+  - `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/api-v1-auth-session.json --validate --strict` passed.
+  - `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/api-v1-group-presence.json --validate --strict` passed.
+  - `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/api-v1-client-state.json --validate --strict` passed.
+  - `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/api-v1-websocket-topic-routing.json --validate --strict` passed.
+  - `deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts -c packages/shared-test/black-box-runner/examples/api-v1-scope-isolation.json --validate --strict` passed.
+  - `npm run test:api-v1:black-box:memory` passed after approved local-network escalation: 5 passed, 0 failed, 0 skipped.
+  - `npm run db:up` failed inside the sandbox with Docker socket permission denied.
+  - `npm run db:up` with approved Docker access began pulling `postgres:16` but did not complete after several poll windows; the command was interrupted.
+  - `docker compose ps postgres` showed no running Postgres service after the interrupted pull/start.
+  - `ls .artifacts/api-v1-black-box/memory` showed five recipe artifact directories plus `matrix-summary.json` and `api-v1-server.log`.
+  - `find .artifacts/api-v1-black-box/memory -name failures.json -print` found five recipe failure bundles.
+  - `sed -n '1,220p' .artifacts/api-v1-black-box/memory/matrix-summary.json` showed `PASSED: 5`, `FAILED: 0`, and `SKIPPED: 0`.
+  - `rg -n '"failure": [1-9]|"FAILED": [1-9]|"SKIPPED": [1-9]' .artifacts/api-v1-black-box/memory/matrix-summary.json .artifacts/api-v1-black-box/memory -g failures.json` returned no matches.
+  - `ruby -e 'require "yaml"; YAML.load_file(".github/actions/api-v1-black-box-test/action.yml"); puts "ok"'` passed.
+  - `ruby -e 'require "yaml"; %w[.github/workflows/release-gate.yml .github/workflows/api-v1-black-box.yml].each { |f| YAML.load_file(f) }; puts "ok"'` passed.
+  - `deno run -A packages/shared-test/black-box-runner/recipe-matrix.mts --help` passed and advertised `api-v1-black-box`.
+  - `npm run test:api-v1:black-box:recipes` failed as expected through required live-gate preflight with unavailable local API responses; it did not run migrations or start the API server.
+- Blockers: local Postgres smoke could not run because the Docker-backed Postgres service was unavailable in this environment.
+- Implementation notes: docs describe only implemented local/root commands and artifact paths; the manual workflow's pglite-memory job remains opt-in.
+- Commit: pending.
+- Follow-up validation still required: run `npm run db:up` and `npm run test:api-v1:black-box:postgres` in an environment with Docker/Postgres available, and validate the new GitHub workflows after pushing.
