@@ -196,6 +196,13 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(runnerWorkflow).toContain('agent_source:');
         expect(runnerWorkflow).toContain('operator_phase:');
         expect(runnerWorkflow).toContain('ref: ${{ inputs.ref }}');
+        expect(runnerWorkflow).toContain('control_url:');
+        expect(runnerWorkflow).toContain('control_http_url:');
+        expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}');
+        expect(runnerWorkflow).toContain('RALLAR_CONTROL_HTTP_URL: ${{ inputs.control_http_url }}');
+        expect(runnerWorkflow).toContain('printf \'RALLAR_BLACK_BOX_CONTROL_URL=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"');
+        expect(manualWorkflow).toContain('control_url: ${{ inputs.control_url }}');
+        expect(manualWorkflow).toContain('control_http_url: ${{ inputs.control_http_url }}');
         expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_AGENT_SOURCE');
         expect(runnerWorkflow).toContain('RALLAR_HETZNER_OPERATOR_PHASE');
         expect(runnerWorkflow).toContain('RALLAR_DISTRIBUTED_PREPARE_MARKER');
@@ -330,7 +337,7 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).not.toContain('RALLAR_WRITE_HEADLESS_ENV=0 ./11-restart-headless-workers.sh');
     });
 
-    it('uses a TLS control URL for distributed-run admin API calls', async () => {
+    it('defaults to a TLS control URL for distributed-run admin API calls', async () => {
         const workflow = await readFile(
             path.join(repoRoot, distributedRunnerWorkflowPath),
             'utf8',
@@ -344,7 +351,9 @@ describe('Hetzner distributed recipe workflow', () => {
             'RALLAR_CONTROL_HTTP_URL="${RALLAR_CONTROL_HTTP_URL:-https://control.rallar.intactss.com}"',
         );
         expect(script).not.toContain('RALLAR_CONTROL_HTTP_URL="${RALLAR_CONTROL_HTTP_URL:-http://127.0.0.1:5180}"');
-        expect(workflow).toContain('RALLAR_CONTROL_HTTP_URL: https://control.rallar.intactss.com');
+        expect(workflow).toContain('control_http_url:');
+        expect(workflow).toContain('default: https://control.rallar.intactss.com');
+        expect(workflow).toContain('RALLAR_CONTROL_HTTP_URL: ${{ inputs.control_http_url }}');
         expect(workflow).toContain('printf \'RALLAR_CONTROL_HTTP_URL=%s\\n\' "$(quote "${RALLAR_CONTROL_HTTP_URL}")"');
     });
 

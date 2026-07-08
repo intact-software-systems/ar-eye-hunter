@@ -253,6 +253,8 @@ jobs:
       run_id: ${{ needs.plan.outputs.run_id }}
       room_id: ${{ inputs.room_id }}
       agent_prefix: ${{ inputs.agent_prefix }}
+      control_url: ${{ inputs.control_url }}
+      control_http_url: ${{ inputs.control_http_url }}
       manifest_path: ${{ inputs.manifest_path }}
       application_id: ${{ inputs.application_id }}
       workspace_id: ${{ inputs.workspace_id }}
@@ -341,6 +343,8 @@ jobs:
       run_id: ${{ needs.plan.outputs.run_id }}
       room_id: ${{ inputs.room_id }}
       agent_prefix: ${{ inputs.agent_prefix }}
+      control_url: ${{ inputs.control_url }}
+      control_http_url: ${{ inputs.control_http_url }}
       manifest_path: ${{ inputs.manifest_path }}
       application_id: ${{ inputs.application_id }}
       workspace_id: ${{ inputs.workspace_id }}

@@ -777,6 +777,12 @@ Use `manifest_path` for the repo-relative distributed manifest file. Leave
 workflow sets the distributed `controlRunId` to the same value so target
 resolution uses the newly connected headless agents.
 
+Use `control_url` and `control_http_url` to point the workflow at a staging
+control server or another public Hetzner control plane. The reusable runner
+forwards them to the remote `RALLAR_BLACK_BOX_CONTROL_URL` and
+`RALLAR_CONTROL_HTTP_URL` values used by the headless workers and
+distributed-run admin calls.
+
 The recipe step may fail, but the workflow still uploads artifacts before the
 final job failure. Read `analysis/fix-proposal.md` for failed runs and
 `analysis/performance.md` for passed runs.

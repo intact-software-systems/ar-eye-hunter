@@ -24,6 +24,8 @@ describe("GitHub Free distributed recipe workflow", () => {
     expect(workflow).toContain("prepare-hetzner:");
     expect(workflow).toContain("operator_phase: prepare");
     expect(workflow).toContain("operator_phase: run");
+    expect(workflow).toContain("control_url: ${{ inputs.control_url }}");
+    expect(workflow).toContain("control_http_url: ${{ inputs.control_http_url }}");
     expect(workflow).toContain("needs: [plan, prepare-hetzner]");
     expect(workflow).toContain("fromJSON(needs.plan.outputs.matrix)");
     expect(workflow).toContain(

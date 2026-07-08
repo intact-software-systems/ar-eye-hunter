@@ -159,7 +159,7 @@ async function waitForAgentRegistration(
   const deadline = Date.now() + config.readyTimeoutMs;
   let lastState = "not seen";
   while (Date.now() < deadline) {
-    const snapshot = await fetchControlRunSnapshot().catch((error) => {
+    const snapshot = await fetchControlRunSnapshot(config).catch((error) => {
       lastState = errorMessage(error);
       return undefined;
     });
@@ -234,9 +234,12 @@ async function confirmHeadlessRegistrationUi(
   }).catch(() => undefined);
 }
 
-async function fetchControlRunSnapshot(): Promise<ControlRunSnapshot> {
+async function fetchControlRunSnapshot(
+  config: HeadlessWorkerConfig,
+): Promise<ControlRunSnapshot> {
   const response = await fetch(
     controlRunSnapshotUrlFromControlUrl(config.controlUrl, config.runId),
+    { headers: controlReadHeaders(config) },
   );
   if (!response.ok) {
     throw new Error(
@@ -286,7 +289,7 @@ async function waitForDistributedRunTerminal(
   let malformedJsonCount = 0;
 
   while (deadline === undefined || Date.now() < deadline) {
-    const response = await fetch(url);
+    const response = await fetch(url, { headers: controlReadHeaders(config) });
     if (response.status === 404) {
       const state = "not-created";
       if (lastObservedState !== state) {
@@ -367,6 +370,15 @@ function distributedRunUrl(config: HeadlessWorkerConfig): string {
   url.search = "";
   url.hash = "";
   return url.toString();
+}
+
+function controlReadHeaders(config: HeadlessWorkerConfig): HeadersInit | undefined {
+  if (!config.controlToken) {
+    return undefined;
+  }
+  return {
+    Authorization: `Bearer ${config.controlToken}`,
+  };
 }
 
 function delay(ms: number): Promise<void> {

@@ -35,6 +35,14 @@ on:
         description: Agent id prefix for headless agents
         required: true
         default: controller
+      control_url:
+        description: Public black-box control WebSocket URL
+        required: true
+        default: wss://control.rallar.intactss.com/control
+      control_http_url:
+        description: Public black-box control HTTP URL
+        required: true
+        default: https://control.rallar.intactss.com
       manifest_path:
         description: Repo path to a distributed run manifest JSON file
         required: true
@@ -111,6 +119,8 @@ jobs:
       run_id: ${{ inputs.run_id }}
       room_id: ${{ inputs.room_id }}
       agent_prefix: ${{ inputs.agent_prefix }}
+      control_url: ${{ inputs.control_url }}
+      control_http_url: ${{ inputs.control_http_url }}
       manifest_path: ${{ inputs.manifest_path }}
       application_id: ${{ inputs.application_id }}
       workspace_id: ${{ inputs.workspace_id }}

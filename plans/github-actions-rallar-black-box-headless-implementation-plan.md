@@ -1553,3 +1553,20 @@ For live acceptance, use the GitHub Actions workflow dispatch sequence in Task 9
 - Blockers: Task 9 live GitHub Actions/Hetzner acceptance was not run because the local `gh` token is invalid and remote dispatch would consume external CI minutes/resources.
 - Notes: Task 9 checkboxes remain unchecked. Generated profile/run artifacts were not created.
 - Follow-up validation still required: run the Task 9 dispatch sequence from an authenticated environment with the required GitHub and Hetzner secrets, then record the outcome note if requested.
+
+### Review Follow-up - 2026-07-08T15:05:26+0200
+
+- Completed steps: addressed review feedback for GitHub Free/Hetzner control endpoint propagation and authenticated headless-worker control-server read polling.
+- Files changed: `.github/workflows/github-free-distributed-recipe.yml`, `.github/workflows/hetzner-distributed-recipe.yml`, `.github/workflows/hetzner-distributed-recipe-runner.yml`, `apps/rallar-black-box/scripts/headless-worker.ts`, `packages/tests/hetzner/distributed-recipe-workflow.test.ts`, `packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`, `packages/tests/rallar-black-box/headless-worker-script.test.ts`, `docs/environment-variables.md`, `scripts/hetzner/controller/README.md`, `plans/github-actions-rallar-black-box-headless-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts packages/tests/rallar-black-box/headless-worker-script.test.ts` after adding review regression tests: FAIL as expected because the workflows did not yet forward custom control endpoints and the worker did not yet apply `RALLAR_BLACK_BOX_CONTROL_TOKEN` to Node-side read polling.
+  - `npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts packages/tests/rallar-black-box/headless-worker-script.test.ts` after implementation: PASS, 73 tests.
+  - `npx vitest run packages/tests/rallar-black-box/headless-worker-config.test.ts packages/tests/rallar-black-box/headless-worker-script.test.ts packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts packages/tests/hetzner/distributed-recipe-workflow.test.ts`: PASS, 107 tests.
+  - `npm --workspace rallar-black-box run typecheck`: PASS.
+  - `node scripts/github-actions/plan-github-free-headless-matrix.mjs --target-agent-count=50 --agents-per-job=3 --max-parallel-jobs=17 --run-id=gh-free-validation`: PASS, 17 shards with final shard starting at agent 49 and `estimatedSixtyMinuteRunMinutes=1080`.
+  - `git diff --check -- .github/workflows/github-free-distributed-recipe.yml .github/workflows/hetzner-distributed-recipe.yml .github/workflows/hetzner-distributed-recipe-runner.yml apps/rallar-black-box packages/tests/rallar-black-box packages/tests/hetzner scripts/github-actions scripts/hetzner/controller docs/environment-variables.md plans/github-actions-rallar-black-box-headless-runbook.md plans/github-actions-rallar-black-box-headless-implementation-plan.md`: PASS.
+  - `command -v actionlint`: skipped optional workflow lint because `actionlint` is not installed locally.
+  - `gh auth status`: FAIL for live acceptance because the default GitHub token is invalid.
+- Blockers: Task 9 live GitHub Actions/Hetzner acceptance remains unrun because the local `gh` token is invalid and remote dispatch would consume external CI minutes/resources.
+- Notes: The Hetzner reusable runner now defaults to the production TLS endpoints but accepts caller-provided `control_url` and `control_http_url`; GitHub Free prepare/run operator jobs forward their dispatch inputs to that runner. Headless worker read polling now uses the configured control token when present.
+- Follow-up validation still required: run the Task 9 dispatch sequence from an authenticated environment with the required GitHub and Hetzner secrets, then record the outcome note if requested.

@@ -59,4 +59,16 @@ describe("rallar-black-box headless worker script", () => {
     expect(script).toContain("rallarToken");
     expect(script).toContain("/(token|password|secret)/i");
   });
+
+  it("authenticates Node-side control-server reads when a control token is configured", async () => {
+    const script = await readFile(
+      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
+      "utf8",
+    );
+
+    expect(script).toContain("controlReadHeaders(config)");
+    expect(script).toContain('Authorization: `Bearer ${config.controlToken}`');
+    expect(script).toContain("fetchControlRunSnapshot(config)");
+    expect(script).toContain("fetch(url, { headers: controlReadHeaders(config) })");
+  });
 });
