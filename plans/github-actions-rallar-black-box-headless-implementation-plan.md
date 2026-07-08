@@ -737,7 +737,7 @@ https://api.rallar.intactss.com
 https://control.rallar.intactss.com
 ```
 
-- [ ] **Step 1: Write workflow source tests**
+- [x] **Step 1: Write workflow source tests**
 
 Create tests that assert:
 
@@ -806,7 +806,7 @@ expect(unsafe.status).not.toBe(0);
 expect(unsafe.stderr).toContain("max_parallel_jobs must be between 1 and 19 for GitHub Free");
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [x] **Step 2: Run tests and verify failure**
 
 Run:
 
@@ -816,7 +816,7 @@ npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-work
 
 Expected before implementation: FAIL because the workflow and matrix script do not exist.
 
-- [ ] **Step 3: Implement matrix planning script**
+- [x] **Step 3: Implement matrix planning script**
 
 Create `scripts/github-actions/plan-github-free-headless-matrix.mjs`. It should:
 
@@ -839,7 +839,7 @@ for (let start = 1, shard = 1; start <= targetAgentCount; shard += 1) {
 }
 ```
 
-- [ ] **Step 4: Implement plan job**
+- [x] **Step 4: Implement plan job**
 
 Add a `plan` job that:
 
@@ -862,7 +862,7 @@ For 50 agents and 3 agents per job, the matrix should contain 17 entries:
 
 Use the final shard count of 2 so the workflow starts exactly 50 agents by default.
 
-- [ ] **Step 5: Implement Hetzner prepare job**
+- [x] **Step 5: Implement Hetzner prepare job**
 
 Add a `prepare-hetzner` reusable-workflow job that runs before any GitHub agents connect:
 
@@ -896,7 +896,7 @@ prepare-hetzner:
 
 This job is required for the default tree manifest because it carries `metadata.rtcTopologyEnv`. It must not wait for GitHub agents or start the recipe.
 
-- [ ] **Step 6: Implement GitHub agent matrix job**
+- [x] **Step 6: Implement GitHub agent matrix job**
 
 Add `github-agents` job with:
 
@@ -951,7 +951,7 @@ RALLAR_AGENT_DEPLOYMENT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
 RALLAR_AGENT_TAGS: github-actions,free-tier,external-agent
 ```
 
-- [ ] **Step 7: Implement concurrent operator run job**
+- [x] **Step 7: Implement concurrent operator run job**
 
 Add `operator` job with:
 
@@ -984,7 +984,7 @@ secrets: inherit
 
 Do not add `needs: github-agents`; after `prepare-hetzner` is complete, the operator must run concurrently with `github-agents` and wait through the control server. `operator_phase: run` deliberately skips rollout so it does not restart API/control while agents are connecting.
 
-- [ ] **Step 8: Document workflow usage**
+- [x] **Step 8: Document workflow usage**
 
 In `docs/environment-variables.md`, add a "GitHub Free distributed recipe workflow" subsection under the Rallar Black Box area. Document the default 50-agent sharding:
 
@@ -997,7 +997,7 @@ agent_prefix=controller
 
 Explain that `max_parallel_jobs` must stay at or below 19 for this GitHub Free workflow because the concurrent operator job reserves the 20th hosted-job slot. Also explain that `agent_prefix=controller` is the default because the existing 50-agent role-map manifests target `controller-01` through `controller-50`. Document that changing the prefix requires a matching manifest or a manifest rewrite.
 
-- [ ] **Step 9: Run workflow verification**
+- [x] **Step 9: Run workflow verification**
 
 Run:
 
@@ -1008,7 +1008,7 @@ git diff --check -- .github/workflows/github-free-distributed-recipe.yml scripts
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add .github/workflows/github-free-distributed-recipe.yml scripts/github-actions/plan-github-free-headless-matrix.mjs packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts docs/environment-variables.md
@@ -1481,3 +1481,17 @@ For live acceptance, use the GitHub Actions workflow dispatch sequence in Task 9
 - Blockers: none for Iteration 2 local implementation.
 - Notes: The previous topology-rollout source assertion was updated to the new prepare-marker-aware error text.
 - Follow-up validation still required: none for Iteration 2 local implementation.
+- Commit: `e7ff0d1` (`feat: run distributed recipes with external agents`).
+
+### Iteration 3 - 2026-07-08T11:22:23Z
+
+- Completed steps: Task 5 steps 1-10.
+- Files changed: `.github/workflows/github-free-distributed-recipe.yml`, `scripts/github-actions/plan-github-free-headless-matrix.mjs`, `packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`, `docs/environment-variables.md`, `plans/github-actions-rallar-black-box-headless-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts` after adding planned tests: FAIL as expected because `.github/workflows/github-free-distributed-recipe.yml` and `scripts/github-actions/plan-github-free-headless-matrix.mjs` did not exist.
+  - `npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts`: PASS, 3 tests.
+  - `npx vitest run packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts packages/tests/hetzner/distributed-recipe-workflow.test.ts`: PASS, 66 tests.
+  - `git diff --check -- .github/workflows/github-free-distributed-recipe.yml scripts/github-actions/plan-github-free-headless-matrix.mjs docs/environment-variables.md`: PASS.
+- Blockers: none for Iteration 3 local implementation.
+- Notes: The workflow reserves one GitHub-hosted concurrency slot for the Hetzner operator and rejects `max_parallel_jobs > 19`.
+- Follow-up validation still required: none for Iteration 3 local implementation.

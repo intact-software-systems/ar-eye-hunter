@@ -1,0 +1,286 @@
+name: Run GitHub Free Distributed Recipe
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to run
+        required: true
+        default: main
+      manifest_path:
+        description: Repo path to a distributed run manifest JSON file
+        required: true
+        default: apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json
+      target_agent_count:
+        description: Total GitHub-hosted headless agents to start
+        type: number
+        default: 50
+      agents_per_job:
+        description: Headless agents to run in each GitHub-hosted job
+        type: number
+        default: 3
+      max_parallel_jobs:
+        description: Maximum concurrent GitHub-hosted agent jobs
+        type: number
+        default: 17
+      run_id:
+        description: Control run id; leave blank to derive one from this workflow run
+        required: false
+        default: ''
+      room_id:
+        description: Rallar room id for headless agents
+        required: true
+        default: hetzner-headless-room
+      agent_prefix:
+        description: Agent id prefix; default matches controller-01..controller-50 role-map manifests
+        required: true
+        default: controller
+      application_id:
+        description: Rallar application id for headless agents
+        required: true
+        default: rallar-server
+      workspace_id:
+        description: Rallar workspace id for headless agents
+        required: true
+        default: default
+      ready_timeout_seconds:
+        description: Agent and distributed readiness wait timeout in seconds
+        type: number
+        default: 300
+      terminal_timeout_seconds:
+        description: Distributed recipe terminal-state wait timeout in seconds; blank derives from manifest metadata
+        required: false
+        default: ''
+      register_before_login:
+        description: Register disposable test users before login
+        type: boolean
+        default: false
+      browser_log_level:
+        description: Browser console log verbosity for headless agents
+        type: choice
+        default: warning
+        options:
+          - warning
+          - info
+          - debug
+      browser_engine:
+        description: Playwright browser engine for headless workers
+        type: choice
+        default: chromium
+        options:
+          - chromium
+          - firefox
+          - webkit
+      install_playwright:
+        description: Install the selected Playwright browser and Linux dependencies in agent jobs
+        type: boolean
+        default: true
+      spa_url:
+        description: Public black-box SPA URL
+        required: true
+        default: https://blackbox.rallar.intactss.com
+      control_url:
+        description: Public black-box control WebSocket URL
+        required: true
+        default: wss://control.rallar.intactss.com/control
+      control_http_url:
+        description: Public black-box control HTTP URL
+        required: true
+        default: https://control.rallar.intactss.com
+      api_base_url:
+        description: Public API-v1 base URL
+        required: true
+        default: https://api.rallar.intactss.com
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan GitHub Free headless matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      max_parallel_jobs: ${{ steps.plan.outputs.max_parallel_jobs }}
+      run_id: ${{ steps.plan.outputs.run_id }}
+      distributed_run_id: ${{ steps.plan.outputs.distributed_run_id }}
+      estimated_setup_minutes: ${{ steps.plan.outputs.estimated_setup_minutes }}
+      estimated_sixty_minute_run_minutes: ${{ steps.plan.outputs.estimated_sixty_minute_run_minutes }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Build matrix
+        id: plan
+        shell: bash
+        env:
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+          TARGET_AGENT_COUNT: ${{ inputs.target_agent_count }}
+          AGENTS_PER_JOB: ${{ inputs.agents_per_job }}
+          MAX_PARALLEL_JOBS: ${{ inputs.max_parallel_jobs }}
+        run: |
+          set -euo pipefail
+          sanitize() {
+            tr -c 'A-Za-z0-9_.-' '-' | sed -E 's/-+/-/g; s/^-|-$//g'
+          }
+
+          run_id="${INPUT_RUN_ID}"
+          if [[ -z "${run_id}" ]]; then
+            run_id="gh-free-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
+          run_id="$(printf '%s' "${run_id}" | sanitize)"
+
+          if ! [[ "${MAX_PARALLEL_JOBS}" =~ ^[1-9][0-9]*$ ]] || [[ "${MAX_PARALLEL_JOBS}" -gt 19 ]]; then
+            echo "::error::max_parallel_jobs must be between 1 and 19 for GitHub Free" >&2
+            exit 1
+          fi
+
+          plan_json="$(node scripts/github-actions/plan-github-free-headless-matrix.mjs \
+            --target-agent-count="${TARGET_AGENT_COUNT}" \
+            --agents-per-job="${AGENTS_PER_JOB}" \
+            --max-parallel-jobs="${MAX_PARALLEL_JOBS}" \
+            --run-id="${run_id}")"
+
+          matrix="$(jq -c '.matrix' <<<"${plan_json}")"
+          max_parallel_jobs="$(jq -r '.maxParallelJobs' <<<"${plan_json}")"
+          distributed_run_id="$(jq -r '.distributedRunId' <<<"${plan_json}")"
+          estimated_setup_minutes="$(jq -r '.estimatedSetupMinutes' <<<"${plan_json}")"
+          estimated_sixty_minute_run_minutes="$(jq -r '.estimatedSixtyMinuteRunMinutes' <<<"${plan_json}")"
+
+          printf 'matrix=%s\n' "${matrix}" >> "${GITHUB_OUTPUT}"
+          printf 'max_parallel_jobs=%s\n' "${max_parallel_jobs}" >> "${GITHUB_OUTPUT}"
+          printf 'run_id=%s\n' "${run_id}" >> "${GITHUB_OUTPUT}"
+          printf 'distributed_run_id=%s\n' "${distributed_run_id}" >> "${GITHUB_OUTPUT}"
+          printf 'estimated_setup_minutes=%s\n' "${estimated_setup_minutes}" >> "${GITHUB_OUTPUT}"
+          printf 'estimated_sixty_minute_run_minutes=%s\n' "${estimated_sixty_minute_run_minutes}" >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "## GitHub Free distributed recipe"
+            echo
+            echo "- Run id: ${run_id}"
+            echo "- Distributed run id: ${distributed_run_id}"
+            echo "- Agent jobs: $(jq 'length' <<<"${matrix}")"
+            echo "- Max parallel agent jobs: ${max_parallel_jobs}"
+            echo "- Estimated setup minutes: ${estimated_setup_minutes}"
+            echo "- Estimated 60-minute run minutes: ${estimated_sixty_minute_run_minutes}"
+            echo
+            echo "GitHub Free reserves one hosted-job slot for the concurrent Hetzner operator, so agent max-parallel must stay at or below 19."
+            echo "A 17-shard one-hour run plus the operator consumes roughly 1,080 included minutes plus setup overhead."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  prepare-hetzner:
+    name: Prepare Hetzner control plane
+    needs: plan
+    uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
+    with:
+      ref: ${{ inputs.ref }}
+      operator_phase: prepare
+      rollout_before_run: true
+      agent_source: external
+      agent_count: ${{ inputs.target_agent_count }}
+      run_id: ${{ needs.plan.outputs.run_id }}
+      room_id: ${{ inputs.room_id }}
+      agent_prefix: ${{ inputs.agent_prefix }}
+      manifest_path: ${{ inputs.manifest_path }}
+      application_id: ${{ inputs.application_id }}
+      workspace_id: ${{ inputs.workspace_id }}
+      register_before_login: ${{ inputs.register_before_login }}
+      browser_log_level: ${{ inputs.browser_log_level }}
+      browser_engine: ${{ inputs.browser_engine }}
+      install_playwright: false
+      npm_ci: false
+      wait_for_agents: false
+      ready_timeout_seconds: ${{ inputs.ready_timeout_seconds }}
+      terminal_timeout_seconds: ${{ inputs.terminal_timeout_seconds }}
+      stop_after_run: false
+    secrets: inherit
+
+  github-agents:
+    name: GitHub headless agents
+    needs: [plan, prepare-hetzner]
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(needs.plan.outputs.max_parallel_jobs) }}
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        if: inputs.install_playwright
+        run: npx playwright install --with-deps ${{ inputs.browser_engine }}
+
+      - name: Run headless worker shard
+        run: npm --workspace rallar-black-box run worker:headless
+        env:
+          CI: "1"
+          RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}
+          RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}
+          RALLAR_CONTROL_HTTP_URL: ${{ inputs.control_http_url }}
+          RALLAR_API_BASE_URL: ${{ inputs.api_base_url }}
+          RALLAR_BLACK_BOX_RUN_ID: ${{ needs.plan.outputs.run_id }}
+          RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID: ${{ needs.plan.outputs.distributed_run_id }}
+          RALLAR_BLACK_BOX_EXIT_MODE: after-target-distributed-run-terminal
+          RALLAR_BLACK_BOX_IDLE_EXIT_MS: "4500000"
+          RALLAR_BLACK_BOX_ROOM_ID: ${{ inputs.room_id }}
+          RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
+          RALLAR_BLACK_BOX_AGENT_COUNT: ${{ matrix.shard.agent_count }}
+          RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ matrix.shard.agent_start_index }}
+          RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}
+          RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
+          RALLAR_BLACK_BOX_USERNAME: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}
+          RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
+          RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
+          RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
+          RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}
+          RALLAR_BLACK_BOX_HEADLESS_ENTRY: headless
+          RALLAR_BLACK_BOX_BROWSER_ENGINE: ${{ inputs.browser_engine }}
+          RALLAR_AGENT_PROVIDER: github-actions
+          RALLAR_AGENT_REGION: github-hosted
+          RALLAR_AGENT_DATACENTER: ubuntu-latest
+          RALLAR_AGENT_POOL_ID: github-free
+          RALLAR_AGENT_DEPLOYMENT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          RALLAR_AGENT_TAGS: github-actions,free-tier,external-agent
+
+  operator:
+    name: Run Hetzner operator
+    needs: [plan, prepare-hetzner]
+    uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
+    with:
+      ref: ${{ inputs.ref }}
+      operator_phase: run
+      rollout_before_run: false
+      agent_source: external
+      agent_count: ${{ inputs.target_agent_count }}
+      run_id: ${{ needs.plan.outputs.run_id }}
+      room_id: ${{ inputs.room_id }}
+      agent_prefix: ${{ inputs.agent_prefix }}
+      manifest_path: ${{ inputs.manifest_path }}
+      application_id: ${{ inputs.application_id }}
+      workspace_id: ${{ inputs.workspace_id }}
+      register_before_login: ${{ inputs.register_before_login }}
+      browser_log_level: ${{ inputs.browser_log_level }}
+      browser_engine: ${{ inputs.browser_engine }}
+      install_playwright: false
+      npm_ci: false
+      wait_for_agents: true
+      ready_timeout_seconds: ${{ inputs.ready_timeout_seconds }}
+      terminal_timeout_seconds: ${{ inputs.terminal_timeout_seconds }}
+      stop_after_run: false
+    secrets: inherit

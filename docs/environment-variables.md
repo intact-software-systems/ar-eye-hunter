@@ -278,6 +278,25 @@ safe values to browser agents as URL parameters.
 | `RALLAR_BLACK_BOX_IDLE_EXIT_MS` | Required when `RALLAR_BLACK_BOX_EXIT_MODE=after-idle-ms`; optional fallback for distributed-run polling | None | Positive millisecond timeout for fixed-lease workers. When supplied with distributed-run polling, it bounds how long a GitHub shard can wait for the operator-created run to become terminal. |
 | `RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS` | No | `5000` | Positive millisecond interval between distributed-run status polls. GitHub Actions may lower this for faster shard shutdown after a short smoke run. |
 
+### GitHub Free Distributed Recipe Workflow
+
+`.github/workflows/github-free-distributed-recipe.yml` runs GitHub-hosted
+headless browser shards against the existing public Hetzner control plane. The
+default 50-agent smoke sizing is:
+
+```text
+target_agent_count=50
+agents_per_job=3
+max_parallel_jobs=17
+agent_prefix=controller
+```
+
+Keep `max_parallel_jobs` at or below `19` for this GitHub Free workflow because
+the concurrent Hetzner operator job reserves the 20th standard hosted-job slot.
+The default `agent_prefix=controller` matches the existing 50-agent role-map
+manifests, which target `controller-01` through `controller-50`. Changing the
+prefix requires a matching manifest or a manifest rewrite before dispatch.
+
 ### Full-Stack Playwright Startup
 
 | Variable                      | Required | Default                 | Usage                                                                                                                                  |
