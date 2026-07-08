@@ -69,8 +69,9 @@ export function init(
 ): void {
   const deps = toDependencies(dependencies);
 
-  app.get('/api/state/apps/:applicationId/workspaces/:workspaceId/graphs/global', (c) => {
+  app.get('/api/state/apps/:applicationId/workspaces/:workspaceId/graphs/global', async (c) => {
     try {
+      await assertCanReadScopedGlobalGraph(c.req, deps);
       const result = deps.graphDiagnostics.readScopedGlobalGraphDiagnostic(
         toScope(c),
         readGraphOptions(c),
@@ -285,6 +286,16 @@ async function assertCanReadGroupRef(
   if (!result.allowed) {
     throw new GroupPolicyDeniedError(result);
   }
+}
+
+async function assertCanReadScopedGlobalGraph(
+  req: { header(name: string): string | undefined },
+  deps: GraphTopologyRouteDependencies,
+): Promise<void> {
+  if (!isStrictReadAuthEnabled()) {
+    return;
+  }
+  await deps.requireApiAuthSession(req);
 }
 
 async function assertCanManageGroupRef(
