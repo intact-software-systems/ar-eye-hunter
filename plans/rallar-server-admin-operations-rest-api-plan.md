@@ -47,6 +47,46 @@ surfaces:
 The new admin API should collect these into one operational product instead of
 requiring admins to know every subsystem route.
 
+## Repo Truths To Preserve
+
+- Public REST DTOs that may be consumed by browser/admin UI code belong in
+  `packages/shared/api`, then should be exported from `packages/shared/mod.ts`.
+  Server-only orchestration and repository contracts belong in
+  `packages/shared-server`.
+- api-v1 OpenAPI is a checked-in YAML document at
+  `apps/api-v1/resources/api-v1-openapi.yaml`, loaded by
+  `apps/api-v1/src/config-repo.ts`. Route work must update that file and the
+  existing swagger route tests.
+- `runtime_state_store` is a JSON string key-value table. Client/group/auth/AL
+  state lives under namespaces and encoded `store_key` prefixes, not normalized
+  relational columns. Aggregate readers must either count by namespace/prefix or
+  deliberately cast `store_value` to JSON for fields that cannot be derived from
+  keys.
+- `client_state_events` and `group_state_events` are normalized enough for
+  scoped count queries. Their `workspace_key` uses `_` for missing workspace
+  ids.
+- api-v1 currently starts periodic eviction for `runtime_state_store` and
+  `resource_inbox`. `resource_inbox_results` and `app_data_store` have
+  `deleteExpired(...)` support, but api-v1 startup does not visibly schedule
+  periodic pruning for those tables.
+- `PSqlAppDataRepository.deleteExpired(...)` requires an app-data namespace and
+  optional store name. A platform-wide app-data prune therefore needs a dedicated
+  SQL-level admin helper or explicit namespace/store targets; it cannot be
+  implemented through the generic app-data facade alone.
+- Existing CRDT admin routes already expose document list, integrity,
+  debug-export, backup-export, projection rebuild, compaction, lifecycle, and
+  erase under `/api/crdt/admin/documents/*`. They wrap successful responses as
+  `{ ok: true, result }` and repository failures as `{ ok: false, error }`.
+- Existing topology reconfiguration is
+  `/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure`.
+  `GroupTopologyManagementService.reconfigureGroupTopology(...)` accepts
+  `groupRef`, optional request-time topology options, optional group snapshot,
+  and publish behavior. It does not currently persist an admin `requestId` or
+  `reason` for a plain recompute, so admin audit/timing must carry that context
+  unless the service contract is extended.
+- REST API additions should add or update no-browser API-v1 black-box recipes in
+  `packages/shared-test/black-box-runner` alongside unit/route coverage.
+
 ## Recommended Approach
 
 Create one coherent admin namespace:
@@ -273,6 +313,10 @@ type AdminPruneExpiredRequest = Readonly<{
     | 'resource-inbox-results'
     | 'app-data'
   )[];
+  appData?: Readonly<{
+    namespace?: string;
+    storeName?: string;
+  }>;
   dryRun?: boolean;
   reason?: string;
 }>;
@@ -283,6 +327,11 @@ Rules:
 - default `dryRun` should be `true` until product confidence is high
 - real execution deletes only expired rows
 - no arbitrary key or namespace deletion
+- app-data pruning must either require `appData.namespace` or use a dedicated
+  SQL helper that reports exactly which namespaces/stores it touched
+- runtime-state and resource-inbox pruning should report that background
+  eviction already exists in api-v1; resource-inbox-results and app-data pruning
+  should report whether they are admin-triggered only
 - response reports category counts and changed status
 
 ### CRDT Integrity
@@ -366,8 +415,12 @@ Errors should not leak secrets or raw payloads.
 
 Recommended package split:
 
+- `packages/shared/api/admin-operations-types.ts`
+  - public request/response DTOs for the admin operations REST product
+  - reusable enums for categories, warnings, and operation result statuses
+  - exported from `packages/shared/mod.ts`
+
 - `packages/shared-server/rallar-system/admin-operations/`
-  - reusable DTOs and contracts
   - stat reader interfaces
   - aggregation helpers over client/group snapshots
   - operation result types
@@ -389,6 +442,11 @@ Recommended package split:
   - dependency construction from existing runtime objects
   - route installer registration
 
+- `apps/api-v1/resources/api-v1-openapi.yaml`
+  - Admin Operations tag
+  - path entries and schemas for every admin endpoint
+  - reusable error responses for unauthorized/forbidden/admin operation errors
+
 This keeps `packages/shared-server` reusable and Hono-free while allowing
 api-v1 to own deployment-specific auth and OpenAPI details.
 
@@ -408,6 +466,16 @@ Implementation should prefer direct aggregate queries for large tables. Snapshot
 repository list calls are acceptable only for scoped views where data volume is
 bounded or as a temporary implementation with a warning.
 
+State aggregate readers should be explicit about their strategy:
+
+- use `runtime_state_store.store_namespace` and `store_key` prefixes for cheap
+  counts where possible
+- use `store_value::jsonb` only for fields that cannot be derived from keys,
+  such as group status or active session metadata
+- avoid loading every JSON row into JavaScript for global admin views
+- keep scoped fallback readers marked with warnings until SQL aggregate readers
+  exist
+
 ## Auditing And Timing
 
 Write operations should emit either:
@@ -422,12 +490,16 @@ Timing/audit events must avoid secrets and raw payloads.
 
 ### Phase 1: Admin Read Foundation
 
-- Add contracts and dependency-injected admin operations service.
+- Add public REST contracts in `packages/shared/api/admin-operations-types.ts`.
+- Add shared-server dependency-injected admin operations service.
 - Add Postgres aggregate readers for queue, runtime state, app data, CRDT, and
   state events.
 - Add `/overview`, `/queues`, `/realtime`, `/state`, `/crdt`, and `/system`
   read routes.
-- Add OpenAPI coverage.
+- Update `apps/api-v1/resources/api-v1-openapi.yaml`.
+- Add OpenAPI/swagger route coverage.
+- Add or update API-v1 black-box recipes for admin auth denial and one
+  successful read path.
 - Add auth/admin tests.
 
 ### Phase 2: Controlled Admin Writes
@@ -436,6 +508,8 @@ Timing/audit events must avoid secrets and raw payloads.
 - Add `/topology/recompute`.
 - Add `/maintenance/prune-expired` with dry-run support.
 - Add CRDT integrity/debug-export wrappers or documented links.
+- Add or update API-v1 black-box recipes for one safe write path, preferably
+  dry-run pruning or redacted CRDT debug export.
 - Emit timing/audit events.
 
 ### Phase 3: Operator Polish
@@ -461,13 +535,19 @@ Focused validation should include:
 - prune dry-run and real execution tests
 - CRDT debug export redaction default tests
 - OpenAPI route/schema tests
+- black-box recipe coverage for admin authorization and representative
+  operations
 
 Candidate commands:
 
 - `cd apps/api-v1 && deno task check`
 - focused api-v1 Deno tests for admin routes
+- `cd apps/api-v1 && deno test --allow-env --allow-read test/swagger-routes.test.ts`
 - focused shared-server tests for aggregate readers
 - `npx tsc -p packages/shared-server/tsconfig.json --noEmit`
+- `npx tsc -p packages/shared/tsconfig.json --noEmit` when public DTOs change
+- `npm run test:api-v1:black-box:memory` when black-box recipe coverage is
+  added and memory-mode services are suitable
 
 ## Open Decisions For Implementation
 
@@ -479,3 +559,8 @@ Candidate commands:
   admin overview should deep-link/document the existing CRDT admin routes first.
 - Whether a future unauthenticated `/healthz` or Prometheus endpoint should be
   added separately from this admin-only surface.
+- Whether app-data prune should support global expired-row cleanup in phase 1 or
+  require explicit namespace/store targets until operator UX proves the need.
+- Whether topology recompute should extend
+  `GroupTopologyManagementService.reconfigureGroupTopology(...)` with
+  `requestId`/`reason`, or keep that context only in admin timing/audit events.
