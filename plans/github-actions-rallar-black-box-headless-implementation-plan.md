@@ -10,7 +10,8 @@
 
 ## Global Constraints
 
-- GitHub Free default target: at most 20 concurrent GitHub-hosted jobs.
+- GitHub Free default target: at most 20 total concurrent GitHub-hosted jobs for this workflow.
+- Reserve one concurrent GitHub-hosted job for the Hetzner operator while agents are running, so the GitHub agent matrix must default to and validate `max_parallel_jobs <= 19` under GitHub Free constraints.
 - GitHub Free currently allows 20 concurrent standard GitHub-hosted jobs, 2,000 included minutes per month, and 500 MB artifact storage for the Free plan. Re-check <https://docs.github.com/en/actions/reference/limits> before increasing defaults because GitHub marks these limits as subject to change.
 - Default sharding must support 50 Rallar agents with fewer than 20 jobs, for example 17 jobs with `agents_per_job=3` where the first 16 shards run 3 agents and the final shard runs 2 agents.
 - The default 50-agent manifest uses role-map agent IDs `controller-01` through `controller-50`; the GitHub Free workflow must default `agent_prefix=controller` unless it also rewrites or validates a manifest with a different prefix.
@@ -18,6 +19,8 @@
 - The first implementation should keep Hetzner as the control server and artifact collection host.
 - Existing Hetzner controller deployment should be reused as-is unless a task explicitly states a narrow extension.
 - Manifests with `metadata.rtcTopologyEnv` must apply the Hetzner/API topology environment before any GitHub agents connect; do not let agents start while the API/control plane is rolling.
+- The reusable Hetzner runner must check out `inputs.ref` before copying scripts or manifests; otherwise the GitHub workflow can dispatch one ref while the operator uses files from another.
+- A split `prepare`/`run` operator flow must write and validate a remote prepare marker for topology manifests so `operator_phase=run` can safely skip rollout without bypassing topology validation accidentally.
 - Use barrier-enabled or scheduled distributed manifests so GitHub-hosted agents can finish registering before recipe start.
 - Worker terminal polling must tolerate the target distributed run returning `404` before the operator creates it.
 - Acceptance artifacts must prove that all expected agents have unique `agentId`, `sessionId`, and `auth.clientId`/client identity values.
@@ -59,10 +62,11 @@
 ## Decisions
 
 - Implement Option A: GitHub-hosted agent pool plus existing Hetzner operator/control plane.
-- Make GitHub Free the default: `max-parallel` must not exceed 20, and the workflow should encourage sharding multiple agents per job.
+- Make GitHub Free the default: agent-matrix `max-parallel` must not exceed 19 because the operator consumes one concurrent hosted-job slot, and the workflow should encourage sharding multiple agents per job.
 - Build one top-level workflow first, not two manually coordinated dispatches. The workflow has a planning job, a Hetzner prepare job, a GitHub agent matrix job, and a concurrent Hetzner operator run job. This keeps shared `run_id`, `distributed_run_id`, `agent_prefix`, and manifest inputs in one execution while ensuring topology rollout completes before external agents connect.
 - Extend the existing Hetzner distributed recipe runner with an external-agent mode. Do not duplicate the stage/start/artifact logic in a second operator implementation.
 - Extend the existing Hetzner distributed recipe runner with explicit `prepare` and `run` phases. The default `full` phase preserves existing Hetzner-only behavior.
+- In `prepare` phase, write a remote prepare marker keyed by distributed run id, selected ref, manifest checksum, and topology env. In `run` phase, validate that marker before allowing topology manifests to skip rollout.
 - Add clean worker exit support before relying on long-running GitHub jobs. GitHub jobs should exit when the distributed run becomes terminal, with an idle timeout as a fallback.
 - Use the existing `RALLAR_BLACK_BOX_AGENT_START_INDEX` support to create deterministic agent IDs across shards. Default `agent_prefix=controller` so the GitHub agents match the existing role-map manifests; any other prefix must be proven compatible by preflight.
 - Keep `apps/rallar-black-box-headless` terminology out of commands where it would be misleading. GitHub jobs run `npm --workspace rallar-black-box run worker:headless`, which opens the `/headless/` browser entry.
@@ -127,7 +131,7 @@ distributedPollIntervalMs: number;
 
 - Consumes existing `controlRunSnapshotUrlFromControlUrl(controlUrl, runId)`.
 
-- [ ] **Step 1: Write config tests**
+- [x] **Step 1: Write config tests**
 
 Add tests that assert:
 
@@ -171,7 +175,7 @@ expect(() => readHeadlessWorkerConfig({
   .toThrow("RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer");
 ```
 
-- [ ] **Step 2: Run config tests and verify failure**
+- [x] **Step 2: Run config tests and verify failure**
 
 Run:
 
@@ -181,7 +185,7 @@ npx vitest run packages/tests/rallar-black-box/headless-worker-config.test.ts
 
 Expected before implementation: FAIL because `exitMode` fields are missing.
 
-- [ ] **Step 3: Implement config parsing**
+- [x] **Step 3: Implement config parsing**
 
 Add the type, defaults, parsing helpers, and config fields. Use:
 
@@ -200,11 +204,11 @@ Parse:
 
 For `after-target-distributed-run-terminal`, require `RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID`. Derive `controlHttpUrl` from `RALLAR_CONTROL_HTTP_URL` when set, otherwise from `RALLAR_BLACK_BOX_CONTROL_URL` by converting `ws:` to `http:` and `wss:` to `https:`.
 
-- [ ] **Step 4: Document config**
+- [x] **Step 4: Document config**
 
 In `docs/environment-variables.md`, under the Rallar Black Box Headless Worker section, add rows for the new variables with defaults and GitHub Actions usage.
 
-- [ ] **Step 5: Run config verification**
+- [x] **Step 5: Run config verification**
 
 Run:
 
@@ -215,7 +219,7 @@ npm --workspace rallar-black-box run typecheck
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/rallar-black-box/src/headless-worker-config.ts packages/tests/rallar-black-box/headless-worker-config.test.ts docs/environment-variables.md
@@ -237,7 +241,7 @@ git commit -m "feat: add headless worker exit config"
   - `after-idle-ms`: resolves after the configured idle period.
   - `after-target-distributed-run-terminal`: polls `/distributed-runs/{id}` until `passed`, `failed`, `cancelled`, or `timed-out`.
 
-- [ ] **Step 1: Write source tests**
+- [x] **Step 1: Write source tests**
 
 Add assertions that `headless-worker.ts` contains:
 
@@ -260,7 +264,7 @@ expect(script).toContain("Distributed run dist-run-1 is not created yet");
 expect(script).toContain("response.status === 404");
 ```
 
-- [ ] **Step 2: Run worker script tests and verify failure**
+- [x] **Step 2: Run worker script tests and verify failure**
 
 Run:
 
@@ -270,7 +274,7 @@ npx vitest run packages/tests/rallar-black-box/headless-worker-script.test.ts
 
 Expected before implementation: FAIL because terminal polling helpers are missing.
 
-- [ ] **Step 3: Implement exit helpers**
+- [x] **Step 3: Implement exit helpers**
 
 Add helpers:
 
@@ -291,7 +295,7 @@ function distributedRunUrl(config: HeadlessWorkerConfig): string
 
 Use `Promise.race([shutdown.wait(), waitForDistributedRunTerminal(config)])` for terminal mode so SIGTERM still exits promptly. Log each observed distributed-run state change. If `/distributed-runs/{id}` returns `404`, log once per state transition as "not created yet" and keep polling until the idle timeout or a terminal state. Fail fast on `401` or `403` because those indicate bad GitHub/operator token configuration. Treat malformed JSON as retryable for three consecutive polls, then throw with a redacted URL.
 
-- [ ] **Step 4: Run worker verification**
+- [x] **Step 4: Run worker verification**
 
 Run:
 
@@ -302,7 +306,7 @@ npm --workspace rallar-black-box run typecheck
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/rallar-black-box/scripts/headless-worker.ts packages/tests/rallar-black-box/headless-worker-script.test.ts
@@ -445,11 +449,14 @@ Add assertions:
 ```ts
 expect(runnerWorkflow).toContain("agent_source:");
 expect(runnerWorkflow).toContain("operator_phase:");
+expect(runnerWorkflow).toContain("ref: ${{ inputs.ref }}");
 expect(runnerWorkflow).toContain("RALLAR_BLACK_BOX_AGENT_SOURCE");
 expect(runnerWorkflow).toContain("RALLAR_HETZNER_OPERATOR_PHASE");
+expect(runnerWorkflow).toContain("RALLAR_DISTRIBUTED_PREPARE_MARKER");
 expect(runnerWorkflow).toContain("./16-wait-for-control-agents.sh");
 expect(runnerWorkflow).toContain('case "${RALLAR_BLACK_BOX_AGENT_SOURCE}" in');
 expect(runnerWorkflow).toContain('case "${RALLAR_HETZNER_OPERATOR_PHASE}" in');
+expect(runnerWorkflow).toContain("inputs.operator_phase != 'prepare'");
 ```
 
 Assert that existing `hetzner` behavior still contains:
@@ -490,13 +497,108 @@ case "${RALLAR_HETZNER_OPERATOR_PHASE}" in
 esac
 ```
 
-- [ ] **Step 4: Split prepare and run behavior**
+- [ ] **Step 4: Check out the selected ref**
+
+Update the reusable runner checkout step so `inputs.ref` controls the scripts, manifests, and analysis code used by the operator:
+
+```yaml
+- name: Checkout repo
+  uses: actions/checkout@v4
+  with:
+    ref: ${{ inputs.ref }}
+```
+
+Keep the manual wrapper passing `ref: ${{ inputs.ref }}` into the reusable runner. Without this, a dispatch can roll out one ref on Hetzner while copying a manifest or controller script from the workflow's current branch.
+
+- [ ] **Step 5: Split prepare and run behavior**
 
 Keep existing behavior in `operator_phase=full`. In `operator_phase=prepare`, run the existing checkout/copy/env/render/rollout/readiness setup and exit before the headless-agent wait or distributed recipe start. This phase is what the GitHub Free workflow uses before starting any external browser jobs, so topology env changes are applied while no GitHub agents are connected.
 
 In `operator_phase=run`, skip API rollout and do only the agent wait plus distributed recipe start/export. If the manifest has `metadata.rtcTopologyEnv`, the workflow must already have run `operator_phase=prepare` for the same `ref`, `manifest_path`, `run_id`, `application_id`, `workspace_id`, and `room_id`.
 
-- [ ] **Step 5: Change remote execution branch**
+Change the manifest validation so topology env still requires rollout in `full` and `prepare`, but allows `run` only when a remote prepare marker is later validated:
+
+```bash
+if topology_env_requires_rollout &&
+  [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" != "run" ]] &&
+  ! bool_enabled "${INPUT_ROLLOUT_BEFORE_RUN}"; then
+  echo "::error::Manifest ${MANIFEST_PATH} requires rollout_before_run=true unless operator_phase=run validates a prepare marker." >&2
+  exit 1
+fi
+```
+
+- [ ] **Step 6: Add prepare marker validation**
+
+Render a marker path into the remote env:
+
+```bash
+RALLAR_DISTRIBUTED_PREPARE_MARKER=/tmp/rallar-distributed-prepare-${RALLAR_DISTRIBUTED_RUN_ID}.json
+```
+
+In `operator_phase=prepare`, after rollout/readiness has succeeded and before exiting, write a marker that proves what was prepared:
+
+```bash
+manifest_sha="$(sha256sum "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" | awk '{print $1}')"
+jq -n \
+  --arg runId "${RALLAR_DISTRIBUTED_RUN_ID}" \
+  --arg ref "${RALLAR_REPO_REF}" \
+  --arg manifestSha "${manifest_sha}" \
+  --arg degreeLimit "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT:-}" \
+  --arg treeMinSize "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE:-}" \
+  --arg meshMinSize "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE:-}" \
+  --arg meshParamK "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K:-}" \
+  --arg rttRebuildDebounceMs "${RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS:-}" \
+  '{
+    runId: $runId,
+    ref: $ref,
+    manifestSha: $manifestSha,
+    rtcTopologyEnv: {
+      RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT: $degreeLimit,
+      RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE: $treeMinSize,
+      RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: $meshMinSize,
+      RALLAR_RTC_TOPOLOGY_MESH_PARAM_K: $meshParamK,
+      RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS: $rttRebuildDebounceMs
+    }
+  }' > "${RALLAR_DISTRIBUTED_PREPARE_MARKER}"
+```
+
+In `operator_phase=run`, when any topology env value is non-empty, require the marker to exist and match the current `RALLAR_REPO_REF` and manifest checksum before waiting for external agents:
+
+```bash
+remote_topology_env_requires_rollout() {
+  [[ -n "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT:-}" ||
+    -n "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE:-}" ||
+    -n "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE:-}" ||
+    -n "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K:-}" ||
+    -n "${RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS:-}" ]]
+}
+
+if remote_topology_env_requires_rollout && [[ "${RALLAR_HETZNER_OPERATOR_PHASE}" == "run" ]]; then
+  if [[ ! -s "${RALLAR_DISTRIBUTED_PREPARE_MARKER}" ]]; then
+    echo "Missing prepare marker ${RALLAR_DISTRIBUTED_PREPARE_MARKER}; run prepare phase before external agents." >&2
+    exit 1
+  fi
+  expected_manifest_sha="$(sha256sum "${RALLAR_DISTRIBUTED_MANIFEST_PATH}" | awk '{print $1}')"
+  jq -e \
+    --arg ref "${RALLAR_REPO_REF}" \
+    --arg manifestSha "${expected_manifest_sha}" \
+    --arg degreeLimit "${RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT:-}" \
+    --arg treeMinSize "${RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE:-}" \
+    --arg meshMinSize "${RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE:-}" \
+    --arg meshParamK "${RALLAR_RTC_TOPOLOGY_MESH_PARAM_K:-}" \
+    --arg rttRebuildDebounceMs "${RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS:-}" \
+    '.ref == $ref and
+      .manifestSha == $manifestSha and
+      .rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT == $degreeLimit and
+      .rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE == $treeMinSize and
+      .rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE == $meshMinSize and
+      .rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_MESH_PARAM_K == $meshParamK and
+      .rtcTopologyEnv.RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS == $rttRebuildDebounceMs' \
+    "${RALLAR_DISTRIBUTED_PREPARE_MARKER}" >/dev/null
+fi
+```
+
+- [ ] **Step 7: Change remote execution branch**
 
 In the remote `Run distributed recipe` step:
 
@@ -524,7 +626,39 @@ esac
 
 Keep `stop_after_run` from stopping GitHub-hosted agents in `external` mode. Only call `./10-stop-headless-workers.sh` on cleanup when `agent_source` is `hetzner` or `mixed`.
 
-- [ ] **Step 6: Run verification**
+- [ ] **Step 8: Skip recipe artifacts during prepare phase**
+
+Guard artifact copy/upload, analysis, and failure propagation steps so `operator_phase=prepare` does not upload empty distributed-run artifacts or analyze a run that was intentionally not started. Use concrete conditions:
+
+```yaml
+if: always() && inputs.operator_phase != 'prepare'
+```
+
+For analysis steps that already require copied artifacts, use:
+
+```yaml
+if: always() && inputs.operator_phase != 'prepare' && steps.artifact_status.outputs.available == 'true'
+```
+
+For the final failure propagation step, use:
+
+```yaml
+if: always() && inputs.operator_phase != 'prepare' && steps.run_recipe.outcome != 'success'
+```
+
+Use that condition on:
+
+- `Copy distributed artifacts`
+- `Upload distributed artifacts`
+- `Check distributed artifact availability`
+- `Setup Node for analysis`
+- `Install dependencies for analysis`
+- `Analyze distributed artifacts`
+- `Publish distributed analysis summary`
+- `Upload distributed analysis`
+- `Fail if distributed recipe failed`
+
+- [ ] **Step 9: Run verification**
 
 Run:
 
@@ -535,7 +669,7 @@ git diff --check -- .github/workflows/hetzner-distributed-recipe.yml .github/wor
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add .github/workflows/hetzner-distributed-recipe.yml .github/workflows/hetzner-distributed-recipe-runner.yml packages/tests/hetzner/distributed-recipe-workflow.test.ts
@@ -631,10 +765,10 @@ expect(workflow).toContain("agent_source: external");
 expect(workflow).toContain("uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml");
 ```
 
-Also assert it rejects Free-plan unsafe parallelism:
+Also assert it rejects Free-plan unsafe parallelism while reserving one hosted job for the operator:
 
 ```ts
-expect(workflow).toContain("max_parallel_jobs must be between 1 and 20");
+expect(workflow).toContain("max_parallel_jobs must be between 1 and 19 for GitHub Free");
 ```
 
 Create tests for `scripts/github-actions/plan-github-free-headless-matrix.mjs` that run the script with Node and assert exact output for the default sizing:
@@ -657,6 +791,21 @@ expect(output.matrix[0]).toEqual({ shard_index: 1, agent_start_index: 1, agent_c
 expect(output.matrix[16]).toEqual({ shard_index: 17, agent_start_index: 49, agent_count: 2 });
 ```
 
+Also assert the script rejects an agent matrix that would occupy all 20 Free-plan hosted-job slots and leave no concurrent slot for the operator:
+
+```ts
+const unsafe = spawnSync(process.execPath, [
+  "scripts/github-actions/plan-github-free-headless-matrix.mjs",
+  "--target-agent-count=20",
+  "--agents-per-job=1",
+  "--max-parallel-jobs=20",
+  "--run-id=gh-free-unsafe",
+], { cwd: repoRoot, encoding: "utf8" });
+
+expect(unsafe.status).not.toBe(0);
+expect(unsafe.stderr).toContain("max_parallel_jobs must be between 1 and 19 for GitHub Free");
+```
+
 - [ ] **Step 2: Run tests and verify failure**
 
 Run:
@@ -673,7 +822,7 @@ Create `scripts/github-actions/plan-github-free-headless-matrix.mjs`. It should:
 
 - parse `--target-agent-count`, `--agents-per-job`, `--max-parallel-jobs`, and `--run-id`;
 - validate all count inputs as positive integers;
-- reject `max_parallel_jobs > 20` with `max_parallel_jobs must be between 1 and 20`;
+- reject `max_parallel_jobs > 19` with `max_parallel_jobs must be between 1 and 19 for GitHub Free`;
 - compute `shard_count = Math.ceil(targetAgentCount / agentsPerJob)`;
 - reject `shard_count > maxParallelJobs` with `shard_count must not exceed max_parallel_jobs`;
 - emit JSON with `runId`, `distributedRunId`, `maxParallelJobs`, `estimatedSetupMinutes`, `estimatedSixtyMinuteRunMinutes`, and `matrix`.
@@ -699,7 +848,7 @@ Add a `plan` job that:
 - resolves `distributed_run_id` to `dist-${run_id}`;
 - calls `node scripts/github-actions/plan-github-free-headless-matrix.mjs` for sizing and matrix generation;
 - emits the matrix JSON array, `max_parallel_jobs`, `run_id`, `distributed_run_id`, and budget estimates as job outputs;
-- writes a GitHub step summary showing default Free-plan concurrency, the estimated 60-minute job-minute cost, and a warning that 17 one-hour shards consume roughly 1,020 included minutes plus setup/operator overhead.
+- writes a GitHub step summary showing default Free-plan concurrency, the estimated 60-minute job-minute cost, and a warning that 17 one-hour shards plus the operator consume roughly 1,080 included minutes plus setup overhead.
 
 For 50 agents and 3 agents per job, the matrix should contain 17 entries:
 
@@ -846,7 +995,7 @@ max_parallel_jobs=17
 agent_prefix=controller
 ```
 
-Explain that `max_parallel_jobs` must stay at or below 20 for GitHub Free, and that `agent_prefix=controller` is the default because the existing 50-agent role-map manifests target `controller-01` through `controller-50`. Document that changing the prefix requires a matching manifest or a manifest rewrite.
+Explain that `max_parallel_jobs` must stay at or below 19 for this GitHub Free workflow because the concurrent operator job reserves the 20th hosted-job slot. Also explain that `agent_prefix=controller` is the default because the existing 50-agent role-map manifests target `controller-01` through `controller-50`. Document that changing the prefix requires a matching manifest or a manifest rewrite.
 
 - [ ] **Step 9: Run workflow verification**
 
@@ -882,7 +1031,7 @@ Goal: make accidental non-barrier, wrong-participant-count, or wrong-agent-prefi
 - Consumes `manifest_path`.
 - Enforces:
   - `.targetPolicy.expectedParticipantCount == inputs.target_agent_count`
-  - `.targetPolicy.mode == "role-map"` manifests only pass when every role target and `roleAssignments[].agentId` uses the selected `${agent_prefix}-NN` range.
+  - `.targetPolicy.mode == "role-map"` manifests only pass when the unique role target count equals `target_agent_count` and every role target plus `roleAssignments[].agentId` uses the selected `${agent_prefix}-NN` range.
   - `.barrier.enabled == true` for 10+ agents
   - `.startMode` is `manual`, `auto-after-ready`, or `scheduled`
   - `.metadata.recommendedTerminalTimeoutSeconds` is present for 60-minute manifests
@@ -921,6 +1070,12 @@ Before emitting the matrix, validate:
 
 ```bash
 manifest_count="$(jq -r '.targetPolicy.expectedParticipantCount // empty' "${MANIFEST_PATH}")"
+manifest_target_mode="$(jq -r '.targetPolicy.mode // empty' "${MANIFEST_PATH}")"
+manifest_barrier="$(jq -r '.barrier.enabled // false' "${MANIFEST_PATH}")"
+manifest_barrier_timeout_ms="$(jq -r '.barrier.timeoutMs // empty' "${MANIFEST_PATH}")"
+manifest_start_mode="$(jq -r '.startMode // empty' "${MANIFEST_PATH}")"
+manifest_terminal_timeout_seconds="$(jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty' "${MANIFEST_PATH}")"
+manifest_rtc_topology_env="$(jq -r '.metadata.rtcTopologyEnv // empty' "${MANIFEST_PATH}")"
 if [[ "${manifest_count}" != "${TARGET_AGENT_COUNT}" ]]; then
   echo "::error::Manifest expectedParticipantCount (${manifest_count}) must match target_agent_count (${TARGET_AGENT_COUNT})." >&2
   exit 1
@@ -940,6 +1095,11 @@ For role-map manifests, validate the role target IDs against the selected prefix
 
 ```bash
 role_agent_ids="$(jq -r '[.targetPolicy.roles[]?[]?, .roleAssignments[]?.agentId] | unique | .[]' "${MANIFEST_PATH}")"
+role_agent_count="$(printf '%s\n' "${role_agent_ids}" | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "${manifest_target_mode}" == "role-map" && "${role_agent_count}" != "${TARGET_AGENT_COUNT}" ]]; then
+  echo "::error::Role-map unique agent count (${role_agent_count}) must match target_agent_count (${TARGET_AGENT_COUNT})." >&2
+  exit 1
+fi
 while IFS= read -r agent_id; do
   [[ -z "${agent_id}" ]] && continue
   if [[ ! "${agent_id}" =~ ^${AGENT_PREFIX}-[0-9][0-9]$ ]]; then
@@ -1091,7 +1251,7 @@ Assert the runbook contains:
 ```ts
 expect(runbook).toContain("GitHub Free");
 expect(runbook).toContain("17 shards with agents_per_job=3");
-expect(runbook).toContain("Do not set max_parallel_jobs above 20");
+expect(runbook).toContain("Do not set max_parallel_jobs above 19");
 expect(runbook).toContain("agent_prefix=controller");
 expect(runbook).toContain("prepare-hetzner");
 expect(runbook).toContain("agent_source=external");
@@ -1115,12 +1275,12 @@ Cover:
 
 - prerequisites: deployed Hetzner control server, production secrets, public SPA/API/control URLs;
 - first smoke: 2 agents;
-- GitHub Free 50-agent smoke: 17 jobs x 3 agents with final shard of 2;
+- GitHub Free 50-agent smoke: 17 agent jobs x 3 agents with final shard of 2, plus one concurrent operator job;
 - why the default prefix is `controller`, and how to verify the manifest role-map agent IDs before changing it;
 - the `prepare-hetzner` phase, including why topology env must be applied before GitHub agents connect;
 - estimated GitHub Free minute burn for 30-second and 60-minute runs;
 - artifact locations;
-- common failures: Actions concurrency, monthly minute exhaustion, registration timeout, TURN/ICE issues, manifest count mismatch, role-map prefix mismatch, topology prepare failure, short barrier timeout;
+- common failures: Actions concurrency, monthly minute exhaustion, registration timeout, TURN/ICE issues, manifest count mismatch, role-map prefix mismatch, topology prepare marker failure, short barrier timeout;
 - cleanup: no Hetzner headless systemd worker stop is needed in `external` mode.
 
 - [ ] **Step 4: Run documentation verification**
@@ -1215,6 +1375,8 @@ all connected agents include provider metadata RALLAR_AGENT_PROVIDER=github-acti
 
 Expected: all uniqueness and role-map checks pass. If the same username/password produces duplicate client identity, stop here and add per-agent registration or credential generation before the 60-minute test.
 
+The headless config already accepts per-agent credential env vars named `RALLAR_BLACK_BOX_AGENT_1_USERNAME`, `RALLAR_BLACK_BOX_AGENT_1_PASSWORD`, and so on. Prefer wiring those existing env vars first if unique auth identities are required; add new registration/generation code only if maintaining 50 static credentials becomes the limiter.
+
 - [ ] **Step 5: Record outcomes**
 
 Append a dated note to `playground/FREE_TIER_HEADLESS_BROWSER_DISTRIBUTED_RECIPES.md` with:
@@ -1279,11 +1441,27 @@ For live acceptance, use the GitHub Actions workflow dispatch sequence in Task 9
 
 ## Open Risks
 
-- GitHub Free private-repo minutes may be exhausted quickly. A 50-agent, 60-minute run at 17 jobs is roughly 1,020 job-minutes plus setup and operator overhead.
-- GitHub Free limits are external policy, not repo contracts. As of 2026-07-07, the plan assumes 20 concurrent standard GitHub-hosted jobs, 2,000 included minutes per month, and 500 MB artifact storage; re-check GitHub's Actions limits documentation before long or repeated runs.
+- GitHub Free private-repo minutes may be exhausted quickly. A 50-agent, 60-minute run at 17 agent jobs plus one operator job is roughly 1,080 job-minutes plus setup overhead.
+- GitHub Free limits are external policy, not repo contracts. As of 2026-07-08, the plan assumes 20 concurrent standard GitHub-hosted jobs, 2,000 included minutes per month, and 500 MB artifact storage; re-check GitHub's Actions limits documentation before long or repeated runs.
 - GitHub-hosted runners share provider/network characteristics. `50` agents are real browsers but not 50 independent networks.
 - A GitHub-hosted job has a 6-hour maximum, so the 60-minute target fits, but setup plus queueing plus barrier wait should be kept comfortably below that.
 - If the control server requires strict read tokens, both GitHub agent jobs and the Hetzner operator need compatible token handling.
 - If a matrix job fails before registration, the operator should time out with artifacts rather than waiting indefinitely.
 - The existing 50-agent tree smoke manifest uses `barrier.timeoutMs=15000`; the plan warns but does not fail on this because the operator waits for all agents before starting. If staged command delivery is flaky, create a GitHub-specific manifest copy with a 60-second barrier before attempting the 60-minute run.
-- If shared username/password credentials collapse multiple browser agents into the same authenticated client identity, the next iteration must add per-agent registration or credential generation before interpreting RTC delivery results.
+- If shared username/password credentials collapse multiple browser agents into the same authenticated client identity, use the existing `RALLAR_BLACK_BOX_AGENT_N_USERNAME/PASSWORD` support first; if maintaining static credentials becomes impractical, the next iteration must add per-agent registration or credential generation before interpreting RTC delivery results.
+
+## Implementation Progress
+
+### Iteration 1 - 2026-07-08T11:10:21Z
+
+- Completed steps: Task 1 steps 1-5; Task 2 steps 1-4.
+- Files changed: `apps/rallar-black-box/src/headless-worker-config.ts`, `apps/rallar-black-box/scripts/headless-worker.ts`, `packages/tests/rallar-black-box/headless-worker-config.test.ts`, `packages/tests/rallar-black-box/headless-worker-script.test.ts`, `docs/environment-variables.md`, `plans/github-actions-rallar-black-box-headless-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/rallar-black-box/headless-worker-config.test.ts packages/tests/rallar-black-box/headless-worker-script.test.ts` before red tests: PASS, 20 tests.
+  - `npx vitest run packages/tests/rallar-black-box/headless-worker-config.test.ts packages/tests/rallar-black-box/headless-worker-script.test.ts` after adding planned tests: FAIL as expected because exit config fields and terminal polling helpers were missing.
+  - `npx vitest run packages/tests/rallar-black-box/headless-worker-config.test.ts packages/tests/rallar-black-box/headless-worker-script.test.ts` after implementation: PASS, 24 tests.
+  - `npm --workspace rallar-black-box run typecheck`: PASS.
+- Blockers: none for Iteration 1 local implementation.
+- Notes: The worker source test checks the dynamic log template `Distributed run ${runId} is not created yet` rather than forcing production code to contain the sample id `dist-run-1`.
+- Follow-up validation still required: none for Iteration 1 local implementation.
+- Implementation detail: Task 1 and Task 2 changes were grouped into one Iteration 1 commit (`3e52bb1`, `feat: add headless worker exit config`) instead of split into two commits.

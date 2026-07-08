@@ -2,6 +2,10 @@ export type HeadlessWorkerTransport = "realtime" | "messages.rtc";
 export type HeadlessWorkerBrowserLogLevel = "warning" | "info" | "debug";
 export type HeadlessWorkerEntry = "operator-spa" | "headless";
 export type HeadlessWorkerBrowserEngine = "chromium" | "firefox" | "webkit";
+export type HeadlessWorkerExitMode =
+  | "signal"
+  | "after-target-distributed-run-terminal"
+  | "after-idle-ms";
 
 export type HeadlessWorkerCredentials = Readonly<{
   username: string;
@@ -56,6 +60,11 @@ export type HeadlessWorkerConfig = Readonly<{
   headless: boolean;
   launchTimeoutMs: number;
   readyTimeoutMs: number;
+  exitMode: HeadlessWorkerExitMode;
+  targetDistributedRunId?: string;
+  controlHttpUrl?: string;
+  idleExitMs?: number;
+  distributedPollIntervalMs: number;
   agentCredentials: readonly HeadlessWorkerCredentials[];
   agents: readonly HeadlessWorkerAgentConfig[];
 }>;
@@ -68,6 +77,11 @@ export type HeadlessWorkerAgentUrlInput =
   & Omit<
     HeadlessWorkerConfig,
     "agents" | "agentCredentials" | "browserLogLevel"
+      | "exitMode"
+      | "targetDistributedRunId"
+      | "controlHttpUrl"
+      | "idleExitMs"
+      | "distributedPollIntervalMs"
   >
   & Omit<HeadlessWorkerAgentConfig, "url">;
 
@@ -77,6 +91,8 @@ const DEFAULT_AGENT_PREFIX = "hetzner-agent";
 const DEFAULT_TRANSPORT: HeadlessWorkerTransport = "realtime";
 const DEFAULT_BROWSER_LOG_LEVEL: HeadlessWorkerBrowserLogLevel = "warning";
 const DEFAULT_BROWSER_ENGINE: HeadlessWorkerBrowserEngine = "chromium";
+const DEFAULT_EXIT_MODE: HeadlessWorkerExitMode = "signal";
+const DEFAULT_DISTRIBUTED_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_LAUNCH_TIMEOUT_MS = 30_000;
 const DEFAULT_READY_TIMEOUT_MS = 45_000;
 
@@ -109,11 +125,33 @@ export function readHeadlessWorkerConfig(
     "RALLAR_BLACK_BOX_AGENT_START_INDEX",
     DEFAULT_AGENT_START_INDEX,
   );
+  const controlUrl = requireEnv(env, "RALLAR_BLACK_BOX_CONTROL_URL");
+  const exitMode = exitModeEnv(env);
+  const targetDistributedRunId = envValue(
+    env,
+    "RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID",
+  );
+  const idleExitMs = optionalPositiveIntegerEnv(
+    env,
+    "RALLAR_BLACK_BOX_IDLE_EXIT_MS",
+  );
+  if (
+    exitMode === "after-target-distributed-run-terminal" &&
+    !targetDistributedRunId
+  ) {
+    throw new Error(
+      "RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID is required when " +
+        "RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal",
+    );
+  }
+  if (exitMode === "after-idle-ms" && idleExitMs === undefined) {
+    throw new Error("RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer");
+  }
   const browserEngine = browserEngineEnv(env);
   const agentCredentials = readAgentCredentials(env, agentCount);
   const baseConfig = {
     spaUrl: normalizeBaseUrl(requireEnv(env, "RALLAR_BLACK_BOX_SPA_URL")),
-    controlUrl: requireEnv(env, "RALLAR_BLACK_BOX_CONTROL_URL"),
+    controlUrl,
     apiBaseUrl: normalizeBaseUrl(requireEnv(env, "RALLAR_API_BASE_URL")),
     headlessEntry: headlessEntryEnv(env),
     browserEngine,
@@ -203,6 +241,18 @@ export function readHeadlessWorkerConfig(
       env,
       "RALLAR_BLACK_BOX_READY_TIMEOUT_MS",
       DEFAULT_READY_TIMEOUT_MS,
+    ),
+    exitMode,
+    targetDistributedRunId,
+    controlHttpUrl: normalizeBaseUrl(
+      envValue(env, "RALLAR_CONTROL_HTTP_URL") ??
+        controlHttpUrlFromControlUrl(controlUrl),
+    ),
+    idleExitMs,
+    distributedPollIntervalMs: positiveIntegerEnv(
+      env,
+      "RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS",
+      DEFAULT_DISTRIBUTED_POLL_INTERVAL_MS,
     ),
     agentCredentials,
   };
@@ -322,20 +372,32 @@ export function controlRunSnapshotUrlFromControlUrl(
   runId: string,
 ): string {
   const url = new URL(controlUrl);
+  normalizeControlHttpProtocol(url, controlUrl);
+
+  url.pathname = `/runs/${encodeURIComponent(runId)}`;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+function controlHttpUrlFromControlUrl(controlUrl: string): string {
+  const url = new URL(controlUrl);
+  normalizeControlHttpProtocol(url, controlUrl);
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+function normalizeControlHttpProtocol(url: URL, originalValue: string): void {
   if (url.protocol === "ws:") {
     url.protocol = "http:";
   } else if (url.protocol === "wss:") {
     url.protocol = "https:";
   } else if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error(
-      `Control URL must use ws, wss, http, or https. Received: ${controlUrl}`,
+      `Control URL must use ws, wss, http, or https. Received: ${originalValue}`,
     );
   }
-
-  url.pathname = `/runs/${encodeURIComponent(runId)}`;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
 }
 
 function readAgentCredentials(
@@ -518,6 +580,25 @@ function browserLogLevelEnv(
   }
   throw new Error(
     `${key} must be warning, info, or debug. Received: ${raw}`,
+  );
+}
+
+function exitModeEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): HeadlessWorkerExitMode {
+  const raw = envValue(env, "RALLAR_BLACK_BOX_EXIT_MODE");
+  if (!raw) {
+    return DEFAULT_EXIT_MODE;
+  }
+  if (
+    raw === "signal" ||
+    raw === "after-target-distributed-run-terminal" ||
+    raw === "after-idle-ms"
+  ) {
+    return raw;
+  }
+  throw new Error(
+    "RALLAR_BLACK_BOX_EXIT_MODE must be signal, after-target-distributed-run-terminal, or after-idle-ms",
   );
 }
 

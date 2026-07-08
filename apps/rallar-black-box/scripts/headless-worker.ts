@@ -11,6 +11,7 @@ import {
   controlRunSnapshotUrlFromControlUrl,
   type HeadlessWorkerAgentConfig,
   type HeadlessWorkerBrowserEngine,
+  type HeadlessWorkerConfig,
   readHeadlessWorkerConfig,
 } from "../src/headless-worker-config.ts";
 
@@ -24,6 +25,10 @@ type ControlRunSnapshot = Readonly<{
   agents?: readonly ControlRunAgentSnapshot[];
 }>;
 
+type DistributedRunSnapshot = Readonly<{
+  state?: string;
+}>;
+
 type RunningAgent = Readonly<{
   agent: HeadlessWorkerAgentConfig;
   context: BrowserContext;
@@ -31,6 +36,7 @@ type RunningAgent = Readonly<{
 }>;
 
 const WORKBENCH_UI_CONFIRMATION_TIMEOUT_MS = 5_000;
+const TERMINAL_DISTRIBUTED_RUN_STATES = new Set(["passed", "failed", "cancelled", "timed-out"]);
 const browserTypes = {
   chromium,
   firefox,
@@ -63,7 +69,7 @@ try {
     `All ${runningAgents.length} rallar-black-box headless agents are registered. ` +
       "Waiting for control-server commands.",
   );
-  await shutdown.wait();
+  await waitForWorkerExit(config, shutdown);
 } catch (error) {
   console.error(`[rallar-black-box-worker] ${errorMessage(error)}`);
   process.exitCode = 1;
@@ -239,6 +245,128 @@ async function fetchControlRunSnapshot(): Promise<ControlRunSnapshot> {
     );
   }
   return await response.json() as ControlRunSnapshot;
+}
+
+async function waitForWorkerExit(
+  config: HeadlessWorkerConfig,
+  shutdown: Readonly<{ wait(): Promise<void> }>,
+): Promise<void> {
+  if (config.exitMode === "signal") {
+    await shutdown.wait();
+    return;
+  }
+
+  if (config.exitMode === "after-idle-ms") {
+    if (!config.idleExitMs) {
+      throw new Error("RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer");
+    }
+    log(`Worker will stop after idle timeout ${config.idleExitMs}ms.`);
+    await Promise.race([shutdown.wait(), delay(config.idleExitMs)]);
+    return;
+  }
+
+  await Promise.race([shutdown.wait(), waitForDistributedRunTerminal(config)]);
+}
+
+async function waitForDistributedRunTerminal(
+  config: HeadlessWorkerConfig,
+): Promise<void> {
+  const runId = config.targetDistributedRunId;
+  if (!runId) {
+    throw new Error(
+      "RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID is required for terminal distributed-run exit mode.",
+    );
+  }
+
+  const url = distributedRunUrl(config);
+  const deadline = config.idleExitMs === undefined
+    ? undefined
+    : Date.now() + config.idleExitMs;
+  let lastObservedState = "";
+  let malformedJsonCount = 0;
+
+  while (deadline === undefined || Date.now() < deadline) {
+    const response = await fetch(url);
+    if (response.status === 404) {
+      const state = "not-created";
+      if (lastObservedState !== state) {
+        log(`Distributed run ${runId} is not created yet.`);
+        lastObservedState = state;
+      }
+      malformedJsonCount = 0;
+      await delay(config.distributedPollIntervalMs);
+      continue;
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        `Distributed run ${runId} returned HTTP ${response.status}; ` +
+          `check GitHub/operator control token configuration for ${
+            redactUrlForLog(url)
+          }.`,
+      );
+    }
+
+    if (!response.ok) {
+      const state = `http-${response.status}`;
+      if (lastObservedState !== state) {
+        log(`Distributed run ${runId} returned HTTP ${response.status}; retrying.`);
+        lastObservedState = state;
+      }
+      malformedJsonCount = 0;
+      await delay(config.distributedPollIntervalMs);
+      continue;
+    }
+
+    let snapshot: DistributedRunSnapshot;
+    try {
+      snapshot = await response.json() as DistributedRunSnapshot;
+    } catch {
+      malformedJsonCount += 1;
+      if (malformedJsonCount >= 3) {
+        throw new Error(
+          `Distributed run ${runId} returned malformed JSON from ${
+            redactUrlForLog(url)
+          } for ${malformedJsonCount} consecutive polls.`,
+        );
+      }
+      await delay(config.distributedPollIntervalMs);
+      continue;
+    }
+
+    malformedJsonCount = 0;
+    const state = snapshot.state ?? "unknown";
+    if (lastObservedState !== state) {
+      log(`Distributed run ${runId} state=${state}`);
+      lastObservedState = state;
+    }
+    if (TERMINAL_DISTRIBUTED_RUN_STATES.has(state)) {
+      return;
+    }
+    await delay(config.distributedPollIntervalMs);
+  }
+
+  throw new Error(
+    `Timed out after ${config.idleExitMs}ms waiting for distributed run ${runId} ` +
+      `to become terminal at ${redactUrlForLog(url)}.`,
+  );
+}
+
+function distributedRunUrl(config: HeadlessWorkerConfig): string {
+  if (!config.controlHttpUrl) {
+    throw new Error("RALLAR_CONTROL_HTTP_URL could not be derived.");
+  }
+  if (!config.targetDistributedRunId) {
+    throw new Error("RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID is required.");
+  }
+
+  const url = new URL(config.controlHttpUrl);
+  url.pathname = `/distributed-runs/${
+    encodeURIComponent(config.targetDistributedRunId)
+  }`;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
 }
 
 function delay(ms: number): Promise<void> {

@@ -272,6 +272,11 @@ safe values to browser agents as URL parameters.
 | `RALLAR_AGENT_LONGITUDE` / `RALLAR_BLACK_BOX_AGENT_LONGITUDE` | No | None | Explicit fleet longitude forwarded as `fleetLongitude`; invalid values fail startup.    |
 | `RALLAR_AGENT_LOCATION_LABEL` / `RALLAR_BLACK_BOX_AGENT_LOCATION_LABEL` | No | None | Human label forwarded as `fleetLocationLabel`.                                         |
 | `RALLAR_AGENT_TAGS` / `RALLAR_BLACK_BOX_AGENT_TAGS` | No | None | Comma-separated fleet tags forwarded as `fleetTags`.                                   |
+| `RALLAR_BLACK_BOX_EXIT_MODE` | No | `signal` | Worker shutdown policy. Use `after-target-distributed-run-terminal` in GitHub Actions so a headless shard exits when the target distributed run reaches `passed`, `failed`, `cancelled`, or `timed-out`; use `after-idle-ms` for a fixed lease. |
+| `RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID` | Required when `RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal` | None | Distributed run id polled by GitHub-hosted headless workers before exiting. |
+| `RALLAR_CONTROL_HTTP_URL` | No | Derived from `RALLAR_BLACK_BOX_CONTROL_URL` by converting `ws:` to `http:` and `wss:` to `https:` | Control-server HTTP base URL used for distributed-run polling. In GitHub Actions this should point at the public Hetzner control URL, for example `https://control.rallar.intactss.com`. |
+| `RALLAR_BLACK_BOX_IDLE_EXIT_MS` | Required when `RALLAR_BLACK_BOX_EXIT_MODE=after-idle-ms`; optional fallback for distributed-run polling | None | Positive millisecond timeout for fixed-lease workers. When supplied with distributed-run polling, it bounds how long a GitHub shard can wait for the operator-created run to become terminal. |
+| `RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS` | No | `5000` | Positive millisecond interval between distributed-run status polls. GitHub Actions may lower this for faster shard shutdown after a short smoke run. |
 
 ### Full-Stack Playwright Startup
 

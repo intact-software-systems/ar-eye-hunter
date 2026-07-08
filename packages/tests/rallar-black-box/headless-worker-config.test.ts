@@ -336,6 +336,58 @@ describe("rallar-black-box headless worker config", () => {
     );
   });
 
+  it("parses worker exit mode and distributed-run polling options", () => {
+    const config = readHeadlessWorkerConfig({
+      env: {
+        RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
+        RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+        RALLAR_API_BASE_URL: "https://api.example.test",
+        RALLAR_BLACK_BOX_RUN_ID: "run-1",
+        RALLAR_BLACK_BOX_ROOM_ID: "room-1",
+        RALLAR_BLACK_BOX_USERNAME: "alice",
+        RALLAR_BLACK_BOX_PASSWORD: "secret",
+        RALLAR_BLACK_BOX_EXIT_MODE: "after-target-distributed-run-terminal",
+        RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID: "dist-run-1",
+        RALLAR_CONTROL_HTTP_URL: "https://control.example.test",
+        RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS: "2500",
+      },
+    });
+
+    expect(config.exitMode).toBe("after-target-distributed-run-terminal");
+    expect(config.targetDistributedRunId).toBe("dist-run-1");
+    expect(config.controlHttpUrl).toBe("https://control.example.test");
+    expect(config.distributedPollIntervalMs).toBe(2500);
+  });
+
+  it("defaults and validates worker exit controls", () => {
+    const baseEnv = {
+      RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
+      RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+      RALLAR_API_BASE_URL: "https://api.example.test",
+      RALLAR_BLACK_BOX_RUN_ID: "run-exit-defaults",
+      RALLAR_BLACK_BOX_ROOM_ID: "room-exit-defaults",
+      RALLAR_BLACK_BOX_USERNAME: "alice",
+      RALLAR_BLACK_BOX_PASSWORD: "secret",
+    };
+
+    expect(readHeadlessWorkerConfig({ env: baseEnv }).exitMode).toBe("signal");
+    expect(() =>
+      readHeadlessWorkerConfig({
+        env: Object.assign({}, baseEnv, { RALLAR_BLACK_BOX_EXIT_MODE: "forever" }),
+      })
+    ).toThrow(
+      "RALLAR_BLACK_BOX_EXIT_MODE must be signal, after-target-distributed-run-terminal, or after-idle-ms",
+    );
+    expect(() =>
+      readHeadlessWorkerConfig({
+        env: Object.assign({}, baseEnv, {
+          RALLAR_BLACK_BOX_EXIT_MODE: "after-idle-ms",
+          RALLAR_BLACK_BOX_IDLE_EXIT_MS: "0",
+        }),
+      })
+    ).toThrow("RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer");
+  });
+
   it("defaults the Playwright browser engine to chromium", () => {
     const config = readHeadlessWorkerConfig({
       env: {
