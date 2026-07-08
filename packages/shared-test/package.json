@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "bb:api-v1:recipes": "deno run -A black-box-runner/api-v1-black-box-run.mts --recipes-only --artifact-dir=../../.artifacts/api-v1-black-box/recipes",
+    "bb:api-v1:postgres": "deno run -A black-box-runner/api-v1-black-box-run.mts --backend=postgres --artifact-dir=../../.artifacts/api-v1-black-box/postgres",
+    "bb:api-v1:memory": "deno run -A black-box-runner/api-v1-black-box-run.mts --backend=pglite-memory --artifact-dir=../../.artifacts/api-v1-black-box/memory",
     "bb:matrix:deterministic": "deno run -A black-box-runner/recipe-matrix.mts --profile=deterministic --artifact-dir=../../.artifacts/shared-test/recipe-matrix/deterministic",
     "bb:matrix:dry": "deno run -A black-box-runner/recipe-matrix.mts --profile=dry --artifact-dir=../../.artifacts/shared-test/recipe-matrix/dry",
     "bb:matrix:list": "deno run -A black-box-runner/recipe-matrix.mts --list",
