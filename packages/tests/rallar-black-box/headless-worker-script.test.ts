@@ -67,7 +67,8 @@ describe("rallar-black-box headless worker script", () => {
     );
 
     expect(script).toContain("controlReadHeaders(config)");
-    expect(script).toContain('Authorization: `Bearer ${config.controlToken}`');
+    expect(script).toContain("config.controlReadToken ?? config.controlToken");
+    expect(script).toContain('Authorization: `Bearer ${token}`');
     expect(script).toContain("fetchControlRunSnapshot(config)");
     expect(script).toContain("fetch(url, { headers: controlReadHeaders(config) })");
   });

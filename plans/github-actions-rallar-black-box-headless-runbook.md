@@ -11,9 +11,12 @@ the distributed run.
 - The Hetzner control server, API, and SPA are already deployed and reachable
   from GitHub-hosted runners.
 - The workflow secrets are configured: `RALLAR_BLACK_BOX_USERNAME`,
-  `RALLAR_BLACK_BOX_PASSWORD`, `RALLAR_BLACK_BOX_CONTROL_TOKEN`,
-  `HETZNER_SSH_PRIVATE_KEY`, `HETZNER_KNOWN_HOSTS`, `HETZNER_HOST`, and
-  `HETZNER_USER`.
+  `RALLAR_BLACK_BOX_PASSWORD`, `HETZNER_SSH_PRIVATE_KEY`,
+  `HETZNER_KNOWN_HOSTS`, `HETZNER_HOST`, and `HETZNER_USER`. For hardened
+  control servers, also configure `RALLAR_BLACK_BOX_CONTROL_READ_TOKEN` with an
+  admin/operator token; the workflow uses it to mint short-lived per-agent run
+  tokens and to poll protected read endpoints. `RALLAR_BLACK_BOX_CONTROL_TOKEN`
+  remains a legacy fallback for older deployments.
 - Public endpoint inputs point at production or the intended staging target:
   `spa_url`, `api_base_url`, `control_url`, and `control_http_url`.
 - The selected manifest role map matches the workflow `agent_prefix`.
@@ -48,6 +51,12 @@ RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal
 
 The worker exit mode makes each shard poll the target distributed run and exit
 after it reaches `passed`, `failed`, `cancelled`, or `timed-out`.
+
+Before launching a shard, the workflow calls
+`POST /runs/{runId}/agents/{agentId}/tokens` for each local agent and exports
+the returned values as `RALLAR_BLACK_BOX_AGENT_<N>_CONTROL_TOKEN`. Those
+short-lived run tokens are the only control tokens forwarded into browser-agent
+URLs. The admin/operator read token stays in the Node-side worker environment.
 
 ## Smoke Progression
 
@@ -135,7 +144,9 @@ per-agent `RALLAR_BLACK_BOX_AGENT_N_USERNAME` and
 - Monthly minute exhaustion: use the 2-agent and 10-agent smokes until the next
   billing window or a higher allowance is available.
 - Registration timeout: confirm the public SPA, API, and control URLs are
-  reachable from GitHub-hosted runners and that credentials are valid.
+  reachable from GitHub-hosted runners, credentials are valid, and the
+  `RALLAR_BLACK_BOX_CONTROL_READ_TOKEN` secret can mint per-agent run tokens
+  when control-server hardening is enabled.
 - TURN or ICE issues: inspect fleet and RTC artifacts before rerunning larger
   smokes.
 - Manifest count mismatch: set `target_agent_count` to the manifest

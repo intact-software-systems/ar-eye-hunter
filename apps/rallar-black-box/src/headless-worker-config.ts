@@ -17,6 +17,7 @@ export type HeadlessWorkerAgentConfig = Readonly<{
   actor: string;
   sessionId: string;
   credentials: HeadlessWorkerCredentials;
+  controlToken?: string;
   url: string;
 }>;
 
@@ -37,6 +38,7 @@ export type HeadlessWorkerConfig = Readonly<{
   statsIntervalMs?: number;
   heartbeatIntervalMs?: number;
   controlToken?: string;
+  controlReadToken?: string;
   reportUploadUrl?: string;
   environment?: string;
   fleetRegion?: string;
@@ -66,6 +68,7 @@ export type HeadlessWorkerConfig = Readonly<{
   idleExitMs?: number;
   distributedPollIntervalMs: number;
   agentCredentials: readonly HeadlessWorkerCredentials[];
+  agentControlTokens: readonly (string | undefined)[];
   agents: readonly HeadlessWorkerAgentConfig[];
 }>;
 
@@ -77,6 +80,8 @@ export type HeadlessWorkerAgentUrlInput =
   & Omit<
     HeadlessWorkerConfig,
     "agents" | "agentCredentials" | "browserLogLevel"
+      | "agentControlTokens"
+      | "controlReadToken"
       | "exitMode"
       | "targetDistributedRunId"
       | "controlHttpUrl"
@@ -149,6 +154,12 @@ export function readHeadlessWorkerConfig(
   }
   const browserEngine = browserEngineEnv(env);
   const agentCredentials = readAgentCredentials(env, agentCount);
+  const controlToken = envValue(env, "RALLAR_BLACK_BOX_CONTROL_TOKEN");
+  const agentControlTokens = readAgentControlTokens(
+    env,
+    agentCount,
+    controlToken,
+  );
   const baseConfig = {
     spaUrl: normalizeBaseUrl(requireEnv(env, "RALLAR_BLACK_BOX_SPA_URL")),
     controlUrl,
@@ -178,7 +189,8 @@ export function readHeadlessWorkerConfig(
       env,
       "RALLAR_BLACK_BOX_HEARTBEAT_INTERVAL_MS",
     ),
-    controlToken: envValue(env, "RALLAR_BLACK_BOX_CONTROL_TOKEN"),
+    controlToken,
+    controlReadToken: envValue(env, "RALLAR_BLACK_BOX_CONTROL_READ_TOKEN"),
     reportUploadUrl: envValue(env, "RALLAR_BLACK_BOX_REPORT_UPLOAD_URL"),
     environment: envValue(env, "RALLAR_BLACK_BOX_ENVIRONMENT"),
     fleetRegion: envValue(env, "RALLAR_AGENT_REGION") ??
@@ -255,6 +267,7 @@ export function readHeadlessWorkerConfig(
       DEFAULT_DISTRIBUTED_POLL_INTERVAL_MS,
     ),
     agentCredentials,
+    agentControlTokens,
   };
 
   return {
@@ -275,12 +288,14 @@ export function createHeadlessWorkerAgents(
       actor,
       sessionId: agentId,
       credentials: config.agentCredentials[index],
+      controlToken: config.agentControlTokens[index],
       url: createHeadlessWorkerAgentUrl({
         ...config,
         agentId,
         actor,
         sessionId: agentId,
         credentials: config.agentCredentials[index],
+        controlToken: config.agentControlTokens[index],
       }),
     };
   });
@@ -425,6 +440,22 @@ function readAgentCredentials(
     credentials.push({ username, password });
   }
   return credentials;
+}
+
+function readAgentControlTokens(
+  env: Readonly<Record<string, string | undefined>>,
+  agentCount: number,
+  fallback: string | undefined,
+): readonly (string | undefined)[] {
+  const tokens: (string | undefined)[] = [];
+  for (let index = 0; index < agentCount; index += 1) {
+    const ordinal = index + 1;
+    tokens.push(
+      envValue(env, `RALLAR_BLACK_BOX_AGENT_${ordinal}_CONTROL_TOKEN`) ??
+        fallback,
+    );
+  }
+  return tokens;
 }
 
 function setOptionalParam(

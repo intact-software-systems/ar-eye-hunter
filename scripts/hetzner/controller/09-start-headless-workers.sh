@@ -203,6 +203,7 @@ EOF_ENV
     RALLAR_BLACK_BOX_USERNAME
     RALLAR_BLACK_BOX_PASSWORD
     RALLAR_BLACK_BOX_CONTROL_TOKEN
+    RALLAR_BLACK_BOX_CONTROL_READ_TOKEN
     RALLAR_BLACK_BOX_REPORT_UPLOAD_URL
     RALLAR_BLACK_BOX_ENVIRONMENT
     RALLAR_BLACK_BOX_TRANSPORT
@@ -231,7 +232,7 @@ EOF_ENV
 
   while IFS= read -r key; do
     write_env_var "${key}"
-  done < <(compgen -e | grep -E '^RALLAR_BLACK_BOX_AGENT_[0-9]+_(USERNAME|PASSWORD)$' | sort || true)
+  done < <(compgen -e | grep -E '^RALLAR_BLACK_BOX_AGENT_[0-9]+_(USERNAME|PASSWORD|CONTROL_TOKEN)$' | sort || true)
 
   mv "${tmp_env_file}" "${ENV_FILE}"
   chmod 0600 "${ENV_FILE}"
@@ -320,13 +321,18 @@ wait_for_workers() {
   require_command jq
   validate_positive_integer RALLAR_HEADLESS_READY_TIMEOUT_SECONDS "${RALLAR_HEADLESS_READY_TIMEOUT_SECONDS}"
 
-  local snapshot_url expected prefix agent_start agent_end connected total snapshot last_state
+  local snapshot_url expected prefix agent_start agent_end connected total snapshot last_state read_token
   snapshot_url="$(control_run_snapshot_url "${RALLAR_BLACK_BOX_CONTROL_URL}" "${RALLAR_BLACK_BOX_RUN_ID}")"
   expected="${RALLAR_BLACK_BOX_AGENT_COUNT}"
   prefix="${RALLAR_BLACK_BOX_AGENT_PREFIX}-"
   agent_start="${RALLAR_BLACK_BOX_AGENT_START_INDEX}"
   agent_end="$((agent_start + expected - 1))"
   last_state="no snapshot yet"
+  read_token="${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN:-${RALLAR_BLACK_BOX_CONTROL_TOKEN:-}}"
+  local curl_args=(-fsS)
+  if [[ -n "${read_token}" ]]; then
+    curl_args+=(-H "Authorization: Bearer ${read_token}")
+  fi
 
   echo "==> Waiting for ${expected} connected headless agent(s) ${prefix}${agent_start}..${prefix}${agent_end} in ${snapshot_url}"
   for _ in $(seq 1 "${RALLAR_HEADLESS_READY_TIMEOUT_SECONDS}"); do
@@ -336,7 +342,7 @@ wait_for_workers() {
       return 1
     fi
 
-    snapshot="$(curl -fsS "${snapshot_url}" 2>/dev/null || true)"
+    snapshot="$(curl "${curl_args[@]}" "${snapshot_url}" 2>/dev/null || true)"
     if [[ -n "${snapshot}" ]]; then
       connected="$(jq --arg prefix "${prefix}" --argjson start "${agent_start}" --argjson end "${agent_end}" '[.agents[]? | select(.connected == true and (.agentId | startswith($prefix)) and ((.agentId[$prefix | length:] | tonumber?) as $ordinal | ($ordinal >= $start and $ordinal <= $end)))] | length' <<<"${snapshot}" 2>/dev/null || echo 0)"
       total="$(jq '[.agents[]?] | length' <<<"${snapshot}" 2>/dev/null || echo 0)"

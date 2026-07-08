@@ -234,6 +234,39 @@ describe("rallar-black-box headless worker config", () => {
     expect(secondUrl.searchParams.get("rallarLeaveRoomOnClose")).toBe("1");
   });
 
+  it("keeps read auth separate from per-agent registration tokens", () => {
+    const config = readHeadlessWorkerConfig({
+      env: {
+        RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
+        RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
+        RALLAR_API_BASE_URL: "https://api.example.test",
+        RALLAR_BLACK_BOX_RUN_ID: "run-hardened",
+        RALLAR_BLACK_BOX_ROOM_ID: "room-hardened",
+        RALLAR_BLACK_BOX_AGENT_COUNT: "2",
+        RALLAR_BLACK_BOX_USERNAME: "alice",
+        RALLAR_BLACK_BOX_PASSWORD: "secret",
+        RALLAR_BLACK_BOX_CONTROL_TOKEN: "legacy-registration-token",
+        RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: "operator-read-token",
+        RALLAR_BLACK_BOX_AGENT_1_CONTROL_TOKEN: "agent-run-token-1",
+        RALLAR_BLACK_BOX_AGENT_2_CONTROL_TOKEN: "agent-run-token-2",
+      },
+    });
+
+    expect(config.controlToken).toBe("legacy-registration-token");
+    expect(config.controlReadToken).toBe("operator-read-token");
+    expect(config.agents.map((agent) => agent.controlToken)).toEqual([
+      "agent-run-token-1",
+      "agent-run-token-2",
+    ]);
+
+    const firstUrl = new URL(config.agents[0].url);
+    const secondUrl = new URL(config.agents[1].url);
+    expect(firstUrl.searchParams.get("controlToken")).toBe("agent-run-token-1");
+    expect(secondUrl.searchParams.get("controlToken")).toBe("agent-run-token-2");
+    expect(firstUrl.toString()).not.toContain("operator-read-token");
+    expect(secondUrl.toString()).not.toContain("operator-read-token");
+  });
+
   it("supports stable multi-worker agent id shards", () => {
     const config = readHeadlessWorkerConfig({
       env: {

@@ -375,10 +375,19 @@ useful for temporary runs, but GitHub workflow inputs are not repository
 secrets.
 
 If `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1` is enabled on the control server,
-also pass:
+pass per-agent run tokens to the headless worker rather than a permanent admin
+token:
 
 ```sh
-RALLAR_BLACK_BOX_CONTROL_TOKEN=<run-or-agent-token>
+RALLAR_BLACK_BOX_AGENT_1_CONTROL_TOKEN=<issued-run-token-for-local-agent-1>
+RALLAR_BLACK_BOX_AGENT_2_CONTROL_TOKEN=<issued-run-token-for-local-agent-2>
+```
+
+If `RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN=1` is enabled, also pass an
+admin/operator token for Node-side control-server reads:
+
+```sh
+RALLAR_BLACK_BOX_CONTROL_READ_TOKEN=<admin-or-operator-token>
 ```
 
 Useful options:
@@ -714,11 +723,17 @@ the dispatch inputs `rallar_black_box_username` and `rallar_black_box_password`
 are provided for the run. For `action=start`, the workflow fails before opening
 SSH if neither inputs nor production secrets provide both values.
 
-Optional GitHub secret when run tokens are enabled for headless worker links:
+Optional GitHub secrets when control-server hardening is enabled:
 
 ```text
+RALLAR_BLACK_BOX_CONTROL_READ_TOKEN
 RALLAR_BLACK_BOX_CONTROL_TOKEN
 ```
+
+Prefer `RALLAR_BLACK_BOX_CONTROL_READ_TOKEN` for the admin/operator token used
+by GitHub workflows to mint short-lived per-agent run tokens and poll protected
+read endpoints. `RALLAR_BLACK_BOX_CONTROL_TOKEN` remains a legacy fallback for
+older deployments.
 
 For normal browser operation, do not paste the permanent
 `RALLAR_BLACK_BOX_ADMIN_TOKEN` into public Black Box URLs. The Recipes tab now

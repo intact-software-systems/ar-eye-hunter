@@ -229,6 +229,7 @@ describe('black-box runner recipe matrix', () => {
             'api-v1-auth-session',
             'api-v1-client-state',
             'api-v1-group-presence',
+            'api-v1-openapi-topology-auth',
             'api-v1-scope-isolation',
             'api-v1-websocket-topic-routing',
         ]);

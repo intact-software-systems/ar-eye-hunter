@@ -38,6 +38,18 @@ describe("GitHub Free distributed recipe workflow", () => {
     expect(workflow).toContain(
       "npm --workspace rallar-black-box run worker:headless",
     );
+    expect(workflow).toContain("name: Mint per-agent control run tokens");
+    expect(workflow).toContain("/runs/${encoded_run_id}/agents/${encoded_agent_id}/tokens");
+    expect(workflow).toContain("RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN");
+    expect(workflow).toContain(
+      "RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}",
+    );
+    expect(workflow).toContain(
+      'source "${RUNNER_TEMP}/rallar-github-headless-token.env"',
+    );
+    expect(workflow).not.toContain(
+      "RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}",
+    );
     expect(workflow).toContain("agent_source: external");
     expect(workflow).toContain(
       "uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml",

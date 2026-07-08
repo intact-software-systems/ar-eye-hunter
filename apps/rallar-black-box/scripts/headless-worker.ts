@@ -373,11 +373,12 @@ function distributedRunUrl(config: HeadlessWorkerConfig): string {
 }
 
 function controlReadHeaders(config: HeadlessWorkerConfig): HeadersInit | undefined {
-  if (!config.controlToken) {
+  const token = config.controlReadToken ?? config.controlToken;
+  if (!token) {
     return undefined;
   }
   return {
-    Authorization: `Bearer ${config.controlToken}`,
+    Authorization: `Bearer ${token}`,
   };
 }
 

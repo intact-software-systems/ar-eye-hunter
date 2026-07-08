@@ -298,8 +298,52 @@ jobs:
         if: inputs.install_playwright
         run: npx playwright install --with-deps ${{ inputs.browser_engine }}
 
+      - name: Mint per-agent control run tokens
+        shell: bash
+        env:
+          RALLAR_CONTROL_HTTP_URL: ${{ inputs.control_http_url }}
+          RALLAR_BLACK_BOX_RUN_ID: ${{ needs.plan.outputs.run_id }}
+          RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
+          RALLAR_BLACK_BOX_AGENT_COUNT: ${{ matrix.shard.agent_count }}
+          RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ matrix.shard.agent_start_index }}
+          RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
+        run: |
+          set -euo pipefail
+          quote() { printf '%q' "$1"; }
+
+          token_env_file="${RUNNER_TEMP}/rallar-github-headless-token.env"
+          : > "${token_env_file}"
+          chmod 600 "${token_env_file}"
+
+          curl_args=(-fsS -X POST -H "content-type: application/json" --data '{"ttlMs":7200000}')
+          if [[ -n "${RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN}" ]]; then
+            curl_args+=(-H "Authorization: Bearer ${RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN}")
+          fi
+
+          for ((local_index = 1; local_index <= RALLAR_BLACK_BOX_AGENT_COUNT; local_index += 1)); do
+            ordinal=$((RALLAR_BLACK_BOX_AGENT_START_INDEX + local_index - 1))
+            agent_id="${RALLAR_BLACK_BOX_AGENT_PREFIX}-$(printf '%02d' "${ordinal}")"
+            encoded_run_id="$(jq -nr --arg v "${RALLAR_BLACK_BOX_RUN_ID}" '$v|@uri')"
+            encoded_agent_id="$(jq -nr --arg v "${agent_id}" '$v|@uri')"
+            token_url="${RALLAR_CONTROL_HTTP_URL%/}/runs/${encoded_run_id}/agents/${encoded_agent_id}/tokens"
+            response="$(curl "${curl_args[@]}" "${token_url}")"
+            token="$(jq -r '.token // empty' <<<"${response}")"
+            if [[ -z "${token}" ]]; then
+              echo "::error::Control server did not return a run token for ${agent_id}" >&2
+              exit 1
+            fi
+            echo "::add-mask::${token}"
+            env_key="RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN"
+            printf '%s=%s\n' "${env_key}" "$(quote "${token}")" >> "${token_env_file}"
+          done
+
       - name: Run headless worker shard
-        run: npm --workspace rallar-black-box run worker:headless
+        run: |
+          set -euo pipefail
+          set -a
+          source "${RUNNER_TEMP}/rallar-github-headless-token.env"
+          set +a
+          npm --workspace rallar-black-box run worker:headless
         env:
           CI: "1"
           RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}
@@ -318,7 +362,7 @@ jobs:
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
           RALLAR_BLACK_BOX_USERNAME: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}
           RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
-          RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
+          RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
           RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}
           RALLAR_BLACK_BOX_HEADLESS_ENTRY: headless

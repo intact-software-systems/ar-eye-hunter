@@ -200,7 +200,9 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(runnerWorkflow).toContain('control_http_url:');
         expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}');
         expect(runnerWorkflow).toContain('RALLAR_CONTROL_HTTP_URL: ${{ inputs.control_http_url }}');
+        expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}');
         expect(runnerWorkflow).toContain('printf \'RALLAR_BLACK_BOX_CONTROL_URL=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_CONTROL_URL}")"');
+        expect(runnerWorkflow).toContain('printf \'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN}")"');
         expect(manualWorkflow).toContain('control_url: ${{ inputs.control_url }}');
         expect(manualWorkflow).toContain('control_http_url: ${{ inputs.control_http_url }}');
         expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_AGENT_SOURCE');
@@ -321,6 +323,8 @@ describe('Hetzner distributed recipe workflow', () => {
 
         expect(script).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
         expect(script).toContain('control_run_snapshot_url');
+        expect(script).toContain('RALLAR_BLACK_BOX_CONTROL_READ_TOKEN="${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN:-${RALLAR_BLACK_BOX_CONTROL_TOKEN:-}}"');
+        expect(script).toContain('Authorization: Bearer ${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN}');
         expect(script).toContain('Timed out waiting for external control agents');
         expect(script).not.toContain('systemctl is-active');
     });
@@ -334,6 +338,8 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toMatch(
             /restart\)[\s\S]*RALLAR_WRITE_HEADLESS_ENV=1 \.\/09-start-headless-workers\.sh/,
         );
+        expect(workflow).toContain('RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}');
+        expect(workflow).toContain('printf \'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN=%s\\n\' "$(quote "${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN}")"');
         expect(workflow).not.toContain('RALLAR_WRITE_HEADLESS_ENV=0 ./11-restart-headless-workers.sh');
     });
 
@@ -580,6 +586,10 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(script).toContain(
             'RALLAR_BLACK_BOX_AGENT_START_INDEX="${RALLAR_BLACK_BOX_AGENT_START_INDEX:-1}"',
         );
+        expect(script).toContain('RALLAR_BLACK_BOX_CONTROL_READ_TOKEN');
+        expect(script).toContain('read_token="${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN:-${RALLAR_BLACK_BOX_CONTROL_TOKEN:-}}"');
+        expect(script).toContain('curl "${curl_args[@]}" "${snapshot_url}"');
+        expect(script).toContain("^RALLAR_BLACK_BOX_AGENT_[0-9]+_(USERNAME|PASSWORD|CONTROL_TOKEN)$");
         expect(script).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
         expect(script).toContain('agent_start="${RALLAR_BLACK_BOX_AGENT_START_INDEX}"');
         expect(script).toContain('agent_end="$((agent_start + expected - 1))"');

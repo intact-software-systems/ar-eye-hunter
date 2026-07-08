@@ -94,9 +94,10 @@ prefix="${RALLAR_BLACK_BOX_AGENT_PREFIX}-"
 agent_start="${RALLAR_BLACK_BOX_AGENT_START_INDEX}"
 agent_end="$((agent_start + expected - 1))"
 last_state="no snapshot yet"
+RALLAR_BLACK_BOX_CONTROL_READ_TOKEN="${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN:-${RALLAR_BLACK_BOX_CONTROL_TOKEN:-}}"
 curl_args=(-fsS)
-if [[ -n "${RALLAR_BLACK_BOX_CONTROL_TOKEN:-}" ]]; then
-  curl_args+=(-H "Authorization: Bearer ${RALLAR_BLACK_BOX_CONTROL_TOKEN}")
+if [[ -n "${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN:-}" ]]; then
+  curl_args+=(-H "Authorization: Bearer ${RALLAR_BLACK_BOX_CONTROL_READ_TOKEN}")
 fi
 
 echo "==> Waiting for ${expected} external control agent(s) ${prefix}${agent_start}..${prefix}${agent_end} in ${snapshot_url}"
