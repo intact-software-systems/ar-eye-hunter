@@ -30,7 +30,7 @@ on:
         type: number
         default: 1
       run_id:
-        description: Run id for action=start; leave blank to generate one on the VM
+        description: Run id for action=start; leave blank to generate one before launch
         required: false
         default: ''
       room_id:
@@ -291,6 +291,72 @@ jobs:
             printf 'RALLAR_HEADLESS_READY_TIMEOUT_SECONDS=%s\n' "$(quote "${RALLAR_HEADLESS_READY_TIMEOUT_SECONDS}")"
           } > "${env_file}"
           chmod 600 "${env_file}"
+
+      - name: Mint per-agent control run tokens
+        if: inputs.action == 'start' || inputs.action == 'restart'
+        shell: bash
+        env:
+          RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
+        run: |
+          set -euo pipefail
+          quote() { printf '%q' "$1"; }
+
+          control_http_url_from_control_url() {
+            local control_url="$1"
+            local scheme rest host
+
+            if [[ "${control_url}" == ws://* ]]; then
+              scheme="http"
+              rest="${control_url#ws://}"
+            elif [[ "${control_url}" == wss://* ]]; then
+              scheme="https"
+              rest="${control_url#wss://}"
+            elif [[ "${control_url}" == http://* ]]; then
+              scheme="http"
+              rest="${control_url#http://}"
+            elif [[ "${control_url}" == https://* ]]; then
+              scheme="https"
+              rest="${control_url#https://}"
+            else
+              echo "::error::Unsupported control URL: ${control_url}" >&2
+              return 1
+            fi
+
+            host="${rest%%/*}"
+            printf '%s://%s' "${scheme}" "${host}"
+          }
+
+          env_file="${RUNNER_TEMP}/rallar-headless-action.env"
+          set -a
+          # shellcheck disable=SC1090
+          source "${env_file}"
+          set +a
+
+          RALLAR_BLACK_BOX_RUN_ID="${RALLAR_BLACK_BOX_RUN_ID:-hetzner-headless-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}"
+          printf 'RALLAR_BLACK_BOX_RUN_ID=%s\n' "$(quote "${RALLAR_BLACK_BOX_RUN_ID}")" >> "${env_file}"
+
+          control_http_url="$(control_http_url_from_control_url "${RALLAR_BLACK_BOX_CONTROL_URL}")"
+          curl_args=(-fsS -X POST -H "content-type: application/json" --data '{"ttlMs":7200000}')
+          if [[ -n "${RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN}" ]]; then
+            curl_args+=(-H "Authorization: Bearer ${RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN}")
+          fi
+
+          for ((local_index = 1; local_index <= RALLAR_BLACK_BOX_AGENT_COUNT; local_index += 1)); do
+            ordinal=$((RALLAR_BLACK_BOX_AGENT_START_INDEX + local_index - 1))
+            agent_id="${RALLAR_BLACK_BOX_AGENT_PREFIX}-$(printf '%02d' "${ordinal}")"
+            encoded_run_id="$(jq -nr --arg v "${RALLAR_BLACK_BOX_RUN_ID}" '$v|@uri')"
+            encoded_agent_id="$(jq -nr --arg v "${agent_id}" '$v|@uri')"
+            token_url="${control_http_url}/runs/${encoded_run_id}/agents/${encoded_agent_id}/tokens"
+            response="$(curl "${curl_args[@]}" "${token_url}")"
+            token="$(jq -r '.token // empty' <<<"${response}")"
+            if [[ -z "${token}" ]]; then
+              echo "::error::Control server did not return a run token for ${agent_id}" >&2
+              exit 1
+            fi
+            echo "::add-mask::${token}"
+            env_key="RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN"
+            printf '%s=%s\n' "${env_key}" "$(quote "${token}")" >> "${env_file}"
+          done
 
       - name: Copy headless env
         shell: bash

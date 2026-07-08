@@ -1570,3 +1570,19 @@ For live acceptance, use the GitHub Actions workflow dispatch sequence in Task 9
 - Blockers: Task 9 live GitHub Actions/Hetzner acceptance remains unrun because the local `gh` token is invalid and remote dispatch would consume external CI minutes/resources.
 - Notes: The Hetzner reusable runner now defaults to the production TLS endpoints but accepts caller-provided `control_url` and `control_http_url`; GitHub Free prepare/run operator jobs forward their dispatch inputs to that runner. Headless worker read polling now uses the configured control token when present.
 - Follow-up validation still required: run the Task 9 dispatch sequence from an authenticated environment with the required GitHub and Hetzner secrets, then record the outcome note if requested.
+
+### Review Follow-up - 2026-07-08T20:23:36+0200
+
+- Completed steps: addressed review feedback for the regular Hetzner headless browser workflow by minting per-agent run tokens before `action=start` and `action=restart` copy the remote worker env.
+- Files changed: `.github/workflows/hetzner-headless-browsers.yml`, `packages/tests/hetzner/distributed-recipe-workflow.test.ts`, `docs/environment-variables.md`, `scripts/hetzner/controller/README.md`, `plans/github-actions-rallar-black-box-headless-implementation-plan.md`.
+- Commands run:
+  - `npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts --testNamePattern "mints per-agent run tokens"` before implementation: FAIL as expected because the workflow did not mint per-agent run tokens.
+  - `npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts --testNamePattern "mints per-agent run tokens"` after implementation: PASS, 1 test.
+  - `npx vitest run packages/tests/hetzner/distributed-recipe-workflow.test.ts`: PASS, 64 tests.
+  - `npx vitest run packages/tests/rallar-black-box/headless-worker-config.test.ts packages/tests/rallar-black-box/headless-worker-script.test.ts packages/tests/rallar-black-box/github-actions-headless-pool-workflow.test.ts packages/tests/hetzner/distributed-recipe-workflow.test.ts`: PASS, 95 tests.
+  - `bash -n scripts/hetzner/controller/09-start-headless-workers.sh scripts/hetzner/controller/16-wait-for-control-agents.sh`: PASS.
+  - `npm --workspace rallar-black-box run typecheck`: PASS.
+  - `git diff --check`: PASS.
+- Blockers: live GitHub Actions/Hetzner acceptance remains unrun because it requires authenticated GitHub dispatch and external CI/Hetzner resources.
+- Notes: The workflow now generates a stable `hetzner-headless-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}` run id when dispatch input `run_id` is blank, then uses the control HTTP origin derived from `RALLAR_BLACK_BOX_CONTROL_URL` to mint tokens for each local agent.
+- Follow-up validation still required: run the Task 9 dispatch sequence from an authenticated environment with the required GitHub and Hetzner secrets, then record the outcome note if requested.

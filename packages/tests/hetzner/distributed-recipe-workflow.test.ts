@@ -343,6 +343,22 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).not.toContain('RALLAR_WRITE_HEADLESS_ENV=0 ./11-restart-headless-workers.sh');
     });
 
+    it('mints per-agent run tokens for regular headless browser starts', async () => {
+        const workflow = await readFile(
+            path.join(repoRoot, '.github/workflows/hetzner-headless-browsers.yml'),
+            'utf8',
+        );
+
+        expect(workflow).toContain('name: Mint per-agent control run tokens');
+        expect(workflow).toContain("if: inputs.action == 'start' || inputs.action == 'restart'");
+        expect(workflow).toContain('RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}');
+        expect(workflow).toContain('control_http_url_from_control_url()');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_RUN_ID="${RALLAR_BLACK_BOX_RUN_ID:-hetzner-headless-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}"');
+        expect(workflow).toContain('/runs/${encoded_run_id}/agents/${encoded_agent_id}/tokens');
+        expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN');
+        expect(workflow).toContain('printf \'%s=%s\\n\' "${env_key}" "$(quote "${token}")" >> "${env_file}"');
+    });
+
     it('defaults to a TLS control URL for distributed-run admin API calls', async () => {
         const workflow = await readFile(
             path.join(repoRoot, distributedRunnerWorkflowPath),

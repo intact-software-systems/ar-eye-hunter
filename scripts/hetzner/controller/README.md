@@ -375,8 +375,10 @@ useful for temporary runs, but GitHub workflow inputs are not repository
 secrets.
 
 If `RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1` is enabled on the control server,
-pass per-agent run tokens to the headless worker rather than a permanent admin
-token:
+the GitHub Actions headless browser workflow mints per-agent run tokens for
+`action=start` and `action=restart` before copying the remote worker env. For
+direct script usage, pass per-agent run tokens to the headless worker rather
+than a permanent admin token:
 
 ```sh
 RALLAR_BLACK_BOX_AGENT_1_CONTROL_TOKEN=<issued-run-token-for-local-agent-1>
@@ -734,6 +736,11 @@ Prefer `RALLAR_BLACK_BOX_CONTROL_READ_TOKEN` for the admin/operator token used
 by GitHub workflows to mint short-lived per-agent run tokens and poll protected
 read endpoints. `RALLAR_BLACK_BOX_CONTROL_TOKEN` remains a legacy fallback for
 older deployments.
+
+For `action=start` and `action=restart`, the headless browser workflow appends
+`RALLAR_BLACK_BOX_AGENT_<N>_CONTROL_TOKEN` values to the remote worker env. When
+the `run_id` input is blank, the workflow generates a stable run id before token
+minting so the issued tokens match the worker registration run.
 
 For normal browser operation, do not paste the permanent
 `RALLAR_BLACK_BOX_ADMIN_TOKEN` into public Black Box URLs. The Recipes tab now
