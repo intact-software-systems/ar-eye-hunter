@@ -10,6 +10,7 @@ import {
     executeRallarServerRestRequest,
     extractRallarServerRestVariables,
     extractRallarServerOpenApiEndpoints,
+    RALLAR_SERVER_ENDPOINT_PRESETS,
     readRallarServerJsonPath,
     resolveRallarServerCollectionValue,
     toRallarServerBlackBoxCommand,
@@ -218,6 +219,59 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
                 requiresAuth: true,
             },
         ]);
+    });
+
+    it('includes scoped graph and topology endpoint presets while retaining deprecated legacy graph presets', () => {
+        const presets = new Map(
+            RALLAR_SERVER_ENDPOINT_PRESETS.map((preset) => [preset.presetId, preset]),
+        );
+
+        expect(presets.get('graph-scoped-global')).toMatchObject({
+            tag: 'Graph',
+            method: 'GET',
+            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global',
+            requiresAuth: false,
+        });
+        expect(presets.get('group-graph-latest')).toMatchObject({
+            tag: 'Graph',
+            method: 'GET',
+            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest',
+            requiresAuth: true,
+        });
+        expect(presets.get('group-topology-read')).toMatchObject({
+            tag: 'Topology',
+            method: 'GET',
+            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology',
+            requiresAuth: true,
+        });
+        expect(presets.get('group-topology-config-put')).toMatchObject({
+            tag: 'Topology',
+            method: 'PUT',
+            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
+            requiresAuth: true,
+        });
+        expect(presets.get('group-topology-override-put')).toMatchObject({
+            tag: 'Topology',
+            method: 'PUT',
+            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
+            requiresAuth: true,
+        });
+        expect(presets.get('group-topology-reconfigure')).toMatchObject({
+            tag: 'Topology',
+            method: 'POST',
+            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure',
+            requiresAuth: true,
+        });
+        expect(presets.get('group-topology-config-delete')).toMatchObject({
+            method: 'DELETE',
+            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config',
+        });
+        expect(presets.get('group-topology-override-delete')).toMatchObject({
+            method: 'DELETE',
+            pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
+        });
+        expect(presets.get('graph-global')?.label.toLowerCase()).toContain('deprecated');
+        expect(presets.get('graph-group')?.label.toLowerCase()).toContain('deprecated');
     });
 
     it('redacts authorization, query secrets, and body secrets in cURL output', () => {

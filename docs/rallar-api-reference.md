@@ -944,6 +944,31 @@ continue overlay versioning from the previous durable snapshot and compute with
 durable RTT inputs even if another worker accepted the triggering RTT message.
 `rttTtlMs` can override the durable RTT retention window.
 
+### Scoped Graph And Topology REST
+
+API-v1 exposes graph diagnostics and RTC topology management under the same
+state scope used by clients and groups:
+
+- `GET /api/state/apps/:applicationId/workspaces/:workspaceId/graphs/global`
+  reads app/workspace-scoped global graph diagnostics.
+- `GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/graphs/latest`
+  reads the latest diagnostic graph for one scoped group.
+- `GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology`
+  reads the effective topology view, including the current overlay snapshot
+  when one exists.
+- `GET|PUT|DELETE /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/config`
+  manages durable group topology config.
+- `GET|PUT|DELETE /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/override`
+  manages temporary topology overrides.
+- `POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/topology/reconfigure`
+  recomputes and optionally publishes topology immediately.
+
+Topology config resolves as server defaults, durable config, temporary override,
+then request-time reconfigure options. Writes require an authenticated group
+owner/admin or a platform admin client ID from `AUTH_ADMIN_CLIENT_IDS`. Strict
+read auth (`RALLAR_STATE_STRICT_READ_AUTH`) also protects group graph and
+topology reads.
+
 ### Target Resolver
 
 `createWsServerTargetResolver(webSocketServer, options?)` creates the default target resolver.

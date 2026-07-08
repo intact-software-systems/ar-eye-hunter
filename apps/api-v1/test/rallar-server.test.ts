@@ -64,6 +64,7 @@ Deno.test(
       [...runtime.websocketCallbackIds],
       ['handle-ws-lifecycle'],
     );
+    assert.deepEqual(runtime.appInboxTopics, ['RTC_TOPOLOGY_RECOMPUTE']);
 
     const app = new Hono();
     rallar.ws.mount(app).mount(app);
@@ -71,6 +72,10 @@ Deno.test(
 
     assert.equal((await app.request('/api/ws/session-1')).status, 426);
     assert.equal((await app.request('/api/docs')).status, 200);
+    assert.equal(
+      (await app.request('/api/state/apps/app-1/workspaces/workspace-1/graphs/global?refresh=bogus')).status,
+      400,
+    );
   },
 );
 
@@ -246,6 +251,7 @@ type FakeRuntime = Readonly<{
   anyInboxCallbackIds: Set<string>;
   websocketCallbackIds: Set<string>;
   starts: number;
+  appInboxTopics: string[];
 }>;
 
 function createFakeMiddleware(): FakeRuntime {
@@ -253,6 +259,7 @@ function createFakeMiddleware(): FakeRuntime {
   const outboxTopics: string[] = [];
   const anyInboxCallbackIds = new Set<string>();
   const websocketCallbackIds = new Set<string>();
+  const appInboxTopics: string[] = [];
   let starts = 0;
 
   const socket = {
@@ -288,6 +295,14 @@ function createFakeMiddleware(): FakeRuntime {
       start(): void {
         starts += 1;
       },
+      wake(): void {
+      },
+    },
+    inboxQueueReader: {
+      onInboxMessageDo(topicId: string): unknown {
+        appInboxTopics.push(topicId);
+        return this;
+      },
     },
     wsQBoxServerService,
     clientsRepository: {},
@@ -300,6 +315,7 @@ function createFakeMiddleware(): FakeRuntime {
     outboxTopics,
     anyInboxCallbackIds,
     websocketCallbackIds,
+    appInboxTopics,
     get starts() {
       return starts;
     },

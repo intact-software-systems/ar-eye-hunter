@@ -16,7 +16,20 @@ import {
   RallarServerSystemFacade,
 } from '@shared-server/rallar-facade/RallarServer.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
-import type { RallarRtcTopologyServiceOptions } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import {
+  RallarRtcTopologyService,
+  type RallarRtcTopologyServiceOptions,
+} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
+import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
+import {
+  readGroupGraphDiagnostic,
+  readScopedGlobalGraphDiagnostic,
+} from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware.ts';
 import { getMiddleware, initialiseMiddleware } from './middleware.ts';
@@ -27,12 +40,14 @@ import * as wsRoutes from './routes/ws-routes.ts';
 import * as iceRoutes from './routes/ice-route.ts';
 import * as clientStateRoutes from './routes/client-state-routes.ts';
 import * as groupStateRoutes from './routes/group-state-routes.ts';
+import * as graphTopologyRoutes from './routes/graph-topology-routes.ts';
 import * as graphRoutes from './routes/graph-routes.ts';
 import * as crdtAdminRoutes from './routes/crdt-admin-routes.ts';
 import * as swaggerRoutes from './routes/swagger-routes.ts';
 import { initWsLifecycle as initSharedWsLifecycle } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
 import { sql } from './db/db.ts';
 import { myServerId } from './runtime/runtime-identity.ts';
+import { createRuntimeStateRepository } from './repository/createStateRepositories.ts';
 
 export { RallarServerDataFacade, RallarServerSystemFacade };
 
@@ -55,6 +70,39 @@ export function createRallarServer(
       serverId: myServerId,
       audit: options.crdtAuditSink,
     });
+  const runtimeStateRepository = createRuntimeStateRepository(sql);
+  const rtcTopologyOptions = options.rtcTopologyOptions ??
+    getApiRtcTopologyServiceOptions();
+  const rtcTopologyServerDefaults = {
+    ...rtcTopologyOptions,
+    topologyKind: rtcTopologyOptions.topologyKind ?? 'auto' as const,
+  };
+  const rtcTopologyService = new RallarRtcTopologyService(rtcTopologyOptions);
+  const topologyConfigRepository = new GroupTopologyConfigRepository(
+    runtimeStateRepository,
+  );
+  const topologySnapshotRepository = new RtcTopologySnapshotRepository(
+    runtimeStateRepository,
+  );
+  const rttRepository = new RtcRttRepository(runtimeStateRepository, {
+    now: rtcTopologyOptions.now,
+  });
+  const groupSnapshotCache = createGroupStateSnapshotReadThroughCache({
+    groupsRepository: middleware.groupsRepository,
+  });
+  const topologyManagement = new GroupTopologyManagementService({
+    findGroupSnapshotByRef: (ref, cacheOptions) =>
+      groupSnapshotCache.findOrLoadByRef(ref, cacheOptions),
+    configRepository: topologyConfigRepository,
+    topologyService: rtcTopologyService,
+    topologySnapshotRepository,
+    rttRepository,
+    publisher: (message) => {
+      sendStateSyncMessage(middleware.wsQBoxServerService.socket, message);
+    },
+    serverDefaults: rtcTopologyServerDefaults,
+    now: rtcTopologyOptions.now,
+  });
 
   return createRallarServerApplication({
     runtime: middleware,
@@ -73,8 +121,18 @@ export function createRallarServer(
       installDefaultMiddlewareTopics: (runtime, ws) => {
         initRallarSystemWsTopics(runtime.wsQBoxServerService, {
           initDynamicTopics: false,
-          rtcTopologyOptions: options.rtcTopologyOptions ??
-            getApiRtcTopologyServiceOptions(),
+          rtcTopologyService,
+          rtcTopologyOptions,
+          rtcTopologyRuntimeState: {
+            repository: runtimeStateRepository,
+          },
+          rtcTopologyAppInbox: {
+            inboxQueueReader: runtime.inboxQueueReader,
+            senderId: myServerId,
+            wake: () => runtime.qboxEngine.wake(),
+            findGroupSnapshotByRef: (ref, cacheOptions) =>
+              groupSnapshotCache.findOrLoadByRef(ref, cacheOptions),
+          },
         });
         installRallarCrdtWsTopics(ws, {
           logRepository: crdtLogRepository,
@@ -120,6 +178,15 @@ export function createRallarServer(
         iceRoutes.init,
         clientStateRoutes.init,
         groupStateRoutes.init,
+        (app) =>
+          graphTopologyRoutes.init(app, {
+            graphDiagnostics: {
+              readScopedGlobalGraphDiagnostic,
+              readGroupGraphDiagnostic,
+            },
+            topologyManagement,
+            adminClientIds: readAdminClientIds(),
+          }),
         graphRoutes.init,
         (app) =>
           crdtAdminRoutes.init(app, {

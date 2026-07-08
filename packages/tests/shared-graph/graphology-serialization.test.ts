@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UndirectedGraph } from 'graphology';
+import { serializeGraphInfoSnapshot } from '@shared-graph/graph-diagnostics-serialization.ts';
 import type { GraphInfo, GraphInfoSnapshot, } from '@shared-graph/shared-graph-types.ts';
 import type { EdgeProp, GraphProp, VertexProp, WeightedGraph, } from '@shared-graph/graph/graph-props.ts';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
@@ -94,6 +95,60 @@ describe('graphology JSON serialization', () => {
             restored.measured.graph.edge('peer-a', 'peer-b')!,
             'weight',
         )).toBe(7);
+    });
+
+    it('serializes graph snapshots through the shared diagnostic DTO helper', () => {
+        const predictedGraph = createGraph([
+            ['peer-a', VertexState.MEMBER, 4],
+            ['peer-b', VertexState.MEMBER, 4],
+        ], [
+            ['peer-a', 'peer-b', 2],
+        ]);
+        const predictedTree = createGraph([
+            ['peer-a', VertexState.MEMBER, 4],
+            ['peer-b', VertexState.MEMBER, 4],
+        ], [
+            ['peer-a', 'peer-b', 2],
+        ]);
+        const measuredGraph = createGraph([
+            ['peer-a', VertexState.MEMBER, 4],
+            ['peer-b', VertexState.MEMBER, 4],
+        ], [
+            ['peer-a', 'peer-b', 7],
+        ]);
+        const measuredTree = createGraph([
+            ['peer-a', VertexState.MEMBER, 4],
+            ['peer-b', VertexState.MEMBER, 4],
+        ], [
+            ['peer-a', 'peer-b', 7],
+        ]);
+        const groupRef = createGroupRef('group-2');
+        const snapshot: GraphInfoSnapshot = {
+            groupRef,
+            predicted: {
+                groupRef,
+                graph: predictedGraph,
+                groupGraph: predictedTree,
+                coreNodes: ['peer-a'],
+            },
+            measured: {
+                groupRef,
+                graph: measuredGraph,
+                groupGraph: measuredTree,
+                coreNodes: ['peer-b'],
+            },
+            createdAtEpochMs: 456,
+            version: 8,
+        };
+
+        const serialized = serializeGraphInfoSnapshot(snapshot);
+
+        expect(serialized.predicted.graph).toEqual(predictedGraph.export());
+        expect(serialized.predicted.groupGraph).toEqual(predictedTree.export());
+        expect(serialized.measured?.graph).toEqual(measuredGraph.export());
+        expect(serialized.measured?.groupGraph).toEqual(measuredTree.export());
+        expect('graphId' in serialized).toBe(false);
+        expect(serialized.groupRef).toEqual(groupRef);
     });
 });
 

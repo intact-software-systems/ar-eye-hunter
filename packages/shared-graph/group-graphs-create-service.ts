@@ -9,6 +9,8 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import * as graphsRepository from './repository/graphs-repository.ts';
 import { DEFAULT_GRAPH_PROP, DEFAULT_K_CORE_NODES } from './algo-props.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { StateScope } from '@shared/api/state-types.ts';
+import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import type { WeightedGraph } from './graph-props.ts';
 
 export const GLOBAL_GRAPH_REF: GroupRef = {
@@ -16,6 +18,16 @@ export const GLOBAL_GRAPH_REF: GroupRef = {
     workspaceId: 'global',
     groupId: DEFAULT_GRAPH_PROP.id,
 };
+
+export const SCOPED_GLOBAL_GRAPH_GROUP_ID = '__global__';
+
+export function toScopedGlobalGraphRef(scope: StateScope): GroupRef {
+    return {
+        applicationId: scope.applicationId,
+        workspaceId: scope.workspaceId,
+        groupId: SCOPED_GLOBAL_GRAPH_GROUP_ID,
+    };
+}
 
 export function computeGroupGraph(
     groupRef: GroupRef,
@@ -74,6 +86,33 @@ export function computeGlobalGraphAndCacheIt() {
     return graphInfoSnapshot;
 }
 
+export function computeScopedGlobalGraphAndCacheIt(
+    scope: StateScope,
+    isIncludeMeasured: boolean = false,
+): GraphInfoSnapshot {
+    const graphInfoSnapshot = computeScopedGlobalGraph(
+        scope,
+        [
+            ...new Set(
+                clientStateSnapshotsRepository.getAllClientStateSnapshots()
+                    .filter((snapshot) => isSameGroupScope(snapshot.principal, scope))
+                    .flatMap((snapshot) =>
+                        snapshot.activeSessions
+                            .filter((session) =>
+                                session.status === 'active' &&
+                                isSameGroupScope(session, scope)
+                            )
+                            .map((session) => session.sessionId)
+                    ),
+            ),
+        ],
+        isIncludeMeasured,
+    );
+
+    graphsRepository.setGraph(graphInfoSnapshot);
+    return graphInfoSnapshot;
+}
+
 export function computeGlobalGraph(
     allNodes: readonly string[],
     isIncludeMeasured: boolean = false,
@@ -82,6 +121,21 @@ export function computeGlobalGraph(
         groupRef: GLOBAL_GRAPH_REF,
         predicted: toPredictedGroupGraph(allNodes, GLOBAL_GRAPH_REF),
         measured: isIncludeMeasured ? toMeasuredGroupGraph(allNodes, GLOBAL_GRAPH_REF) : undefined,
+        createdAtEpochMs: Date.now(),
+        version: 1,
+    };
+}
+
+export function computeScopedGlobalGraph(
+    scope: StateScope,
+    allNodes: readonly string[],
+    isIncludeMeasured: boolean = false,
+): GraphInfoSnapshot {
+    const groupRef = toScopedGlobalGraphRef(scope);
+    return {
+        groupRef,
+        predicted: toPredictedGroupGraph(allNodes, groupRef),
+        measured: isIncludeMeasured ? toMeasuredGroupGraph(allNodes, groupRef) : undefined,
         createdAtEpochMs: Date.now(),
         version: 1,
     };

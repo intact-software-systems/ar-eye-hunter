@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
 import {
+    computeScopedGlobalGraphAndCacheIt,
     computeGlobalGraphAndCacheIt,
     computeGroupGraph,
     GLOBAL_GRAPH_REF,
 } from '@shared-graph/group-graphs-create-service.ts';
+import {
+    readGroupGraphDiagnostic,
+    readScopedGlobalGraphDiagnostic,
+} from '@shared-graph/graph-diagnostics-service.ts';
 import { clearAllNodes, hasNode } from '@shared-graph/repository/vivaldi-repository.ts';
 import { findGraphByRef, readableGraphCache } from '@shared-graph/repository/graphs-repository.ts';
 import { observeRtt } from '@shared-graph/vivaldi-service.ts';
@@ -101,6 +106,104 @@ describe('shared-graph group graph services', () => {
         expect(findGraphByRef(GLOBAL_GRAPH_REF)).toBe(snapshot);
     });
 
+    it('computes and caches scoped global graphs by app and workspace', () => {
+        setClientStateSnapshotByPrincipalId(
+            'peer-a',
+            createClientStateSnapshot('peer-a', ['peer-a'], {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-a',
+            }),
+        );
+        setClientStateSnapshotByPrincipalId(
+            'peer-b',
+            createClientStateSnapshot('peer-b', ['peer-b'], {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-a',
+            }),
+        );
+        setClientStateSnapshotByPrincipalId(
+            'peer-other-workspace',
+            createClientStateSnapshot('peer-other-workspace', ['peer-other-workspace'], {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-b',
+            }),
+        );
+        setClientStateSnapshotByPrincipalId(
+            'peer-other-app',
+            createClientStateSnapshot('peer-other-app', ['peer-other-app'], {
+                applicationId: 'app-2',
+                workspaceId: 'workspace-a',
+            }),
+        );
+        const rtt = createRtt('peer-a', 'peer-b', 12, 1);
+        setRtt(rtt);
+        observeRtt(rtt);
+
+        const snapshot = computeScopedGlobalGraphAndCacheIt({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+        }, true);
+
+        expect(snapshot.groupRef).toEqual({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-a',
+            groupId: '__global__',
+        });
+        expect(snapshot.predicted.graph.hasNode('peer-a')).toBe(true);
+        expect(snapshot.predicted.graph.hasNode('peer-b')).toBe(true);
+        expect(snapshot.predicted.graph.hasNode('peer-other-workspace')).toBe(false);
+        expect(snapshot.predicted.graph.hasNode('peer-other-app')).toBe(false);
+        expect(findGraphByRef(snapshot.groupRef)).toBe(snapshot);
+    });
+
+    it('honors graph diagnostic refresh modes', () => {
+        const scope = {
+            applicationId: 'app',
+            workspaceId: 'ws',
+        };
+        setClientStateSnapshotByPrincipalId(
+            'peer-a',
+            createClientStateSnapshot('peer-a', ['peer-a']),
+        );
+
+        const firstRead = readScopedGlobalGraphDiagnostic(scope, {
+            includeMeasured: false,
+            refresh: 'if-missing',
+        });
+
+        expect(firstRead.left).toBeUndefined();
+        expect(firstRead.right?.cache).toEqual({ hit: false, refreshed: true });
+        expect(firstRead.right?.snapshot.groupRef.groupId).toBe('__global__');
+
+        const cachedRead = readScopedGlobalGraphDiagnostic(scope, {
+            includeMeasured: false,
+            refresh: 'if-missing',
+        });
+
+        expect(cachedRead.left).toBeUndefined();
+        expect(cachedRead.right?.cache).toEqual({ hit: true, refreshed: false });
+
+        const refreshedRead = readScopedGlobalGraphDiagnostic(scope, {
+            includeMeasured: false,
+            refresh: 'always',
+        });
+
+        expect(refreshedRead.left).toBeUndefined();
+        expect(refreshedRead.right?.cache).toEqual({ hit: true, refreshed: true });
+
+        const missingGroupRead = readGroupGraphDiagnostic({
+            applicationId: 'app',
+            workspaceId: 'ws',
+            groupId: 'missing-group',
+        }, {
+            includeMeasured: false,
+            refresh: 'never',
+        });
+
+        expect(missingGroupRead.right).toBeUndefined();
+        expect(missingGroupRead.left).toContain('No cached graph diagnostic');
+    });
+
     it('tolerates partial measured RTT coverage when caching the global graph', () => {
         setClientStateSnapshotByPrincipalId(
             'peer-a',
@@ -142,10 +245,14 @@ describe('shared-graph group graph services', () => {
 function createClientStateSnapshot(
     principalId: string,
     sessionIds: readonly string[],
-): ClientSnapshot {
-    const activeSessions = sessionIds.map((sessionId) => ({
+    scope: Readonly<{ applicationId: string; workspaceId: string }> = {
         applicationId: 'app',
         workspaceId: 'ws',
+    },
+): ClientSnapshot {
+    const activeSessions = sessionIds.map((sessionId) => ({
+        applicationId: scope.applicationId,
+        workspaceId: scope.workspaceId,
         principalId,
         clientInstanceId: principalId,
         sessionId,
@@ -160,8 +267,8 @@ function createClientStateSnapshot(
 
     return {
         principal: {
-            applicationId: 'app',
-            workspaceId: 'ws',
+            applicationId: scope.applicationId,
+            workspaceId: scope.workspaceId,
             principalId,
             username: principalId,
             displayName: principalId,
