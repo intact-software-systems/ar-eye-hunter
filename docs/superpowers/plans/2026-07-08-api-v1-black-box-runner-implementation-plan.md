@@ -1360,7 +1360,7 @@ find .artifacts/api-v1-black-box/memory -name failures.json -print
 
 Expected: backend artifact folder exists; every `failures.json` either contains an empty failure list or belongs to a run that failed and was already investigated.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add \
@@ -1480,7 +1480,7 @@ git commit -m "docs: document api-v1 black-box validation"
 ### Iteration 6: Verification And Documentation
 
 - Date/time: 2026-07-08 15:16:04 CEST.
-- Completed steps: 1-4 and 6; step 5 is blocked because local Postgres is not available; step 7 is pending until the documentation commit succeeds.
+- Completed steps: 1-4, 6, and 7; step 5 is blocked because local Postgres is not available.
 - Files changed:
   - `packages/shared-test/docs/shared-test-verification.md`
   - `packages/shared-test/black-box-runner/docs/black-box-runner-recipe-matrix.md`
@@ -1507,5 +1507,5 @@ git commit -m "docs: document api-v1 black-box validation"
   - `npm run test:api-v1:black-box:recipes` failed as expected through required live-gate preflight with unavailable local API responses; it did not run migrations or start the API server.
 - Blockers: local Postgres smoke could not run because the Docker-backed Postgres service was unavailable in this environment.
 - Implementation notes: docs describe only implemented local/root commands and artifact paths; the manual workflow's pglite-memory job remains opt-in.
-- Commit: pending.
+- Commit: `d30cefb` (`docs: document api-v1 black-box validation`).
 - Follow-up validation still required: run `npm run db:up` and `npm run test:api-v1:black-box:postgres` in an environment with Docker/Postgres available, and validate the new GitHub workflows after pushing.
