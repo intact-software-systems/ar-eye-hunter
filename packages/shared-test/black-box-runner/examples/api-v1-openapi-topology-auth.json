@@ -1,0 +1,192 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Accept": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "openApiListsGraphTopologyAuth",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/openapi.json"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "paths": {
+            "/api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global": {
+              "get": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any"
+                }
+              }
+            },
+            "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/graphs/latest": {
+              "get": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any",
+                  "404": "any"
+                }
+              }
+            },
+            "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology": {
+              "get": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any",
+                  "404": "any"
+                }
+              }
+            },
+            "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/config": {
+              "get": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any",
+                  "404": "any"
+                }
+              },
+              "put": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any",
+                  "404": "any"
+                }
+              },
+              "delete": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any",
+                  "404": "any"
+                }
+              }
+            },
+            "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override": {
+              "get": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any",
+                  "404": "any"
+                }
+              },
+              "put": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any",
+                  "404": "any"
+                }
+              },
+              "delete": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any",
+                  "404": "any"
+                }
+              }
+            },
+            "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure": {
+              "post": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any",
+                  "404": "any"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

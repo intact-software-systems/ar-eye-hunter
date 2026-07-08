@@ -926,6 +926,25 @@
       "description": "No-browser API-v1 scoped application/workspace isolation recipe."
     },
     {
+      "id": "api-v1-openapi-topology-auth",
+      "recipe": "examples/api-v1-openapi-topology-auth.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-openapi-topology-auth",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 OpenAPI auth contract for scoped graph and topology management endpoints."
+    },
+    {
       "id": "rallar-signaling-two-peer-chat-dry",
       "recipe": "examples/rtc-rallar-two-peer-chat.json",
       "category": "rallar-signaling",
