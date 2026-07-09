@@ -366,6 +366,142 @@ describe('GroupStateRepository', () => {
         expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(groupCount);
     });
 
+    it('lists bounded group snapshot pages without scanning every group row', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        const now = Date.now();
+        const groupCount = 5;
+
+        for (let index = 0; index < groupCount; index += 1) {
+            const groupId = `group-${String(index).padStart(4, '0')}`;
+            const principalId = `principal-${String(index).padStart(4, '0')}`;
+
+            await groupRepository.putGroup(createGroup(groupId));
+            await groupRepository.putMember(
+                createGroupMember(principalId, 'active', groupId),
+            );
+            await groupRepository.putPresenceSession(
+                createGroupSession(principalId, `session-${index}`, {
+                    groupId,
+                    expiresAtEpochMs: now + 60_000,
+                }),
+            );
+        }
+
+        repository.resetCounters();
+        const page = await (groupRepository as unknown as {
+            listSnapshotsPage(
+                scope: { applicationId: string; workspaceId: string },
+                options: { limit: number },
+            ): Promise<{
+                snapshots: readonly { group: { groupId: string } }[];
+                scannedGroupCount: number;
+                hasMore: boolean;
+            }>;
+        }).listSnapshotsPage({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        }, {
+            limit: 2,
+        });
+
+        expect(page.snapshots.map((snapshot) => snapshot.group.groupId)).toEqual([
+            'group-0000',
+            'group-0001',
+        ]);
+        expect(page.scannedGroupCount).toBe(2);
+        expect(page.hasMore).toBe(true);
+        expect(repository.findEntriesByPrefixPageCalls).toEqual([
+            {
+                namespace: 'group-state:groups',
+                keyPrefix: 'app=app-1:ws=workspace-1:',
+                afterKey: undefined,
+                limit: 3,
+            },
+        ]);
+        expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(1);
+    });
+
+    it('fills bounded group snapshot pages after expired raw group rows are skipped', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+
+        await groupRepository.putGroup({
+            ...createGroup('group-0000'),
+            purgeAfterEpochMs: Date.now() - 1,
+        });
+        await groupRepository.putGroup(createGroup('group-0001'));
+        await groupRepository.putGroup(createGroup('group-0002'));
+        await groupRepository.putGroup(createGroup('group-0003'));
+
+        const page = await (groupRepository as unknown as {
+            listSnapshotsPage(
+                scope: { applicationId: string; workspaceId: string },
+                options: { limit: number },
+            ): Promise<{
+                snapshots: readonly { group: { groupId: string } }[];
+                scannedGroupCount: number;
+                hasMore: boolean;
+                nextGroupKey?: string;
+            }>;
+        }).listSnapshotsPage({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        }, {
+            limit: 2,
+        });
+
+        expect(page.snapshots.map((snapshot) => snapshot.group.groupId)).toEqual([
+            'group-0001',
+            'group-0002',
+        ]);
+        expect(page.scannedGroupCount).toBe(2);
+        expect(page.hasMore).toBe(true);
+        expect(page.nextGroupKey).toBe('app=app-1:ws=workspace-1:group=group-0002');
+    });
+
+    it('keeps paged group snapshot scans inside the exact workspace scope', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+
+        await groupRepository.putGroup(createGroup('room-current'));
+        await groupRepository.putGroup({
+            ...createGroup('room-sibling'),
+            workspaceId: 'workspace-10',
+        });
+
+        const page = await (groupRepository as unknown as {
+            listSnapshotsPage(
+                scope: { applicationId: string; workspaceId: string },
+                options: { limit: number },
+            ): Promise<{
+                snapshots: readonly { group: { groupId: string; workspaceId: string } }[];
+                scannedGroupCount: number;
+                hasMore: boolean;
+            }>;
+        }).listSnapshotsPage({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        }, {
+            limit: 10,
+        });
+
+        expect(page.snapshots.map((snapshot) => snapshot.group)).toEqual([
+            expect.objectContaining({
+                groupId: 'room-current',
+                workspaceId: 'workspace-1',
+            }),
+        ]);
+        expect(page.scannedGroupCount).toBe(1);
+        expect(page.hasMore).toBe(false);
+    });
+
     it('lists group event pages with cursor order through dedicated event-store paging', async () => {
         const repository = new FakeRuntimeStateRepository();
         const eventStore = new InMemoryGroupStateEventStore();

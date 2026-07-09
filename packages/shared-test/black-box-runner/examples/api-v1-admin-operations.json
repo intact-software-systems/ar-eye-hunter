@@ -1,0 +1,183 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "rejectMissingAdminAuth",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/overview"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    },
+    {
+      "name": "loginDemoAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "admin",
+          "password": "admin"
+        },
+        "outputs": {
+          "adminClientId": "body.clientId",
+          "adminAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "admin",
+          "accessToken": "string",
+          "username": "admin",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveAdminAuthHeader",
+      "type": "set",
+      "output": "adminAuthHeader",
+      "secret": true,
+      "redactAs": "adminAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.adminAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "readAdminOverview",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/admin/operations/overview",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "generatedAtEpochMs": "integer",
+          "serverId": "string",
+          "health": {
+            "status": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "dryRunPruneExpired",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/maintenance/prune-expired",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "dryRun": true,
+          "categories": ["runtime-state", "resource-inbox-results"],
+          "reason": "black-box-admin-operations-dry-run"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "generatedAtEpochMs": "integer",
+          "operation": "maintenance.prune-expired",
+          "status": "dry-run",
+          "changed": false
+        }
+      }
+    },
+    {
+      "name": "openApiListsAdminOperations",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/openapi.json"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "paths": {
+            "/api/admin/operations/overview": {
+              "get": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any"
+                }
+              }
+            },
+            "/api/admin/operations/maintenance/prune-expired": {
+              "post": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

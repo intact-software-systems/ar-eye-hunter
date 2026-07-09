@@ -222,6 +222,127 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
   );
 });
 
+Deno.test('OpenAPI JSON includes admin operations contracts', async () => {
+  const app = init(new Hono());
+  const response = await app.request('/api/openapi.json');
+  const json = await response.json() as {
+    paths: Record<string, {
+      get?: OpenApiOperation;
+      post?: OpenApiOperation;
+    }>;
+    components: {
+      schemas: Record<string, unknown>;
+    };
+  };
+
+  for (
+    const [path, method] of [
+      ['/api/admin/operations/overview', 'get'],
+      ['/api/admin/operations/queues', 'get'],
+      ['/api/admin/operations/realtime', 'get'],
+      ['/api/admin/operations/state', 'get'],
+      ['/api/admin/operations/state/apps/{applicationId}/workspaces/{workspaceId}', 'get'],
+      ['/api/admin/operations/crdt', 'get'],
+      ['/api/admin/operations/crdt/apps/{applicationId}/workspaces/{workspaceId}', 'get'],
+      ['/api/admin/operations/system', 'get'],
+      ['/api/admin/operations/metrics/reset', 'post'],
+      ['/api/admin/operations/topology/recompute', 'post'],
+      ['/api/admin/operations/maintenance/prune-expired', 'post'],
+      ['/api/admin/operations/crdt/integrity', 'post'],
+      ['/api/admin/operations/crdt/debug-export', 'post'],
+      ['/api/admin/operations/crdt/compact', 'post'],
+      ['/api/admin/operations/crdt/lifecycle', 'post'],
+      ['/api/admin/operations/crdt/erase', 'post'],
+    ] as const
+  ) {
+    assert.ok(json.paths[path]?.[method], `missing ${method.toUpperCase()} ${path}`);
+    assertAuthContract(`${method.toUpperCase()} ${path}`, json.paths[path]?.[method], [
+      '200',
+      '401',
+      '403',
+    ]);
+  }
+
+  assert.ok(json.components.schemas.AdminOperationsOverviewResponse);
+  assert.ok(json.components.schemas.AdminPruneExpiredRequest);
+  assert.ok(json.components.schemas.AdminOperationResultResponse);
+});
+
+Deno.test('OpenAPI JSON includes admin support contracts', async () => {
+  const app = init(new Hono());
+  const response = await app.request('/api/openapi.json');
+  const json = await response.json() as {
+    paths: Record<string, {
+      post?: OpenApiOperation;
+    }>;
+    components: {
+      schemas: Record<string, unknown>;
+    };
+  };
+
+  for (
+    const path of [
+      '/api/admin/support/explain/client',
+      '/api/admin/support/explain/group',
+      '/api/admin/support/explain/request',
+      '/api/admin/support/explain/crdt-document',
+      '/api/admin/support/explain/queue-item',
+    ]
+  ) {
+    assert.ok(json.paths[path]?.post, `missing POST ${path}`);
+    assertAuthContract(`POST ${path}`, json.paths[path]?.post, [
+      '200',
+      '401',
+      '403',
+    ]);
+  }
+
+  assert.ok(json.components.schemas.AdminSupportNarrativeResponse);
+  assert.ok(json.components.schemas.AdminSupportExplainQueueItemRequest);
+  assert.ok(json.components.schemas.AdminSupportExplainRequestRequest);
+});
+
+Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
+  const app = init(new Hono());
+  const response = await app.request('/api/openapi.json');
+  const json = await response.json() as {
+    paths: Record<string, {
+      get?: OpenApiOperation;
+    }>;
+    components: {
+      schemas: Record<string, unknown>;
+    };
+  };
+
+  for (
+    const path of [
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/stats/summary',
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/stats',
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/stats/me/realtime',
+    ]
+  ) {
+    assert.ok(json.paths[path]?.get, `missing GET ${path}`);
+    assertAuthContract(`GET ${path}`, json.paths[path]?.get, [
+      '200',
+      '401',
+      '403',
+    ]);
+    assert.equal(
+      json.paths[path]?.get?.responses?.['200'] &&
+        JSON.stringify(json.paths[path]?.get?.responses?.['200']).includes('no-store'),
+      true,
+      `GET ${path} should document no-store actor-specific responses`,
+    );
+  }
+
+  assert.ok(json.paths[
+    '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/stats'
+  ]?.get?.responses?.['404']);
+  assert.ok(json.components.schemas.WorkspaceSpaStatisticsResponse);
+  assert.ok(json.components.schemas.GroupSpaStatisticsResponse);
+  assert.ok(json.components.schemas.MyRealtimeSpaStatisticsResponse);
+});
+
 Deno.test('graph topology product docs describe implemented REST and recompute behavior', async () => {
   const apiReference = await Deno.readTextFile('../../docs/rallar-api-reference.md');
   const rttDoc = await Deno.readTextFile('../../docs/rallar-rtc-rtt-reporting.md');
@@ -230,6 +351,28 @@ Deno.test('graph topology product docs describe implemented REST and recompute b
   assert.match(apiReference, /\/topology\/reconfigure/);
   assert.match(rttDoc, /REST reconfigure/i);
   assert.match(rttDoc, /shared recompute path/i);
+});
+
+Deno.test('admin operations product docs describe implemented REST auth and safety behavior', async () => {
+  const apiReference = await Deno.readTextFile('../../docs/rallar-api-reference.md');
+  const envDocs = await Deno.readTextFile('../../docs/environment-variables.md');
+
+  assert.match(apiReference, /\/api\/admin\/operations\/overview/);
+  assert.match(apiReference, /\/api\/admin\/operations\/maintenance\/prune-expired/);
+  assert.match(apiReference, /payloads redacted/i);
+  assert.match(envDocs, /admin operations/);
+  assert.match(envDocs, /platform-admin allow-list/i);
+});
+
+Deno.test('SPA statistics product docs describe implemented REST auth and safety behavior', async () => {
+  const apiReference = await Deno.readTextFile('../../docs/rallar-api-reference.md');
+  const envDocs = await Deno.readTextFile('../../docs/environment-variables.md');
+
+  assert.match(apiReference, /\/stats\/summary/);
+  assert.match(apiReference, /\/stats\/me\/realtime/);
+  assert.match(apiReference, /strict read auth independent/i);
+  assert.match(apiReference, /does not expose admin operations/i);
+  assert.match(envDocs, /SPA statistics/i);
 });
 
 type OpenApiOperation = {

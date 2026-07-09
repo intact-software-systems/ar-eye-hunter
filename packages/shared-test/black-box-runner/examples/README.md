@@ -18,6 +18,9 @@ examples.
 | `api-v1-client-state.json` | API-v1 black-box integration | Login as Alice and exercise client principal, instance, session, presence, event list, and event page REST endpoints. |
 | `api-v1-websocket-topic-routing.json` | API-v1 black-box integration | Use REST setup plus an authenticated raw `/api/ws/:sessionId` connection to send a self-addressed AL message over WebSocket. |
 | `api-v1-scope-isolation.json` | API-v1 black-box integration | Login as Alice and Bob, create the same logical group id in separate application/workspace scopes, and verify wrong-principal reads are denied. |
+| `api-v1-admin-operations.json` | API-v1 black-box integration | Verify admin operations auth denial, demo-admin overview success, and OpenAPI admin namespace coverage over REST. |
+| `api-v1-admin-support.json` | API-v1 black-box integration | Verify admin support auth denial, explicit QueueBox-key explanation, constrained request warning, and OpenAPI admin support namespace coverage over REST. |
+| `api-v1-spa-statistics.json` | API-v1 black-box integration | Verify SPA statistics auth denial, non-member group denial, scoped success reads, and OpenAPI stats namespace coverage over REST. |
 | `rtc-rallar-memory-delivery-semantics.json` | Generic runner semantics | Use deterministic `rallar-memory` peers to assert direct delivery, room broadcast delivery, delivery metadata, and payload parity between recipients. |
 | `rtc-rallar-memory-routing-failures.json` | Generic runner semantics | Intentionally records no-recipient, closed-target, and send-after-close failures with `failFast: false` so report diagnostics can be inspected. |
 | `rtc-rallar-memory-same-connection-soak.json` | Generic runner semantics | Keeps two deterministic `rallar-memory` RTC connections open, sends repeated bidirectional payloads, records soak metrics, enforces post-run thresholds, and closes both connections once. |

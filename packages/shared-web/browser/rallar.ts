@@ -117,6 +117,12 @@ import { createRallarRealtimeFacade, type RallarRealtimeFacade, } from '@shared-
 import { createRallarRtcFacade, type RallarRtcFacade, } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { createRallarRoomsFacade, type RallarRoomsFacade, } from '@shared-web/browser/rallar-rooms-facade.ts';
 import {
+    createRallarStatsFacade,
+    type RallarStatsFacade,
+    type RallarStatsGroupInput,
+    type RallarStatsReadOptions,
+} from '@shared-web/browser/rallar-stats-facade.ts';
+import {
     evaluateRallarReadinessExpectation,
     normalizeRallarReadinessExpectation,
     type RallarNormalizedReadinessExpectation,
@@ -193,6 +199,12 @@ export type {
     RallarMessageSelector,
     RallarMessageSelectorInput,
 } from '@shared-web/browser/rallar-message-selectors.ts';
+
+export type {
+    RallarStatsFacade,
+    RallarStatsGroupInput,
+    RallarStatsReadOptions,
+} from '@shared-web/browser/rallar-stats-facade.ts';
 
 export type {
     RallarOperationOptions,
@@ -1673,6 +1685,7 @@ export type RallarFacade = Readonly<{
             options?: RallarRoomEventOptions,
         ): RallarUnsubscribe;
     }>;
+    stats: RallarStatsFacade;
     people: Readonly<{
         state(): RallarPeopleState;
         list(): readonly RallarPerson[];
@@ -3160,6 +3173,94 @@ class BrowserRallarFacade implements RallarFacade {
         onChange: (listener, options) => this.onPeopleChange(listener, options),
         onEvent: (listener, options = {}) => this.onPeopleEvent(listener, options),
     });
+
+    readonly stats: RallarStatsFacade = createRallarStatsFacade({
+        summary: async (options = {}) => await this.readStatsSummary(options),
+        group: async (group, options = {}) =>
+            await this.readStatsGroup(group, options),
+        meRealtime: async (options = {}) =>
+            await this.readStatsMeRealtime(options),
+    });
+
+    private async readStatsSummary(
+        options: RallarStatsReadOptions = {},
+    ) {
+        const operationOptions = this.resolveOperationOptions(options);
+        const session = this.requireSession();
+        const scope = this.resolveOperationScope(options.scope) ??
+            api.defaultStateScope();
+
+        return await this.runAuthAwareOperation(async () =>
+            await runRallarCommand(
+                async (signal) =>
+                    await api.readStateWorkspaceStatsSummary(scope, {
+                        authSession: session,
+                        signal,
+                    }),
+                operationOptions,
+            )
+        );
+    }
+
+    private async readStatsGroup(
+        group: RallarStatsGroupInput,
+        options: RallarStatsReadOptions = {},
+    ) {
+        const operationOptions = this.resolveOperationOptions(options);
+        const session = this.requireSession();
+        const target = this.toStatsGroupTarget(group, options.scope);
+
+        return await this.runAuthAwareOperation(async () =>
+            await runRallarCommand(
+                async (signal) =>
+                    await api.readStateGroupStats(target.groupId, target.scope, {
+                        authSession: session,
+                        signal,
+                    }),
+                operationOptions,
+            )
+        );
+    }
+
+    private async readStatsMeRealtime(
+        options: RallarStatsReadOptions = {},
+    ) {
+        const operationOptions = this.resolveOperationOptions(options);
+        const session = this.requireSession();
+        const scope = this.resolveOperationScope(options.scope) ??
+            api.defaultStateScope();
+
+        return await this.runAuthAwareOperation(async () =>
+            await runRallarCommand(
+                async (signal) =>
+                    await api.readStateMyRealtimeStatus(scope, {
+                        authSession: session,
+                        signal,
+                    }),
+                operationOptions,
+            )
+        );
+    }
+
+    private toStatsGroupTarget(
+        group: RallarStatsGroupInput,
+        scope?: StateScope,
+    ): Readonly<{ groupId: string; scope: StateScope }> {
+        if (typeof group === 'string') {
+            return {
+                groupId: group,
+                scope: this.resolveOperationScope(scope) ?? api.defaultStateScope(),
+            };
+        }
+
+        return {
+            groupId: group.groupId,
+            scope: {
+                applicationId: group.applicationId,
+                workspaceId: group.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+            },
+        };
+    }
 
     private async refreshPeople(
         input?: StateScope | RallarRefreshOptions,

@@ -945,6 +945,63 @@
       "description": "No-browser API-v1 OpenAPI auth contract for scoped graph and topology management endpoints."
     },
     {
+      "id": "api-v1-admin-operations",
+      "recipe": "examples/api-v1-admin-operations.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-admin-operations",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 admin operations auth denial, admin overview success, and OpenAPI contract coverage."
+    },
+    {
+      "id": "api-v1-admin-support",
+      "recipe": "examples/api-v1-admin-support.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-admin-support",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 admin support auth denial, explicit QueueBox-key explanation, constrained request warning, and OpenAPI contract coverage."
+    },
+    {
+      "id": "api-v1-spa-statistics",
+      "recipe": "examples/api-v1-spa-statistics.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-spa-statistics",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 SPA statistics missing-auth denial, non-member group denial, scoped success reads, and OpenAPI contract coverage."
+    },
+    {
       "id": "rallar-signaling-two-peer-chat-dry",
       "recipe": "examples/rtc-rallar-two-peer-chat.json",
       "category": "rallar-signaling",

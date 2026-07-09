@@ -226,11 +226,14 @@ describe('black-box runner recipe matrix', () => {
         const apiEntries = entries.filter(entry => entry.profiles.includes('api-v1-black-box'));
 
         expect(apiEntries.map(entry => entry.id).sort()).toEqual([
+            'api-v1-admin-operations',
+            'api-v1-admin-support',
             'api-v1-auth-session',
             'api-v1-client-state',
             'api-v1-group-presence',
             'api-v1-openapi-topology-auth',
             'api-v1-scope-isolation',
+            'api-v1-spa-statistics',
             'api-v1-websocket-topic-routing',
         ]);
 
