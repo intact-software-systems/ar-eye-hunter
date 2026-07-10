@@ -255,7 +255,7 @@ describe('Rallar match shared helpers', () => {
         });
 
         expect(result.idempotencyKey).toBe(
-            'app-1:workspace%3Apresent%3Aworkspace-1:room-1:example.match.v1:match-1:browser-director:session-a:4:2000',
+            'app-1:workspace%3Aworkspace-1:room-1:example.match.v1:match-1:browser-director:session-a:4:2000',
         );
         expect(result.trust).toBe('room-trusted');
         expect(result.summary).toEqual({ reason: 'finished' });
@@ -324,7 +324,7 @@ describe('Rallar match shared helpers', () => {
         expect(serverKey).not.toBe(browserDirectorKey);
     });
 
-    it('scopes result idempotency keys by room and preserves absent workspace identity', () => {
+    it('scopes result idempotency keys by canonical room identity', () => {
         const input = {
             protocol: 'example.match.v1',
             matchId: 'match-1',
@@ -349,7 +349,7 @@ describe('Rallar match shared helpers', () => {
         });
 
         expect(roomOneKey).not.toBe(roomTwoKey);
-        expect(roomOneKey).not.toBe(emptyWorkspaceKey);
+        expect(roomOneKey).toBe(emptyWorkspaceKey);
     });
 
     it('reports generic match diagnostics', () => {
