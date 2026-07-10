@@ -364,18 +364,15 @@ describe('AdminOperationsService', () => {
     expect(writeCount).toBe(0);
   });
 
-  it('rejects invalid CRDT lifecycle and erase mode before repository calls', async () => {
+  it('rejects an invalid CRDT lifecycle before repository calls', async () => {
     const lifecycleCalls: unknown[] = [];
-    const auditCalls: unknown[] = [];
     const service = createService({
       crdtAdminRepository: {
         updateDocumentLifecycle: (input) => {
           lifecycleCalls.push(input);
           return Promise.resolve({} as never);
         },
-        exportDebugBundle: () => Promise.resolve({}),
       },
-      crdtAuditSink: { record: (event) => { auditCalls.push(event); } },
     });
 
     await expect(service.updateCrdtLifecycle({
@@ -383,12 +380,20 @@ describe('AdminOperationsService', () => {
       request: { document: CRDT_DOCUMENT, lifecycle: 'destroy' } as never,
     })).rejects.toThrow('Unsupported CRDT lifecycle: destroy');
 
+    expect(lifecycleCalls).toEqual([]);
+  });
+
+  it('rejects an invalid CRDT erasure mode before recording an audit event', async () => {
+    const auditCalls: unknown[] = [];
+    const service = createService({
+      crdtAuditSink: { record: (event) => { auditCalls.push(event); } },
+    });
+
     await expect(service.eraseCrdt({
       adminSession: createAdminSession(),
       request: { document: CRDT_DOCUMENT, mode: 'redact-payload' },
     })).rejects.toThrow('Unsupported CRDT erasure mode: redact-payload');
 
-    expect(lifecycleCalls).toEqual([]);
     expect(auditCalls).toEqual([]);
   });
 
