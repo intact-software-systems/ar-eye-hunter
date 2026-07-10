@@ -8,7 +8,10 @@ const repoRoot = path.resolve(__dirname, "../../..");
 describe("GitHub Free distributed recipe workflow", () => {
   it("defines the GitHub Free headless agent pool workflow", async () => {
     const workflow = await readFile(
-      path.join(repoRoot, ".github/workflows/github-free-distributed-recipe.yml"),
+      path.join(
+        repoRoot,
+        ".github/workflows/github-free-distributed-recipe.yml",
+      ),
       "utf8",
     );
 
@@ -25,7 +28,9 @@ describe("GitHub Free distributed recipe workflow", () => {
     expect(workflow).toContain("operator_phase: prepare");
     expect(workflow).toContain("operator_phase: run");
     expect(workflow).toContain("control_url: ${{ inputs.control_url }}");
-    expect(workflow).toContain("control_http_url: ${{ inputs.control_http_url }}");
+    expect(workflow).toContain(
+      "control_http_url: ${{ inputs.control_http_url }}",
+    );
     expect(workflow).toContain("needs: [plan, prepare-hetzner]");
     expect(workflow).toContain("fromJSON(needs.plan.outputs.matrix)");
     expect(workflow).toContain(
@@ -39,8 +44,12 @@ describe("GitHub Free distributed recipe workflow", () => {
       "npm --workspace rallar-black-box run worker:headless",
     );
     expect(workflow).toContain("name: Mint per-agent control run tokens");
-    expect(workflow).toContain("/runs/${encoded_run_id}/agents/${encoded_agent_id}/tokens");
-    expect(workflow).toContain("RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN");
+    expect(workflow).toContain(
+      "/runs/${encoded_run_id}/agents/${encoded_agent_id}/tokens",
+    );
+    expect(workflow).toContain(
+      "RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN",
+    );
     expect(workflow).toContain(
       "RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}",
     );
@@ -60,13 +69,17 @@ describe("GitHub Free distributed recipe workflow", () => {
   });
 
   it("plans deterministic GitHub Free worker shards", () => {
-    const result = spawnSync(process.execPath, [
-      "scripts/github-actions/plan-github-free-headless-matrix.mjs",
-      "--target-agent-count=50",
-      "--agents-per-job=3",
-      "--max-parallel-jobs=17",
-      "--run-id=gh-free-test",
-    ], { cwd: repoRoot, encoding: "utf8" });
+    const result = spawnSync(
+      process.execPath,
+      [
+        "scripts/github-actions/plan-github-free-headless-matrix.mjs",
+        "--target-agent-count=50",
+        "--agents-per-job=3",
+        "--max-parallel-jobs=17",
+        "--run-id=gh-free-test",
+      ],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
 
     expect(result.status).toBe(0);
     const output = JSON.parse(result.stdout) as {
@@ -90,13 +103,17 @@ describe("GitHub Free distributed recipe workflow", () => {
   });
 
   it("rejects an agent matrix that leaves no GitHub Free slot for the operator", () => {
-    const unsafe = spawnSync(process.execPath, [
-      "scripts/github-actions/plan-github-free-headless-matrix.mjs",
-      "--target-agent-count=20",
-      "--agents-per-job=1",
-      "--max-parallel-jobs=20",
-      "--run-id=gh-free-unsafe",
-    ], { cwd: repoRoot, encoding: "utf8" });
+    const unsafe = spawnSync(
+      process.execPath,
+      [
+        "scripts/github-actions/plan-github-free-headless-matrix.mjs",
+        "--target-agent-count=20",
+        "--agents-per-job=1",
+        "--max-parallel-jobs=20",
+        "--run-id=gh-free-unsafe",
+      ],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
 
     expect(unsafe.status).not.toBe(0);
     expect(unsafe.stderr).toContain(
@@ -106,26 +123,31 @@ describe("GitHub Free distributed recipe workflow", () => {
 
   it("preflights free-tier manifests before planning the matrix", async () => {
     const workflow = await readFile(
-      path.join(repoRoot, ".github/workflows/github-free-distributed-recipe.yml"),
+      path.join(
+        repoRoot,
+        ".github/workflows/github-free-distributed-recipe.yml",
+      ),
       "utf8",
     );
 
-    expect(workflow).toContain("jq -r '.targetPolicy.expectedParticipantCount // empty'");
+    expect(workflow).toContain(
+      "jq -r '.targetPolicy.expectedParticipantCount // empty'",
+    );
     expect(workflow).toContain("jq -r '.targetPolicy.mode // empty'");
-    expect(workflow).toContain("jq -r '[.targetPolicy.roles[]?[]?, .roleAssignments[]?.agentId] | unique | @json'");
+    expect(workflow).toContain(
+      "jq -r '[.targetPolicy.roles[]?[]?, .roleAssignments[]?.agentId] | unique | @json'",
+    );
     expect(workflow).toContain("jq -r '.barrier.enabled // false'");
     expect(workflow).toContain("jq -r '.barrier.timeoutMs // empty'");
     expect(workflow).toContain("jq -r '.metadata.rtcTopologyEnv // empty'");
-    expect(workflow).toContain("jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty'");
     expect(workflow).toContain(
-      "::error::Manifest expectedParticipantCount",
+      "jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty'",
     );
+    expect(workflow).toContain("::error::Manifest expectedParticipantCount");
     expect(workflow).toContain(
       "::error::GitHub free multi-agent runs require barrier.enabled=true.",
     );
-    expect(workflow).toContain(
-      "::error::Role-map unique agent count",
-    );
+    expect(workflow).toContain("::error::Role-map unique agent count");
     expect(workflow).toContain(
       "::error::Role-map agent ${agent_id} must match selected agent_prefix",
     );
@@ -135,9 +157,63 @@ describe("GitHub Free distributed recipe workflow", () => {
     expect(workflow).toContain("requires_topology_prepare=true");
   });
 
+  it("pins secret-consuming runs to the workflow commit and unique registered principals", async () => {
+    const workflow = await readFile(
+      path.join(
+        repoRoot,
+        ".github/workflows/github-free-distributed-recipe.yml",
+      ),
+      "utf8",
+    );
+
+    expect(workflow).not.toMatch(/^\s{6}ref:\s*$/m);
+    expect(workflow.match(/^\s+ref:.*$/gm)).toEqual([
+      "          ref: ${{ github.sha }}",
+      "      ref: ${{ github.sha }}",
+      "          ref: ${{ github.sha }}",
+      "      ref: ${{ github.sha }}",
+    ]);
+    expect(workflow).toMatch(/github-agents:[\s\S]*?environment: production/);
+    expect(workflow).toContain(
+      "register_before_login:\n        description: Register disposable test users before login\n        type: boolean\n        default: true",
+    );
+    expect(workflow).toContain(
+      'REGISTER_BEFORE_LOGIN: "${{ inputs.register_before_login }}"',
+    );
+    expect(workflow).toContain(
+      'if [[ "${TARGET_AGENT_COUNT}" -gt 1 && "${REGISTER_BEFORE_LOGIN}" != "true" ]]; then',
+    );
+    expect(workflow).toContain(
+      "::error::GitHub free multi-agent runs require register_before_login=true.",
+    );
+    expect(workflow).toContain(
+      "RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}",
+    );
+    expect(workflow).toContain(
+      'echo "::add-mask::${RALLAR_BLACK_BOX_PASSWORD}"',
+    );
+    expect(workflow).toContain(
+      'printf \'%s=%s\\n\' "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "$(quote "${agent_id}")" >> "${token_env_file}"',
+    );
+    expect(workflow).toContain(
+      'printf \'%s=%s\\n\' "RALLAR_BLACK_BOX_AGENT_${local_index}_PASSWORD" "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")" >> "${token_env_file}"',
+    );
+    expect(workflow).not.toContain(
+      "RALLAR_BLACK_BOX_USERNAME: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}",
+    );
+    expect(
+      workflow.match(
+        /source "\$\{RUNNER_TEMP\}\/rallar-github-headless-token\.env"/g,
+      ),
+    ).toEqual(['source "${RUNNER_TEMP}/rallar-github-headless-token.env"']);
+  });
+
   it("documents the GitHub Free operator runbook", async () => {
     const runbook = await readFile(
-      path.join(repoRoot, "plans/github-actions-rallar-black-box-headless-runbook.md"),
+      path.join(
+        repoRoot,
+        "plans/github-actions-rallar-black-box-headless-runbook.md",
+      ),
       "utf8",
     );
 

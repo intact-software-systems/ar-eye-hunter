@@ -3,10 +3,6 @@ name: Run GitHub Free Distributed Recipe
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: Git ref to run
-        required: true
-        default: main
       manifest_path:
         description: Repo path to a distributed run manifest JSON file
         required: true
@@ -26,7 +22,7 @@ on:
       run_id:
         description: Control run id; leave blank to derive one from this workflow run
         required: false
-        default: ''
+        default: ""
       room_id:
         description: Rallar room id for headless agents
         required: true
@@ -50,11 +46,11 @@ on:
       terminal_timeout_seconds:
         description: Distributed recipe terminal-state wait timeout in seconds; blank derives from manifest metadata
         required: false
-        default: ''
+        default: ""
       register_before_login:
         description: Register disposable test users before login
         type: boolean
-        default: false
+        default: true
       browser_log_level:
         description: Browser console log verbosity for headless agents
         type: choice
@@ -111,7 +107,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.sha }}
 
       - name: Build matrix
         id: plan
@@ -123,6 +119,7 @@ jobs:
           MAX_PARALLEL_JOBS: ${{ inputs.max_parallel_jobs }}
           AGENT_PREFIX: ${{ inputs.agent_prefix }}
           MANIFEST_PATH: ${{ inputs.manifest_path }}
+          REGISTER_BEFORE_LOGIN: "${{ inputs.register_before_login }}"
         run: |
           set -euo pipefail
           sanitize() {
@@ -141,6 +138,10 @@ jobs:
           fi
           if ! [[ "${TARGET_AGENT_COUNT}" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::target_agent_count must be a positive integer." >&2
+            exit 1
+          fi
+          if [[ "${TARGET_AGENT_COUNT}" -gt 1 && "${REGISTER_BEFORE_LOGIN}" != "true" ]]; then
+            echo "::error::GitHub free multi-agent runs require register_before_login=true." >&2
             exit 1
           fi
           if [[ ! -r "${MANIFEST_PATH}" ]]; then
@@ -245,7 +246,7 @@ jobs:
     needs: plan
     uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
     with:
-      ref: ${{ inputs.ref }}
+      ref: ${{ github.sha }}
       operator_phase: prepare
       rollout_before_run: true
       agent_source: external
@@ -273,6 +274,7 @@ jobs:
     name: GitHub headless agents
     needs: [plan, prepare-hetzner]
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 75
     strategy:
       fail-fast: false
@@ -283,7 +285,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -307,6 +309,7 @@ jobs:
           RALLAR_BLACK_BOX_AGENT_COUNT: ${{ matrix.shard.agent_count }}
           RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ matrix.shard.agent_start_index }}
           RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
+          RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
         run: |
           set -euo pipefail
           quote() { printf '%q' "$1"; }
@@ -314,6 +317,7 @@ jobs:
           token_env_file="${RUNNER_TEMP}/rallar-github-headless-token.env"
           : > "${token_env_file}"
           chmod 600 "${token_env_file}"
+          echo "::add-mask::${RALLAR_BLACK_BOX_PASSWORD}"
 
           curl_args=(-fsS -X POST -H "content-type: application/json" --data '{"ttlMs":7200000}')
           if [[ -n "${RALLAR_BLACK_BOX_CONTROL_AUTH_TOKEN}" ]]; then
@@ -335,6 +339,8 @@ jobs:
             echo "::add-mask::${token}"
             env_key="RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN"
             printf '%s=%s\n' "${env_key}" "$(quote "${token}")" >> "${token_env_file}"
+            printf '%s=%s\n' "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "$(quote "${agent_id}")" >> "${token_env_file}"
+            printf '%s=%s\n' "RALLAR_BLACK_BOX_AGENT_${local_index}_PASSWORD" "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")" >> "${token_env_file}"
           done
 
       - name: Run headless worker shard
@@ -360,8 +366,6 @@ jobs:
           RALLAR_BLACK_BOX_AGENT_START_INDEX: ${{ matrix.shard.agent_start_index }}
           RALLAR_BLACK_BOX_APPLICATION_ID: ${{ inputs.application_id }}
           RALLAR_BLACK_BOX_WORKSPACE_ID: ${{ inputs.workspace_id }}
-          RALLAR_BLACK_BOX_USERNAME: ${{ secrets.RALLAR_BLACK_BOX_USERNAME }}
-          RALLAR_BLACK_BOX_PASSWORD: ${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}
           RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}
           RALLAR_BLACK_BOX_REGISTER: ${{ inputs.register_before_login }}
           RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL: ${{ inputs.browser_log_level }}
@@ -379,7 +383,7 @@ jobs:
     needs: [plan, prepare-hetzner]
     uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
     with:
-      ref: ${{ inputs.ref }}
+      ref: ${{ github.sha }}
       operator_phase: run
       rollout_before_run: false
       agent_source: external
