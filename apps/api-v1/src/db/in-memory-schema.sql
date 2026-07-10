@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS runtime_state_store
 CREATE INDEX IF NOT EXISTS runtime_state_store_namespace_ix
     ON runtime_state_store (store_namespace);
 
+CREATE INDEX IF NOT EXISTS runtime_state_store_namespace_key_c_ix
+    ON runtime_state_store (store_namespace, store_key COLLATE "C");
+
 CREATE INDEX IF NOT EXISTS runtime_state_store_namespace_expire_at_ix
     ON runtime_state_store (store_namespace, expire_at_ts);
 

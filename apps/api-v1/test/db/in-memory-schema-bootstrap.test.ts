@@ -36,8 +36,8 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
       ],
     );
 
-    const indexes = await db.query<{ indexname: string }>(
-      `select indexname
+    const indexes = await db.query<{ indexname: string; indexdef: string }>(
+      `select indexname, indexdef
              from pg_indexes
              where schemaname = 'public'
              order by indexname`,
@@ -76,6 +76,7 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
         'ri_pk',
         'ris_pk',
         'runtime_state_store_expire_at_ix',
+        'runtime_state_store_namespace_key_c_ix',
         'runtime_state_store_namespace_expire_at_ix',
         'runtime_state_store_namespace_ix',
         'runtime_state_store_pk',
@@ -83,6 +84,11 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
     ) {
       assert.ok(indexNames.has(indexName), `missing index ${indexName}`);
     }
+    assert.match(
+      indexes.rows.find((row) => row.indexname === 'runtime_state_store_namespace_key_c_ix')
+        ?.indexdef ?? '',
+      /\(store_namespace, store_key COLLATE "C"\)/,
+    );
   } finally {
     await db.close();
   }

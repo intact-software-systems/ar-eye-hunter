@@ -89,6 +89,21 @@ describe('Rallar server storage schema docs', () => {
         expect(migration).toContain('ANALYZE resource_inbox');
     });
 
+    it('builds the runtime-state prefix index without blocking live writes', () => {
+        const migration = readWorkspaceFile(
+            'apps/api-v1/prisma/migrations/20260710221500_runtime_state_store_c_prefix_index/migration.sql',
+        );
+        const dropStatement =
+            'DROP INDEX CONCURRENTLY IF EXISTS runtime_state_store_namespace_key_c_ix';
+        const createStatement =
+            'CREATE INDEX CONCURRENTLY runtime_state_store_namespace_key_c_ix';
+
+        expect(migration).toContain(dropStatement);
+        expect(migration).toContain(createStatement);
+        expect(migration.indexOf(dropStatement)).toBeLessThan(migration.indexOf(createStatement));
+        expect(migration).toContain('store_key COLLATE "C"');
+    });
+
     it('documents state snapshots and event logs in the architecture notes', () => {
         const docs = readWorkspaceFile('packages/shared-server/architecture.md')
             .replace(/\s+/g, ' ');

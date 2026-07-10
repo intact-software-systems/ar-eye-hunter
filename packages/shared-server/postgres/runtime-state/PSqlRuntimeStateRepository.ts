@@ -64,9 +64,9 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
             select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
             from runtime_state_store
             where store_namespace = ${namespace}
-              and store_key >= ${keyPrefix}
-              and store_key < ${prefixEnd}
-            order by store_key
+              and store_key collate "C" >= ${keyPrefix}
+              and store_key collate "C" < ${prefixEnd}
+            order by store_key collate "C"
         `;
 
         return rows.map(toEntry);
@@ -87,15 +87,15 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
                     select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
                     from runtime_state_store
                     where store_namespace = ${namespace}
-                    order by store_key
+                    order by store_key collate "C"
                     limit ${limit}
                 `
                 : await this.sql<RuntimeStateRow[]>`
                     select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
                     from runtime_state_store
                     where store_namespace = ${namespace}
-                      and store_key > ${options.afterKey}
-                    order by store_key
+                      and store_key collate "C" > ${options.afterKey}
+                    order by store_key collate "C"
                     limit ${limit}
                 `;
 
@@ -108,19 +108,19 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
                 select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
                 from runtime_state_store
                 where store_namespace = ${namespace}
-                  and store_key >= ${keyPrefix}
-                  and store_key < ${prefixEnd}
-                order by store_key
+                  and store_key collate "C" >= ${keyPrefix}
+                  and store_key collate "C" < ${prefixEnd}
+                order by store_key collate "C"
                 limit ${limit}
             `
             : await this.sql<RuntimeStateRow[]>`
                 select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
                 from runtime_state_store
                 where store_namespace = ${namespace}
-                  and store_key >= ${keyPrefix}
-                  and store_key < ${prefixEnd}
-                  and store_key > ${options.afterKey}
-                order by store_key
+                  and store_key collate "C" >= ${keyPrefix}
+                  and store_key collate "C" < ${prefixEnd}
+                  and store_key collate "C" > ${options.afterKey}
+                order by store_key collate "C"
                 limit ${limit}
             `;
 
