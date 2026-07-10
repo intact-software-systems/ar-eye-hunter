@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
     parseApiV1BlackBoxArgs,
+    readBoundedLogTail,
     toApiV1BlackBoxEnvironment,
     toApiV1ServerCommand,
     waitForManagedApiReady,
@@ -45,6 +46,45 @@ function observeReadiness(promise: Promise<void>): Promise<
         () => ({ ok: true as const }),
         error => ({ ok: false as const, error }),
     );
+}
+
+function secretDiagnosticFixture(): {
+    databaseUrl: string;
+    secrets: string[];
+    text: string;
+} {
+    const databaseUrl = 'postgres://app:db-password@db.internal/app'
+        + '?sslpassword=query-secret&application_name=runner';
+    const secrets = [
+        databaseUrl,
+        'control-token-secret',
+        'token-secret',
+        'bearer-secret',
+        'query-secret',
+    ];
+    return {
+        databaseUrl,
+        secrets,
+        text: [
+            `DATABASE_URL=${databaseUrl}`,
+            'Authorization: Bearer bearer-secret',
+            'CONTROL_TOKEN=control-token-secret',
+            'opaque=control-token-secret',
+            'request=https://api.internal/check?token=query-secret&safe=visible',
+        ].join('\n'),
+    };
+}
+
+function expectSecretDiagnosticsRedacted(message: string, secrets: readonly string[]): void {
+    for (const secret of secrets) {
+        expect(message).not.toContain(secret);
+    }
+    expect(message).toContain('DATABASE_URL=postgres://app:<redacted>@db.internal/app');
+    expect(message).toContain('sslpassword=<redacted>&application_name=runner');
+    expect(message).toContain('Authorization: Bearer <redacted>');
+    expect(message).toContain('CONTROL_TOKEN=<redacted>');
+    expect(message).toContain('opaque=<redacted>');
+    expect(message).toContain('token=<redacted>&safe=visible');
 }
 
 function closeServer(server: Server): Promise<void> {
@@ -222,6 +262,32 @@ describe('api-v1 black-box run helper', () => {
         ]);
     });
 
+    it('reads only the fixed-size suffix of a large production log tail', async () => {
+        const bytes = new TextEncoder().encode('x'.repeat(16_384) + 'useful-tail');
+        const reads: Array<{ offset: number; length: number }> = [];
+        const close = vi.fn();
+
+        const tail = await readBoundedLogTail('/large/api-v1.log', {
+            openFile: async (_path: string) => ({
+                size: async () => bytes.byteLength,
+                readAt: async (offset: number, target: Uint8Array) => {
+                    reads.push({ offset, length: target.byteLength });
+                    const source = bytes.subarray(offset, offset + target.byteLength);
+                    target.set(source);
+                    return source.byteLength;
+                },
+                close,
+            }),
+        });
+
+        expect(reads).toEqual([{
+            offset: bytes.byteLength - 4096,
+            length: 4096,
+        }]);
+        expect(tail.endsWith('useful-tail')).toBe(true);
+        expect(close).toHaveBeenCalledOnce();
+    });
+
     it('rejects when the managed API child exits while another listener is ready', async () => {
         const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
 
@@ -273,13 +339,37 @@ describe('api-v1 black-box run helper', () => {
         expect(fetchSignals[0].aborted).toBe(true);
     });
 
+    it('cancels a successful config response body without masking readiness', async () => {
+        const response = new Response('status-only payload', { status: 200 });
+        const cancel = vi.spyOn(response.body!, 'cancel')
+            .mockRejectedValueOnce(new Error('body cancel failed'));
+
+        await expect(waitForManagedApiReady({
+            baseUrl: 'http://127.0.0.1:18080',
+            logPath: '/tmp/api-v1-server.log',
+            childStatus: new Promise(() => undefined),
+            startup: Promise.resolve(),
+            streamsDrained: Promise.resolve(),
+            fetchImpl: async () => response,
+            readTextFile: async () => 'unused',
+            timeoutMs: 1_000,
+        })).resolves.toBeUndefined();
+
+        expect(cancel).toHaveBeenCalledOnce();
+    });
+
     it('retries a non-OK config response after startup', async () => {
         const fetchSignalStates: boolean[] = [];
+        const retryResponse = new Response('retry payload', { status: 503 });
+        const successResponse = new Response('success payload', { status: 200 });
+        const cancelRetry = vi.spyOn(retryResponse.body!, 'cancel')
+            .mockRejectedValueOnce(new Error('retry body cancel failed'));
+        const cancelSuccess = vi.spyOn(successResponse.body!, 'cancel');
         let attempt = 0;
         const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
-            fetchSignalStates.push(init?.signal.aborted ?? false);
+            fetchSignalStates.push(init?.signal?.aborted ?? false);
             attempt += 1;
-            return new Response(null, { status: attempt === 1 ? 503 : 200 });
+            return attempt === 1 ? retryResponse : successResponse;
         });
         const sleepImpl = vi.fn(async (_ms: number, signal?: AbortSignal) => {
             expect(signal?.aborted).toBe(false);
@@ -300,6 +390,56 @@ describe('api-v1 black-box run helper', () => {
         expect(fetchImpl).toHaveBeenCalledTimes(2);
         expect(sleepImpl).toHaveBeenCalledTimes(1);
         expect(fetchSignalStates).toEqual([false, false]);
+        expect(cancelRetry).toHaveBeenCalledOnce();
+        expect(cancelSuccess).toHaveBeenCalledOnce();
+    });
+
+    it('redacts secrets from child-exit diagnostics', async () => {
+        const fixture = secretDiagnosticFixture();
+        const outcome = await observeReadiness(waitForManagedApiReady({
+            baseUrl: 'http://127.0.0.1:18080',
+            logPath: '/tmp/api-v1-server.log',
+            childStatus: Promise.resolve({ success: false, code: 1, signal: null }),
+            startup: new Promise<void>(() => undefined),
+            streamsDrained: Promise.resolve(),
+            fetchImpl: async () => new Response(null, { status: 200 }),
+            readTextFile: async () => fixture.text,
+            diagnosticSecrets: fixture.secrets,
+            timeoutMs: 1_000,
+        }));
+
+        expect(outcome.ok).toBe(false);
+        if (!outcome.ok) {
+            expectSecretDiagnosticsRedacted(String(outcome.error), fixture.secrets);
+        }
+    });
+
+    it('redacts secrets from timeout diagnostics', async () => {
+        vi.useFakeTimers();
+        try {
+            const fixture = secretDiagnosticFixture();
+            const outcomePromise = observeReadiness(waitForManagedApiReady({
+                baseUrl: 'http://127.0.0.1:18080',
+                logPath: '/tmp/api-v1-server.log',
+                childStatus: new Promise(() => undefined),
+                startup: new Promise<void>(() => undefined),
+                streamsDrained: Promise.resolve(),
+                fetchImpl: async () => new Response(null, { status: 200 }),
+                readTextFile: async () => fixture.text,
+                diagnosticSecrets: fixture.secrets,
+                timeoutMs: 100,
+            }));
+
+            await vi.advanceTimersByTimeAsync(100);
+            const outcome = await outcomePromise;
+
+            expect(outcome.ok).toBe(false);
+            if (!outcome.ok) {
+                expectSecretDiagnosticsRedacted(String(outcome.error), fixture.secrets);
+            }
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('aborts an in-flight fetch and drains streams before reporting child exit', async () => {
@@ -314,7 +454,7 @@ describe('api-v1 black-box run helper', () => {
             startup: Promise.resolve(),
             streamsDrained: streamsDrained.promise,
             fetchImpl: async (_url: string, init?: RequestInit) => {
-                fetchSignal = init?.signal;
+                fetchSignal = init?.signal ?? undefined;
                 return await fetchResponse.promise;
             },
             readTextFile: async () => 'AddrInUse: Address already in use',
@@ -357,7 +497,7 @@ describe('api-v1 black-box run helper', () => {
                 startup: Promise.resolve(),
                 streamsDrained: Promise.resolve(),
                 fetchImpl: async (_url: string, init?: RequestInit) => {
-                    fetchSignal = init?.signal;
+                    fetchSignal = init?.signal ?? undefined;
                     return await fetchResponse.promise;
                 },
                 readTextFile: async () => 'Server started on port 18080.',
@@ -380,6 +520,43 @@ describe('api-v1 black-box run helper', () => {
                 }));
             }
             expect(fetchWasAborted).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('cancels a late config response body after timeout without leaking cancel failure', async () => {
+        vi.useFakeTimers();
+        try {
+            const fetchResponse = deferred<Response>();
+            const observeCancellation = vi.fn();
+            const cancellation = { then: observeCancellation } as unknown as Promise<void>;
+            const cancel = vi.fn(() => cancellation);
+            const response = {
+                ok: true,
+                status: 200,
+                body: { cancel },
+            } as unknown as Response;
+            const outcomePromise = observeReadiness(waitForManagedApiReady({
+                baseUrl: 'http://127.0.0.1:18080',
+                logPath: '/tmp/api-v1-server.log',
+                childStatus: new Promise(() => undefined),
+                startup: Promise.resolve(),
+                streamsDrained: Promise.resolve(),
+                fetchImpl: async () => await fetchResponse.promise,
+                readTextFile: async () => 'timeout diagnostics',
+                timeoutMs: 100,
+            }));
+
+            await flushMicrotasks();
+            await vi.advanceTimersByTimeAsync(100);
+            expect((await outcomePromise).ok).toBe(false);
+
+            fetchResponse.resolve(response);
+            await flushMicrotasks();
+            const cancellationWasObserved = observeCancellation.mock.calls.length > 0;
+            expect(cancel).toHaveBeenCalledOnce();
+            expect(cancellationWasObserved).toBe(true);
         } finally {
             vi.useRealTimers();
         }

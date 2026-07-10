@@ -27,10 +27,22 @@ export type WaitForManagedApiReadyInput = Readonly<{
     fetchImpl?: (
         url: string,
         init?: Readonly<{ signal?: AbortSignal }>,
-    ) => Promise<Pick<Response, 'ok' | 'status'>>
+    ) => Promise<Pick<Response, 'ok' | 'status' | 'body'>>
+    diagnosticSecrets?: readonly string[]
+    readLogTail?: (path: string) => Promise<string>
     readTextFile?: (path: string) => Promise<string>
     now?: () => number
     sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
+}>
+
+export type BoundedLogTailFile = Readonly<{
+    size: () => Promise<number>
+    readAt: (offset: number, target: Uint8Array) => Promise<number | null>
+    close: () => void
+}>
+
+export type ReadBoundedLogTailOptions = Readonly<{
+    openFile?: (path: string) => Promise<BoundedLogTailFile>
 }>
 
 type ManagedApiServer = Readonly<{
@@ -44,7 +56,12 @@ const REPO_ROOT = new URL('../../../', SCRIPT_DIR)
 const API_CONFIG_PATH = 'apps/api-v1/deno.json'
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts'
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb'
-const LOG_TAIL_LENGTH = 4096
+const LOG_TAIL_MAX_BYTES = 4096
+const MANAGED_SECRET_ENV_KEY = /(?:PASSWORD|PASSWD|TOKEN|SECRET|DATABASE_URL)/i
+const URL_USERINFO_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:)([^@\s/]+)(@)/gi
+const BEARER_CREDENTIAL = /(\bBearer\s+)[^\s,;]+/gi
+const SENSITIVE_QUERY_VALUE = /([?&][^=\s&#]*(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|signature|credential)[^=\s&#]*=)([^&#\s]*)/gi
+const SENSITIVE_ASSIGNMENT = /(\b[A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|APIKEY|CREDENTIAL)[A-Z0-9_]*\s*[:=]\s*)([^\s,;&]+)/gi
 
 export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOptions {
     const values = new Map<string, string | boolean>()
@@ -263,7 +280,8 @@ async function appendStreamToFile(
 export async function waitForManagedApiReady(input: WaitForManagedApiReadyInput): Promise<void> {
     const timeoutMs = input.timeoutMs ?? 30000
     const fetchImpl = input.fetchImpl ?? globalThis.fetch
-    const readTextFile = input.readTextFile ?? Deno.readTextFile
+    const readLogTail = resolveLogTailReader(input)
+    const diagnosticSecrets = normalizeDiagnosticSecrets(input.diagnosticSecrets ?? [])
     const now = input.now ?? Date.now
     const sleepImpl = input.sleep ?? sleep
     const deadline = now() + timeoutMs
@@ -312,7 +330,8 @@ export async function waitForManagedApiReady(input: WaitForManagedApiReadyInput)
             startupObserved,
             lastError,
             input.logPath,
-            readTextFile,
+            readLogTail,
+            diagnosticSecrets,
         ).then(rejectCompletion, rejectCompletion)
     }
 
@@ -328,7 +347,12 @@ export async function waitForManagedApiReady(input: WaitForManagedApiReadyInput)
         }
         abort(new Error(`API-v1 child exited before readiness (code ${status.code})`))
         await Promise.resolve(input.streamsDrained).catch(() => undefined)
-        rejectCompletion(await managedApiChildExitError(status, input.logPath, readTextFile))
+        rejectCompletion(await managedApiChildExitError(
+            status,
+            input.logPath,
+            readLogTail,
+            diagnosticSecrets,
+        ))
     }, settleUnexpectedError)
 
     const timeout = setTimeout(triggerTimeout, Math.max(0, timeoutMs))
@@ -340,10 +364,16 @@ export async function waitForManagedApiReady(input: WaitForManagedApiReadyInput)
             checkDeadline()
 
             while (!winner) {
-                let response: Pick<Response, 'ok' | 'status'> | undefined
+                let response: Pick<Response, 'ok' | 'status' | 'body'> | undefined
                 try {
-                    response = await raceWithAbort(
+                    const responseWithDisposedBody = Promise.resolve(
                         fetchImpl(url, { signal: controller.signal }),
+                    ).then(async configResponse => {
+                        await cancelResponseBodyBestEffort(configResponse, controller.signal)
+                        return configResponse
+                    })
+                    response = await raceWithAbort(
+                        responseWithDisposedBody,
                         controller.signal,
                     )
                 } catch (error) {
@@ -402,38 +432,144 @@ async function managedApiTimeoutError(
     startupObserved: boolean,
     lastError: unknown,
     logPath: string,
-    readTextFile: (path: string) => Promise<string>,
+    readLogTail: (path: string) => Promise<string>,
+    diagnosticSecrets: readonly string[],
 ): Promise<Error> {
     const reason = startupObserved
         ? lastError instanceof Error ? lastError.message : String(lastError ?? 'no successful response')
         : 'API-v1 child startup marker was not observed'
-    const logTail = await readBoundedLogTail(logPath, readTextFile)
-    return new Error(`Timed out waiting for ${url}: ${reason}\nLatest API-v1 log tail:\n${logTail}`)
+    const logTail = await readLogTailSafely(logPath, readLogTail)
+    return new Error(redactManagedApiDiagnostic(
+        `Timed out waiting for ${url}: ${reason}\nLatest API-v1 log tail:\n${logTail}`,
+        diagnosticSecrets,
+    ))
 }
 
 async function managedApiChildExitError(
     status: Awaited<WaitForManagedApiReadyInput['childStatus']>,
     logPath: string,
-    readTextFile: (path: string) => Promise<string>,
+    readLogTail: (path: string) => Promise<string>,
+    diagnosticSecrets: readonly string[],
 ): Promise<Error> {
     const signal = status.signal ? `, signal ${status.signal}` : ''
-    const logTail = await readBoundedLogTail(logPath, readTextFile)
-    return new Error(
+    const logTail = await readLogTailSafely(logPath, readLogTail)
+    return new Error(redactManagedApiDiagnostic(
         `API-v1 child exited before readiness (code ${status.code}${signal})`
         + `\nLatest API-v1 log tail:\n${logTail}`,
-    )
+        diagnosticSecrets,
+    ))
 }
 
-async function readBoundedLogTail(
+export async function readBoundedLogTail(
     logPath: string,
-    readTextFile: (path: string) => Promise<string>,
+    options: ReadBoundedLogTailOptions = {},
 ): Promise<string> {
+    let file: BoundedLogTailFile | undefined
     try {
-        const contents = await readTextFile(logPath)
-        return contents.slice(-LOG_TAIL_LENGTH).trimEnd() || '(empty)'
+        file = await (options.openFile ?? openDenoBoundedLogTailFile)(logPath)
+        const size = Math.max(0, await file.size())
+        const length = Math.min(size, LOG_TAIL_MAX_BYTES)
+        if (length === 0) {
+            return '(empty)'
+        }
+
+        const bytes = new Uint8Array(length)
+        const bytesRead = await file.readAt(size - length, bytes) ?? 0
+        return normalizeLogTail(new TextDecoder().decode(bytes.subarray(0, bytesRead)))
     } catch (error) {
         return `[unable to read ${logPath}: ${error instanceof Error ? error.message : String(error)}]`
+    } finally {
+        try {
+            file?.close()
+        } catch (_error) {
+            // Diagnostic cleanup must not replace the readiness outcome.
+        }
     }
+}
+
+async function openDenoBoundedLogTailFile(path: string): Promise<BoundedLogTailFile> {
+    const file = await Deno.open(path, { read: true })
+    return {
+        size: async () => (await file.stat()).size,
+        readAt: async (offset, target) => {
+            await file.seek(offset, Deno.SeekMode.Start)
+            let total = 0
+            while (total < target.byteLength) {
+                const count = await file.read(target.subarray(total))
+                if (count === null || count === 0) {
+                    break
+                }
+                total += count
+            }
+            return total === 0 ? null : total
+        },
+        close: () => file.close(),
+    }
+}
+
+function resolveLogTailReader(input: WaitForManagedApiReadyInput): (path: string) => Promise<string> {
+    if (input.readLogTail) {
+        return input.readLogTail
+    }
+    if (input.readTextFile) {
+        const readTextFile = input.readTextFile
+        return async path => normalizeLogTail((await readTextFile(path)).slice(-LOG_TAIL_MAX_BYTES))
+    }
+    return readBoundedLogTail
+}
+
+async function readLogTailSafely(
+    path: string,
+    readLogTail: (path: string) => Promise<string>,
+): Promise<string> {
+    try {
+        return normalizeLogTail(await readLogTail(path))
+    } catch (error) {
+        return `[unable to read ${path}: ${error instanceof Error ? error.message : String(error)}]`
+    }
+}
+
+function normalizeLogTail(contents: string): string {
+    return contents.trimEnd() || '(empty)'
+}
+
+async function cancelResponseBodyBestEffort(
+    response: Pick<Response, 'body'>,
+    signal: AbortSignal,
+): Promise<void> {
+    if (!response.body) {
+        return
+    }
+    try {
+        const cancellation = Promise.resolve(response.body.cancel()).catch(() => undefined)
+        await raceWithAbort(cancellation, signal)
+    } catch (_error) {
+        // Body disposal cannot mask readiness, child-exit, or timeout outcomes.
+    }
+}
+
+function managedApiDiagnosticSecrets(env: Record<string, string>): readonly string[] {
+    return Object.entries(env)
+        .filter(([key, value]) => MANAGED_SECRET_ENV_KEY.test(key) && value.length > 0)
+        .map(([, value]) => value)
+}
+
+function normalizeDiagnosticSecrets(secrets: readonly string[]): readonly string[] {
+    return [...new Set(secrets.filter(secret => secret.length > 0))]
+        .sort((left, right) => right.length - left.length)
+}
+
+function redactManagedApiDiagnostic(value: string, diagnosticSecrets: readonly string[]): string {
+    let redacted = value
+        .replace(URL_USERINFO_PASSWORD, '$1<redacted>$3')
+        .replace(BEARER_CREDENTIAL, '$1<redacted>')
+        .replace(SENSITIVE_QUERY_VALUE, '$1<redacted>')
+        .replace(SENSITIVE_ASSIGNMENT, '$1<redacted>')
+
+    for (const secret of diagnosticSecrets) {
+        redacted = redacted.replaceAll(secret, '<redacted>')
+    }
+    return redacted
 }
 
 function raceWithAbort<T>(value: PromiseLike<T>, signal: AbortSignal): Promise<T> {
@@ -550,6 +686,7 @@ async function main(): Promise<void> {
                 childStatus: server.child.status,
                 startup: server.startup,
                 streamsDrained: server.streamsDrained,
+                diagnosticSecrets: managedApiDiagnosticSecrets(env),
             })
         }
 
