@@ -416,6 +416,37 @@ describe('rallar-black-box app source ownership', () => {
         }
     });
 
+    it('keeps imported artifact performance formatters in their canonical module', () => {
+        const panelSource = repositorySource(
+            'apps/rallar-black-box/src/legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx',
+        );
+        const moduleImport = '../shared/performance-format.ts';
+        const formatterNames = [
+            'formatPercent',
+            'formatFleetDuration',
+            'formatStreamRate',
+        ] as const;
+        const escapedModuleImport = moduleImport.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            '\\$&',
+        );
+        const importedFormatters = panelSource.match(
+            new RegExp(
+                `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+            ),
+        )?.[1];
+
+        expect(importedFormatters, moduleImport).toBeDefined();
+        for (const formatterName of formatterNames) {
+            expect(importedFormatters ?? '', `${moduleImport}: ${formatterName}`).toMatch(
+                new RegExp(`(?:^|,)\\s*${formatterName}\\s*(?=,|$)`),
+            );
+            expect(panelSource, `panel-local ${formatterName}`).not.toMatch(
+                new RegExp(`\\b(?:const|let|var|function)\\s+${formatterName}\\b`),
+            );
+        }
+    });
+
     it('does not declare Recipe Console panels in App.tsx', () => {
         const source = repositorySource(appSourcePath);
 
