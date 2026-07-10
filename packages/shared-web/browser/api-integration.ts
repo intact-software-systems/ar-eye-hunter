@@ -27,6 +27,11 @@ import type {
     GroupSnapshot as GroupStateSnapshot,
 } from '@shared/api/group-types.ts';
 import type {
+    GroupSpaStatisticsResponse,
+    MyRealtimeSpaStatisticsResponse,
+    WorkspaceSpaStatisticsResponse,
+} from '@shared/api/spa-statistics-types.ts';
+import type {
     GraphDiagnosticReadOptions,
     GraphDiagnosticReadResponse,
     GroupTopologyConfigView,
@@ -821,6 +826,46 @@ export async function readStateGroupTopology(
     return await executeHttpRequest<void, GroupTopologyManagementView>(
         readApiBaseUrl(),
         `${toStateGroupPath(scope, groupId)}/topology`,
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function readStateWorkspaceStatsSummary(
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<WorkspaceSpaStatisticsResponse> {
+    return await executeHttpRequest<void, WorkspaceSpaStatisticsResponse>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/stats/summary`,
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function readStateGroupStats(
+    groupId: string,
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<GroupSpaStatisticsResponse> {
+    return await executeHttpRequest<void, GroupSpaStatisticsResponse>(
+        readApiBaseUrl(),
+        `${toStateGroupPath(scope, groupId)}/stats`,
+        'GET',
+        undefined,
+        options,
+    );
+}
+
+export async function readStateMyRealtimeStatus(
+    scope: StateScope = defaultStateScope(),
+    options?: ApiRequestOptions,
+): Promise<MyRealtimeSpaStatisticsResponse> {
+    return await executeHttpRequest<void, MyRealtimeSpaStatisticsResponse>(
+        readApiBaseUrl(),
+        `${toStateScopePath(scope)}/stats/me/realtime`,
         'GET',
         undefined,
         options,

@@ -116,6 +116,21 @@ describe('group topology config service', () => {
             expiresAtEpochMs: 1_000 + MAX_GROUP_TOPOLOGY_OVERRIDE_TTL_MS + 10_000,
         })).toBe(1_000 + MAX_GROUP_TOPOLOGY_OVERRIDE_TTL_MS);
     });
+
+    it('rejects temporary override expiries that are not in the future', () => {
+        expect(() =>
+            resolveOverrideExpiresAtEpochMs({
+                nowEpochMs: 1_000,
+                ttlMs: 0,
+            })
+        ).toThrow(GroupTopologyConfigValidationError);
+        expect(() =>
+            resolveOverrideExpiresAtEpochMs({
+                nowEpochMs: 1_000,
+                expiresAtEpochMs: 999,
+            })
+        ).toThrow(GroupTopologyConfigValidationError);
+    });
 });
 
 function createGroupRef() {

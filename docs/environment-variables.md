@@ -52,7 +52,7 @@ for some Rallar Black Box runs.
 | `RALLAR_API_BASE_URL` | No       | From selected web config                                                                              | Runtime override for `/api/config.apiBaseUrl`. Takes precedence over `API_BASE_URL`. Trailing slash is removed.                       |
 | `API_BASE_URL`        | No       | From selected web config                                                                              | Secondary runtime override for `/api/config.apiBaseUrl`.                                                                              |
 | `RALLAR_WS_BASE_URL`  | No       | Derived from `RALLAR_API_BASE_URL` or `API_BASE_URL` when present, otherwise from selected web config | Runtime override for `/api/config.wsBaseUrl`. Trailing slash is removed.                                                              |
-| `RALLAR_STATE_STRICT_READ_AUTH` | No | Disabled | `/api/state/*` is already authenticated. `1`, `true`, `yes`, or `on` additionally applies strict full-state read authorization to client/group list, snapshot, and event reads. |
+| `RALLAR_STATE_STRICT_READ_AUTH` | No | Disabled | `/api/state/*` is already authenticated. `1`, `true`, `yes`, or `on` additionally applies strict full-state read authorization to client/group list, snapshot, and event reads. SPA statistics routes enforce their own route-local auth and group-policy checks regardless of this flag. |
 
 ### Database
 
@@ -69,7 +69,7 @@ for some Rallar Black Box runs.
 | Variable                       | Required | Default  | Usage                                                                                                                                |
 | ------------------------------ | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `AUTH_REGISTRATION_MODE`       | No       | `public` | When set to `admin`, `/api/auth/register` requires an authenticated admin client. Other values behave like public registration.      |
-| `AUTH_ADMIN_CLIENT_IDS`        | No       | `admin`  | Comma-separated client IDs allowed to register users when `AUTH_REGISTRATION_MODE=admin`.                                            |
+| `AUTH_ADMIN_CLIENT_IDS`        | No       | `admin`  | Comma-separated platform-admin allow-list for admin-only registration, topology management, CRDT admin routes, admin operations, and admin support explain routes. |
 | `AUTH_STATIC_CLIENTS_MODE`     | No       | `demo`   | `demo` enables bundled local clients such as `admin/admin`, `user/user`, and tests. `disabled` removes static clients from login and registration conflict checks. |
 | `RALLAR_LOGIN_IP_RATE_LIMIT`   | No       | `30`     | Login attempts per client IP per 60 seconds. Must be a positive integer.                                                             |
 | `RALLAR_LOGIN_USER_RATE_LIMIT` | No       | `5`      | Login attempts per client IP plus username per 60 seconds. Must be a positive integer. Root memory-mode scripts raise this to `100`. |

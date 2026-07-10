@@ -28,7 +28,8 @@ WebSocket URL.
 
 ## Shared-test Runner Catalog
 
-The richer JSON recipe set lives under `packages/shared-test/black-box-runner/examples/` and is indexed by
+The richer JSON recipe set lives under `packages/shared-test/black-box-runner/examples/`, with validation fixtures under
+`packages/shared-test/black-box-runner/tests/`; both are indexed by
 `packages/shared-test/black-box-runner/recipe-matrix.json`.
 
 The SPA re-exports a browser-safe fixture catalog and artifact contract from:

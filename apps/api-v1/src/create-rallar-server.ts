@@ -20,11 +20,18 @@ import {
   RallarRtcTopologyService,
   type RallarRtcTopologyServiceOptions,
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/AdminOperationsService.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
+import {
+  PSqlAdminOperationsPruner,
+  PSqlAdminOperationsStatsReader,
+} from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+import { AdminSupportService } from '@shared-server/rallar-system/admin-support/AdminSupportService.ts';
+import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PSqlAdminSupportReader.ts';
 import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
 import {
   readGroupGraphDiagnostic,
@@ -34,20 +41,27 @@ import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/w
 import type { Middleware } from './middleware.ts';
 import { getMiddleware, initialiseMiddleware } from './middleware.ts';
 import { getApiRtcTopologyServiceOptions } from './services/rtc-topology-config.ts';
+import { getApiTimingSink } from './services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
 import * as configRoutes from './routes/config-route.ts';
 import * as wsRoutes from './routes/ws-routes.ts';
 import * as iceRoutes from './routes/ice-route.ts';
 import * as clientStateRoutes from './routes/client-state-routes.ts';
 import * as groupStateRoutes from './routes/group-state-routes.ts';
+import * as spaStatisticsRoutes from './routes/spa-statistics-routes.ts';
 import * as graphTopologyRoutes from './routes/graph-topology-routes.ts';
 import * as graphRoutes from './routes/graph-routes.ts';
 import * as crdtAdminRoutes from './routes/crdt-admin-routes.ts';
+import * as adminOperationsRoutes from './routes/admin-operations-routes.ts';
+import * as adminSupportRoutes from './routes/admin-support-routes.ts';
 import * as swaggerRoutes from './routes/swagger-routes.ts';
 import { initWsLifecycle as initSharedWsLifecycle } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
 import { sql } from './db/db.ts';
+import { readApiV1DatabaseBackendConfig } from './db/database-config.ts';
+import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import { myServerId } from './runtime/runtime-identity.ts';
 import { createRuntimeStateRepository } from './repository/createStateRepositories.ts';
+import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
 
 export { RallarServerDataFacade, RallarServerSystemFacade };
 
@@ -103,8 +117,55 @@ export function createRallarServer(
     serverDefaults: rtcTopologyServerDefaults,
     now: rtcTopologyOptions.now,
   });
+  const adminClientIds = readAdminClientIds();
+  const databaseConfig = readApiV1DatabaseBackendConfig();
+  const databasePubSubConfig = readApiV1DatabasePubSubConfig(Deno.env, databaseConfig);
+  let rallarApplication: RallarServerApplication<Middleware, Hono> | undefined;
+  const emptyWsStatus = {
+    transport: 'ws-server' as const,
+    connectionCount: 0,
+    openConnectionCount: 0,
+    connectionIds: [],
+    openConnectionIds: [],
+    connections: [],
+  };
+  const adminOperations = new AdminOperationsService({
+    now: rtcTopologyOptions.now ?? (() => Date.now()),
+    serverId: myServerId,
+    statsReader: new PSqlAdminOperationsStatsReader(sql as unknown as PSqlSql, {
+      now: rtcTopologyOptions.now ?? (() => Date.now()),
+      serverId: myServerId,
+      sqlBackend: databaseConfig.sqlBackend,
+      dbPubSub: databasePubSubConfig.mode,
+    }),
+    pruner: new PSqlAdminOperationsPruner(sql as unknown as PSqlSql),
+    wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
+    readRtcTopologyMetrics: () => rtcTopologyService.readMetrics(),
+    resetRtcTopologyMetrics: () => rtcTopologyService.resetMetrics(),
+    topologyManagement,
+    crdtAdminRepository: crdtLogRepository,
+    crdtAuditSink: options.crdtAuditSink,
+    timing: getApiTimingSink(),
+  });
+  const adminSupport = new AdminSupportService({
+    now: rtcTopologyOptions.now ?? (() => Date.now()),
+    serverId: myServerId,
+    reader: new PSqlAdminSupportReader(sql as unknown as PSqlSql),
+    clientStateService: middleware.clientsRepository,
+    groupStateService: middleware.groupsRepository,
+    topologyManagement,
+    wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
+    crdtAdminRepository: crdtLogRepository,
+    timing: getApiTimingSink(),
+  });
+  const spaStatistics = new SpaStatisticsService({
+    now: rtcTopologyOptions.now ?? (() => Date.now()),
+    clientStateService: middleware.clientsRepository,
+    groupStateService: middleware.groupsRepository,
+    wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
+  });
 
-  return createRallarServerApplication({
+  rallarApplication = createRallarServerApplication({
     runtime: middleware,
     repositories: options.repositories ?? defaultRepositoryManager,
     ws: {
@@ -179,25 +240,41 @@ export function createRallarServer(
         clientStateRoutes.init,
         groupStateRoutes.init,
         (app) =>
+          spaStatisticsRoutes.init(app, {
+            statistics: spaStatistics,
+          }),
+        (app) =>
           graphTopologyRoutes.init(app, {
             graphDiagnostics: {
               readScopedGlobalGraphDiagnostic,
               readGroupGraphDiagnostic,
             },
             topologyManagement,
-            adminClientIds: readAdminClientIds(),
+            adminClientIds,
           }),
         graphRoutes.init,
         (app) =>
           crdtAdminRoutes.init(app, {
             repository: crdtLogRepository,
             audit: options.crdtAuditSink,
-            adminClientIds: readAdminClientIds(),
+            adminClientIds,
+          }),
+        (app) =>
+          adminOperationsRoutes.init(app, {
+            adminClientIds,
+            operations: adminOperations,
+            now: rtcTopologyOptions.now ?? (() => Date.now()),
+          }),
+        (app) =>
+          adminSupportRoutes.init(app, {
+            adminClientIds,
+            support: adminSupport,
           }),
         swaggerRoutes.init,
       ],
     },
   });
+  return rallarApplication;
 }
 
 function readAdminClientIds(): readonly string[] {

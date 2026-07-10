@@ -27,8 +27,11 @@ tags:
   - name: WebRTC
   - name: Client State
   - name: Group State
+  - name: SPA Statistics
   - name: Graph
   - name: CRDT
+  - name: Admin Operations
+  - name: Admin Support
   - name: Docs
 
 paths:
@@ -152,6 +155,62 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
+
+  /api/auth/agent-session-tickets:
+    post:
+      tags: [Auth]
+      summary: Create agent auth session tickets
+      description: |
+        Mints short-lived one-time tickets for browser-control agents. Each
+        ticket resolves to a distinct auth session for the same authenticated
+        API-v1 principal and can be consumed once by
+        `/api/auth/agent-session-tickets/consume`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentSessionTicketRequest'
+      responses:
+        '200':
+          description: Agent session tickets issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionTicketResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/agent-session-tickets/consume:
+    post:
+      tags: [Auth]
+      summary: Consume an agent auth session ticket
+      description: |
+        Exchanges a short-lived agent session ticket for the auth session it
+        represents. Tickets are single-use and return 404 after consumption or
+        expiry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsumeAgentSessionTicketRequest'
+      responses:
+        '200':
+          description: Agent auth session restored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/black-box/control-token:
     post:
@@ -1198,6 +1257,110 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/stats/summary:
+    get:
+      tags: [SPA Statistics]
+      summary: Read actor-scoped workspace SPA statistics
+      description: |
+        Returns read-only product statistics for the authenticated actor in a
+        single application/workspace scope. The route always performs route-local
+        API auth and group policy checks independent of
+        `RALLAR_STATE_STRICT_READ_AUTH`; only full-readable groups are counted.
+        Actor-specific responses are not cacheable and include
+        `Cache-Control: no-store`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Workspace SPA statistics for the authenticated actor. Cache-Control no-store.
+          headers:
+            Cache-Control:
+              description: Actor-specific response; always `no-store`.
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceSpaStatisticsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/stats:
+    get:
+      tags: [SPA Statistics]
+      summary: Read actor-scoped group SPA statistics
+      description: |
+        Returns safe room/lobby statistics after full group read policy passes.
+        The response omits raw session ids, raw event payloads, topology graphs,
+        and admin operations data. Owner/admin-only fields are omitted for
+        regular members.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/GroupId'
+      responses:
+        '200':
+          description: Group SPA statistics for the authenticated actor. Cache-Control no-store.
+          headers:
+            Cache-Control:
+              description: Actor-specific response; always `no-store`.
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSpaStatisticsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/state/apps/{applicationId}/workspaces/{workspaceId}/stats/me/realtime:
+    get:
+      tags: [SPA Statistics]
+      summary: Read current actor realtime readiness hints
+      description: |
+        Returns self-only readiness hints for the authenticated session, including
+        whether that session has an open WebSocket connection on this API
+        process and whether it appears in client/group presence state. Other
+        users' session ids and connection ids are never exposed.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Self realtime readiness for the authenticated actor. Cache-Control no-store.
+          headers:
+            Cache-Control:
+              description: Actor-specific response; always `no-store`.
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyRealtimeSpaStatisticsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/graphs/global:
     get:
       tags: [Graph]
@@ -1716,6 +1879,521 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/admin/operations/overview:
+    get:
+      tags: [Admin Operations]
+      summary: Read admin operations overview
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      responses:
+        '200':
+          description: Compact operational overview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationsOverviewResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/queues:
+    get:
+      tags: [Admin Operations]
+      summary: Read QueueBox and app-inbox statistics
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      responses:
+        '200':
+          description: Queue pressure and expiry summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationsQueuesResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/realtime:
+    get:
+      tags: [Admin Operations]
+      summary: Read realtime and topology statistics
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      responses:
+        '200':
+          description: Process-local realtime and topology metrics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationsRealtimeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/state:
+    get:
+      tags: [Admin Operations]
+      summary: Read global state statistics
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      responses:
+        '200':
+          description: Global state aggregate summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationsStateResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/state/apps/{applicationId}/workspaces/{workspaceId}:
+    get:
+      tags: [Admin Operations]
+      summary: Read scoped state statistics
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Application/workspace scoped state aggregate summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationsStateResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/crdt:
+    get:
+      tags: [Admin Operations]
+      summary: Read global CRDT metadata statistics
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      responses:
+        '200':
+          description: Global CRDT metadata summary without document payloads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationsCrdtResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/crdt/apps/{applicationId}/workspaces/{workspaceId}:
+    get:
+      tags: [Admin Operations]
+      summary: Read scoped CRDT metadata statistics
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Application/workspace scoped CRDT metadata summary without document payloads.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationsCrdtResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/system:
+    get:
+      tags: [Admin Operations]
+      summary: Read server storage and configuration statistics
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      responses:
+        '200':
+          description: Runtime storage pressure and safe configuration summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationsSystemResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/metrics/reset:
+    post:
+      tags: [Admin Operations]
+      summary: Reset admin-visible in-memory metrics
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminMetricsResetRequest'
+      responses:
+        '200':
+          description: Metrics reset result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationResultResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/topology/recompute:
+    post:
+      tags: [Admin Operations]
+      summary: Recompute topology for one group
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTopologyRecomputeRequest'
+      responses:
+        '200':
+          description: Topology recompute result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationResultResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/maintenance/prune-expired:
+    post:
+      tags: [Admin Operations]
+      summary: Prune expired runtime rows
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPruneExpiredRequest'
+      responses:
+        '200':
+          description: Expiry pruning result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOperationResultResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/crdt/integrity:
+    post:
+      tags: [Admin Operations]
+      summary: Verify one CRDT document through the admin operations namespace
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtDocumentRequest'
+      responses:
+        '200':
+          description: CRDT integrity result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/crdt/debug-export:
+    post:
+      tags: [Admin Operations]
+      summary: Export a redacted CRDT debug bundle through the admin operations namespace
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtDebugExportRequest'
+      responses:
+        '200':
+          description: CRDT debug export result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/crdt/compact:
+    post:
+      tags: [Admin Operations]
+      summary: Compact a CRDT document through the admin operations namespace
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtCompactRequest'
+      responses:
+        '200':
+          description: CRDT compaction result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/crdt/lifecycle:
+    post:
+      tags: [Admin Operations]
+      summary: Update CRDT lifecycle through the admin operations namespace
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtLifecycleRequest'
+      responses:
+        '200':
+          description: CRDT lifecycle update result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/operations/crdt/erase:
+    post:
+      tags: [Admin Operations]
+      summary: Erase or redact a CRDT document through the admin operations namespace
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RallarCrdtEraseRequest'
+      responses:
+        '200':
+          description: CRDT erase workflow result.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/support/explain/client:
+    post:
+      tags: [Admin Support]
+      summary: Explain one client principal or session
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`. Response facts are bounded and redact secrets.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSupportExplainClientRequest'
+      responses:
+        '200':
+          description: Client diagnostic narrative.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSupportNarrativeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/admin/support/explain/group:
+    post:
+      tags: [Admin Support]
+      summary: Explain one group room
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`. Prefer scoped `GroupRef` input over bare group ids.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSupportExplainGroupRequest'
+      responses:
+        '200':
+          description: Group diagnostic narrative.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSupportNarrativeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/admin/support/explain/request:
+    post:
+      tags: [Admin Support]
+      summary: Explain one request or idempotency key
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`. Phase 1 avoids unindexed global request-id searches.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSupportExplainRequestRequest'
+      responses:
+        '200':
+          description: Request diagnostic narrative.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSupportNarrativeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/admin/support/explain/crdt-document:
+    post:
+      tags: [Admin Support]
+      summary: Explain one CRDT document
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`. Debug bundles are redacted by default.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSupportExplainCrdtDocumentRequest'
+      responses:
+        '200':
+          description: CRDT document diagnostic narrative.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSupportNarrativeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/admin/support/explain/queue-item:
+    post:
+      tags: [Admin Support]
+      summary: Explain one QueueBox item
+      description: Requires a platform admin auth session from `AUTH_ADMIN_CLIENT_IDS`. Looks up an explicit QueueBox key across inbox and result rows and redacts payload bodies.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSupportExplainQueueItemRequest'
+      responses:
+        '200':
+          description: Queue item diagnostic narrative.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSupportNarrativeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/openapi.json:
     get:
       tags: [Docs]
@@ -1974,6 +2652,687 @@ components:
           type: object
           additionalProperties: true
 
+    StateScope:
+      type: object
+      required: [applicationId, workspaceId]
+      properties:
+        applicationId:
+          type: string
+        workspaceId:
+          type: string
+
+    SpaStatisticsWarningCode:
+      type: string
+      enum:
+        - policy-filtered-scan
+        - bounded-snapshot-scan
+        - bounded-recent-events
+        - process-local-realtime
+        - websocket-session-missing
+        - client-session-missing
+        - group-presence-filtered
+
+    SpaStatisticsWarning:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: '#/components/schemas/SpaStatisticsWarningCode'
+        message:
+          type: string
+        source:
+          type: string
+
+    SpaStatisticsActor:
+      type: object
+      required: [principalId]
+      properties:
+        principalId:
+          type: string
+        sessionId:
+          type: string
+
+    SpaStatisticsBoundedCount:
+      type: object
+      required: [count, limit, bounded]
+      properties:
+        count:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int64
+        bounded:
+          type: boolean
+          const: true
+
+    SpaStatisticsSafeGroupSummary:
+      type: object
+      required:
+        - groupRef
+        - displayName
+        - kind
+        - status
+        - joinMode
+        - memberCount
+        - onlineMemberCount
+        - activeSessionCount
+        - snapshotVersion
+        - presenceVersion
+      properties:
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        displayName:
+          type: string
+        kind:
+          type: string
+          enum: [party, room, team, custom]
+        status:
+          type: string
+          enum: [active, archived, deleted]
+        joinMode:
+          type: string
+          enum: [invite-only, code, open]
+        memberCount:
+          type: integer
+          format: int64
+        onlineMemberCount:
+          type: integer
+          format: int64
+        activeSessionCount:
+          type: integer
+          format: int64
+        snapshotVersion:
+          type: integer
+          format: int64
+        presenceVersion:
+          type: integer
+          format: int64
+
+    WorkspaceSpaStatisticsResponse:
+      type: object
+      required: [generatedAtEpochMs, scope, actor, warnings, groups, activity, topGroups]
+      properties:
+        generatedAtEpochMs:
+          type: integer
+          format: int64
+        scope:
+          $ref: '#/components/schemas/StateScope'
+        actor:
+          allOf:
+            - $ref: '#/components/schemas/SpaStatisticsActor'
+            - type: object
+              required: [activeClientSessionCount, groupPresenceCount]
+              properties:
+                activeClientSessionCount:
+                  type: integer
+                  format: int64
+                groupPresenceCount:
+                  type: integer
+                  format: int64
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpaStatisticsWarning'
+        groups:
+          type: object
+          required: [fullReadableCount, joinedCount, onlineMemberCount]
+          properties:
+            fullReadableCount:
+              type: integer
+              format: int64
+            joinedCount:
+              type: integer
+              format: int64
+            onlineMemberCount:
+              type: integer
+              format: int64
+        activity:
+          type: object
+          required: [recentVisibleGroupEventCount]
+          properties:
+            recentVisibleGroupEventCount:
+              $ref: '#/components/schemas/SpaStatisticsBoundedCount'
+        topGroups:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpaStatisticsSafeGroupSummary'
+
+    GroupSpaStatisticsResponse:
+      type: object
+      required: [generatedAtEpochMs, scope, groupRef, actor, warnings, group, activity]
+      properties:
+        generatedAtEpochMs:
+          type: integer
+          format: int64
+        scope:
+          $ref: '#/components/schemas/StateScope'
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        actor:
+          allOf:
+            - $ref: '#/components/schemas/SpaStatisticsActor'
+            - type: object
+              required: [activePresenceSessionCount]
+              properties:
+                role:
+                  type: string
+                  enum: [owner, admin, member]
+                activePresenceSessionCount:
+                  type: integer
+                  format: int64
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpaStatisticsWarning'
+        group:
+          type: object
+          required:
+            - groupId
+            - displayName
+            - kind
+            - status
+            - joinMode
+            - memberCount
+            - onlineMemberCount
+            - activeSessionCount
+            - snapshotVersion
+            - presenceVersion
+          properties:
+            groupId:
+              type: string
+            displayName:
+              type: string
+            kind:
+              type: string
+              enum: [party, room, team, custom]
+            status:
+              type: string
+              enum: [active, archived, deleted]
+            joinMode:
+              type: string
+              enum: [invite-only, code, open]
+            memberCount:
+              type: integer
+              format: int64
+            onlineMemberCount:
+              type: integer
+              format: int64
+            activeSessionCount:
+              type: integer
+              format: int64
+            snapshotVersion:
+              type: integer
+              format: int64
+            presenceVersion:
+              type: integer
+              format: int64
+        activity:
+          type: object
+          required: [recentGroupEventCount]
+          properties:
+            recentGroupEventCount:
+              $ref: '#/components/schemas/SpaStatisticsBoundedCount'
+        owner:
+          type: object
+          additionalProperties: false
+          properties:
+            maxMembers:
+              type: integer
+              format: int64
+            maxSessionsPerMember:
+              type: integer
+              format: int64
+
+    MyRealtimeSpaStatisticsResponse:
+      type: object
+      required: [generatedAtEpochMs, scope, actor, warnings, realtime, clientState, groupPresence]
+      properties:
+        generatedAtEpochMs:
+          type: integer
+          format: int64
+        scope:
+          $ref: '#/components/schemas/StateScope'
+        actor:
+          $ref: '#/components/schemas/SpaStatisticsActor'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpaStatisticsWarning'
+        realtime:
+          type: object
+          required: [processLocal, currentSessionOpen]
+          properties:
+            processLocal:
+              type: boolean
+              const: true
+            currentSessionOpen:
+              type: boolean
+        clientState:
+          type: object
+          required: [activeClientSessionCount, currentSessionInClientState]
+          properties:
+            activeClientSessionCount:
+              type: integer
+              format: int64
+            currentSessionInClientState:
+              type: boolean
+        groupPresence:
+          type: object
+          required: [activeGroupPresenceCount, groups]
+          properties:
+            activeGroupPresenceCount:
+              type: integer
+              format: int64
+            groups:
+              type: array
+              items:
+                type: object
+                required: [groupRef, displayName, kind, status, joinMode, actorSessionPresent]
+                properties:
+                  groupRef:
+                    $ref: '#/components/schemas/GroupRef'
+                  displayName:
+                    type: string
+                  kind:
+                    type: string
+                    enum: [party, room, team, custom]
+                  status:
+                    type: string
+                    enum: [active, archived, deleted]
+                  joinMode:
+                    type: string
+                    enum: [invite-only, code, open]
+                  actorSessionPresent:
+                    type: boolean
+                    const: true
+
+    AdminOperationWarning:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        source:
+          type: string
+
+    AdminOperationBaseResponse:
+      type: object
+      required: [generatedAtEpochMs, warnings]
+      properties:
+        generatedAtEpochMs:
+          type: integer
+          format: int64
+        serverId:
+          type: string
+        scope:
+          type: object
+          additionalProperties: true
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminOperationWarning'
+
+    AdminOperationsOverviewResponse:
+      allOf:
+        - $ref: '#/components/schemas/AdminOperationBaseResponse'
+        - type: object
+          properties:
+            health:
+              type: object
+              additionalProperties: true
+            websocket:
+              type: object
+              additionalProperties: true
+            queues:
+              type: object
+              additionalProperties: true
+            realtime:
+              type: object
+              additionalProperties: true
+            state:
+              type: object
+              additionalProperties: true
+            crdt:
+              type: object
+              additionalProperties: true
+            system:
+              type: object
+              additionalProperties: true
+
+    AdminOperationsQueuesResponse:
+      allOf:
+        - $ref: '#/components/schemas/AdminOperationBaseResponse'
+        - type: object
+          properties:
+            queueRows:
+              type: object
+              additionalProperties: true
+            resultRows:
+              type: object
+              additionalProperties: true
+
+    AdminOperationsRealtimeResponse:
+      allOf:
+        - $ref: '#/components/schemas/AdminOperationBaseResponse'
+        - type: object
+          properties:
+            websocket:
+              type: object
+              additionalProperties: true
+            rtcTopology:
+              type: object
+              additionalProperties: true
+
+    AdminOperationsStateResponse:
+      allOf:
+        - $ref: '#/components/schemas/AdminOperationBaseResponse'
+        - type: object
+          properties:
+            clients:
+              type: object
+              additionalProperties: true
+            groups:
+              type: object
+              additionalProperties: true
+            events:
+              type: object
+              additionalProperties: true
+
+    AdminOperationsCrdtResponse:
+      allOf:
+        - $ref: '#/components/schemas/AdminOperationBaseResponse'
+        - type: object
+          properties:
+            documents:
+              type: object
+              additionalProperties: true
+            storage:
+              type: object
+              additionalProperties: true
+
+    AdminOperationsSystemResponse:
+      allOf:
+        - $ref: '#/components/schemas/AdminOperationBaseResponse'
+        - type: object
+          properties:
+            runtimeState:
+              type: object
+              additionalProperties: true
+            appData:
+              type: object
+              additionalProperties: true
+            stateEvents:
+              type: object
+              additionalProperties: true
+            configuration:
+              type: object
+              additionalProperties: true
+
+    AdminMetricsResetRequest:
+      type: object
+      properties:
+        requestId:
+          type: string
+        categories:
+          type: array
+          items:
+            type: string
+            enum: [rtc-topology]
+        reason:
+          type: string
+
+    AdminTopologyRecomputeRequest:
+      type: object
+      required: [groupRef]
+      properties:
+        requestId:
+          type: string
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        publish:
+          type: boolean
+        options:
+          $ref: '#/components/schemas/GroupTopologyConfigPatch'
+        reason:
+          type: string
+
+    AdminPruneExpiredRequest:
+      type: object
+      properties:
+        requestId:
+          type: string
+        categories:
+          type: array
+          items:
+            type: string
+            enum:
+              - runtime-state
+              - resource-inbox
+              - resource-inbox-results
+              - app-data
+        appData:
+          type: object
+          properties:
+            namespace:
+              type: string
+            storeName:
+              type: string
+        dryRun:
+          type: boolean
+          default: true
+        reason:
+          type: string
+
+    AdminOperationResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/AdminOperationBaseResponse'
+        - type: object
+          required: [operation, status, changed]
+          properties:
+            operation:
+              type: string
+            status:
+              type: string
+              enum: [completed, dry-run, skipped, failed]
+            changed:
+              type: boolean
+            before:
+              type: object
+              additionalProperties: true
+            after:
+              type: object
+              additionalProperties: true
+            results:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+
+    QueueBoxKey:
+      type: object
+      required: [topicId, resourceId, contextId]
+      properties:
+        topicId:
+          type: string
+        resourceId:
+          type: string
+        contextId:
+          type: string
+
+    AdminSupportWarning:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        source:
+          type: string
+
+    AdminSupportFact:
+      type: object
+      required: [label, source, value, certainty]
+      properties:
+        label:
+          type: string
+        source:
+          type: string
+        value: {}
+        certainty:
+          type: string
+          enum: [exact, inferred, unavailable]
+        redacted:
+          type: boolean
+
+    AdminSupportTimelineItem:
+      type: object
+      required: [source, eventType, summary]
+      properties:
+        atEpochMs:
+          type: integer
+          format: int64
+        source:
+          type: string
+        eventType:
+          type: string
+        summary:
+          type: string
+        rawRef:
+          type: string
+
+    AdminSupportSuggestedAction:
+      type: object
+      required: [code, label, severity]
+      properties:
+        code:
+          type: string
+        label:
+          type: string
+        severity:
+          type: string
+          enum: [info, warning, urgent]
+        operationRef:
+          type: string
+
+    AdminSupportNarrativeResponse:
+      type: object
+      required:
+        - target
+        - generatedAtEpochMs
+        - facts
+        - timeline
+        - warnings
+        - likelyCauses
+        - suggestedActions
+        - rawRefs
+      properties:
+        target:
+          type: object
+          required: [kind]
+          additionalProperties: true
+          properties:
+            kind:
+              type: string
+              enum: [client, group, request, crdt-document, queue-item]
+        generatedAtEpochMs:
+          type: integer
+          format: int64
+        serverId:
+          type: string
+        facts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSupportFact'
+        timeline:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSupportTimelineItem'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSupportWarning'
+        likelyCauses:
+          type: array
+          items:
+            type: string
+        suggestedActions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminSupportSuggestedAction'
+        rawRefs:
+          type: array
+          items:
+            type: string
+
+    AdminSupportExplainClientRequest:
+      type: object
+      required: [scope, principalId]
+      properties:
+        scope:
+          $ref: '#/components/schemas/StateScope'
+        principalId:
+          type: string
+        clientInstanceId:
+          type: string
+        sessionId:
+          type: string
+        limitRecentEvents:
+          type: integer
+          minimum: 1
+          maximum: 50
+
+    AdminSupportExplainGroupRequest:
+      type: object
+      required: [groupRef]
+      properties:
+        groupRef:
+          $ref: '#/components/schemas/GroupRef'
+        principalId:
+          type: string
+        sessionId:
+          type: string
+        limitRecentEvents:
+          type: integer
+          minimum: 1
+          maximum: 50
+
+    AdminSupportExplainRequestRequest:
+      type: object
+      properties:
+        requestId:
+          type: string
+        idempotencyKey:
+          type: string
+        queueKey:
+          $ref: '#/components/schemas/QueueBoxKey'
+        target:
+          type: object
+          additionalProperties: true
+
+    AdminSupportExplainCrdtDocumentRequest:
+      type: object
+      required: [document]
+      properties:
+        document:
+          $ref: '#/components/schemas/RallarCrdtDocumentRef'
+        includeIntegrity:
+          type: boolean
+        includeRedactedDebugBundle:
+          type: boolean
+
+    AdminSupportExplainQueueItemRequest:
+      type: object
+      required: [queueKey]
+      properties:
+        queueKey:
+          $ref: '#/components/schemas/QueueBoxKey'
+        includeExpired:
+          type: boolean
+
     ApiConfig:
       type: object
       required: [apiBaseUrl, wsBaseUrl, endpoints]
@@ -2065,6 +3424,50 @@ components:
         expiresAtEpochMs:
           type: integer
           format: int64
+
+    AgentSessionTicketRequest:
+      type: object
+      required: [agentIds]
+      properties:
+        agentIds:
+          type: array
+          minItems: 1
+          maxItems: 6
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+
+    AgentSessionTicket:
+      type: object
+      required: [agentId, ticket, sessionId, expiresAtEpochMs]
+      properties:
+        agentId:
+          type: string
+        ticket:
+          type: string
+        sessionId:
+          type: string
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+
+    AgentSessionTicketResponse:
+      type: object
+      required: [tickets]
+      properties:
+        tickets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSessionTicket'
+
+    ConsumeAgentSessionTicketRequest:
+      type: object
+      required: [ticket]
+      properties:
+        ticket:
+          type: string
+          minLength: 1
 
     BlackBoxControlTokenResponse:
       type: object
@@ -3315,11 +4718,15 @@ components:
         config:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
         ttlMs:
+          description: Temporary override time-to-live in milliseconds. Must be positive.
           type: integer
           format: int64
+          minimum: 1
         expiresAtEpochMs:
+          description: Absolute temporary override expiry time in epoch milliseconds. Must be in the future when submitted.
           type: integer
           format: int64
+          minimum: 1
         reconfigure:
           type: boolean
 

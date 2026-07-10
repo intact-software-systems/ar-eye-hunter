@@ -1,0 +1,201 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "rejectMissingAdminAuth",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/support/explain/queue-item",
+        "body": {
+          "queueKey": {
+            "topicId": "black-box.support.missing",
+            "resourceId": "missing-request",
+            "contextId": "missing-context"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    },
+    {
+      "name": "loginDemoAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "admin",
+          "password": "admin"
+        },
+        "outputs": {
+          "adminClientId": "body.clientId",
+          "adminAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "admin",
+          "accessToken": "string",
+          "username": "admin",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveAdminAuthHeader",
+      "type": "set",
+      "output": "adminAuthHeader",
+      "secret": true,
+      "redactAs": "adminAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.adminAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "explainMissingQueueItem",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/support/explain/queue-item",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "queueKey": {
+            "topicId": "black-box.support.missing",
+            "resourceId": "missing-request",
+            "contextId": "missing-context"
+          },
+          "includeExpired": true
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "generatedAtEpochMs": "integer",
+          "serverId": "string",
+          "target": {
+            "kind": "queue-item",
+            "queueKey": {
+              "topicId": "black-box.support.missing",
+              "resourceId": "missing-request",
+              "contextId": "missing-context"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "explainRequestWithoutIndexedTarget",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/support/explain/request",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "requestId": "black-box-request-without-target"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "target": {
+            "kind": "request",
+            "requestId": "black-box-request-without-target"
+          }
+        }
+      }
+    },
+    {
+      "name": "openApiListsAdminSupport",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/openapi.json"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "paths": {
+            "/api/admin/support/explain/client": {
+              "post": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any"
+                }
+              }
+            },
+            "/api/admin/support/explain/queue-item": {
+              "post": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

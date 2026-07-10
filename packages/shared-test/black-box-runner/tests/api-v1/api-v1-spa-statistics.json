@@ -1,0 +1,392 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "default-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "api-v1-bb-stats-group-{runId}"
+    },
+    "groupName": {
+      "env": "RALLAR_BB_GROUP_NAME",
+      "default": "API v1 SPA stats {runId}"
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "setAliceUsername",
+      "type": "set",
+      "output": "aliceUsername",
+      "value": "api-v1-spa-stats-alice-{runId}"
+    },
+    {
+      "name": "setBobUsername",
+      "type": "set",
+      "output": "bobUsername",
+      "value": "api-v1-spa-stats-bob-{runId}"
+    },
+    {
+      "name": "registerAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "api-v1-spa-stats-password-{runId}",
+          "displayName": "SPA stats Alice {runId}"
+        },
+        "outputs": {
+          "aliceRegisteredClientId": "body.clientId"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string",
+          "username": "{aliceUsername}",
+          "registeredAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "registerBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "api-v1-spa-stats-password-{runId}",
+          "displayName": "SPA stats Bob {runId}"
+        },
+        "outputs": {
+          "bobRegisteredClientId": "body.clientId"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string",
+          "username": "{bobUsername}",
+          "registeredAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "api-v1-spa-stats-password-{runId}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "aliceSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "{aliceRegisteredClientId}",
+          "accessToken": "string",
+          "username": "{aliceUsername}",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "api-v1-spa-stats-password-{runId}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "bobSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "{bobRegisteredClientId}",
+          "accessToken": "string",
+          "username": "{bobUsername}",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rejectMissingStatsAuth",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/stats/summary"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    },
+    {
+      "name": "createPrivateStatsGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "create-spa-stats-{groupId}-{runId}",
+          "groupId": "{groupId}",
+          "displayName": "{groupName}",
+          "kind": "room",
+          "joinMode": "invite-only",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}",
+            "displayName": "{groupName}",
+            "kind": "room",
+            "joinMode": "invite-only"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectAliceGroupPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "presence-spa-stats-{aliceSessionId}-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          },
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}",
+              "principalId": "{aliceClientId}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "readWorkspaceSpaStats",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/stats/summary",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "generatedAtEpochMs": "integer",
+          "scope": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}"
+          },
+          "actor": {
+            "principalId": "{aliceClientId}",
+            "sessionId": "{aliceSessionId}"
+          },
+          "groups": {
+            "fullReadableCount": "integer",
+            "joinedCount": "integer",
+            "onlineMemberCount": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "readGroupSpaStats",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/stats",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupId}"
+          },
+          "actor": {
+            "principalId": "{aliceClientId}",
+            "sessionId": "{aliceSessionId}",
+            "role": "owner"
+          },
+          "group": {
+            "groupId": "{groupId}",
+            "displayName": "{groupName}",
+            "kind": "room"
+          }
+        }
+      }
+    },
+    {
+      "name": "rejectBobGroupSpaStats",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/stats",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "group-policy-denied"
+        }
+      }
+    },
+    {
+      "name": "readMyRealtimeSpaStats",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/stats/me/realtime",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "actor": {
+            "principalId": "{aliceClientId}",
+            "sessionId": "{aliceSessionId}"
+          },
+          "realtime": {
+            "processLocal": true,
+            "currentSessionOpen": false
+          },
+          "clientState": {
+            "activeClientSessionCount": "integer",
+            "currentSessionInClientState": false
+          }
+        }
+      }
+    }
+  ]
+}

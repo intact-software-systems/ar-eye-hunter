@@ -832,10 +832,10 @@
     },
     {
       "id": "api-v1-auth-session",
-      "recipe": "examples/api-v1-auth-session.json",
+      "recipe": "tests/api-v1/api-v1-auth-session.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box"],
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-auth-session",
       "requires": {
@@ -851,10 +851,10 @@
     },
     {
       "id": "api-v1-group-presence",
-      "recipe": "examples/api-v1-group-presence.json",
+      "recipe": "tests/api-v1/api-v1-group-presence.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box"],
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-presence",
       "requires": {
@@ -870,10 +870,10 @@
     },
     {
       "id": "api-v1-client-state",
-      "recipe": "examples/api-v1-client-state.json",
+      "recipe": "tests/api-v1/api-v1-client-state.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box"],
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-client-state",
       "requires": {
@@ -889,10 +889,10 @@
     },
     {
       "id": "api-v1-websocket-topic-routing",
-      "recipe": "examples/api-v1-websocket-topic-routing.json",
+      "recipe": "tests/api-v1/api-v1-websocket-topic-routing.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box"],
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-websocket-topic-routing",
       "requires": {
@@ -908,10 +908,10 @@
     },
     {
       "id": "api-v1-scope-isolation",
-      "recipe": "examples/api-v1-scope-isolation.json",
+      "recipe": "tests/api-v1/api-v1-scope-isolation.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box"],
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-scope-isolation",
       "requires": {
@@ -927,10 +927,10 @@
     },
     {
       "id": "api-v1-openapi-topology-auth",
-      "recipe": "examples/api-v1-openapi-topology-auth.json",
+      "recipe": "tests/api-v1/api-v1-openapi-topology-auth.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box"],
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
       "expectedExitCode": 0,
       "artifactName": "api-v1-openapi-topology-auth",
       "requires": {
@@ -943,6 +943,101 @@
         ]
       },
       "description": "No-browser API-v1 OpenAPI auth contract for scoped graph and topology management endpoints."
+    },
+    {
+      "id": "api-v1-admin-operations",
+      "recipe": "tests/api-v1/api-v1-admin-operations.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-admin-operations",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 admin operations auth denial, admin overview success, and OpenAPI contract coverage."
+    },
+    {
+      "id": "api-v1-admin-support",
+      "recipe": "tests/api-v1/api-v1-admin-support.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-admin-support",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 admin support auth denial, explicit QueueBox-key explanation, constrained request warning, and OpenAPI contract coverage."
+    },
+    {
+      "id": "api-v1-black-box-control-auth",
+      "recipe": "tests/api-v1/api-v1-black-box-control-auth.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-black-box-control-auth",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 black-box operator token and agent-session ticket lifecycle coverage."
+    },
+    {
+      "id": "api-v1-ice-config",
+      "recipe": "tests/api-v1/api-v1-ice-config.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-ice-config",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 authenticated WebRTC ICE configuration coverage."
+    },
+    {
+      "id": "api-v1-spa-statistics",
+      "recipe": "tests/api-v1/api-v1-spa-statistics.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-spa-statistics",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 SPA statistics missing-auth denial, non-member group denial, scoped success reads, and OpenAPI contract coverage."
     },
     {
       "id": "rallar-signaling-two-peer-chat-dry",
