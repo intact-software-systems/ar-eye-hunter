@@ -4584,11 +4584,15 @@ components:
         config:
           $ref: '#/components/schemas/GroupTopologyConfigPatch'
         ttlMs:
+          description: Temporary override time-to-live in milliseconds. Must be positive.
           type: integer
           format: int64
+          minimum: 1
         expiresAtEpochMs:
+          description: Absolute temporary override expiry time in epoch milliseconds. Must be in the future when submitted.
           type: integer
           format: int64
+          minimum: 1
         reconfigure:
           type: boolean
 

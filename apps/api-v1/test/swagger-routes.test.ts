@@ -88,6 +88,15 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     ['auto', 'star', 'tree', 'mesh'],
   );
   assert.equal(json.components.schemas.GroupTopologyPositiveInteger.minimum, 1);
+  const topologyOverrideRequest = json.components.schemas
+    .PutGroupTopologyOverrideRequest as {
+      properties?: Record<string, { minimum?: number; description?: string }>;
+    };
+  assert.equal(topologyOverrideRequest.properties?.ttlMs?.minimum, 1);
+  assert.match(
+    topologyOverrideRequest.properties?.expiresAtEpochMs?.description ?? '',
+    /future/i,
+  );
   assert.ok(
     json.components.schemas.ReconfigureGroupTopologyResponse.properties?.changed,
   );
