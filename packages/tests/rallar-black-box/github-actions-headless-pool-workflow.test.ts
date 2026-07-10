@@ -29,6 +29,7 @@ interface WorkflowStep {
 
 interface WorkflowJob {
   readonly environment?: unknown;
+  readonly needs?: unknown;
   readonly with?: Readonly<Record<string, unknown>>;
   readonly steps?: readonly WorkflowStep[];
 }
@@ -220,6 +221,8 @@ describe("GitHub Free distributed recipe workflow", () => {
     expect(dispatchInputs).not.toHaveProperty("ref");
     expect(dispatchInputs.register_before_login?.default).toBe(true);
     expect(githubAgents.environment).toBe("production");
+    expect(githubAgents.needs).toEqual(["plan", "prepare-hetzner"]);
+    expect(operator.needs).toEqual(["plan", "prepare-hetzner"]);
     expect(planCheckout.uses).toBe("actions/checkout@v4");
     expect(planCheckout.with?.ref).toBe("${{ github.sha }}");
     expect(prepare.with?.ref).toBe("${{ github.sha }}");

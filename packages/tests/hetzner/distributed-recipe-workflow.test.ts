@@ -35,6 +35,7 @@ interface WorkflowStep {
 }
 
 interface WorkflowJob {
+    readonly strategy?: Readonly<Record<string, unknown>>;
     readonly steps?: readonly WorkflowStep[];
 }
 
@@ -162,6 +163,7 @@ describe('Hetzner distributed recipe workflow', () => {
             if: "always() && steps.run_recipe.outcome != 'success'",
             run: 'echo "Distributed recipe operation failed. Artifacts and analysis were uploaded when applicable." >&2\nexit 1\n',
         });
+        expect(runnerJob?.steps?.at(-1)).toEqual(failureStep);
     });
 
     it('applies manifest-requested RTC topology env during distributed recipe rollout', async () => {
@@ -274,6 +276,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('runs supported Hetzner manifests on every main push with a serial matrix', async () => {
         const workflow = await readFile(path.join(repoRoot, supportedManifestsWorkflowPath), 'utf8');
+        const parsedWorkflow = await readWorkflow(supportedManifestsWorkflowPath);
         const matrixPaths = [...workflow.matchAll(/manifest_path:\s+(apps\/rallar-black-box\/manifests\/hetzner\/[^\s]+\.json)/g)]
             .map(match => match[1]);
 
@@ -283,7 +286,7 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).not.toMatch(/\n\s+paths:/);
         expect(workflow).toContain('cancel-in-progress: false');
         expect(workflow).toContain('fail-fast: false');
-        expect(workflow).toContain('max-parallel: 1');
+        expect(parsedWorkflow.jobs?.run?.strategy?.['max-parallel']).toBe(1);
         expect(matrixPaths).toEqual(supportedMainlineManifestPaths);
         expect(workflow).not.toContain('apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json');
         expect(workflow).not.toContain('apps/rallar-black-box/manifests/hetzner/06-rtc-realtime-3-agent-15s.json');
