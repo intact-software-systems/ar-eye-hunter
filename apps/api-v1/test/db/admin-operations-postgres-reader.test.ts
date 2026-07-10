@@ -64,6 +64,68 @@ Deno.test('PSqlAdminOperationsStatsReader aggregates admin read statistics', asy
   });
 });
 
+Deno.test('PSqlAdminOperationsStatsReader bounds recent events and expires active groups logically', async () => {
+  await withPGliteSql(async (sql) => {
+    const nowEpochMs = 1_700_000_000_000;
+    const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
+    const keyPrefix = 'app=app-1:ws=workspace-1';
+
+    for (
+      const [key, value] of [
+        [`${keyPrefix}:group=no-expiry`, { status: 'active' }],
+        [
+          `${keyPrefix}:group=future-expiry`,
+          { status: 'active', expiresAtEpochMs: nowEpochMs + 1 },
+        ],
+        [
+          `${keyPrefix}:group=expired-now`,
+          { status: 'active', expiresAtEpochMs: nowEpochMs },
+        ],
+      ] as const
+    ) {
+      await insertRuntimeState(sql, {
+        namespace: 'group-state:groups',
+        key,
+        value,
+      });
+    }
+
+    await sql`
+      insert into client_state_events (
+        application_id, workspace_key, principal_id, event_id, event_type,
+        snapshot_version, occurred_at_epoch_ms, event_json
+      )
+      values
+        (${'app-1'}, ${'workspace-1'}, ${'alice'}, ${'client-old'}, ${'connected'}, ${1}, ${1_699_999_099_999}, ${'{}'}),
+        (${'app-1'}, ${'workspace-1'}, ${'alice'}, ${'client-boundary'}, ${'connected'}, ${1}, ${1_699_999_100_000}, ${'{}'})
+    `;
+    await sql`
+      insert into group_state_events (
+        application_id, workspace_key, group_id, event_id, event_type,
+        snapshot_version, occurred_at_epoch_ms, event_json
+      )
+      values
+        (${'app-1'}, ${'workspace-1'}, ${'room-1'}, ${'group-old'}, ${'connected'}, ${1}, ${1_699_999_099_999}, ${'{}'}),
+        (${'app-1'}, ${'workspace-1'}, ${'room-1'}, ${'group-boundary'}, ${'connected'}, ${1}, ${1_699_999_100_000}, ${'{}'})
+    `;
+
+    const reader = new PSqlAdminOperationsStatsReader(sql, { now: () => nowEpochMs });
+
+    const scopedState = await reader.readState({ adminSession: createAdminSession(), scope });
+    const globalState = await reader.readState({ adminSession: createAdminSession() });
+    const system = await reader.readSystem({ adminSession: createAdminSession() });
+
+    assert.equal(scopedState.events.recentClientEvents, 1);
+    assert.equal(scopedState.events.recentGroupEvents, 1);
+    assert.equal(globalState.events.recentClientEvents, 1);
+    assert.equal(globalState.events.recentGroupEvents, 1);
+    assert.equal(system.stateEvents.clientEvents, 2);
+    assert.equal(system.stateEvents.groupEvents, 2);
+    assert.equal(scopedState.groups.activeGroups, 2);
+    assert.equal(globalState.groups.activeGroups, 2);
+  });
+});
+
 Deno.test('PSqlAdminOperationsStatsReader orders queue topPressure by count descending', async () => {
   await withPGliteSql(async (sql) => {
     for (
