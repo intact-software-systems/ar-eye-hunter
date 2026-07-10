@@ -10,13 +10,17 @@ the distributed run.
 
 - The Hetzner control server, API, and SPA are already deployed and reachable
   from GitHub-hosted runners.
-- The workflow secrets are configured: `RALLAR_BLACK_BOX_PASSWORD`,
-  `HETZNER_SSH_PRIVATE_KEY`,
+- The workflow secrets are configured: `RALLAR_BLACK_BOX_USERNAME`,
+  `RALLAR_BLACK_BOX_PASSWORD`, `HETZNER_SSH_PRIVATE_KEY`,
   `HETZNER_KNOWN_HOSTS`, `HETZNER_HOST`, and `HETZNER_USER`. For hardened
   control servers, also configure `RALLAR_BLACK_BOX_CONTROL_READ_TOKEN` with an
   admin/operator token; the workflow uses it to mint short-lived per-agent run
   tokens and to poll protected read endpoints. `RALLAR_BLACK_BOX_CONTROL_TOKEN`
   remains a legacy fallback for older deployments.
+  `RALLAR_BLACK_BOX_USERNAME` remains required by the Hetzner operator reusable
+  runner in both `prepare-hetzner` and `operator` phases. It is the reusable
+  runner's operator credential, not a GitHub-hosted per-agent username; the
+  `github-agents` job uses each global agent ID as that agent's username.
 - Public endpoint inputs point at production or the intended staging target:
   `spa_url`, `api_base_url`, `control_url`, and `control_http_url`.
 - The workflow always runs the immutable `${{ github.sha }}` associated with
