@@ -2,9 +2,7 @@ import {
     type ChangeEvent,
     type FormEvent,
     type KeyboardEvent,
-    type ReactNode,
     useEffect,
-    useId,
     useMemo,
     useRef,
     useState,
@@ -264,12 +262,8 @@ import {
     type SyntheticDistributedRunSeed,
 } from './distributed-run-seeds.ts';
 import {
-    commandExampleSnippets,
-    schemaAuthoringSummary,
-    schemaAuthoringTone,
     validateSchemaAuthoringText,
     validateSchemaAuthoringValue,
-    type CommandExampleSnippet,
     type SchemaAuthoringTarget,
     type SchemaAuthoringValidation,
 } from './schema-authoring.ts';
@@ -382,6 +376,36 @@ import type {
     RunnerDistributedRunSelection,
 } from './legacy/runner/runner-contracts.ts';
 import { loadBrowserRallarFacade } from './legacy/rallar/load-browser-rallar-facade.ts';
+import { Metric } from './legacy/shared/Metric.tsx';
+import { FilterSelect } from './legacy/shared/FilterSelect.tsx';
+import { CollapsiblePanelSection } from './legacy/shared/CollapsiblePanelSection.tsx';
+import {
+    formatDuration,
+    formatRelativeDuration,
+    formatSignedDuration,
+    formatSignedNumber,
+    formatTime,
+} from './legacy/shared/time-format.ts';
+import {
+    json,
+    parseJsonText,
+    splitCsvValues,
+} from './legacy/shared/json-presentation.ts';
+import {
+    redactedJson,
+    uiRedactionOptions,
+    uiSecretValues,
+} from './legacy/shared/redaction-presentation.ts';
+import {
+    commandId,
+    resultSummary,
+    statusTone,
+} from './legacy/shared/command-presentation.ts';
+import {
+    SchemaAuthoringPanel,
+    SchemaCapabilitySummary,
+} from './legacy/shared/schema/SchemaAuthoringPanel.tsx';
+import { CommandExamplePicker } from './legacy/shared/schema/CommandExamplePicker.tsx';
 
 // Recipe Console work belongs under `src/recipe-console/**`; legacy extraction belongs under `src/legacy/**`; no new feature panel belongs in `App.tsx`.
 
@@ -1344,60 +1368,6 @@ function writeDistributedRunSeedToUrl(seedId: DistributedRunSeedId | undefined):
     window.history.replaceState(window.history.state, '', url);
 }
 
-function commandId(command: RallarBlackBoxTestCommand, index: number): string {
-    return command.commandId ?? `${command.kind}-${index + 1}`;
-}
-
-function statusTone(status: RallarBlackBoxTestRuntimeStatus | string): string {
-    if (
-        status === 'completed' ||
-        status === 'configured' ||
-        status === 'loaded' ||
-        status === 'passed' ||
-        status === 'registered'
-    ) {
-        return 'good';
-    }
-
-    if (
-        status === 'running' ||
-        status === 'connecting' ||
-        status === 'reconnecting'
-    ) {
-        return 'active';
-    }
-
-    if (status === 'failed') {
-        return 'bad';
-    }
-
-    if (status === 'cancelled') {
-        return 'warn';
-    }
-
-    return 'muted';
-}
-
-function formatTime(epochMs: number | undefined): string {
-    if (!epochMs) {
-        return 'never';
-    }
-
-    return new Intl.DateTimeFormat(undefined, {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-    }).format(new Date(epochMs));
-}
-
-function formatDuration(ms: number | undefined): string {
-    if (ms === undefined) {
-        return '-';
-    }
-
-    return `${Math.round(ms)} ms`;
-}
-
 function idleActionFeedback(message: string): CommandCenterActionFeedback {
     return {
         state: 'idle',
@@ -1445,81 +1415,6 @@ function completedActionFeedback(
     };
 }
 
-function formatRelativeDuration(ms: number | undefined): string {
-    if (ms === undefined || !Number.isFinite(ms)) {
-        return '-';
-    }
-
-    const sign = ms < 0 ? '-' : '';
-    const absoluteMs = Math.abs(ms);
-    const totalSeconds = Math.round(absoluteMs / 1000);
-    const totalMinutes = Math.round(totalSeconds / 60);
-    const totalHours = Math.round(totalMinutes / 60);
-    if (totalSeconds < 90) {
-        return `${sign}${totalSeconds}s`;
-    }
-    if (totalMinutes < 90) {
-        return `${sign}${totalMinutes}m`;
-    }
-
-    return `${sign}${totalHours}h`;
-}
-
-function json(value: unknown): string {
-    return JSON.stringify(value ?? null, null, 2);
-}
-
-function parseJsonText(text: string, fallback: unknown = {}): unknown {
-    const trimmed = text.trim();
-    return trimmed.length > 0 ? (JSON.parse(trimmed) as unknown) : fallback;
-}
-
-function splitCsvValues(value: string): readonly string[] {
-    return value
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter(Boolean);
-}
-
-function uiSecretValues(
-    state?: RallarBlackBoxTestState,
-    authSession?: AuthSession,
-    extraValues: readonly (string | undefined)[] = [],
-): readonly string[] {
-    return [
-        ...(state?.currentConfig?.redaction?.secretValues ?? []),
-        authSession?.accessToken,
-        authSession ? `Bearer ${authSession.accessToken}` : undefined,
-        ...extraValues,
-    ].filter((entry): entry is string => Boolean(entry && entry.length > 0));
-}
-
-function uiRedactionOptions(
-    state?: RallarBlackBoxTestState,
-    authSession?: AuthSession,
-    extraValues: readonly (string | undefined)[] = [],
-): RallarBlackBoxTestRedactionOptions {
-    const base = state?.currentConfig?.redaction ?? {};
-    return {
-        ...base,
-        secretValues: uiSecretValues(state, authSession, extraValues),
-    };
-}
-
-function redactedJson(
-    value: unknown,
-    state?: RallarBlackBoxTestState,
-    authSession?: AuthSession,
-    extraValues: readonly (string | undefined)[] = [],
-): string {
-    return json(
-        redactRallarBlackBoxValue(
-            value,
-            uiRedactionOptions(state, authSession, extraValues),
-        ),
-    );
-}
-
 function activeDeadlineEpochMs(
     command:
         | (RallarBlackBoxTestCommand & Readonly<{ commandId: string }>)
@@ -1536,27 +1431,6 @@ function activeDeadlineEpochMs(
             ? startedAtEpochMs + command.timeoutMs
             : undefined)
     );
-}
-
-function resultSummary(result: RallarBlackBoxTestResult): string {
-    if (result.error?.message) {
-        return result.error.message;
-    }
-
-    if (result.value && typeof result.value === 'object') {
-        const value = result.value as Record<string, unknown>;
-        if (typeof value.status === 'number') {
-            return `HTTP ${value.status}`;
-        }
-        if (typeof value.connection === 'string') {
-            return value.connection;
-        }
-        if (typeof value.recipeId === 'string') {
-            return value.recipeId;
-        }
-    }
-
-    return result.ok ? 'ok' : result.status;
 }
 
 function uniqueValues<T extends string>(
@@ -1779,128 +1653,6 @@ function dateInputEndEpoch(value: string): number | undefined {
     }
     const epochMs = new Date(`${value}T23:59:59.999`).getTime();
     return Number.isFinite(epochMs) ? epochMs : undefined;
-}
-
-function SchemaAuthoringPanel({
-    validation,
-    compact = false,
-}: {
-    validation: SchemaAuthoringValidation;
-    compact?: boolean;
-}) {
-    return (
-        <section
-            className={`schema-authoring-panel ${compact ? 'compact' : ''} ${schemaAuthoringTone(validation)}`}
-        >
-            <div className="schema-authoring-heading">
-                <strong>{validation.title}</strong>
-                <span className={`pill ${schemaAuthoringTone(validation)}`}>
-                    {schemaAuthoringSummary(validation)}
-                </span>
-            </div>
-            {!validation.ok && (
-                <div className="schema-error-list">
-                    {validation.errors.slice(0, 8).map((issue, index) => (
-                        <div
-                            className="schema-error-row"
-                            key={`${issue.path}-${index}`}
-                        >
-                            <strong>{issue.path}</strong>
-                            <span>{issue.message}</span>
-                        </div>
-                    ))}
-                </div>
-            )}
-            {validation.ok && validation.capabilities.length > 0 && (
-                <SchemaCapabilitySummary validation={validation} />
-            )}
-            {validation.ok &&
-                validation.capabilities.length === 0 &&
-                validation.target === 'runner-scenario' && (
-                    <div className="schema-capability-empty">
-                        Provider-neutral runner scenario schema valid.
-                    </div>
-                )}
-        </section>
-    );
-}
-
-function SchemaCapabilitySummary({
-    validation,
-}: {
-    validation: SchemaAuthoringValidation;
-}) {
-    if (validation.capabilities.length === 0) {
-        return (
-            <div className="schema-capability-empty">
-                No browser-agent command capabilities detected.
-            </div>
-        );
-    }
-
-    return (
-        <div className="schema-capability-summary">
-            <div className="schema-chip-row">
-                {validation.commandKinds.map((kind) => (
-                    <span className="pill muted" key={kind}>
-                        {kind}
-                    </span>
-                ))}
-                <span
-                    className={`pill ${validation.distributedCompatible ? 'good' : 'warn'}`}
-                >
-                    {validation.distributedCompatible
-                        ? 'distributed-ready'
-                        : 'local-only command'}
-                </span>
-            </div>
-            <div className="schema-capability-grid">
-                <SchemaCapabilityList
-                    title="Provider modes"
-                    values={validation.providerModes}
-                />
-                <SchemaCapabilityList
-                    title="Runtime surfaces"
-                    values={validation.runtimeSurfaces}
-                />
-                <SchemaCapabilityList
-                    title="Live requirements"
-                    values={validation.liveServiceRequirements}
-                />
-                <SchemaCapabilityList
-                    title="Artifacts"
-                    values={validation.artifactExpectations}
-                />
-            </div>
-            <div className="schema-command-capabilities">
-                {validation.capabilities.map((capability) => (
-                    <article
-                        className="schema-command-capability"
-                        key={capability.kind}
-                    >
-                        <strong>{capability.title}</strong>
-                        <small>{capability.kind}</small>
-                        <p>{capability.description}</p>
-                    </article>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-function SchemaCapabilityList({
-    title,
-    values,
-}: {
-    title: string;
-    values: readonly string[];
-}) {
-    return (
-        <div className="schema-capability-list">
-            <strong>{title}</strong>
-            <span>{values.length > 0 ? values.join(', ') : 'none'}</span>
-        </div>
-    );
 }
 
 type DistributedAuthoringDraftTarget = Extract<
@@ -2138,72 +1890,6 @@ function DistributedRecipeAuthoringPanel({
                     )}
                 </section>
             </div>
-        </section>
-    );
-}
-
-function CommandExamplePicker({
-    onInsert,
-    onCopy,
-}: {
-    onInsert(text: string): void;
-    onCopy(text: string): void;
-}) {
-    const snippets = useMemo(() => commandExampleSnippets(), []);
-    const [selectedKind, setSelectedKind] = useState(
-        snippets[0]?.kind ?? 'health',
-    );
-    const selected =
-        snippets.find((snippet) => snippet.kind === selectedKind) ??
-        snippets[0];
-    if (!selected) {
-        return null;
-    }
-    const selectedValidation = validateSchemaAuthoringText(
-        'command',
-        selected.commandText,
-    );
-
-    return (
-        <section className="command-example-picker">
-            <div className="section-heading compact">
-                <h3>Command Examples</h3>
-                <span>{snippets.length} generated</span>
-            </div>
-            <div className="command-example-controls">
-                <label className="field">
-                    <span>Kind</span>
-                    <select
-                        value={selected.kind}
-                        onChange={(event) =>
-                            setSelectedKind(
-                                event.target
-                                    .value as CommandExampleSnippet['kind'],
-                            )
-                        }
-                    >
-                        {snippets.map((snippet) => (
-                            <option key={snippet.kind} value={snippet.kind}>
-                                {snippet.kind} - {snippet.title}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <button
-                    type="button"
-                    onClick={() => onInsert(selected.commandText)}
-                >
-                    Insert
-                </button>
-                <button
-                    type="button"
-                    onClick={() => onCopy(selected.commandText)}
-                >
-                    Copy
-                </button>
-            </div>
-            <pre className="mini-json">{selected.commandText}</pre>
-            <SchemaAuthoringPanel validation={selectedValidation} compact />
         </section>
     );
 }
@@ -4531,56 +4217,6 @@ function AppModeSwitch({
                         <span>{mode.description}</span>
                     </button>
                 ))}
-            </div>
-        </section>
-    );
-}
-
-function CollapsiblePanelSection({
-    title,
-    meta,
-    defaultExpanded = true,
-    className,
-    contentClassName,
-    children,
-}: {
-    title: string;
-    meta?: ReactNode;
-    defaultExpanded?: boolean;
-    className?: string;
-    contentClassName?: string;
-    children: ReactNode;
-}) {
-    const [expanded, setExpanded] = useState(defaultExpanded);
-    const contentId = useId();
-    const toggleLabel = `${expanded ? 'Hide' : 'Show'} ${title}`;
-
-    return (
-        <section
-            className={`collapsible-panel-section ${expanded ? 'expanded' : 'collapsed'} ${className ?? ''}`}
-        >
-            <div className="collapsible-section-heading">
-                <h3>{title}</h3>
-                {meta && (
-                    <span className="collapsible-section-meta">{meta}</span>
-                )}
-                <button
-                    type="button"
-                    className="collapsible-toggle"
-                    aria-expanded={expanded}
-                    aria-controls={contentId}
-                    aria-label={toggleLabel}
-                    onClick={() => setExpanded((current) => !current)}
-                >
-                    {expanded ? 'Hide' : 'Show'}
-                </button>
-            </div>
-            <div
-                id={contentId}
-                className={`collapsible-section-content ${contentClassName ?? ''}`}
-                hidden={!expanded}
-            >
-                {children}
             </div>
         </section>
     );
@@ -17133,17 +16769,6 @@ function distributedDiagnosticSearchText(
         .toLowerCase();
 }
 
-function formatSignedDuration(ms: number | undefined): string {
-    if (ms === undefined) {
-        return '-';
-    }
-    return `${ms >= 0 ? '+' : ''}${formatDuration(ms)}`;
-}
-
-function formatSignedNumber(value: number): string {
-    return `${value >= 0 ? '+' : ''}${value}`;
-}
-
 function DistributedRunSummary({
     run,
 }: {
@@ -17307,23 +16932,6 @@ function BootstrapPanel({
                 </div>
             </dl>
         </section>
-    );
-}
-
-function Metric({
-    label,
-    value,
-    tone = 'muted',
-}: {
-    label: string;
-    value: string;
-    tone?: string;
-}) {
-    return (
-        <div className="metric">
-            <span>{label}</span>
-            <strong className={tone}>{value}</strong>
-        </div>
     );
 }
 
@@ -17940,40 +17548,6 @@ function RallarTracePanel({
                 })}
             </div>
         </section>
-    );
-}
-
-function FilterSelect({
-    label,
-    value,
-    values,
-    onChange,
-}: {
-    label: string;
-    value: string;
-    values: readonly string[];
-    onChange(value: string): void;
-}) {
-    const selectId = useId();
-
-    return (
-        <div className="field compact-field">
-            <label htmlFor={selectId}>
-                <span>{label}</span>
-            </label>
-            <select
-                id={selectId}
-                value={value}
-                onChange={(event) => onChange(event.target.value)}
-            >
-                <option value="">All</option>
-                {values.map((entry) => (
-                    <option key={entry} value={entry}>
-                        {entry}
-                    </option>
-                ))}
-            </select>
-        </div>
     );
 }
 

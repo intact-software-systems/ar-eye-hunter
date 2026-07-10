@@ -19,6 +19,59 @@ const extractedModuleImports = [
     './legacy/runner/runner-contracts.ts',
     './legacy/rallar/load-browser-rallar-facade.ts',
 ] as const;
+const presentationModules = [
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/Metric.tsx',
+        moduleImport: './legacy/shared/Metric.tsx',
+        seams: ['Metric'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/FilterSelect.tsx',
+        moduleImport: './legacy/shared/FilterSelect.tsx',
+        seams: ['FilterSelect'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/CollapsiblePanelSection.tsx',
+        moduleImport: './legacy/shared/CollapsiblePanelSection.tsx',
+        seams: ['CollapsiblePanelSection'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/time-format.ts',
+        moduleImport: './legacy/shared/time-format.ts',
+        seams: [
+            'formatTime',
+            'formatDuration',
+            'formatRelativeDuration',
+            'formatSignedDuration',
+            'formatSignedNumber',
+        ],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/json-presentation.ts',
+        moduleImport: './legacy/shared/json-presentation.ts',
+        seams: ['json', 'parseJsonText', 'splitCsvValues'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/redaction-presentation.ts',
+        moduleImport: './legacy/shared/redaction-presentation.ts',
+        seams: ['uiSecretValues', 'uiRedactionOptions', 'redactedJson'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/command-presentation.ts',
+        moduleImport: './legacy/shared/command-presentation.ts',
+        seams: ['commandId', 'statusTone', 'resultSummary'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/schema/SchemaAuthoringPanel.tsx',
+        moduleImport: './legacy/shared/schema/SchemaAuthoringPanel.tsx',
+        seams: ['SchemaAuthoringPanel', 'SchemaCapabilitySummary'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/schema/CommandExamplePicker.tsx',
+        moduleImport: './legacy/shared/schema/CommandExamplePicker.tsx',
+        seams: ['CommandExamplePicker'],
+    },
+] as const;
 
 function repositorySource(path: string): string {
     return readFileSync(resolve(repositoryRoot, path), 'utf8');
@@ -81,6 +134,61 @@ describe('rallar-black-box app source ownership', () => {
 
         for (const declaration of extractedDeclarations) {
             expect(source, declaration.source).not.toMatch(declaration);
+        }
+    });
+
+    it('keeps shared legacy presentation seams in focused modules', () => {
+        const source = repositorySource(appSourcePath);
+        const movedDeclarations = [
+            /\bfunction\s+Metric\s*\(/,
+            /\bfunction\s+FilterSelect\s*\(/,
+            /\bfunction\s+CollapsiblePanelSection\s*\(/,
+            /\bfunction\s+formatTime\s*\(/,
+            /\bfunction\s+formatDuration\s*\(/,
+            /\bfunction\s+formatRelativeDuration\s*\(/,
+            /\bfunction\s+formatSignedDuration\s*\(/,
+            /\bfunction\s+formatSignedNumber\s*\(/,
+            /\bfunction\s+json\s*\(/,
+            /\bfunction\s+parseJsonText\s*\(/,
+            /\bfunction\s+splitCsvValues\s*\(/,
+            /\bfunction\s+uiSecretValues\s*\(/,
+            /\bfunction\s+uiRedactionOptions\s*\(/,
+            /\bfunction\s+redactedJson\s*\(/,
+            /\bfunction\s+commandId\s*\(/,
+            /\bfunction\s+statusTone\s*\(/,
+            /\bfunction\s+resultSummary\s*\(/,
+            /\bfunction\s+SchemaAuthoringPanel\s*\(/,
+            /\bfunction\s+SchemaCapabilitySummary\s*\(/,
+            /\bfunction\s+SchemaCapabilityList\s*\(/,
+            /\bfunction\s+CommandExamplePicker\s*\(/,
+        ];
+
+        for (const presentationModule of presentationModules) {
+            expect.soft(
+                existsSync(resolve(repositoryRoot, presentationModule.path)),
+                presentationModule.path,
+            ).toBe(true);
+
+            const escapedModuleImport = presentationModule.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importedSeams = source.match(
+                new RegExp(
+                    `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                ),
+            )?.[1];
+
+            expect.soft(importedSeams, presentationModule.moduleImport).toBeDefined();
+            for (const seam of presentationModule.seams) {
+                expect
+                    .soft(importedSeams ?? '', `${presentationModule.moduleImport}: ${seam}`)
+                    .toMatch(new RegExp(`\\b${seam}\\b`));
+            }
+        }
+
+        for (const declaration of movedDeclarations) {
+            expect.soft(declaration.test(source), declaration.source).toBe(false);
         }
     });
 
