@@ -42,8 +42,6 @@ const presentationModules = [
             'formatTime',
             'formatDuration',
             'formatRelativeDuration',
-            'formatSignedDuration',
-            'formatSignedNumber',
         ],
     },
     {
@@ -413,6 +411,152 @@ describe('rallar-black-box app source ownership', () => {
 
         for (const declaration of movedDeclarations) {
             expect.soft(declaration.test(source), declaration.source).toBe(false);
+        }
+    });
+
+    it('keeps legacy distributed monitor views and helpers in focused modules', () => {
+        const appSource = repositorySource(appSourcePath);
+        const monitorPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunMonitorPanel.tsx';
+        const distributedMonitorModules = [
+            {
+                path: 'apps/rallar-black-box/src/legacy/shared/unique-values.ts',
+                importerPath: appSourcePath,
+                moduleImport: './legacy/shared/unique-values.ts',
+                seams: ['uniqueValues'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed/distributed-diagnostics.ts',
+                importerPath: monitorPath,
+                moduleImport: './distributed-diagnostics.ts',
+                seams: [
+                    'DistributedRuntimeDiagnostic',
+                    'distributedDiagnosticGroupValue',
+                    'distributedDiagnosticSearchText',
+                ],
+            },
+            {
+                path: monitorPath,
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/distributed/DistributedRunMonitorPanel.tsx',
+                seams: ['DistributedRunMonitorPanel'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunComparePanel.tsx',
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/distributed/DistributedRunComparePanel.tsx',
+                seams: ['DistributedRunComparePanel'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunSummary.tsx',
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/distributed/DistributedRunSummary.tsx',
+                seams: ['DistributedRunSummary'],
+            },
+        ] as const;
+
+        for (const distributedMonitorModule of distributedMonitorModules) {
+            expect.soft(
+                existsSync(resolve(repositoryRoot, distributedMonitorModule.path)),
+                distributedMonitorModule.path,
+            ).toBe(true);
+
+            const importerExists = existsSync(
+                resolve(repositoryRoot, distributedMonitorModule.importerPath),
+            );
+            const importerSource = importerExists
+                ? repositorySource(distributedMonitorModule.importerPath)
+                : '';
+            const escapedModuleImport =
+                distributedMonitorModule.moduleImport.replace(
+                    /[.*+?^${}()|[\]\\]/g,
+                    '\\$&',
+                );
+            const importedSeams = importerSource.match(
+                new RegExp(
+                    `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                ),
+            )?.[1];
+
+            expect.soft(
+                importedSeams,
+                distributedMonitorModule.moduleImport,
+            ).toBeDefined();
+            for (const seam of distributedMonitorModule.seams) {
+                expect
+                    .soft(
+                        importedSeams ?? '',
+                        `${distributedMonitorModule.moduleImport}: ${seam}`,
+                    )
+                    .toMatch(new RegExp(`\\b${seam}\\b`));
+            }
+        }
+
+        const monitorSource = existsSync(resolve(repositoryRoot, monitorPath))
+            ? repositorySource(monitorPath)
+            : '';
+        const monitorCanonicalImports = [
+            {
+                moduleImport: '../../shared/unique-values.ts',
+                seams: ['uniqueValues'],
+            },
+            {
+                moduleImport: './distributed-diagnostics.ts',
+                seams: [
+                    'DistributedRuntimeDiagnostic',
+                    'distributedDiagnosticGroupValue',
+                    'distributedDiagnosticSearchText',
+                ],
+            },
+            {
+                moduleImport: './status-presentation.ts',
+                seams: [
+                    'distributedCompositeStatusTone',
+                    'distributedDiagnosticTone',
+                    'distributedProgressTone',
+                ],
+            },
+        ] as const;
+
+        for (const canonicalImport of monitorCanonicalImports) {
+            const escapedModuleImport = canonicalImport.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importedSeams = monitorSource.match(
+                new RegExp(
+                    `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                ),
+            )?.[1];
+
+            expect.soft(importedSeams, canonicalImport.moduleImport).toBeDefined();
+            for (const seam of canonicalImport.seams) {
+                expect
+                    .soft(
+                        importedSeams ?? '',
+                        `${canonicalImport.moduleImport}: ${seam}`,
+                    )
+                    .toMatch(new RegExp(`\\b${seam}\\b`));
+            }
+        }
+
+        const movedDeclarations = [
+            /\bfunction\s+uniqueValues\s*</,
+            /\bfunction\s+DistributedRunMonitorPanel\s*\(/,
+            /\bfunction\s+DistributedRunComparePanel\s*\(/,
+            /\bfunction\s+DistributedCompareList\s*\(/,
+            /\bfunction\s+distributedCompositeStatusTone\s*\(/,
+            /\btype\s+DistributedRuntimeDiagnostic\s*=/,
+            /\bfunction\s+distributedDiagnosticGroupValue\s*\(/,
+            /\bfunction\s+distributedDiagnosticSearchText\s*\(/,
+            /\bfunction\s+DistributedRunSummary\s*\(/,
+        ];
+
+        for (const declaration of movedDeclarations) {
+            expect.soft(declaration.test(appSource), declaration.source).toBe(false);
         }
     });
 

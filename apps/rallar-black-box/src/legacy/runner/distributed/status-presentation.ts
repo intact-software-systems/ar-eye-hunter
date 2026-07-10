@@ -56,3 +56,19 @@ export function distributedDiagnosticTone(
     }
     return 'muted';
 }
+
+export function distributedCompositeStatusTone(status: string): string {
+    if (status === 'ok' || status === 'passed') {
+        return 'good';
+    }
+    if (status === 'failed') {
+        return 'bad';
+    }
+    if (status === 'cancelled') {
+        return 'warn';
+    }
+    if (status === 'skipped' || status === 'empty') {
+        return 'muted';
+    }
+    return 'active';
+}
