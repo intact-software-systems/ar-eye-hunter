@@ -14,6 +14,10 @@ import {
   type HeadlessWorkerConfig,
   readHeadlessWorkerConfig,
 } from "../src/headless-worker-config.ts";
+import {
+  redactHeadlessWorkerLogText,
+  waitForDistributedRunTerminal,
+} from "../src/headless-worker-runtime.ts";
 
 type ControlRunAgentSnapshot = Readonly<{
   agentId?: string;
@@ -25,10 +29,6 @@ type ControlRunSnapshot = Readonly<{
   agents?: readonly ControlRunAgentSnapshot[];
 }>;
 
-type DistributedRunSnapshot = Readonly<{
-  state?: string;
-}>;
-
 type RunningAgent = Readonly<{
   agent: HeadlessWorkerAgentConfig;
   context: BrowserContext;
@@ -36,7 +36,6 @@ type RunningAgent = Readonly<{
 }>;
 
 const WORKBENCH_UI_CONFIRMATION_TIMEOUT_MS = 5_000;
-const TERMINAL_DISTRIBUTED_RUN_STATES = new Set(["passed", "failed", "cancelled", "timed-out"]);
 const browserTypes = {
   chromium,
   firefox,
@@ -45,6 +44,12 @@ const browserTypes = {
 
 const config = readHeadlessWorkerConfig({ env: process.env });
 const shutdown = createShutdownSignal();
+const headlessWorkerLogSecrets = [
+  config.controlToken,
+  config.controlReadToken,
+  ...config.agentControlTokens,
+  ...config.agentCredentials.map((credentials) => credentials.password),
+];
 
 let browser: Browser | undefined;
 let runningAgents: readonly RunningAgent[] = [];
@@ -71,7 +76,12 @@ try {
   );
   await waitForWorkerExit(config, shutdown);
 } catch (error) {
-  console.error(`[rallar-black-box-worker] ${errorMessage(error)}`);
+  console.error(
+    `[rallar-black-box-worker] ${redactHeadlessWorkerLogText(
+      errorMessage(error),
+      headlessWorkerLogSecrets,
+    )}`,
+  );
   process.exitCode = 1;
 } finally {
   await closeAgents(runningAgents);
@@ -83,7 +93,7 @@ async function openAgent(
   browser: Browser,
   agent: HeadlessWorkerAgentConfig,
 ): Promise<RunningAgent> {
-  log(`Opening agent ${agent.agentId} url=${redactAgentUrlForLog(agent.url)}`);
+  log(`Opening agent ${agent.agentId} url=${redactHeadlessWorkerLogText(agent.url, [])}`);
   const context = await browser.newContext();
   const page = await context.newPage();
   page.on("console", (message) => {
@@ -100,7 +110,7 @@ async function openAgent(
       const failure = request.failure()?.errorText ?? "unknown";
       log(
         `agent=${agent.agentId} browser.requestfailed: ${request.method()} ` +
-          `${redactUrlForLog(request.url())} ${failure}`,
+          `${redactHeadlessWorkerLogText(request.url(), [])} ${failure}`,
       );
     });
   }
@@ -268,10 +278,13 @@ async function waitForWorkerExit(
     return;
   }
 
-  await Promise.race([shutdown.wait(), waitForDistributedRunTerminal(config)]);
+  await Promise.race([
+    shutdown.wait(),
+    waitForConfiguredDistributedRunTerminal(config),
+  ]);
 }
 
-async function waitForDistributedRunTerminal(
+async function waitForConfiguredDistributedRunTerminal(
   config: HeadlessWorkerConfig,
 ): Promise<void> {
   const runId = config.targetDistributedRunId;
@@ -281,78 +294,19 @@ async function waitForDistributedRunTerminal(
     );
   }
 
-  const url = distributedRunUrl(config);
-  const deadline = config.idleExitMs === undefined
-    ? undefined
-    : Date.now() + config.idleExitMs;
-  let lastObservedState = "";
-  let malformedJsonCount = 0;
-
-  while (deadline === undefined || Date.now() < deadline) {
-    const response = await fetch(url, { headers: controlReadHeaders(config) });
-    if (response.status === 404) {
-      const state = "not-created";
-      if (lastObservedState !== state) {
-        log(`Distributed run ${runId} is not created yet.`);
-        lastObservedState = state;
-      }
-      malformedJsonCount = 0;
-      await delay(config.distributedPollIntervalMs);
-      continue;
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      throw new Error(
-        `Distributed run ${runId} returned HTTP ${response.status}; ` +
-          `check GitHub/operator control token configuration for ${
-            redactUrlForLog(url)
-          }.`,
-      );
-    }
-
-    if (!response.ok) {
-      const state = `http-${response.status}`;
-      if (lastObservedState !== state) {
-        log(`Distributed run ${runId} returned HTTP ${response.status}; retrying.`);
-        lastObservedState = state;
-      }
-      malformedJsonCount = 0;
-      await delay(config.distributedPollIntervalMs);
-      continue;
-    }
-
-    let snapshot: DistributedRunSnapshot;
-    try {
-      snapshot = await response.json() as DistributedRunSnapshot;
-    } catch {
-      malformedJsonCount += 1;
-      if (malformedJsonCount >= 3) {
-        throw new Error(
-          `Distributed run ${runId} returned malformed JSON from ${
-            redactUrlForLog(url)
-          } for ${malformedJsonCount} consecutive polls.`,
-        );
-      }
-      await delay(config.distributedPollIntervalMs);
-      continue;
-    }
-
-    malformedJsonCount = 0;
-    const state = snapshot.state ?? "unknown";
-    if (lastObservedState !== state) {
-      log(`Distributed run ${runId} state=${state}`);
-      lastObservedState = state;
-    }
-    if (TERMINAL_DISTRIBUTED_RUN_STATES.has(state)) {
-      return;
-    }
-    await delay(config.distributedPollIntervalMs);
-  }
-
-  throw new Error(
-    `Timed out after ${config.idleExitMs}ms waiting for distributed run ${runId} ` +
-      `to become terminal at ${redactUrlForLog(url)}.`,
-  );
+  await waitForDistributedRunTerminal({
+    runId,
+    url: distributedRunUrl(config),
+    headers: controlReadHeaders(config),
+    deadline: config.idleExitMs === undefined
+      ? undefined
+      : Date.now() + config.idleExitMs,
+    pollIntervalMs: config.distributedPollIntervalMs,
+    fetch,
+    sleep: delay,
+    now: Date.now,
+    log,
+  });
 }
 
 function distributedRunUrl(config: HeadlessWorkerConfig): string {
@@ -414,7 +368,9 @@ function createShutdownSignal(): Readonly<{ wait(): Promise<void> }> {
 
 function log(message: string): void {
   console.log(
-    `[rallar-black-box-worker] ${new Date().toISOString()} ${message}`,
+    `[rallar-black-box-worker] ${new Date().toISOString()} ${
+      redactHeadlessWorkerLogText(message, headlessWorkerLogSecrets)
+    }`,
   );
 }
 
@@ -426,35 +382,6 @@ function shouldLogBrowserConsole(type: string): boolean {
     return type !== "debug";
   }
   return type === "error" || type === "warning";
-}
-
-function redactUrlForLog(value: string): string {
-  return redactAgentUrlForLog(value);
-}
-
-function redactAgentUrlForLog(value: string): string {
-  const sensitiveParams = new Set([
-    "controlToken",
-    "rallarPassword",
-    "rallarToken",
-    "token",
-    "password",
-    "secret",
-  ]);
-  try {
-    const url = new URL(value);
-    for (const key of url.searchParams.keys()) {
-      if (sensitiveParams.has(key) || /(token|password|secret)/i.test(key)) {
-        url.searchParams.set(key, "[REDACTED]");
-      }
-    }
-    return url.toString();
-  } catch {
-    return value.replace(
-      /((?:token|password|secret)=)[^&\s]+/gi,
-      "$1[REDACTED]",
-    );
-  }
 }
 
 function errorMessage(error: unknown): string {
