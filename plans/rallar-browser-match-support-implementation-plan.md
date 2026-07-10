@@ -754,7 +754,7 @@ git commit -m "feat: add shared rallar match helpers"
   - `RallarBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence>`
   - `RallarBrowserMatchDependencies<TCommand, TSnapshot, TEvent, TPresence>`
 
-- [ ] **Step 1: Write failing browser wrapper tests**
+- [x] **Step 1: Write failing browser wrapper tests**
 
 Create `packages/tests/shared-web/rallar-browser-match-support.test.ts`:
 
@@ -1070,7 +1070,7 @@ function fakeRallarFacade(): RallarGameMatchConfig<
 }
 ```
 
-- [ ] **Step 2: Run the failing browser wrapper tests**
+- [x] **Step 2: Run the failing browser wrapper tests**
 
 Run:
 
@@ -1080,7 +1080,7 @@ npx vitest run packages/tests/shared-web/rallar-browser-match-support.test.ts
 
 Expected: FAIL because `createRallarBrowserMatch` is not exported.
 
-- [ ] **Step 3: Implement `match-support.ts`**
+- [x] **Step 3: Implement `match-support.ts`**
 
 Create `packages/shared-web/game/match-support.ts` with these API names:
 
@@ -1252,7 +1252,7 @@ export function createRallarBrowserMatch<
 }
 ```
 
-- [ ] **Step 4: Export browser match support**
+- [x] **Step 4: Export browser match support**
 
 Modify `packages/shared-web/game/mod.ts`:
 
@@ -1260,7 +1260,7 @@ Modify `packages/shared-web/game/mod.ts`:
 export * from './match-support.ts';
 ```
 
-- [ ] **Step 5: Run browser wrapper tests and shared-web typecheck**
+- [x] **Step 5: Run browser wrapper tests and shared-web typecheck**
 
 Run:
 
@@ -1271,7 +1271,7 @@ npx tsc -p packages/shared-web/tsconfig.json --noEmit
 
 Expected: both commands PASS.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 Run:
 
@@ -1973,3 +1973,11 @@ Implement Tasks 1-6 as written. Any expansion into consumer migration, formal te
 - Fixed: percent-encoded each result idempotency-key component before joining with `:` so delimiter-bearing match and authority IDs cannot collide while ordinary keys retain their existing format.
 - Files changed: `packages/shared/rallar-match/results.ts` and `packages/tests/shared/rallar-match.test.ts`.
 - Validation: RED `npx vitest run packages/tests/shared/rallar-match.test.ts` reproduced the collision (1 failed, 5 passed); GREEN passed (1 file, 6 tests); `npx tsc -p packages/shared/tsconfig.json --noEmit` passed.
+
+### Task 2 - 2026-07-10T12:45:00+02:00
+
+- Completed: added the optional browser-director match wrapper over `createRallarGameMatch`; it maps commands to the existing intent lane, delegates participants and standings to `@shared/rallar-match`, and produces browser-director results labeled `room-trusted`.
+- Files changed: `packages/shared-web/game/match-support.ts`, `packages/shared-web/game/mod.ts`, and `packages/tests/shared-web/rallar-browser-match-support.test.ts`.
+- Commands: RED `npx vitest run packages/tests/shared-web/rallar-browser-match-support.test.ts` failed as expected (1 failed file, 5 failed tests) because `createRallarBrowserMatch` was not exported; GREEN passed (1 file, 5 tests); `npx tsc -p packages/shared-web/tsconfig.json --noEmit` passed with exit code `0` and no diagnostics.
+- Blockers: none.
+- Remaining validation: Tasks 3-6 and their focused match, adjacent Rallar Game, public-surface, and shared/shared-web/shared-server typecheck matrix remain.
