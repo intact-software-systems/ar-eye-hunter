@@ -47,10 +47,6 @@ import type {
 } from '@shared/crdt/crdt-types.ts';
 import type { RallarCrdtDocument } from '@shared-web/browser/rallar-crdt.ts';
 import {
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    validateJsonSchema,
-} from '@shared-test/rallar-bb-test/schema.ts';
-import {
     isDistributedRunTerminalState,
     type RallarBlackBoxDistributedGroupRef,
     type RallarBlackBoxDistributedRunManifest,
@@ -124,11 +120,8 @@ import {
     RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
-    RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS,
-    RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
-    normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
     recipeFixtureText,
 } from './recipe-fixtures.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
@@ -182,7 +175,6 @@ import {
     type FlowBuilderStepKind,
 } from './flow-builder.ts';
 import {
-    DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS,
     buildDistributedRunManifest,
     compareDistributedRuns,
     defaultDistributedRecipeTargetIds,
@@ -357,7 +349,6 @@ import {
 } from './legacy/shared/command-presentation.ts';
 import {
     SchemaAuthoringPanel,
-    SchemaCapabilitySummary,
 } from './legacy/shared/schema/SchemaAuthoringPanel.tsx';
 import { CommandExamplePicker } from './legacy/shared/schema/CommandExamplePicker.tsx';
 import { recordValue } from './legacy/shared/record-value.ts';
@@ -376,6 +367,11 @@ import { DistributedRunAnalysisReportPanel } from './legacy/runner/runs/Distribu
 import { ImportedDistributedArtifactAnalysisPanel } from './legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx';
 import { RunManagerPanel } from './legacy/runner/run-manager/RunManagerPanel.tsx';
 import { DistributedRecipePreflightPanel } from './legacy/runner/distributed-recipes/DistributedRecipePreflightPanel.tsx';
+import { DistributedManifestPreviewPanel } from './legacy/runner/distributed-recipes/views/DistributedManifestPreviewPanel.tsx';
+import { DistributedRecipeCatalogPanel } from './legacy/runner/distributed-recipes/views/DistributedRecipeCatalogPanel.tsx';
+import { DistributedRecipesHeader } from './legacy/runner/distributed-recipes/views/DistributedRecipesHeader.tsx';
+import { DistributedRunControlPanel } from './legacy/runner/distributed-recipes/views/DistributedRunControlPanel.tsx';
+import { DistributedTargetResolutionPanel } from './legacy/runner/distributed-recipes/views/DistributedTargetResolutionPanel.tsx';
 import {
     DistributedRecipeAuthoringPanel,
 } from './legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringPanel.tsx';
@@ -11956,120 +11952,42 @@ function DistributedRecipesPanel({
         setSelectedDistributedRun(undefined);
         setArtifactBundle(undefined);
     };
+    const redactedError = error
+        ? String(
+              redactRallarBlackBoxValue(
+                  error,
+                  uiRedactionOptions(state, undefined, [token]),
+              ),
+          )
+        : undefined;
 
     return (
         <section className="panel distributed-recipes-panel">
-            <div className="panel-heading">
-                <h2>Distributed Recipes</h2>
-                <span>{busyAction ?? lastAction ?? 'idle'}</span>
-            </div>
-            <div className="distributed-toolbar">
-                <label className="field">
-                    <span>Control HTTP Base URL</span>
-                    <input
-                        value={baseUrl}
-                        onChange={(event) => setBaseUrl(event.target.value)}
-                    />
-                </label>
-                <label className="field">
-                    <span>Token</span>
-                    <input
-                        value={token}
-                        onChange={(event) => setToken(event.target.value)}
-                        type="password"
-                        autoComplete="off"
-                    />
-                </label>
-                <label className="field">
-                    <span>Control Run</span>
-                    <select
-                        value={selectedRunId}
-                        onChange={(event) => void loadRun(event.target.value)}
-                    >
-                        <option value="">Select run</option>
-                        {runOptions.map((option) => (
-                            <option key={option.runId} value={option.runId}>
-                                {option.runId}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <button
-                    type="button"
-                    disabled={Boolean(busyAction)}
-                    onClick={() => void refresh()}
-                >
-                    Refresh
-                </button>
-                <button
-                    type="button"
-                    disabled={Boolean(busyAction) || !selectedRunId}
-                    onClick={() => void resolveTargets()}
-                >
-                    Resolve targets
-                </button>
-            </div>
-            <div className="distributed-summary-grid">
-                <Metric
-                    label="Group"
-                    value={groupRef.groupId || 'not set'}
-                    tone={groupRef.groupId ? 'active' : 'bad'}
-                />
-                <Metric
-                    label="Scope"
-                    value={`${groupRef.applicationId || '-'}/${groupRef.workspaceId || '-'}`}
-                />
-                <Metric
-                    label="Recipes"
-                    value={String(selectedRecipes.length)}
-                    tone={selectedRecipes.length > 0 ? 'good' : 'bad'}
-                />
-                <Metric
-                    label="Targets"
-                    value={usesWorldFleetTargets
-                        ? `${worldFleetPreviewSelected ?? 0}/${expectedParticipantCount}`
-                        : `${selectedAgentIds.length}/${targetableRows.length}`}
-                    tone={usesWorldFleetTargets
-                        ? worldFleetStageStartBlocked ? 'bad' : 'active'
-                        : selectedAgentIds.length > 0 ? 'active' : 'bad'}
-                />
-                <Metric
-                    label="Live recipes"
-                    value={String(liveSelectedRecipeCount)}
-                    tone={liveSelectedRecipeCount > 0 ? 'warn' : 'muted'}
-                />
-                <Metric
-                    label="Distributed runs"
-                    value={String(distributedRuns.length)}
-                />
-            </div>
-            {error && (
-                <div
-                    className="workbench-error run-manager-error"
-                    role="status"
-                >
-                    {String(
-                        redactRallarBlackBoxValue(
-                            error,
-                            uiRedactionOptions(state, undefined, [token]),
-                        ),
-                    )}
-                </div>
-            )}
-            {manifestValidation && (
-                <div
-                    className="workbench-error run-manager-error"
-                    role="status"
-                >
-                    {manifestValidation}
-                </div>
-            )}
-            {liveSelectedRecipeCount > 0 && (
-                <div className="distributed-warning" role="status">
-                    Live recipes can send real HTTP, WebSocket, or RTC traffic
-                    through connected browser agents.
-                </div>
-            )}
+            <DistributedRecipesHeader
+                status={busyAction ?? lastAction ?? 'idle'}
+                busy={Boolean(busyAction)}
+                baseUrl={baseUrl}
+                token={token}
+                selectedRunId={selectedRunId}
+                runOptions={runOptions}
+                group={groupRef}
+                selectedRecipeCount={selectedRecipes.length}
+                liveSelectedRecipeCount={liveSelectedRecipeCount}
+                usesWorldFleetTargets={usesWorldFleetTargets}
+                worldFleetPreviewSelected={worldFleetPreviewSelected}
+                worldFleetStageStartBlocked={worldFleetStageStartBlocked}
+                expectedParticipantCount={expectedParticipantCount}
+                selectedAgentCount={selectedAgentIds.length}
+                targetableAgentCount={targetableRows.length}
+                distributedRunCount={distributedRuns.length}
+                redactedError={redactedError}
+                manifestValidation={manifestValidation}
+                onBaseUrlChange={setBaseUrl}
+                onTokenChange={setToken}
+                onRunChange={loadRun}
+                onRefresh={refresh}
+                onResolveTargets={resolveTargets}
+            />
             <DistributedRecipeAuthoringPanel
                 selectedTemplateId={authoringTemplateId}
                 promptText={authoringPromptText}
@@ -12105,584 +12023,81 @@ function DistributedRecipesPanel({
                 onUseManifestPreview={useManifestPreviewForAuthoring}
             />
             <div className="distributed-layout">
-                <section className="distributed-subpanel distributed-recipes-catalog">
-                    <div className="section-heading">
-                        <h3>Recipe Catalog</h3>
-                        <span>{filteredRecipes.length} visible</span>
-                    </div>
-                    <div className="shared-test-filter-grid distributed-filter-grid">
-                        <label className="field">
-                            <span>Search</span>
-                            <input
-                                value={query}
-                                onChange={(event) =>
-                                    setQuery(event.target.value)
-                                }
-                                placeholder="recipe, profile, command"
-                            />
-                        </label>
-                        <label className="field">
-                            <span>Profile</span>
-                            <select
-                                value={profile}
-                                onChange={(event) =>
-                                    setProfile(event.target.value)
-                                }
-                            >
-                                <option value="">All profiles</option>
-                                {profileOptions.map((option) => (
-                                    <option key={option} value={option}>
-                                        {option}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        {rtcRealtimeSelected && (
-                            <label className="field">
-                                <span>RTC Realtime Length Seconds</span>
-                                <input
-                                    type="number"
-                                    min={
-                                        RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS
-                                    }
-                                    max={
-                                        RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS
-                                    }
-                                    value={rtcRealtimeDurationSeconds}
-                                    onChange={(event) => {
-                                        setRtcRealtimeDurationSeconds(
-                                            normalizeRallarBlackBoxRtcRealtimeDurationSeconds(
-                                                event.target.value,
-                                            ),
-                                        );
-                                    }}
-                                />
-                                <small>
-                                    {rtcRealtimeFrameCount} position frames at{' '}
-                                    {RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ} Hz.
-                                </small>
-                            </label>
-                        )}
-                    </div>
-                    <div className="distributed-recipe-list">
-                        {filteredRecipes.map((item) => {
-                            const selected = selectedRecipeIds.includes(
-                                item.itemId,
-                            );
-                            const validation = validateJsonSchema(
-                                RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-                                item.recipe,
-                            );
-                            const authoringValidation =
-                                validateSchemaAuthoringValue(
-                                    'recipe',
-                                    item.recipe,
-                                );
-                            const commandPreview =
-                                distributedRecipeCommandPreview(item.recipe);
-                            const preflight = distributedRecipePreflight(
-                                item.recipe,
-                            );
-                            return (
-                                <article
-                                    className={`distributed-recipe-row ${selected ? 'selected' : ''}`}
-                                    key={item.itemId}
-                                >
-                                    <label>
-                                        <input
-                                            type="checkbox"
-                                            checked={selected}
-                                            onChange={() =>
-                                                toggleRecipe(item.itemId)
-                                            }
-                                        />
-                                        <span>
-                                            <strong>{item.title}</strong>
-                                            <small>
-                                                {item.recipe.recipeId} -{' '}
-                                                {commandPreview.label}
-                                            </small>
-                                        </span>
-                                    </label>
-                                    <p>{item.description}</p>
-                                    <div className="badge-list">
-                                        <span
-                                            className={`pill ${item.live ? 'warn' : 'muted'}`}
-                                        >
-                                            {item.live
-                                                ? 'live traffic'
-                                                : 'local'}
-                                        </span>
-                                        <span
-                                            className={`pill ${validation.ok ? 'good' : 'bad'}`}
-                                        >
-                                            {validation.ok
-                                                ? 'schema valid'
-                                                : 'schema invalid'}
-                                        </span>
-                                        <span
-                                            className={`pill ${preflight.errors.length > 0 ? 'bad' : preflight.warnings.length > 0 ? 'warn' : 'good'}`}
-                                        >
-                                            preflight{' '}
-                                            {preflight.errors.length > 0
-                                                ? 'blocked'
-                                                : preflight.warnings.length > 0
-                                                  ? 'warnings'
-                                                  : 'clear'}
-                                        </span>
-                                        {item.profiles.map((entry) => (
-                                            <span
-                                                className="pill muted"
-                                                key={entry}
-                                            >
-                                                {entry}
-                                            </span>
-                                        ))}
-                                        {preflight.serviceBadges.map(
-                                            (badge) => (
-                                                <span
-                                                    className={`pill ${badge.tone}`}
-                                                    key={badge.label}
-                                                >
-                                                    {badge.label}
-                                                </span>
-                                            ),
-                                        )}
-                                        {commandPreview.effectiveFrameCount !==
-                                            undefined && (
-                                            <span className="pill active">
-                                                {
-                                                    commandPreview.effectiveFrameCount
-                                                }{' '}
-                                                effective frames
-                                            </span>
-                                        )}
-                                    </div>
-                                    <details>
-                                        <summary>Prerequisites</summary>
-                                        <ul>
-                                            {item.prerequisites.map(
-                                                (requirement) => (
-                                                    <li key={requirement}>
-                                                        {requirement}
-                                                    </li>
-                                                ),
-                                            )}
-                                        </ul>
-                                    </details>
-                                    <details>
-                                        <summary>Capabilities</summary>
-                                        <SchemaCapabilitySummary
-                                            validation={authoringValidation}
-                                        />
-                                    </details>
-                                    <details open={selected}>
-                                        <summary>Preflight</summary>
-                                        <DistributedRecipePreflightPanel
-                                            preflight={preflight}
-                                        />
-                                    </details>
-                                </article>
-                            );
-                        })}
-                    </div>
-                </section>
-                <section className="distributed-subpanel">
-                    <div className="section-heading">
-                        <h3>Target Resolution</h3>
-                        <span>{targetRows.length} agents</span>
-                    </div>
-                    <div className="distributed-options-grid">
-                        <label className="field">
-                            <span>Target Policy</span>
-                            <select
-                                value={targetPolicyMode}
-                                onChange={(event) =>
-                                    setTargetPolicyMode(
-                                        event.target
-                                            .value as DistributedRecipeTargetPolicyMode,
-                                    )
-                                }
-                            >
-                                <option value="selected-agents">
-                                    Selected agents
-                                </option>
-                                <option value="all-online-group-members">
-                                    All online group members
-                                </option>
-                                <option
-                                    value="role-map"
-                                    disabled={rolePattern === 'all-agents'}
-                                >
-                                    Role map
-                                </option>
-                            </select>
-                        </label>
-                        <label className="field">
-                            <span>Role Pattern</span>
-                            <select
-                                value={rolePattern}
-                                onChange={(event) =>
-                                    selectRolePattern(
-                                        event.target
-                                            .value as DistributedRecipeRolePattern,
-                                    )
-                                }
-                            >
-                                {DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS.map(
-                                    (option) => (
-                                        <option
-                                            key={option.value}
-                                            value={option.value}
-                                        >
-                                            {option.label}
-                                        </option>
-                                    ),
-                                )}
-                            </select>
-                        </label>
-                        {usesWorldFleetTargets && (
-                            <label className="field">
-                                <span>Expected Participants</span>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    value={expectedParticipantCount}
-                                    onChange={(event) =>
-                                        setExpectedParticipantCount(
-                                            Number.parseInt(
-                                                event.target.value,
-                                                10,
-                                            ) || 1,
-                                        )
-                                    }
-                                />
-                            </label>
-                        )}
-                        <label className="field">
-                            <span>ACK Timeout Ms</span>
-                            <input
-                                type="number"
-                                min={1}
-                                value={ackTimeoutMs}
-                                onChange={(event) =>
-                                    setAckTimeoutMs(
-                                        Number.parseInt(
-                                            event.target.value,
-                                            10,
-                                        ) || 1,
-                                    )
-                                }
-                            />
-                        </label>
-                        <label className="field">
-                            <span>Barrier</span>
-                            <select
-                                value={barrierEnabled ? 'enabled' : 'disabled'}
-                                onChange={(event) =>
-                                    setBarrierEnabled(
-                                        event.target.value === 'enabled',
-                                    )
-                                }
-                            >
-                                <option value="disabled">Disabled</option>
-                                <option value="enabled">Enabled</option>
-                            </select>
-                        </label>
-                        {barrierEnabled && (
-                            <label className="field">
-                                <span>Barrier Timeout Ms</span>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    value={barrierTimeoutMs}
-                                    onChange={(event) =>
-                                        setBarrierTimeoutMs(
-                                            Number.parseInt(
-                                                event.target.value,
-                                                10,
-                                            ) || 1,
-                                        )
-                                    }
-                                />
-                            </label>
-                        )}
-                        <label className="field">
-                            <span>Start Mode</span>
-                            <select
-                                value={startMode}
-                                onChange={(event) =>
-                                    setStartMode(
-                                        event.target
-                                            .value as RallarBlackBoxDistributedRunManifest['startMode'],
-                                    )
-                                }
-                            >
-                                <option value="manual">Manual</option>
-                                <option value="auto-after-ready">
-                                    Auto after ready
-                                </option>
-                                <option value="scheduled">Scheduled</option>
-                            </select>
-                        </label>
-                        {startMode === 'scheduled' && (
-                            <label className="field">
-                                <span>Start Delay Ms</span>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    value={startDelayMs}
-                                    onChange={(event) =>
-                                        setStartDelayMs(
-                                            Number.parseInt(
-                                                event.target.value,
-                                                10,
-                                            ) || 1,
-                                        )
-                                    }
-                                />
-                            </label>
-                        )}
-                    </div>
-                    {usesWorldFleetTargets && (
-                        <div className="distributed-warning" role="status">
-                            {activeTargetResolution
-                                ? `Server preview selected ${activeTargetResolution.summary.selected}/${expectedParticipantCount}; roles ${Object.entries(activeTargetResolution.summary.roleCounts).map(([role, count]) => `${role}:${count}`).join(', ') || 'none'}; blockers ${activeTargetResolution.blockers.length}.`
-                                : 'Resolve targets to preview online world-fleet participants and derived roles.'}
-                        </div>
-                    )}
-                    <ControlAgentBoardPanel
-                        title="Resolved Targets"
-                        subtitle={`${selectedAgentIds.length}/${targetableRows.length} selected for ${groupRef.groupId || 'missing group'}`}
-                        rows={distributedTargetAgentRows}
-                        summary={distributedTargetAgentSummary}
-                        emptyMessage="No control agents in selected run"
-                        selectedAgentIds={selectedAgentSet}
-                        onToggleAgent={toggleAgent}
-                        disableUntargetableSelection
-                        compact
-                    />
-                </section>
-                <section className="distributed-subpanel">
-                    <div className="section-heading">
-                        <h3>Run Control</h3>
-                        <span
-                            className={`pill ${distributedRecipeStateTone(selectedDistributedRun?.state ?? 'draft')}`}
-                        >
-                            {selectedDistributedRun?.state ?? 'draft'}
-                        </span>
-                    </div>
-                    <div className="distributed-run-id-row">
-                        <label className="field">
-                            <span>Distributed Run ID</span>
-                            <input
-                                value={distributedRunId}
-                                onChange={(event) => {
-                                    setDistributedRunId(event.target.value);
-                                    setSelectedDistributedRun(undefined);
-                                    setArtifactBundle(undefined);
-                                }}
-                            />
-                        </label>
-                        <button
-                            type="button"
-                            onClick={generateNewRunId}
-                            disabled={Boolean(busyAction)}
-                        >
-                            New ID
-                        </button>
-                    </div>
-                    <div className="distributed-action-grid">
-                        <button
-                            type="button"
-                            disabled={
-                                Boolean(busyAction) ||
-                                Boolean(manifestValidation)
-                            }
-                            onClick={() => void createRun()}
-                        >
-                            Create
-                        </button>
-                        <button
-                            type="button"
-                            disabled={
-                                Boolean(busyAction) ||
-                                Boolean(manifestValidation) ||
-                                Boolean(worldFleetBlockReason)
-                            }
-                            onClick={() => void stageRun()}
-                        >
-                            Stage
-                        </button>
-                        <button
-                            type="button"
-                            disabled={
-                                Boolean(busyAction) ||
-                                !selectedDistributedRun ||
-                                Boolean(worldFleetBlockReason)
-                            }
-                            onClick={() => void startRun()}
-                        >
-                            Start
-                        </button>
-                        <button
-                            type="button"
-                            disabled={
-                                Boolean(busyAction) || !selectedDistributedRun
-                            }
-                            onClick={() => void cancelRun()}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            disabled={
-                                Boolean(busyAction) || !selectedDistributedRun
-                            }
-                            onClick={() => void loadArtifact()}
-                        >
-                            Export artifact
-                        </button>
-                        <button
-                            type="button"
-                            disabled={!artifactBundle}
-                            onClick={() => void copyArtifact()}
-                        >
-                            Copy artifact
-                        </button>
-                    </div>
-                    {selectedDistributedRun && (
-                        <DistributedRunSummary run={selectedDistributedRun} />
-                    )}
-                    <div className="section-heading compact">
-                        <h3>Distributed Runs</h3>
-                        <span>{currentDistributedRuns.length}</span>
-                    </div>
-                    <div className="distributed-run-list">
-                        {currentDistributedRuns.map((item) => (
-                            <button
-                                type="button"
-                                key={item.distributedRunId}
-                                className={`distributed-run-row ${item.distributedRunId === selectedDistributedRun?.distributedRunId ? 'selected' : ''}`}
-                                onClick={() =>
-                                    void loadDistributedRun(
-                                        item.distributedRunId,
-                                    )
-                                }
-                            >
-                                <span>
-                                    <strong>{item.distributedRunId}</strong>
-                                    <small>
-                                        {item.manifest.displayName ??
-                                            item.controlRunId}
-                                    </small>
-                                </span>
-                                <span
-                                    className={`pill ${distributedRecipeStateTone(item.state)}`}
-                                >
-                                    {item.state}
-                                </span>
-                                <small>
-                                    {formatTime(item.updatedAtEpochMs)}
-                                </small>
-                            </button>
-                        ))}
-                        {currentDistributedRuns.length === 0 && (
-                            <div className="empty-state">
-                                No distributed runs for selected control run
-                            </div>
-                        )}
-                    </div>
-                    {artifactBundle && (
-                        <div className="distributed-artifact-summary">
-                            <Metric
-                                label="Artifact"
-                                value={`schema ${artifactBundle.artifactSchemaVersion}`}
-                            />
-                            <Metric
-                                label="Files"
-                                value={String(
-                                    Object.keys(artifactBundle.files).length,
-                                )}
-                                tone="good"
-                            />
-                            <Metric
-                                label="Generated"
-                                value={formatTime(
-                                    artifactBundle.generatedAtEpochMs,
-                                )}
-                            />
-                        </div>
-                    )}
-                </section>
-                <section className="distributed-subpanel distributed-manifest-panel">
-                    <div className="section-heading">
-                        <h3>Manifest Preview</h3>
-                        <span
-                            className={`pill ${manifestValidation ? 'bad' : 'good'}`}
-                        >
-                            {manifestValidation ? 'invalid' : 'valid'}
-                        </span>
-                    </div>
-                    {selectedRecipePreflights.length > 0 && (
-                        <div
-                            className="distributed-selected-preflight"
-                            aria-label="Selected recipe preflight"
-                        >
-                            <div className="distributed-preflight-metrics">
-                                <Metric
-                                    label="Selected recipes"
-                                    value={String(
-                                        selectedRecipePreflights.length,
-                                    )}
-                                    tone="active"
-                                />
-                                <Metric
-                                    label="Effective ops"
-                                    value={String(
-                                        selectedPreflightEffectiveOperations,
-                                    )}
-                                    tone="active"
-                                />
-                                <Metric
-                                    label="Warnings"
-                                    value={String(selectedPreflightWarnings)}
-                                    tone={
-                                        selectedPreflightWarnings > 0
-                                            ? 'warn'
-                                            : 'good'
-                                    }
-                                />
-                                <Metric
-                                    label="Errors"
-                                    value={String(selectedPreflightErrors)}
-                                    tone={
-                                        selectedPreflightErrors > 0
-                                            ? 'bad'
-                                            : 'good'
-                                    }
-                                />
-                            </div>
-                            {selectedRecipePreflights.map((entry) => (
-                                <details key={entry.item.itemId} open>
-                                    <summary>
-                                        {entry.item.title} preflight
-                                    </summary>
-                                    <DistributedRecipePreflightPanel
-                                        preflight={entry.preflight}
-                                        compact
-                                    />
-                                </details>
-                            ))}
-                        </div>
-                    )}
-                    <pre className="json-block">{json(manifest)}</pre>
-                    {manifestAuthoringValidation && (
-                        <SchemaAuthoringPanel
-                            validation={manifestAuthoringValidation}
-                        />
-                    )}
-                </section>
+                <DistributedRecipeCatalogPanel
+                    query={query}
+                    profile={profile}
+                    profileOptions={profileOptions}
+                    rtcRealtimeSelected={rtcRealtimeSelected}
+                    rtcRealtimeDurationSeconds={rtcRealtimeDurationSeconds}
+                    rtcRealtimeFrameCount={rtcRealtimeFrameCount}
+                    filteredRecipes={filteredRecipes}
+                    selectedRecipeIds={selectedRecipeIds}
+                    onQueryChange={setQuery}
+                    onProfileChange={setProfile}
+                    onRtcRealtimeDurationChange={setRtcRealtimeDurationSeconds}
+                    onToggleRecipe={toggleRecipe}
+                />
+                <DistributedTargetResolutionPanel
+                    targetRowCount={targetRows.length}
+                    targetPolicyMode={targetPolicyMode}
+                    rolePattern={rolePattern}
+                    usesWorldFleetTargets={usesWorldFleetTargets}
+                    expectedParticipantCount={expectedParticipantCount}
+                    ackTimeoutMs={ackTimeoutMs}
+                    barrierEnabled={barrierEnabled}
+                    barrierTimeoutMs={barrierTimeoutMs}
+                    startMode={startMode}
+                    startDelayMs={startDelayMs}
+                    activeTargetResolution={activeTargetResolution}
+                    selectedAgentCount={selectedAgentIds.length}
+                    targetableAgentCount={targetableRows.length}
+                    groupId={groupRef.groupId}
+                    agentRows={distributedTargetAgentRows}
+                    agentSummary={distributedTargetAgentSummary}
+                    selectedAgentIds={selectedAgentSet}
+                    onTargetPolicyModeChange={setTargetPolicyMode}
+                    onRolePatternChange={selectRolePattern}
+                    onExpectedParticipantCountChange={setExpectedParticipantCount}
+                    onAckTimeoutMsChange={setAckTimeoutMs}
+                    onBarrierEnabledChange={setBarrierEnabled}
+                    onBarrierTimeoutMsChange={setBarrierTimeoutMs}
+                    onStartModeChange={setStartMode}
+                    onStartDelayMsChange={setStartDelayMs}
+                    onToggleAgent={toggleAgent}
+                />
+                <DistributedRunControlPanel
+                    busy={Boolean(busyAction)}
+                    manifestValidation={manifestValidation}
+                    worldFleetBlockReason={worldFleetBlockReason}
+                    distributedRunId={distributedRunId}
+                    selectedDistributedRun={selectedDistributedRun}
+                    currentDistributedRuns={currentDistributedRuns}
+                    artifactBundle={artifactBundle}
+                    onDistributedRunIdChange={(value) => {
+                        setDistributedRunId(value);
+                        setSelectedDistributedRun(undefined);
+                        setArtifactBundle(undefined);
+                    }}
+                    onGenerateNewRunId={generateNewRunId}
+                    onCreateRun={createRun}
+                    onStageRun={stageRun}
+                    onStartRun={startRun}
+                    onCancelRun={cancelRun}
+                    onLoadArtifact={loadArtifact}
+                    onCopyArtifact={copyArtifact}
+                    onLoadDistributedRun={loadDistributedRun}
+                />
+                <DistributedManifestPreviewPanel
+                    manifestValidation={manifestValidation}
+                    selectedRecipePreflights={selectedRecipePreflights}
+                    selectedPreflightEffectiveOperations={
+                        selectedPreflightEffectiveOperations
+                    }
+                    selectedPreflightWarnings={selectedPreflightWarnings}
+                    selectedPreflightErrors={selectedPreflightErrors}
+                    manifest={manifest}
+                    manifestAuthoringValidation={manifestAuthoringValidation}
+                />
                 <DistributedRunMonitorPanel monitor={selectedMonitor} />
                 <section className="distributed-subpanel distributed-history-panel">
                     <div className="section-heading">

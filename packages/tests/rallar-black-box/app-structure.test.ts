@@ -62,7 +62,14 @@ const presentationModules = [
     {
         path: 'apps/rallar-black-box/src/legacy/shared/schema/SchemaAuthoringPanel.tsx',
         moduleImport: './legacy/shared/schema/SchemaAuthoringPanel.tsx',
-        seams: ['SchemaAuthoringPanel', 'SchemaCapabilitySummary'],
+        seams: ['SchemaAuthoringPanel'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/schema/SchemaAuthoringPanel.tsx',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedRecipeCatalogPanel.tsx',
+        moduleImport: '../../../shared/schema/SchemaAuthoringPanel.tsx',
+        seams: ['SchemaCapabilitySummary'],
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/schema/CommandExamplePicker.tsx',
@@ -207,7 +214,10 @@ describe('rallar-black-box app source ownership', () => {
                 /[.*+?^${}()|[\]\\]/g,
                 '\\$&',
             );
-            const importedSeams = source.match(
+            const importerSource = 'importerPath' in presentationModule
+                ? repositorySource(presentationModule.importerPath)
+                : source;
+            const importedSeams = importerSource.match(
                 new RegExp(
                     `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
                 ),
@@ -745,6 +755,196 @@ describe('rallar-black-box app source ownership', () => {
                     ),
                 );
         }
+    });
+
+    it('keeps distributed recipe controlled views in their exact direct owners', () => {
+        const appSource = repositorySource(appSourcePath);
+        const panelStart = appSource.indexOf('function DistributedRecipesPanel(');
+        const panelEnd = appSource.indexOf('\nfunction BootstrapPanel(', panelStart);
+        const panelSource = appSource.slice(panelStart, panelEnd);
+        const distributedRecipeViews = [
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedRecipesHeader.tsx',
+                moduleImport:
+                    './legacy/runner/distributed-recipes/views/DistributedRecipesHeader.tsx',
+                declaration: 'DistributedRecipesHeader',
+                lineCap: 150,
+                markers: [
+                    '<h2>Distributed Recipes</h2>',
+                    'className="distributed-toolbar"',
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedRecipeCatalogPanel.tsx',
+                moduleImport:
+                    './legacy/runner/distributed-recipes/views/DistributedRecipeCatalogPanel.tsx',
+                declaration: 'DistributedRecipeCatalogPanel',
+                lineCap: 240,
+                markers: [
+                    '<h3>Recipe Catalog</h3>',
+                    'distributed-recipes-catalog',
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedTargetResolutionPanel.tsx',
+                moduleImport:
+                    './legacy/runner/distributed-recipes/views/DistributedTargetResolutionPanel.tsx',
+                declaration: 'DistributedTargetResolutionPanel',
+                lineCap: 240,
+                markers: ['<h3>Target Resolution</h3>'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedRunControlPanel.tsx',
+                moduleImport:
+                    './legacy/runner/distributed-recipes/views/DistributedRunControlPanel.tsx',
+                declaration: 'DistributedRunControlPanel',
+                lineCap: 220,
+                markers: [
+                    '<h3>Run Control</h3>',
+                    'className="distributed-run-id-row"',
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedManifestPreviewPanel.tsx',
+                moduleImport:
+                    './legacy/runner/distributed-recipes/views/DistributedManifestPreviewPanel.tsx',
+                declaration: 'DistributedManifestPreviewPanel',
+                lineCap: 120,
+                markers: [
+                    '<h3>Manifest Preview</h3>',
+                    'distributed-manifest-panel',
+                ],
+            },
+        ] as const;
+
+        const sourceByPath = new Map<string, string>();
+        for (const view of distributedRecipeViews) {
+            const ownerExists = existsSync(resolve(repositoryRoot, view.path));
+            const ownerSource = ownerExists ? repositorySource(view.path) : '';
+            sourceByPath.set(view.path, ownerSource);
+
+            expect.soft(ownerExists, view.path).toBe(true);
+            expect
+                .soft(ownerSource, `${view.path}: direct declaration`)
+                .toMatch(
+                    new RegExp(
+                        `^\\s*export\\s+function\\s+${view.declaration}\\s*\\(`,
+                        'm',
+                    ),
+                );
+            expect
+                .soft(ownerSource, `${view.path}: export-star facade`)
+                .not.toMatch(/^\s*export\s*\*(?:\s+as\s+\w+)?\s+from\b/m);
+            expect
+                .soft(ownerSource, `${view.path}: named re-export facade`)
+                .not.toMatch(/^\s*export\s+(?:type\s+)?{[^}]+}\s*from\s*['"]/m);
+            expect.soft(ownerSource, `${view.path}: App.tsx import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/,
+            );
+            expect.soft(ownerSource, `${view.path}: React hooks`).not.toMatch(
+                /\buse[A-Z]\w*\b/,
+            );
+            expect.soft(ownerSource, `${view.path}: fetch`).not.toMatch(
+                /\bfetch\s*\(/,
+            );
+            expect
+                .soft(ownerSource, `${view.path}: control-run-manager runtime import`)
+                .not.toMatch(
+                    /import(?!\s+type\b)\s*{[^}]*}\s*from\s*['"][^'"]*control-run-manager\.ts['"];/s,
+                );
+            expect.soft(
+                ownerSource === ''
+                    ? 0
+                    : ownerSource.trimEnd().split(/\r?\n/).length,
+                `${view.path}: line count`,
+            ).toBeLessThanOrEqual(view.lineCap);
+
+            for (const marker of view.markers) {
+                expect.soft(ownerSource, `${view.path}: ${marker}`).toContain(marker);
+                expect.soft(appSource, `App.tsx: ${marker}`).not.toContain(marker);
+            }
+
+            const escapedModuleImport = view.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importedSeams = appSource.match(
+                new RegExp(
+                    `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                ),
+            )?.[1];
+            expect.soft(importedSeams, view.moduleImport).toBeDefined();
+            expect
+                .soft(importedSeams ?? '', `${view.moduleImport}: ${view.declaration}`)
+                .toMatch(new RegExp(`\\b${view.declaration}\\b`));
+        }
+
+        expect(appSource, 'parent owner').toMatch(
+            /^\s*function\s+DistributedRecipesPanel\s*\(/m,
+        );
+        const orderedCalls = [
+            '<DistributedRecipesHeader',
+            '<DistributedRecipeAuthoringPanel',
+            '<DistributedRecipeCatalogPanel',
+            '<DistributedTargetResolutionPanel',
+            '<DistributedRunControlPanel',
+            '<DistributedManifestPreviewPanel',
+            '<DistributedRunMonitorPanel',
+            'distributed-history-panel',
+            '<DistributedRunComparePanel',
+        ].map((marker) => panelSource.indexOf(marker));
+        expect.soft(orderedCalls.every((position) => position >= 0), 'render calls').toBe(
+            true,
+        );
+        expect.soft(orderedCalls, 'render order').toEqual(
+            [...orderedCalls].sort((left, right) => left - right),
+        );
+
+        const targetPaths = new Set(distributedRecipeViews.map((view) => view.path));
+        const dependencies = new Map<string, readonly string[]>();
+        for (const view of distributedRecipeViews) {
+            dependencies.set(
+                view.path,
+                [...(sourceByPath.get(view.path) ?? '').matchAll(
+                    /\bfrom\s+['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]/g,
+                )]
+                    .map((match) => match[1] ?? match[2])
+                    .filter((moduleImport) => moduleImport.startsWith('.'))
+                    .map((moduleImport) =>
+                        relative(
+                            repositoryRoot,
+                            resolve(
+                                resolve(repositoryRoot, view.path),
+                                '..',
+                                moduleImport,
+                            ),
+                        ),
+                    )
+                    .filter((dependency) => targetPaths.has(dependency)),
+            );
+        }
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) {
+                return;
+            }
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) {
+                visit(dependency);
+            }
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const targetPath of targetPaths) {
+            visit(targetPath);
+        }
+        expect(cycles, 'distributed recipe view import cycles').toEqual([]);
     });
 
     it('keeps legacy distributed monitor views and helpers in focused modules', () => {
