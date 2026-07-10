@@ -192,16 +192,11 @@ import {
 } from './topology-graph.ts';
 import {
     APP_MODES,
-    DEFAULT_APP_MODE_ID,
-    DEFAULT_APP_TAB_ID,
     appModeForTab,
-    appModeFromValue,
     appTabInMode,
-    appTabFromValue,
     appTabsForMode,
     defaultAppTabForMode,
     nextAppTab,
-    runnerAdvancedSurfaceForTab,
     visibleAppTabForTab,
     type AppModeId,
     type AppTabId,
@@ -352,7 +347,6 @@ import {
     writeStoredAppTab,
     writeStoredSelectedCommandId,
     type ManualWorkbenchDraft,
-    type RallarBlackBoxUiStorage,
     type RallarServerRestCollectionDraft,
     type RallarServerWorkbenchDraft,
 } from './ui-persistence.ts';
@@ -375,14 +369,21 @@ import {
     type RunnerServiceProbeStatus,
     type RunnerTurnProbeStatus,
 } from './runner-readiness.ts';
+import { browserUiStorage } from './legacy/shell/browser-ui-storage.ts';
+import {
+    normalizeAppNavigation,
+    readInitialAppNavigation,
+    writeAppNavigationToUrl,
+    type AppNavigationState,
+} from './legacy/shell/navigation.ts';
+import type { CommandCenterGlobalValues } from './legacy/shell/global-context-model.ts';
+import type {
+    CommandQueueRow,
+    RunnerDistributedRunSelection,
+} from './legacy/runner/runner-contracts.ts';
+import { loadBrowserRallarFacade } from './legacy/rallar/load-browser-rallar-facade.ts';
 
-type CommandQueueRow = Readonly<{
-    id: string;
-    kind: string;
-    label: string;
-    status: 'pending' | 'running' | 'completed' | 'failed';
-    timeoutMs?: number;
-}>;
+// Recipe Console work belongs under `src/recipe-console/**`; legacy extraction belongs under `src/legacy/**`; no new feature panel belongs in `App.tsx`.
 
 type EventFilter = RallarBlackBoxTestEventKind | 'all';
 
@@ -490,15 +491,6 @@ type AuthCommandCenterTicket = Readonly<{
     sessionId: string;
     expiresAtEpochMs: number;
     issuedAtEpochMs: number;
-}>;
-
-type CommandCenterGlobalValues = Readonly<{
-    apiBaseUrl: string;
-    applicationId: string;
-    workspaceId: string;
-    clientId: string;
-    sessionId: string;
-    roomId: string;
 }>;
 
 type RoomsClientsActionId =
@@ -1331,114 +1323,6 @@ function eventFilterFromValue(value: string): EventFilter {
         : 'all';
 }
 
-type AppNavigationState = Readonly<{
-    mode: AppModeId;
-    tab: AppTabId;
-    advancedSurface?: RunnerAdvancedSurfaceId;
-}>;
-
-function advancedSurfaceFromValue(value: string | null | undefined): RunnerAdvancedSurfaceId | undefined {
-    switch (value) {
-        case 'manual':
-        case 'workbench':
-        case 'run-manager':
-        case 'distributed':
-        case 'shared-test':
-            return value;
-        default:
-            return undefined;
-    }
-}
-
-function normalizeAppNavigation(input: Readonly<{
-    mode?: AppModeId;
-    tab: AppTabId;
-    advancedSurface?: RunnerAdvancedSurfaceId;
-}>): AppNavigationState {
-    const visibleTab = visibleAppTabForTab(input.tab);
-    const mode =
-        input.mode && appTabInMode(visibleTab, input.mode)
-            ? input.mode
-            : appModeForTab(visibleTab);
-    const advancedSurface =
-        visibleTab === 'advanced'
-            ? input.advancedSurface ?? runnerAdvancedSurfaceForTab(input.tab)
-            : undefined;
-
-    return {
-        mode,
-        tab: visibleTab,
-        ...(advancedSurface ? { advancedSurface } : {}),
-    };
-}
-
-function readInitialAppNavigation(): AppNavigationState {
-    if (typeof window === 'undefined') {
-        return {
-            mode: DEFAULT_APP_MODE_ID,
-            tab: DEFAULT_APP_TAB_ID,
-        };
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    const explicitModeValue = params.get('workspace') ?? params.get('appMode');
-    const explicitMode = explicitModeValue
-        ? appModeFromValue(explicitModeValue)
-        : undefined;
-    const explicitTab = params.get('tab');
-    if (explicitTab) {
-        const tab = appTabFromValue(explicitTab);
-        const navigation = normalizeAppNavigation({
-            mode: explicitMode,
-            tab,
-            advancedSurface: advancedSurfaceFromValue(
-                params.get('advancedSurface') ?? params.get('advanced'),
-            ),
-        });
-        writeStoredAppMode(browserUiStorage(), navigation.mode);
-        writeStoredAppTab(browserUiStorage(), navigation.tab);
-        return navigation;
-    }
-
-    const storedMode = readStoredAppMode(browserUiStorage());
-    const mode = explicitMode ?? storedMode ?? DEFAULT_APP_MODE_ID;
-    const storedTab = readStoredAppTab(browserUiStorage());
-    const requestedTab =
-        storedTab && appTabInMode(storedTab, mode)
-            ? storedTab
-            : defaultAppTabForMode(mode);
-    const navigation = normalizeAppNavigation({
-        mode,
-        tab: requestedTab,
-        advancedSurface: advancedSurfaceFromValue(
-            params.get('advancedSurface') ?? params.get('advanced'),
-        ),
-    });
-
-    writeStoredAppMode(browserUiStorage(), navigation.mode);
-    writeStoredAppTab(browserUiStorage(), navigation.tab);
-    return navigation;
-}
-
-function writeAppNavigationToUrl(navigation: AppNavigationState): void {
-    if (typeof window === 'undefined') {
-        return;
-    }
-
-    writeStoredAppMode(browserUiStorage(), navigation.mode);
-    writeStoredAppTab(browserUiStorage(), navigation.tab);
-    const url = new URL(window.location.href);
-    url.searchParams.set('workspace', navigation.mode);
-    url.searchParams.set('tab', navigation.tab);
-    if (navigation.advancedSurface) {
-        url.searchParams.set('advancedSurface', navigation.advancedSurface);
-    } else {
-        url.searchParams.delete('advancedSurface');
-        url.searchParams.delete('advanced');
-    }
-    window.history.replaceState(null, '', url);
-}
-
 function readDistributedRunSeedFromUrl(): DistributedRunSeedId | undefined {
     if (typeof window === 'undefined') {
         return undefined;
@@ -1595,14 +1479,6 @@ function splitCsvValues(value: string): readonly string[] {
         .split(',')
         .map((entry) => entry.trim())
         .filter(Boolean);
-}
-
-function browserUiStorage(): RallarBlackBoxUiStorage | undefined {
-    if (typeof window === 'undefined') {
-        return undefined;
-    }
-
-    return window.localStorage;
 }
 
 function uiSecretValues(
@@ -4141,19 +4017,6 @@ function consumeBootstrapAgentSessionTicket(
         });
     pendingAgentSessionTicketConsume = { ticket, promise };
     return promise;
-}
-
-async function loadBrowserRallarFacade() {
-    const directFacade =
-        typeof window === 'undefined'
-            ? undefined
-            : (window as Window & { __rallarDirectFacade?: unknown })
-                  .__rallarDirectFacade;
-    if (directFacade) {
-        return directFacade as typeof import('@shared-web/browser/rallar.ts').rallar;
-    }
-
-    return (await import('@shared-web/browser/rallar.ts')).rallar;
 }
 
 function LoginScreen({
@@ -13600,13 +13463,6 @@ const DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS = {
 } as const;
 
 const RUNNER_DISTRIBUTED_POLL_MS = 1_000;
-
-type RunnerDistributedRunSelection = Readonly<{
-    distributedRunId: string;
-    controlRunId: string;
-    controlBaseUrl: string;
-    controlToken?: string;
-}>;
 
 function parseRunManagerCommandText(text: string): RallarBlackBoxTestCommand {
     const value = JSON.parse(text) as unknown;
