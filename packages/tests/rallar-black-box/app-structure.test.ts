@@ -192,6 +192,143 @@ describe('rallar-black-box app source ownership', () => {
         }
     });
 
+    it('keeps legacy runner evidence components in focused modules', () => {
+        const appSource = repositorySource(appSourcePath);
+        const evidenceModules = [
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/evidence/RunVerdictPanel.tsx',
+                importerPath: appSourcePath,
+                moduleImport: './legacy/runner/evidence/RunVerdictPanel.tsx',
+                seams: ['RunVerdictPanel'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/evidence/CausalTrailPanel.tsx',
+                importerPath: appSourcePath,
+                moduleImport: './legacy/runner/evidence/CausalTrailPanel.tsx',
+                seams: ['CausalTrailPanel'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/agents/ControlAgentBoardPanel.tsx',
+                importerPath: appSourcePath,
+                moduleImport: './legacy/runner/agents/ControlAgentBoardPanel.tsx',
+                seams: ['ControlAgentBoardPanel'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/agents/ControlAgentBoardRowView.tsx',
+                importerPath: 'apps/rallar-black-box/src/legacy/runner/agents/ControlAgentBoardPanel.tsx',
+                moduleImport: './ControlAgentBoardRowView.tsx',
+                seams: ['ControlAgentBoardRowView'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/agents/control-agent-board-presentation.ts',
+                importerPath: 'apps/rallar-black-box/src/legacy/runner/agents/ControlAgentBoardRowView.tsx',
+                moduleImport: './control-agent-board-presentation.ts',
+                seams: [
+                    'controlAgentVisibleParticipations',
+                    'controlAgentConnectionTone',
+                    'controlAgentTargetTone',
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/shared/run-id-presentation.ts',
+                importerPath: appSourcePath,
+                moduleImport: './legacy/runner/shared/run-id-presentation.ts',
+                seams: ['shortRunId'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed/status-presentation.ts',
+                importerPath: appSourcePath,
+                moduleImport: './legacy/runner/distributed/status-presentation.ts',
+                seams: ['distributedProgressTone'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcDiagnosticsTimeseriesPanel.tsx',
+                importerPath: appSourcePath,
+                moduleImport: './legacy/runner/evidence/rtc/RtcDiagnosticsTimeseriesPanel.tsx',
+                seams: ['RtcDiagnosticsTimeseriesPanel'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcLatencyCharts.tsx',
+                importerPath: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcPerformancePanel.tsx',
+                moduleImport: './RtcLatencyCharts.tsx',
+                seams: ['RtcLatencyScatterChart', 'RtcLatencyHistogram'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcPhaseWaterfall.tsx',
+                importerPath: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcPerformancePanel.tsx',
+                moduleImport: './RtcPhaseWaterfall.tsx',
+                seams: ['RtcPhaseWaterfall'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcAgentMatrix.tsx',
+                importerPath: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcPerformancePanel.tsx',
+                moduleImport: './RtcAgentMatrix.tsx',
+                seams: ['RtcAgentMatrix'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcPerformancePanel.tsx',
+                importerPath: appSourcePath,
+                moduleImport: './legacy/runner/evidence/rtc/RtcPerformancePanel.tsx',
+                seams: ['RtcPerformancePanel'],
+            },
+        ] as const;
+        const movedDeclarations = [
+            /\bfunction\s+RunVerdictPanel\s*\(/,
+            /\bfunction\s+CausalTrailPanel\s*\(/,
+            /\bfunction\s+ControlAgentBoardPanel\s*\(/,
+            /\bfunction\s+ControlAgentBoardRowView\s*\(/,
+            /\bfunction\s+ControlAgentRunParticipationChip\s*\(/,
+            /\bfunction\s+controlAgentVisibleParticipations\s*\(/,
+            /\bfunction\s+controlAgentConnectionTone\s*\(/,
+            /\bfunction\s+controlAgentTargetTone\s*\(/,
+            /\bfunction\s+shortRunId\s*\(/,
+            /\bfunction\s+distributedProgressTone\s*\(/,
+            /\bfunction\s+timeseriesPolyline\s*\(/,
+            /\bfunction\s+RtcDiagnosticsTimeseriesPanel\s*\(/,
+            /\bfunction\s+scatterCircleClass\s*\(/,
+            /\bfunction\s+rtcPercentileMarkerEntries\s*\(/,
+            /\bfunction\s+RtcLatencyScatterChart\s*\(/,
+            /\bfunction\s+RtcLatencyHistogram\s*\(/,
+            /\bfunction\s+RtcPhaseWaterfall\s*\(/,
+            /\bfunction\s+RtcAgentMatrix\s*\(/,
+            /\bfunction\s+RtcPerformancePanel\s*\(/,
+        ];
+
+        for (const evidenceModule of evidenceModules) {
+            const moduleExists = existsSync(
+                resolve(repositoryRoot, evidenceModule.path),
+            );
+            expect.soft(moduleExists, evidenceModule.path).toBe(true);
+
+            const importerExists = existsSync(
+                resolve(repositoryRoot, evidenceModule.importerPath),
+            );
+            const importerSource = importerExists
+                ? repositorySource(evidenceModule.importerPath)
+                : '';
+            const escapedModuleImport = evidenceModule.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importedSeams = importerSource.match(
+                new RegExp(
+                    `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                ),
+            )?.[1];
+
+            expect.soft(importedSeams, evidenceModule.moduleImport).toBeDefined();
+            for (const seam of evidenceModule.seams) {
+                expect
+                    .soft(importedSeams ?? '', `${evidenceModule.moduleImport}: ${seam}`)
+                    .toMatch(new RegExp(`\\b${seam}\\b`));
+            }
+        }
+
+        for (const declaration of movedDeclarations) {
+            expect.soft(declaration.test(appSource), declaration.source).toBe(false);
+        }
+    });
+
     it('does not declare Recipe Console panels in App.tsx', () => {
         const source = repositorySource(appSourcePath);
 
