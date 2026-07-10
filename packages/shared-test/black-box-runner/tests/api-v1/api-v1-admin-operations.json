@@ -148,7 +148,7 @@
           "document": {
             "applicationId": "app-1",
             "workspaceId": "workspace-1",
-            "documentScope": "group",
+            "scope": "group",
             "documentType": "map",
             "documentId": "doc-1"
           },
@@ -177,7 +177,7 @@
           "document": {
             "applicationId": "app-1",
             "workspaceId": "workspace-1",
-            "documentScope": "group",
+            "scope": "group",
             "documentType": "map",
             "documentId": "doc-1"
           },
