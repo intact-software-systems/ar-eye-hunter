@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
     createRallarAuthorityBrowserMatch,
+    type RallarGameAuthorityClientConfig,
     type RallarGameAuthorityClientHandle,
 } from '@shared-web/game/mod.ts';
 import type { RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
@@ -17,28 +18,44 @@ const authority: RallarGameAuthorityRef = {
 };
 
 describe('Rallar authority browser match support', () => {
-    it('delegates commands to Rallar Game Authority client', async () => {
+    it('delegates authority-client configuration, lifecycle, and commands', async () => {
         const client = fakeAuthorityClient();
+        const config = authorityMatchConfig();
+        let receivedConfig: RallarGameAuthorityClientConfig<
+            Command,
+            Snapshot,
+            Event,
+            Presence
+        > | undefined;
         const match = createRallarAuthorityBrowserMatch<
             Command,
             Snapshot,
             Event,
             Presence
-        >({
-            rallar: {} as never,
-            protocol: 'example.authority.v1',
-            topicId: 'room.example.authority',
-            matchId: 'match-1',
-            authority,
-        }, {
-            createAuthorityClient: () => client,
+        >(config, {
+            createAuthorityClient: (factoryConfig) => {
+                receivedConfig = factoryConfig;
+                return client;
+            },
         });
 
-        await expect(match.submitCommand({ kind: 'claim', id: 'relic-1' }))
+        expect(receivedConfig).toBe(config);
+        await expect(match.start()).resolves.toMatchObject({ phase: 'ready' });
+        match.stop();
+        expect(match.status()).toMatchObject({ phase: 'ready' });
+        expect(match.diagnostics()).toBeUndefined();
+        expect(client.start).toHaveBeenCalledOnce();
+        expect(client.stop).toHaveBeenCalledOnce();
+        expect(client.status).toHaveBeenCalledOnce();
+        expect(client.diagnostics).toHaveBeenCalledOnce();
+
+        await expect(match.submitCommand({ kind: 'claim', id: 'relic-1' }, {
+            key: 'command-1',
+        }))
             .resolves.toEqual({ status: 'sent', transport: 'ws', seq: 1 });
         expect(client.sendCommand).toHaveBeenCalledWith(
             { kind: 'claim', id: 'relic-1' },
-            undefined,
+            { key: 'command-1' },
         );
     });
 
@@ -50,11 +67,7 @@ describe('Rallar authority browser match support', () => {
             Event,
             Presence
         >({
-            rallar: {} as never,
-            protocol: 'example.authority.v1',
-            topicId: 'room.example.authority',
-            matchId: 'match-1',
-            authority,
+            ...authorityMatchConfig(),
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
@@ -78,6 +91,20 @@ describe('Rallar authority browser match support', () => {
     });
 });
 
+function authorityMatchConfig(): RallarGameAuthorityClientConfig<
+    Command,
+    Snapshot,
+    Event,
+    Presence
+> {
+    return {
+        rallar: {} as never,
+        protocol: 'example.authority.v1',
+        topicId: 'room.example.authority',
+        authority,
+    };
+}
+
 function fakeAuthorityClient(): RallarGameAuthorityClientHandle<
     Command,
     Snapshot,
@@ -86,7 +113,7 @@ function fakeAuthorityClient(): RallarGameAuthorityClientHandle<
 > {
     return {
         start: vi.fn(async () => ({
-            phase: 'ready',
+            phase: 'ready' as const,
             protocol: 'example.authority.v1',
             topicId: 'room.example.authority',
             roomId: 'room-1',
@@ -104,7 +131,7 @@ function fakeAuthorityClient(): RallarGameAuthorityClientHandle<
         })),
         stop: vi.fn(),
         status: vi.fn(() => ({
-            phase: 'ready',
+            phase: 'ready' as const,
             protocol: 'example.authority.v1',
             topicId: 'room.example.authority',
             roomId: 'room-1',
@@ -122,8 +149,8 @@ function fakeAuthorityClient(): RallarGameAuthorityClientHandle<
         })),
         diagnostics: vi.fn(),
         sendCommand: vi.fn(async () => ({
-            status: 'sent',
-            transport: 'ws',
+            status: 'sent' as const,
+            transport: 'ws' as const,
             seq: 1,
         })),
         requestSync: vi.fn(),

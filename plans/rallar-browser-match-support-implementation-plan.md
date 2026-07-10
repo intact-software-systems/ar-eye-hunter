@@ -1335,7 +1335,6 @@ describe('Rallar authority browser match support', () => {
             rallar: {} as never,
             protocol: 'example.authority.v1',
             topicId: 'room.example.authority',
-            matchId: 'match-1',
             authority,
         }, {
             createAuthorityClient: () => client,
@@ -1360,7 +1359,6 @@ describe('Rallar authority browser match support', () => {
             rallar: {} as never,
             protocol: 'example.authority.v1',
             topicId: 'room.example.authority',
-            matchId: 'match-1',
             authority,
             roomRef: {
                 applicationId: 'app-1',
@@ -1472,8 +1470,6 @@ export type RallarAuthorityBrowserMatchConfig<
 > =
     RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence> &
     Readonly<{
-        matchId: string;
-        startedAtEpochMs?: number;
         readStandingRows?: () => readonly RallarMatchStandingRow[];
     }>;
 
@@ -1988,5 +1984,14 @@ Implement Tasks 1-6 as written. Any expansion into consumer migration, formal te
 - Files changed: `packages/shared-web/game/authority-match-support.ts`, `packages/shared-web/game/mod.ts`, `packages/tests/shared-web/rallar-authority-match-support.test.ts`, and this implementation plan.
 - Commands: RED `npx vitest run packages/tests/shared-web/rallar-authority-match-support.test.ts` failed as expected (1 failed file, 2 failed tests) because `createRallarAuthorityBrowserMatch` was not exported; GREEN passed (1 file, 2 tests); `npx tsc -p packages/shared-web/tsconfig.json --noEmit` passed with exit code `0` and no diagnostics.
 - Trust correction followed: this browser wrapper does not create or label any result as `server-validated`; Task 4 remains the sole V1 constructor for that server-owned trust level.
+- Blockers: none.
+- Remaining validation: Tasks 4-6 and their focused match, adjacent Rallar Game, public-surface, browser bundle-boundary, and shared/shared-web/shared-server typecheck matrix remain.
+
+### Task 3 Review Fix - 2026-07-10T13:02:24+02:00
+
+- Fixed: removed the unused `matchId` and `startedAtEpochMs` fields from `RallarAuthorityBrowserMatchConfig`; neither belonged to the browser authority-client lifecycle/command/standings contract after result finalization was deliberately excluded.
+- Tests: strengthened the focused wrapper test to capture and assert the exact authority-client factory config, send a command with `{ key: 'command-1' }`, and exercise delegated `start`, `stop`, `status`, and `diagnostics` methods.
+- Evidence: before the production type change, the strengthened Vitest suite passed (1 file, 2 tests), demonstrating the runtime delegations already worked. `npx tsc -p packages/shared-web/tsconfig.json --noEmit` also passed because that project excludes `packages/tests`; a temporary test-inclusive TypeScript project then failed with exactly two missing-`matchId` errors. After the config removal, focused Vitest, the shared-web typecheck, and the test-inclusive TypeScript check all passed.
+- Scope: preserved the Task 3 trust correction. No result finalization, `server-validated` label, app change, top-level facade, or other task surface was added.
 - Blockers: none.
 - Remaining validation: Tasks 4-6 and their focused match, adjacent Rallar Game, public-surface, browser bundle-boundary, and shared/shared-web/shared-server typecheck matrix remain.

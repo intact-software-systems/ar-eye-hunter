@@ -14,8 +14,6 @@ export type RallarAuthorityBrowserMatchConfig<
 > =
     RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence> &
     Readonly<{
-        matchId: string;
-        startedAtEpochMs?: number;
         readStandingRows?: () => readonly RallarMatchStandingRow[];
     }>;
 
