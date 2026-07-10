@@ -33,6 +33,9 @@ export * from './rallar-system/services/group-state-snapshot-read-through-cache.
 export * from './rallar-system/services/timing.ts';
 export * from './rallar-system/services/ws-lifecycle-service.ts';
 export * from './rallar-system/services/ws-topic-room-authorizer.ts';
+export * from './rallar-system/admin-operations/AdminOperationsService.ts';
+export * from './rallar-system/admin-support/AdminSupportService.ts';
+export * from './rallar-system/spa-statistics/SpaStatisticsService.ts';
 export * from './rallar-system/snapshot-presence.ts';
 export * from './rallar-system/group-policy.ts';
 export * from './rallar-system/state-sync-publisher.ts';
@@ -51,6 +54,8 @@ export * from './postgres/queuebox/PSqlQueueBox.ts';
 export * from './postgres/queuebox/PSqlResultsQueueBox.ts';
 export * from './postgres/rallar-system/createStateRepositories.ts';
 export * from './postgres/rallar-system/PSqlStateEventRepository.ts';
+export * from './postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+export * from './postgres/admin-support/PSqlAdminSupportReader.ts';
 export * from './postgres/resource-inbox/ResourceInboxRepository.ts';
 export * from './postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 export * from './postgres/runtime-state/PSqlJsonPersistenceProvider.ts';

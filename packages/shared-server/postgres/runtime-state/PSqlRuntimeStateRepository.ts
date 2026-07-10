@@ -55,11 +55,17 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
         namespace: string,
         keyPrefix: string,
     ): Promise<readonly RuntimeStateEntry[]> {
+        if (keyPrefix.length === 0) {
+            return await this.findAllEntries(namespace);
+        }
+
+        const prefixEnd = toExclusivePrefixEnd(keyPrefix);
         const rows = await this.sql<RuntimeStateRow[]>`
             select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
             from runtime_state_store
             where store_namespace = ${namespace}
-              and store_key like ${`${keyPrefix}%`}
+              and store_key >= ${keyPrefix}
+              and store_key < ${prefixEnd}
             order by store_key
         `;
 
@@ -75,12 +81,35 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
         }>,
     ): Promise<readonly RuntimeStateEntry[]> {
         const limit = Math.max(1, Math.floor(options.limit));
+        if (keyPrefix.length === 0) {
+            const rows = options.afterKey === undefined
+                ? await this.sql<RuntimeStateRow[]>`
+                    select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
+                    from runtime_state_store
+                    where store_namespace = ${namespace}
+                    order by store_key
+                    limit ${limit}
+                `
+                : await this.sql<RuntimeStateRow[]>`
+                    select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
+                    from runtime_state_store
+                    where store_namespace = ${namespace}
+                      and store_key > ${options.afterKey}
+                    order by store_key
+                    limit ${limit}
+                `;
+
+            return rows.map(toEntry);
+        }
+
+        const prefixEnd = toExclusivePrefixEnd(keyPrefix);
         const rows = options.afterKey === undefined
             ? await this.sql<RuntimeStateRow[]>`
                 select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
                 from runtime_state_store
                 where store_namespace = ${namespace}
-                  and store_key like ${`${keyPrefix}%`}
+                  and store_key >= ${keyPrefix}
+                  and store_key < ${prefixEnd}
                 order by store_key
                 limit ${limit}
             `
@@ -88,7 +117,8 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
                 select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
                 from runtime_state_store
                 where store_namespace = ${namespace}
-                  and store_key like ${`${keyPrefix}%`}
+                  and store_key >= ${keyPrefix}
+                  and store_key < ${prefixEnd}
                   and store_key > ${options.afterKey}
                 order by store_key
                 limit ${limit}
@@ -203,6 +233,19 @@ function toEntry(row: RuntimeStateRow): RuntimeStateEntry {
         updatedTimestamp: row.updated_ts,
         revision: Number(row.revision),
     };
+}
+
+function toExclusivePrefixEnd(prefix: string): string {
+    if (prefix.length === 0) {
+        throw new Error('Runtime state prefix must not be empty.');
+    }
+
+    const lastIndex = prefix.length - 1;
+    const lastCode = prefix.charCodeAt(lastIndex);
+    if (lastCode >= 0xffff) {
+        throw new Error(`Runtime state prefix has no safe upper bound: ${prefix}`);
+    }
+    return `${prefix.slice(0, lastIndex)}${String.fromCharCode(lastCode + 1)}`;
 }
 
 function toPgDate(timestamp: number): Date {

@@ -72,8 +72,14 @@ Deno.test(
 
     assert.equal((await app.request('/api/ws/session-1')).status, 426);
     assert.equal((await app.request('/api/docs')).status, 200);
+    assert.equal((await app.request('/api/admin/operations/overview')).status, 401);
+    assert.equal((await app.request('/api/admin/support/explain/queue-item', {
+      method: 'POST',
+    })).status, 401);
     assert.equal(
-      (await app.request('/api/state/apps/app-1/workspaces/workspace-1/graphs/global?refresh=bogus')).status,
+      (await app.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/graphs/global?refresh=bogus',
+      )).status,
       400,
     );
   },

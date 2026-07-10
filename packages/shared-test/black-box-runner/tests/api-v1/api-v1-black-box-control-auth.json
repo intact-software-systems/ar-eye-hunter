@@ -1,0 +1,272 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "rejectMissingControlTokenAuth",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/black-box/control-token"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    },
+    {
+      "name": "rejectMissingAgentTicketAuth",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/agent-session-tickets",
+        "body": {
+          "agentIds": ["controller-01"]
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    },
+    {
+      "name": "loginDemoAdmin",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "admin",
+          "password": "admin"
+        },
+        "outputs": {
+          "adminClientId": "body.clientId",
+          "adminAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "admin",
+          "accessToken": "string",
+          "username": "admin",
+          "sessionId": "string",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "deriveAdminAuthHeader",
+      "type": "set",
+      "output": "adminAuthHeader",
+      "secret": true,
+      "redactAs": "adminAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.adminAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "issueBlackBoxControlToken",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/black-box/control-token",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "outputs": {
+          "blackBoxControlToken": {
+            "path": "body.token",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "tokenType": "Bearer",
+          "token": "string",
+          "issuedAtEpochMs": "integer",
+          "expiresAtEpochMs": "integer",
+          "ttlMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "issueAgentSessionTickets",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/agent-session-tickets",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "agentIds": ["controller-01", "controller-02"]
+        },
+        "outputs": {
+          "firstAgentTicket": {
+            "path": "body.tickets.0.ticket",
+            "secret": true
+          },
+          "firstAgentSessionId": "body.tickets.0.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "tickets": [
+            {
+              "agentId": "controller-01",
+              "ticket": "string",
+              "sessionId": "string",
+              "expiresAtEpochMs": "integer"
+            },
+            {
+              "agentId": "controller-02",
+              "ticket": "string",
+              "sessionId": "string",
+              "expiresAtEpochMs": "integer"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "consumeFirstAgentSessionTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/agent-session-tickets/consume",
+        "body": {
+          "ticket": "{firstAgentTicket}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "admin",
+          "accessToken": "string",
+          "username": "admin",
+          "sessionId": "{firstAgentSessionId}",
+          "expiresAtEpochMs": "integer"
+        }
+      }
+    },
+    {
+      "name": "rejectConsumedAgentSessionTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/agent-session-tickets/consume",
+        "body": {
+          "ticket": "{firstAgentTicket}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "error": "Agent session ticket is invalid or expired."
+        }
+      }
+    },
+    {
+      "name": "openApiListsBlackBoxAuthSupport",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/openapi.json"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "paths": {
+            "/api/black-box/control-token": {
+              "post": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "401": "any",
+                  "403": "any",
+                  "503": "any"
+                }
+              }
+            },
+            "/api/auth/agent-session-tickets": {
+              "post": {
+                "security": [
+                  {
+                    "bearerAuth": [],
+                    "clientIdHeader": []
+                  }
+                ],
+                "responses": {
+                  "200": "any",
+                  "400": "any",
+                  "401": "any"
+                }
+              }
+            },
+            "/api/auth/agent-session-tickets/consume": {
+              "post": {
+                "responses": {
+                  "200": "any",
+                  "400": "any",
+                  "404": "any"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

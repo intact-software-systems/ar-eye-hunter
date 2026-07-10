@@ -21,6 +21,10 @@ export {
 } from '@shared-web/browser/rallar-people-facade.ts';
 
 export {
+    createRallarStatsFacade,
+} from '@shared-web/browser/rallar-stats-facade.ts';
+
+export {
     createRallarMessagesFacade,
 } from '@shared-web/browser/rallar-messages-facade.ts';
 
@@ -50,6 +54,11 @@ export type {
     CreateRallarPeopleFacadeOptions,
     RallarPeopleFacade,
 } from '@shared-web/browser/rallar-people-facade.ts';
+
+export type {
+    CreateRallarStatsFacadeOptions,
+    RallarStatsFacade,
+} from '@shared-web/browser/rallar-stats-facade.ts';
 
 export type {
     CreateRallarMessagesFacadeOptions,

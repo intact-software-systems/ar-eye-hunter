@@ -12,11 +12,14 @@ import {
     deleteStateGroupTopologyOverride,
     putStateGroupTopologyConfig,
     putStateGroupTopologyOverride,
+    readStateGroupStats,
     readStateGroupGraph,
+    readStateMyRealtimeStatus,
     readStateGroupTopology,
     readStateGroupTopologyConfig,
     readStateGroupTopologyOverride,
     readStateScopedGlobalGraph,
+    readStateWorkspaceStatsSummary,
     reconfigureStateGroupTopology,
 } from '@shared-web/browser/api-integration.ts';
 import {
@@ -252,6 +255,35 @@ describe('state API workflows', () => {
             'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/config',
             'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/topology/override',
         ]);
+    });
+
+    it('reads SPA statistics with encoded state paths and auth forwarding', async () => {
+        const scope = {
+            applicationId: 'app 1',
+            workspaceId: 'workspace/1',
+        };
+        const authSession = {
+            clientId: 'alice',
+            username: 'alice',
+            sessionId: 'alice-session',
+            accessToken: 'token-1',
+            expiresAtEpochMs: Date.now() + 60_000,
+        };
+        stubFetch(() => jsonResponse({ ok: true }));
+
+        await readStateWorkspaceStatsSummary(scope, { authSession });
+        await readStateGroupStats('room /1', scope, { authSession });
+        await readStateMyRealtimeStatus(scope, { authSession });
+
+        expect(fetchCalls.map((call) => `${call.method} ${call.url}`)).toEqual([
+            'GET /api/state/apps/app%201/workspaces/workspace%2F1/stats/summary',
+            'GET /api/state/apps/app%201/workspaces/workspace%2F1/groups/room%20%2F1/stats',
+            'GET /api/state/apps/app%201/workspaces/workspace%2F1/stats/me/realtime',
+        ]);
+        expect(fetchCalls.every((call) => call.headers.authorization === 'Bearer token-1'))
+            .toBe(true);
+        expect(fetchCalls.every((call) => call.headers['x-client-id'] === 'alice'))
+            .toBe(true);
     });
 
     it('mutates topology config and overrides with auth-capable methods', async () => {

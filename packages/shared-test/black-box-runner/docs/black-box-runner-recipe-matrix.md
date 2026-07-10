@@ -1,8 +1,8 @@
 # Black-box Runner Recipe Matrix
 
 The recipe matrix is the post-Iteration-10 live-validation catalog for
-`black-box-runner` examples. It answers two questions for every runnable recipe
-variant:
+`black-box-runner` examples and validation recipes. It answers two questions
+for every runnable recipe variant:
 
 - what profile should run it
 - what service, browser, or environment gate is required before it can run
@@ -12,6 +12,11 @@ The catalog lives in:
 ```text
 packages/shared-test/black-box-runner/recipe-matrix.json
 ```
+
+Matrix entries may point at illustrative recipes under
+`packages/shared-test/black-box-runner/examples/` or validation fixtures under
+`packages/shared-test/black-box-runner/tests/`. API-v1 release-gate recipes live
+under `tests/api-v1/`.
 
 The runner lives in:
 
@@ -35,7 +40,8 @@ packages/shared-test/black-box-runner/recipe-matrix.mts
 | `live-parallel` | Gated live browser and remote-browser bounded parallel recipes. |
 | `live-crdt` | Gated CRDT live validation for WS convergence, RTC fallback, durable catch-up, local persistence, and admin integrity. |
 | `rallar-server-live` | Live Rallar Server REST/WS recipes. Skips when the configured API is unavailable. |
-| `api-v1-black-box` | No-browser `apps/api-v1` REST/WS black-box recipes. Requires a running Rallar API and no Playwright/browser gate. |
+| `api-v1-black-box` | Full no-browser `apps/api-v1` REST/WS black-box test recipes. Managed helper runs start the API with deterministic local ICE and operator-token settings. |
+| `api-v1-black-box-recipes` | Portable recipes-only subset for an already-running `apps/api-v1`. Excludes scenarios that require server startup env the helper cannot apply externally. |
 | `browser-live` | Live browser-backed Rallar recipes. Requires credentials, Rallar API, and Playwright. |
 | `remote-live` | Live control-server-backed browser provider recipes. Requires Rallar API, control server, and an agent. |
 | `signaling-live` | Live signaling-only provider recipes. Requires `RALLAR_SIGNALING_URL`. |
@@ -91,6 +97,13 @@ npm run test:api-v1:black-box:postgres
 npm run test:api-v1:black-box:memory
 npm run test:api-v1:black-box:recipes
 ```
+
+Postgres and memory runs use the full `api-v1-black-box` profile. Recipes-only
+mode defaults to `api-v1-black-box-recipes` so it can run against an existing
+API without assuming that server was started with local ICE or a black-box
+operator-token secret. To run the full profile against an already-running API,
+start that API with equivalent managed-run settings and pass
+`--profile=api-v1-black-box` to `bb:api-v1:recipes`.
 
 These commands write artifacts under `.artifacts/api-v1-black-box/*` instead of
 the generic `.artifacts/shared-test/recipe-matrix/*` path because the helper

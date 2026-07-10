@@ -21,8 +21,19 @@ describe('api-v1 black-box run helper', () => {
     it('keeps recipes-only mode free of server and migration side effects', () => {
         expect(parseApiV1BlackBoxArgs(['--recipes-only'])).toMatchObject({
             backend: 'postgres',
+            profile: 'api-v1-black-box-recipes',
             requireGates: true,
             runMigrations: false,
+            recipesOnly: true,
+        });
+    });
+
+    it('allows recipes-only mode to opt into the full managed API-v1 profile', () => {
+        expect(parseApiV1BlackBoxArgs([
+            '--recipes-only',
+            '--profile=api-v1-black-box',
+        ])).toMatchObject({
+            profile: 'api-v1-black-box',
             recipesOnly: true,
         });
     });
@@ -35,8 +46,20 @@ describe('api-v1 black-box run helper', () => {
         expect(env.RALLAR_SQL_BACKEND).toBe('postgres');
         expect(env.DATABASE_URL).toBe('postgres://app:app@localhost:5432/appdb');
         expect(env.RALLAR_STATE_STRICT_READ_AUTH).toBe('1');
+        expect(env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET).toBe(
+            'local-api-v1-black-box-operator-secret',
+        );
         expect(env.AUTH_STATIC_CLIENTS_MODE).toBe('demo');
         expect(env.AUTH_REGISTRATION_MODE).toBe('public');
+    });
+
+    it('preserves explicit black-box operator token secret values', () => {
+        const options = parseApiV1BlackBoxArgs(['--backend=postgres']);
+        const env = toApiV1BlackBoxEnvironment(options, {
+            RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: 'custom-operator-secret',
+        });
+
+        expect(env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET).toBe('custom-operator-secret');
     });
 
     it('preserves explicit Postgres DATABASE_URL values', () => {

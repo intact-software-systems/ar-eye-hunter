@@ -111,6 +111,44 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
   });
 });
 
+Deno.test('PSqlRuntimeStateRepository treats encoded prefix characters literally', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new PSqlRuntimeStateRepository(sql);
+    const literalPrefix = 'app=ops%2Fapp:ws=workspace%3Ablue';
+    const wildcardCollisionPrefix = 'app=opsZZ2Fapp:ws=workspaceZZ3Ablue';
+
+    await repository.upsert(
+      'runtime-prefix',
+      `${literalPrefix}:group=room-a`,
+      '{"room":"a"}',
+      FUTURE_MS,
+    );
+    await repository.upsert(
+      'runtime-prefix',
+      `${wildcardCollisionPrefix}:group=room-b`,
+      '{"room":"b"}',
+      FUTURE_MS,
+    );
+
+    const entries = await repository.findEntriesByPrefix(
+      'runtime-prefix',
+      `${literalPrefix}:`,
+    );
+    const page = await repository.findEntriesByPrefixPage(
+      'runtime-prefix',
+      `${literalPrefix}:`,
+      { limit: 10 },
+    );
+
+    assert.deepEqual(entries.map((entry) => entry.key), [
+      `${literalPrefix}:group=room-a`,
+    ]);
+    assert.deepEqual(page.map((entry) => entry.key), [
+      `${literalPrefix}:group=room-a`,
+    ]);
+  });
+});
+
 Deno.test('PSql state event repositories page by snapshot cursor order', async () => {
   await withPGliteSql(async (sql) => {
     const clientEvents = new PSqlClientStateEventRepository(sql);

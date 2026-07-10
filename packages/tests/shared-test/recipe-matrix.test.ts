@@ -22,6 +22,7 @@ type MatrixEntry = {
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const runnerRoot = path.join(repoRoot, 'packages/shared-test/black-box-runner');
 const examplesRoot = path.join(runnerRoot, 'examples');
+const testsRoot = path.join(runnerRoot, 'tests');
 const matrixPath = path.join(runnerRoot, 'recipe-matrix.json');
 
 function readMatrix(): { entries: MatrixEntry[] } {
@@ -30,6 +31,19 @@ function readMatrix(): { entries: MatrixEntry[] } {
 
 function readRecipe(relativePath: string): Record<string, unknown> {
     return JSON.parse(readFileSync(path.join(runnerRoot, relativePath), 'utf8'));
+}
+
+function listJsonRecipes(root: string, prefix: string): string[] {
+    return readdirSync(root, { withFileTypes: true }).flatMap(entry => {
+        const entryPrefix = prefix + entry.name;
+        const entryPath = path.join(root, entry.name);
+
+        if (entry.isDirectory()) {
+            return listJsonRecipes(entryPath, entryPrefix + '/');
+        }
+
+        return entry.isFile() && entry.name.endsWith('.json') ? [entryPrefix] : [];
+    });
 }
 
 function rtcProviders(recipe: Record<string, unknown>): string[] {
@@ -49,11 +63,12 @@ describe('black-box runner recipe matrix', () => {
         expect(new Set(artifactNames).size).toBe(artifactNames.length);
     });
 
-    it('points every entry at an example recipe file', () => {
+    it('points every entry at a catalog recipe file', () => {
         const { entries } = readMatrix();
+        const recipeRoots = ['examples/', 'tests/'];
 
         entries.forEach(entry => {
-            expect(entry.recipe.startsWith('examples/')).toBe(true);
+            expect(recipeRoots.some(root => entry.recipe.startsWith(root))).toBe(true);
             expect(entry.recipe.endsWith('.json')).toBe(true);
             expect(() => readFileSync(path.join(runnerRoot, entry.recipe), 'utf8')).not.toThrow();
         });
@@ -62,11 +77,18 @@ describe('black-box runner recipe matrix', () => {
     it('covers every example recipe at least once', () => {
         const { entries } = readMatrix();
         const covered = new Set(entries.map(entry => entry.recipe));
-        const examples = readdirSync(examplesRoot)
-            .filter(name => name.endsWith('.json'))
-            .map(name => 'examples/' + name);
+        const examples = listJsonRecipes(examplesRoot, 'examples/');
 
         expect([...covered].sort()).toEqual(expect.arrayContaining(examples.sort()));
+    });
+
+    it('covers every test recipe at least once', () => {
+        const { entries } = readMatrix();
+        const covered = new Set(entries.map(entry => entry.recipe));
+        const tests = listJsonRecipes(testsRoot, 'tests/');
+
+        expect(tests.length).toBeGreaterThan(0);
+        expect([...covered].sort()).toEqual(expect.arrayContaining(tests.sort()));
     });
 
     it('uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture', () => {
@@ -106,6 +128,8 @@ describe('black-box runner recipe matrix', () => {
         expect(profiles.has('live-soak')).toBe(true);
         expect(profiles.has('live-traffic')).toBe(true);
         expect(profiles.has('live-parallel')).toBe(true);
+        expect(profiles.has('api-v1-black-box')).toBe(true);
+        expect(profiles.has('api-v1-black-box-recipes')).toBe(true);
 
         entries.forEach(entry => {
             expect(['dry-run', 'run']).toContain(entry.mode);
@@ -226,16 +250,22 @@ describe('black-box runner recipe matrix', () => {
         const apiEntries = entries.filter(entry => entry.profiles.includes('api-v1-black-box'));
 
         expect(apiEntries.map(entry => entry.id).sort()).toEqual([
+            'api-v1-admin-operations',
+            'api-v1-admin-support',
             'api-v1-auth-session',
+            'api-v1-black-box-control-auth',
             'api-v1-client-state',
             'api-v1-group-presence',
+            'api-v1-ice-config',
             'api-v1-openapi-topology-auth',
             'api-v1-scope-isolation',
+            'api-v1-spa-statistics',
             'api-v1-websocket-topic-routing',
         ]);
 
         apiEntries.forEach(entry => {
             expect(entry.category).toBe('api-v1-black-box');
+            expect(entry.recipe).toMatch(/^tests\/api-v1\/api-v1-.*\.json$/);
             expect(entry.mode).toBe('run');
             expect(entry.expectedExitCode).toBe(0);
             expect(entry.profiles).toContain('api-v1-black-box');
@@ -249,6 +279,30 @@ describe('black-box runner recipe matrix', () => {
                     default: 'http://127.0.0.1:18080',
                 },
             ]);
+        });
+    });
+
+    it('defines a portable recipes-only API-v1 black-box profile', () => {
+        const { entries } = readMatrix();
+        const apiRecipeEntries = entries.filter(entry => entry.profiles.includes('api-v1-black-box-recipes'));
+
+        expect(apiRecipeEntries.map(entry => entry.id).sort()).toEqual([
+            'api-v1-admin-operations',
+            'api-v1-admin-support',
+            'api-v1-auth-session',
+            'api-v1-client-state',
+            'api-v1-group-presence',
+            'api-v1-openapi-topology-auth',
+            'api-v1-scope-isolation',
+            'api-v1-spa-statistics',
+            'api-v1-websocket-topic-routing',
+        ]);
+
+        apiRecipeEntries.forEach(entry => {
+            expect(entry.category).toBe('api-v1-black-box');
+            expect(entry.recipe).toMatch(/^tests\/api-v1\/api-v1-.*\.json$/);
+            expect(entry.profiles).toContain('api-v1-black-box');
+            expect(entry.requires?.playwright).not.toBe(true);
         });
     });
 

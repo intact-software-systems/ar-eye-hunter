@@ -169,6 +169,20 @@ export function resolveOverrideExpiresAtEpochMs(
     const maxExpiresAtEpochMs = input.nowEpochMs + MAX_GROUP_TOPOLOGY_OVERRIDE_TTL_MS;
     const requestedExpiresAtEpochMs = input.expiresAtEpochMs ??
         input.nowEpochMs + (input.ttlMs ?? DEFAULT_GROUP_TOPOLOGY_OVERRIDE_TTL_MS);
+    if (
+        !Number.isFinite(requestedExpiresAtEpochMs) ||
+        requestedExpiresAtEpochMs <= input.nowEpochMs
+    ) {
+        throwIfIssues([{
+            code: 'override-expiry-not-in-future',
+            path: [input.expiresAtEpochMs === undefined ? 'ttlMs' : 'expiresAtEpochMs'],
+            message: 'Temporary topology override expiry must be in the future',
+            details: {
+                nowEpochMs: input.nowEpochMs,
+                requestedExpiresAtEpochMs,
+            },
+        }]);
+    }
     return Math.min(requestedExpiresAtEpochMs, maxExpiresAtEpochMs);
 }
 

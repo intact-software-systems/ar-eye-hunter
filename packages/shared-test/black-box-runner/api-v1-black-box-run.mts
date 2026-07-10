@@ -45,7 +45,9 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
     return {
         backend,
         port,
-        profile: String(values.get('--profile') ?? 'api-v1-black-box'),
+        profile: String(values.get('--profile') ?? (
+            recipesOnly ? 'api-v1-black-box-recipes' : 'api-v1-black-box'
+        )),
         artifactDir,
         runId,
         requireGates: values.get('--no-require-gates') !== true,
@@ -76,6 +78,8 @@ export function toApiV1BlackBoxEnvironment(
         : defaultWsBaseUrl
     env.RALLAR_BB_RUN_ID = options.runId
     env.RALLAR_ICE_MODE = env.RALLAR_ICE_MODE ?? 'local'
+    env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET = env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET
+        ?? 'local-api-v1-black-box-operator-secret'
     env.RALLAR_LOGIN_USER_RATE_LIMIT = env.RALLAR_LOGIN_USER_RATE_LIMIT ?? '100'
     env.RALLAR_STATE_STRICT_READ_AUTH = env.RALLAR_STATE_STRICT_READ_AUTH ?? '1'
     env.AUTH_STATIC_CLIENTS_MODE = env.AUTH_STATIC_CLIENTS_MODE ?? 'demo'

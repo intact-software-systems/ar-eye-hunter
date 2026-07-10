@@ -294,6 +294,38 @@ In strict mode, REST reads, state-sync routing, and room messaging authorization
 all use server-side group policy before exposing full group state or allowing
 room traffic.
 
+### SPA Statistics REST
+
+API-v1 exposes actor-scoped, read-only SPA statistics under the state namespace:
+
+- `GET /api/state/apps/:applicationId/workspaces/:workspaceId/stats/summary`
+  returns workspace counts for the authenticated actor, including full-readable
+  group count, joined group count, online member count across those readable
+  groups, actor client-session count, actor group-presence count, bounded recent
+  visible group activity count, and a limited safe `topGroups` list.
+- `GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/stats`
+  returns room/lobby counts after full group read policy passes: member count,
+  online member count, active session count, group status/kind/join mode,
+  snapshot/presence versions, actor role, actor active presence count, and a
+  bounded recent group event count.
+- `GET /api/state/apps/:applicationId/workspaces/:workspaceId/stats/me/realtime`
+  returns self-only realtime readiness hints for the current auth session:
+  process-local WebSocket openness, actor client-session state, and readable
+  groups where that same session has active presence.
+
+SPA statistics routes always require a route-local bearer auth session and
+matching `x-client-id`; this is strict read auth independent behavior. They do
+not depend on `RALLAR_STATE_STRICT_READ_AUTH` to protect actor, self-session, or
+group-policy reads. Responses are actor-specific and return
+`Cache-Control: no-store`.
+
+The SPA statistics surface is separate from admin operations and does not expose admin operations DTOs, queue/runtime-state/app-data/auth-session internals,
+CRDT storage pressure, raw event payloads, other users' session or connection
+ids, or topology graphs. Workspace summary currently counts only groups the
+actor can read fully; directory-visible open groups are intentionally omitted
+until a limited directory DTO is designed. Activity counts are bounded recent
+event counts rather than exact global counters.
+
 ### Director
 
 `director.appoint(room, options?)` appoints the current browser session as the
@@ -323,6 +355,26 @@ if (status.isDirector) {
     startAuthoritativeLoop();
 }
 ```
+
+### Stats
+
+`stats.summary(options?)` reads
+`GET /api/state/apps/:applicationId/workspaces/:workspaceId/stats/summary`
+for the current auth session and resolved scope.
+
+`stats.group(roomIdOrRef, options?)` reads
+`GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/stats`.
+String room IDs use the provided or default scope; `GroupRef` input carries its
+own application/workspace scope.
+
+`stats.meRealtime(options?)` reads
+`GET /api/state/apps/:applicationId/workspaces/:workspaceId/stats/me/realtime`
+for the current auth session.
+
+The lower-level browser API helpers are
+`readStateWorkspaceStatsSummary(...)`, `readStateGroupStats(...)`, and
+`readStateMyRealtimeStatus(...)`. All stats helpers forward the current
+`AuthSession` unless an explicit API integration option overrides it.
 
 ### People
 
@@ -978,6 +1030,102 @@ then request-time reconfigure options. Writes require an authenticated group
 owner/admin or a platform admin client ID from `AUTH_ADMIN_CLIENT_IDS`. Strict
 read auth (`RALLAR_STATE_STRICT_READ_AUTH`) also protects group graph and
 topology reads.
+
+### Admin Operations REST
+
+API-v1 exposes platform-admin operational statistics and bounded maintenance
+operations under `/api/admin/operations/*`. Every route requires a normal bearer
+auth session, a matching `x-client-id` header, and a client id listed in
+`AUTH_ADMIN_CLIENT_IDS`.
+
+Read routes:
+
+- `GET /api/admin/operations/overview` returns a compact dashboard summary for
+  server health, websocket counts, queue pressure, state, CRDT metadata, and
+  storage pressure.
+- `GET /api/admin/operations/queues` returns QueueBox and app-inbox result row
+  counts by type/status plus expiry pressure.
+- `GET /api/admin/operations/realtime` returns process-local WebSocket status
+  and RTC topology metrics. Responses include a warning because these metrics
+  are process-local in multi-server deployments.
+- `GET /api/admin/operations/state` and
+  `GET /api/admin/operations/state/apps/:applicationId/workspaces/:workspaceId`
+  return client, group, and state-event aggregates.
+- `GET /api/admin/operations/crdt` and
+  `GET /api/admin/operations/crdt/apps/:applicationId/workspaces/:workspaceId`
+  return CRDT document metadata and storage counters only.
+- `GET /api/admin/operations/system` returns runtime-state, app-data,
+  state-event, and safe SQL/pubsub mode summaries.
+
+Write routes are intentionally narrow:
+
+- `POST /api/admin/operations/metrics/reset` resets resettable in-memory metric
+  categories, currently RTC topology metrics.
+- `POST /api/admin/operations/topology/recompute` delegates to the same scoped
+  topology recompute path used by group topology management.
+- `POST /api/admin/operations/maintenance/prune-expired` defaults to dry-run.
+  Real execution deletes only expired rows for supported categories. App-data
+  pruning requires an explicit namespace and optional store name.
+- `POST /api/admin/operations/crdt/integrity`,
+  `/api/admin/operations/crdt/debug-export`,
+  `/api/admin/operations/crdt/compact`,
+  `/api/admin/operations/crdt/lifecycle`, and
+  `/api/admin/operations/crdt/erase` delegate to existing CRDT admin repository
+  workflows. Debug exports keep payloads redacted by default unless an admin
+  explicitly disables redaction.
+
+Admin operation responses include `generatedAtEpochMs`, `serverId` when known,
+and `warnings` for partial or process-local sources. They do not expose bearer
+tokens, websocket tickets, passwords, raw queue payloads, or CRDT
+update/snapshot payloads outside the explicit debug-export workflow.
+Write operations also emit `rallar.timing` events through the existing timing
+sink. These events include operation name, status, duration, admin client id,
+session id, request id, reason, and bounded target metadata; they do not include
+bearer tokens or raw operation payloads. `RALLAR_TIMING_LOGS` controls the
+default console sink.
+
+### Admin Support REST
+
+API-v1 exposes targeted platform-admin diagnostics under
+`/api/admin/support/explain/*`. Every route requires a normal bearer auth
+session, a matching `x-client-id` header, and a client id listed in
+`AUTH_ADMIN_CLIENT_IDS`.
+
+Explain routes:
+
+- `POST /api/admin/support/explain/client` accepts `scope`, `principalId`,
+  optional `clientInstanceId`, optional `sessionId`, and optional
+  `limitRecentEvents`. It returns a diagnostic narrative with client snapshot
+  facts, presence facts, bounded recent client events, and a process-local
+  WebSocket connection match when the current API worker can see one.
+- `POST /api/admin/support/explain/group` accepts `groupRef`, optional
+  `principalId`, optional `sessionId`, and optional `limitRecentEvents`. It
+  returns group snapshot facts, bounded recent group events, focused session or
+  member facts, and a summarized `GroupTopologyManagementService.readTopologyView`
+  result.
+- `POST /api/admin/support/explain/request` accepts `requestId`,
+  `idempotencyKey`, `queueKey`, and optional `target`. Phase 1 supports explicit
+  QueueBox-key delegation. Request-id-only global search is intentionally not
+  indexed and returns a warning instead of scanning tables.
+- `POST /api/admin/support/explain/crdt-document` accepts `document` plus
+  optional `includeIntegrity` and `includeRedactedDebugBundle`. Debug bundle
+  summaries are always requested with payload redaction; this support route does
+  not expose a raw-payload opt-out.
+- `POST /api/admin/support/explain/queue-item` accepts `queueKey` and optional
+  `includeExpired`. It reads `resource_inbox` and `resource_inbox_results` by
+  explicit QueueBox key and returns status, attempts, retry/expiry timeline, and
+  redacted payload metadata such as byte length and JSON shape.
+
+Support responses use a diagnostic narrative DTO:
+`target`, `generatedAtEpochMs`, `serverId`, `facts`, `timeline`, `warnings`,
+`likelyCauses`, `suggestedActions`, and `rawRefs`. Queue and CRDT payload bodies
+are not returned. Recent state events are bounded by `limitRecentEvents` with a
+server-side cap. Live WebSocket facts are labeled process-local because
+`rallarApplication.ws.status()` only reflects the current API worker.
+
+Support explanation generation emits `rallar.timing` events with component
+`admin-support`; timing details include bounded target metadata and exclude
+bearer tokens and raw payloads.
 
 ### Target Resolver
 

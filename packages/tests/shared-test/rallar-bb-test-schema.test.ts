@@ -33,6 +33,7 @@ import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const appExamplesRoot = path.join(repoRoot, 'apps/rallar-black-box/examples');
 const runnerExamplesRoot = path.join(repoRoot, 'packages/shared-test/black-box-runner/examples');
+const runnerTestsRoot = path.join(repoRoot, 'packages/shared-test/black-box-runner/tests');
 const rallarBbTestRoot = path.join(repoRoot, 'packages/shared-test/rallar-bb-test');
 const goldenCompatibilityCorpusPath = path.join(
     rallarBbTestRoot,
@@ -45,6 +46,18 @@ const schemaCompatibilityGuidePath = path.join(
 
 function readJsonFile(filePath: string): unknown {
     return JSON.parse(readFileSync(filePath, 'utf8'));
+}
+
+function listJsonFiles(root: string): string[] {
+    return readdirSync(root, { withFileTypes: true }).flatMap(entry => {
+        const entryPath = path.join(root, entry.name);
+
+        if (entry.isDirectory()) {
+            return listJsonFiles(entryPath);
+        }
+
+        return entry.isFile() && entry.name.endsWith('.json') ? [entryPath] : [];
+    });
 }
 
 function expectValid(schema: Parameters<typeof validateJsonSchema>[0], value: unknown): void {
@@ -534,14 +547,17 @@ describe('rallar-bb-test capability and schema contract', () => {
         }
     });
 
-    it('validates every shared-test black-box-runner example scenario', () => {
-        const exampleNames = readdirSync(runnerExamplesRoot).filter(name => name.endsWith('.json'));
-        expect(exampleNames.length).toBeGreaterThan(0);
+    it('validates every shared-test black-box-runner example and test scenario', () => {
+        const recipePaths = [
+            ...listJsonFiles(runnerExamplesRoot),
+            ...listJsonFiles(runnerTestsRoot),
+        ];
+        expect(recipePaths.length).toBeGreaterThan(0);
 
-        for (const fileName of exampleNames) {
+        for (const recipePath of recipePaths) {
             expectValid(
                 BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA,
-                readJsonFile(path.join(runnerExamplesRoot, fileName)),
+                readJsonFile(recipePath),
             );
         }
     });

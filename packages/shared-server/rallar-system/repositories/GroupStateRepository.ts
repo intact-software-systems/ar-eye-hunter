@@ -12,6 +12,8 @@ import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStat
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
     GroupJoinCodeWritten,
+    GroupSnapshotPage,
+    GroupSnapshotPageOptions,
     GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -142,6 +144,76 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                 activeSessionsByGroupId.get(group.groupId) ?? [],
             )
         );
+    }
+
+    async listSnapshotsPage(
+        scope: GroupScope,
+        options: GroupSnapshotPageOptions,
+    ): Promise<GroupSnapshotPage> {
+        const limit = Math.max(1, Math.floor(options.limit));
+        const rawPageLimit = limit + 1;
+        const pageGroups: Array<Readonly<{ key: string; group: Group }>> = [];
+        let afterKey = options.afterKey;
+        let hasMore = false;
+
+        while (!hasMore) {
+            const groupEntries = await this.listEntriesPage(
+                GROUPS_NAMESPACE,
+                this.scopeChildPrefix(scope),
+                {
+                    afterKey,
+                    limit: rawPageLimit,
+                },
+            );
+
+            if (groupEntries.length === 0) {
+                break;
+            }
+
+            for (const entry of groupEntries) {
+                afterKey = entry.key;
+                const group = await this.toLiveValue<Group>(
+                    GROUPS_NAMESPACE,
+                    entry,
+                );
+
+                if (group === undefined) {
+                    continue;
+                }
+
+                if (pageGroups.length === limit) {
+                    hasMore = true;
+                    break;
+                }
+
+                pageGroups.push({ key: entry.key, group });
+            }
+
+            if (groupEntries.length < rawPageLimit) {
+                break;
+            }
+        }
+
+        const snapshots = await Promise.all(
+            pageGroups.map(async ({ group }) => {
+                const [members, sessions] = await Promise.all([
+                    this.listMembers(group),
+                    this.listPresenceSessions(group),
+                ]);
+                return this.toSnapshot(
+                    group,
+                    members,
+                    this.toActiveSessions(sessions),
+                );
+            }),
+        );
+
+        return {
+            snapshots,
+            scannedGroupCount: snapshots.length,
+            hasMore,
+            nextGroupKey: pageGroups.at(-1)?.key,
+        };
     }
 
     async findGroupBySlug(
@@ -297,6 +369,10 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
 
     private scopePrefix(scope: GroupScope): string {
         return this.scopeKey(scope);
+    }
+
+    private scopeChildPrefix(scope: GroupScope): string {
+        return `${this.scopePrefix(scope)}:`;
     }
 
     private groupKey(ref: GroupRef): string {

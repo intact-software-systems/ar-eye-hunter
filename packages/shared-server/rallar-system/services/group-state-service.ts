@@ -11,11 +11,12 @@ import type {
 import type {
     AcceptGroupInviteRequest,
     AppointGroupDirectorRequest,
+    BanGroupMemberRequest,
     ConnectGroupPresenceSessionRequest,
     CreateGroupInviteRequest,
     CreateGroupRequest,
-    BanGroupMemberRequest,
     DisconnectGroupPresenceSessionRequest,
+    GroupJoinCodeResponse,
     HeartbeatGroupPresenceSessionRequest,
     JoinGroupRequest,
     MutationActorInput,
@@ -28,13 +29,9 @@ import type {
     UnbanGroupMemberRequest,
     UpdateGroupRequest,
     UpsertGroupMemberRequest,
-    GroupJoinCodeResponse,
 } from '@shared/api/state-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import type {
-    GroupPolicyDenied,
-    GroupPolicyResult,
-} from '@shared/api/group-policy-types.ts';
+import type { GroupPolicyDenied, GroupPolicyResult } from '@shared/api/group-policy-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
     createRallarGroupDirectorAppointment,
@@ -44,18 +41,13 @@ import {
     resolveRallarGroupDirectorAppointmentEligibility,
 } from '@shared/api/group-director.ts';
 import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
-import {
-    type GroupStateEventStore,
-} from '../repositories/StateEventStore.ts';
+import { type GroupStateEventStore } from '../repositories/StateEventStore.ts';
 import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import {
-    timeRallarAsync,
-    type RallarTimingSink,
-} from './timing.ts';
+import { type RallarTimingSink, timeRallarAsync } from './timing.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 import {
     canActivateGroupMember,
@@ -72,8 +64,7 @@ const DEFAULT_GROUP_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
 const RALLAR_GROUP_JOIN_CODE_VERSION = 1;
-const GROUP_PRESENCE_SESSION_LOCK_NAMESPACE =
-    'group-state:presence-session-locks';
+const GROUP_PRESENCE_SESSION_LOCK_NAMESPACE = 'group-state:presence-session-locks';
 
 export type GroupWritten = {
     snapshot: GroupSnapshot;
@@ -93,16 +84,32 @@ export type GroupStateWritten = {
 export type GroupJoinCodeMutationWritten =
     & GroupJoinCodeResponse
     & Readonly<{
-    event?: GroupEvent;
-}>;
+        event?: GroupEvent;
+    }>;
 
 export type GroupJoinCodeWritten = {
     status: 'ok' | 'error';
     result: Either<string, GroupJoinCodeMutationWritten>;
 };
 
+export type GroupSnapshotPageOptions = Readonly<{
+    afterKey?: string;
+    limit: number;
+}>;
+
+export type GroupSnapshotPage = Readonly<{
+    snapshots: readonly GroupSnapshot[];
+    scannedGroupCount: number;
+    hasMore: boolean;
+    nextGroupKey?: string;
+}>;
+
 export type GroupStateService = Readonly<{
     listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
+    listSnapshotsPage(
+        scope: GroupScope,
+        options: GroupSnapshotPageOptions,
+    ): Promise<GroupSnapshotPage>;
     readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
     listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
     listRecentEvents?(
@@ -248,6 +255,12 @@ export function createGroupStateService(
         listSnapshots: async (scope) => {
             return await repositoryFor(runtimeRepository).listSnapshots(scope);
         },
+        listSnapshotsPage: async (scope, options) => {
+            return await repositoryFor(runtimeRepository).listSnapshotsPage(
+                scope,
+                options,
+            );
+        },
         readSnapshot: async (ref) => {
             return await repositoryFor(runtimeRepository).readSnapshot(
                 ref,
@@ -358,8 +371,7 @@ export function createGroupStateService(
                     group,
                     {
                         ...request,
-                        actorPrincipalId:
-                            request.actorPrincipalId ?? request.createdByPrincipalId,
+                        actorPrincipalId: request.actorPrincipalId ?? request.createdByPrincipalId,
                     },
                     timestamp,
                     serviceId,
@@ -424,20 +436,16 @@ export function createGroupStateService(
                     status,
                     joinMode: request.joinMode ?? existing.joinMode,
                     maxMembers: request.maxMembers ?? existing.maxMembers,
-                    maxSessionsPerMember:
-                        request.maxSessionsPerMember ?? existing.maxSessionsPerMember,
+                    maxSessionsPerMember: request.maxSessionsPerMember ?? existing.maxSessionsPerMember,
                     metadata: request.metadata ?? existing.metadata,
                     snapshotVersion: nextGroupSnapshotVersion(existing),
                     metadataVersion: existing.metadataVersion + 1,
                     updated: updatedAudit,
                     archived: status === 'archived' ? updatedAudit : existing.archived,
                     deleted: status === 'deleted' ? updatedAudit : existing.deleted,
-                    expiresAtEpochMs:
-                        request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
-                    emptySinceEpochMs:
-                        request.emptySinceEpochMs ?? existing.emptySinceEpochMs,
-                    purgeAfterEpochMs:
-                        request.purgeAfterEpochMs ?? existing.purgeAfterEpochMs,
+                    expiresAtEpochMs: request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
+                    emptySinceEpochMs: request.emptySinceEpochMs ?? existing.emptySinceEpochMs,
+                    purgeAfterEpochMs: request.purgeAfterEpochMs ?? existing.purgeAfterEpochMs,
                 };
 
                 if (isSameGroupMutation(existing, group)) {
@@ -458,8 +466,8 @@ export function createGroupStateService(
                     status === 'archived'
                         ? 'group-archived'
                         : status === 'deleted'
-                            ? 'group-deleted'
-                            : 'group-updated',
+                        ? 'group-deleted'
+                        : 'group-updated',
                     group,
                     request,
                     timestamp,
@@ -721,9 +729,7 @@ export function createGroupStateService(
                     action: 'invite',
                 }));
 
-                const existing = snapshot.members.find((member) =>
-                    member.principalId === principalId
-                );
+                const existing = snapshot.members.find((member) => member.principalId === principalId);
                 assertCanInviteMember(existing);
                 if (existing?.status === 'active') {
                     return await addIdempotentGroupMutationWritten(
@@ -759,8 +765,7 @@ export function createGroupStateService(
                     removed: existing?.removed,
                     banned: existing?.banned,
                     invitedByPrincipalId: request.actorPrincipalId,
-                    invitationExpiresAtEpochMs:
-                        request.invitationExpiresAtEpochMs ??
+                    invitationExpiresAtEpochMs: request.invitationExpiresAtEpochMs ??
                         timestamp + DEFAULT_GROUP_INVITE_TTL_MS,
                 };
 
@@ -837,9 +842,7 @@ export function createGroupStateService(
                     action: 'remove',
                 }));
 
-                const existing = snapshot.members.find((member) =>
-                    member.principalId === principalId
-                );
+                const existing = snapshot.members.find((member) => member.principalId === principalId);
                 if (existing?.status !== 'invited') {
                     return await addIdempotentGroupMutationWritten(
                         repository,
@@ -903,12 +906,11 @@ export function createGroupStateService(
                     ...scope,
                     groupId,
                 };
-                const idempotentWritten =
-                    await findIdempotentGroupJoinCodeMutationWritten(
-                        repository,
-                        groupRef,
-                        request.requestId,
-                    );
+                const idempotentWritten = await findIdempotentGroupJoinCodeMutationWritten(
+                    repository,
+                    groupRef,
+                    request.requestId,
+                );
                 if (idempotentWritten) {
                     return idempotentWritten;
                 }
@@ -930,8 +932,7 @@ export function createGroupStateService(
                 }));
 
                 const joinCode = normalizeJoinCode(request.joinCode);
-                const expiresAtEpochMs =
-                    request.expiresAtEpochMs ??
+                const expiresAtEpochMs = request.expiresAtEpochMs ??
                     timestamp + DEFAULT_GROUP_JOIN_CODE_TTL_MS;
                 const verifier = await toGroupJoinCodeVerifier(joinCode);
                 const updatedAudit = toGroupAuditStamp(
@@ -1074,9 +1075,7 @@ export function createGroupStateService(
                 }));
 
                 const actorMember = request.actorPrincipalId
-                    ? snapshot.members.find((member) =>
-                        member.principalId === request.actorPrincipalId
-                    )
+                    ? snapshot.members.find((member) => member.principalId === request.actorPrincipalId)
                     : undefined;
                 const newOwner = snapshot.members.find((member) =>
                     member.principalId === request.newOwnerPrincipalId
@@ -1199,9 +1198,7 @@ export function createGroupStateService(
                     groupId,
                     principalId,
                 };
-                const existing = snapshot.members.find((member) =>
-                    member.principalId === principalId
-                );
+                const existing = snapshot.members.find((member) => member.principalId === principalId);
                 assertRawMemberMutationKeepsOwner(snapshot, existing, request);
                 const updatedAudit = toGroupAuditStamp(
                     request,
@@ -1219,10 +1216,8 @@ export function createGroupStateService(
                     left: status === 'left' ? updatedAudit : existing?.left,
                     removed: status === 'removed' ? updatedAudit : existing?.removed,
                     banned: status === 'banned' ? updatedAudit : existing?.banned,
-                    invitedByPrincipalId:
-                        request.invitedByPrincipalId ?? existing?.invitedByPrincipalId,
-                    invitationExpiresAtEpochMs:
-                        request.invitationExpiresAtEpochMs ??
+                    invitedByPrincipalId: request.invitedByPrincipalId ?? existing?.invitedByPrincipalId,
+                    invitationExpiresAtEpochMs: request.invitationExpiresAtEpochMs ??
                         existing?.invitationExpiresAtEpochMs,
                 };
 
@@ -1338,13 +1333,11 @@ export function createGroupStateService(
                     groupId,
                     sessionId,
                     principalId: request.principalId,
-                    connectedAtEpochMs:
-                        request.connectedAtEpochMs ??
+                    connectedAtEpochMs: request.connectedAtEpochMs ??
                         existing?.connectedAtEpochMs ??
                         timestamp,
                     lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? timestamp,
-                    expiresAtEpochMs:
-                        request.expiresAtEpochMs ??
+                    expiresAtEpochMs: request.expiresAtEpochMs ??
                         timestamp + DEFAULT_GROUP_SESSION_TTL_MS,
                     disconnectedAtEpochMs: undefined,
                     disconnectReason: undefined,
@@ -1432,17 +1425,15 @@ export function createGroupStateService(
                     timestamp,
                     serviceId,
                     request.actorPrincipalId ??
-                    request.principalId ??
-                    existing.principalId,
+                        request.principalId ??
+                        existing.principalId,
                 );
-                const wasActive =
-                    existing.disconnectedAtEpochMs === undefined &&
+                const wasActive = existing.disconnectedAtEpochMs === undefined &&
                     existing.disconnectReason === undefined;
                 const session: GroupPresenceSession = {
                     ...existing,
                     lastHeartbeatAtEpochMs: timestamp,
-                    expiresAtEpochMs:
-                        request.expiresAtEpochMs ??
+                    expiresAtEpochMs: request.expiresAtEpochMs ??
                         existing.expiresAtEpochMs ??
                         timestamp + DEFAULT_GROUP_SESSION_TTL_MS,
                     disconnectedAtEpochMs: undefined,
@@ -1534,21 +1525,17 @@ export function createGroupStateService(
                     timestamp,
                     serviceId,
                     request.actorPrincipalId ??
-                    request.principalId ??
-                    existing.principalId,
+                        request.principalId ??
+                        existing.principalId,
                 );
                 const session: GroupPresenceSession = {
                     ...existing,
-                    lastHeartbeatAtEpochMs:
-                        request.lastHeartbeatAtEpochMs ?? existing.lastHeartbeatAtEpochMs,
-                    expiresAtEpochMs:
-                        request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
-                    disconnectedAtEpochMs:
-                        request.disconnectedAtEpochMs ??
+                    lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? existing.lastHeartbeatAtEpochMs,
+                    expiresAtEpochMs: request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
+                    disconnectedAtEpochMs: request.disconnectedAtEpochMs ??
                         existing.disconnectedAtEpochMs ??
                         timestamp,
-                    disconnectReason:
-                        request.reason ?? existing.disconnectReason ?? 'closed',
+                    disconnectReason: request.reason ?? existing.disconnectReason ?? 'closed',
                 };
 
                 await repository.putPresenceSession(session);
@@ -1629,8 +1616,7 @@ export function createGroupStateService(
                     );
                     writtenResults.push(written);
                 } catch (error) {
-                    const message =
-                        error instanceof Error ? error.message : String(error);
+                    const message = error instanceof Error ? error.message : String(error);
                     if (!message.includes('not found')) {
                         throw error;
                     }
@@ -1670,8 +1656,7 @@ export function createGroupStateService(
                     );
                     writtenResults.push(written);
                 } catch (error) {
-                    const message =
-                        error instanceof Error ? error.message : String(error);
+                    const message = error instanceof Error ? error.message : String(error);
                     if (!message.includes('not found')) {
                         throw error;
                     }
@@ -1706,6 +1691,19 @@ function withGroupStateServiceTiming(
                     workspaceId: scope.workspaceId,
                 },
                 () => service.listSnapshots(scope),
+            ),
+        listSnapshotsPage: async (scope, options) =>
+            await timeRallarAsync(
+                timing,
+                {
+                    component: 'group-state-service',
+                    operation: 'listSnapshotsPage',
+                    serviceId,
+                    applicationId: scope.applicationId,
+                    workspaceId: scope.workspaceId,
+                    details: { limit: options.limit },
+                },
+                () => service.listSnapshotsPage(scope, options),
             ),
         readSnapshot: async (ref) =>
             await timeRallarAsync(
@@ -2305,9 +2303,7 @@ async function writeGovernedGroupMemberMutation(
             nowEpochMs: timestamp,
         }));
 
-        const existing = snapshot.members.find((member) =>
-            member.principalId === input.principalId
-        );
+        const existing = snapshot.members.find((member) => member.principalId === input.principalId);
         if (input.role === 'owner') {
             throwGroupPolicyDenied(
                 'forbidden-role',
@@ -2321,9 +2317,7 @@ async function writeGovernedGroupMemberMutation(
                 sessionId: input.request.actorSessionId,
             },
             targetPrincipalId: input.principalId,
-            action: input.role
-                ? toRoleGovernanceAction(existing, input.role)
-                : input.action,
+            action: input.role ? toRoleGovernanceAction(existing, input.role) : input.action,
         }));
 
         if (!existing && input.missingMemberBehavior === 'noop') {
@@ -2470,9 +2464,8 @@ function isLastActiveOwnerInSnapshot(
         return false;
     }
 
-    return snapshot.members.filter((entry) =>
-        entry.role === 'owner' && entry.status === 'active'
-    ).length === 1;
+    return snapshot.members.filter((entry) => entry.role === 'owner' && entry.status === 'active')
+        .length === 1;
 }
 
 function assertCanInviteMember(member: GroupMember | undefined): void {
