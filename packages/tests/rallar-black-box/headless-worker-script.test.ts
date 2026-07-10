@@ -68,7 +68,9 @@ describe("rallar-black-box headless worker script", () => {
     expect(runtime).toContain("Distributed run ${input.runId} is not created yet");
     expect(runtime).toContain("response.status === 404");
     expect(script).toContain("await waitForWorkerExit(config, shutdown);");
+    expect(script).toContain("waitForHeadlessWorkerExit({");
     expect(script).toContain("await waitForDistributedRunTerminal({");
+    expect(script).toContain("signal,");
   });
 
   it("redacts URL secrets by known key and sensitive key pattern", async () => {

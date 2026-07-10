@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   attachHeadlessWorkerPageLogging,
   createHeadlessWorkerLogger,
@@ -6,7 +6,48 @@ import {
   logHeadlessWorkerUiConfirmationFailure,
   redactHeadlessWorkerLogText,
   waitForDistributedRunTerminal,
+  waitForHeadlessWorkerExit,
 } from "../../../apps/rallar-black-box/src/headless-worker-runtime.ts";
+
+type PromiseOutcome =
+  | Readonly<{ state: "resolved" }>
+  | Readonly<{ state: "rejected"; error: unknown }>
+  | Readonly<{ state: "pending" }>;
+
+function deferred<T>(): Readonly<{
+  promise: Promise<T>;
+  resolve(value: T): void;
+}> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+  return { promise, resolve };
+}
+
+function observe(promise: Promise<void>): Promise<PromiseOutcome> {
+  return promise.then(
+    () => ({ state: "resolved" }),
+    (error: unknown) => ({ state: "rejected", error }),
+  );
+}
+
+async function observeWithin(
+  promise: Promise<void>,
+  timeoutMs: number,
+): Promise<PromiseOutcome> {
+  return await Promise.race([
+    observe(promise),
+    new Promise<PromiseOutcome>((resolve) => {
+      setTimeout(() => resolve({ state: "pending" }), timeoutMs);
+    }),
+  ]);
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 class FakePageEvents {
   #listeners = new Map<string, ((value: unknown) => void)[]>();
@@ -48,6 +89,7 @@ describe("rallar-black-box headless worker runtime", () => {
       runId: "run-1",
       url: "https://control.example.test/distributed-runs/run-1",
       deadline: 1_000,
+      timeoutMs: 1_000,
       pollIntervalMs: 10,
       fetch: async () => {
         calls += 1;
@@ -150,5 +192,252 @@ describe("rallar-black-box headless worker runtime", () => {
     expect(output).toContain("UI confirmation skipped");
     expect(output).toContain("startup failure");
     expect(output).toContain("controlToken=[REDACTED]");
+  });
+
+  it("hard-times out a never-settling fetch and aborts its signal", async () => {
+    vi.useFakeTimers();
+    try {
+      let fetchSignal: AbortSignal | undefined;
+      const startedAt = Date.now();
+      const polling = waitForDistributedRunTerminal({
+        runId: "run-never",
+        url: "https://control.example.test/distributed-runs/run-never",
+        deadline: startedAt + 10,
+        timeoutMs: 10,
+        pollIntervalMs: 5,
+        fetch: async (_url, init) => {
+          fetchSignal = init?.signal;
+          return await new Promise(() => undefined);
+        },
+        sleep: async () => undefined,
+        now: Date.now,
+        log: () => undefined,
+      });
+      const guarded = Promise.race([
+        observe(polling),
+        new Promise<PromiseOutcome>((resolve) => {
+          setTimeout(() => resolve({ state: "pending" }), 11);
+        }),
+      ]);
+
+      await vi.advanceTimersByTimeAsync(11);
+      const outcome = await guarded;
+
+      expect(outcome).toEqual({
+        state: "rejected",
+        error: expect.objectContaining({
+          message: expect.stringContaining("Timed out after 10ms"),
+        }),
+      });
+      expect(fetchSignal).toBeInstanceOf(AbortSignal);
+      expect(fetchSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("settles promptly when external shutdown aborts an active fetch", async () => {
+    vi.useFakeTimers();
+    try {
+      const shutdown = deferred<void>();
+      let fetchSignal: AbortSignal | undefined;
+      const startedAt = Date.now();
+      const exit = waitForHeadlessWorkerExit({
+        waitForShutdown: async () => await shutdown.promise,
+        waitForCompletion: async (signal) => {
+          await waitForDistributedRunTerminal({
+            runId: "run-shutdown",
+            url: "https://control.example.test/distributed-runs/run-shutdown",
+            deadline: startedAt + 10_000,
+            timeoutMs: 10_000,
+            pollIntervalMs: 5_000,
+            signal,
+            fetch: async (_url, init) => {
+              fetchSignal = init?.signal;
+              return await new Promise(() => undefined);
+            },
+            sleep: async () => undefined,
+            now: Date.now,
+            log: () => undefined,
+          });
+        },
+      });
+
+      await flushMicrotasks();
+      shutdown.resolve();
+      await expect(exit).resolves.toBeUndefined();
+
+      expect(fetchSignal).toBeInstanceOf(AbortSignal);
+      expect(fetchSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("observes late response disposal failures after an aborted fetch", async () => {
+    const shutdown = new AbortController();
+    const response = deferred<Readonly<{
+      status: number;
+      ok: boolean;
+      body: Readonly<{ cancel(): Promise<void> }>;
+      json(): Promise<unknown>;
+    }>>();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown) => unhandled.push(error);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const polling = waitForDistributedRunTerminal({
+        runId: "run-late",
+        url: "https://control.example.test/distributed-runs/run-late",
+        deadline: Date.now() + 10_000,
+        timeoutMs: 10_000,
+        pollIntervalMs: 5_000,
+        signal: shutdown.signal,
+        fetch: async () => await response.promise,
+        sleep: async () => undefined,
+        now: Date.now,
+        log: () => undefined,
+      });
+
+      await flushMicrotasks();
+      shutdown.abort(new Error("worker shutdown"));
+      expect((await observeWithin(polling, 25)).state).toBe("rejected");
+      response.resolve({
+        status: 503,
+        ok: false,
+        body: {
+          cancel: async () => {
+            throw new Error("late cancel failed");
+          },
+        },
+        json: async () => ({}),
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("cancels the losing after-idle timer when shutdown wins", async () => {
+    const shutdown = deferred<void>();
+    let idleSignal: AbortSignal | undefined;
+    let idleTimerCleared = false;
+
+    const exit = waitForHeadlessWorkerExit({
+      waitForShutdown: async () => await shutdown.promise,
+      waitForCompletion: async (signal) => {
+        idleSignal = signal;
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 10_000);
+          signal.addEventListener("abort", () => {
+            clearTimeout(timer);
+            idleTimerCleared = true;
+            reject(signal.reason);
+          }, { once: true });
+        });
+      },
+    });
+
+    await flushMicrotasks();
+    shutdown.resolve();
+    await expect(exit).resolves.toBeUndefined();
+
+    expect(idleSignal?.aborted).toBe(true);
+    expect(idleTimerCleared).toBe(true);
+  });
+
+  it("cancels the 404 response body before retrying", async () => {
+    const cancel = vi.fn(async () => undefined);
+    let calls = 0;
+
+    await waitForDistributedRunTerminal({
+      runId: "run-404",
+      url: "https://control.example.test/distributed-runs/run-404",
+      deadline: undefined,
+      timeoutMs: undefined,
+      pollIntervalMs: 10,
+      fetch: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            status: 404,
+            ok: false,
+            body: { cancel },
+            json: async () => ({}),
+          };
+        }
+        return {
+          status: 200,
+          ok: true,
+          json: async () => ({ state: "passed" }),
+        };
+      },
+      sleep: async () => undefined,
+      now: () => 0,
+      log: () => undefined,
+    });
+
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("cancels an authentication response body before throwing", async () => {
+    const cancel = vi.fn(async () => undefined);
+
+    await expect(waitForDistributedRunTerminal({
+      runId: "run-auth",
+      url: "https://control.example.test/distributed-runs/run-auth",
+      deadline: undefined,
+      timeoutMs: undefined,
+      pollIntervalMs: 10,
+      fetch: async () => ({
+        status: 401,
+        ok: false,
+        body: { cancel },
+        json: async () => ({}),
+      }),
+      sleep: async () => undefined,
+      now: () => 0,
+      log: () => undefined,
+    })).rejects.toThrow("returned HTTP 401");
+
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a retryable non-OK response body before polling again", async () => {
+    const cancel = vi.fn(async () => undefined);
+    let calls = 0;
+
+    await waitForDistributedRunTerminal({
+      runId: "run-retry",
+      url: "https://control.example.test/distributed-runs/run-retry",
+      deadline: undefined,
+      timeoutMs: undefined,
+      pollIntervalMs: 10,
+      fetch: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            status: 503,
+            ok: false,
+            body: { cancel },
+            json: async () => ({}),
+          };
+        }
+        return {
+          status: 200,
+          ok: true,
+          json: async () => ({ state: "passed" }),
+        };
+      },
+      sleep: async () => undefined,
+      now: () => 0,
+      log: () => undefined,
+    });
+
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });

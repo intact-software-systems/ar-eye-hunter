@@ -21,6 +21,7 @@ import {
   type HeadlessWorkerLogger,
   logHeadlessWorkerUiConfirmationFailure,
   waitForDistributedRunTerminal,
+  waitForHeadlessWorkerExit,
 } from "../src/headless-worker-runtime.ts";
 
 type ControlRunAgentSnapshot = Readonly<{
@@ -39,6 +40,11 @@ type RunningAgent = Readonly<{
   page: Page;
 }>;
 
+type ShutdownSignal = Readonly<{
+  wait(signal?: AbortSignal): Promise<void>;
+  dispose(): void;
+}>;
+
 const WORKBENCH_UI_CONFIRMATION_TIMEOUT_MS = 5_000;
 const browserTypes = {
   chromium,
@@ -48,6 +54,7 @@ const browserTypes = {
 
 let browser: Browser | undefined;
 let runningAgents: readonly RunningAgent[] = [];
+let shutdown: ShutdownSignal | undefined;
 const bootstrapLogSecrets = headlessWorkerLogSecretsFromEnv(process.env);
 let logger = createWorkerLogger(bootstrapLogSecrets);
 
@@ -60,7 +67,7 @@ try {
     ...config.agentControlTokens,
     ...config.agentCredentials.map((credentials) => credentials.password),
   ]);
-  const shutdown = createShutdownSignal();
+  shutdown = createShutdownSignal();
   log(
     `Starting rallar-black-box headless worker run=${config.runId} ` +
       `agents=${config.agentCount} entry=${config.headlessEntry} ` +
@@ -85,6 +92,7 @@ try {
   logger.error(error);
   process.exitCode = 1;
 } finally {
+  shutdown?.dispose();
   await closeAgents(runningAgents);
   await browser?.close().catch(() => undefined);
   log("Rallar black-box headless worker stopped.");
@@ -257,7 +265,7 @@ async function fetchControlRunSnapshot(
 
 async function waitForWorkerExit(
   config: HeadlessWorkerConfig,
-  shutdown: Readonly<{ wait(): Promise<void> }>,
+  shutdown: ShutdownSignal,
 ): Promise<void> {
   if (config.exitMode === "signal") {
     await shutdown.wait();
@@ -265,22 +273,28 @@ async function waitForWorkerExit(
   }
 
   if (config.exitMode === "after-idle-ms") {
-    if (!config.idleExitMs) {
+    const idleExitMs = config.idleExitMs;
+    if (!idleExitMs) {
       throw new Error("RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer");
     }
-    log(`Worker will stop after idle timeout ${config.idleExitMs}ms.`);
-    await Promise.race([shutdown.wait(), delay(config.idleExitMs)]);
+    log(`Worker will stop after idle timeout ${idleExitMs}ms.`);
+    await waitForHeadlessWorkerExit({
+      waitForShutdown: (signal) => shutdown.wait(signal),
+      waitForCompletion: (signal) => delay(idleExitMs, signal),
+    });
     return;
   }
 
-  await Promise.race([
-    shutdown.wait(),
-    waitForConfiguredDistributedRunTerminal(config),
-  ]);
+  await waitForHeadlessWorkerExit({
+    waitForShutdown: (signal) => shutdown.wait(signal),
+    waitForCompletion: (signal) =>
+      waitForConfiguredDistributedRunTerminal(config, signal),
+  });
 }
 
 async function waitForConfiguredDistributedRunTerminal(
   config: HeadlessWorkerConfig,
+  signal: AbortSignal,
 ): Promise<void> {
   const runId = config.targetDistributedRunId;
   if (!runId) {
@@ -298,6 +312,7 @@ async function waitForConfiguredDistributedRunTerminal(
       : Date.now() + config.idleExitMs,
     timeoutMs: config.idleExitMs,
     pollIntervalMs: config.distributedPollIntervalMs,
+    signal,
     fetch,
     sleep: delay,
     now: Date.now,
@@ -332,8 +347,31 @@ function controlReadHeaders(config: HeadlessWorkerConfig): HeadersInit | undefin
   };
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+        timeout = undefined;
+      }
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(signal?.reason ?? new Error("Operation aborted"));
+    };
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+  });
 }
 
 async function closeAgents(agents: readonly RunningAgent[]): Promise<void> {
@@ -345,20 +383,55 @@ async function closeAgents(agents: readonly RunningAgent[]): Promise<void> {
   );
 }
 
-function createShutdownSignal(): Readonly<{ wait(): Promise<void> }> {
+function createShutdownSignal(): ShutdownSignal {
   let resolve!: () => void;
+  let settled = false;
   const waitPromise = new Promise<void>((innerResolve) => {
     resolve = innerResolve;
   });
+  const onSigint = () => stop("SIGINT");
+  const onSigterm = () => stop("SIGTERM");
+  const dispose = () => {
+    process.removeListener("SIGINT", onSigint);
+    process.removeListener("SIGTERM", onSigterm);
+  };
   const stop = (signal: string) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    dispose();
     log(`Received ${signal}; shutting down`);
     resolve();
   };
 
-  process.once("SIGINT", () => stop("SIGINT"));
-  process.once("SIGTERM", () => stop("SIGTERM"));
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
   return {
-    wait: () => waitPromise,
+    wait: (signal) => {
+      if (!signal) {
+        return waitPromise;
+      }
+      return new Promise<void>((innerResolve, reject) => {
+        const cleanup = () => signal.removeEventListener("abort", onAbort);
+        const onAbort = () => {
+          cleanup();
+          dispose();
+          reject(signal.reason ?? new Error("Operation aborted"));
+        };
+
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+        waitPromise.then(() => {
+          cleanup();
+          innerResolve();
+        });
+      });
+    },
+    dispose,
   };
 }
 
