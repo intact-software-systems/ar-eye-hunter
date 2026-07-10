@@ -204,19 +204,29 @@ export async function waitForDistributedRunTerminal(
     now: input.now,
     timeoutError,
   });
+  const ensureActive = (response?: DistributedRunResponse) => {
+    ensurePollingActive(
+      input,
+      abortScope,
+      timeoutError,
+      response,
+    );
+  };
   let lastObservedState = "";
   let malformedJsonCount = 0;
 
   try {
-    throwIfAborted(abortScope.signal);
-    while (input.deadline === undefined || input.now() < input.deadline) {
+    ensureActive();
+    while (true) {
       let response: DistributedRunResponse;
       try {
         response = await fetchWithAbort(input, abortScope.signal);
+        ensureActive(response);
       } catch (error) {
         if (abortScope.signal.aborted) {
           throw abortReason(abortScope.signal);
         }
+        ensureActive();
         const state = "network-error";
         if (lastObservedState !== state) {
           input.log(`Distributed run ${input.runId} state=${state}`);
@@ -224,10 +234,12 @@ export async function waitForDistributedRunTerminal(
         }
         malformedJsonCount = 0;
         await sleepWithAbort(input, abortScope.signal);
+        ensureActive();
         continue;
       }
       if (response.status === 404) {
         await cancelResponseBody(response, abortScope.signal);
+        ensureActive();
         const state = "not-created";
         if (lastObservedState !== state) {
           input.log(`Distributed run ${input.runId} is not created yet.`);
@@ -235,11 +247,13 @@ export async function waitForDistributedRunTerminal(
         }
         malformedJsonCount = 0;
         await sleepWithAbort(input, abortScope.signal);
+        ensureActive();
         continue;
       }
 
       if (response.status === 401 || response.status === 403) {
         await cancelResponseBody(response, abortScope.signal);
+        ensureActive();
         throw new Error(
           `Distributed run ${input.runId} returned HTTP ${response.status}; ` +
             `check GitHub/operator control token configuration for ${
@@ -250,6 +264,7 @@ export async function waitForDistributedRunTerminal(
 
       if (!response.ok) {
         await cancelResponseBody(response, abortScope.signal);
+        ensureActive();
         const state = `http-${response.status}`;
         if (lastObservedState !== state) {
           input.log(
@@ -259,6 +274,7 @@ export async function waitForDistributedRunTerminal(
         }
         malformedJsonCount = 0;
         await sleepWithAbort(input, abortScope.signal);
+        ensureActive();
         continue;
       }
 
@@ -269,9 +285,7 @@ export async function waitForDistributedRunTerminal(
           abortScope.signal,
         ) as DistributedRunSnapshot;
       } catch (error) {
-        if (abortScope.signal.aborted) {
-          throw abortReason(abortScope.signal);
-        }
+        ensureActive(response);
         malformedJsonCount += 1;
         if (malformedJsonCount >= 3) {
           throw new Error(
@@ -281,8 +295,10 @@ export async function waitForDistributedRunTerminal(
           );
         }
         await sleepWithAbort(input, abortScope.signal);
+        ensureActive();
         continue;
       }
+      ensureActive(response);
 
       malformedJsonCount = 0;
       const state = snapshot.state ?? "unknown";
@@ -294,9 +310,8 @@ export async function waitForDistributedRunTerminal(
         return;
       }
       await sleepWithAbort(input, abortScope.signal);
+      ensureActive();
     }
-
-    throw timeoutError();
   } finally {
     abortScope.cleanup();
   }
@@ -318,13 +333,20 @@ function createAbortScope(input: Readonly<{
   deadline: number | undefined;
   now: () => number;
   timeoutError: () => Error;
-}>): Readonly<{ signal: AbortSignal; cleanup(): void }> {
+}>): Readonly<{
+  signal: AbortSignal;
+  abort(reason: unknown): void;
+  cleanup(): void;
+}> {
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  const abortFromParent = () => {
+  const abort = (reason: unknown) => {
     if (!controller.signal.aborted) {
-      controller.abort(abortReason(input.parentSignal!));
+      controller.abort(reason);
     }
+  };
+  const abortFromParent = () => {
+    abort(abortReason(input.parentSignal!));
   };
   const cleanup = () => {
     if (timeout !== undefined) {
@@ -341,13 +363,39 @@ function createAbortScope(input: Readonly<{
   }
   if (input.deadline !== undefined && !controller.signal.aborted) {
     timeout = setTimeout(() => {
-      if (!controller.signal.aborted) {
-        controller.abort(input.timeoutError());
-      }
+      abort(input.timeoutError());
     }, Math.max(0, input.deadline - input.now()));
   }
 
-  return { signal: controller.signal, cleanup };
+  return { signal: controller.signal, abort, cleanup };
+}
+
+function ensurePollingActive(
+  input: WaitForDistributedRunTerminalInput,
+  abortScope: Readonly<{
+    signal: AbortSignal;
+    abort(reason: unknown): void;
+  }>,
+  timeoutError: () => Error,
+  response?: DistributedRunResponse,
+): void {
+  let reason: unknown;
+  if (abortScope.signal.aborted) {
+    reason = abortReason(abortScope.signal);
+  } else if (
+    input.deadline !== undefined &&
+    input.now() >= input.deadline
+  ) {
+    reason = timeoutError();
+    abortScope.abort(reason);
+  } else {
+    return;
+  }
+
+  if (response) {
+    void cancelResponseBody(response, abortScope.signal);
+  }
+  throw reason;
 }
 
 async function fetchWithAbort(
@@ -387,16 +435,19 @@ async function cancelResponseBody(
   if (!response.body) {
     return;
   }
+  let cancellation: Promise<void>;
   try {
-    await raceWithAbort(
-      Promise.resolve().then(() => response.body!.cancel()),
-      signal,
+    cancellation = Promise.resolve(response.body.cancel()).then(
+      () => undefined,
+      () => undefined,
     );
-  } catch (error) {
-    if (signal.aborted) {
-      throw error;
-    }
+  } catch {
+    return;
   }
+  if (signal.aborted) {
+    return;
+  }
+  await raceWithAbort(cancellation, signal).catch(() => undefined);
 }
 
 function raceWithAbort<T>(value: PromiseLike<T>, signal: AbortSignal): Promise<T> {

@@ -285,6 +285,9 @@ describe("rallar-black-box headless worker runtime", () => {
       json(): Promise<unknown>;
     }>>();
     const unhandled: unknown[] = [];
+    const cancel = vi.fn(async () => {
+      throw new Error("late cancel failed");
+    });
     const onUnhandled = (error: unknown) => unhandled.push(error);
     process.on("unhandledRejection", onUnhandled);
     try {
@@ -307,15 +310,12 @@ describe("rallar-black-box headless worker runtime", () => {
       response.resolve({
         status: 503,
         ok: false,
-        body: {
-          cancel: async () => {
-            throw new Error("late cancel failed");
-          },
-        },
+        body: { cancel },
         json: async () => ({}),
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
 
+      expect(cancel).toHaveBeenCalledOnce();
       expect(unhandled).toEqual([]);
     } finally {
       process.removeListener("unhandledRejection", onUnhandled);
@@ -439,5 +439,238 @@ describe("rallar-black-box headless worker runtime", () => {
     });
 
     expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a terminal 200 response that arrives after the logical deadline", async () => {
+    let now = 0;
+    const cancel = vi.fn(async () => undefined);
+    const json = vi.fn(async () => ({ state: "passed" }));
+    const logs: string[] = [];
+
+    await expect(waitForDistributedRunTerminal({
+      runId: "run-late-passed",
+      url: "https://control.example.test/distributed-runs/run-late-passed",
+      deadline: 10_000,
+      timeoutMs: 10_000,
+      pollIntervalMs: 10,
+      fetch: async () => {
+        now = 10_000;
+        return {
+          status: 200,
+          ok: true,
+          body: { cancel },
+          json,
+        };
+      },
+      sleep: async () => undefined,
+      now: () => now,
+      log: (message) => logs.push(message),
+    })).rejects.toThrow("Timed out after 10000ms");
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(json).not.toHaveBeenCalled();
+    expect(logs).toEqual([]);
+  });
+
+  it("rejects a 401 response that arrives after the logical deadline", async () => {
+    let now = 0;
+    const cancel = vi.fn(async () => undefined);
+
+    await expect(waitForDistributedRunTerminal({
+      runId: "run-late-auth",
+      url: "https://control.example.test/distributed-runs/run-late-auth",
+      deadline: 10_000,
+      timeoutMs: 10_000,
+      pollIntervalMs: 10,
+      fetch: async () => {
+        now = 10_000;
+        return {
+          status: 401,
+          ok: false,
+          body: { cancel },
+          json: async () => ({}),
+        };
+      },
+      sleep: async () => undefined,
+      now: () => now,
+      log: () => undefined,
+    })).rejects.toThrow("Timed out after 10000ms");
+
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("does not log or retry a 503 response that arrives after the logical deadline", async () => {
+    let now = 0;
+    const cancel = vi.fn(async () => undefined);
+    const sleep = vi.fn(async () => undefined);
+    const logs: string[] = [];
+
+    await expect(waitForDistributedRunTerminal({
+      runId: "run-late-retry",
+      url: "https://control.example.test/distributed-runs/run-late-retry",
+      deadline: 10_000,
+      timeoutMs: 10_000,
+      pollIntervalMs: 10,
+      fetch: async () => {
+        now = 10_000;
+        return {
+          status: 503,
+          ok: false,
+          body: { cancel },
+          json: async () => ({}),
+        };
+      },
+      sleep,
+      now: () => now,
+      log: (message) => logs.push(message),
+    })).rejects.toThrow("Timed out after 10000ms");
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(sleep).not.toHaveBeenCalled();
+    expect(logs).toEqual([]);
+  });
+
+  it("cancels an active response body when JSON is aborted", async () => {
+    const shutdown = new AbortController();
+    const abortError = new Error("worker shutdown during json");
+    const cancel = vi.fn(async () => {
+      throw new Error("json cancel failed");
+    });
+    const json = vi.fn(async () => await new Promise(() => undefined));
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown) => unhandled.push(error);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const polling = waitForDistributedRunTerminal({
+        runId: "run-json-abort",
+        url: "https://control.example.test/distributed-runs/run-json-abort",
+        deadline: undefined,
+        timeoutMs: undefined,
+        pollIntervalMs: 10,
+        signal: shutdown.signal,
+        fetch: async () => ({
+          status: 200,
+          ok: true,
+          body: { cancel },
+          json,
+        }),
+        sleep: async () => undefined,
+        now: () => 0,
+        log: () => undefined,
+      });
+
+      for (let attempt = 0; attempt < 10 && json.mock.calls.length === 0; attempt += 1) {
+        await Promise.resolve();
+      }
+      expect(json).toHaveBeenCalledOnce();
+      shutdown.abort(abortError);
+      const outcome = await observeWithin(polling, 25);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(outcome).toEqual({ state: "rejected", error: abortError });
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("hard-times out a non-cooperative retry sleep without unhandled rejection", async () => {
+    vi.useFakeTimers();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown) => unhandled.push(error);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      let sleepSignal: AbortSignal | undefined;
+      const startedAt = Date.now();
+      const polling = waitForDistributedRunTerminal({
+        runId: "run-sleep-timeout",
+        url: "https://control.example.test/distributed-runs/run-sleep-timeout",
+        deadline: startedAt + 10,
+        timeoutMs: 10,
+        pollIntervalMs: 5,
+        fetch: async () => ({
+          status: 503,
+          ok: false,
+          json: async () => ({}),
+        }),
+        sleep: async (_ms, signal) => {
+          sleepSignal = signal;
+          return await new Promise(() => undefined);
+        },
+        now: Date.now,
+        log: () => undefined,
+      });
+      const outcomePromise = observe(polling);
+
+      await vi.advanceTimersByTimeAsync(10);
+      const outcome = await outcomePromise;
+      await Promise.resolve();
+
+      expect(outcome).toEqual({
+        state: "rejected",
+        error: expect.objectContaining({
+          message: expect.stringContaining("Timed out after 10ms"),
+        }),
+      });
+      expect(sleepSignal?.aborted).toBe(true);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps three consecutive malformed payloads fatal", async () => {
+    let calls = 0;
+
+    await expect(waitForDistributedRunTerminal({
+      runId: "run-malformed",
+      url: "https://control.example.test/distributed-runs/run-malformed",
+      deadline: undefined,
+      timeoutMs: undefined,
+      pollIntervalMs: 10,
+      fetch: async () => {
+        calls += 1;
+        return {
+          status: 200,
+          ok: true,
+          json: async () => {
+            throw new Error("invalid json");
+          },
+        };
+      },
+      sleep: async () => undefined,
+      now: () => 0,
+      log: () => undefined,
+    })).rejects.toThrow("for 3 consecutive polls");
+
+    expect(calls).toBe(3);
+  });
+
+  it("logs distributed states only when they change", async () => {
+    const states = ["running", "running", "passed"];
+    const logs: string[] = [];
+
+    await waitForDistributedRunTerminal({
+      runId: "run-state-change",
+      url: "https://control.example.test/distributed-runs/run-state-change",
+      deadline: undefined,
+      timeoutMs: undefined,
+      pollIntervalMs: 10,
+      fetch: async () => ({
+        status: 200,
+        ok: true,
+        json: async () => ({ state: states.shift() }),
+      }),
+      sleep: async () => undefined,
+      now: () => 0,
+      log: (message) => logs.push(message),
+    });
+
+    expect(logs).toEqual([
+      "Distributed run run-state-change state=running",
+      "Distributed run run-state-change state=passed",
+    ]);
   });
 });
