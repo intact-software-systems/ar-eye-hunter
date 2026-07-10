@@ -1800,7 +1800,7 @@ git commit -m "feat: add server match result helper"
   - Updated public API expectations for `packages/shared-web/game/mod.ts`.
   - Documentation explaining that match support is optional and does not include leaderboards or point rules.
 
-- [ ] **Step 1: Update shared-web public API snapshot expectations**
+- [x] **Step 1: Update shared-web public API snapshot expectations**
 
 Modify the `packages/shared-web/game/mod.ts` expected values in `packages/tests/shared-web/shared-web-public-api-snapshots.test.ts` by adding these value exports:
 
@@ -1827,7 +1827,7 @@ Add these star exports to the same expected `starExports` array:
 './match-support.ts',
 ```
 
-- [ ] **Step 2: Write documentation section**
+- [x] **Step 2: Write documentation section**
 
 Append this section to `docs/rallar-api-reference.md` near the existing Director and Rallar Game material:
 
@@ -1852,7 +1852,7 @@ and diagnostics. The application still owns command legality, scoring rules,
 win conditions, persistence, rewards, global leaderboards, and anti-cheat.
 ```
 
-- [ ] **Step 3: Run public API and doc-related tests**
+- [x] **Step 3: Run public API and doc-related tests**
 
 Run:
 
@@ -1862,7 +1862,7 @@ npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit Task 5**
+- [x] **Step 4: Commit Task 5**
 
 Run:
 
@@ -1995,3 +1995,12 @@ Implement Tasks 1-6 as written. Any expansion into consumer migration, formal te
 - Scope: preserved the Task 3 trust correction. No result finalization, `server-validated` label, app change, top-level facade, or other task surface was added.
 - Blockers: none.
 - Remaining validation: Tasks 4-6 and their focused match, adjacent Rallar Game, public-surface, browser bundle-boundary, and shared/shared-web/shared-server typecheck matrix remain.
+
+### Task 5 - 2026-07-10T13:13:50+02:00
+
+- Completed: refreshed the `packages/shared-web/game/mod.ts` public API snapshot for the optional browser-director and server-authority browser match wrappers, and added the canonical Optional Match Support reference beside Director.
+- Files changed: `packages/tests/shared-web/shared-web-public-api-snapshots.test.ts`, `docs/rallar-api-reference.md`, and this implementation plan.
+- Commands: RED `npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts` failed as expected because the Task 2/3 exports were absent from the expected snapshot; GREEN passed (1 file, 8 tests).
+- Documentation decision: kept one Optional Match Support section in `docs/rallar-api-reference.md`; it documents named optional imports, room-trusted browser-director results, the server-authority browser command/standings wrapper, the server-only validated-result helper, and application-owned scoring, persistence, leaderboards, and anti-cheat.
+- Blockers: none.
+- Remaining validation: Task 6 final focused match, adjacent Rallar Game, public-surface, browser bundle-boundary, and shared/shared-web/shared-server typecheck matrix remain.

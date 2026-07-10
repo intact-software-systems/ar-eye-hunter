@@ -356,6 +356,25 @@ if (status.isDirector) {
 }
 ```
 
+### Optional Match Support
+
+Rallar match support is an optional layer for room-based browser activities. It
+does not add a top-level `rallar.match` facade in V1. Import named helpers from
+`@shared/rallar-match/mod.ts` and `@shared-web/game/mod.ts`.
+
+Use `createRallarBrowserMatch` for browser-director matches where a live
+room session holds the director lease and routes commands, snapshots, events,
+participants, standings, and room-trusted result envelopes.
+
+Use `createRallarAuthorityBrowserMatch` when the authoritative game or
+activity loop lives behind Rallar Game Authority. Browser clients do not mint
+`server-validated` results. Server-owned domain code creates those envelopes
+with `createRallarServerValidatedMatchResult(...)` after validating the match.
+
+Rallar provides participant derivation, standings projection, result envelopes,
+and diagnostics. The application still owns command legality, scoring rules,
+win conditions, persistence, rewards, global leaderboards, and anti-cheat.
+
 ### Stats
 
 `stats.summary(options?)` reads
