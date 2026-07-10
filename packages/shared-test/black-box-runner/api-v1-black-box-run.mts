@@ -13,11 +13,28 @@ export type ApiV1BlackBoxOptions = Readonly<{
     recipesOnly: boolean
 }>
 
+export type WaitForManagedApiReadyInput = Readonly<{
+    baseUrl: string
+    logPath: string
+    childStatus: PromiseLike<Readonly<{
+        success: boolean
+        code: number
+        signal: string | null
+    }>>
+    timeoutMs?: number
+    fetchImpl?: (url: string) => Promise<Pick<Response, 'ok' | 'status'>>
+    readTextFile?: (path: string) => Promise<string>
+    now?: () => number
+    sleep?: (ms: number) => Promise<void>
+}>
+
 const SCRIPT_DIR = new URL('.', import.meta.url)
 const REPO_ROOT = new URL('../../../', SCRIPT_DIR)
 const API_CONFIG_PATH = 'apps/api-v1/deno.json'
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts'
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb'
+const API_STARTUP_MARKER = /Server started on port \d+\./
+const LOG_TAIL_LENGTH = 4096
 
 export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOptions {
     const values = new Map<string, string | boolean>()
@@ -206,27 +223,109 @@ async function appendStreamToFile(stream: ReadableStream<Uint8Array>, path: stri
     }
 }
 
-async function waitForApiConfig(baseUrl: string, timeoutMs = 30000): Promise<void> {
-    const deadline = Date.now() + timeoutMs
-    const url = baseUrl.replace(/\/+$/, '') + '/api/config'
+export async function waitForManagedApiReady(input: WaitForManagedApiReadyInput): Promise<void> {
+    const timeoutMs = input.timeoutMs ?? 30000
+    const fetchImpl = input.fetchImpl ?? globalThis.fetch
+    const readTextFile = input.readTextFile ?? Deno.readTextFile
+    const now = input.now ?? Date.now
+    const sleepImpl = input.sleep ?? sleep
+    const deadline = now() + timeoutMs
+    const url = input.baseUrl.replace(/\/+$/, '') + '/api/config'
+    let childExitStatus: Awaited<WaitForManagedApiReadyInput['childStatus']> | undefined
+    let finished = false
+    let startupObserved = false
     let lastError: unknown
 
-    while (Date.now() < deadline) {
-        try {
-            const response = await fetch(url)
-            if (response.ok) {
-                return
-            }
-            lastError = new Error(`${url} returned ${response.status}`)
-        } catch (error) {
-            lastError = error
-        }
-        await sleep(250)
-    }
+    const childExit = input.childStatus.then(async status => {
+        childExitStatus = status
+        throw await managedApiChildExitError(status, input.logPath, readTextFile)
+    })
 
-    throw new Error(
-        `Timed out waiting for ${url}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    const readiness = (async () => {
+        while (!finished && now() < deadline) {
+            if (childExitStatus) {
+                throw await managedApiChildExitError(childExitStatus, input.logPath, readTextFile)
+            }
+
+            if (!startupObserved) {
+                try {
+                    startupObserved = API_STARTUP_MARKER.test(await readTextFile(input.logPath))
+                } catch (error) {
+                    lastError = error
+                }
+            }
+
+            if (childExitStatus) {
+                throw await managedApiChildExitError(childExitStatus, input.logPath, readTextFile)
+            }
+
+            if (startupObserved) {
+                let response: Pick<Response, 'ok' | 'status'> | undefined
+                try {
+                    response = await fetchImpl(url)
+                } catch (error) {
+                    lastError = error
+                }
+
+                if (childExitStatus) {
+                    throw await managedApiChildExitError(
+                        childExitStatus,
+                        input.logPath,
+                        readTextFile,
+                    )
+                }
+                if (response) {
+                    if (response.ok) {
+                        return
+                    }
+                    lastError = new Error(`${url} returned ${response.status}`)
+                }
+            }
+
+            await sleepImpl(250)
+        }
+
+        if (finished) {
+            return
+        }
+
+        const reason = startupObserved
+            ? lastError instanceof Error ? lastError.message : String(lastError)
+            : 'API-v1 startup marker was not observed'
+        const logTail = await readBoundedLogTail(input.logPath, readTextFile)
+        throw new Error(`Timed out waiting for ${url}: ${reason}\nLatest API-v1 log tail:\n${logTail}`)
+    })()
+
+    try {
+        await Promise.race([childExit, readiness])
+    } finally {
+        finished = true
+    }
+}
+
+async function managedApiChildExitError(
+    status: Awaited<WaitForManagedApiReadyInput['childStatus']>,
+    logPath: string,
+    readTextFile: (path: string) => Promise<string>,
+): Promise<Error> {
+    const signal = status.signal ? `, signal ${status.signal}` : ''
+    const logTail = await readBoundedLogTail(logPath, readTextFile)
+    return new Error(
+        `API-v1 child exited before readiness (code ${status.code}${signal})`
+        + `\nLatest API-v1 log tail:\n${logTail}`,
     )
+}
+
+async function readBoundedLogTail(
+    logPath: string,
+    readTextFile: (path: string) => Promise<string>,
+): Promise<string> {
+    try {
+        const contents = await readTextFile(logPath)
+        return contents.slice(-LOG_TAIL_LENGTH).trimEnd() || '(empty)'
+    } catch (error) {
+        return `[unable to read ${logPath}: ${error instanceof Error ? error.message : String(error)}]`
+    }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -282,7 +381,11 @@ async function main(): Promise<void> {
         if (!options.recipesOnly) {
             await Deno.writeTextFile(logPath, '')
             server = startServer(options, env, logPath)
-            await waitForApiConfig(env.RALLAR_API_BASE_URL)
+            await waitForManagedApiReady({
+                baseUrl: env.RALLAR_API_BASE_URL,
+                logPath,
+                childStatus: server.status,
+            })
         }
 
         await runRecipeMatrix(options, env, artifactDir)
