@@ -495,6 +495,135 @@ describe('rallar-black-box app source ownership', () => {
             }
         }
 
+        const distributedOwnerModules = [
+            {
+                path: 'apps/rallar-black-box/src/legacy/shared/unique-values.ts',
+                declarations: [
+                    {
+                        seam: 'uniqueValues',
+                        pattern: /^\s*export\s+function\s+uniqueValues\s*</m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed/distributed-diagnostics.ts',
+                declarations: [
+                    {
+                        seam: 'DistributedRuntimeDiagnostic',
+                        pattern:
+                            /^\s*export\s+type\s+DistributedRuntimeDiagnostic\s*=/m,
+                    },
+                    {
+                        seam: 'distributedDiagnosticGroupValue',
+                        pattern:
+                            /^\s*export\s+function\s+distributedDiagnosticGroupValue\s*\(/m,
+                    },
+                    {
+                        seam: 'distributedDiagnosticSearchText',
+                        pattern:
+                            /^\s*export\s+function\s+distributedDiagnosticSearchText\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: monitorPath,
+                declarations: [
+                    {
+                        seam: 'DistributedRunMonitorPanel',
+                        pattern:
+                            /^\s*export\s+function\s+DistributedRunMonitorPanel\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunComparePanel.tsx',
+                declarations: [
+                    {
+                        seam: 'DistributedRunComparePanel',
+                        pattern:
+                            /^\s*export\s+function\s+DistributedRunComparePanel\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunSummary.tsx',
+                declarations: [
+                    {
+                        seam: 'DistributedRunSummary',
+                        pattern:
+                            /^\s*export\s+function\s+DistributedRunSummary\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed/status-presentation.ts',
+                declarations: [
+                    {
+                        seam: 'distributedCompositeStatusTone',
+                        pattern:
+                            /^\s*export\s+function\s+distributedCompositeStatusTone\s*\(/m,
+                    },
+                    {
+                        seam: 'distributedDiagnosticTone',
+                        pattern:
+                            /^\s*export\s+function\s+distributedDiagnosticTone\s*\(/m,
+                    },
+                    {
+                        seam: 'distributedProgressTone',
+                        pattern:
+                            /^\s*export\s+function\s+distributedProgressTone\s*\(/m,
+                    },
+                ],
+            },
+        ] as const;
+
+        for (const ownerModule of distributedOwnerModules) {
+            const ownerExists = existsSync(resolve(repositoryRoot, ownerModule.path));
+            const ownerSource = ownerExists
+                ? repositorySource(ownerModule.path)
+                : '';
+
+            expect.soft(ownerExists, ownerModule.path).toBe(true);
+            expect
+                .soft(ownerSource, `${ownerModule.path}: export-star barrel`)
+                .not.toMatch(/^\s*export\s*\*(?:\s+as\s+\w+)?\s+from\b/m);
+            for (const declaration of ownerModule.declarations) {
+                expect
+                    .soft(
+                        ownerSource,
+                        `${ownerModule.path}: ${declaration.seam} declaration`,
+                    )
+                    .toMatch(declaration.pattern);
+                expect
+                    .soft(
+                        ownerSource,
+                        `${ownerModule.path}: ${declaration.seam} re-export`,
+                    )
+                    .not.toMatch(
+                        new RegExp(
+                            `^\\s*export\\s+(?:type\\s+)?{[^}]*\\b${declaration.seam}\\b[^}]*}\\s*from\\s*['\"]`,
+                            'm',
+                        ),
+                    );
+            }
+        }
+
+        const compareSource = repositorySource(
+            'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunComparePanel.tsx',
+        );
+        expect(compareSource, 'private DistributedCompareList declaration').toMatch(
+            /^\s*function\s+DistributedCompareList\s*\(/m,
+        );
+        expect(compareSource, 'exported DistributedCompareList declaration').not.toMatch(
+            /^\s*export\s+(?:default\s+)?function\s+DistributedCompareList\s*\(/m,
+        );
+        expect(compareSource, 'exported DistributedCompareList binding').not.toMatch(
+            /^\s*export\s+(?:type\s+)?{[^}]*\bDistributedCompareList\b[^}]*}/m,
+        );
+        expect(compareSource, 'default DistributedCompareList export').not.toMatch(
+            /^\s*export\s+default\s+DistributedCompareList\b/m,
+        );
+
         const monitorSource = existsSync(resolve(repositoryRoot, monitorPath))
             ? repositorySource(monitorPath)
             : '';
@@ -543,6 +672,22 @@ describe('rallar-black-box app source ownership', () => {
             }
         }
 
+        const monitorLocalDuplicates = [
+            /^\s*(?:export\s+)?(?:const|let|var|function)\s+uniqueValues\b/m,
+            /^\s*(?:export\s+)?type\s+DistributedRuntimeDiagnostic\s*=/m,
+            /^\s*(?:export\s+)?(?:const|let|var|function)\s+distributedDiagnosticGroupValue\b/m,
+            /^\s*(?:export\s+)?(?:const|let|var|function)\s+distributedDiagnosticSearchText\b/m,
+            /^\s*(?:export\s+)?(?:const|let|var|function)\s+distributedCompositeStatusTone\b/m,
+            /^\s*(?:export\s+)?(?:const|let|var|function)\s+distributedDiagnosticTone\b/m,
+            /^\s*(?:export\s+)?(?:const|let|var|function)\s+distributedProgressTone\b/m,
+        ];
+
+        for (const localDuplicate of monitorLocalDuplicates) {
+            expect
+                .soft(monitorSource, `monitor-local ${localDuplicate.source}`)
+                .not.toMatch(localDuplicate);
+        }
+
         const movedDeclarations = [
             /\bfunction\s+uniqueValues\s*</,
             /\bfunction\s+DistributedRunMonitorPanel\s*\(/,
@@ -557,6 +702,39 @@ describe('rallar-black-box app source ownership', () => {
 
         for (const declaration of movedDeclarations) {
             expect.soft(declaration.test(appSource), declaration.source).toBe(false);
+        }
+    });
+
+    it('keeps distributed compare formatters in the canonical time module', () => {
+        const panelSource = repositorySource(
+            'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunComparePanel.tsx',
+        );
+        const moduleImport = '../../shared/time-format.ts';
+        const formatterNames = [
+            'formatSignedDuration',
+            'formatSignedNumber',
+        ] as const;
+        const escapedModuleImport = moduleImport.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            '\\$&',
+        );
+        const importedFormatters = panelSource.match(
+            new RegExp(
+                `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+            ),
+        )?.[1];
+
+        expect(importedFormatters, moduleImport).toBeDefined();
+        for (const formatterName of formatterNames) {
+            expect(importedFormatters ?? '', `${moduleImport}: ${formatterName}`).toMatch(
+                new RegExp(`(?:^|,)\\s*${formatterName}\\s*(?=,|$)`),
+            );
+            expect(panelSource, `panel-local ${formatterName}`).not.toMatch(
+                new RegExp(
+                    `^\\s*(?:export\\s+)?(?:const|let|var|function)\\s+${formatterName}\\b`,
+                    'm',
+                ),
+            );
         }
     });
 
