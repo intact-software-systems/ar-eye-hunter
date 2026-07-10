@@ -1846,6 +1846,9 @@ Use `createRallarAuthorityBrowserMatch` when the authoritative game or
 activity loop lives behind Rallar Game Authority. Browser clients do not mint
 `server-validated` results. Server-owned domain code creates those envelopes
 with `createRallarServerValidatedMatchResult(...)` after validating the match.
+Its `submitCommand(...)` delegates app-owned commands through Rallar Game
+Authority, while `standings()` projects app-provided `readStandingRows` metrics;
+Rallar does not calculate scores.
 
 Rallar provides participant derivation, standings projection, result envelopes,
 and diagnostics. The application still owns command legality, scoring rules,
@@ -2004,3 +2007,11 @@ Implement Tasks 1-6 as written. Any expansion into consumer migration, formal te
 - Documentation decision: kept one Optional Match Support section in `docs/rallar-api-reference.md`; it documents named optional imports, room-trusted browser-director results, the server-authority browser command/standings wrapper, the server-only validated-result helper, and application-owned scoring, persistence, leaderboards, and anti-cheat.
 - Blockers: none.
 - Remaining validation: Task 6 final focused match, adjacent Rallar Game, public-surface, browser bundle-boundary, and shared/shared-web/shared-server typecheck matrix remain.
+
+### Task 5 Review Fix - 2026-07-10T13:18:43+02:00
+
+- Fixed: clarified that `createRallarAuthorityBrowserMatch.submitCommand(...)` delegates app-owned commands through Rallar Game Authority, while `standings()` projects app-provided `readStandingRows` metrics and Rallar does not calculate scores.
+- Files changed: `docs/rallar-api-reference.md`, this implementation plan, and `/private/tmp/rallar-match-sdd/task-5-report.md`.
+- Validation: `npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts` passed (1 file, 8 tests). Focused `rg` review confirmed matching command/standings wording in the canonical docs and Task 5 snippet, one Optional Match Support section, no browser-minted `server-validated` claim, and application-owned persistence, leaderboards, and anti-cheat.
+- Blockers: none.
+- Remaining validation: Task 6 final validation matrix remains.

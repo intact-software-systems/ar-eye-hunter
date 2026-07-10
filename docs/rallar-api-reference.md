@@ -370,6 +370,9 @@ Use `createRallarAuthorityBrowserMatch` when the authoritative game or
 activity loop lives behind Rallar Game Authority. Browser clients do not mint
 `server-validated` results. Server-owned domain code creates those envelopes
 with `createRallarServerValidatedMatchResult(...)` after validating the match.
+Its `submitCommand(...)` delegates app-owned commands through Rallar Game
+Authority, while `standings()` projects app-provided `readStandingRows` metrics;
+Rallar does not calculate scores.
 
 Rallar provides participant derivation, standings projection, result envelopes,
 and diagnostics. The application still owns command legality, scoring rules,
