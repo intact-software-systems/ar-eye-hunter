@@ -17,22 +17,14 @@ import {
 import {
   attachHeadlessWorkerPageLogging,
   createHeadlessWorkerLogger,
+  type HeadlessWorkerRegistrationSnapshot,
   headlessWorkerLogSecretsFromEnv,
   type HeadlessWorkerLogger,
   logHeadlessWorkerUiConfirmationFailure,
   waitForDistributedRunTerminal,
+  waitForHeadlessWorkerAgentRegistration,
   waitForHeadlessWorkerExit,
 } from "../src/headless-worker-runtime.ts";
-
-type ControlRunAgentSnapshot = Readonly<{
-  agentId?: string;
-  connected?: boolean;
-  status?: string;
-}>;
-
-type ControlRunSnapshot = Readonly<{
-  agents?: readonly ControlRunAgentSnapshot[];
-}>;
 
 type RunningAgent = Readonly<{
   agent: HeadlessWorkerAgentConfig;
@@ -41,6 +33,7 @@ type RunningAgent = Readonly<{
 }>;
 
 type ShutdownSignal = Readonly<{
+  signal: AbortSignal;
   wait(signal?: AbortSignal): Promise<void>;
   dispose(): void;
 }>;
@@ -67,7 +60,8 @@ try {
     ...config.agentControlTokens,
     ...config.agentCredentials.map((credentials) => credentials.password),
   ]);
-  shutdown = createShutdownSignal();
+  const activeShutdown = createShutdownSignal();
+  shutdown = activeShutdown;
   log(
     `Starting rallar-black-box headless worker run=${config.runId} ` +
       `agents=${config.agentCount} entry=${config.headlessEntry} ` +
@@ -80,14 +74,16 @@ try {
   });
 
   runningAgents = await Promise.all(
-    config.agents.map((agent) => openAgent(browser!, agent, config)),
+    config.agents.map((agent) =>
+      openAgent(browser!, agent, config, activeShutdown.signal)
+    ),
   );
 
   log(
     `All ${runningAgents.length} rallar-black-box headless agents are registered. ` +
       "Waiting for control-server commands.",
   );
-  await waitForWorkerExit(config, shutdown);
+  await waitForWorkerExit(config, activeShutdown);
 } catch (error) {
   logger.error(error);
   process.exitCode = 1;
@@ -102,6 +98,7 @@ async function openAgent(
   browser: Browser,
   agent: HeadlessWorkerAgentConfig,
   config: HeadlessWorkerConfig,
+  signal: AbortSignal,
 ): Promise<RunningAgent> {
   log(`Opening agent ${agent.agentId} url=${agent.url}`);
   const context = await browser.newContext();
@@ -119,7 +116,7 @@ async function openAgent(
   });
 
   await signInIfLoginGateIsVisible(page, agent, config);
-  await waitForAgentRegistration(agent, config);
+  await waitForAgentRegistration(agent, config, signal);
   log(`Agent ${agent.agentId} registered in control server`);
   void confirmAgentRegistrationUi(page, agent, config).catch((error) => {
     logHeadlessWorkerUiConfirmationFailure({
@@ -166,37 +163,17 @@ async function signInIfLoginGateIsVisible(
 async function waitForAgentRegistration(
   agent: HeadlessWorkerAgentConfig,
   config: HeadlessWorkerConfig,
+  signal: AbortSignal,
 ): Promise<void> {
-  const deadline = Date.now() + config.readyTimeoutMs;
-  let lastState = "not seen";
-  while (Date.now() < deadline) {
-    const snapshot = await fetchControlRunSnapshot(config).catch((error) => {
-      lastState = error instanceof Error ? error.stack ?? error.message : String(error);
-      return undefined;
-    });
-    const registeredAgent = snapshot?.agents?.find((candidate) =>
-      candidate.agentId === agent.agentId
-    );
-    if (registeredAgent?.connected) {
-      if (registeredAgent.status === "failed") {
-        throw new Error(
-          `Agent ${agent.agentId} registered with failed runtime status.`,
-        );
-      }
-      return;
-    }
-    lastState = registeredAgent
-      ? `connected=${registeredAgent.connected} status=${
-        registeredAgent.status ?? "unknown"
-      }`
-      : "not in run snapshot";
-    await delay(500);
-  }
-
-  throw new Error(
-    `Timed out waiting ${config.readyTimeoutMs}ms for agent ${agent.agentId} ` +
-      `to register in control server snapshot. Last state: ${lastState}`,
-  );
+  await waitForHeadlessWorkerAgentRegistration({
+    agentId: agent.agentId,
+    timeoutMs: config.readyTimeoutMs,
+    pollIntervalMs: 500,
+    signal,
+    fetchSnapshot: (signal) => fetchControlRunSnapshot(config, signal),
+    sleep: delay,
+    now: Date.now,
+  });
 }
 
 async function confirmWorkbenchRegistrationUi(
@@ -249,10 +226,11 @@ async function confirmHeadlessRegistrationUi(
 
 async function fetchControlRunSnapshot(
   config: HeadlessWorkerConfig,
-): Promise<ControlRunSnapshot> {
+  signal: AbortSignal,
+): Promise<HeadlessWorkerRegistrationSnapshot> {
   const response = await fetch(
     controlRunSnapshotUrlFromControlUrl(config.controlUrl, config.runId),
-    { headers: controlReadHeaders(config) },
+    { headers: controlReadHeaders(config), signal },
   );
   if (!response.ok) {
     throw new Error(
@@ -260,7 +238,7 @@ async function fetchControlRunSnapshot(
         `${await response.text()}`,
     );
   }
-  return await response.json() as ControlRunSnapshot;
+  return await response.json() as HeadlessWorkerRegistrationSnapshot;
 }
 
 async function waitForWorkerExit(
@@ -384,6 +362,7 @@ async function closeAgents(agents: readonly RunningAgent[]): Promise<void> {
 }
 
 function createShutdownSignal(): ShutdownSignal {
+  const shutdownController = new AbortController();
   let resolve!: () => void;
   let settled = false;
   const waitPromise = new Promise<void>((innerResolve) => {
@@ -391,23 +370,35 @@ function createShutdownSignal(): ShutdownSignal {
   });
   const onSigint = () => stop("SIGINT");
   const onSigterm = () => stop("SIGTERM");
-  const dispose = () => {
+  const removeListeners = () => {
     process.removeListener("SIGINT", onSigint);
     process.removeListener("SIGTERM", onSigterm);
+  };
+  const dispose = () => {
+    removeListeners();
+    if (!shutdownController.signal.aborted) {
+      shutdownController.abort(new Error("Headless worker shutdown disposed"));
+    }
+    if (!settled) {
+      settled = true;
+      resolve();
+    }
   };
   const stop = (signal: string) => {
     if (settled) {
       return;
     }
     settled = true;
-    dispose();
+    removeListeners();
     log(`Received ${signal}; shutting down`);
+    shutdownController.abort(new Error(`Received ${signal}; shutting down`));
     resolve();
   };
 
   process.once("SIGINT", onSigint);
   process.once("SIGTERM", onSigterm);
   return {
+    signal: shutdownController.signal,
     wait: (signal) => {
       if (!signal) {
         return waitPromise;

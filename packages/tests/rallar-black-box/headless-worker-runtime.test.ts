@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   attachHeadlessWorkerPageLogging,
   createHeadlessWorkerLogger,
+  type HeadlessWorkerRegistrationSnapshot,
   headlessWorkerLogSecretsFromEnv,
   logHeadlessWorkerUiConfirmationFailure,
   redactHeadlessWorkerLogText,
   waitForDistributedRunTerminal,
+  waitForHeadlessWorkerAgentRegistration,
   waitForHeadlessWorkerExit,
 } from "../../../apps/rallar-black-box/src/headless-worker-runtime.ts";
 
@@ -17,12 +19,15 @@ type PromiseOutcome =
 function deferred<T>(): Readonly<{
   promise: Promise<T>;
   resolve(value: T): void;
+  reject(error: unknown): void;
 }> {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((innerResolve) => {
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((innerResolve, innerReject) => {
     resolve = innerResolve;
+    reject = innerReject;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function observe(promise: Promise<void>): Promise<PromiseOutcome> {
@@ -350,11 +355,11 @@ describe("rallar-black-box headless worker runtime", () => {
     expect(idleTimerCleared).toBe(true);
   });
 
-  it("cancels the 404 response body before retrying", async () => {
-    const cancel = vi.fn(async () => undefined);
+  it("does not await a never-settling 404 response body cancellation", async () => {
+    const cancel = vi.fn(async () => await new Promise<void>(() => undefined));
     let calls = 0;
 
-    await waitForDistributedRunTerminal({
+    const polling = waitForDistributedRunTerminal({
       runId: "run-404",
       url: "https://control.example.test/distributed-runs/run-404",
       deadline: undefined,
@@ -381,17 +386,20 @@ describe("rallar-black-box headless worker runtime", () => {
       log: () => undefined,
     });
 
+    expect(await observeWithin(polling, 50)).toEqual({ state: "resolved" });
+    expect(calls).toBe(2);
     expect(cancel).toHaveBeenCalledOnce();
   });
 
-  it("cancels an authentication response body before throwing", async () => {
-    const cancel = vi.fn(async () => undefined);
+  it("does not let a never-settling body cancellation mask a 401", async () => {
+    const cancel = vi.fn(async () => await new Promise<void>(() => undefined));
+    const startedAt = Date.now();
 
-    await expect(waitForDistributedRunTerminal({
+    const polling = waitForDistributedRunTerminal({
       runId: "run-auth",
       url: "https://control.example.test/distributed-runs/run-auth",
-      deadline: undefined,
-      timeoutMs: undefined,
+      deadline: startedAt + 1_000,
+      timeoutMs: 1_000,
       pollIntervalMs: 10,
       fetch: async () => ({
         status: 401,
@@ -400,18 +408,24 @@ describe("rallar-black-box headless worker runtime", () => {
         json: async () => ({}),
       }),
       sleep: async () => undefined,
-      now: () => 0,
+      now: Date.now,
       log: () => undefined,
-    })).rejects.toThrow("returned HTTP 401");
+    });
 
+    expect(await observeWithin(polling, 50)).toEqual({
+      state: "rejected",
+      error: expect.objectContaining({
+        message: expect.stringContaining("returned HTTP 401"),
+      }),
+    });
     expect(cancel).toHaveBeenCalledOnce();
   });
 
-  it("cancels a retryable non-OK response body before polling again", async () => {
-    const cancel = vi.fn(async () => undefined);
+  it("does not await a never-settling retryable response body cancellation", async () => {
+    const cancel = vi.fn(async () => await new Promise<void>(() => undefined));
     let calls = 0;
 
-    await waitForDistributedRunTerminal({
+    const polling = waitForDistributedRunTerminal({
       runId: "run-retry",
       url: "https://control.example.test/distributed-runs/run-retry",
       deadline: undefined,
@@ -438,7 +452,199 @@ describe("rallar-black-box headless worker runtime", () => {
       log: () => undefined,
     });
 
+    expect(await observeWithin(polling, 50)).toEqual({ state: "resolved" });
+    expect(calls).toBe(2);
     expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("hard-times out a never-settling registration fetch with detailed state", async () => {
+    vi.useFakeTimers();
+    try {
+      let fetchSignal: AbortSignal | undefined;
+      const sleep = vi.fn(async () => undefined);
+      const registration = waitForHeadlessWorkerAgentRegistration({
+        agentId: "agent-never",
+        timeoutMs: 10,
+        pollIntervalMs: 5,
+        fetchSnapshot: async (signal) => {
+          fetchSignal = signal;
+          return await new Promise(() => undefined);
+        },
+        sleep,
+        now: Date.now,
+      });
+      const outcome = observe(registration);
+
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(await outcome).toEqual({
+        state: "rejected",
+        error: expect.objectContaining({
+          message:
+            "Timed out waiting 10ms for agent agent-never to register " +
+            "in control server snapshot. Last state: not seen",
+        }),
+      });
+      expect(fetchSignal?.aborted).toBe(true);
+      expect(sleep).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("propagates external shutdown during registration without retrying", async () => {
+    const shutdown = new AbortController();
+    const shutdownReason = new Error("SIGTERM during agent registration");
+    let fetchSignal: AbortSignal | undefined;
+    const sleep = vi.fn(async () => undefined);
+    const registration = waitForHeadlessWorkerAgentRegistration({
+      agentId: "agent-shutdown",
+      timeoutMs: 10_000,
+      pollIntervalMs: 500,
+      signal: shutdown.signal,
+      fetchSnapshot: async (signal) => {
+        fetchSignal = signal;
+        return await new Promise(() => undefined);
+      },
+      sleep,
+      now: Date.now,
+    });
+
+    await flushMicrotasks();
+    shutdown.abort(shutdownReason);
+
+    expect(await observeWithin(registration, 50)).toEqual({
+      state: "rejected",
+      error: shutdownReason,
+    });
+    expect(fetchSignal?.aborted).toBe(true);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("observes a late registration fetch rejection after shutdown", async () => {
+    const shutdown = new AbortController();
+    const shutdownReason = new Error("registration stopped");
+    const pendingSnapshot = deferred<HeadlessWorkerRegistrationSnapshot>();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown) => unhandled.push(error);
+    const fetchSnapshot = vi.fn(async () => await pendingSnapshot.promise);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const registration = waitForHeadlessWorkerAgentRegistration({
+        agentId: "agent-late-rejection",
+        timeoutMs: 10_000,
+        pollIntervalMs: 500,
+        signal: shutdown.signal,
+        fetchSnapshot,
+        sleep: async () => undefined,
+        now: Date.now,
+      });
+
+      await flushMicrotasks();
+      shutdown.abort(shutdownReason);
+      expect(await observeWithin(registration, 50)).toEqual({
+        state: "rejected",
+        error: shutdownReason,
+      });
+      if (fetchSnapshot.mock.calls.length === 0) {
+        void pendingSnapshot.promise.catch(() => undefined);
+      }
+      pendingSnapshot.reject(new Error("late registration rejection"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(fetchSnapshot).toHaveBeenCalledOnce();
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("hard-times out a non-cooperative registration retry sleep", async () => {
+    vi.useFakeTimers();
+    try {
+      let sleepSignal: AbortSignal | undefined;
+      const registration = waitForHeadlessWorkerAgentRegistration({
+        agentId: "agent-sleep",
+        timeoutMs: 10,
+        pollIntervalMs: 5,
+        fetchSnapshot: async () => ({
+          agents: [{
+            agentId: "agent-sleep",
+            connected: false,
+            status: "idle",
+          }],
+        }),
+        sleep: async (_ms, signal) => {
+          sleepSignal = signal;
+          return await new Promise(() => undefined);
+        },
+        now: Date.now,
+      });
+      const outcome = observe(registration);
+
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(await outcome).toEqual({
+        state: "rejected",
+        error: expect.objectContaining({
+          message:
+            "Timed out waiting 10ms for agent agent-sleep to register " +
+            "in control server snapshot. Last state: connected=false status=idle",
+        }),
+      });
+      expect(sleepSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets the registration deadline win over a late connected snapshot", async () => {
+    let now = 0;
+    const sleep = vi.fn(async () => undefined);
+
+    await expect(waitForHeadlessWorkerAgentRegistration({
+      agentId: "agent-late",
+      timeoutMs: 10,
+      pollIntervalMs: 5,
+      fetchSnapshot: async () => {
+        now = 10;
+        return {
+          agents: [{ agentId: "agent-late", connected: true, status: "idle" }],
+        };
+      },
+      sleep,
+      now: () => now,
+    })).rejects.toThrow("Timed out waiting 10ms");
+
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("preserves connected and failed registration status behavior", async () => {
+    await expect(waitForHeadlessWorkerAgentRegistration({
+      agentId: "agent-ready",
+      timeoutMs: 10,
+      pollIntervalMs: 5,
+      fetchSnapshot: async () => ({
+        agents: [{ agentId: "agent-ready", connected: true, status: "idle" }],
+      }),
+      sleep: async () => undefined,
+      now: () => 0,
+    })).resolves.toBeUndefined();
+
+    await expect(waitForHeadlessWorkerAgentRegistration({
+      agentId: "agent-failed",
+      timeoutMs: 10,
+      pollIntervalMs: 5,
+      fetchSnapshot: async () => ({
+        agents: [{ agentId: "agent-failed", connected: true, status: "failed" }],
+      }),
+      sleep: async () => undefined,
+      now: () => 0,
+    })).rejects.toThrow(
+      "Agent agent-failed registered with failed runtime status.",
+    );
   });
 
   it("rejects a terminal 200 response that arrives after the logical deadline", async () => {

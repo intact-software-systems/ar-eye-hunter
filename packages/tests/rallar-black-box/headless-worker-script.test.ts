@@ -67,7 +67,7 @@ describe("rallar-black-box headless worker script", () => {
     );
     expect(runtime).toContain("Distributed run ${input.runId} is not created yet");
     expect(runtime).toContain("response.status === 404");
-    expect(script).toContain("await waitForWorkerExit(config, shutdown);");
+    expect(script).toContain("await waitForWorkerExit(config, activeShutdown);");
     expect(script).toContain("waitForHeadlessWorkerExit({");
     expect(script).toContain("await waitForDistributedRunTerminal({");
     expect(script).toContain("signal,");
@@ -132,7 +132,28 @@ describe("rallar-black-box headless worker script", () => {
     expect(script).toContain("controlReadHeaders(config)");
     expect(script).toContain("config.controlReadToken ?? config.controlToken");
     expect(script).toContain('Authorization: `Bearer ${token}`');
-    expect(script).toContain("fetchControlRunSnapshot(config)");
+    expect(script).toContain("fetchControlRunSnapshot(config, signal)");
     expect(script).toContain("headers: controlReadHeaders(config)");
+  });
+
+  it("creates shutdown cancellation before opening agents and wires it through registration", async () => {
+    const script = await readFile(
+      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
+      "utf8",
+    );
+
+    expect(script).toContain("signal: AbortSignal;");
+    expect(script).toContain("const activeShutdown = createShutdownSignal();");
+    expect(
+      script.indexOf("const activeShutdown = createShutdownSignal();"),
+    ).toBeLessThan(
+      script.indexOf("config.agents.map"),
+    );
+    expect(script).toContain(
+      "openAgent(browser!, agent, config, activeShutdown.signal)",
+    );
+    expect(script).toContain("waitForAgentRegistration(agent, config, signal)");
+    expect(script).toContain("fetchControlRunSnapshot(config, signal)");
+    expect(script).toContain("signal: shutdownController.signal");
   });
 });

@@ -11,6 +11,26 @@ type DistributedRunResponse = Readonly<{
   json(): Promise<unknown>;
 }>;
 
+export type HeadlessWorkerRegistrationSnapshot = Readonly<{
+  agents?: readonly Readonly<{
+    agentId?: string;
+    connected?: boolean;
+    status?: string;
+  }>[];
+}>;
+
+export type WaitForHeadlessWorkerAgentRegistrationInput = Readonly<{
+  agentId: string;
+  timeoutMs: number;
+  pollIntervalMs: number;
+  signal?: AbortSignal;
+  fetchSnapshot(
+    signal: AbortSignal,
+  ): Promise<HeadlessWorkerRegistrationSnapshot>;
+  sleep(ms: number, signal?: AbortSignal): Promise<void>;
+  now(): number;
+}>;
+
 export type WaitForDistributedRunTerminalInput = Readonly<{
   runId: string;
   url: string;
@@ -184,6 +204,77 @@ export async function waitForHeadlessWorkerExit(
   }
 }
 
+export async function waitForHeadlessWorkerAgentRegistration(
+  input: WaitForHeadlessWorkerAgentRegistrationInput,
+): Promise<void> {
+  const deadline = input.now() + input.timeoutMs;
+  let lastState = "not seen";
+  const timeoutError = () => new Error(
+    `Timed out waiting ${input.timeoutMs}ms for agent ${input.agentId} ` +
+      `to register in control server snapshot. Last state: ${lastState}`,
+  );
+  const abortScope = createAbortScope({
+    parentSignal: input.signal,
+    deadline,
+    now: input.now,
+    timeoutError,
+  });
+  const ensureActive = () => {
+    ensureDeadlineActive({
+      abortScope,
+      deadline,
+      now: input.now,
+      timeoutError,
+    });
+  };
+
+  try {
+    ensureActive();
+    while (true) {
+      let snapshot: HeadlessWorkerRegistrationSnapshot;
+      try {
+        snapshot = await raceWithAbort(
+          Promise.resolve().then(() =>
+            input.fetchSnapshot(abortScope.signal)
+          ),
+          abortScope.signal,
+        );
+        ensureActive();
+      } catch (error) {
+        if (abortScope.signal.aborted) {
+          throw abortReason(abortScope.signal);
+        }
+        ensureActive();
+        lastState = headlessWorkerErrorMessage(error);
+        await registrationSleepWithAbort(input, abortScope.signal);
+        ensureActive();
+        continue;
+      }
+
+      const registeredAgent = snapshot.agents?.find((candidate) =>
+        candidate.agentId === input.agentId
+      );
+      if (registeredAgent?.connected) {
+        if (registeredAgent.status === "failed") {
+          throw new Error(
+            `Agent ${input.agentId} registered with failed runtime status.`,
+          );
+        }
+        return;
+      }
+      lastState = registeredAgent
+        ? `connected=${registeredAgent.connected} status=${
+          registeredAgent.status ?? "unknown"
+        }`
+        : "not in run snapshot";
+      await registrationSleepWithAbort(input, abortScope.signal);
+      ensureActive();
+    }
+  } finally {
+    abortScope.cleanup();
+  }
+}
+
 export async function waitForDistributedRunTerminal(
   input: WaitForDistributedRunTerminalInput,
 ): Promise<void> {
@@ -238,7 +329,7 @@ export async function waitForDistributedRunTerminal(
         continue;
       }
       if (response.status === 404) {
-        await cancelResponseBody(response, abortScope.signal);
+        cancelResponseBodyBestEffort(response);
         ensureActive();
         const state = "not-created";
         if (lastObservedState !== state) {
@@ -252,7 +343,7 @@ export async function waitForDistributedRunTerminal(
       }
 
       if (response.status === 401 || response.status === 403) {
-        await cancelResponseBody(response, abortScope.signal);
+        cancelResponseBodyBestEffort(response);
         ensureActive();
         throw new Error(
           `Distributed run ${input.runId} returned HTTP ${response.status}; ` +
@@ -263,7 +354,7 @@ export async function waitForDistributedRunTerminal(
       }
 
       if (!response.ok) {
-        await cancelResponseBody(response, abortScope.signal);
+        cancelResponseBodyBestEffort(response);
         ensureActive();
         const state = `http-${response.status}`;
         if (lastObservedState !== state) {
@@ -370,6 +461,25 @@ function createAbortScope(input: Readonly<{
   return { signal: controller.signal, abort, cleanup };
 }
 
+function ensureDeadlineActive(input: Readonly<{
+  abortScope: Readonly<{
+    signal: AbortSignal;
+    abort(reason: unknown): void;
+  }>;
+  deadline: number;
+  now(): number;
+  timeoutError(): Error;
+}>): void {
+  if (input.abortScope.signal.aborted) {
+    throw abortReason(input.abortScope.signal);
+  }
+  if (input.now() >= input.deadline) {
+    const reason = input.timeoutError();
+    input.abortScope.abort(reason);
+    throw reason;
+  }
+}
+
 function ensurePollingActive(
   input: WaitForDistributedRunTerminalInput,
   abortScope: Readonly<{
@@ -393,7 +503,7 @@ function ensurePollingActive(
   }
 
   if (response) {
-    void cancelResponseBody(response, abortScope.signal);
+    cancelResponseBodyBestEffort(response);
   }
   throw reason;
 }
@@ -407,9 +517,9 @@ async function fetchWithAbort(
     input.fetch(input.url, { headers: input.headers, signal })
   );
   void pending.then(
-    async (response) => {
+    (response) => {
       if (signal.aborted) {
-        await cancelResponseBody(response, signal).catch(() => undefined);
+        cancelResponseBodyBestEffort(response);
       }
     },
     () => undefined,
@@ -428,26 +538,28 @@ async function sleepWithAbort(
   );
 }
 
-async function cancelResponseBody(
-  response: DistributedRunResponse,
+async function registrationSleepWithAbort(
+  input: WaitForHeadlessWorkerAgentRegistrationInput,
   signal: AbortSignal,
 ): Promise<void> {
+  throwIfAborted(signal);
+  await raceWithAbort(
+    Promise.resolve().then(() => input.sleep(input.pollIntervalMs, signal)),
+    signal,
+  );
+}
+
+function cancelResponseBodyBestEffort(
+  response: DistributedRunResponse,
+): void {
   if (!response.body) {
     return;
   }
-  let cancellation: Promise<void>;
   try {
-    cancellation = Promise.resolve(response.body.cancel()).then(
-      () => undefined,
-      () => undefined,
-    );
+    void Promise.resolve(response.body.cancel()).catch(() => undefined);
   } catch {
-    return;
+    // Response disposal cannot change polling status or cancellation outcomes.
   }
-  if (signal.aborted) {
-    return;
-  }
-  await raceWithAbort(cancellation, signal).catch(() => undefined);
 }
 
 function raceWithAbort<T>(value: PromiseLike<T>, signal: AbortSignal): Promise<T> {
