@@ -9,6 +9,11 @@ const require = createRequire(path.join(repoRoot, "package.json"));
 const { load: loadYaml } = require("js-yaml") as {
   load(source: string): unknown;
 };
+const productionConcurrency = {
+  group: "hetzner-production-distributed-recipe",
+  "cancel-in-progress": false,
+  queue: "max",
+};
 const workflowPath = path.join(
   repoRoot,
   ".github/workflows/github-free-distributed-recipe.yml",
@@ -29,6 +34,7 @@ interface WorkflowJob {
 }
 
 interface WorkflowDocument {
+  readonly concurrency?: Readonly<Record<string, unknown>>;
   readonly on?: {
     readonly workflow_dispatch?: {
       readonly inputs?: Readonly<
@@ -56,6 +62,12 @@ const findStep = (job: WorkflowJob, name: string): WorkflowStep =>
   );
 
 describe("GitHub Free distributed recipe workflow", () => {
+  it("locks the complete production run with the shared queued group", async () => {
+    const workflow = await readWorkflow();
+
+    expect(workflow.concurrency).toEqual(productionConcurrency);
+  });
+
   it("defines the GitHub Free headless agent pool workflow", async () => {
     const workflow = await readFile(
       path.join(

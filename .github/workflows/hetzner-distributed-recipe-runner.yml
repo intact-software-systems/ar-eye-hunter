@@ -111,10 +111,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: hetzner-distributed-recipe
-  cancel-in-progress: false
-
 jobs:
   run:
     name: Run distributed recipe on Hetzner
@@ -700,8 +696,8 @@ jobs:
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
             'cd "${HOME}/rallar-controller" && ./10-stop-headless-workers.sh'
 
-      - name: Fail if distributed recipe failed
-        if: always() && inputs.operator_phase != 'prepare' && steps.run_recipe.outcome != 'success'
+      - name: Fail if distributed recipe operation failed
+        if: always() && steps.run_recipe.outcome != 'success'
         run: |
-          echo "Distributed recipe failed. Artifacts and analysis were uploaded when available." >&2
+          echo "Distributed recipe operation failed. Artifacts and analysis were uploaded when applicable." >&2
           exit 1

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { chmod, mkdir, mkdtemp, readFile, stat, utimes, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -10,6 +11,15 @@ const execFileAsync = promisify(execFile);
 const distributedWorkflowPath = '.github/workflows/hetzner-distributed-recipe.yml';
 const distributedRunnerWorkflowPath = '.github/workflows/hetzner-distributed-recipe-runner.yml';
 const supportedManifestsWorkflowPath = '.github/workflows/hetzner-supported-distributed-manifests.yml';
+const require = createRequire(path.join(repoRoot, 'package.json'));
+const { load: loadYaml } = require('js-yaml') as {
+    load(source: string): unknown;
+};
+const productionConcurrency = {
+    group: 'hetzner-production-distributed-recipe',
+    'cancel-in-progress': false,
+    queue: 'max',
+};
 const supportedMainlineManifestPaths = [
     'apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json',
@@ -17,6 +27,24 @@ const supportedMainlineManifestPaths = [
     'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
     'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json',
 ];
+
+interface WorkflowStep {
+    readonly name?: string;
+    readonly if?: string;
+    readonly run?: string;
+}
+
+interface WorkflowJob {
+    readonly steps?: readonly WorkflowStep[];
+}
+
+interface WorkflowDocument {
+    readonly concurrency?: Readonly<Record<string, unknown>>;
+    readonly jobs?: Readonly<Record<string, WorkflowJob>>;
+}
+
+const readWorkflow = async (workflowPath: string): Promise<WorkflowDocument> =>
+    loadYaml(await readFile(path.join(repoRoot, workflowPath), 'utf8')) as WorkflowDocument;
 
 const parseMajorMinorPatch = (version: string): [number, number, number] => {
     const match = version.match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -85,7 +113,6 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('keeps the distributed recipe workflow as a manual dispatch wrapper', async () => {
         const workflow = await readFile(path.join(repoRoot, distributedWorkflowPath), 'utf8');
-        const runnerWorkflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
 
         expect(workflow).toContain('workflow_dispatch:');
         expect(workflow).toContain('uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml');
@@ -93,8 +120,16 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toContain('manifest_path: ${{ inputs.manifest_path }}');
         expect(workflow).toContain('ref: ${{ inputs.ref }}');
         expect(workflow).toContain('run_id: ${{ inputs.run_id }}');
-        expect(workflow).not.toContain('concurrency:');
-        expect(runnerWorkflow).toContain('group: hetzner-distributed-recipe');
+    });
+
+    it('locks complete Hetzner production runs in their callers', async () => {
+        const runner = await readWorkflow(distributedRunnerWorkflowPath);
+        const manualCaller = await readWorkflow(distributedWorkflowPath);
+        const supportedCaller = await readWorkflow(supportedManifestsWorkflowPath);
+
+        expect(runner).not.toHaveProperty('concurrency');
+        expect(manualCaller.concurrency).toEqual(productionConcurrency);
+        expect(supportedCaller.concurrency).toEqual(productionConcurrency);
     });
 
     it('keeps the reusable distributed recipe runner responsible for Hetzner execution', async () => {
@@ -112,7 +147,21 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toContain('name: Copy distributed artifacts');
         expect(workflow).toContain('name: Analyze distributed artifacts');
         expect(workflow).toContain('name: Publish distributed analysis summary');
-        expect(workflow).toContain('name: Fail if distributed recipe failed');
+        expect(workflow).toContain('name: Fail if distributed recipe operation failed');
+    });
+
+    it('fails every unsuccessful distributed recipe phase after evidence handling', async () => {
+        const workflow = await readWorkflow(distributedRunnerWorkflowPath);
+        const runnerJob = workflow.jobs?.run;
+        const failureStep = runnerJob?.steps?.find(
+            step => step.name === 'Fail if distributed recipe operation failed',
+        );
+
+        expect(failureStep).toEqual({
+            name: 'Fail if distributed recipe operation failed',
+            if: "always() && steps.run_recipe.outcome != 'success'",
+            run: 'echo "Distributed recipe operation failed. Artifacts and analysis were uploaded when applicable." >&2\nexit 1\n',
+        });
     });
 
     it('applies manifest-requested RTC topology env during distributed recipe rollout', async () => {
