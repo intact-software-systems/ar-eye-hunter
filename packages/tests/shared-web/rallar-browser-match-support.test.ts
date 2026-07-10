@@ -56,7 +56,7 @@ describe('Rallar browser match support', () => {
         expect(game.sendIntent).toHaveBeenCalledWith({ kind: 'move', x: 3 });
     });
 
-    it('derives participants and standings from app-provided metrics', () => {
+    it('derives standings with the app-provided comparator', () => {
         const game = fakeGameMatch();
         const match = createRallarBrowserMatch<Command, Snapshot, Event>({
             rallar: fakeRallarFacade(),
@@ -68,29 +68,33 @@ describe('Rallar browser match support', () => {
                     participantId: 'principal-a',
                     principalId: 'principal-a',
                     sessionIds: ['session-a'],
-                    metrics: { points: 20 },
+                    metrics: { points: 20, objectives: 1 },
                 },
                 {
                     participantId: 'principal-b',
                     principalId: 'principal-b',
                     sessionIds: ['session-b'],
-                    metrics: { points: 10 },
+                    metrics: { points: 10, objectives: 2 },
                 },
             ],
+            compareStandings: (left, right) =>
+                right.metrics.objectives - left.metrics.objectives,
         }, {
             createGameMatch: () => game,
         });
 
         expect(match.standings()).toMatchObject([
-            { participantId: 'principal-a', rank: 1 },
-            { participantId: 'principal-b', rank: 2 },
+            { participantId: 'principal-b', rank: 1 },
+            { participantId: 'principal-a', rank: 2 },
         ]);
     });
 
-    it('finalizes a room-trusted result for browser-director matches', () => {
+    it('finalizes from the fresh local director appointment and app comparator', () => {
         const game = fakeGameMatch();
+        const rallar = fakeRallarFacade();
+        const directorStatus = vi.spyOn(rallar.director, 'status');
         const match = createRallarBrowserMatch<Command, Snapshot, Event>({
-            rallar: fakeRallarFacade(),
+            rallar,
             protocol: 'example.match.v1',
             topicId: 'room.example.match',
             matchId: 'match-1',
@@ -99,9 +103,17 @@ describe('Rallar browser match support', () => {
                     participantId: 'principal-a',
                     principalId: 'principal-a',
                     sessionIds: ['session-a'],
-                    metrics: { points: 20 },
+                    metrics: { points: 20, objectives: 1 },
+                },
+                {
+                    participantId: 'principal-b',
+                    principalId: 'principal-b',
+                    sessionIds: ['session-b'],
+                    metrics: { points: 10, objectives: 2 },
                 },
             ],
+            compareStandings: (left, right) =>
+                right.metrics.objectives - left.metrics.objectives,
         }, {
             createGameMatch: () => game,
             nowEpochMs: () => 2_000,
@@ -113,9 +125,101 @@ describe('Rallar browser match support', () => {
             matchId: 'match-1',
             trust: 'room-trusted',
             protocol: 'example.match.v1',
+            authority: {
+                kind: 'browser-director',
+                id: 'session-a',
+                epoch: 4,
+                principalId: 'principal-a',
+                sessionId: 'session-a',
+            },
             summary: { reason: 'complete' },
-            standings: [{ participantId: 'principal-a', rank: 1 }],
+            standings: [
+                { participantId: 'principal-b', rank: 1 },
+                { participantId: 'principal-a', rank: 2 },
+            ],
         });
+        expect(directorStatus).toHaveBeenCalledWith({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'room-1',
+        });
+    });
+
+    it('rejects finalization when the live director appointment is missing', () => {
+        const rallar = fakeRallarFacade();
+        const current = rallar.director.status();
+        vi.spyOn(rallar.director, 'status').mockReturnValue({
+            ...current,
+            role: 'none',
+            state: 'none',
+            appointment: undefined,
+            isDirector: false,
+            isFresh: false,
+            active: false,
+            freshness: 'none',
+        });
+        const match = createRallarBrowserMatch<Command, Snapshot, Event>({
+            rallar,
+            protocol: 'example.match.v1',
+            topicId: 'room.example.match',
+            matchId: 'match-1',
+        }, {
+            createGameMatch: () => fakeGameMatch(),
+        });
+
+        expect(() => match.finalizeResult({ reason: 'complete' })).toThrow(
+            'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.',
+        );
+    });
+
+    it('rejects finalization when the live director appointment is stale', () => {
+        const rallar = fakeRallarFacade();
+        const current = rallar.director.status();
+        vi.spyOn(rallar.director, 'status').mockReturnValue({
+            ...current,
+            state: 'stale',
+            isFresh: false,
+            freshness: 'stale',
+        });
+        const match = createRallarBrowserMatch<Command, Snapshot, Event>({
+            rallar,
+            protocol: 'example.match.v1',
+            topicId: 'room.example.match',
+            matchId: 'match-1',
+        }, {
+            createGameMatch: () => fakeGameMatch(),
+        });
+
+        expect(() => match.finalizeResult({ reason: 'complete' })).toThrow(
+            'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.',
+        );
+    });
+
+    it('rejects finalization when another session holds the live appointment', () => {
+        const rallar = fakeRallarFacade();
+        const current = rallar.director.status();
+        vi.spyOn(rallar.director, 'status').mockReturnValue({
+            ...current,
+            role: 'client',
+            isDirector: false,
+            appointment: {
+                ...current.appointment!,
+                principalId: 'principal-b',
+                sessionId: 'session-b',
+            },
+        });
+        const match = createRallarBrowserMatch<Command, Snapshot, Event>({
+            rallar,
+            protocol: 'example.match.v1',
+            topicId: 'room.example.match',
+            matchId: 'match-1',
+        }, {
+            createGameMatch: () => fakeGameMatch(),
+        });
+
+        expect(() => match.finalizeResult({ reason: 'complete' })).toThrow(
+            'Cannot finalize a room-trusted Rallar match result unless the local session holds the director appointment.',
+        );
     });
 
     it('throws when no status, config, or current-room GroupRef exists', () => {
@@ -271,6 +375,8 @@ function fakeRallarFacade(): RallarGameMatchConfig<
                     workspaceId: 'workspace-1',
                     groupId: 'room-1',
                 },
+                role: 'director',
+                state: 'fresh',
                 isDirector: true,
                 isFresh: true,
                 appointment: {
@@ -282,7 +388,9 @@ function fakeRallarFacade(): RallarGameMatchConfig<
                     appointedAtEpochMs: 1_000,
                     heartbeatTtlMs: 5_000,
                 },
+                active: true,
                 freshness: 'fresh',
+                nowEpochMs: 2_000,
             }),
             appoint: vi.fn(),
             resign: vi.fn(),
@@ -330,5 +438,11 @@ function fakeRallarFacade(): RallarGameMatchConfig<
                 reconnectExhausted: false,
             }),
         },
-    } as RallarGameMatchConfig<Command, Command, Snapshot, Event, Command>['rallar'];
+    } as unknown as RallarGameMatchConfig<
+        Command,
+        Command,
+        Snapshot,
+        Event,
+        Command
+    >['rallar'];
 }

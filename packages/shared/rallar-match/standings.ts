@@ -4,6 +4,7 @@ import type {
     RallarMatchStandingRow,
     RallarMatchStandingsInput,
 } from './types.ts';
+import { compareRallarMatchOrdinalStrings } from './internal.ts';
 
 export function deriveRallarMatchStandings(
     input: RallarMatchStandingsInput,
@@ -12,7 +13,10 @@ export function deriveRallarMatchStandings(
     const rows = Array.from(input.rows).sort((left, right) => {
         const compared = compare(left, right);
         return compared === 0
-            ? left.participantId.localeCompare(right.participantId)
+            ? compareRallarMatchOrdinalStrings(
+                left.participantId,
+                right.participantId,
+            )
             : compared;
     });
 

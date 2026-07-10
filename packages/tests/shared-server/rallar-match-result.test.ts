@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { createRallarServerValidatedMatchResult } from '@shared-server/game/mod.ts';
 
 describe('Rallar server match result helper', () => {
@@ -31,8 +31,12 @@ describe('Rallar server match result helper', () => {
             summary: { acceptedCommands: 3 },
         });
 
+        expectTypeOf(result.trust).toEqualTypeOf<'server-validated'>();
+        expectTypeOf(result.authority.kind).toEqualTypeOf<'server'>();
         expect(result.trust).toBe('server-validated');
-        expect(result.idempotencyKey).toBe('match-1:server:server-1:2:5000');
+        expect(result.idempotencyKey).toBe(
+            'app-1:workspace%3Apresent%3Aworkspace-1:room-1:example.authority.v1:match-1:server:server-1:2:5000',
+        );
     });
 
     it('rejects browser-director authority at runtime', () => {

@@ -7,6 +7,7 @@ import type {
     RallarMatchParticipant,
     RallarMatchParticipantsInput,
 } from './types.ts';
+import { compareRallarMatchOrdinalStrings } from './internal.ts';
 
 export function deriveRallarMatchParticipants(
     input: RallarMatchParticipantsInput,
@@ -59,7 +60,7 @@ function groupSessionsByPrincipal(
     }
 
     for (const [principalId, sessionIds] of grouped.entries()) {
-        grouped.set(principalId, sessionIds.sort());
+        grouped.set(principalId, sessionIds.sort(compareRallarMatchOrdinalStrings));
     }
 
     return grouped;
@@ -69,7 +70,10 @@ function compareParticipants(
     left: Pick<RallarMatchParticipant, 'participantId'>,
     right: Pick<RallarMatchParticipant, 'participantId'>,
 ): number {
-    return left.participantId.localeCompare(right.participantId);
+    return compareRallarMatchOrdinalStrings(
+        left.participantId,
+        right.participantId,
+    );
 }
 
 export function isActiveGroupMemberStatus(status: GroupMemberStatus): boolean {

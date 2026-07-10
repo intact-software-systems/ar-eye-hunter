@@ -45,6 +45,7 @@ Create:
 - `packages/shared/rallar-match/participants.ts`: participant derivation from group room snapshots and browser room members.
 - `packages/shared/rallar-match/standings.ts`: generic standings projection and rank/tie helpers.
 - `packages/shared/rallar-match/results.ts`: generic result envelope creation and idempotency key helper.
+- `packages/shared/rallar-match/internal.ts`: internal canonical ordinal string comparator.
 - `packages/shared/rallar-match/diagnostics.ts`: generic result/standings/participant diagnostics.
 - `packages/shared/rallar-match/mod.ts`: package barrel.
 - `packages/shared-web/game/match-support.ts`: browser-director match wrapper over `createRallarGameMatch`.
@@ -80,6 +81,7 @@ Do not modify:
 - Create: `packages/shared/rallar-match/participants.ts`
 - Create: `packages/shared/rallar-match/standings.ts`
 - Create: `packages/shared/rallar-match/results.ts`
+- Create: `packages/shared/rallar-match/internal.ts`
 - Create: `packages/shared/rallar-match/diagnostics.ts`
 - Create: `packages/shared/rallar-match/mod.ts`
 - Modify: `packages/shared/mod.ts`
@@ -94,6 +96,9 @@ Do not modify:
   - `RallarMatchStanding`
   - `RallarMatchResult<TSummary>`
   - `RallarMatchAuthorityDescriptor`
+  - `RallarLocalMatchResult<TSummary>`
+  - `RallarRoomTrustedMatchResult<TSummary>`
+  - `RallarServerValidatedMatchResult<TSummary>`
   - `deriveRallarMatchParticipants(input)`
   - `deriveRallarMatchStandings(input)`
   - `createRallarMatchResult(input)`
@@ -158,7 +163,7 @@ describe('Rallar match shared helpers', () => {
                     sessionId: 'session-a1',
                 },
             ],
-        } as GroupSnapshot;
+        } as unknown as GroupSnapshot;
 
         expect(deriveRallarMatchParticipants({ snapshot })).toEqual([
             {
@@ -193,7 +198,7 @@ describe('Rallar match shared helpers', () => {
                 },
             ],
             activeSessions: [],
-        } as GroupSnapshot;
+        } as unknown as GroupSnapshot;
 
         expect(
             deriveRallarMatchParticipants({
@@ -292,7 +297,7 @@ describe('Rallar match shared helpers', () => {
         });
 
         expect(result.idempotencyKey).toBe(
-            'match-1:browser-director:session-a:4:2000',
+            'app-1:workspace%3Apresent%3Aworkspace-1:room-1:example.match.v1:match-1:browser-director:session-a:4:2000',
         );
         expect(result.trust).toBe('room-trusted');
         expect(result.summary).toEqual({ reason: 'finished' });
@@ -319,6 +324,26 @@ describe('Rallar match shared helpers', () => {
         ]);
     });
 });
+```
+
+Final-review negative type coverage in the same test file keeps invalid calls
+unreachable at runtime while making an unused directive fail before narrowing:
+
+```ts
+if (false) {
+    createRallarMatchResult({
+        resultId: 'result-type-server',
+        matchId: 'match-1',
+        roomRef: { applicationId: 'app-1', groupId: 'room-1' },
+        protocol: 'example.match.v1',
+        authority: { kind: 'server', id: 'server-1', epoch: 1 },
+        // @ts-expect-error Shared creation cannot mint server-validated trust.
+        trust: 'server-validated',
+        finishedAtEpochMs: 2_000,
+        standings: [],
+        summary: {},
+    });
+}
 ```
 
 - [x] **Step 2: Run the failing shared helper tests**
@@ -399,23 +424,38 @@ export type RallarMatchStandingsInput = Readonly<{
 
 export type RallarMatchAuthorityKind = 'browser-director' | 'server';
 
-export type RallarMatchAuthorityDescriptor = Readonly<{
-    kind: RallarMatchAuthorityKind;
+type RallarMatchAuthorityDescriptorBase = Readonly<{
     id: string;
     epoch: number;
-    principalId?: PrincipalId;
-    sessionId?: SessionId;
 }>;
+
+export type RallarMatchBrowserDirectorAuthorityDescriptor =
+    RallarMatchAuthorityDescriptorBase &
+    Readonly<{
+        kind: 'browser-director';
+        principalId: PrincipalId;
+        sessionId: SessionId;
+    }>;
+
+export type RallarMatchServerAuthorityDescriptor =
+    RallarMatchAuthorityDescriptorBase &
+    Readonly<{
+        kind: 'server';
+        principalId?: never;
+        sessionId?: never;
+    }>;
+
+export type RallarMatchAuthorityDescriptor =
+    | RallarMatchBrowserDirectorAuthorityDescriptor
+    | RallarMatchServerAuthorityDescriptor;
 
 export type RallarMatchTrust = 'local' | 'room-trusted' | 'server-validated';
 
-export type RallarMatchResult<TSummary = unknown> = Readonly<{
+type RallarMatchResultFields<TSummary> = Readonly<{
     resultId: string;
     matchId: string;
     roomRef: GroupRef;
     protocol: string;
-    authority: RallarMatchAuthorityDescriptor;
-    trust: RallarMatchTrust;
     startedAtEpochMs?: number;
     finishedAtEpochMs: number;
     standings: readonly RallarMatchStanding[];
@@ -423,9 +463,43 @@ export type RallarMatchResult<TSummary = unknown> = Readonly<{
     idempotencyKey: string;
 }>;
 
-export type RallarMatchResultInput<TSummary = unknown> =
-    Omit<RallarMatchResult<TSummary>, 'idempotencyKey'> &
+export type RallarLocalMatchResult<TSummary = unknown> =
+    RallarMatchResultFields<TSummary> &
+    Readonly<{
+        authority: RallarMatchAuthorityDescriptor;
+        trust: 'local';
+    }>;
+
+export type RallarRoomTrustedMatchResult<TSummary = unknown> =
+    RallarMatchResultFields<TSummary> &
+    Readonly<{
+        authority: RallarMatchBrowserDirectorAuthorityDescriptor;
+        trust: 'room-trusted';
+    }>;
+
+export type RallarServerValidatedMatchResult<TSummary = unknown> =
+    RallarMatchResultFields<TSummary> &
+    Readonly<{
+        authority: RallarMatchServerAuthorityDescriptor;
+        trust: 'server-validated';
+    }>;
+
+export type RallarMatchResult<TSummary = unknown> =
+    | RallarLocalMatchResult<TSummary>
+    | RallarRoomTrustedMatchResult<TSummary>
+    | RallarServerValidatedMatchResult<TSummary>;
+
+export type RallarLocalMatchResultInput<TSummary = unknown> =
+    Omit<RallarLocalMatchResult<TSummary>, 'idempotencyKey'> &
     Readonly<{ idempotencyKey?: string }>;
+
+export type RallarRoomTrustedMatchResultInput<TSummary = unknown> =
+    Omit<RallarRoomTrustedMatchResult<TSummary>, 'idempotencyKey'> &
+    Readonly<{ idempotencyKey?: string }>;
+
+export type RallarMatchResultInput<TSummary = unknown> =
+    | RallarLocalMatchResultInput<TSummary>
+    | RallarRoomTrustedMatchResultInput<TSummary>;
 
 export type RallarMatchDiagnosticsInput<TSummary = unknown> = Readonly<{
     participants?: readonly RallarMatchParticipant[];
@@ -447,6 +521,24 @@ export type RallarMatchDiagnostics = Readonly<{
 }>;
 ```
 
+Final-review addition: create `packages/shared/rallar-match/internal.ts` and do
+not export it from `mod.ts`:
+
+```ts
+export function compareRallarMatchOrdinalStrings(
+    left: string,
+    right: string,
+): number {
+    if (left < right) {
+        return -1;
+    }
+    if (left > right) {
+        return 1;
+    }
+    return 0;
+}
+```
+
 - [x] **Step 4: Implement `participants.ts`**
 
 Create `packages/shared/rallar-match/participants.ts`:
@@ -461,6 +553,7 @@ import type {
     RallarMatchParticipant,
     RallarMatchParticipantsInput,
 } from './types.ts';
+import { compareRallarMatchOrdinalStrings } from './internal.ts';
 
 export function deriveRallarMatchParticipants(
     input: RallarMatchParticipantsInput,
@@ -513,7 +606,7 @@ function groupSessionsByPrincipal(
     }
 
     for (const [principalId, sessionIds] of grouped.entries()) {
-        grouped.set(principalId, sessionIds.sort());
+        grouped.set(principalId, sessionIds.sort(compareRallarMatchOrdinalStrings));
     }
 
     return grouped;
@@ -523,7 +616,10 @@ function compareParticipants(
     left: Pick<RallarMatchParticipant, 'participantId'>,
     right: Pick<RallarMatchParticipant, 'participantId'>,
 ): number {
-    return left.participantId.localeCompare(right.participantId);
+    return compareRallarMatchOrdinalStrings(
+        left.participantId,
+        right.participantId,
+    );
 }
 
 export function isActiveGroupMemberStatus(status: GroupMemberStatus): boolean {
@@ -545,6 +641,7 @@ import type {
     RallarMatchStandingRow,
     RallarMatchStandingsInput,
 } from './types.ts';
+import { compareRallarMatchOrdinalStrings } from './internal.ts';
 
 export function deriveRallarMatchStandings(
     input: RallarMatchStandingsInput,
@@ -553,7 +650,10 @@ export function deriveRallarMatchStandings(
     const rows = Array.from(input.rows).sort((left, right) => {
         const compared = compare(left, right);
         return compared === 0
-            ? left.participantId.localeCompare(right.participantId)
+            ? compareRallarMatchOrdinalStrings(
+                left.participantId,
+                right.participantId,
+            )
             : compared;
     });
 
@@ -604,44 +704,89 @@ Create `packages/shared/rallar-match/results.ts`:
 
 ```ts
 import type {
-    RallarMatchResult,
+    RallarLocalMatchResult,
+    RallarLocalMatchResultInput,
     RallarMatchResultInput,
+    RallarRoomTrustedMatchResult,
+    RallarRoomTrustedMatchResultInput,
 } from './types.ts';
 
 export function createRallarMatchResult<TSummary>(
+    input: RallarLocalMatchResultInput<TSummary>,
+): RallarLocalMatchResult<TSummary>;
+export function createRallarMatchResult<TSummary>(
+    input: RallarRoomTrustedMatchResultInput<TSummary>,
+): RallarRoomTrustedMatchResult<TSummary>;
+export function createRallarMatchResult<TSummary>(
     input: RallarMatchResultInput<TSummary>,
-): RallarMatchResult<TSummary> {
-    return {
-        resultId: input.resultId,
-        matchId: input.matchId,
-        roomRef: input.roomRef,
-        protocol: input.protocol,
-        authority: input.authority,
-        trust: input.trust,
-        startedAtEpochMs: input.startedAtEpochMs,
-        finishedAtEpochMs: input.finishedAtEpochMs,
-        standings: input.standings,
-        summary: input.summary,
-        idempotencyKey: input.idempotencyKey ??
-            createRallarMatchResultIdempotencyKey(input),
-    };
+): RallarLocalMatchResult<TSummary> | RallarRoomTrustedMatchResult<TSummary> {
+    if ((input as Readonly<{ trust?: unknown }>).trust === 'server-validated') {
+        throw new Error(
+            'Shared Rallar match result creation cannot assign server-validated trust.',
+        );
+    }
+    if (
+        input.trust === 'room-trusted' &&
+        !isBrowserDirectorAuthority(input.authority)
+    ) {
+        throw new Error(
+            'Room-trusted Rallar match results require browser-director authority.',
+        );
+    }
+
+    const idempotencyKey = input.idempotencyKey ??
+        createRallarMatchResultIdempotencyKey(input);
+    if (input.trust === 'room-trusted') {
+        return { ...input, idempotencyKey };
+    }
+    return { ...input, idempotencyKey };
 }
 
 export function createRallarMatchResultIdempotencyKey(
     input: Pick<
-        RallarMatchResultInput<unknown>,
-        'matchId' | 'authority' | 'finishedAtEpochMs'
+        RallarLocalMatchResultInput<unknown>,
+        | 'roomRef'
+        | 'protocol'
+        | 'matchId'
+        | 'authority'
+        | 'finishedAtEpochMs'
     >,
 ): string {
+    const workspace = input.roomRef.workspaceId === undefined
+        ? 'workspace:absent'
+        : `workspace:present:${input.roomRef.workspaceId}`;
+
     return [
+        input.roomRef.applicationId,
+        workspace,
+        input.roomRef.groupId,
+        input.protocol,
         input.matchId,
         input.authority.kind,
         input.authority.id,
         String(input.authority.epoch),
         String(input.finishedAtEpochMs),
-    ].join(':');
+    ].map(encodeURIComponent).join(':');
+}
+
+function isBrowserDirectorAuthority(authority: unknown): boolean {
+    if (!authority || typeof authority !== 'object') {
+        return false;
+    }
+
+    const value = authority as Readonly<Record<string, unknown>>;
+    return value.kind === 'browser-director' &&
+        typeof value.id === 'string' &&
+        typeof value.epoch === 'number' &&
+        typeof value.principalId === 'string' &&
+        typeof value.sessionId === 'string';
 }
 ```
+
+The final shared tests include negative compile-time cases for
+`server-validated` trust and room-trusted server authority, matching runtime
+rejections, cross-room and absent-versus-empty-workspace key collisions, and an
+ASCII-source `\u00e4` regression for ordinal participant/tied-standing order.
 
 - [x] **Step 7: Implement `diagnostics.ts`**
 
@@ -817,7 +962,7 @@ describe('Rallar browser match support', () => {
         expect(game.sendIntent).toHaveBeenCalledWith({ kind: 'move', x: 3 });
     });
 
-    it('derives participants and standings from app-provided metrics', () => {
+    it('derives standings with the app-provided comparator', () => {
         const game = fakeGameMatch();
         const match = createRallarBrowserMatch<Command, Snapshot, Event>({
             rallar: fakeRallarFacade(),
@@ -829,26 +974,28 @@ describe('Rallar browser match support', () => {
                     participantId: 'principal-a',
                     principalId: 'principal-a',
                     sessionIds: ['session-a'],
-                    metrics: { points: 20 },
+                    metrics: { points: 20, objectives: 1 },
                 },
                 {
                     participantId: 'principal-b',
                     principalId: 'principal-b',
                     sessionIds: ['session-b'],
-                    metrics: { points: 10 },
+                    metrics: { points: 10, objectives: 2 },
                 },
             ],
+            compareStandings: (left, right) =>
+                right.metrics.objectives - left.metrics.objectives,
         }, {
             createGameMatch: () => game,
         });
 
         expect(match.standings()).toMatchObject([
-            { participantId: 'principal-a', rank: 1 },
-            { participantId: 'principal-b', rank: 2 },
+            { participantId: 'principal-b', rank: 1 },
+            { participantId: 'principal-a', rank: 2 },
         ]);
     });
 
-    it('finalizes a room-trusted result for browser-director matches', () => {
+    it('finalizes from the fresh local appointment and app comparator', () => {
         const game = fakeGameMatch();
         const match = createRallarBrowserMatch<Command, Snapshot, Event>({
             rallar: fakeRallarFacade(),
@@ -860,9 +1007,17 @@ describe('Rallar browser match support', () => {
                     participantId: 'principal-a',
                     principalId: 'principal-a',
                     sessionIds: ['session-a'],
-                    metrics: { points: 20 },
+                    metrics: { points: 20, objectives: 1 },
+                },
+                {
+                    participantId: 'principal-b',
+                    principalId: 'principal-b',
+                    sessionIds: ['session-b'],
+                    metrics: { points: 10, objectives: 2 },
                 },
             ],
+            compareStandings: (left, right) =>
+                right.metrics.objectives - left.metrics.objectives,
         }, {
             createGameMatch: () => game,
             nowEpochMs: () => 2_000,
@@ -874,8 +1029,18 @@ describe('Rallar browser match support', () => {
             matchId: 'match-1',
             trust: 'room-trusted',
             protocol: 'example.match.v1',
+            authority: {
+                kind: 'browser-director',
+                id: 'session-a',
+                epoch: 4,
+                principalId: 'principal-a',
+                sessionId: 'session-a',
+            },
             summary: { reason: 'complete' },
-            standings: [{ participantId: 'principal-a', rank: 1 }],
+            standings: [
+                { participantId: 'principal-b', rank: 1 },
+                { participantId: 'principal-a', rank: 2 },
+            ],
         });
     });
 });
@@ -1066,9 +1231,19 @@ function fakeRallarFacade(): RallarGameMatchConfig<
                 reconnectExhausted: false,
             }),
         },
-    } as RallarGameMatchConfig<Command, Command, Snapshot, Event, Command>['rallar'];
+    } as unknown as RallarGameMatchConfig<
+        Command,
+        Command,
+        Snapshot,
+        Event,
+        Command
+    >['rallar'];
 }
 ```
+
+Final-review coverage also spies on `rallar.director.status(roomRef)` and
+separately rejects missing, stale, and non-local live appointments even when the
+wrapped game's cached status still reports active local authority.
 
 - [x] **Step 2: Run the failing browser wrapper tests**
 
@@ -1085,7 +1260,11 @@ Expected: FAIL because `createRallarBrowserMatch` is not exported.
 Create `packages/shared-web/game/match-support.ts` with these API names:
 
 ```ts
-import type { RallarMatchResult, RallarMatchStandingRow } from '@shared/rallar-match/mod.ts';
+import type {
+    RallarMatchStandingComparator,
+    RallarMatchStandingRow,
+    RallarRoomTrustedMatchResult,
+} from '@shared/rallar-match/mod.ts';
 import {
     createRallarMatchResult,
     deriveRallarMatchParticipants,
@@ -1119,6 +1298,7 @@ export type RallarBrowserMatchConfig<
             TPresence
         >['onIntent'];
         readStandingRows?: () => readonly RallarMatchStandingRow[];
+        compareStandings?: RallarMatchStandingComparator;
     }>;
 
 export type RallarBrowserMatchDependencies<
@@ -1154,7 +1334,7 @@ export type RallarBrowserMatchHandle<
     submitCommand(command: TCommand): Promise<RallarGameSendResult>;
     participants: typeof deriveRallarMatchParticipants;
     standings(): ReturnType<typeof deriveRallarMatchStandings>;
-    finalizeResult<TSummary>(summary: TSummary): RallarMatchResult<TSummary>;
+    finalizeResult<TSummary>(summary: TSummary): RallarRoomTrustedMatchResult<TSummary>;
 }>;
 
 export function createRallarBrowserMatch<
@@ -1206,6 +1386,11 @@ export function createRallarBrowserMatch<
     const nowEpochMs = dependencies.nowEpochMs ?? Date.now;
     const resultId = dependencies.resultId ??
         (() => `${config.matchId}:${nowEpochMs()}`);
+    const deriveStandings = () =>
+        deriveRallarMatchStandings({
+            rows: config.readStandingRows?.() ?? [],
+            compare: config.compareStandings,
+        });
 
     return {
         game,
@@ -1215,10 +1400,7 @@ export function createRallarBrowserMatch<
         diagnostics: game.diagnostics,
         submitCommand: (command) => game.sendIntent(command),
         participants: deriveRallarMatchParticipants,
-        standings: () =>
-            deriveRallarMatchStandings({
-                rows: config.readStandingRows?.() ?? [],
-            }),
+        standings: deriveStandings,
         finalizeResult: (summary) => {
             const status = game.status();
             const roomRef = status.roomRef ??
@@ -1226,6 +1408,24 @@ export function createRallarBrowserMatch<
                 config.rallar.rooms.state().currentRoomRef;
             if (!roomRef) {
                 throw new Error('Cannot finalize a Rallar match result without a roomRef.');
+            }
+            const directorStatus = config.rallar.director.status(roomRef);
+            const appointment = directorStatus.appointment;
+            if (!appointment || !directorStatus.isFresh) {
+                throw new Error(
+                    'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.',
+                );
+            }
+            const session = config.rallar.session();
+            if (
+                !session ||
+                !directorStatus.isDirector ||
+                appointment.sessionId !== session.sessionId ||
+                appointment.principalId !== session.clientId
+            ) {
+                throw new Error(
+                    'Cannot finalize a room-trusted Rallar match result unless the local session holds the director appointment.',
+                );
             }
 
             return createRallarMatchResult({
@@ -1235,16 +1435,15 @@ export function createRallarBrowserMatch<
                 protocol: config.protocol,
                 authority: {
                     kind: 'browser-director',
-                    id: status.directorPeerId ?? status.localPeerId ?? 'unknown-director',
-                    epoch: status.directorEpoch ?? 0,
-                    sessionId: status.directorPeerId ?? status.localPeerId,
+                    id: appointment.sessionId,
+                    epoch: appointment.epoch,
+                    principalId: appointment.principalId,
+                    sessionId: appointment.sessionId,
                 },
                 trust: 'room-trusted',
                 startedAtEpochMs: config.startedAtEpochMs,
                 finishedAtEpochMs: nowEpochMs(),
-                standings: deriveRallarMatchStandings({
-                    rows: config.readStandingRows?.() ?? [],
-                }),
+                standings: deriveStandings(),
                 summary,
             });
         },
@@ -1317,7 +1516,7 @@ type Snapshot = Readonly<{ tick: number }>;
 type Event = Readonly<{ kind: 'claimed' }>;
 type Presence = Readonly<{ ready: boolean }>;
 
-const authority: RallarGameAuthorityRef = {
+const authority: RallarGameAuthorityRef & Readonly<{ kind: 'server' }> = {
     kind: 'server',
     id: 'server-1',
     epoch: 3,
@@ -1348,7 +1547,7 @@ describe('Rallar authority browser match support', () => {
         );
     });
 
-    it('derives standings from app-provided server-authority metrics', () => {
+    it('derives standings with the app-provided comparator', () => {
         const client = fakeAuthorityClient();
         const match = createRallarAuthorityBrowserMatch<
             Command,
@@ -1370,16 +1569,40 @@ describe('Rallar authority browser match support', () => {
                     participantId: 'principal-a',
                     principalId: 'principal-a',
                     sessionIds: ['session-a'],
-                    metrics: { points: 5 },
+                    metrics: { points: 5, objectives: 1 },
+                },
+                {
+                    participantId: 'principal-b',
+                    principalId: 'principal-b',
+                    sessionIds: ['session-b'],
+                    metrics: { points: 1, objectives: 2 },
                 },
             ],
+            compareStandings: (left, right) =>
+                right.metrics.objectives - left.metrics.objectives,
         }, {
             createAuthorityClient: () => client,
         });
 
         expect(match.standings()).toMatchObject([
-            { participantId: 'principal-a', rank: 1 },
+            { participantId: 'principal-b', rank: 1 },
+            { participantId: 'principal-a', rank: 2 },
         ]);
+    });
+
+    it('rejects browser-director authority before creating the client', () => {
+        expect(() => createRallarAuthorityBrowserMatch({
+            rallar: {} as never,
+            protocol: 'example.authority.v1',
+            topicId: 'room.example.authority',
+            authority: {
+                kind: 'browser-director',
+                id: 'session-a',
+                epoch: 1,
+            },
+        } as never)).toThrow(
+            'Rallar authority browser matches require server authority.',
+        );
     });
 });
 
@@ -1439,6 +1662,10 @@ function fakeAuthorityClient(): RallarGameAuthorityClientHandle<
 }
 ```
 
+The final test file also includes an unreachable negative call with
+`@ts-expect-error` on a `browser-director` authority and a runtime cast test that
+asserts rejection occurs before the authority-client factory is called.
+
 - [x] **Step 2: Run the failing authority wrapper tests**
 
 Run:
@@ -1454,8 +1681,12 @@ Expected: FAIL because `createRallarAuthorityBrowserMatch` is not exported.
 Create `packages/shared-web/game/authority-match-support.ts` with these names:
 
 ```ts
-import type { RallarMatchStandingRow } from '@shared/rallar-match/mod.ts';
+import type {
+    RallarMatchStandingComparator,
+    RallarMatchStandingRow,
+} from '@shared/rallar-match/mod.ts';
 import { deriveRallarMatchStandings } from '@shared/rallar-match/mod.ts';
+import type { RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
 import {
     createRallarGameAuthorityClient,
     type RallarGameAuthorityClientConfig,
@@ -1468,9 +1699,14 @@ export type RallarAuthorityBrowserMatchConfig<
     TEvent,
     TPresence = unknown,
 > =
-    RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence> &
+    Omit<
+        RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence>,
+        'authority'
+    > &
     Readonly<{
+        authority: RallarGameAuthorityRef & Readonly<{ kind: 'server' }>;
         readStandingRows?: () => readonly RallarMatchStandingRow[];
+        compareStandings?: RallarMatchStandingComparator;
     }>;
 
 export type RallarAuthorityBrowserMatchDependencies<
@@ -1563,9 +1799,20 @@ export function createRallarAuthorityBrowserMatch<
         TPresence
     > = {},
 ): RallarAuthorityBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence> {
+    if (config.authority.kind !== 'server') {
+        throw new Error(
+            'Rallar authority browser matches require server authority.',
+        );
+    }
+
     const createAuthorityClient = dependencies.createAuthorityClient ??
         createRallarGameAuthorityClient;
     const client = createAuthorityClient(config);
+    const deriveStandings = () =>
+        deriveRallarMatchStandings({
+            rows: config.readStandingRows?.() ?? [],
+            compare: config.compareStandings,
+        });
 
     return {
         client,
@@ -1574,10 +1821,7 @@ export function createRallarAuthorityBrowserMatch<
         status: client.status,
         diagnostics: client.diagnostics,
         submitCommand: (command, options) => client.sendCommand(command, options),
-        standings: () =>
-            deriveRallarMatchStandings({
-                rows: config.readStandingRows?.() ?? [],
-            }),
+        standings: deriveStandings,
     };
 }
 ```
@@ -1630,7 +1874,7 @@ git commit -m "feat: add authority browser match support"
 
 - Consumes:
   - `RallarGameAuthorityRef` from `@shared/rallar-game/mod.ts`.
-  - `createRallarMatchResult` from `@shared/rallar-match/mod.ts`.
+  - `RallarServerValidatedMatchResult` and `createRallarMatchResultIdempotencyKey` from `@shared/rallar-match/mod.ts`.
 - Produces:
   - `createRallarServerValidatedMatchResult(input)`
   - `RallarServerValidatedMatchResultInput<TSummary>`
@@ -1640,7 +1884,7 @@ git commit -m "feat: add authority browser match support"
 Create `packages/tests/shared-server/rallar-match-result.test.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { createRallarServerValidatedMatchResult } from '@shared-server/game/mod.ts';
 
 describe('Rallar server match result helper', () => {
@@ -1673,8 +1917,12 @@ describe('Rallar server match result helper', () => {
             summary: { acceptedCommands: 3 },
         });
 
+        expectTypeOf(result.trust).toEqualTypeOf<'server-validated'>();
+        expectTypeOf(result.authority.kind).toEqualTypeOf<'server'>();
         expect(result.trust).toBe('server-validated');
-        expect(result.idempotencyKey).toBe('match-1:server:server-1:2:5000');
+        expect(result.idempotencyKey).toBe(
+            'app-1:workspace%3Apresent%3Aworkspace-1:room-1:example.authority.v1:match-1:server:server-1:2:5000',
+        );
     });
 
     it('rejects browser-director authority at runtime', () => {
@@ -1718,40 +1966,57 @@ Create `packages/shared-server/game/match-result.ts`:
 
 ```ts
 import type {
-    RallarMatchResult,
-    RallarMatchResultInput,
+    RallarMatchServerAuthorityDescriptor,
+    RallarServerValidatedMatchResult,
 } from '@shared/rallar-match/mod.ts';
-import { createRallarMatchResult } from '@shared/rallar-match/mod.ts';
+import { createRallarMatchResultIdempotencyKey } from '@shared/rallar-match/mod.ts';
 import type { RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
 
 export type RallarServerValidatedMatchResultInput<TSummary = unknown> =
-    Omit<RallarMatchResultInput<TSummary>, 'authority' | 'trust'> &
+    Omit<
+        RallarServerValidatedMatchResult<TSummary>,
+        'authority' | 'trust' | 'idempotencyKey'
+    > &
     Readonly<{
         authority: RallarGameAuthorityRef & Readonly<{ kind: 'server' }>;
+        idempotencyKey?: string;
     }>;
 
 export function createRallarServerValidatedMatchResult<TSummary>(
     input: RallarServerValidatedMatchResultInput<TSummary>,
-): RallarMatchResult<TSummary> {
+): RallarServerValidatedMatchResult<TSummary> {
     if (input.authority.kind !== 'server') {
         throw new Error(
             'Server-validated Rallar match results require server authority.',
         );
     }
 
-    return createRallarMatchResult({
+    const authority: RallarMatchServerAuthorityDescriptor = {
+        kind: 'server',
+        id: input.authority.id,
+        epoch: input.authority.epoch,
+    };
+
+    return {
         resultId: input.resultId,
         matchId: input.matchId,
         roomRef: input.roomRef,
         protocol: input.protocol,
-        authority: input.authority,
+        authority,
         trust: 'server-validated',
         startedAtEpochMs: input.startedAtEpochMs,
         finishedAtEpochMs: input.finishedAtEpochMs,
         standings: input.standings,
         summary: input.summary,
-        idempotencyKey: input.idempotencyKey,
-    });
+        idempotencyKey: input.idempotencyKey ??
+            createRallarMatchResultIdempotencyKey({
+                roomRef: input.roomRef,
+                protocol: input.protocol,
+                matchId: input.matchId,
+                authority,
+                finishedAtEpochMs: input.finishedAtEpochMs,
+            }),
+    };
 }
 ```
 
@@ -1839,20 +2104,30 @@ does not add a top-level `rallar.match` facade in V1. Import named helpers from
 `@shared/rallar-match/mod.ts` and `@shared-web/game/mod.ts`.
 
 Use `createRallarBrowserMatch` for browser-director matches where a live
-room session holds the director lease and routes commands, snapshots, events,
-participants, standings, and room-trusted result envelopes.
+room session holds the director lease and routes commands, snapshots, and
+events. Applications pass a group snapshot or normalized browser member rows to
+`participants(input)`, and supply metrics plus app-owned ordering through
+`readStandingRows` and `compareStandings`.
+
+`finalizeResult(summary)` reads the live director facade and returns a
+`room-trusted` envelope only for the fresh local appointment. Shared
+`createRallarMatchResult(...)` can create only `local` or `room-trusted`
+results.
 
 Use `createRallarAuthorityBrowserMatch` when the authoritative game or
-activity loop lives behind Rallar Game Authority. Browser clients do not mint
-`server-validated` results. Server-owned domain code creates those envelopes
-with `createRallarServerValidatedMatchResult(...)` after validating the match.
-Its `submitCommand(...)` delegates app-owned commands through Rallar Game
-Authority, while `standings()` projects app-provided `readStandingRows` metrics;
-Rallar does not calculate scores.
+activity loop lives behind Rallar Game Authority. It requires server authority
+and delegates app-owned commands while projecting app-provided standings.
+Browser clients do not mint `server-validated` results. Server-owned domain
+code creates those envelopes with
+`createRallarServerValidatedMatchResult(...)` after validation.
 
-Rallar provides participant derivation, standings projection, result envelopes,
-and diagnostics. The application still owns command legality, scoring rules,
-win conditions, persistence, rewards, global leaderboards, and anti-cheat.
+The helpers do not automatically publish, transport, or persist derived values
+or returned results. Applications own those paths as well as scoring,
+comparison, command legality, win conditions, rewards, leaderboards, and
+anti-cheat.
+
+Default result idempotency keys include application/workspace/group scope,
+protocol, match, authority, epoch, and finish time.
 ```
 
 - [x] **Step 3: Run public API and doc-related tests**
@@ -1937,14 +2212,15 @@ git commit -m "test: validate rallar match support"
 ## Scope Coverage Review
 
 - Participant identity: Task 1 implements principal-first participants with a custom resolver.
-- Standings projection: Task 1 implements generic metrics sorting and rank ties.
-- Result envelopes: Task 1 implements generic results; Task 4 adds server-validated helper.
-- Browser-director match wiring: Task 2 wraps `createRallarGameMatch`.
-- Server-authority browser wiring: Task 3 wraps `createRallarGameAuthorityClient`.
+- Standings projection: Task 1 implements generic metrics sorting and rank ties; both browser wrappers accept the application-owned `compareStandings` policy.
+- Result envelopes: shared result types discriminate local, room-trusted browser-director, and server-validated server authority. Shared creation is limited to local/room-trusted results; Task 4 directly constructs the sole server-validated variant.
+- Browser-director match wiring: Task 2 wraps `createRallarGameMatch` and finalizes only from a fresh local appointment read from the live director facade.
+- Server-authority browser wiring: Task 3 wraps `createRallarGameAuthorityClient` and requires server authority at both the type and runtime boundary.
+- Idempotency and ordering: default keys include canonical room/protocol scope with absent workspace identity preserved, and one internal ordinal helper orders participant and tied-standing IDs.
 - Diagnostics: Task 1 adds generic diagnostics; browser/server wrappers can surface existing Rallar Game diagnostics through their underlying handles.
 - Public exports: Tasks 1, 2, 3, and 4 update barrels; Task 5 updates shared-web public API snapshots.
-- Docs: Task 5 documents optional support and game-rule boundaries.
-- Testing: Tasks 1-6 include focused tests, adjacent Rallar Game tests, public API snapshots, browser bundle checks, and typechecks.
+- Docs: Task 5 documents optional support, participant/comparator inputs, trust boundaries, app-owned transport/persistence, and game-rule boundaries.
+- Testing: Tasks 1-6 plus the final-review fix include focused runtime/type regressions, adjacent Rallar Game tests, public API snapshots, browser bundle checks, package typechecks, and both game builds.
 
 ## Execution Notes
 
@@ -2043,3 +2319,16 @@ Implement Tasks 1-6 as written. Any expansion into consumer migration, formal te
 - Corrected: reconciled all six unchecked Task 4 steps with the authoritative Task 4 report and commit `b929cf6` after the completion audit identified the omitted tracker record.
 - Verified Task 4 evidence: the report records the expected RED failure, GREEN `1` file and `2` tests passed, shared-server typecheck pass, no blockers, and the implementation/export commit; `git show --stat b929cf6` confirms the three recorded Task 4 files.
 - Full-scope status: Tasks 1-6 are fully checked only after this audit verification, for the approved local/package/consumer scope. Remote/runtime/deployment validation remains out of scope.
+
+### Final Review Fix - 2026-07-10T14:07:54+02:00
+
+- Completed: made result trust and authority discriminated; restricted shared result creation to local and room-trusted results with runtime guards; made the server helper directly construct the narrowed server-validated variant; required fresh local live-director authority for browser finalization; restricted the authority browser wrapper to server authority; passed app-owned standings comparators through both wrappers and browser results; scoped default keys by canonical room and protocol identity; replaced match ID locale ordering with one internal ordinal comparator; and corrected canonical documentation and plan snippets.
+- Files changed: `packages/shared/rallar-match/types.ts`, `packages/shared/rallar-match/internal.ts`, `packages/shared/rallar-match/participants.ts`, `packages/shared/rallar-match/standings.ts`, `packages/shared/rallar-match/results.ts`, `packages/shared-web/game/match-support.ts`, `packages/shared-web/game/authority-match-support.ts`, `packages/shared-server/game/match-result.ts`, `packages/tests/shared/rallar-match.test.ts`, `packages/tests/shared-web/rallar-browser-match-support.test.ts`, `packages/tests/shared-web/rallar-authority-match-support.test.ts`, `packages/tests/shared-server/rallar-match-result.test.ts`, `docs/rallar-api-reference.md`, and this implementation plan. No app files changed.
+- RED evidence: before production edits, the four focused files ran `22` tests with `12` expected failures and `10` passes, covering ordinal ordering, scoped keys, runtime trust rejection, live appointment checks, authority rejection, and comparator pass-through. The pre-fix `npx tsc -p packages/tests/tsconfig.json --noEmit` included the intended unused `@ts-expect-error` diagnostics for the then-valid forged trust calls, alongside unrelated repository baseline failures.
+- GREEN evidence: `npx vitest run packages/tests/shared/rallar-match.test.ts packages/tests/shared-web/rallar-browser-match-support.test.ts packages/tests/shared-web/rallar-authority-match-support.test.ts packages/tests/shared-server/rallar-match-result.test.ts` passed (`4` files, `22` tests); `npx vitest run packages/tests/shared-web/rallar-game-match.test.ts packages/tests/shared-web/rallar-game-diagnostics.test.ts packages/tests/shared-web/rallar-game-authority-client.test.ts packages/tests/shared-server/rallar-game-authority-server.test.ts` passed (`4` files, `37` tests); and `npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-entrypoints.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts` passed (`3` files, `17` tests).
+- Typechecks passed: `npx tsc -p packages/shared/tsconfig.json --noEmit`; `npx tsc -p packages/shared-web/tsconfig.json --noEmit`; `npx tsc -p packages/shared-server/tsconfig.json --noEmit`; and the focused test substitute `npx tsc -p /private/tmp/rallar-match-sdd/tsconfig.rallar-match-final-fix.json --noEmit`. The temporary config is outside the repository, extends `packages/tests/tsconfig.json`, includes only the four focused match test files, and exited `0` with no diagnostics.
+- Full tests-typecheck baseline gap: `npx tsc -p packages/tests/tsconfig.json --noEmit --pretty false` exited `2` with `1,558` diagnostic lines and zero diagnostics in the match-support test files. Representative unchanged failures include missing `Deno` globals in `apps/api-v1/src/db/database-config.ts`, missing `@electric-sql/pglite` types in `apps/api-v1/src/db/db.ts`, missing `@shared-test/rallar-bb-test/schema.ts` in `apps/rallar-black-box-control-server/src/routes/swagger-routes.ts`, incompatible callback returns in `packages/tests/shared/qrtc-data-channel.test.ts`, and existing WebSocket fake/type diagnostics in `packages/tests/shared/websocket-webrtc.test.ts`. This broad baseline is not changed by the final-review fix; the focused extending config is the closest clean proof of the requested negative type contract.
+- Consumer builds: `npm --workspace ar-eye-hunter-v1 run build` and `npm --workspace relic-hunters-v1 run build` both exited `0`. Both emitted Vite's known chunks-larger-than-500-kB warning after successful production output.
+- Repository checks: `git diff --check` exited `0`; `rg -n "^- \[ \]" plans/rallar-browser-match-support-implementation-plan.md` exited `1` with no output, confirming no unchecked steps; `git diff --name-only -- apps` exited `0` with no output; and `git status --short --branch` showed only the fourteen intended repository paths on `codex/rallar-browser-match-support`.
+- Warnings and blockers: no feature blocker. The full `packages/tests` TypeScript project remains a repository baseline concern outside this match-support change; the focused match project is clean. The two successful game builds retain their known bundle-size warnings.
+- Remaining validation: no remaining focused/package/consumer validation for this fix. Repairing the unrelated full tests-TypeScript baseline and remote/runtime/deployment validation remain outside scope.

@@ -363,16 +363,36 @@ does not add a top-level `rallar.match` facade in V1. Import named helpers from
 `@shared/rallar-match/mod.ts` and `@shared-web/game/mod.ts`.
 
 Use `createRallarBrowserMatch` for browser-director matches where a live
-room session holds the director lease and routes commands, snapshots, events,
-participants, standings, and room-trusted result envelopes.
+room session holds the director lease and routes commands, snapshots, and
+events. Its `participants(input)` function is the pure
+`deriveRallarMatchParticipants(...)` helper: applications supply either a group
+snapshot with members and active sessions or already-normalized browser member
+rows. Configure `readStandingRows` to supply app-owned metrics and
+`compareStandings` to define their ordering and tie semantics. Rallar does not
+calculate points or choose the winning metric.
+
+`finalizeResult(summary)` resolves the match `GroupRef`, reads the live
+`rallar.director.status(...)`, and returns a `room-trusted` envelope only when
+the current browser session holds a fresh director appointment. The envelope's
+authority comes from that appointment. The shared
+`createRallarMatchResult(...)` helper can construct only `local` or
+`room-trusted` results; it cannot assign `server-validated` trust.
 
 Use `createRallarAuthorityBrowserMatch` when the authoritative game or
-activity loop lives behind Rallar Game Authority. Browser clients do not mint
-`server-validated` results. Server-owned domain code creates those envelopes
-with `createRallarServerValidatedMatchResult(...)` after validating the match.
-Its `submitCommand(...)` delegates app-owned commands through Rallar Game
-Authority, while `standings()` projects app-provided `readStandingRows` metrics;
-Rallar does not calculate scores.
+activity loop lives behind Rallar Game Authority. Its authority must be
+`kind: 'server'`; `submitCommand(...)` delegates app-owned commands through
+Rallar Game Authority, while `standings()` uses the same app-provided
+`readStandingRows` and optional `compareStandings` contract. Browser clients do
+not mint `server-validated` results. Server-owned domain code creates those
+envelopes with `createRallarServerValidatedMatchResult(...)` after validating
+the match and server authority.
+
+These helpers only derive values and construct or return envelopes. They do not
+publish, transport, or persist participants, standings, or results. The
+application must send or store the returned result through its own transport
+and persistence path. Default result idempotency keys include the canonical
+application/workspace/group scope and protocol as well as match, authority,
+epoch, and finish-time components.
 
 Rallar provides participant derivation, standings projection, result envelopes,
 and diagnostics. The application still owns command legality, scoring rules,

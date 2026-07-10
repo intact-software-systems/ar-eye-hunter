@@ -1,6 +1,7 @@
 import type {
-    RallarMatchResult,
+    RallarMatchStandingComparator,
     RallarMatchStandingRow,
+    RallarRoomTrustedMatchResult,
 } from '@shared/rallar-match/mod.ts';
 import {
     createRallarMatchResult,
@@ -35,6 +36,7 @@ export type RallarBrowserMatchConfig<
             TPresence
         >['onIntent'];
         readStandingRows?: () => readonly RallarMatchStandingRow[];
+        compareStandings?: RallarMatchStandingComparator;
     }>;
 
 export type RallarBrowserMatchDependencies<
@@ -70,7 +72,7 @@ export type RallarBrowserMatchHandle<
     submitCommand(command: TCommand): Promise<RallarGameSendResult>;
     participants: typeof deriveRallarMatchParticipants;
     standings(): ReturnType<typeof deriveRallarMatchStandings>;
-    finalizeResult<TSummary>(summary: TSummary): RallarMatchResult<TSummary>;
+    finalizeResult<TSummary>(summary: TSummary): RallarRoomTrustedMatchResult<TSummary>;
 }>;
 
 export function createRallarBrowserMatch<
@@ -122,6 +124,11 @@ export function createRallarBrowserMatch<
     const nowEpochMs = dependencies.nowEpochMs ?? Date.now;
     const resultId = dependencies.resultId ??
         (() => `${config.matchId}:${nowEpochMs()}`);
+    const deriveStandings = () =>
+        deriveRallarMatchStandings({
+            rows: config.readStandingRows?.() ?? [],
+            compare: config.compareStandings,
+        });
 
     return {
         game,
@@ -131,10 +138,7 @@ export function createRallarBrowserMatch<
         diagnostics: game.diagnostics,
         submitCommand: (command) => game.sendIntent(command),
         participants: deriveRallarMatchParticipants,
-        standings: () =>
-            deriveRallarMatchStandings({
-                rows: config.readStandingRows?.() ?? [],
-            }),
+        standings: deriveStandings,
         finalizeResult: (summary) => {
             const status = game.status();
             const roomRef = status.roomRef ??
@@ -142,6 +146,24 @@ export function createRallarBrowserMatch<
                 config.rallar.rooms.state().currentRoomRef;
             if (!roomRef) {
                 throw new Error('Cannot finalize a Rallar match result without a roomRef.');
+            }
+            const directorStatus = config.rallar.director.status(roomRef);
+            const appointment = directorStatus.appointment;
+            if (!appointment || !directorStatus.isFresh) {
+                throw new Error(
+                    'Cannot finalize a room-trusted Rallar match result without a fresh director appointment.',
+                );
+            }
+            const session = config.rallar.session();
+            if (
+                !session ||
+                !directorStatus.isDirector ||
+                appointment.sessionId !== session.sessionId ||
+                appointment.principalId !== session.clientId
+            ) {
+                throw new Error(
+                    'Cannot finalize a room-trusted Rallar match result unless the local session holds the director appointment.',
+                );
             }
 
             return createRallarMatchResult({
@@ -151,16 +173,15 @@ export function createRallarBrowserMatch<
                 protocol: config.protocol,
                 authority: {
                     kind: 'browser-director',
-                    id: status.directorPeerId ?? status.localPeerId ?? 'unknown-director',
-                    epoch: status.directorEpoch ?? 0,
-                    sessionId: status.directorPeerId ?? status.localPeerId,
+                    id: appointment.sessionId,
+                    epoch: appointment.epoch,
+                    principalId: appointment.principalId,
+                    sessionId: appointment.sessionId,
                 },
                 trust: 'room-trusted',
                 startedAtEpochMs: config.startedAtEpochMs,
                 finishedAtEpochMs: nowEpochMs(),
-                standings: deriveRallarMatchStandings({
-                    rows: config.readStandingRows?.() ?? [],
-                }),
+                standings: deriveStandings(),
                 summary,
             });
         },

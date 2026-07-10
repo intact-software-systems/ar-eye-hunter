@@ -8,6 +8,34 @@ import {
     deriveRallarMatchStandings,
 } from '@shared/rallar-match/mod.ts';
 
+if (false) {
+    createRallarMatchResult({
+        resultId: 'result-type-server',
+        matchId: 'match-1',
+        roomRef: { applicationId: 'app-1', groupId: 'room-1' },
+        protocol: 'example.match.v1',
+        authority: { kind: 'server', id: 'server-1', epoch: 1 },
+        // @ts-expect-error Browser-safe result creation cannot mint server-validated trust.
+        trust: 'server-validated',
+        finishedAtEpochMs: 2_000,
+        standings: [],
+        summary: {},
+    });
+
+    // @ts-expect-error Room-trusted results require browser-director authority.
+    createRallarMatchResult({
+        resultId: 'result-type-room',
+        matchId: 'match-1',
+        roomRef: { applicationId: 'app-1', groupId: 'room-1' },
+        protocol: 'example.match.v1',
+        authority: { kind: 'server', id: 'server-1', epoch: 1 },
+        trust: 'room-trusted',
+        finishedAtEpochMs: 2_000,
+        standings: [],
+        summary: {},
+    });
+}
+
 describe('Rallar match shared helpers', () => {
     it('derives principal-first participants from active group members and sessions', () => {
         const snapshot = {
@@ -53,7 +81,7 @@ describe('Rallar match shared helpers', () => {
                     sessionId: 'session-a1',
                 },
             ],
-        } as GroupSnapshot;
+        } as unknown as GroupSnapshot;
 
         expect(deriveRallarMatchParticipants({ snapshot })).toEqual([
             {
@@ -88,7 +116,7 @@ describe('Rallar match shared helpers', () => {
                 },
             ],
             activeSessions: [],
-        } as GroupSnapshot;
+        } as unknown as GroupSnapshot;
 
         expect(
             deriveRallarMatchParticipants({
@@ -153,6 +181,46 @@ describe('Rallar match shared helpers', () => {
         ]);
     });
 
+    it('orders participant and tied standing IDs by canonical ordinal value', () => {
+        const escapedUnicodeId = '\u00e4';
+
+        expect(deriveRallarMatchParticipants({
+            members: [
+                {
+                    participantId: escapedUnicodeId,
+                    online: false,
+                    sessionIds: [],
+                },
+                {
+                    participantId: 'z',
+                    online: false,
+                    sessionIds: [],
+                },
+            ],
+        }).map((participant) => participant.participantId)).toEqual([
+            'z',
+            escapedUnicodeId,
+        ]);
+
+        expect(deriveRallarMatchStandings({
+            rows: [
+                {
+                    participantId: escapedUnicodeId,
+                    sessionIds: [],
+                    metrics: { points: 1 },
+                },
+                {
+                    participantId: 'z',
+                    sessionIds: [],
+                    metrics: { points: 1 },
+                },
+            ],
+        }).map((standing) => standing.participantId)).toEqual([
+            'z',
+            escapedUnicodeId,
+        ]);
+    });
+
     it('creates deterministic match result envelopes', () => {
         const result = createRallarMatchResult({
             resultId: 'result-1',
@@ -187,25 +255,101 @@ describe('Rallar match shared helpers', () => {
         });
 
         expect(result.idempotencyKey).toBe(
-            'match-1:browser-director:session-a:4:2000',
+            'app-1:workspace%3Apresent%3Aworkspace-1:room-1:example.match.v1:match-1:browser-director:session-a:4:2000',
         );
         expect(result.trust).toBe('room-trusted');
         expect(result.summary).toEqual({ reason: 'finished' });
     });
 
+    it('rejects server-validated trust and invalid room-trusted authority at runtime', () => {
+        const input = {
+            resultId: 'result-1',
+            matchId: 'match-1',
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
+            protocol: 'example.match.v1',
+            authority: { kind: 'server', id: 'server-1', epoch: 1 },
+            finishedAtEpochMs: 2_000,
+            standings: [],
+            summary: {},
+        } as const;
+
+        expect(() => createRallarMatchResult({
+            ...input,
+            trust: 'server-validated',
+        } as never)).toThrow(
+            'Shared Rallar match result creation cannot assign server-validated trust.',
+        );
+        expect(() => createRallarMatchResult({
+            ...input,
+            trust: 'room-trusted',
+        } as never)).toThrow(
+            'Room-trusted Rallar match results require browser-director authority.',
+        );
+    });
+
     it('creates collision-safe result idempotency keys', () => {
         const serverKey = createRallarMatchResultIdempotencyKey({
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
+            protocol: 'example.match.v1',
             matchId: 'match-1:browser-director',
             authority: { kind: 'server', id: 'id', epoch: 1 },
             finishedAtEpochMs: 2_000,
         });
         const browserDirectorKey = createRallarMatchResultIdempotencyKey({
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
+            protocol: 'example.match.v1',
             matchId: 'match-1',
-            authority: { kind: 'browser-director', id: 'server:id', epoch: 1 },
+            authority: {
+                kind: 'browser-director',
+                id: 'server:id',
+                epoch: 1,
+                principalId: 'principal-a',
+                sessionId: 'server:id',
+            },
             finishedAtEpochMs: 2_000,
         });
 
         expect(serverKey).not.toBe(browserDirectorKey);
+    });
+
+    it('scopes result idempotency keys by room and preserves absent workspace identity', () => {
+        const input = {
+            protocol: 'example.match.v1',
+            matchId: 'match-1',
+            authority: { kind: 'server', id: 'server-1', epoch: 1 } as const,
+            finishedAtEpochMs: 2_000,
+        };
+        const roomOneKey = createRallarMatchResultIdempotencyKey({
+            ...input,
+            roomRef: { applicationId: 'app-1', groupId: 'room-1' },
+        });
+        const roomTwoKey = createRallarMatchResultIdempotencyKey({
+            ...input,
+            roomRef: { applicationId: 'app-1', groupId: 'room-2' },
+        });
+        const emptyWorkspaceKey = createRallarMatchResultIdempotencyKey({
+            ...input,
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: '',
+                groupId: 'room-1',
+            },
+        });
+
+        expect(roomOneKey).not.toBe(roomTwoKey);
+        expect(roomOneKey).not.toBe(emptyWorkspaceKey);
     });
 
     it('reports generic match diagnostics', () => {

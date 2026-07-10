@@ -1,5 +1,9 @@
-import type { RallarMatchStandingRow } from '@shared/rallar-match/mod.ts';
+import type {
+    RallarMatchStandingComparator,
+    RallarMatchStandingRow,
+} from '@shared/rallar-match/mod.ts';
 import { deriveRallarMatchStandings } from '@shared/rallar-match/mod.ts';
+import type { RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
 import {
     createRallarGameAuthorityClient,
     type RallarGameAuthorityClientConfig,
@@ -12,9 +16,14 @@ export type RallarAuthorityBrowserMatchConfig<
     TEvent,
     TPresence = unknown,
 > =
-    RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence> &
+    Omit<
+        RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence>,
+        'authority'
+    > &
     Readonly<{
+        authority: RallarGameAuthorityRef & Readonly<{ kind: 'server' }>;
         readStandingRows?: () => readonly RallarMatchStandingRow[];
+        compareStandings?: RallarMatchStandingComparator;
     }>;
 
 export type RallarAuthorityBrowserMatchDependencies<
@@ -107,9 +116,20 @@ export function createRallarAuthorityBrowserMatch<
         TPresence
     > = {},
 ): RallarAuthorityBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence> {
+    if (config.authority.kind !== 'server') {
+        throw new Error(
+            'Rallar authority browser matches require server authority.',
+        );
+    }
+
     const createAuthorityClient = dependencies.createAuthorityClient ??
         createRallarGameAuthorityClient;
     const client = createAuthorityClient(config);
+    const deriveStandings = () =>
+        deriveRallarMatchStandings({
+            rows: config.readStandingRows?.() ?? [],
+            compare: config.compareStandings,
+        });
 
     return {
         client,
@@ -118,9 +138,6 @@ export function createRallarAuthorityBrowserMatch<
         status: client.status,
         diagnostics: client.diagnostics,
         submitCommand: (command, options) => client.sendCommand(command, options),
-        standings: () =>
-            deriveRallarMatchStandings({
-                rows: config.readStandingRows?.() ?? [],
-            }),
+        standings: deriveStandings,
     };
 }

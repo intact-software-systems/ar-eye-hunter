@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
     createRallarAuthorityBrowserMatch,
+    type RallarAuthorityBrowserMatchConfig,
     type RallarGameAuthorityClientConfig,
     type RallarGameAuthorityClientHandle,
 } from '@shared-web/game/mod.ts';
@@ -11,11 +12,19 @@ type Snapshot = Readonly<{ tick: number }>;
 type Event = Readonly<{ kind: 'claimed' }>;
 type Presence = Readonly<{ ready: boolean }>;
 
-const authority: RallarGameAuthorityRef = {
+const authority: RallarGameAuthorityRef & Readonly<{ kind: 'server' }> = {
     kind: 'server',
     id: 'server-1',
     epoch: 3,
 };
+
+if (false) {
+    createRallarAuthorityBrowserMatch<Command, Snapshot, Event, Presence>({
+        ...authorityMatchConfig(),
+        // @ts-expect-error Server-authority browser matches reject browser-director authority.
+        authority: { kind: 'browser-director', id: 'session-a', epoch: 1 },
+    });
+}
 
 describe('Rallar authority browser match support', () => {
     it('delegates authority-client configuration, lifecycle, and commands', async () => {
@@ -59,7 +68,7 @@ describe('Rallar authority browser match support', () => {
         );
     });
 
-    it('derives standings from app-provided server-authority metrics', () => {
+    it('derives standings with the app-provided comparator', () => {
         const client = fakeAuthorityClient();
         const match = createRallarAuthorityBrowserMatch<
             Command,
@@ -78,20 +87,45 @@ describe('Rallar authority browser match support', () => {
                     participantId: 'principal-a',
                     principalId: 'principal-a',
                     sessionIds: ['session-a'],
-                    metrics: { points: 5 },
+                    metrics: { points: 5, objectives: 1 },
+                },
+                {
+                    participantId: 'principal-b',
+                    principalId: 'principal-b',
+                    sessionIds: ['session-b'],
+                    metrics: { points: 1, objectives: 2 },
                 },
             ],
+            compareStandings: (left, right) =>
+                right.metrics.objectives - left.metrics.objectives,
         }, {
             createAuthorityClient: () => client,
         });
 
         expect(match.standings()).toMatchObject([
-            { participantId: 'principal-a', rank: 1 },
+            { participantId: 'principal-b', rank: 1 },
+            { participantId: 'principal-a', rank: 2 },
         ]);
+    });
+
+    it('rejects browser-director authority before creating the client', () => {
+        const createAuthorityClient = vi.fn(() => fakeAuthorityClient());
+
+        expect(() => createRallarAuthorityBrowserMatch({
+            ...authorityMatchConfig(),
+            authority: {
+                kind: 'browser-director',
+                id: 'session-a',
+                epoch: 1,
+            },
+        } as never, { createAuthorityClient })).toThrow(
+            'Rallar authority browser matches require server authority.',
+        );
+        expect(createAuthorityClient).not.toHaveBeenCalled();
     });
 });
 
-function authorityMatchConfig(): RallarGameAuthorityClientConfig<
+function authorityMatchConfig(): RallarAuthorityBrowserMatchConfig<
     Command,
     Snapshot,
     Event,

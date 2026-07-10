@@ -61,23 +61,38 @@ export type RallarMatchStandingsInput = Readonly<{
 
 export type RallarMatchAuthorityKind = 'browser-director' | 'server';
 
-export type RallarMatchAuthorityDescriptor = Readonly<{
-    kind: RallarMatchAuthorityKind;
+type RallarMatchAuthorityDescriptorBase = Readonly<{
     id: string;
     epoch: number;
-    principalId?: PrincipalId;
-    sessionId?: SessionId;
 }>;
+
+export type RallarMatchBrowserDirectorAuthorityDescriptor =
+    RallarMatchAuthorityDescriptorBase &
+    Readonly<{
+        kind: 'browser-director';
+        principalId: PrincipalId;
+        sessionId: SessionId;
+    }>;
+
+export type RallarMatchServerAuthorityDescriptor =
+    RallarMatchAuthorityDescriptorBase &
+    Readonly<{
+        kind: 'server';
+        principalId?: never;
+        sessionId?: never;
+    }>;
+
+export type RallarMatchAuthorityDescriptor =
+    | RallarMatchBrowserDirectorAuthorityDescriptor
+    | RallarMatchServerAuthorityDescriptor;
 
 export type RallarMatchTrust = 'local' | 'room-trusted' | 'server-validated';
 
-export type RallarMatchResult<TSummary = unknown> = Readonly<{
+type RallarMatchResultFields<TSummary> = Readonly<{
     resultId: string;
     matchId: string;
     roomRef: GroupRef;
     protocol: string;
-    authority: RallarMatchAuthorityDescriptor;
-    trust: RallarMatchTrust;
     startedAtEpochMs?: number;
     finishedAtEpochMs: number;
     standings: readonly RallarMatchStanding[];
@@ -85,9 +100,43 @@ export type RallarMatchResult<TSummary = unknown> = Readonly<{
     idempotencyKey: string;
 }>;
 
-export type RallarMatchResultInput<TSummary = unknown> =
-    Omit<RallarMatchResult<TSummary>, 'idempotencyKey'> &
+export type RallarLocalMatchResult<TSummary = unknown> =
+    RallarMatchResultFields<TSummary> &
+    Readonly<{
+        authority: RallarMatchAuthorityDescriptor;
+        trust: 'local';
+    }>;
+
+export type RallarRoomTrustedMatchResult<TSummary = unknown> =
+    RallarMatchResultFields<TSummary> &
+    Readonly<{
+        authority: RallarMatchBrowserDirectorAuthorityDescriptor;
+        trust: 'room-trusted';
+    }>;
+
+export type RallarServerValidatedMatchResult<TSummary = unknown> =
+    RallarMatchResultFields<TSummary> &
+    Readonly<{
+        authority: RallarMatchServerAuthorityDescriptor;
+        trust: 'server-validated';
+    }>;
+
+export type RallarMatchResult<TSummary = unknown> =
+    | RallarLocalMatchResult<TSummary>
+    | RallarRoomTrustedMatchResult<TSummary>
+    | RallarServerValidatedMatchResult<TSummary>;
+
+export type RallarLocalMatchResultInput<TSummary = unknown> =
+    Omit<RallarLocalMatchResult<TSummary>, 'idempotencyKey'> &
     Readonly<{ idempotencyKey?: string }>;
+
+export type RallarRoomTrustedMatchResultInput<TSummary = unknown> =
+    Omit<RallarRoomTrustedMatchResult<TSummary>, 'idempotencyKey'> &
+    Readonly<{ idempotencyKey?: string }>;
+
+export type RallarMatchResultInput<TSummary = unknown> =
+    | RallarLocalMatchResultInput<TSummary>
+    | RallarRoomTrustedMatchResultInput<TSummary>;
 
 export type RallarMatchDiagnosticsInput<TSummary = unknown> = Readonly<{
     participants?: readonly RallarMatchParticipant[];
