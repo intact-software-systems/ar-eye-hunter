@@ -1635,7 +1635,7 @@ git commit -m "feat: add authority browser match support"
   - `createRallarServerValidatedMatchResult(input)`
   - `RallarServerValidatedMatchResultInput<TSummary>`
 
-- [ ] **Step 1: Write failing server result helper tests**
+- [x] **Step 1: Write failing server result helper tests**
 
 Create `packages/tests/shared-server/rallar-match-result.test.ts`:
 
@@ -1702,7 +1702,7 @@ describe('Rallar server match result helper', () => {
 });
 ```
 
-- [ ] **Step 2: Run the failing server result helper tests**
+- [x] **Step 2: Run the failing server result helper tests**
 
 Run:
 
@@ -1712,7 +1712,7 @@ npx vitest run packages/tests/shared-server/rallar-match-result.test.ts
 
 Expected: FAIL because `createRallarServerValidatedMatchResult` is not exported.
 
-- [ ] **Step 3: Implement `match-result.ts`**
+- [x] **Step 3: Implement `match-result.ts`**
 
 Create `packages/shared-server/game/match-result.ts`:
 
@@ -1755,7 +1755,7 @@ export function createRallarServerValidatedMatchResult<TSummary>(
 }
 ```
 
-- [ ] **Step 4: Export server result helper**
+- [x] **Step 4: Export server result helper**
 
 Modify `packages/shared-server/game/mod.ts`:
 
@@ -1763,7 +1763,7 @@ Modify `packages/shared-server/game/mod.ts`:
 export * from './match-result.ts';
 ```
 
-- [ ] **Step 5: Run server helper tests and shared-server typecheck**
+- [x] **Step 5: Run server helper tests and shared-server typecheck**
 
 Run:
 
@@ -1774,7 +1774,7 @@ npx tsc -p packages/shared-server/tsconfig.json --noEmit
 
 Expected: both commands PASS.
 
-- [ ] **Step 6: Commit Task 4**
+- [x] **Step 6: Commit Task 4**
 
 Run:
 
@@ -2000,6 +2000,15 @@ Implement Tasks 1-6 as written. Any expansion into consumer migration, formal te
 - Blockers: none.
 - Remaining validation: Tasks 4-6 and their focused match, adjacent Rallar Game, public-surface, browser bundle-boundary, and shared/shared-web/shared-server typecheck matrix remain.
 
+### Task 4 - 2026-07-10T13:08:08+02:00
+
+- Completed: added the server-only `createRallarServerValidatedMatchResult` helper and exported it from `packages/shared-server/game/mod.ts`; it requires server authority before creating canonical `server-validated` result envelopes.
+- Files changed: `packages/shared-server/game/match-result.ts`, `packages/shared-server/game/mod.ts`, and `packages/tests/shared-server/rallar-match-result.test.ts`.
+- Commands: RED `npx vitest run packages/tests/shared-server/rallar-match-result.test.ts` failed as expected because `createRallarServerValidatedMatchResult` was not exported; GREEN passed (1 file, 2 tests); `npx tsc -p packages/shared-server/tsconfig.json --noEmit` passed.
+- Commit: `b929cf6 feat: add server match result helper` at `2026-07-10T13:08:08+02:00`.
+- Blockers: none.
+- Remaining validation at this historical point: Task 5 public API snapshot/documentation work and Task 6 focused match, adjacent Rallar Game, public-surface, typecheck, consumer-build, and repository-hygiene validation remained.
+
 ### Task 5 - 2026-07-10T13:13:50+02:00
 
 - Completed: refreshed the `packages/shared-web/game/mod.ts` public API snapshot for the optional browser-director and server-authority browser match wrappers, and added the canonical Optional Match Support reference beside Director.
@@ -2027,4 +2036,10 @@ Implement Tasks 1-6 as written. Any expansion into consumer migration, formal te
 - Blockers: none.
 - Files changed: `plans/rallar-browser-match-support-implementation-plan.md` only; the external validation report at `/private/tmp/rallar-match-sdd/task-6-report.md` is not a repository change.
 - Remaining validation: none for Tasks 1-6 within the approved local/package/consumer scope. Remote/runtime/deployment validation remains out of scope.
-- Tasks 1-6 fully checked: yes, for the approved scope; Tasks 1-5 were independently reviewed and Task 6 completed the focused, adjacent, public-surface, typecheck, consumer-build, and repository hygiene matrix.
+- Tasks 1-6 fully checked: Task 4 progress reconciliation had not yet been verified when this entry was first recorded; see the following audit correction for the verified full-scope status.
+
+### Task 6 Audit Correction - 2026-07-10T13:26:51+02:00
+
+- Corrected: reconciled all six unchecked Task 4 steps with the authoritative Task 4 report and commit `b929cf6` after the completion audit identified the omitted tracker record.
+- Verified Task 4 evidence: the report records the expected RED failure, GREEN `1` file and `2` tests passed, shared-server typecheck pass, no blockers, and the implementation/export commit; `git show --stat b929cf6` confirms the three recorded Task 4 files.
+- Full-scope status: Tasks 1-6 are fully checked only after this audit verification, for the approved local/package/consumer scope. Remote/runtime/deployment validation remains out of scope.
