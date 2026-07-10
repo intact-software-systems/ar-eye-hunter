@@ -3313,6 +3313,7 @@
         "npm:fake-indexeddb@^6.2.5",
         "npm:graphology@0.26",
         "npm:happy-dom@^20.9.0",
+        "npm:js-yaml@^4.1.1",
         "npm:postgres@^3.4.9",
         "npm:prettier@^3.2.5",
         "npm:tsx@^4.21.0",
