@@ -18,43 +18,94 @@ const managedRunnerPath = path.join(
     'packages/shared-test/black-box-runner/api-v1-black-box-run.mts',
 );
 
+function deferred<T>(): {
+    promise: Promise<T>;
+    resolve: (value: T | PromiseLike<T>) => void;
+    reject: (reason?: unknown) => void;
+} {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(): Promise<void> {
+    for (let index = 0; index < 5; index += 1) {
+        await Promise.resolve();
+    }
+}
+
+function observeReadiness(promise: Promise<void>): Promise<
+    { ok: true } | { ok: false; error: unknown }
+> {
+    return promise.then(
+        () => ({ ok: true as const }),
+        error => ({ ok: false as const, error }),
+    );
+}
+
 function closeServer(server: Server): Promise<void> {
     return new Promise((resolve, reject) => {
         server.close(error => error ? reject(error) : resolve());
     });
 }
 
-function runManagedApiRunner(port: number, artifactDir: string): Promise<{
+async function runManagedApiRunner(port: number, artifactDir: string, timeoutMs = 10_000): Promise<{
     code: number;
     stdout: string;
     stderr: string;
 }> {
-    return new Promise((resolve, reject) => {
-        const child = spawn('deno', [
-            'run',
-            '-A',
-            managedRunnerPath,
-            '--backend=pglite-memory',
-            `--port=${port}`,
-            '--profile=remote-dry',
-            `--artifact-dir=${artifactDir}`,
-        ], {
-            cwd: repoRoot,
-            env: process.env,
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        let stdout = '';
-        let stderr = '';
+    const child = spawn('deno', [
+        'run',
+        '-A',
+        managedRunnerPath,
+        '--backend=pglite-memory',
+        `--port=${port}`,
+        '--profile=remote-dry',
+        `--artifact-dir=${artifactDir}`,
+    ], {
+        cwd: repoRoot,
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const childExit = new Promise<{ code: number; stdout: string; stderr: string }>(
+        (resolve, reject) => {
+            child.once('error', reject);
+            child.once('close', code => resolve({ code: code ?? 0, stdout, stderr }));
+        },
+    );
+    const hardTimeout = new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+            reject(new Error(`Managed API runner did not exit within ${timeoutMs}ms.`));
+        }, timeoutMs);
+    });
 
+    try {
         child.stdout.on('data', chunk => {
             stdout += chunk.toString();
         });
         child.stderr.on('data', chunk => {
             stderr += chunk.toString();
         });
-        child.on('error', reject);
-        child.on('close', code => resolve({ code: code ?? 0, stdout, stderr }));
-    });
+
+        return await Promise.race([childExit, hardTimeout]);
+    } catch (error) {
+        if (child.exitCode === null && child.signalCode === null) {
+            child.kill('SIGKILL');
+        }
+        await childExit.catch(() => undefined);
+        throw error;
+    } finally {
+        if (timeout !== undefined) {
+            clearTimeout(timeout);
+        }
+    }
 }
 
 describe('api-v1 black-box run helper', () => {
@@ -178,6 +229,8 @@ describe('api-v1 black-box run helper', () => {
             baseUrl: 'http://127.0.0.1:18080',
             logPath: '/tmp/api-v1-server.log',
             childStatus: Promise.resolve({ success: false, code: 1, signal: null }),
+            startup: new Promise<void>(() => undefined),
+            streamsDrained: Promise.resolve(),
             fetchImpl,
             readTextFile: async () => 'AddrInUse',
             now: () => 0,
@@ -187,6 +240,188 @@ describe('api-v1 black-box run helper', () => {
         await expect(readiness).rejects.toThrow('API-v1 child exited before readiness (code 1)');
         await expect(readiness).rejects.toThrow('AddrInUse');
         expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it('waits for the child startup marker before accepting config', async () => {
+        const startup = deferred<void>();
+        const fetchSignals: AbortSignal[] = [];
+        const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+            if (init?.signal) {
+                fetchSignals.push(init.signal);
+            }
+            return new Response(null, { status: 200 });
+        });
+        const readiness = waitForManagedApiReady({
+            baseUrl: 'http://127.0.0.1:18080',
+            logPath: '/tmp/api-v1-server.log',
+            childStatus: new Promise(() => undefined),
+            startup: startup.promise,
+            streamsDrained: Promise.resolve(),
+            fetchImpl,
+            readTextFile: async () => 'Server started on port 18080.',
+            timeoutMs: 1_000,
+        });
+
+        await flushMicrotasks();
+        const fetchesBeforeStartup = fetchImpl.mock.calls.length;
+        startup.resolve();
+        await expect(readiness).resolves.toBeUndefined();
+
+        expect(fetchesBeforeStartup).toBe(0);
+        expect(fetchImpl).toHaveBeenCalledTimes(1);
+        expect(fetchSignals).toHaveLength(1);
+        expect(fetchSignals[0].aborted).toBe(true);
+    });
+
+    it('retries a non-OK config response after startup', async () => {
+        const fetchSignalStates: boolean[] = [];
+        let attempt = 0;
+        const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+            fetchSignalStates.push(init?.signal.aborted ?? false);
+            attempt += 1;
+            return new Response(null, { status: attempt === 1 ? 503 : 200 });
+        });
+        const sleepImpl = vi.fn(async (_ms: number, signal?: AbortSignal) => {
+            expect(signal?.aborted).toBe(false);
+        });
+
+        await expect(waitForManagedApiReady({
+            baseUrl: 'http://127.0.0.1:18080',
+            logPath: '/tmp/api-v1-server.log',
+            childStatus: new Promise(() => undefined),
+            startup: Promise.resolve(),
+            streamsDrained: Promise.resolve(),
+            fetchImpl,
+            readTextFile: async () => 'Server started on port 18080.',
+            sleep: sleepImpl,
+            timeoutMs: 1_000,
+        })).resolves.toBeUndefined();
+
+        expect(fetchImpl).toHaveBeenCalledTimes(2);
+        expect(sleepImpl).toHaveBeenCalledTimes(1);
+        expect(fetchSignalStates).toEqual([false, false]);
+    });
+
+    it('aborts an in-flight fetch and drains streams before reporting child exit', async () => {
+        const childStatus = deferred<{ success: boolean; code: number; signal: string | null }>();
+        const streamsDrained = deferred<void>();
+        const fetchResponse = deferred<Response>();
+        let fetchSignal: AbortSignal | undefined;
+        const readiness = waitForManagedApiReady({
+            baseUrl: 'http://127.0.0.1:18080',
+            logPath: '/tmp/api-v1-server.log',
+            childStatus: childStatus.promise,
+            startup: Promise.resolve(),
+            streamsDrained: streamsDrained.promise,
+            fetchImpl: async (_url: string, init?: RequestInit) => {
+                fetchSignal = init?.signal;
+                return await fetchResponse.promise;
+            },
+            readTextFile: async () => 'AddrInUse: Address already in use',
+            timeoutMs: 1_000,
+        });
+        const outcomePromise = observeReadiness(readiness);
+        let settled = false;
+        void outcomePromise.then(() => {
+            settled = true;
+        });
+
+        await flushMicrotasks();
+        childStatus.resolve({ success: false, code: 1, signal: null });
+        await flushMicrotasks();
+        const settledBeforeDrain = settled;
+        const fetchWasAborted = fetchSignal?.aborted ?? false;
+        streamsDrained.resolve();
+        fetchResponse.resolve(new Response(null, { status: 200 }));
+        const outcome = await outcomePromise;
+
+        expect(outcome.ok).toBe(false);
+        if (!outcome.ok) {
+            expect(outcome.error).toEqual(expect.objectContaining({
+                message: expect.stringContaining('API-v1 child exited before readiness (code 1)'),
+            }));
+        }
+        expect(settledBeforeDrain).toBe(false);
+        expect(fetchWasAborted).toBe(true);
+    });
+
+    it('hard-times out an in-flight fetch and rejects a late OK response', async () => {
+        vi.useFakeTimers();
+        try {
+            const fetchResponse = deferred<Response>();
+            let fetchSignal: AbortSignal | undefined;
+            const readiness = waitForManagedApiReady({
+                baseUrl: 'http://127.0.0.1:18080',
+                logPath: '/tmp/api-v1-server.log',
+                childStatus: new Promise(() => undefined),
+                startup: Promise.resolve(),
+                streamsDrained: Promise.resolve(),
+                fetchImpl: async (_url: string, init?: RequestInit) => {
+                    fetchSignal = init?.signal;
+                    return await fetchResponse.promise;
+                },
+                readTextFile: async () => 'Server started on port 18080.',
+                timeoutMs: 100,
+            });
+            const outcomePromise = observeReadiness(readiness);
+
+            await flushMicrotasks();
+            await vi.advanceTimersByTimeAsync(100);
+            const fetchWasAborted = fetchSignal?.aborted ?? false;
+            fetchResponse.resolve(new Response(null, { status: 200 }));
+            const outcome = await outcomePromise;
+
+            expect(outcome.ok).toBe(false);
+            if (!outcome.ok) {
+                expect(outcome.error).toEqual(expect.objectContaining({
+                    message: expect.stringContaining(
+                        'Timed out waiting for http://127.0.0.1:18080/api/config',
+                    ),
+                }));
+            }
+            expect(fetchWasAborted).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('aborts the losing retry sleep when the child exits', async () => {
+        const childStatus = deferred<{ success: boolean; code: number; signal: string | null }>();
+        let sleepSignal: AbortSignal | undefined;
+        let sleepAborted = false;
+        const sleepImpl = vi.fn((_ms: number, signal?: AbortSignal) => {
+            sleepSignal = signal;
+            if (!signal) {
+                return new Promise<void>(() => undefined);
+            }
+            return new Promise<void>((_resolve, reject) => {
+                signal.addEventListener('abort', () => {
+                    sleepAborted = true;
+                    reject(signal.reason);
+                }, { once: true });
+            });
+        });
+        const readiness = waitForManagedApiReady({
+            baseUrl: 'http://127.0.0.1:18080',
+            logPath: '/tmp/api-v1-server.log',
+            childStatus: childStatus.promise,
+            startup: Promise.resolve(),
+            streamsDrained: Promise.resolve(),
+            fetchImpl: async () => new Response(null, { status: 503 }),
+            readTextFile: async () => 'AddrInUse',
+            sleep: sleepImpl,
+            timeoutMs: 1_000,
+        });
+        const outcomePromise = observeReadiness(readiness);
+
+        await flushMicrotasks();
+        childStatus.resolve({ success: false, code: 1, signal: null });
+        const outcome = await outcomePromise;
+
+        expect(outcome.ok).toBe(false);
+        expect(sleepImpl).toHaveBeenCalledTimes(1);
+        expect(sleepSignal?.aborted).toBe(true);
+        expect(sleepAborted).toBe(true);
     });
 
     it('rejects an unrelated config listener on the managed API port', async () => {
@@ -221,6 +456,7 @@ describe('api-v1 black-box run helper', () => {
 
             expect(result.code).toBe(1);
             expect(result.stderr).toContain('API-v1 child exited before readiness');
+            expect(result.stderr).toContain('AddrInUse');
             expect(result.stdout).not.toContain('Matrix profile remote-dry:');
             expect(configRequests).toBe(0);
         } finally {

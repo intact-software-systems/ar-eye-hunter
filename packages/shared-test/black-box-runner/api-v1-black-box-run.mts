@@ -21,11 +21,22 @@ export type WaitForManagedApiReadyInput = Readonly<{
         code: number
         signal: string | null
     }>>
+    startup: PromiseLike<void>
+    streamsDrained: PromiseLike<void>
     timeoutMs?: number
-    fetchImpl?: (url: string) => Promise<Pick<Response, 'ok' | 'status'>>
+    fetchImpl?: (
+        url: string,
+        init?: Readonly<{ signal?: AbortSignal }>,
+    ) => Promise<Pick<Response, 'ok' | 'status'>>
     readTextFile?: (path: string) => Promise<string>
     now?: () => number
-    sleep?: (ms: number) => Promise<void>
+    sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
+}>
+
+type ManagedApiServer = Readonly<{
+    child: Deno.ChildProcess
+    startup: Promise<void>
+    streamsDrained: Promise<void>
 }>
 
 const SCRIPT_DIR = new URL('.', import.meta.url)
@@ -33,7 +44,6 @@ const REPO_ROOT = new URL('../../../', SCRIPT_DIR)
 const API_CONFIG_PATH = 'apps/api-v1/deno.json'
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts'
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb'
-const API_STARTUP_MARKER = /Server started on port \d+\./
 const LOG_TAIL_LENGTH = 4096
 
 export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOptions {
@@ -180,7 +190,7 @@ function startServer(
     options: ApiV1BlackBoxOptions,
     env: Record<string, string>,
     logPath: string,
-): Deno.ChildProcess {
+): ManagedApiServer {
     const [command, ...args] = toApiV1ServerCommand(options)
     const child = new Deno.Command(command, {
         args,
@@ -190,17 +200,43 @@ function startServer(
         stderr: 'piped',
     }).spawn()
 
+    const expectedStartupMarker = `Server started on port ${options.port}.`
+    const stdoutDecoder = new TextDecoder()
+    let stdoutTail = ''
+    let startupObserved = false
+    let resolveStartup!: () => void
+    const startup = new Promise<void>(resolve => {
+        resolveStartup = resolve
+    })
+    const observeStdout = (chunk: Uint8Array): void => {
+        const text = stdoutTail + stdoutDecoder.decode(chunk, { stream: true })
+        if (!startupObserved && text.includes(expectedStartupMarker)) {
+            startupObserved = true
+            resolveStartup()
+        }
+        stdoutTail = text.slice(-(expectedStartupMarker.length - 1))
+    }
+    const streamPumps: Promise<void>[] = []
+
     if (child.stdout) {
-        void appendStreamToFile(child.stdout, logPath)
+        streamPumps.push(appendStreamToFile(child.stdout, logPath, observeStdout))
     }
     if (child.stderr) {
-        void appendStreamToFile(child.stderr, logPath)
+        streamPumps.push(appendStreamToFile(child.stderr, logPath))
     }
 
-    return child
+    return {
+        child,
+        startup,
+        streamsDrained: Promise.allSettled(streamPumps).then(() => undefined),
+    }
 }
 
-async function appendStreamToFile(stream: ReadableStream<Uint8Array>, path: string): Promise<void> {
+async function appendStreamToFile(
+    stream: ReadableStream<Uint8Array>,
+    path: string,
+    observe?: (chunk: Uint8Array) => void,
+): Promise<void> {
     const reader = stream.getReader()
     const file = await Deno.open(path, {
         append: true,
@@ -215,6 +251,7 @@ async function appendStreamToFile(stream: ReadableStream<Uint8Array>, path: stri
             }
             if (value) {
                 await file.write(value)
+                observe?.(value)
             }
         }
     } finally {
@@ -231,76 +268,147 @@ export async function waitForManagedApiReady(input: WaitForManagedApiReadyInput)
     const sleepImpl = input.sleep ?? sleep
     const deadline = now() + timeoutMs
     const url = input.baseUrl.replace(/\/+$/, '') + '/api/config'
-    let childExitStatus: Awaited<WaitForManagedApiReadyInput['childStatus']> | undefined
-    let finished = false
+    const controller = new AbortController()
+    let winner: 'ready' | 'child' | 'timeout' | 'error' | undefined
     let startupObserved = false
     let lastError: unknown
-
-    const childExit = input.childStatus.then(async status => {
-        childExitStatus = status
-        throw await managedApiChildExitError(status, input.logPath, readTextFile)
+    let resolveCompletion!: () => void
+    let rejectCompletion!: (error: unknown) => void
+    const completion = new Promise<void>((resolve, reject) => {
+        resolveCompletion = resolve
+        rejectCompletion = reject
     })
 
-    const readiness = (async () => {
-        while (!finished && now() < deadline) {
-            if (childExitStatus) {
-                throw await managedApiChildExitError(childExitStatus, input.logPath, readTextFile)
-            }
-
-            if (!startupObserved) {
-                try {
-                    startupObserved = API_STARTUP_MARKER.test(await readTextFile(input.logPath))
-                } catch (error) {
-                    lastError = error
-                }
-            }
-
-            if (childExitStatus) {
-                throw await managedApiChildExitError(childExitStatus, input.logPath, readTextFile)
-            }
-
-            if (startupObserved) {
-                let response: Pick<Response, 'ok' | 'status'> | undefined
-                try {
-                    response = await fetchImpl(url)
-                } catch (error) {
-                    lastError = error
-                }
-
-                if (childExitStatus) {
-                    throw await managedApiChildExitError(
-                        childExitStatus,
-                        input.logPath,
-                        readTextFile,
-                    )
-                }
-                if (response) {
-                    if (response.ok) {
-                        return
-                    }
-                    lastError = new Error(`${url} returned ${response.status}`)
-                }
-            }
-
-            await sleepImpl(250)
+    const claim = (candidate: NonNullable<typeof winner>): boolean => {
+        if (winner) {
+            return false
         }
+        winner = candidate
+        return true
+    }
 
-        if (finished) {
+    const abort = (reason: Error): void => {
+        if (!controller.signal.aborted) {
+            controller.abort(reason)
+        }
+    }
+
+    const settleUnexpectedError = (error: unknown): void => {
+        if (!claim('error')) {
             return
         }
+        const reason = error instanceof Error ? error : new Error(String(error))
+        abort(reason)
+        rejectCompletion(reason)
+    }
 
-        const reason = startupObserved
-            ? lastError instanceof Error ? lastError.message : String(lastError)
-            : 'API-v1 startup marker was not observed'
-        const logTail = await readBoundedLogTail(input.logPath, readTextFile)
-        throw new Error(`Timed out waiting for ${url}: ${reason}\nLatest API-v1 log tail:\n${logTail}`)
+    const triggerTimeout = (): void => {
+        if (!claim('timeout')) {
+            return
+        }
+        abort(new Error(`Timed out waiting for ${url}`))
+        void managedApiTimeoutError(
+            url,
+            startupObserved,
+            lastError,
+            input.logPath,
+            readTextFile,
+        ).then(rejectCompletion, rejectCompletion)
+    }
+
+    const checkDeadline = (): void => {
+        if (!winner && now() >= deadline) {
+            triggerTimeout()
+        }
+    }
+
+    void Promise.resolve(input.childStatus).then(async status => {
+        if (!claim('child')) {
+            return
+        }
+        abort(new Error(`API-v1 child exited before readiness (code ${status.code})`))
+        await Promise.resolve(input.streamsDrained).catch(() => undefined)
+        rejectCompletion(await managedApiChildExitError(status, input.logPath, readTextFile))
+    }, settleUnexpectedError)
+
+    const timeout = setTimeout(triggerTimeout, Math.max(0, timeoutMs))
+
+    const readinessLoop = (async () => {
+        try {
+            await raceWithAbort(input.startup, controller.signal)
+            startupObserved = true
+            checkDeadline()
+
+            while (!winner) {
+                let response: Pick<Response, 'ok' | 'status'> | undefined
+                try {
+                    response = await raceWithAbort(
+                        fetchImpl(url, { signal: controller.signal }),
+                        controller.signal,
+                    )
+                } catch (error) {
+                    if (winner) {
+                        return
+                    }
+                    lastError = error
+                }
+
+                checkDeadline()
+                if (winner) {
+                    return
+                }
+                if (response?.ok) {
+                    if (claim('ready')) {
+                        abort(new Error('API-v1 managed readiness completed'))
+                        resolveCompletion()
+                    }
+                    return
+                }
+                if (response) {
+                    lastError = new Error(`${url} returned ${response.status}`)
+                }
+
+                try {
+                    await raceWithAbort(
+                        sleepImpl(250, controller.signal),
+                        controller.signal,
+                    )
+                } catch (error) {
+                    if (winner) {
+                        return
+                    }
+                    throw error
+                }
+                checkDeadline()
+            }
+        } catch (error) {
+            if (!winner) {
+                settleUnexpectedError(error)
+            }
+        }
     })()
 
     try {
-        await Promise.race([childExit, readiness])
+        await completion
     } finally {
-        finished = true
+        clearTimeout(timeout)
+        abort(new Error('API-v1 managed readiness stopped'))
+        await readinessLoop
     }
+}
+
+async function managedApiTimeoutError(
+    url: string,
+    startupObserved: boolean,
+    lastError: unknown,
+    logPath: string,
+    readTextFile: (path: string) => Promise<string>,
+): Promise<Error> {
+    const reason = startupObserved
+        ? lastError instanceof Error ? lastError.message : String(lastError ?? 'no successful response')
+        : 'API-v1 child startup marker was not observed'
+    const logTail = await readBoundedLogTail(logPath, readTextFile)
+    return new Error(`Timed out waiting for ${url}: ${reason}\nLatest API-v1 log tail:\n${logTail}`)
 }
 
 async function managedApiChildExitError(
@@ -328,8 +436,63 @@ async function readBoundedLogTail(
     }
 }
 
-function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+function raceWithAbort<T>(value: PromiseLike<T>, signal: AbortSignal): Promise<T> {
+    return new Promise((resolve, reject) => {
+        let settled = false
+        const finish = (callback: () => void): void => {
+            if (settled) {
+                return
+            }
+            settled = true
+            signal.removeEventListener('abort', onAbort)
+            callback()
+        }
+        const onAbort = (): void => {
+            finish(() => reject(abortReason(signal)))
+        }
+
+        if (signal.aborted) {
+            onAbort()
+            return
+        }
+
+        signal.addEventListener('abort', onAbort, { once: true })
+        Promise.resolve(value).then(
+            result => finish(() => resolve(result)),
+            error => finish(() => reject(error)),
+        )
+    })
+}
+
+function abortReason(signal: AbortSignal): unknown {
+    return signal.reason ?? new Error('Operation aborted')
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        const cleanup = (): void => {
+            if (timeout !== undefined) {
+                clearTimeout(timeout)
+            }
+            signal?.removeEventListener('abort', onAbort)
+        }
+        const onAbort = (): void => {
+            cleanup()
+            reject(signal ? abortReason(signal) : new Error('Operation aborted'))
+        }
+
+        if (signal?.aborted) {
+            onAbort()
+            return
+        }
+
+        signal?.addEventListener('abort', onAbort, { once: true })
+        timeout = setTimeout(() => {
+            cleanup()
+            resolve()
+        }, ms)
+    })
 }
 
 async function runRecipeMatrix(
@@ -370,7 +533,7 @@ async function main(): Promise<void> {
     const env = toApiV1BlackBoxEnvironment(options, Deno.env.toObject())
     const artifactDir = resolveArtifactDir(options.artifactDir)
     const logPath = artifactDir.replace(/\/+$/, '') + '/api-v1-server.log'
-    let server: Deno.ChildProcess | undefined
+    let server: ManagedApiServer | undefined
 
     await Deno.mkdir(artifactDir, { recursive: true })
     if (options.runMigrations) {
@@ -384,13 +547,15 @@ async function main(): Promise<void> {
             await waitForManagedApiReady({
                 baseUrl: env.RALLAR_API_BASE_URL,
                 logPath,
-                childStatus: server.status,
+                childStatus: server.child.status,
+                startup: server.startup,
+                streamsDrained: server.streamsDrained,
             })
         }
 
         await runRecipeMatrix(options, env, artifactDir)
     } finally {
-        await stopServer(server)
+        await stopServer(server?.child)
     }
 }
 
