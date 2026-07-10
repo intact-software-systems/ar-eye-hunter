@@ -19,6 +19,7 @@ export * from './crdt/mod.ts';
 
 export * from './rallar-ai/mod.ts';
 export * from './rallar-game/mod.ts';
+export * from './rallar-match/mod.ts';
 export * from './rallar-motion/mod.ts';
 
 export * from './rtc/rtt-reporting-policy.ts';

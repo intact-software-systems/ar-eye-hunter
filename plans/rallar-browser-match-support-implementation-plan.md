@@ -4,7 +4,7 @@
 
 **Goal:** Add an optional Rallar browser match-support layer that standardizes participants, standings, results, browser-director match wiring, and server-authority browser wiring without making Rallar own game scoring rules.
 
-**Architecture:** Runtime-agnostic match contracts and pure helpers live in `packages/shared/rallar-match`. Browser integration lives beside the existing Rallar Game helpers in `packages/shared-web/game` and composes `createRallarGameMatch` plus `createRallarGameAuthorityClient`. Server support stays minimal: use existing `installRallarGameAuthorityServer` and add only a server-validated result helper if durable match results are needed.
+**Architecture:** Runtime-agnostic match contracts and pure helpers live in `packages/shared/rallar-match`. Browser integration lives beside the existing Rallar Game helpers in `packages/shared-web/game` and composes `createRallarGameMatch` plus `createRallarGameAuthorityClient`. Server support stays minimal: use existing `installRallarGameAuthorityServer` and add one server-validated result helper without adding REST routes or persistence.
 
 **Tech Stack:** TypeScript, Vitest, existing Rallar shared/shared-web/shared-server package boundaries, existing Rallar Game browser and authority helpers.
 
@@ -17,26 +17,23 @@
 - Treat browser-director results as `room-trusted` unless a server validates and finalizes them.
 - Preserve existing public exports and import paths.
 - Use named optional imports from `@shared/rallar-match/mod.ts` and `@shared-web/game/mod.ts`.
-- Keep AR Eye Hunter and Relic Hunters unchanged unless a clarification explicitly requests migration.
+- Keep AR Eye Hunter and Relic Hunters unchanged in V1.
+- Keep formal team membership and team standings out of V1.
+- Keep result persistence app-owned; Rallar does not add result storage or retrieval APIs in V1.
 
-## Clarification Questions Before Implementation
+## Resolved V1 Decisions
 
-These questions should be answered before executing the plan. The plan below uses the listed default assumptions.
+These decisions are approved for implementation and define the V1 scope.
 
-1. Should the shared package be named `rallar-match` instead of extending `rallar-game`?
-   Default assumption: create `packages/shared/rallar-match` because the helpers apply to games, quizzes, challenge rooms, and simulations.
+1. Create a separate `packages/shared/rallar-match` package instead of extending `rallar-game`. The helpers remain usable by games, quizzes, challenge rooms, and simulations without coupling generic match contracts to Rallar Game Authority.
 
-2. Should V1 include server-side helper files?
-   Default assumption: include only a narrow server-validated result helper; do not add REST routes or persistence.
+2. Include one narrow server-side helper for validating and constructing `server-validated` result envelopes. Do not add REST routes, storage, or retrieval APIs.
 
-3. Should either AR Eye Hunter or Relic Hunters adopt the new wrapper in V1?
-   Default assumption: no consumer migration in V1; prove the surface with package tests first.
+3. Do not migrate AR Eye Hunter or Relic Hunters in V1. Prove the public surface with focused package tests before adopting it in an application.
 
-4. Should standings support teams in V1?
-   Default assumption: no team model in V1; represent team standings later as app-owned metrics or a separate extension.
+4. Do not add a formal team model in V1. Applications may project team-like rows through app-owned metrics; first-class team identity, membership, and aggregation remain a later extension.
 
-5. Should result envelopes be persisted by Rallar in V1?
-   Default assumption: no persistence in V1; apps can publish/store result envelopes through existing app-owned channels.
+5. Do not persist result envelopes in Rallar in V1. Applications may publish or store them through existing app-owned channels, while Rallar supplies validation, envelope construction, and idempotency helpers only.
 
 ---
 
@@ -102,7 +99,7 @@ Do not modify:
   - `createRallarMatchResult(input)`
   - `deriveRallarMatchDiagnostics(input)`
 
-- [ ] **Step 1: Write the failing shared helper tests**
+- [x] **Step 1: Write the failing shared helper tests**
 
 Create `packages/tests/shared/rallar-match.test.ts` with these tests:
 
@@ -324,7 +321,7 @@ describe('Rallar match shared helpers', () => {
 });
 ```
 
-- [ ] **Step 2: Run the failing shared helper tests**
+- [x] **Step 2: Run the failing shared helper tests**
 
 Run:
 
@@ -334,7 +331,7 @@ npx vitest run packages/tests/shared/rallar-match.test.ts
 
 Expected: FAIL because `@shared/rallar-match/mod.ts` does not exist.
 
-- [ ] **Step 3: Implement `types.ts`**
+- [x] **Step 3: Implement `types.ts`**
 
 Create `packages/shared/rallar-match/types.ts` with these public names:
 
@@ -450,7 +447,7 @@ export type RallarMatchDiagnostics = Readonly<{
 }>;
 ```
 
-- [ ] **Step 4: Implement `participants.ts`**
+- [x] **Step 4: Implement `participants.ts`**
 
 Create `packages/shared/rallar-match/participants.ts`:
 
@@ -537,7 +534,7 @@ export type RallarMatchParticipantMemberInput =
     Pick<GroupMember, 'principalId' | 'role' | 'status'>;
 ```
 
-- [ ] **Step 5: Implement `standings.ts`**
+- [x] **Step 5: Implement `standings.ts`**
 
 Create `packages/shared/rallar-match/standings.ts`:
 
@@ -601,7 +598,7 @@ function readMetric(row: RallarMatchStandingRow, key: string): number {
 }
 ```
 
-- [ ] **Step 6: Implement `results.ts`**
+- [x] **Step 6: Implement `results.ts`**
 
 Create `packages/shared/rallar-match/results.ts`:
 
@@ -646,7 +643,7 @@ export function createRallarMatchResultIdempotencyKey(
 }
 ```
 
-- [ ] **Step 7: Implement `diagnostics.ts`**
+- [x] **Step 7: Implement `diagnostics.ts`**
 
 Create `packages/shared/rallar-match/diagnostics.ts`:
 
@@ -698,7 +695,7 @@ export function deriveRallarMatchDiagnostics(
 }
 ```
 
-- [ ] **Step 8: Add barrels**
+- [x] **Step 8: Add barrels**
 
 Create `packages/shared/rallar-match/mod.ts`:
 
@@ -716,7 +713,7 @@ Modify `packages/shared/mod.ts` by adding this line near the existing Rallar pac
 export * from './rallar-match/mod.ts';
 ```
 
-- [ ] **Step 9: Run shared tests and typecheck**
+- [x] **Step 9: Run shared tests and typecheck**
 
 Run:
 
@@ -727,7 +724,7 @@ npx tsc -p packages/shared/tsconfig.json --noEmit
 
 Expected: both commands PASS.
 
-- [ ] **Step 10: Commit Task 1**
+- [x] **Step 10: Commit Task 1**
 
 Run:
 
@@ -1297,7 +1294,7 @@ git commit -m "feat: add browser match support wrapper"
 
 - Consumes:
   - `createRallarGameAuthorityClient` and authority client types from `@shared-web/game/mod.ts`.
-  - `deriveRallarMatchStandings` and `createRallarMatchResult` from `@shared/rallar-match/mod.ts`.
+  - `deriveRallarMatchStandings` from `@shared/rallar-match/mod.ts`.
 - Produces:
   - `createRallarAuthorityBrowserMatch`
   - `RallarAuthorityBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence>`
@@ -1352,7 +1349,7 @@ describe('Rallar authority browser match support', () => {
         );
     });
 
-    it('creates server-validated result envelopes when finalized by caller', () => {
+    it('derives standings from app-provided server-authority metrics', () => {
         const client = fakeAuthorityClient();
         const match = createRallarAuthorityBrowserMatch<
             Command,
@@ -1380,16 +1377,11 @@ describe('Rallar authority browser match support', () => {
             ],
         }, {
             createAuthorityClient: () => client,
-            nowEpochMs: () => 3_000,
-            resultId: () => 'result-1',
         });
 
-        expect(match.finalizeServerValidatedResult({ ok: true })).toMatchObject({
-            resultId: 'result-1',
-            trust: 'server-validated',
-            authority,
-            standings: [{ participantId: 'principal-a', rank: 1 }],
-        });
+        expect(match.standings()).toMatchObject([
+            { participantId: 'principal-a', rank: 1 },
+        ]);
     });
 });
 
@@ -1464,14 +1456,8 @@ Expected: FAIL because `createRallarAuthorityBrowserMatch` is not exported.
 Create `packages/shared-web/game/authority-match-support.ts` with these names:
 
 ```ts
-import type {
-    RallarMatchResult,
-    RallarMatchStandingRow,
-} from '@shared/rallar-match/mod.ts';
-import {
-    createRallarMatchResult,
-    deriveRallarMatchStandings,
-} from '@shared/rallar-match/mod.ts';
+import type { RallarMatchStandingRow } from '@shared/rallar-match/mod.ts';
+import { deriveRallarMatchStandings } from '@shared/rallar-match/mod.ts';
 import {
     createRallarGameAuthorityClient,
     type RallarGameAuthorityClientConfig,
@@ -1510,8 +1496,6 @@ export type RallarAuthorityBrowserMatchDependencies<
         TEvent,
         TPresence
     >;
-    nowEpochMs?: () => number;
-    resultId?: () => string;
 }>;
 
 export type RallarAuthorityBrowserMatchHandle<
@@ -1562,9 +1546,6 @@ export type RallarAuthorityBrowserMatchHandle<
         >['sendCommand']
     >;
     standings(): ReturnType<typeof deriveRallarMatchStandings>;
-    finalizeServerValidatedResult<TSummary>(
-        summary: TSummary,
-    ): RallarMatchResult<TSummary>;
 }>;
 
 export function createRallarAuthorityBrowserMatch<
@@ -1589,9 +1570,6 @@ export function createRallarAuthorityBrowserMatch<
     const createAuthorityClient = dependencies.createAuthorityClient ??
         createRallarGameAuthorityClient;
     const client = createAuthorityClient(config);
-    const nowEpochMs = dependencies.nowEpochMs ?? Date.now;
-    const resultId = dependencies.resultId ??
-        (() => `${config.matchId}:${nowEpochMs()}`);
 
     return {
         client,
@@ -1604,31 +1582,15 @@ export function createRallarAuthorityBrowserMatch<
             deriveRallarMatchStandings({
                 rows: config.readStandingRows?.() ?? [],
             }),
-        finalizeServerValidatedResult: (summary) => {
-            const status = client.status();
-            const roomRef = config.roomRef ?? status.roomRef;
-            if (!roomRef) {
-                throw new Error('Cannot finalize a server-validated Rallar match result without a roomRef.');
-            }
-
-            return createRallarMatchResult({
-                resultId: resultId(),
-                matchId: config.matchId,
-                roomRef,
-                protocol: config.protocol,
-                authority: config.authority,
-                trust: 'server-validated',
-                startedAtEpochMs: config.startedAtEpochMs,
-                finishedAtEpochMs: nowEpochMs(),
-                standings: deriveRallarMatchStandings({
-                    rows: config.readStandingRows?.() ?? [],
-                }),
-                summary,
-            });
-        },
     };
 }
 ```
+
+> **Intentional repository-safety update:** The browser authority wrapper does
+> not construct `server-validated` results. Existing Rallar Game Authority
+> transports commands to server-owned domain code, so Task 4 is the sole V1
+> constructor for that trust level. Applications transport the resulting
+> envelope through their existing app-owned event, message, or storage path.
 
 - [ ] **Step 4: Export authority match support**
 
@@ -1718,6 +1680,29 @@ describe('Rallar server match result helper', () => {
         expect(result.trust).toBe('server-validated');
         expect(result.idempotencyKey).toBe('match-1:server:server-1:2:5000');
     });
+
+    it('rejects browser-director authority at runtime', () => {
+        expect(() => createRallarServerValidatedMatchResult({
+            resultId: 'result-1',
+            matchId: 'match-1',
+            roomRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
+            protocol: 'example.authority.v1',
+            authority: {
+                kind: 'browser-director',
+                id: 'session-1',
+                epoch: 2,
+            },
+            finishedAtEpochMs: 5_000,
+            standings: [],
+            summary: { acceptedCommands: 0 },
+        } as never)).toThrow(
+            'Server-validated Rallar match results require server authority.',
+        );
+    });
 });
 ```
 
@@ -1741,13 +1726,23 @@ import type {
     RallarMatchResultInput,
 } from '@shared/rallar-match/mod.ts';
 import { createRallarMatchResult } from '@shared/rallar-match/mod.ts';
+import type { RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
 
 export type RallarServerValidatedMatchResultInput<TSummary = unknown> =
-    Omit<RallarMatchResultInput<TSummary>, 'trust'>;
+    Omit<RallarMatchResultInput<TSummary>, 'authority' | 'trust'> &
+    Readonly<{
+        authority: RallarGameAuthorityRef & Readonly<{ kind: 'server' }>;
+    }>;
 
 export function createRallarServerValidatedMatchResult<TSummary>(
     input: RallarServerValidatedMatchResultInput<TSummary>,
 ): RallarMatchResult<TSummary> {
+    if (input.authority.kind !== 'server') {
+        throw new Error(
+            'Server-validated Rallar match results require server authority.',
+        );
+    }
+
     return createRallarMatchResult({
         resultId: input.resultId,
         matchId: input.matchId,
@@ -1852,8 +1847,9 @@ room session holds the director lease and routes commands, snapshots, events,
 participants, standings, and room-trusted result envelopes.
 
 Use `createRallarAuthorityBrowserMatch` when the authoritative game or
-activity loop lives behind Rallar Game Authority. Server-authoritative final
-results should use `trust: 'server-validated'`.
+activity loop lives behind Rallar Game Authority. Browser clients do not mint
+`server-validated` results. Server-owned domain code creates those envelopes
+with `createRallarServerValidatedMatchResult(...)` after validating the match.
 
 Rallar provides participant derivation, standings projection, result envelopes,
 and diagnostics. The application still owns command legality, scoring rules,
@@ -1927,18 +1923,7 @@ npx tsc -p packages/shared-server/tsconfig.json --noEmit
 
 Expected: all commands PASS.
 
-- [ ] **Step 4: Optional app build validation if a consumer adopts the helpers**
-
-Run this step only if a clarification changes the plan to migrate AR Eye Hunter or Relic Hunters in V1:
-
-```bash
-npm --workspace ar-eye-hunter-v1 run build
-npm --workspace relic-hunters-v1 run build
-```
-
-Expected: both commands PASS. Vite large-chunk warnings are acceptable when the exit code is zero.
-
-- [ ] **Step 5: Commit final validation note if code changed after Task 5**
+- [ ] **Step 4: Commit final validation note if code changed after Task 5**
 
 Run only when validation required a code or documentation fix:
 
@@ -1963,4 +1948,22 @@ git commit -m "test: validate rallar match support"
 
 ## Execution Notes
 
-If clarification answers change package naming, server scope, team support, or consumer adoption, revise this plan before implementation. The smallest safe V1 is Tasks 1, 2, 3, 5, and 6 without Task 4.
+Implement Tasks 1-6 as written. Any expansion into consumer migration, formal team standings, Rallar-owned persistence, or REST APIs requires a separate plan revision before implementation.
+
+## Implementation Progress
+
+### Preflight - 2026-07-10T12:25:39+02:00
+
+- Completed: created isolated worktree `/private/tmp/ar-eye-hunter-rallar-browser-match` on branch `codex/rallar-browser-match-support`; installed dependencies; read the complete plan and relevant Rallar package, realtime, game, code-writing, and testing guidance; inspected existing match APIs and canonical documentation.
+- Files changed: this implementation plan only; no feature code has been written.
+- Commands passed: `npm install`; baseline Vitest run covering seven adjacent Rallar Game and shared-web public-surface test files (`54` tests); `npx tsc -p packages/shared/tsconfig.json --noEmit`; `npx tsc -p packages/shared-web/tsconfig.json --noEmit`; `npx tsc -p packages/shared-server/tsconfig.json --noEmit`.
+- Resolved plan correction: the approved server-side validation decision governs the stale Task 3 sample. Task 3 no longer constructs results in the browser, and Task 4 now restricts and validates server authority before assigning `server-validated` trust.
+- Follow-up validation: all Task 1-6 RED/GREEN checks and the final validation matrix remain.
+
+### Task 1 - 2026-07-10T12:32:00+02:00
+
+- Completed: added runtime-agnostic shared Rallar match contracts plus deterministic participant, standings, result-envelope, and diagnostics helpers; exported the new `rallar-match` package through `packages/shared/mod.ts`.
+- Files changed: `packages/shared/rallar-match/types.ts`, `packages/shared/rallar-match/participants.ts`, `packages/shared/rallar-match/standings.ts`, `packages/shared/rallar-match/results.ts`, `packages/shared/rallar-match/diagnostics.ts`, `packages/shared/rallar-match/mod.ts`, `packages/shared/mod.ts`, and `packages/tests/shared/rallar-match.test.ts`.
+- Commands: RED `npx vitest run packages/tests/shared/rallar-match.test.ts` failed as expected because `@shared/rallar-match/mod.ts` did not exist; GREEN `npx vitest run packages/tests/shared/rallar-match.test.ts` passed (1 file, 5 tests); `npx tsc -p packages/shared/tsconfig.json --noEmit` passed.
+- Blockers: none.
+- Remaining validation: Tasks 2-6 and their final focused match, adjacent Rallar Game, public-surface, and shared/shared-web/shared-server typecheck matrix remain.
