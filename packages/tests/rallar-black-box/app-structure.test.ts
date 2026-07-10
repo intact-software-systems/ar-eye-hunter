@@ -72,6 +72,42 @@ const presentationModules = [
         seams: ['CommandExamplePicker'],
     },
 ] as const;
+const runAnalysisModules = [
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/runs/distributed-artifact-import.ts',
+        moduleImport: './legacy/runner/runs/distributed-artifact-import.ts',
+        seams: [
+            'DISTRIBUTED_ARTIFACT_REQUIRED_FILES',
+            'DistributedArtifactImportStatus',
+            'distributedArtifactImportStatus',
+        ],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/runs/distributed-run-seed-url.ts',
+        moduleImport: './legacy/runner/runs/distributed-run-seed-url.ts',
+        seams: [
+            'readDistributedRunSeedFromUrl',
+            'writeDistributedRunSeedToUrl',
+        ],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/runs/DistributedRunAnalysisReportPanel.tsx',
+        moduleImport:
+            './legacy/runner/runs/DistributedRunAnalysisReportPanel.tsx',
+        seams: ['DistributedRunAnalysisReportPanel'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx',
+        moduleImport:
+            './legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx',
+        seams: ['ImportedDistributedArtifactAnalysisPanel'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/shared/performance-format.ts',
+        moduleImport: './legacy/runner/shared/performance-format.ts',
+        seams: ['formatPercent', 'formatFleetDuration'],
+    },
+] as const;
 
 function repositorySource(path: string): string {
     return readFileSync(resolve(repositoryRoot, path), 'utf8');
@@ -237,9 +273,14 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed/status-presentation.ts',
-                importerPath: appSourcePath,
-                moduleImport: './legacy/runner/distributed/status-presentation.ts',
-                seams: ['distributedProgressTone'],
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/runner/runs/DistributedRunAnalysisReportPanel.tsx',
+                moduleImport: '../distributed/status-presentation.ts',
+                seams: [
+                    'distributedProgressTone',
+                    'distributedFailureCategoryTone',
+                    'distributedDiagnosticTone',
+                ],
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcDiagnosticsTimeseriesPanel.tsx',
@@ -326,6 +367,52 @@ describe('rallar-black-box app source ownership', () => {
 
         for (const declaration of movedDeclarations) {
             expect.soft(declaration.test(appSource), declaration.source).toBe(false);
+        }
+    });
+
+    it('keeps legacy run analysis seams in focused modules', () => {
+        const source = repositorySource(appSourcePath);
+        const movedDeclarations = [
+            /\bconst\s+DISTRIBUTED_ARTIFACT_REQUIRED_FILES\s*=/,
+            /\btype\s+DistributedArtifactImportStatus\s*=/,
+            /\bfunction\s+distributedArtifactImportStatus\s*\(/,
+            /\bfunction\s+readDistributedRunSeedFromUrl\s*\(/,
+            /\bfunction\s+writeDistributedRunSeedToUrl\s*\(/,
+            /\bfunction\s+DistributedRunAnalysisReportPanel\s*\(/,
+            /\bfunction\s+ImportedDistributedArtifactAnalysisPanel\s*\(/,
+            /\bfunction\s+formatPercent\s*\(/,
+            /\bfunction\s+formatFleetDuration\s*\(/,
+            /\bfunction\s+formatStreamRate\s*\(/,
+            /\bfunction\s+distributedFailureCategoryTone\s*\(/,
+            /\bfunction\s+distributedDiagnosticTone\s*\(/,
+        ];
+
+        for (const runAnalysisModule of runAnalysisModules) {
+            expect.soft(
+                existsSync(resolve(repositoryRoot, runAnalysisModule.path)),
+                runAnalysisModule.path,
+            ).toBe(true);
+
+            const escapedModuleImport = runAnalysisModule.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importedSeams = source.match(
+                new RegExp(
+                    `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                ),
+            )?.[1];
+
+            expect.soft(importedSeams, runAnalysisModule.moduleImport).toBeDefined();
+            for (const seam of runAnalysisModule.seams) {
+                expect
+                    .soft(importedSeams ?? '', `${runAnalysisModule.moduleImport}: ${seam}`)
+                    .toMatch(new RegExp(`\\b${seam}\\b`));
+            }
+        }
+
+        for (const declaration of movedDeclarations) {
+            expect.soft(declaration.test(source), declaration.source).toBe(false);
         }
     });
 

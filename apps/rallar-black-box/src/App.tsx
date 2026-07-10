@@ -219,7 +219,6 @@ import {
     distributedRecipeTargetRows,
     filterDistributedRuns,
     type DistributedRunCompareSummary,
-    type DistributedRunAnalysisReport,
     type DistributedRunMonitor,
     type DistributedRecipeCatalogItem,
     type DistributedRecipePreflightSummary,
@@ -396,11 +395,29 @@ import {
 } from './legacy/shared/schema/SchemaAuthoringPanel.tsx';
 import { CommandExamplePicker } from './legacy/shared/schema/CommandExamplePicker.tsx';
 import { ControlAgentBoardPanel } from './legacy/runner/agents/ControlAgentBoardPanel.tsx';
-import { distributedProgressTone } from './legacy/runner/distributed/status-presentation.ts';
+import {
+    distributedDiagnosticTone,
+    distributedProgressTone,
+} from './legacy/runner/distributed/status-presentation.ts';
 import { CausalTrailPanel } from './legacy/runner/evidence/CausalTrailPanel.tsx';
 import { RunVerdictPanel } from './legacy/runner/evidence/RunVerdictPanel.tsx';
 import { RtcDiagnosticsTimeseriesPanel } from './legacy/runner/evidence/rtc/RtcDiagnosticsTimeseriesPanel.tsx';
 import { RtcPerformancePanel } from './legacy/runner/evidence/rtc/RtcPerformancePanel.tsx';
+import { DistributedRunAnalysisReportPanel } from './legacy/runner/runs/DistributedRunAnalysisReportPanel.tsx';
+import { ImportedDistributedArtifactAnalysisPanel } from './legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx';
+import {
+    DISTRIBUTED_ARTIFACT_REQUIRED_FILES,
+    distributedArtifactImportStatus,
+    type DistributedArtifactImportStatus,
+} from './legacy/runner/runs/distributed-artifact-import.ts';
+import {
+    readDistributedRunSeedFromUrl,
+    writeDistributedRunSeedToUrl,
+} from './legacy/runner/runs/distributed-run-seed-url.ts';
+import {
+    formatFleetDuration,
+    formatPercent,
+} from './legacy/runner/shared/performance-format.ts';
 import { shortRunId } from './legacy/runner/shared/run-id-presentation.ts';
 
 // Recipe Console work belongs under `src/recipe-console/**`; legacy extraction belongs under `src/legacy/**`; no new feature panel belongs in `App.tsx`.
@@ -857,7 +874,6 @@ const APP_LOCAL_RECIPE_CATALOG: readonly AppLocalRecipeEntry[] = [
 ];
 
 const RTC_REALTIME_STABILITY_CATALOG_TITLE = 'RTC Realtime Stability';
-const RTC_STREAM_PERFORMANCE_CATEGORY = 'rtc-stream-performance';
 
 const DISTRIBUTED_RECIPE_CATALOG: readonly DistributedRecipeCatalogItem[] =
     RALLAR_BLACK_BOX_RECIPE_FIXTURES.map((fixture) => {
@@ -1341,27 +1357,6 @@ function eventFilterFromValue(value: string): EventFilter {
     return EVENT_KIND_FILTERS.includes(value as EventFilter)
         ? (value as EventFilter)
         : 'all';
-}
-
-function readDistributedRunSeedFromUrl(): DistributedRunSeedId | undefined {
-    if (typeof window === 'undefined') {
-        return undefined;
-    }
-    const params = new URLSearchParams(window.location.search);
-    return distributedRunSeedIdFromValue(params.get('distributedRunSeed'));
-}
-
-function writeDistributedRunSeedToUrl(seedId: DistributedRunSeedId | undefined): void {
-    if (typeof window === 'undefined') {
-        return;
-    }
-    const url = new URL(window.location.href);
-    if (seedId) {
-        url.searchParams.set('distributedRunSeed', seedId);
-    } else {
-        url.searchParams.delete('distributedRunSeed');
-    }
-    window.history.replaceState(window.history.state, '', url);
 }
 
 function idleActionFeedback(message: string): CommandCenterActionFeedback {
@@ -7197,34 +7192,6 @@ function RunnerRecipesPanel({
     );
 }
 
-const DISTRIBUTED_ARTIFACT_REQUIRED_FILES = [
-    'distributed-run.json',
-    'control-run.json',
-] as const;
-
-type DistributedArtifactImportStatus = Readonly<{
-    selectedFileCount: number;
-    warningCount: number;
-    requiredFiles: readonly Readonly<{
-        fileName: string;
-        loaded: boolean;
-    }>[];
-}>;
-
-function distributedArtifactImportStatus(
-    files: DistributedRunArtifactFiles,
-    warningCount: number,
-): DistributedArtifactImportStatus {
-    return {
-        selectedFileCount: Object.values(files).filter((value) => value !== undefined).length,
-        warningCount,
-        requiredFiles: DISTRIBUTED_ARTIFACT_REQUIRED_FILES.map((fileName) => ({
-            fileName,
-            loaded: files[fileName] !== undefined,
-        })),
-    };
-}
-
 function RunnerRunsPanel({
     state,
     bootstrap,
@@ -9573,27 +9540,6 @@ function shortSignatureId(value: string | undefined): string {
     return value.length > 18 ? `${value.slice(0, 18)}...` : value;
 }
 
-function formatPercent(value: number | undefined): string {
-    if (value === undefined || !Number.isFinite(value)) {
-        return '-';
-    }
-    return `${Math.round(value * 100)}%`;
-}
-
-function formatFleetDuration(value: number | undefined): string {
-    if (value === undefined) {
-        return '-';
-    }
-    return value >= 1000 ? formatRelativeDuration(value) : `${Math.round(value)}ms`;
-}
-
-function formatStreamRate(value: number | undefined): string {
-    if (value === undefined || !Number.isFinite(value)) {
-        return '-';
-    }
-    return `${Math.round(value * 100) / 100}Hz`;
-}
-
 function minDefined(
     left: number | undefined,
     right: number | undefined,
@@ -9618,536 +9564,6 @@ function maxDefined(
         return left;
     }
     return Math.max(left, right);
-}
-
-function DistributedRunAnalysisReportPanel({
-    report,
-}: {
-    report: DistributedRunAnalysisReport;
-}) {
-    const firstFailure = report.firstFailure;
-    const topAgents = report.agents.slice(0, 8);
-    const topRecipes = report.recipes.slice(0, 8);
-    const diagnostics = report.diagnostics.correlated.slice(0, 6);
-    const stateTone = report.summary.ok
-        ? 'good'
-        : firstFailure
-        ? 'bad'
-        : distributedRecipeStateTone(report.summary.state);
-
-    return (
-        <section className="distributed-subpanel runner-analysis-report">
-            <div className="section-heading">
-                <h3>Analysis Report</h3>
-                <span className={`pill ${stateTone}`}>
-                    {report.summary.ok ? 'passed' : report.summary.state}
-                </span>
-            </div>
-            <div className="distributed-monitor-metrics">
-                <Metric
-                    label="Verdict"
-                    value={report.summary.ok ? 'passed' : 'attention'}
-                    tone={stateTone}
-                />
-                <Metric
-                    label="Duration"
-                    value={formatDuration(report.summary.durationMs)}
-                />
-                <Metric
-                    label="Targets"
-                    value={String(report.summary.targetCount)}
-                />
-                <Metric
-                    label="Commands"
-                    value={`${report.summary.completedCommandCount}/${report.summary.commandCount}`}
-                />
-                <Metric
-                    label="Failed"
-                    value={String(report.summary.failedCommandCount)}
-                    tone={report.summary.failedCommandCount > 0 ? 'bad' : 'good'}
-                />
-                <Metric
-                    label="Artifact"
-                    value={report.summary.artifactStatus}
-                    tone={
-                        report.summary.artifactStatus === 'valid'
-                            ? 'good'
-                            : report.summary.artifactStatus === 'not-loaded'
-                            ? 'muted'
-                            : 'bad'
-                    }
-                />
-            </div>
-            {report.summary.snapshotWarnings.length > 0 && (
-                <div className="runner-analysis-warning" role="status">
-                    <strong>Snapshot may be truncated</strong>
-                    <span>{report.summary.snapshotWarnings.join(' ')}</span>
-                </div>
-            )}
-            {firstFailure ? (
-                <section className="runner-analysis-first-failure">
-                    <div>
-                        <span className="eyebrow">First failure</span>
-                        <h4>{firstFailure.code ?? firstFailure.category}</h4>
-                        <p>{firstFailure.message}</p>
-                    </div>
-                    <dl>
-                        <div>
-                            <dt>Agent</dt>
-                            <dd>{firstFailure.agentId ?? '-'}</dd>
-                        </div>
-                        <div>
-                            <dt>Recipe</dt>
-                            <dd>{firstFailure.recipeId ?? '-'}</dd>
-                        </div>
-                        <div>
-                            <dt>Command</dt>
-                            <dd>{firstFailure.commandId ?? '-'}</dd>
-                        </div>
-                        <div>
-                            <dt>Time</dt>
-                            <dd>{formatTime(firstFailure.atEpochMs)}</dd>
-                        </div>
-                    </dl>
-                </section>
-            ) : (
-                <div className="empty-state">
-                    No failure evidence in the selected distributed run.
-                </div>
-            )}
-            <section className="runner-analysis-actions">
-                <div className="section-heading compact">
-                    <h3>Next Actions</h3>
-                    <span>{report.nextActions.length}</span>
-                </div>
-                <div className="runner-analysis-action-list">
-                    {report.nextActions.slice(0, 6).map((action, index) => (
-                        <article
-                            className="runner-analysis-action-row"
-                            key={`${action.category}-${action.title}-${index}`}
-                        >
-                            <span
-                                className={`pill ${distributedFailureCategoryTone(action.category)}`}
-                            >
-                                {action.category}
-                            </span>
-                            <div>
-                                <strong>{action.title}</strong>
-                                <small>{action.likelyCause}</small>
-                                <small>{action.nextAction}</small>
-                                {action.evidence.length > 0 && (
-                                    <small>
-                                        Evidence: {action.evidence.join(', ')}
-                                    </small>
-                                )}
-                            </div>
-                        </article>
-                    ))}
-                    {report.nextActions.length === 0 && (
-                        <div className="empty-state">
-                            No recommended action for this run.
-                        </div>
-                    )}
-                </div>
-            </section>
-            <div className="runner-analysis-grid">
-                <section>
-                    <h3>Agents</h3>
-                    <div className="runner-analysis-list">
-                        {topAgents.map((agent) => (
-                            <div
-                                className="runner-analysis-row"
-                                key={agent.agentId}
-                            >
-                                <strong>{agent.agentId}</strong>
-                                <span
-                                    className={`pill ${distributedProgressTone(agent.execution)}`}
-                                >
-                                    {agent.execution}
-                                </span>
-                                <small>
-                                    ack {agent.readiness} - barrier{' '}
-                                    {agent.barrier} - failures{' '}
-                                    {agent.failedCommandCount}
-                                </small>
-                                <small>
-                                    events {agent.eventCount} - reconnects{' '}
-                                    {agent.reconnectCount ?? 0} - heartbeat{' '}
-                                    {formatTime(agent.lastHeartbeatAtEpochMs)}
-                                </small>
-                            </div>
-                        ))}
-                        {topAgents.length === 0 && (
-                            <div className="empty-state">No agents</div>
-                        )}
-                    </div>
-                </section>
-                <section>
-                    <h3>Recipes</h3>
-                    <div className="runner-analysis-list">
-                        {topRecipes.map((recipe) => (
-                            <div
-                                className="runner-analysis-row"
-                                key={`${recipe.recipeId}-${recipe.role ?? 'all'}`}
-                            >
-                                <strong>{recipe.recipeId}</strong>
-                                <span
-                                    className={`pill ${recipe.failedCount > 0 ? 'bad' : recipe.passedCount > 0 ? 'good' : 'muted'}`}
-                                >
-                                    {recipe.failedCount > 0
-                                        ? 'failed'
-                                        : recipe.passedCount > 0
-                                        ? 'passed'
-                                        : 'pending'}
-                                </span>
-                                <small>
-                                    passed {recipe.passedCount} - failed{' '}
-                                    {recipe.failedCount} - running{' '}
-                                    {recipe.runningCount} - missing{' '}
-                                    {recipe.missingCount}
-                                </small>
-                                <small>
-                                    {recipe.role ?? 'all roles'} -{' '}
-                                    {recipe.profile ?? 'default'} - targets{' '}
-                                    {recipe.targetCount}
-                                </small>
-                            </div>
-                        ))}
-                        {topRecipes.length === 0 && (
-                            <div className="empty-state">No recipe rows</div>
-                        )}
-                    </div>
-                </section>
-                <section>
-                    <h3>Diagnostics</h3>
-                    <div className="runner-analysis-list">
-                        <div className="runner-analysis-row">
-                            <strong>
-                                {report.diagnostics.errors} errors,{' '}
-                                {report.diagnostics.warnings} warnings
-                            </strong>
-                            <span
-                                className={`pill ${report.diagnostics.errors > 0 ? 'bad' : report.diagnostics.warnings > 0 ? 'warn' : 'good'}`}
-                            >
-                                {report.diagnostics.total} total
-                            </span>
-                            <small>
-                                WS {report.diagnostics.ws} - RTC{' '}
-                                {report.diagnostics.rtc}
-                            </small>
-                        </div>
-                        {diagnostics.map((diagnostic) => (
-                            <div
-                                className="runner-analysis-row"
-                                key={diagnostic.eventId}
-                            >
-                                <strong>{diagnostic.message}</strong>
-                                <span
-                                    className={`pill ${distributedDiagnosticTone(diagnostic.severity)}`}
-                                >
-                                    {diagnostic.severity}
-                                </span>
-                                <small>
-                                    {diagnostic.transport ?? 'runtime'} -{' '}
-                                    {diagnostic.agentId} -{' '}
-                                    {diagnostic.commandId ?? 'no command'}
-                                </small>
-                                <small>{diagnostic.summary}</small>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-            </div>
-            <details className="runner-analysis-raw">
-                <summary>Raw Evidence</summary>
-                <pre className="mini-json">{json(report.rawEvidence)}</pre>
-            </details>
-        </section>
-    );
-}
-
-function ImportedDistributedArtifactAnalysisPanel({
-    analysis,
-    status,
-}: {
-    analysis: DistributedRunAnalysis;
-    status?: DistributedArtifactImportStatus;
-}) {
-    const failure = analysis.failure;
-    const performance = analysis.performance;
-    const loadedRequiredCount = status?.requiredFiles.filter((file) => file.loaded).length ?? 0;
-    const requiredFileCount = status?.requiredFiles.length ?? DISTRIBUTED_ARTIFACT_REQUIRED_FILES.length;
-    const slowestAgent = performance?.slowestAgents[0];
-    const streamTiming = performance?.streamTiming;
-    const slowestStreamAgent = streamTiming?.slowestAgents[0];
-    const artifactVerdict = analysis.spa?.verdict;
-    const causalTrail = artifactVerdict?.causalTrail ?? [];
-    const stateTone = analysis.ok
-        ? 'good'
-        : failure
-        ? 'bad'
-        : distributedRecipeStateTone(analysis.status);
-
-    return (
-        <section className="distributed-subpanel imported-distributed-artifact-analysis">
-            <div className="section-heading">
-                <h3>Imported CI artifact analysis</h3>
-                <span className={`pill ${stateTone}`}>
-                    {analysis.ok ? 'passed' : analysis.status}
-                </span>
-            </div>
-            <div className="distributed-monitor-metrics">
-                <Metric
-                    label="Run"
-                    value={shortRunId(analysis.distributedRunId)}
-                    tone="active"
-                />
-                <Metric
-                    label="Pass"
-                    value={formatPercent(analysis.summary.passRate)}
-                    tone={analysis.summary.passRate >= 1 ? 'good' : 'warn'}
-                />
-                <Metric label="Agents" value={String(analysis.summary.agents)} />
-                <Metric
-                    label="Warnings"
-                    value={String(analysis.parseWarnings.length)}
-                    tone={analysis.parseWarnings.length > 0 ? 'warn' : 'good'}
-                />
-                <Metric
-                    label="Selected files"
-                    value={status ? String(status.selectedFileCount) : '-'}
-                    tone={status ? 'active' : 'muted'}
-                />
-                <Metric
-                    label="Required files"
-                    value={`${loadedRequiredCount}/${requiredFileCount}`}
-                    tone={loadedRequiredCount === requiredFileCount ? 'good' : 'warn'}
-                />
-            </div>
-            <div className="imported-artifact-band">
-                <div className="section-heading compact">
-                    <h4>{failure ? 'Verdict and Fix' : 'Verdict'}</h4>
-                    <span>{failure ? failure.minimalFixArea : 'passed'}</span>
-                </div>
-                {failure ? (
-                    <div className="runner-analysis-first-failure">
-                        <div>
-                            <span className="eyebrow">Focus</span>
-                            <h4>{failure.title}</h4>
-                            <p>{failure.likelyCause}</p>
-                            <small>{failure.nextAction}</small>
-                        </div>
-                        <dl>
-                            <div>
-                                <dt>Fix area</dt>
-                                <dd>{failure.minimalFixArea}</dd>
-                            </div>
-                            <div>
-                                <dt>Evidence</dt>
-                                <dd>{failure.evidenceFile}</dd>
-                            </div>
-                            <div>
-                                <dt>Agents</dt>
-                                <dd>{failure.affectedAgents.join(', ') || '-'}</dd>
-                            </div>
-                            <div>
-                                <dt>Command</dt>
-                                <dd>{failure.commandId ?? '-'}</dd>
-                            </div>
-                            <div>
-                                <dt>Verify</dt>
-                                <dd>{failure.verificationCommand.replaceAll('`', '')}</dd>
-                            </div>
-                        </dl>
-                    </div>
-                ) : (
-                    <div className="runner-analysis-warning success" role="status">
-                        <strong>Performance baseline</strong>
-                        <span>
-                            {performance
-                                ? `${formatDuration(performance.runDurationMs)} run, ${performance.reconnectCount} reconnects, ${performance.exportedEventCount} exported events`
-                                : 'No performance artifact data was loaded.'}
-                        </span>
-                    </div>
-                )}
-            </div>
-            {causalTrail.length > 0 && (
-                <CausalTrailPanel items={causalTrail} />
-            )}
-            <div className="imported-artifact-band">
-                <div className="section-heading compact">
-                    <h4>Performance Health</h4>
-                    <span>{performance ? `${performance.commandTiming.count} samples` : 'no samples'}</span>
-                </div>
-                <div className="distributed-monitor-metrics">
-                    <Metric
-                        label="P50 command"
-                        value={formatFleetDuration(performance?.commandTiming.p50Ms)}
-                        tone={performance?.commandTiming.p50Ms !== undefined ? 'active' : 'muted'}
-                    />
-                    <Metric
-                        label="P95 command"
-                        value={formatFleetDuration(performance?.commandTiming.p95Ms)}
-                        tone={(performance?.commandTiming.p95Ms ?? 0) > 1_000 ? 'warn' : 'active'}
-                    />
-                    <Metric
-                        label="P99 command"
-                        value={formatFleetDuration(performance?.commandTiming.p99Ms)}
-                        tone={(performance?.commandTiming.p99Ms ?? 0) > 2_000 ? 'warn' : 'active'}
-                    />
-                    <Metric
-                        label="Max command"
-                        value={formatFleetDuration(performance?.commandTiming.maxMs)}
-                        tone={(performance?.commandTiming.maxMs ?? 0) > 2_000 ? 'warn' : 'active'}
-                    />
-                    <Metric
-                        label="Outliers"
-                        value={String(performance?.commandTiming.outlierCount ?? 0)}
-                        tone={(performance?.commandTiming.outlierCount ?? 0) > 0 ? 'warn' : 'good'}
-                    />
-                    <Metric
-                        label="Diagnostics"
-                        value={String(performance?.diagnosticCount ?? 0)}
-                        tone={(performance?.errorDiagnosticCount ?? 0) > 0
-                            ? 'bad'
-                            : (performance?.warningDiagnosticCount ?? 0) > 0
-                            ? 'warn'
-                            : 'good'}
-                    />
-                    <Metric
-                        label="Stream frames"
-                        value={streamTiming
-                            ? `${streamTiming.completedFrames}/${streamTiming.plannedFrames}`
-                            : '-'}
-                        tone={streamTiming
-                            ? streamTiming.completedFrames >= streamTiming.plannedFrames ? 'good' : 'warn'
-                            : 'muted'}
-                    />
-                    <Metric
-                        label="P50 stream"
-                        value={formatFleetDuration(streamTiming?.duration.p50Ms)}
-                        tone={streamTiming?.duration.p50Ms !== undefined ? 'active' : 'muted'}
-                    />
-                    <Metric
-                        label="P95 stream"
-                        value={formatFleetDuration(streamTiming?.duration.p95Ms)}
-                        tone={(streamTiming?.duration.p95Ms ?? 0) > 1_000 ? 'warn' : 'active'}
-                    />
-                    <Metric
-                        label="P99 stream"
-                        value={formatFleetDuration(streamTiming?.duration.p99Ms)}
-                        tone={(streamTiming?.duration.p99Ms ?? 0) > 2_000 ? 'warn' : 'active'}
-                    />
-                    <Metric
-                        label="Stream drops"
-                        value={String(streamTiming?.droppedFrames ?? 0)}
-                        tone={(streamTiming?.droppedFrames ?? 0) > 0 ? 'bad' : 'good'}
-                    />
-                    <Metric
-                        label="In-flight drops"
-                        value={String(streamTiming?.inFlightLimitDropCount ?? 0)}
-                        tone={(streamTiming?.inFlightLimitDropCount ?? 0) > 0 ? 'bad' : 'good'}
-                    />
-                    <Metric
-                        label="Max drift"
-                        value={formatFleetDuration(streamTiming?.maxStartDriftMs)}
-                        tone={(streamTiming?.maxStartDriftMs ?? 0) > 1_000 ? 'warn' : 'active'}
-                    />
-                    <Metric
-                        label="Late frames"
-                        value={String(streamTiming?.lateFrameCount ?? 0)}
-                        tone={(streamTiming?.lateFrameCount ?? 0) > 0 ? 'warn' : 'good'}
-                    />
-                    <Metric
-                        label="Backpressure"
-                        value={String(streamTiming?.backpressureCount ?? 0)}
-                        tone={(streamTiming?.backpressureCount ?? 0) > 0 ? 'warn' : 'good'}
-                    />
-                    <Metric
-                        label="Achieved Hz"
-                        value={formatStreamRate(streamTiming?.achievedCompletionHz)}
-                        tone={streamTiming?.achievedCompletionHz !== undefined ? 'active' : 'muted'}
-                    />
-                </div>
-                {streamTiming && (
-                    <div className="stream-frame-disposition" aria-label="Frame disposition">
-                        <div className="section-heading compact">
-                            <h4>Frame disposition</h4>
-                            <span>{streamTiming.streamCount} stream samples</span>
-                        </div>
-                        <div className="stream-frame-disposition-grid">
-                            <span className="good">
-                                <strong>Completed</strong>
-                                {streamTiming.completedFrames}
-                            </span>
-                            <span className={streamTiming.failedFrames > 0 ? 'bad' : 'good'}>
-                                <strong>Failed</strong>
-                                {streamTiming.failedFrames}
-                            </span>
-                            <span className={streamTiming.droppedFrames > 0 ? 'warn' : 'good'}>
-                                <strong>Dropped</strong>
-                                {streamTiming.droppedFrames}
-                            </span>
-                            <span className={streamTiming.inFlightLimitDropCount > 0 ? 'bad' : 'good'}>
-                                <strong>In-flight drops</strong>
-                                {streamTiming.inFlightLimitDropCount}
-                            </span>
-                        </div>
-                    </div>
-                )}
-                {streamTiming && (
-                    <div className="imported-artifact-slowest">
-                        <strong>Slowest stream agent</strong>
-                        <span>
-                            {slowestStreamAgent
-                                ? `${slowestStreamAgent.agentId} - max ${formatFleetDuration(slowestStreamAgent.maxMs)}, p99 ${formatFleetDuration(slowestStreamAgent.p99Ms)}, frames ${slowestStreamAgent.completedFrames}/${slowestStreamAgent.plannedFrames}`
-                                : 'No stream latency rows'}
-                        </span>
-                    </div>
-                )}
-                <div className="imported-artifact-slowest">
-                    <strong>Slowest agent</strong>
-                    <span>
-                        {slowestAgent
-                            ? `${slowestAgent.agentId} - max ${formatFleetDuration(slowestAgent.maxMs)}, avg ${formatFleetDuration(slowestAgent.averageMs)}`
-                            : 'No agent latency rows'}
-                    </span>
-                </div>
-            </div>
-            <div className="imported-artifact-band">
-                <div className="section-heading compact">
-                    <h4>Evidence Quality</h4>
-                    <span>{status?.warningCount ?? analysis.parseWarnings.length} warnings</span>
-                </div>
-                {status && (
-                    <div className="artifact-issue-list compact" role="status">
-                        {status.requiredFiles.map((file) => (
-                            <div
-                                className={`artifact-issue-row ${file.loaded ? 'good' : 'warning'}`}
-                                key={file.fileName}
-                            >
-                                <strong>{file.fileName}</strong>
-                                <span>{file.loaded ? 'loaded' : 'missing'}</span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-                {analysis.parseWarnings.length > 0 && (
-                    <div className="artifact-issue-list" role="status">
-                        {analysis.parseWarnings.slice(0, 4).map((warning, index) => (
-                            <div
-                                className="artifact-issue-row warning"
-                                key={`${warning.fileName}-${warning.lineNumber ?? 0}-${index}`}
-                            >
-                                <strong>{warning.fileName}</strong>
-                                <span>{warning.message}</span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </section>
-    );
 }
 
 function RunnerAdvancedPanel({
@@ -15756,29 +15172,6 @@ function DistributedCompareList({
     );
 }
 
-function distributedFailureCategoryTone(
-    category: DistributedRunAnalysisReport['nextActions'][number]['category'],
-): string {
-    if (
-        category === 'command' ||
-        category === 'diagnostic' ||
-        category === RTC_STREAM_PERFORMANCE_CATEGORY
-    ) {
-        return 'bad';
-    }
-    if (
-        category === 'targeting' ||
-        category === 'readiness' ||
-        category === 'barrier'
-    ) {
-        return 'warn';
-    }
-    if (category === 'runtime') {
-        return 'active';
-    }
-    return 'muted';
-}
-
 function distributedCompositeStatusTone(status: string): string {
     if (status === 'ok' || status === 'passed') {
         return 'good';
@@ -15802,18 +15195,6 @@ function distributedDiagnosticGroupValue(
     row: DistributedRuntimeDiagnostic,
 ): string | undefined {
     return row.groupId ?? row.roomId ?? row.contextId;
-}
-
-function distributedDiagnosticTone(
-    severity: RallarBlackBoxTestSeverity,
-): string {
-    if (severity === 'error') {
-        return 'bad';
-    }
-    if (severity === 'warning') {
-        return 'warn';
-    }
-    return 'muted';
 }
 
 function distributedDiagnosticSearchText(
