@@ -1889,7 +1889,7 @@ git commit -m "docs: document optional rallar match support"
 - Produces:
   - Final validation evidence for shared, shared-web, and shared-server surfaces.
 
-- [ ] **Step 1: Run focused match tests**
+- [x] **Step 1: Run focused match tests**
 
 Run:
 
@@ -1899,7 +1899,7 @@ npx vitest run packages/tests/shared/rallar-match.test.ts packages/tests/shared-
 
 Expected: PASS.
 
-- [ ] **Step 2: Run adjacent existing Rallar Game tests**
+- [x] **Step 2: Run adjacent existing Rallar Game tests**
 
 Run:
 
@@ -1909,7 +1909,7 @@ npx vitest run packages/tests/shared-web/rallar-game-match.test.ts packages/test
 
 Expected: PASS.
 
-- [ ] **Step 3: Run public surface and package typechecks**
+- [x] **Step 3: Run public surface and package typechecks**
 
 Run:
 
@@ -1922,12 +1922,13 @@ npx tsc -p packages/shared-server/tsconfig.json --noEmit
 
 Expected: all commands PASS.
 
-- [ ] **Step 4: Commit final validation note if code changed after Task 5**
+- [x] **Step 4: Record plan-only final validation**
 
-Run only when validation required a code or documentation fix:
+No code or documentation fix was required. Append the dated final-validation
+record under Implementation Progress and commit that tracker-only record:
 
 ```bash
-git add packages/shared packages/shared-web packages/shared-server packages/tests docs/rallar-api-reference.md
+git add plans/rallar-browser-match-support-implementation-plan.md
 git commit -m "test: validate rallar match support"
 ```
 
@@ -2015,3 +2016,15 @@ Implement Tasks 1-6 as written. Any expansion into consumer migration, formal te
 - Validation: `npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts` passed (1 file, 8 tests). Focused `rg` review confirmed matching command/standings wording in the canonical docs and Task 5 snippet, one Optional Match Support section, no browser-minted `server-validated` claim, and application-owned persistence, leaderboards, and anti-cheat.
 - Blockers: none.
 - Remaining validation: Task 6 final validation matrix remains.
+
+### Task 6 Final Validation - 2026-07-10T13:24:20+02:00
+
+- Completed: marked Task 6 Steps 1-4 complete. Validation found no regression, so no production code or documentation fix was needed; Step 4 records this plan-only validation instead of the former conditional fix path.
+- Commands passed: `npx vitest run packages/tests/shared/rallar-match.test.ts packages/tests/shared-web/rallar-browser-match-support.test.ts packages/tests/shared-web/rallar-authority-match-support.test.ts packages/tests/shared-server/rallar-match-result.test.ts` (4 files, 15 passed, 0 failed); `npx vitest run packages/tests/shared-web/rallar-game-match.test.ts packages/tests/shared-web/rallar-game-diagnostics.test.ts packages/tests/shared-web/rallar-game-authority-client.test.ts packages/tests/shared-server/rallar-game-authority-server.test.ts` (4 files, 37 passed, 0 failed); `npx vitest run packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-entrypoints.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts` (3 files, 17 passed, 0 failed); `npx tsc -p packages/shared/tsconfig.json --noEmit` (exit 0); `npx tsc -p packages/shared-web/tsconfig.json --noEmit` (exit 0); `npx tsc -p packages/shared-server/tsconfig.json --noEmit` (exit 0); `npm --workspace ar-eye-hunter-v1 run build` (exit 0); and `npm --workspace relic-hunters-v1 run build` (exit 0).
+- Build warnings: both consumer builds emitted Vite's known chunks-larger-than-500-kB warning after successful production output; this is a pass under the repository testing guidance.
+- Repository checks: `git diff --check` passed before and after the tracker update with no whitespace errors; `git status --short --branch` after the update reported only `M plans/rallar-browser-match-support-implementation-plan.md` on `codex/rallar-browser-match-support`.
+- Skipped or unrun commands: none from the Task 6 required matrix or the required consumer builds. Remote/runtime/deployment validation was not run because it is outside this task's scope and no such command was requested.
+- Blockers: none.
+- Files changed: `plans/rallar-browser-match-support-implementation-plan.md` only; the external validation report at `/private/tmp/rallar-match-sdd/task-6-report.md` is not a repository change.
+- Remaining validation: none for Tasks 1-6 within the approved local/package/consumer scope. Remote/runtime/deployment validation remains out of scope.
+- Tasks 1-6 fully checked: yes, for the approved scope; Tasks 1-5 were independently reviewed and Task 6 completed the focused, adjacent, public-surface, typecheck, consumer-build, and repository hygiene matrix.
