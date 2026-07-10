@@ -6,3 +6,4 @@ export * from './diagnostics.ts';
 export * from './match.ts';
 export * from './match-support.ts';
 export * from './authority-client.ts';
+export * from './authority-match-support.ts';

@@ -1300,7 +1300,7 @@ git commit -m "feat: add browser match support wrapper"
   - `RallarAuthorityBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence>`
   - `RallarAuthorityBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence>`
 
-- [ ] **Step 1: Write failing authority browser wrapper tests**
+- [x] **Step 1: Write failing authority browser wrapper tests**
 
 Create `packages/tests/shared-web/rallar-authority-match-support.test.ts`:
 
@@ -1441,7 +1441,7 @@ function fakeAuthorityClient(): RallarGameAuthorityClientHandle<
 }
 ```
 
-- [ ] **Step 2: Run the failing authority wrapper tests**
+- [x] **Step 2: Run the failing authority wrapper tests**
 
 Run:
 
@@ -1451,7 +1451,7 @@ npx vitest run packages/tests/shared-web/rallar-authority-match-support.test.ts
 
 Expected: FAIL because `createRallarAuthorityBrowserMatch` is not exported.
 
-- [ ] **Step 3: Implement `authority-match-support.ts`**
+- [x] **Step 3: Implement `authority-match-support.ts`**
 
 Create `packages/shared-web/game/authority-match-support.ts` with these names:
 
@@ -1592,7 +1592,7 @@ export function createRallarAuthorityBrowserMatch<
 > constructor for that trust level. Applications transport the resulting
 > envelope through their existing app-owned event, message, or storage path.
 
-- [ ] **Step 4: Export authority match support**
+- [x] **Step 4: Export authority match support**
 
 Modify `packages/shared-web/game/mod.ts`:
 
@@ -1600,7 +1600,7 @@ Modify `packages/shared-web/game/mod.ts`:
 export * from './authority-match-support.ts';
 ```
 
-- [ ] **Step 5: Run authority wrapper tests and shared-web typecheck**
+- [x] **Step 5: Run authority wrapper tests and shared-web typecheck**
 
 Run:
 
@@ -1611,7 +1611,7 @@ npx tsc -p packages/shared-web/tsconfig.json --noEmit
 
 Expected: both commands PASS.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 Run:
 
@@ -1981,3 +1981,12 @@ Implement Tasks 1-6 as written. Any expansion into consumer migration, formal te
 - Commands: RED `npx vitest run packages/tests/shared-web/rallar-browser-match-support.test.ts` failed as expected (1 failed file, 5 failed tests) because `createRallarBrowserMatch` was not exported; GREEN passed (1 file, 5 tests); `npx tsc -p packages/shared-web/tsconfig.json --noEmit` passed with exit code `0` and no diagnostics.
 - Blockers: none.
 - Remaining validation: Tasks 3-6 and their focused match, adjacent Rallar Game, public-surface, and shared/shared-web/shared-server typecheck matrix remain.
+
+### Task 3 - 2026-07-10T12:54:03+02:00
+
+- Completed: added the browser-only server-authority match wrapper over `createRallarGameAuthorityClient`; it forwards authority-client lifecycle and diagnostics, forwards command options through `sendCommand`, and derives standings from app-provided rows through `@shared/rallar-match`.
+- Files changed: `packages/shared-web/game/authority-match-support.ts`, `packages/shared-web/game/mod.ts`, `packages/tests/shared-web/rallar-authority-match-support.test.ts`, and this implementation plan.
+- Commands: RED `npx vitest run packages/tests/shared-web/rallar-authority-match-support.test.ts` failed as expected (1 failed file, 2 failed tests) because `createRallarAuthorityBrowserMatch` was not exported; GREEN passed (1 file, 2 tests); `npx tsc -p packages/shared-web/tsconfig.json --noEmit` passed with exit code `0` and no diagnostics.
+- Trust correction followed: this browser wrapper does not create or label any result as `server-validated`; Task 4 remains the sole V1 constructor for that server-owned trust level.
+- Blockers: none.
+- Remaining validation: Tasks 4-6 and their focused match, adjacent Rallar Game, public-surface, browser bundle-boundary, and shared/shared-web/shared-server typecheck matrix remain.
