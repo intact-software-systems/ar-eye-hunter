@@ -86,9 +86,9 @@ state-scope normalization while retaining collision-safe part encoding.
 ### 4. Statistics And API Runner Ownership
 
 `PSqlAdminOperationsStatsReader` receives a configurable recent-event window
-with a default of fifteen minutes. Client and group event queries, scoped and
-global, filter `occurred_at_epoch_ms` against the injected clock and that
-window.
+with a default of fifteen minutes. Scoped and global `readState` event queries
+filter `occurred_at_epoch_ms` against the injected clock and that window.
+`readSystem.stateEvents` remains an all-time storage total.
 
 Active-group counts require status `active` and either no logical expiry or an
 `expiresAtEpochMs` later than the injected clock. The same rule is used by the
