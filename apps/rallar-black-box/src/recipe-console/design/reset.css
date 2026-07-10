@@ -1,0 +1,34 @@
+.recipe-console,
+.recipe-console * {
+    box-sizing: border-box;
+}
+
+.recipe-console button,
+.recipe-console input,
+.recipe-console select,
+.recipe-console textarea {
+    color: inherit;
+    font: inherit;
+}
+
+.recipe-console button {
+    margin: 0;
+}
+
+.recipe-console button:disabled {
+    opacity: 1;
+}
+
+.recipe-console h1,
+.recipe-console h2,
+.recipe-console h3,
+.recipe-console p,
+.recipe-console dl,
+.recipe-console dd {
+    margin: 0;
+}
+
+.recipe-console :focus-visible {
+    outline: 2px solid var(--rc-focus);
+    outline-offset: 2px;
+}

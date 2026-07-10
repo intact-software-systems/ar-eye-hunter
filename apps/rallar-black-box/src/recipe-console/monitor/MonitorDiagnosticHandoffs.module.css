@@ -1,0 +1,75 @@
+.handoffs {
+    display: grid;
+    gap: 0.75rem;
+    min-inline-size: 0;
+    padding: 0.9rem;
+    border: 1px solid color-mix(in srgb, var(--rc-primary) 26%, var(--rc-border));
+    border-radius: 0.8rem;
+    background: color-mix(in srgb, var(--rc-primary) 5%, var(--rc-surface));
+}
+
+.heading {
+    display: grid;
+    gap: 0.25rem;
+    min-inline-size: 0;
+}
+
+.heading h3,
+.heading p {
+    margin: 0;
+}
+
+.heading p {
+    color: var(--rc-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.links {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+    gap: 0.55rem;
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.links li {
+    min-inline-size: 0;
+}
+
+.link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-block-size: 44px;
+    min-inline-size: 0;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid color-mix(in srgb, var(--rc-primary) 38%, var(--rc-border));
+    border-radius: 0.65rem;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+}
+
+.link:hover {
+    border-color: var(--rc-primary);
+    color: var(--rc-primary-hover);
+}
+
+.link:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--rc-focus) 52%, transparent);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .link {
+        transition: border-color 120ms ease, color 120ms ease;
+    }
+}

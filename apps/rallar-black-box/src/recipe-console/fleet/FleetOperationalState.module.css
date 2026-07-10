@@ -1,0 +1,68 @@
+.root,
+.evidence {
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+}
+
+.evidence {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.actions {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.actions button,
+.actions a {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 14px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    font: inherit;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.actions button:not(:disabled) {
+    cursor: pointer;
+}
+
+.actions button:focus-visible,
+.actions a:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: 2px;
+}
+
+.acceptance {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+}
+
+@media (max-width: 767px) {
+    .actions {
+        justify-content: stretch;
+    }
+
+    .actions button,
+    .actions a {
+        flex: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .root * {
+        scroll-behavior: auto;
+        transition: none !important;
+    }
+}

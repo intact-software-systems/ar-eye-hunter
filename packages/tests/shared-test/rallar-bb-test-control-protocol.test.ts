@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     type ControlCommandEnvelope,
     parseControlServerMessage,
+    validateRallarBlackBoxTestCommand,
 } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 
@@ -145,5 +146,69 @@ describe('rallar-bb-test control protocol', () => {
             ok: false,
             error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.stream requires count or durationMs.',
         });
+    });
+
+    it('accepts schema-supported loop thresholds in recipe.load', () => {
+        const parsed = parseControlServerMessage(
+            JSON.stringify(envelope('recipe-load-loop-thresholds', {
+                kind: 'recipe.load',
+                recipe: {
+                    recipeId: 'loop-thresholds',
+                    commands: [{
+                        kind: 'loop',
+                        count: 2,
+                        intervalMs: 50,
+                        thresholds: {
+                            minAchievedRateHz: 10,
+                            maxAverageStartDriftMs: 25,
+                            maxStartDriftMs: 50,
+                            maxJitterMs: 20,
+                            minSendSuccessRatio: 0.95,
+                            failOnBackpressure: true,
+                        },
+                        commands: [{ kind: 'health' }],
+                    }],
+                },
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+
+        expect(parsed.ok).toBe(true);
+    });
+
+    it('rejects malformed loop thresholds in recipe.load', () => {
+        const parsed = parseControlServerMessage(
+            JSON.stringify(envelope('recipe-load-loop-thresholds-invalid', {
+                kind: 'recipe.load',
+                recipe: {
+                    recipeId: 'loop-thresholds-invalid',
+                    commands: [{
+                        kind: 'loop',
+                        count: 2,
+                        thresholds: { minSendSuccessRatio: 1.1 },
+                        commands: [{ kind: 'health' }],
+                    }],
+                },
+            })),
+            { runId: 'run-1', agentId: 'agent-1' },
+        );
+
+        expect(parsed).toEqual({
+            ok: false,
+            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: loop.thresholds.minSendSuccessRatio must be between 0 and 1.',
+        });
+    });
+
+    it.each([
+        [{ minAchievedRateHz: Number.NaN }, 'loop.thresholds.minAchievedRateHz must be a finite number.'],
+        [{ maxStartDriftMs: Number.POSITIVE_INFINITY }, 'loop.thresholds.maxStartDriftMs must be a finite number.'],
+        [{ minSendSuccessRatio: Number.NaN }, 'loop.thresholds.minSendSuccessRatio must be a finite number.'],
+        [{ unknown: 1 }, 'loop.thresholds has unsupported field: unknown.'],
+        ['invalid', 'loop.thresholds must be an object.'],
+        [{ failOnBackpressure: 'yes' }, 'loop.thresholds.failOnBackpressure must be a boolean.'],
+    ])('rejects direct malformed loop threshold input %#', (thresholds, error) => {
+        expect(validateRallarBlackBoxTestCommand({
+            kind: 'loop', commands: [{ kind: 'health' }], thresholds,
+        } as never)).toEqual({ ok: false, error });
     });
 });

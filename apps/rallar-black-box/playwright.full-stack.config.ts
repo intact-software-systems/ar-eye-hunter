@@ -15,6 +15,12 @@ const fullStackApiServerMode = fullStackEnabled
     ? readFullStackApiServerMode()
     : 'postgres';
 const reuseExistingServer = !process.env.CI;
+const requireFreshPostgresApi = [
+    '1',
+    'true',
+].includes(
+    process.env.RALLAR_BLACK_BOX_REQUIRE_FRESH_POSTGRES_API?.trim().toLowerCase() ?? '',
+);
 
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     ...(fullStackEnabled
@@ -24,6 +30,7 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 apiBaseUrl: fullStackApiBaseUrl,
                 spaBaseUrl: fullStackSpaBaseUrl,
                 reuseExistingServer,
+                requireFreshPostgres: requireFreshPostgresApi,
             }),
         ]
         : []),

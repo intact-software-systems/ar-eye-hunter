@@ -46,6 +46,8 @@ import {
 } from './cors.ts';
 import { verifyRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
 import { assertBlackBoxControlProductionEnv } from '@shared-server/http/production-env-hardening.ts';
+import { createRetentionPlanTokenAdapter } from './retention-plan-token.ts';
+import { handleRetentionCleanup } from './retention-cleanup.ts';
 
 const DEFAULT_PORT = 5180;
 const OPEN_STATE = 1;
@@ -96,6 +98,9 @@ const artifactRecorder = createArtifactRecorder(security.storageDir, {
 });
 const agentSockets = new Map<string, WebSocket>();
 const socketAgents = new WeakMap<WebSocket, { runId: string; agentId: string }>();
+const retentionPlanTokens = createRetentionPlanTokenAdapter({
+  key: crypto.getRandomValues(new Uint8Array(32)),
+});
 let snapshotPersistSequence = 0;
 let snapshotPersistScheduled = false;
 let snapshotPersisting = false;
@@ -239,16 +244,20 @@ async function handleRequest(request: Request): Promise<Response> {
   }
 
   if (request.method === 'POST' && url.pathname === '/retention/cleanup') {
-    if (!(await authorizeAdminRequest(request, url))) {
-      return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
-    }
-    const deletedRunIds = controlService.pruneRuns(security.retentionMaxRuns);
-    persistControlSnapshot();
-    return jsonResponse({
-      deletedRunIds,
-      retainedRuns: controlService.snapshot().runs.length,
+    const cleanup = await handleRetentionCleanup({
+      url,
       maxRuns: security.retentionMaxRuns,
+      authorize: () => authorizeAdminRequest(request, url),
+      service: {
+        createRetentionPlan: (maxRuns) => controlService.createRetentionPlan(maxRuns),
+        applyRetentionPlan: (plan) => controlService.applyRetentionPlan(plan),
+        pruneRuns: (maxRuns) => controlService.pruneRuns(maxRuns),
+        legacyRetainedRuns: () => controlService.snapshot().runs.length,
+      },
+      tokens: retentionPlanTokens,
+      persist: persistControlSnapshot,
     });
+    return jsonResponse(cleanup.body, cleanup.status);
   }
 
   const runMatch = url.pathname.match(/^\/runs\/([^/]+)$/);

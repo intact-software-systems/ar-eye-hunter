@@ -1,0 +1,220 @@
+.root {
+    position: relative;
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+}
+
+.label {
+    color: var(--rc-muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.root[data-layout="inline"] {
+    display: grid;
+    grid-template-columns: minmax(90px, .35fr) minmax(180px, 1fr);
+    align-items: center;
+    gap: 10px;
+}
+
+.root[data-layout="inline"] .trigger {
+    padding-block: 0;
+    padding-inline: 10px;
+    border-radius: 4px;
+}
+
+.trigger,
+.option {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    cursor: pointer;
+}
+
+.trigger {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-block: 8px;
+    padding-inline: 12px;
+    text-align: start;
+}
+
+.trigger:disabled {
+    color: var(--rc-muted);
+    cursor: not-allowed;
+}
+
+.selection {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    unicode-bidi: isolate;
+}
+
+.selection .optionBody {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.selection .optionBody > [data-exact-identifier] {
+    min-width: 0;
+    order: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.selection .optionBody > [data-exact-identifier]::after {
+    content: " · ";
+}
+.selection .optionBody > strong {
+    order: 2;
+    flex: 0 0 auto;
+}
+.selection .optionBody > small { display: none; }
+
+.popup {
+    position: absolute;
+    z-index: 20;
+    inset-block-start: calc(100% + 4px);
+    inset-inline: 0;
+    display: grid;
+    min-inline-size: min(100%, 320px);
+    max-block-size: min(70vh, 640px);
+    gap: 8px;
+    padding-block: 10px;
+    padding-inline: 10px;
+    overflow: auto;
+    border: 1px solid var(--rc-border);
+    border-radius: 8px;
+    box-shadow: 0 18px 40px rgb(0 0 0 / 28%);
+    background: var(--rc-surface);
+}
+
+.search {
+    display: grid;
+    gap: 4px;
+    color: var(--rc-muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.search input {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+    padding-block: 8px;
+    padding-inline: 10px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    color: var(--rc-text);
+    background: var(--rc-bg);
+}
+
+.listbox {
+    display: grid;
+    gap: 4px;
+}
+
+.option {
+    inline-size: 100%;
+    padding-block: 8px;
+    padding-inline: 10px;
+    text-align: start;
+}
+
+.option[aria-selected="true"] {
+    border-color: var(--rc-focus);
+    background: var(--rc-selected-bg);
+}
+
+.option[data-active="true"] {
+    border-color: var(--rc-focus);
+    box-shadow: inset 0 0 0 2px var(--rc-focus);
+}
+
+.option:focus-visible,
+.root:focus-visible,
+.trigger:focus-visible,
+.search input:focus-visible {
+    outline: 2px solid var(--rc-focus);
+    outline-offset: 2px;
+}
+
+.optionBody {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+    overflow-wrap: anywhere;
+}
+
+.optionBody small,
+.truth,
+.empty {
+    color: var(--rc-muted);
+}
+
+.truth,
+.empty {
+    margin: 0;
+    font-size: 12px;
+}
+
+.focusAnchor {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    border: 0;
+    white-space: nowrap;
+}
+
+.focusAnchor:focus-visible {
+    position: relative;
+    inline-size: auto;
+    block-size: auto;
+    padding-block: 8px;
+    padding-inline: 10px;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    border: 1px solid var(--rc-focus);
+    border-radius: 5px;
+    color: var(--rc-text);
+    background: var(--rc-selected-bg);
+    white-space: normal;
+}
+
+@media (max-width: 520px) {
+    .popup {
+        position: fixed;
+        inset-block: auto 8px;
+        inset-inline: 8px;
+        max-block-size: min(80vh, 640px);
+    }
+}
+
+@media (max-width: 767px) {
+    .root[data-layout="inline"] {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .root,
+    .root * {
+        scroll-behavior: auto;
+        transition: none !important;
+        animation: none !important;
+    }
+}

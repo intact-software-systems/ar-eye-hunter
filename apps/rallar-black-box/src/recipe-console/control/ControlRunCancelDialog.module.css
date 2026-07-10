@@ -1,0 +1,132 @@
+.backdrop {
+    position: fixed;
+    z-index: 20;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgb(23 32 51 / 52%);
+    animation: backdrop-in 140ms ease-out;
+}
+
+.dialog {
+    display: grid;
+    width: min(480px, 100%);
+    max-height: min(680px, calc(100dvh - 40px));
+    gap: 16px;
+    padding: 20px;
+    overflow: auto;
+    border: 1px solid var(--rc-status-failed-border);
+    border-radius: 8px;
+    background: var(--rc-surface);
+    box-shadow: 0 24px 64px rgb(23 32 51 / 28%);
+    animation: dialog-in 160ms ease-out;
+    overscroll-behavior: contain;
+}
+
+.dialog header {
+    display: grid;
+    gap: 4px;
+}
+
+.dialog h2 {
+    font-size: 19px;
+}
+
+.eyebrow,
+.facts dt {
+    color: var(--rc-muted);
+    font-size: 12px;
+}
+
+.facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 14px;
+    padding: 12px;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-canvas);
+}
+
+.facts div {
+    min-width: 0;
+}
+
+.facts dd {
+    overflow-wrap: anywhere;
+}
+
+.facts code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 11px;
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.actions button {
+    min-width: 112px;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--rc-border);
+    border-radius: 5px;
+    background: var(--rc-surface);
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.actions .confirm {
+    border-color: var(--rc-status-failed-border);
+    color: #FFFFFF;
+    background: var(--rc-status-failed-text);
+}
+
+.actions button:disabled {
+    border-color: var(--rc-status-disabled-border);
+    color: var(--rc-status-disabled-text);
+    background: var(--rc-status-disabled-bg);
+    cursor: not-allowed;
+}
+
+@keyframes backdrop-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes dialog-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 520px) {
+    .backdrop {
+        align-items: end;
+        padding: 0;
+    }
+
+    .dialog {
+        width: 100%;
+        max-height: calc(100dvh - 52px);
+        border-radius: 8px 8px 0 0;
+    }
+
+    .facts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .actions button {
+        min-width: 0;
+        flex: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .backdrop,
+    .dialog {
+        animation: none;
+        transition-duration: 0s;
+    }
+}

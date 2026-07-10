@@ -1,0 +1,99 @@
+.root {
+    min-width: 0;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.root > header {
+    display: flex;
+    min-width: 0;
+    align-items: end;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 15px;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.root header span {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.root h2,
+.root header p,
+.labels h3,
+.labels p {
+    margin: 0;
+}
+
+.root header p {
+    color: var(--rc-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.issues {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.issues li {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(120px, auto) minmax(120px, .6fr) minmax(180px, 1fr);
+    align-items: center;
+    gap: 8px 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.issues strong {
+    color: var(--rc-status-failed-text);
+}
+
+.issues code {
+    overflow-wrap: anywhere;
+}
+
+.root > p,
+.labels,
+.ok {
+    padding: 11px 14px;
+}
+
+.ok {
+    color: var(--rc-status-passed-text);
+}
+
+.unavailable {
+    color: var(--rc-muted);
+    font-weight: 700;
+}
+
+.labels {
+    display: grid;
+    gap: 8px;
+    border-top: 1px solid var(--rc-border);
+}
+
+.labels > div {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+@media (max-width: 680px) {
+    .root > header {
+        align-items: start;
+        flex-direction: column;
+    }
+
+    .issues li {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

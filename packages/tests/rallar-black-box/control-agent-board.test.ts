@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    controlAgentBoardWorkForTest,
     deriveControlAgentBoardRows,
     summarizeControlAgentBoardRows,
 } from '../../../apps/rallar-black-box/src/control-agent-board.ts';
@@ -9,6 +10,13 @@ import type {
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import type { DistributedRunAgentProgressRow } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import { createControlSnapshotSelectionIndex } from
+    '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import { createControlSelectionIndexCache } from
+    '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
+import { bindControlSelectionIndexToSnapshot } from
+    '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 
 const group: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
@@ -175,6 +183,256 @@ function distributedRun(
 }
 
 describe('control agent board derivation', () => {
+    it('returns indexed empty truth without traversing 5,000 runs when nothing is selected', () => {
+        const distributedRuns = Array.from({ length: 5_000 }, (_, ordinal) =>
+            distributedRun('running', [`agent-${ordinal}`], {
+                controlRunId: `run-${ordinal}`,
+                distributedRunId: `distributed-${ordinal}`,
+            })
+        );
+        const first = { runs: [], distributedRuns };
+        const currentRuns = new Proxy(structuredClone(distributedRuns), {
+            get(target, property, receiver) {
+                if (
+                    property === Symbol.iterator || property === 'forEach' ||
+                    property === 'filter' || property === 'map'
+                ) {
+                    throw new Error('global distributed traversal is forbidden');
+                }
+                return Reflect.get(target, property, receiver);
+            },
+        });
+        const current = { runs: [], distributedRuns: currentRuns };
+
+        const rows = deriveControlAgentBoardRows({
+            run: undefined,
+            snapshot: current,
+            selectionIndex: bindControlSelectionIndexToSnapshot(
+                current,
+                createControlSnapshotSelectionIndex(first),
+            ),
+            distributedRuns: currentRuns,
+            nowEpochMs: 2_500,
+        });
+
+        expect(rows).toEqual([]);
+        expect(controlAgentBoardWorkForTest(rows)).toEqual({
+            indexed: true,
+            fallback: false,
+            agentProjectionCount: 0,
+            queuedCommandLookupCount: 0,
+            targetMembershipLookupCount: 0,
+            distributedRunProjectionCount: 0,
+            commandLinkProjectionCount: 0,
+            roleLookupCount: 0,
+        });
+    });
+
+    it('uses indexed ordinals while preserving selected duplicate override and current objects', () => {
+        const firstSelected = distributedRun('running', ['agent-first'], {
+            distributedRunId: 'duplicate\0\u202e',
+        });
+        const lastDuplicate = distributedRun('running', ['agent-last'], {
+            distributedRunId: 'duplicate\0\u202e',
+        });
+        const first = {
+            runs: [controlRun([
+                agent('agent-first'),
+                agent('agent-last'),
+            ])],
+            distributedRuns: [firstSelected, lastDuplicate],
+        };
+        const current = structuredClone(first);
+        const selectionIndex = bindControlSelectionIndexToSnapshot(
+            current,
+            createControlSnapshotSelectionIndex(first),
+        );
+        const legacy = deriveControlAgentBoardRows({
+            run: current.runs[0],
+            group,
+            distributedRuns: current.distributedRuns,
+            selectedDistributedRun: current.distributedRuns[0],
+            nowEpochMs: 2_500,
+        });
+
+        const indexed = deriveControlAgentBoardRows({
+            run: current.runs[0],
+            group,
+            snapshot: current,
+            selectionIndex,
+            distributedRuns: current.distributedRuns,
+            selectedDistributedRun: current.distributedRuns[0],
+            nowEpochMs: 2_500,
+        });
+
+        expect(JSON.stringify(indexed)).toBe(JSON.stringify(legacy));
+        expect(indexed[0]!.selectedRun?.distributedRunId).toBe('duplicate\0\u202e');
+        expect(indexed[1]!.selectedRun).toBeUndefined();
+        expect(indexed[0]!.identity).toBe(current.runs[0]!.agents[0]!.identity);
+        expect(controlAgentBoardWorkForTest(indexed)).toEqual({
+            indexed: true,
+            fallback: false,
+            agentProjectionCount: 2,
+            queuedCommandLookupCount: 2,
+            targetMembershipLookupCount: 2,
+            distributedRunProjectionCount: 1,
+            commandLinkProjectionCount: 2,
+            roleLookupCount: 1,
+        });
+    });
+
+    it('projects only active winners in first-insertion order and preserves cross-control selected suppression', () => {
+        const run = controlRun([agent('agent-a')]);
+        const distributedRuns = [
+            distributedRun('running', ['agent-a'], {
+                distributedRunId: 'terminal-winner',
+            }),
+            distributedRun('passed', ['agent-a'], {
+                distributedRunId: 'active-winner',
+            }),
+            distributedRun('running', ['agent-a'], {
+                distributedRunId: 'cross-control-selected',
+            }),
+            distributedRun('running', ['agent-a'], {
+                distributedRunId: 'later-first-insertion',
+            }),
+            distributedRun('passed', ['agent-a'], {
+                distributedRunId: 'terminal-winner',
+            }),
+            distributedRun('running', ['agent-a'], {
+                distributedRunId: 'active-winner',
+            }),
+            distributedRun('running', ['ghost', 'ghost'], {
+                controlRunId: 'run-2',
+                distributedRunId: 'cross-control-selected',
+            }),
+        ];
+        const snapshot = { runs: [run], distributedRuns };
+        const selectionIndex = createControlSelectionIndexCache().get(snapshot);
+        const selected = distributedRuns[6]!;
+        const legacy = deriveControlAgentBoardRows({
+            run,
+            group,
+            distributedRuns,
+            selectedDistributedRun: selected,
+            nowEpochMs: 2_500,
+        });
+
+        const indexed = deriveControlAgentBoardRows({
+            run,
+            group,
+            snapshot,
+            selectionIndex,
+            distributedRuns,
+            selectedDistributedRun: selected,
+            nowEpochMs: 2_500,
+        });
+
+        expect(JSON.stringify(indexed)).toBe(JSON.stringify(legacy));
+        expect(indexed[0]!.activeRuns.map(item => item.distributedRunId)).toEqual([
+            'active-winner',
+            'later-first-insertion',
+        ]);
+        expect(indexed.filter(row => row.agentId === 'ghost')).toHaveLength(2);
+        expect(indexed.every(row => row.selectedRun === undefined)).toBe(true);
+        expect(controlAgentBoardWorkForTest(indexed)).toMatchObject({
+            indexed: true,
+            fallback: false,
+            distributedRunProjectionCount: 2,
+        });
+    });
+
+    it('matches legacy board truth for 5,000 deterministic randomized duplicate runs', () => {
+        const agents = Array.from({ length: 8 }, (_, ordinal) =>
+            agent(`agent-${ordinal}`)
+        );
+        const run = controlRun(agents);
+        let seed = 0x6d2b79f5;
+        const next = () => {
+            seed = Math.imul(seed ^ seed >>> 15, seed | 1);
+            seed ^= seed + Math.imul(seed ^ seed >>> 7, seed | 61);
+            return (seed ^ seed >>> 14) >>> 0;
+        };
+        const states = ['running', 'ready', 'passed', 'failed'] as const;
+        const distributedRuns = Array.from({ length: 5_000 }, () => {
+            const value = next();
+            const firstAgentId = `agent-${value % agents.length}`;
+            const secondAgentId = `agent-${(value >>> 5) % agents.length}`;
+            return distributedRun(
+                states[(value >>> 9) % states.length]!,
+                value % 13 === 0
+                    ? [firstAgentId, secondAgentId, secondAgentId]
+                    : [firstAgentId],
+                {
+                    controlRunId: value % 11 === 0 ? 'run-2' : 'run-1',
+                    distributedRunId: `distributed-${value % 700}`,
+                },
+            );
+        });
+        const selected = distributedRun('running', ['ghost', 'ghost'], {
+            distributedRunId: 'distributed-17',
+        });
+        distributedRuns.push(selected);
+        const snapshot = { runs: [run], distributedRuns };
+        const selectionIndex = createControlSelectionIndexCache().get(snapshot);
+
+        const legacy = deriveControlAgentBoardRows({
+            run,
+            group,
+            distributedRuns,
+            selectedDistributedRun: selected,
+            nowEpochMs: 2_500,
+        });
+        const indexed = deriveControlAgentBoardRows({
+            run,
+            group,
+            snapshot,
+            selectionIndex,
+            distributedRuns,
+            selectedDistributedRun: selected,
+            nowEpochMs: 2_500,
+        });
+
+        expect(JSON.stringify(indexed)).toBe(JSON.stringify(legacy));
+        expect(controlAgentBoardWorkForTest(indexed)).toMatchObject({
+            indexed: true,
+            fallback: false,
+        });
+        expect(controlAgentBoardWorkForTest(indexed)?.distributedRunProjectionCount)
+            .toBeLessThanOrEqual(700);
+    });
+
+    it('falls back explicitly when selected run identity is external to the indexed snapshot', () => {
+        const selected = distributedRun('running', ['agent-a']);
+        const snapshot = {
+            runs: [controlRun([agent('agent-a')])],
+            distributedRuns: [selected],
+        };
+        const external = {
+            ...structuredClone(selected),
+            targetAgentIds: ['ghost'],
+        };
+
+        const rows = deriveControlAgentBoardRows({
+            run: snapshot.runs[0],
+            group,
+            snapshot,
+            selectionIndex: bindControlSelectionIndexToSnapshot(
+                snapshot,
+                createControlSnapshotSelectionIndex(snapshot),
+            ),
+            distributedRuns: snapshot.distributedRuns,
+            selectedDistributedRun: external,
+            nowEpochMs: 2_500,
+        });
+
+        expect(rows.map(row => row.agentId)).toEqual(['agent-a', 'ghost']);
+        expect(controlAgentBoardWorkForTest(rows)).toMatchObject({
+            indexed: false,
+            fallback: true,
+        });
+    });
+
     it('marks connected matching agents as targetable and summarizes them', () => {
         const rows = deriveControlAgentBoardRows({
             run: controlRun([agent('agent-a')]),
@@ -228,6 +486,53 @@ describe('control agent board derivation', () => {
         });
     });
 
+    it('uses a strict 30,000ms heartbeat freshness boundary', () => {
+        const fresh = deriveControlAgentBoardRows({
+            run: controlRun([agent('agent-a', { lastHeartbeatAtEpochMs: 2_000 })]),
+            group,
+            nowEpochMs: 32_000,
+        });
+        const stale = deriveControlAgentBoardRows({
+            run: controlRun([agent('agent-a', { lastHeartbeatAtEpochMs: 2_000 })]),
+            group,
+            nowEpochMs: 32_001,
+        });
+
+        expect(fresh[0]).toMatchObject({ targetStatus: 'matched', targetable: true });
+        expect(stale[0]).toMatchObject({ targetStatus: 'stale', targetable: false });
+    });
+
+    it('does not invent staleness when a connected scoped agent has no timestamps', () => {
+        const {
+            lastHeartbeatAtEpochMs: _heartbeat,
+            lastSeenAtEpochMs: _seen,
+            ...withoutTimestamps
+        } = agent('agent-a');
+        const rows = deriveControlAgentBoardRows({
+            run: controlRun([withoutTimestamps]),
+            group,
+            nowEpochMs: 100_000,
+        });
+
+        expect(rows[0]).toMatchObject({
+            heartbeatAgeMs: undefined,
+            targetStatus: 'matched',
+            targetable: true,
+        });
+    });
+
+    it('marks otherwise matching agents not-scoped when no group is supplied', () => {
+        const rows = deriveControlAgentBoardRows({
+            run: controlRun([agent('agent-a')]),
+            nowEpochMs: 2_500,
+        });
+
+        expect(rows[0]).toMatchObject({
+            targetStatus: 'not-scoped',
+            targetable: false,
+        });
+    });
+
     it('requires CRDT capability when recipe command kinds need CRDT runtime', () => {
         const rows = deriveControlAgentBoardRows({
             run: controlRun([
@@ -246,6 +551,57 @@ describe('control agent board derivation', () => {
         expect(summarizeControlAgentBoardRows(rows)).toMatchObject({
             targetable: 1,
             missingCapability: 1,
+        });
+    });
+
+    it('renders exact selected-recipe CRDT transport targetability', () => {
+        const wsOnly = agent('agent-a', { crdt: true });
+        const run = controlRun([{
+            ...wsOnly,
+            identity: {
+                ...wsOnly.identity!,
+                capabilities: {
+                    crdt: {
+                        supported: true,
+                        transports: ['ws'],
+                    },
+                },
+            },
+        }]);
+        const recipe = (transport: 'rtc' | 'ws'): RallarBlackBoxTestRecipe => ({
+            schemaVersion: 1,
+            recipeId: `crdt-${transport}`,
+            commands: [{
+                kind: 'crdt.open',
+                handle: 'document',
+                name: 'document',
+                transport,
+            }],
+        });
+
+        const rtcRows = deriveControlAgentBoardRows({
+            run,
+            group,
+            requiredCommandKinds: ['crdt.open'],
+            requiredRecipes: [recipe('rtc')],
+            nowEpochMs: 2_500,
+        });
+        const wsRows = deriveControlAgentBoardRows({
+            run,
+            group,
+            requiredCommandKinds: ['crdt.open'],
+            requiredRecipes: [recipe('ws')],
+            nowEpochMs: 2_500,
+        });
+
+        expect(rtcRows[0]).toMatchObject({
+            targetStatus: 'missing-crdt-transport',
+            targetable: false,
+            targetReason: 'Agent CRDT runtime does not report rtc transport support.',
+        });
+        expect(wsRows[0]).toMatchObject({
+            targetStatus: 'matched',
+            targetable: true,
         });
     });
 

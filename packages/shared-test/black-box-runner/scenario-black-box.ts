@@ -2086,12 +2086,12 @@ function compactSuccessSummaries(omittedEvents: readonly ArtifactEventRecord[]):
     omittedEvents
         .filter(event => event.kind === 'step-result' && artifactEventStatus(event) === 'SUCCESS')
         .forEach(event => {
-            const key = [
+            const key = JSON.stringify([
                 event.name,
                 artifactEventTransport(event),
                 event.action,
                 artifactEventConnection(event) || 'unknown',
-            ].join('|');
+            ]);
             const existing = groups.get(key) || {
                 name: event.name,
                 transport: artifactEventTransport(event),

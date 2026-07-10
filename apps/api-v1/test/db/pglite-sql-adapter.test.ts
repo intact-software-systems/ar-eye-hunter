@@ -7,8 +7,11 @@ import {
   ResourceInboxResultsRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { CoalescedAppInboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppInboxWorkService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
   PSqlClientStateEventRepository,
   PSqlGroupStateEventRepository,
@@ -25,6 +28,7 @@ import {
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
@@ -127,6 +131,12 @@ Deno.test('PSqlRuntimeStateRepository treats encoded prefix characters literally
     );
     await repository.upsert(
       'runtime-prefix',
+      `${literalPrefix}:group=room-b`,
+      '{"room":"b"}',
+      FUTURE_MS,
+    );
+    await repository.upsert(
+      'runtime-prefix',
       `${wildcardCollisionPrefix}:group=room-b`,
       '{"room":"b"}',
       FUTURE_MS,
@@ -136,17 +146,29 @@ Deno.test('PSqlRuntimeStateRepository treats encoded prefix characters literally
       'runtime-prefix',
       `${literalPrefix}:`,
     );
-    const page = await repository.findEntriesByPrefixPage(
+    const firstPage = await repository.findEntriesByPrefixPage(
       'runtime-prefix',
       `${literalPrefix}:`,
-      { limit: 10 },
+      { limit: 1 },
+    );
+    const secondPage = await repository.findEntriesByPrefixPage(
+      'runtime-prefix',
+      `${literalPrefix}:`,
+      {
+        afterKey: `${literalPrefix}:group=room-a`,
+        limit: 1,
+      },
     );
 
     assert.deepEqual(entries.map((entry) => entry.key), [
       `${literalPrefix}:group=room-a`,
+      `${literalPrefix}:group=room-b`,
     ]);
-    assert.deepEqual(page.map((entry) => entry.key), [
+    assert.deepEqual(firstPage.map((entry) => entry.key), [
       `${literalPrefix}:group=room-a`,
+    ]);
+    assert.deepEqual(secondPage.map((entry) => entry.key), [
+      `${literalPrefix}:group=room-b`,
     ]);
   });
 });
@@ -422,6 +444,57 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
     );
     assert.equal(await results.deleteExpired(), 1);
     assert.equal(await inbox.deleteByKey(active.key), true);
+  });
+});
+
+Deno.test('Coalesced RTC topology work fits the durable resource inbox key columns', async () => {
+  await withPGliteSql(async (sql) => {
+    const queue = new PSqlQueueBox(new ResourceInboxRepository(sql));
+    const service = new CoalescedAppInboxWorkService(
+      new InboxQueueReader(queue),
+      'rallar-server-instance-with-a-long-identity',
+      () => 500,
+    );
+    const groupId = 'rallar-bb-group-chromium-w0-configured-live-distributed-run-1234567890';
+    const overlayId = JSON.stringify(['rallar-server', 'default', groupId]);
+    const contextId = `rallar-server:default:${groupId}`;
+
+    const result = await service.enqueue({
+      type: AppInboxType.RTC_TOPOLOGY_RECOMPUTE,
+      topicId: 'app-inbox.rtc-topology',
+      resourceId: overlayId,
+      contextId,
+      data: { overlayId },
+    });
+    const updated = await service.enqueue({
+      type: AppInboxType.RTC_TOPOLOGY_RECOMPUTE,
+      topicId: 'app-inbox.rtc-topology',
+      resourceId: overlayId,
+      contextId,
+      data: { overlayId, revision: 2 },
+      reason: 'rtt',
+    });
+    const stored = await queue.getItem(updated.entry.key);
+    const rowCount = await sql<{ count: string }[]>`
+      select count(*) as count
+      from resource_inbox
+      where fk_ext_bank_id = ${updated.entry.key.contextId}
+        and ri_resource_id = ${updated.entry.key.resourceId}
+        and ri_topic_id = ${updated.entry.key.topicId}
+    `;
+
+    assert.ok(stored);
+    assert.equal(result.action, 'inserted');
+    assert.equal(updated.action, 'updated');
+    assert.equal(Number(rowCount[0].count), 1);
+    assert.ok(stored.key.topicId.length <= 36);
+    assert.ok(stored.key.resourceId.length <= 36);
+    assert.ok(stored.key.contextId.length <= 35);
+    assert.ok(stored.audit.createdBy.length <= 16);
+    assert.deepEqual(service.readEnvelope(stored), updated.envelope);
+    assert.equal(updated.envelope.resourceId, overlayId);
+    assert.equal(updated.envelope.contextId, contextId);
+    assert.equal(updated.envelope.data.revision, 2);
   });
 });
 

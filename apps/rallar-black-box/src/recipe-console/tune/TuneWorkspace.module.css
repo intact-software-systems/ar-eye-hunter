@@ -1,0 +1,82 @@
+.workspace {
+    display: grid;
+    min-width: 0;
+    gap: 16px;
+    padding-bottom: 24px;
+}
+
+.evidencePlane {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(260px, .8fr) minmax(420px, 1.2fr);
+    gap: 16px;
+    align-items: start;
+}
+
+@media (max-width: 1100px) and (min-height: 521px) {
+    .evidencePlane {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 719px) {
+    .evidencePlane {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-height: 520px) and (min-width: 720px) {
+    .workspace {
+        height: 100%;
+        min-height: 0;
+        gap: 10px;
+        padding-right: 4px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+    }
+
+    .evidencePlane {
+        position: relative;
+        gap: 12px;
+        align-items: stretch;
+    }
+
+    .evidencePlane > :first-child {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    .evidencePlane > :last-child {
+        grid-column: 2;
+        grid-row: 1;
+    }
+
+    .evidencePlane > * {
+        min-height: 0;
+        max-height: calc(100dvh - 220px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+    }
+
+    .evidencePlane::after {
+        width: 1px;
+        min-height: 0;
+        grid-column: 1;
+        grid-row: 1;
+        align-self: stretch;
+        justify-self: end;
+        z-index: 1;
+        background: var(--rc-border);
+        content: "";
+        transform: translateX(6.5px);
+    }
+}
+
+@media (max-width: 640px) {
+    .workspace {
+        gap: 12px;
+        padding-bottom: 72px;
+    }
+}

@@ -1,0 +1,165 @@
+.backdrop {
+    position: fixed;
+    z-index: 30;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgb(23 32 51 / 54%);
+    animation: retention-backdrop-in 140ms ease-out;
+}
+
+.dialog {
+    display: grid;
+    width: min(520px, 100%);
+    max-height: calc(100dvh - 40px);
+    gap: 14px;
+    padding: 20px;
+    overflow: hidden;
+    overscroll-behavior: contain;
+    border: 1px solid var(--rc-status-failed-border);
+    border-radius: 6px;
+    background: var(--rc-surface);
+    box-shadow: 0 24px 64px rgb(23 32 51 / 30%);
+    animation: retention-dialog-in 160ms ease-out;
+}
+
+.dialog header {
+    display: grid;
+    gap: 4px;
+}
+
+.dialog h2,
+.dialog p,
+.candidates {
+    margin: 0;
+}
+
+.eyebrow {
+    color: var(--rc-muted);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.candidateScroller {
+    min-height: 0;
+    max-height: min(240px, 28dvh);
+    overflow: auto;
+    overscroll-behavior: contain;
+    border-block: 1px solid var(--rc-border);
+    background: var(--rc-canvas);
+}
+
+.candidateScroller:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: -3px;
+}
+
+.candidates {
+    display: grid;
+    gap: 6px;
+    padding: 10px 10px 10px 28px;
+}
+
+.preservation {
+    color: var(--rc-status-warning-text);
+}
+
+.stale,
+.message {
+    padding: 10px;
+    border-left: 3px solid var(--rc-status-failed-border);
+    color: var(--rc-status-failed-text);
+    background: var(--rc-status-failed-bg);
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.actions button {
+    min-width: 132px;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--rc-border);
+    border-radius: 5px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    font: inherit;
+    font-weight: 750;
+}
+
+.actions button:focus-visible,
+.dialog:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: 2px;
+}
+
+.actions .confirm {
+    border-color: var(--rc-status-failed-border);
+    color: #FFFFFF;
+    background: var(--rc-status-failed-text);
+}
+
+.actions button:disabled {
+    border-color: var(--rc-status-disabled-border);
+    color: var(--rc-status-disabled-text);
+    background: var(--rc-status-disabled-bg);
+    cursor: not-allowed;
+}
+
+@keyframes retention-backdrop-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes retention-dialog-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 560px) {
+    .backdrop {
+        align-items: end;
+        padding: 0;
+    }
+
+    .dialog {
+        width: 100%;
+        max-height: calc(100dvh - 44px);
+        border-radius: 6px 6px 0 0;
+    }
+
+    .actions button {
+        min-width: 0;
+        flex: 1;
+    }
+}
+
+@media (max-height: 520px) and (min-width: 561px) {
+    .backdrop {
+        padding: 8px;
+    }
+
+    .dialog {
+        max-height: calc(100dvh - 16px);
+        gap: 8px;
+        padding: 12px;
+    }
+
+    .candidateScroller {
+        max-height: 96px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .backdrop,
+    .dialog {
+        animation: none;
+        transition-duration: 0s;
+    }
+}

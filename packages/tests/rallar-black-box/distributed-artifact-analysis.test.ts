@@ -1,19 +1,232 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     analyzeDistributedRunArtifactFiles,
+    deriveDistributedRunSnapshotPerformance,
     distributedArtifactBundleFromFiles,
     distributedArtifactSnapshotsFromFiles,
     type DistributedRunArtifactFiles,
+    type StreamSampleIndexTelemetry,
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type {
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+} from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     analyzeDistributedRunArtifactDirectory,
 } from '../../../apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts';
 import { deriveDistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 
+function completeStreamSummary(
+    completedFrames = 1,
+    marker = 'same',
+): Record<string, unknown> {
+    return {
+        commandId: 'shared-stream-command',
+        plannedFrames: completedFrames,
+        scheduledFrames: completedFrames,
+        attemptedFrames: completedFrames,
+        completedFrames,
+        failedFrames: 0,
+        droppedFrames: 0,
+        inFlightLimitDropCount: 0,
+        backpressureCount: 0,
+        observations: [{ durationMs: completedFrames, marker }],
+        thresholdFailures: [],
+    };
+}
+
+function streamResult(
+    identity: string | undefined,
+    summary: Record<string, unknown>,
+): Record<string, unknown> {
+    return {
+        ...(identity ? { resultKey: identity } : {}),
+        agentId: 'shared-agent',
+        result: summary,
+    };
+}
+
+function nestedStreamResult(
+    outerIdentity: string,
+    nestedIdentity: string,
+    summary: Record<string, unknown>,
+): Record<string, unknown> {
+    return {
+        resultKey: outerIdentity,
+        agentId: 'shared-agent',
+        result: {
+            results: [{ resultKey: nestedIdentity, result: summary }],
+        },
+    };
+}
+
+function deriveStreamCandidatePerformance(input: Readonly<{
+    controlResults?: readonly Record<string, unknown>[];
+    artifactResults?: readonly Record<string, unknown>[];
+    onStreamSampleIndexTelemetry?: (telemetry: StreamSampleIndexTelemetry) => void;
+}>) {
+    return deriveDistributedRunSnapshotPerformance({
+        distributedRun: {
+            distributedRunId: 'dist-stream-equivalence',
+            controlRunId: 'run-stream-equivalence',
+            manifest: {
+                distributedRunId: 'dist-stream-equivalence',
+                controlRunId: 'run-stream-equivalence',
+                group: { groupId: 'bb-group' },
+                recipes: [],
+                targetPolicy: { mode: 'agent-ids', agentIds: ['shared-agent'] },
+            },
+            state: 'passed',
+            createdAtEpochMs: 0,
+            updatedAtEpochMs: 1,
+            targetAgentIds: ['shared-agent'],
+            commandLinks: [],
+            rollup: {
+                state: 'passed',
+                ok: true,
+                summary: {
+                    participants: 1,
+                    requiredParticipants: 1,
+                    readyParticipants: 1,
+                    passedParticipants: 1,
+                    failedParticipants: 0,
+                    timedOutParticipants: 0,
+                    cancelledParticipants: 0,
+                    pendingParticipants: 0,
+                    blockingFailures: 0,
+                },
+                failures: [],
+            },
+        },
+        controlRun: {
+            runId: 'run-stream-equivalence',
+            agents: [{ agentId: 'shared-agent', connected: true }],
+            commands: [],
+            results: input.controlResults ?? [],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: [],
+        },
+        artifactResults: input.artifactResults ?? [],
+        artifactEvents: [],
+        onStreamSampleIndexTelemetry: input.onStreamSampleIndexTelemetry,
+    });
+}
+
 describe('Hetzner distributed run artifact analysis', () => {
+    it('keeps 200,000 timing and receiver-delivery values within exact extrema', () => {
+        const sampleCount = 200_000;
+        const results = Array.from({ length: sampleCount }, (_, index) => ({
+            kind: 'result' as const,
+            protocolVersion: 1 as const,
+            runId: 'run-large-performance',
+            agentId: 'agent-large',
+            commandId: `command-${index}`,
+            ok: true,
+            result: {
+                commandId: `command-${index}`,
+                kind: 'stats' as const,
+                status: 'ok' as const,
+                ok: true,
+                startedAtEpochMs: 0,
+                endedAtEpochMs: index + 1,
+                durationMs: index + 1,
+                value: {
+                    counters: { messages: index },
+                    metadata: {
+                        receiverDelivery: {
+                            expectedInboundMessages: index + 1,
+                            minExpectedInboundMessages: 0,
+                            minReceiveRatio: 0,
+                        },
+                    },
+                },
+            },
+        }));
+        const performance = deriveDistributedRunSnapshotPerformance({
+            distributedRun: {
+                distributedRunId: 'dist-large-performance',
+                controlRunId: 'run-large-performance',
+                manifest: {
+                    distributedRunId: 'dist-large-performance',
+                    controlRunId: 'run-large-performance',
+                    group: { groupId: 'bb-group' },
+                    recipes: [],
+                    targetPolicy: { mode: 'agent-ids', agentIds: ['agent-large'] },
+                },
+                state: 'passed',
+                createdAtEpochMs: 0,
+                updatedAtEpochMs: 1,
+                targetAgentIds: ['agent-large'],
+                commandLinks: [],
+                rollup: {
+                    state: 'passed',
+                    ok: true,
+                    summary: {
+                        participants: 1,
+                        requiredParticipants: 1,
+                        readyParticipants: 1,
+                        passedParticipants: 1,
+                        failedParticipants: 0,
+                        recipes: 0,
+                        requiredRecipes: 0,
+                        passedRecipes: 0,
+                        failedRecipes: 0,
+                        blockingFailures: 0,
+                    },
+                    failures: [],
+                },
+            } satisfies ControlDistributedRunSnapshot,
+            controlRun: {
+                runId: 'run-large-performance',
+                createdAtEpochMs: 0,
+                updatedAtEpochMs: 1,
+                agents: [],
+                commands: [],
+                results,
+                events: [],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+            } satisfies ControlRunSnapshot,
+            artifactResults: [],
+            artifactEvents: [],
+        });
+
+        expect(performance.commandTiming).toMatchObject({
+            count: sampleCount,
+            minMs: 1,
+            p50Ms: 100_000,
+            p95Ms: 190_000,
+            p99Ms: 198_000,
+            maxMs: sampleCount,
+            averageMs: 100_000.5,
+        });
+        expect(performance.slowestAgents).toEqual([{
+            agentId: 'agent-large',
+            commandCount: sampleCount,
+            averageMs: 100_000.5,
+            maxMs: sampleCount,
+        }]);
+        expect(performance.receiverDelivery).toMatchObject({
+            sampleCount,
+            expectedInboundMessages: 1,
+            minExpectedInboundMessages: 0,
+            minReceiveRatio: 0,
+            minReceivedMessages: 0,
+            medianReceivedMessages: 99_999,
+            p95ReceivedMessages: 189_999,
+            maxReceivedMessages: sampleCount - 1,
+            minDeliveryRatio: 0,
+            medianDeliveryRatio: 1,
+            p95DeliveryRatio: 1,
+        });
+    }, 60_000);
+
     it('includes target-resolution evidence in analysis summaries', () => {
         const files: DistributedRunArtifactFiles = {
             'distributed-run.json': JSON.stringify({
@@ -644,6 +857,242 @@ describe('Hetzner distributed run artifact analysis', () => {
         expect(analysis.fixProposalMarkdown).toBeUndefined();
     });
 
+    it('preserves the stream execution equivalence collision matrix', () => {
+        const sameFingerprint = completeStreamSummary(1, 'same');
+        const differentFingerprint = completeStreamSummary(2, 'different');
+        const cases = [
+            {
+                name: 'exact identities match without fingerprint equality',
+                artifactResults: [
+                    streamResult('same-identity', sameFingerprint),
+                    streamResult('same-identity', differentFingerprint),
+                ],
+                expectedStreamCount: 1,
+                expectedPlannedFrames: 2,
+            },
+            {
+                name: 'identityless samples match without fingerprint equality',
+                artifactResults: [
+                    streamResult(undefined, sameFingerprint),
+                    streamResult(undefined, differentFingerprint),
+                ],
+                expectedStreamCount: 1,
+                expectedPlannedFrames: 2,
+            },
+            {
+                name: 'different nested identities do not match despite equal fingerprints',
+                artifactResults: [
+                    nestedStreamResult('outer-a', 'leaf-a', sameFingerprint),
+                    nestedStreamResult('outer-b', 'leaf-b', sameFingerprint),
+                ],
+                expectedStreamCount: 2,
+                expectedPlannedFrames: 2,
+            },
+            {
+                name: 'same-source nonnested identities do not match despite equal fingerprints',
+                artifactResults: [
+                    streamResult('identity-a', sameFingerprint),
+                    streamResult('identity-b', sameFingerprint),
+                ],
+                expectedStreamCount: 2,
+                expectedPlannedFrames: 2,
+            },
+            {
+                name: 'cross-source nonnested identities match equal fingerprints',
+                controlResults: [streamResult('control-identity', sameFingerprint)],
+                artifactResults: [streamResult('artifact-identity', sameFingerprint)],
+                expectedStreamCount: 1,
+                expectedPlannedFrames: 1,
+            },
+            {
+                name: 'cross-source nonnested identities retain different fingerprints',
+                controlResults: [streamResult('control-identity', sameFingerprint)],
+                artifactResults: [streamResult('artifact-identity', differentFingerprint)],
+                expectedStreamCount: 2,
+                expectedPlannedFrames: 3,
+            },
+            {
+                name: 'nested and nonnested identities match equal fingerprints',
+                artifactResults: [
+                    streamResult('root-identity', sameFingerprint),
+                    nestedStreamResult('outer-identity', 'leaf-identity', sameFingerprint),
+                ],
+                expectedStreamCount: 1,
+                expectedPlannedFrames: 1,
+            },
+            {
+                name: 'identityless and identified samples match equal fingerprints',
+                artifactResults: [
+                    streamResult('identified', sameFingerprint),
+                    streamResult(undefined, sameFingerprint),
+                ],
+                expectedStreamCount: 1,
+                expectedPlannedFrames: 1,
+            },
+            {
+                name: 'identityless and identified samples retain different fingerprints',
+                artifactResults: [
+                    streamResult('identified', sameFingerprint),
+                    streamResult(undefined, differentFingerprint),
+                ],
+                expectedStreamCount: 2,
+                expectedPlannedFrames: 3,
+            },
+        ] as const;
+
+        for (const collisionCase of cases) {
+            const performance = deriveStreamCandidatePerformance(collisionCase);
+            expect(
+                performance.streamTiming?.streamCount,
+                collisionCase.name,
+            ).toBe(collisionCase.expectedStreamCount);
+            expect(
+                performance.streamTiming?.plannedFrames,
+                collisionCase.name,
+            ).toBe(collisionCase.expectedPlannedFrames);
+        }
+    });
+
+    it('keeps canonical insertion groups while ordering output by replacement winners', () => {
+        let telemetry: StreamSampleIndexTelemetry | undefined;
+        const fingerprintA = completeStreamSummary(1, 'fingerprint-a');
+        const fingerprintB = completeStreamSummary(2, 'fingerprint-b');
+
+        const performance = deriveStreamCandidatePerformance({
+            artifactResults: [
+                streamResult('identity-a', fingerprintA),
+                streamResult('identity-b', fingerprintB),
+                streamResult(undefined, fingerprintB),
+                streamResult(undefined, fingerprintA),
+            ],
+            onStreamSampleIndexTelemetry: value => {
+                telemetry = value;
+            },
+        });
+
+        expect(performance.streamTiming).toMatchObject({
+            streamCount: 2,
+            plannedFrames: 3,
+        });
+        expect(telemetry?.replacementCount).toBe(2);
+        expect(telemetry?.outputGroupOrder).toEqual([
+            { insertionIndex: 1, winnerIndex: 2 },
+            { insertionIndex: 0, winnerIndex: 3 },
+        ]);
+    });
+
+    it('accounts exactly for replacement-heavy fingerprint work while lazily invalidating stale groups', () => {
+        const lowA = completeStreamSummary(1, 'low-a');
+        const lowB = completeStreamSummary(2, 'low-b');
+        const highA = completeStreamSummary(4, 'high-a');
+        const highB = completeStreamSummary(5, 'high-b');
+        let telemetry: StreamSampleIndexTelemetry | undefined;
+        const stringify = vi.spyOn(JSON, 'stringify');
+
+        const performance = deriveStreamCandidatePerformance({
+            controlResults: [
+                streamResult('identity-a', lowA),
+                streamResult('identity-b', lowB),
+            ],
+            artifactResults: [
+                streamResult('identity-a', highA),
+                streamResult('identity-b', highB),
+                streamResult(undefined, lowA),
+                streamResult(undefined, highA),
+                streamResult('identity-c', highA),
+                nestedStreamResult('outer', 'leaf', highA),
+                streamResult(undefined, highA),
+            ],
+            onStreamSampleIndexTelemetry: value => {
+                telemetry = value;
+            },
+        });
+
+        const fingerprintStringifyCount = stringify.mock.calls.filter(([value]) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                return false;
+            }
+            const record = value as Record<string, unknown>;
+            return Object.hasOwn(record, 'plannedFrames') &&
+                Object.hasOwn(record, 'pacing') &&
+                Object.hasOwn(record, 'thresholdFailures') &&
+                Object.hasOwn(record, 'observations');
+        }).length;
+        stringify.mockRestore();
+
+        expect(performance.streamTiming).toMatchObject({
+            streamCount: 3,
+            plannedFrames: 10,
+        });
+        expect(telemetry).toEqual({
+            candidateCount: 9,
+            baseKeyLookupCount: 9,
+            fingerprintComputationCount: 9,
+            indexLookupCount: 27,
+            equivalenceCheckCount: 8,
+            indexMaintenanceCount: 34,
+            groupCount: 3,
+            replacementCount: 6,
+            outputGroupOrder: [
+                { insertionIndex: 1, winnerIndex: 3 },
+                { insertionIndex: 4, winnerIndex: 4 },
+                { insertionIndex: 0, winnerIndex: 8 },
+            ],
+        });
+        expect(
+            fingerprintStringifyCount,
+            `telemetry: ${JSON.stringify(telemetry)}`,
+        ).toBe(telemetry?.fingerprintComputationCount);
+    });
+
+    it('reuses the canonical first identity after a cross-source winner changes identity', () => {
+        const firstFingerprint = completeStreamSummary(1, 'first-fingerprint');
+        const laterFingerprint = completeStreamSummary(2, 'later-fingerprint');
+
+        const performance = deriveStreamCandidatePerformance({
+            controlResults: [streamResult('canonical-identity', firstFingerprint)],
+            artifactResults: [
+                streamResult('replacement-identity', firstFingerprint),
+                streamResult('canonical-identity', laterFingerprint),
+            ],
+        });
+
+        expect(performance.streamTiming).toMatchObject({
+            streamCount: 1,
+            plannedFrames: 2,
+        });
+    });
+
+    it('bounds indexed equivalence work for adversarial same-base fingerprint collisions', () => {
+        const candidateCount = 1_500;
+        const sharedFingerprint = completeStreamSummary(1, 'shared-fingerprint');
+        let telemetry: StreamSampleIndexTelemetry | undefined;
+
+        const performance = deriveStreamCandidatePerformance({
+            artifactResults: Array.from({ length: candidateCount }, (_, index) =>
+                streamResult(`same-source-identity-${index}`, sharedFingerprint)
+            ),
+            onStreamSampleIndexTelemetry: value => {
+                telemetry = value;
+            },
+        });
+
+        expect(performance.streamTiming).toMatchObject({
+            streamCount: candidateCount,
+            plannedFrames: candidateCount,
+        });
+        expect(telemetry).toMatchObject({
+            candidateCount,
+            baseKeyLookupCount: candidateCount,
+            fingerprintComputationCount: candidateCount,
+            groupCount: candidateCount,
+            replacementCount: 0,
+        });
+        expect(telemetry?.indexLookupCount).toBe(candidateCount * 4);
+        expect(telemetry?.equivalenceCheckCount).toBe(0);
+        expect(telemetry?.indexMaintenanceCount).toBe(candidateCount * 4);
+    });
+
     it('derives stream performance from rtc.stream JSONL result summaries', () => {
         const analysis = analyzeDistributedRunArtifactFiles({
             files: {
@@ -691,6 +1140,7 @@ describe('Hetzner distributed run artifact analysis', () => {
                             failedFrames: 0,
                             droppedFrames: 0,
                             backpressureCount: 0,
+                            pacing: { lateFrameCount: 0 },
                             requestedRateHz: 20,
                             achievedScheduleHz: 20,
                             achievedCompletionHz: 20,
@@ -719,6 +1169,7 @@ describe('Hetzner distributed run artifact analysis', () => {
                             failedFrames: 0,
                             droppedFrames: 0,
                             backpressureCount: 1,
+                            pacing: { lateFrameCount: 0 },
                             requestedRateHz: 20,
                             achievedScheduleHz: 18,
                             achievedCompletionHz: 18,
@@ -764,6 +1215,76 @@ describe('Hetzner distributed run artifact analysis', () => {
         });
         expect(analysis.performanceMarkdown).toContain('Stream timing: streams=2, frames=5/5');
         expect(analysis.performanceMarkdown).toContain('p99=50ms');
+    });
+
+    it('suppresses stream timing when another agent has only progress evidence', () => {
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-stream-mixed-evidence',
+                    controlRunId: 'run-stream-mixed-evidence',
+                    state: 'passed',
+                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
+                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
+                    targetAgentIds: ['controller-01', 'controller-02'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-stream-mixed-evidence',
+                    agents: [
+                        { agentId: 'controller-01', connected: true },
+                        { agentId: 'controller-02', connected: true },
+                    ],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': [
+                    JSON.stringify({
+                        resultKey: 'controller-01:stream-complete',
+                        agentId: 'controller-01',
+                        commandId: 'stream-command',
+                        action: 'rtc.stream',
+                        ok: true,
+                        result: {
+                            commandId: 'rtc-realtime-position-stream',
+                            plannedFrames: 3,
+                            scheduledFrames: 3,
+                            attemptedFrames: 3,
+                            completedFrames: 3,
+                            failedFrames: 0,
+                            droppedFrames: 0,
+                            inFlightLimitDropCount: 0,
+                            backpressureCount: 0,
+                            pacing: { lateFrameCount: 0 },
+                        },
+                    }),
+                ].join('\n'),
+                'events.jsonl': JSON.stringify({
+                    kind: 'diagnostic',
+                    topic: 'rallar.bb.rtc.stream_progress',
+                    severity: 'info',
+                    agentId: 'controller-02',
+                    commandId: 'rtc-realtime-position-stream',
+                    payload: {
+                        topic: 'rallar.bb.rtc.stream_progress',
+                        severity: 'info',
+                        data: {
+                            plannedFrames: 3,
+                            scheduledFrames: 2,
+                            completedFrames: 2,
+                            failedFrames: 0,
+                            droppedFrames: 0,
+                            inFlightFrames: 0,
+                        },
+                    },
+                }),
+            },
+        });
+
+        expect(analysis.performance?.streamTiming).toBeUndefined();
     });
 
     it('uses the latest stream event when result JSONL is bounded', () => {
@@ -831,6 +1352,9 @@ describe('Hetzner distributed run artifact analysis', () => {
                                 completedFrames: 100,
                                 failedFrames: 0,
                                 droppedFrames: 0,
+                                inFlightLimitDropCount: 0,
+                                backpressureCount: 0,
+                                pacing: { lateFrameCount: 0 },
                                 duration: { p50Ms: 25, p95Ms: 40, p99Ms: 45, maxMs: 50 },
                             },
                         },

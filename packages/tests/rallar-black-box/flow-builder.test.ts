@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment happy-dom
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
 import {
     FLOW_BUILDER_TEMPLATES,
     addFlowBuilderStep,
@@ -8,8 +12,49 @@ import {
     parseFlowBuilderDefinition,
     templateFlowBuilderText,
 } from '../../../apps/rallar-black-box/src/flow-builder.ts';
+import { FlowBuilderPanel } from
+    '../../../apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPanel.tsx';
+import { flowBuilderVariablesFromGlobalValues } from
+    '../../../apps/rallar-black-box/src/legacy/runner/builder/flow-builder-support.ts';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+    .IS_REACT_ACT_ENVIRONMENT = true;
+
+const FLOW_BUILDER_STATE: RallarBlackBoxTestState = {
+    status: 'idle',
+    commandHistory: [],
+    events: [],
+    failures: [],
+    resultCache: {},
+};
+
+const GLOBAL_VALUES = {
+    apiBaseUrl: 'https://api.example.test',
+    applicationId: 'primary-application',
+    workspaceId: 'primary-workspace',
+    clientId: 'primary-client',
+    sessionId: 'primary-session',
+    roomId: 'primary-room',
+} as const;
 
 describe('rallar-black-box flow builder helpers', () => {
+    let container: HTMLDivElement;
+    let root: Root | undefined;
+
+    beforeEach(() => {
+        container = document.createElement('div');
+        document.body.append(container);
+        root = createRoot(container);
+    });
+
+    afterEach(async () => {
+        if (root) {
+            await act(async () => root?.unmount());
+        }
+        container.remove();
+        vi.restoreAllMocks();
+    });
+
     it('substitutes string and structured variables without consuming auth placeholders', () => {
         const substituted = applyFlowBuilderVariables({
             path: '/api/state/apps/{{applicationId}}/workspaces/${workspaceId}/groups/{groupId}',
@@ -117,4 +162,85 @@ describe('rallar-black-box flow builder helpers', () => {
             label: 'Send RTC',
         });
     });
+
+    it('keeps primary-owner drafts while mounted and resets them after unmount', async () => {
+        await renderPanel(false);
+        const editedFlow = JSON.stringify({
+            ...FLOW_BUILDER_TEMPLATES[0].flow,
+            name: 'Edited primary Flow Builder draft',
+        }, null, 2);
+        const editedVariables = JSON.stringify({
+            applicationId: 'edited-application',
+            draftMarker: 'visible-primary-owner',
+        }, null, 2);
+
+        await editTextarea('Flow JSON', editedFlow);
+        await editTextarea('Variables JSON', editedVariables);
+
+        await renderPanel(true, {
+            ...GLOBAL_VALUES,
+            applicationId: 'rerendered-application',
+            roomId: 'rerendered-room',
+        });
+
+        expect(textarea('Flow JSON').value).toBe(editedFlow);
+        expect(textarea('Variables JSON').value).toBe(editedVariables);
+        expect(textarea('Flow JSON').disabled).toBe(true);
+        expect(textarea('Variables JSON').disabled).toBe(true);
+
+        await act(async () => root?.unmount());
+        root = createRoot(container);
+        await renderPanel(false);
+
+        expect(textarea('Flow JSON').value).toBe(
+            templateFlowBuilderText(FLOW_BUILDER_TEMPLATES[0].templateId),
+        );
+        expect(JSON.parse(textarea('Variables JSON').value)).toEqual(
+            flowBuilderVariablesFromGlobalValues(
+                FLOW_BUILDER_TEMPLATES[0].flow.variables,
+                GLOBAL_VALUES,
+            ),
+        );
+        expect(container.textContent).not.toContain(
+            'Edited primary Flow Builder draft',
+        );
+        expect(container.textContent).not.toContain('visible-primary-owner');
+    });
+
+    async function renderPanel(
+        busy: boolean,
+        globalValues = GLOBAL_VALUES,
+    ): Promise<void> {
+        await act(async () => root?.render(createElement(FlowBuilderPanel, {
+            state: FLOW_BUILDER_STATE,
+            globalValues,
+            busy,
+            onSelectCommand: vi.fn(),
+        })));
+    }
+
+    function textarea(label: string): HTMLTextAreaElement {
+        const owner = [...container.querySelectorAll('label')]
+            .find((candidate) => candidate.querySelector('span')?.textContent === label);
+        const editor = owner?.querySelector('textarea');
+        if (!(editor instanceof HTMLTextAreaElement)) {
+            throw new Error(`Missing ${label} textarea`);
+        }
+        return editor;
+    }
+
+    async function editTextarea(label: string, value: string): Promise<void> {
+        const editor = textarea(label);
+        const setValue = Object.getOwnPropertyDescriptor(
+            HTMLTextAreaElement.prototype,
+            'value',
+        )?.set;
+        if (!setValue) {
+            throw new Error('Missing native textarea value setter');
+        }
+        await act(async () => {
+            setValue.call(editor, value);
+            editor.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+    }
 });

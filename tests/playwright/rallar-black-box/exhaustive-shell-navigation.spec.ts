@@ -75,6 +75,7 @@ test.describe('exhaustive shell navigation and persistence', () => {
 
       const reloadQuery = new URLSearchParams({
         provider: 'browser-rallar',
+        experience: 'legacy',
         apiBaseUrl: config.apiBaseUrl,
         applicationId: config.applicationId,
         workspaceId: config.workspaceId,

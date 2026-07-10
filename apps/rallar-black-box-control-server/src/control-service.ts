@@ -53,6 +53,10 @@ import type {
   ControlFleetReportsResponse,
   ControlFleetRunReport,
 } from '@shared-test/rallar-bb-test/fleet-report.ts';
+import {
+  planControlRunRetention,
+  type ControlRetentionPlan,
+} from '@shared-test/rallar-bb-test/control-retention.ts';
 
 const DEFAULT_DISTRIBUTED_BARRIER_TIMEOUT_MS = 15_000;
 const DEFAULT_RUNTIME_RETENTION_BOUNDS: Required<ControlRunSnapshotBounds> = {
@@ -161,6 +165,8 @@ type StoredRun = {
   reportKeys: Set<string>;
   heartbeats: ControlHeartbeatEnvelope[];
   tokens: Map<string, StoredToken>;
+  retentionRevision: number;
+  issuedRunTokenStateRevision: number;
 };
 
 type StoredDistributedRun = {
@@ -295,6 +301,7 @@ export class RallarBlackBoxControlService {
       expiresAtEpochMs: issuedAtEpochMs + Math.max(1, input.ttlMs ?? this.runTokenTtlMs),
     };
     run.tokens.set(token.token, token);
+    run.issuedRunTokenStateRevision += 1;
     this.touch(run);
     return token;
   }
@@ -666,7 +673,6 @@ export class RallarBlackBoxControlService {
     if (maxRuns === undefined || maxRuns <= 0 || this.runs.size <= maxRuns) {
       return [];
     }
-
     const keep = new Set(
       Array.from(this.runs.values())
         .sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs)
@@ -675,17 +681,57 @@ export class RallarBlackBoxControlService {
     );
     const deletedRunIds: string[] = [];
     for (const runId of this.runs.keys()) {
-      if (keep.has(runId)) {
-        continue;
+      if (!keep.has(runId)) {
+        this.runs.delete(runId);
+        deletedRunIds.push(runId);
       }
-      this.runs.delete(runId);
-      deletedRunIds.push(runId);
     }
     for (const [distributedRunId, distributedRun] of this.distributedRuns.entries()) {
       if (deletedRunIds.includes(distributedRun.controlRunId)) {
         this.distributedRuns.delete(distributedRunId);
         this.fleetReports.delete(distributedRunId);
       }
+    }
+    return deletedRunIds;
+  }
+
+  createRetentionPlan(maxRuns: number | undefined): ControlRetentionPlan {
+    return planControlRunRetention({
+      maxRuns,
+      runs: Array.from(this.runs.values(), (run) => this.snapshotRunValue(run)),
+      distributedRuns: Array.from(
+        this.distributedRuns.values(),
+        (run) => this.passiveDistributedRunSnapshotValue(run),
+      ),
+      fleetReports: Array.from(this.fleetReports.values()),
+      runSafety: Array.from(this.runs.values(), (run) => ({
+        runId: run.runId,
+        connectedAgentIds: Array.from(run.agents.values())
+          .filter((agent) => agent.connected)
+          .map((agent) => agent.agentId),
+        issuedRunTokens: Array.from(run.tokens.values(), (token) => ({
+          agentId: token.agentId,
+          issuedAtEpochMs: token.issuedAtEpochMs,
+          expiresAtEpochMs: token.expiresAtEpochMs,
+        })),
+        runStateFingerprint: `revision:${run.retentionRevision}`,
+        issuedRunTokenStateFingerprint: `revision:${run.issuedRunTokenStateRevision}`,
+      })),
+    });
+  }
+
+  applyRetentionPlan(plan: ControlRetentionPlan): readonly string[] {
+    const deletedRunIds: string[] = [];
+    for (const runId of plan.deletedRunIds) {
+      if (this.runs.delete(runId)) {
+        deletedRunIds.push(runId);
+      }
+    }
+    for (const distributedRunId of plan.distributedRunIds) {
+      this.distributedRuns.delete(distributedRunId);
+    }
+    for (const fleetReportId of plan.fleetReportIds) {
+      this.fleetReports.delete(fleetReportId);
     }
     return deletedRunIds;
   }
@@ -712,6 +758,8 @@ export class RallarBlackBoxControlService {
         ),
         heartbeats: [...runSnapshot.heartbeats],
         tokens: new Map(),
+        retentionRevision: 0,
+        issuedRunTokenStateRevision: 0,
       };
       for (const agentSnapshot of runSnapshot.agents) {
         run.agents.set(agentSnapshot.agentId, {
@@ -2017,6 +2065,8 @@ export class RallarBlackBoxControlService {
       reportKeys: new Set(),
       heartbeats: [],
       tokens: new Map(),
+      retentionRevision: 0,
+      issuedRunTokenStateRevision: 0,
     };
     this.runs.set(runId, run);
     return run;
@@ -2046,7 +2096,34 @@ export class RallarBlackBoxControlService {
   }
 
   private touch(run: StoredRun): void {
+    run.retentionRevision += 1;
     run.updatedAtEpochMs = this.now();
+  }
+
+  private passiveDistributedRunSnapshotValue(
+    distributedRun: StoredDistributedRun,
+  ): ControlDistributedRunSnapshot {
+    return {
+      distributedRunId: distributedRun.distributedRunId,
+      controlRunId: distributedRun.controlRunId,
+      manifest: distributedRun.manifest,
+      state: distributedRun.state,
+      createdAtEpochMs: distributedRun.createdAtEpochMs,
+      updatedAtEpochMs: distributedRun.updatedAtEpochMs,
+      stagedAtEpochMs: distributedRun.stagedAtEpochMs,
+      barrierStartedAtEpochMs: distributedRun.barrierStartedAtEpochMs,
+      barrierCompletedAtEpochMs: distributedRun.barrierCompletedAtEpochMs,
+      startedAtEpochMs: distributedRun.startedAtEpochMs,
+      cancelledAtEpochMs: distributedRun.cancelledAtEpochMs,
+      completedAtEpochMs: distributedRun.completedAtEpochMs,
+      targetAgentIds: [...distributedRun.targetAgentIds],
+      targetResolution: distributedRun.targetResolution,
+      commandLinks: [...distributedRun.commandLinks],
+      rollup: distributedRun.rollup ?? rollupDistributedRunResult({
+        stateHint: distributedRun.state,
+      }),
+      error: distributedRun.error,
+    };
   }
 
   private boundedTail<T>(values: readonly T[], limit: number | undefined): readonly T[] {

@@ -8,15 +8,26 @@ import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     deriveRunVerdictView,
+    validateDistributedRunArtifactFromParsed,
+    type DistributedRunArtifactValidation,
     type DistributedRunAnalysisReport,
+    type DistributedRunMonitor,
     type RunVerdictView,
 } from './distributed-run-monitor.ts';
+import {
+    distributedArtifactPipelineFile,
+    distributedArtifactPipelineJsonRecord,
+    distributedArtifactPipelineJsonlRows,
+    parseDistributedArtifactPipeline,
+    type ParsedDistributedArtifactPipeline,
+} from './distributed-artifact-pipeline.ts';
 
 export type DistributedRunArtifactFiles = Readonly<Record<string, string | undefined>>;
 
 export type DistributedRunAnalysisInput = Readonly<{
     files: DistributedRunArtifactFiles;
     generatedAtEpochMs?: number;
+    artifactSchemaVersion?: number;
 }>;
 
 export type DistributedRunArtifactParseWarning = Readonly<{
@@ -129,6 +140,30 @@ export type DistributedRunPerformanceAnalysis = Readonly<{
     }>[];
 }>;
 
+export type StreamSampleIndexTelemetry = Readonly<{
+    candidateCount: number;
+    baseKeyLookupCount: number;
+    fingerprintComputationCount: number;
+    indexLookupCount: number;
+    equivalenceCheckCount: number;
+    indexMaintenanceCount: number;
+    groupCount: number;
+    replacementCount: number;
+    outputGroupOrder: readonly Readonly<{
+        insertionIndex: number;
+        winnerIndex: number;
+    }>[];
+}>;
+
+export type DistributedRunSnapshotPerformanceInput = Readonly<{
+    distributedRun: ControlDistributedRunSnapshot;
+    controlRun: ControlRunSnapshot;
+    fleetReport?: unknown;
+    artifactResults?: readonly unknown[];
+    artifactEvents?: readonly unknown[];
+    onStreamSampleIndexTelemetry?: (telemetry: StreamSampleIndexTelemetry) => void;
+}>;
+
 export type DistributedRunTargetResolutionAnalysis = Readonly<{
     selected: number;
     expectedParticipantCount?: number;
@@ -147,6 +182,7 @@ export type DistributedRunTargetResolutionAnalysis = Readonly<{
 
 export type DistributedRunAnalysis = Readonly<{
     generatedAtEpochMs: number;
+    artifactSchemaVersion?: number;
     distributedRunId: string;
     controlRunId?: string;
     status: string;
@@ -179,6 +215,28 @@ export type DistributedRunArtifactSnapshots = Readonly<{
     distributedRun: ControlDistributedRunSnapshot;
     controlRun: ControlRunSnapshot;
     artifactBundle?: ControlDistributedRunArtifactBundle;
+}>;
+
+export type DistributedRunArtifactPipelineAnalysisInput = Readonly<{
+    parsed: ParsedDistributedArtifactPipeline;
+    generatedAtEpochMs?: number;
+    artifactSchemaVersion?: number;
+    parsedFiles?: ParsedDistributedRunArtifactFiles;
+    snapshots?: DistributedRunArtifactSnapshots;
+    artifactBundle?: ControlDistributedRunArtifactBundle;
+    artifactValidation?: DistributedRunArtifactValidation;
+    monitor?: DistributedRunMonitor;
+    report?: DistributedRunAnalysisReport;
+}>;
+
+export type DistributedRunArtifactPipelineAnalysisResult = Readonly<{
+    analysis: DistributedRunAnalysis;
+    monitor?: DistributedRunMonitor;
+    report?: DistributedRunAnalysisReport;
+    telemetry: Readonly<{
+        monitorDerivationCount: number;
+        reportDerivationCount: number;
+    }>;
 }>;
 
 type ControlPostFailureArtifact = Readonly<{
@@ -224,10 +282,8 @@ const DISTRIBUTED_ARTIFACT_FILE_NAMES = new Set([
     'metadata.json',
 ]);
 
-const DISTRIBUTED_ARTIFACT_V2_REQUIRED_FILE_NAMES = [
+const DISTRIBUTED_ARTIFACT_V2_EVIDENCE_FILE_NAMES = [
     'report.json',
-    'results.jsonl',
-    'events.jsonl',
     'failures.json',
     'metadata.json',
 ] as const;
@@ -242,25 +298,58 @@ const CONTROL_POST_ERROR_FILE_NAMES = [
 export function analyzeDistributedRunArtifactFiles(
     input: DistributedRunAnalysisInput,
 ): DistributedRunAnalysis {
+    return analyzeDistributedRunArtifactPipeline({
+        parsed: parseDistributedArtifactPipeline(input.files, {
+            projection: 'literal-loose-files',
+        }),
+        generatedAtEpochMs: input.generatedAtEpochMs,
+        artifactSchemaVersion: input.artifactSchemaVersion,
+    });
+}
+
+export function analyzeDistributedRunArtifactPipeline(
+    input: DistributedRunArtifactPipelineAnalysisInput,
+): DistributedRunAnalysis {
+    return deriveDistributedRunArtifactPipelineAnalysis(input).analysis;
+}
+
+export function deriveDistributedRunArtifactPipelineAnalysis(
+    input: DistributedRunArtifactPipelineAnalysisInput,
+): DistributedRunArtifactPipelineAnalysisResult {
+    const generatedAtEpochMs = input.generatedAtEpochMs ?? Date.now();
+    const parsedFiles = input.parsedFiles ??
+        parseDistributedRunArtifactPipeline(input.parsed);
+    const parseWarnings = parsedFiles.parseWarnings.map(warning => ({ ...warning }));
     const {
-        parseWarnings,
-        distributedRunRecord,
-        controlRunRecord,
         fleetReport,
         failureBundle,
         controlPostFailure,
         results,
         events,
         targetResolutionRecord,
-    } = parseDistributedRunArtifactFiles(input.files);
-    const distributedRun = normalizeDistributedRunRecord(distributedRunRecord, results);
-    const controlRun = normalizeControlRunRecord(controlRunRecord, distributedRun.controlRunId, results, events);
-    const artifactBundle = distributedArtifactBundleFromFiles(
-        input.files,
-        input.generatedAtEpochMs ?? Date.now(),
-        distributedRun.distributedRunId,
+    } = parsedFiles;
+    const snapshots = input.snapshots ?? distributedArtifactSnapshotsFromPipeline(
+        input.parsed,
+        generatedAtEpochMs,
+        input.artifactSchemaVersion,
+        parsedFiles,
     );
-    const spa = deriveSpaAnalysis(distributedRun, controlRun, artifactBundle, parseWarnings);
+    const distributedRun = snapshots.distributedRun;
+    const controlRun = snapshots.controlRun;
+    const artifactBundle = input.artifactBundle ?? snapshots.artifactBundle;
+    const spaDerivation = deriveSpaAnalysis(
+        distributedRun,
+        controlRun,
+        artifactBundle,
+        parseWarnings,
+        input.artifactValidation ?? validateDistributedRunArtifactFromParsed(
+            artifactBundle,
+            input.parsed,
+        ),
+        input.monitor,
+        input.report,
+    );
+    const spa = spaDerivation.spa;
 
     const distributedRunId = firstString(
         distributedRun.distributedRunId,
@@ -272,7 +361,13 @@ export function analyzeDistributedRunArtifactFiles(
     const ok = booleanValue(fleetReport.ok) ?? booleanValue(readPath(distributedRun, ['rollup', 'ok'])) ??
         status === 'passed';
     const group = groupFromArtifacts(distributedRun, fleetReport);
-    const performance = derivePerformance(distributedRun, controlRun, fleetReport, results, events);
+    const performance = deriveDistributedRunSnapshotPerformance({
+        distributedRun,
+        controlRun,
+        fleetReport,
+        artifactResults: results,
+        artifactEvents: events,
+    });
     const targetResolution = targetResolutionAnalysis(targetResolutionRecord, distributedRun);
     const failure = ok
         ? undefined
@@ -295,7 +390,8 @@ export function analyzeDistributedRunArtifactFiles(
     };
 
     const base: Omit<DistributedRunAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown' | 'performanceMarkdown'> = {
-        generatedAtEpochMs: input.generatedAtEpochMs ?? Date.now(),
+        generatedAtEpochMs,
+        artifactSchemaVersion: artifactBundle?.artifactSchemaVersion ?? input.artifactSchemaVersion ?? 1,
         distributedRunId,
         controlRunId,
         status,
@@ -313,10 +409,15 @@ export function analyzeDistributedRunArtifactFiles(
     const performanceMarkdown = performance ? renderPerformanceMarkdown(base) : undefined;
 
     return {
-        ...base,
-        summaryMarkdown,
-        fixProposalMarkdown,
-        performanceMarkdown,
+        analysis: {
+            ...base,
+            summaryMarkdown,
+            fixProposalMarkdown,
+            performanceMarkdown,
+        },
+        monitor: spaDerivation.monitor,
+        report: spaDerivation.report,
+        telemetry: spaDerivation.telemetry,
     };
 }
 
@@ -324,7 +425,25 @@ export function distributedArtifactBundleFromFiles(
     files: DistributedRunArtifactFiles,
     generatedAtEpochMs = Date.now(),
     fallbackDistributedRunId = 'imported-distributed-run',
+    artifactSchemaVersionOverride?: number,
 ): ControlDistributedRunArtifactBundle | undefined {
+    return distributedArtifactBundleFromPipeline(
+        parseDistributedArtifactPipeline(files, {
+            projection: 'literal-loose-files',
+        }),
+        generatedAtEpochMs,
+        fallbackDistributedRunId,
+        artifactSchemaVersionOverride,
+    );
+}
+
+export function distributedArtifactBundleFromPipeline(
+    parsed: ParsedDistributedArtifactPipeline,
+    generatedAtEpochMs = Date.now(),
+    fallbackDistributedRunId = 'imported-distributed-run',
+    artifactSchemaVersionOverride?: number,
+): ControlDistributedRunArtifactBundle | undefined {
+    const files = parsed.projectedFiles;
     const distributedRunText = files['distributed-run.json'];
     const controlRunText = files['control-run.json'];
     const manifestText = files['manifest.json'] ?? distributedRunText;
@@ -341,15 +460,17 @@ export function distributedArtifactBundleFromFiles(
     if (!bundleFiles['manifest.json']) {
         bundleFiles['manifest.json'] = manifestText;
     }
-    const artifactSchemaVersion = DISTRIBUTED_ARTIFACT_V2_REQUIRED_FILE_NAMES
-        .every(fileName => bundleFiles[fileName] !== undefined)
-        ? 2
-        : 1;
+    const artifactSchemaVersion = artifactSchemaVersionOverride ??
+        (DISTRIBUTED_ARTIFACT_V2_EVIDENCE_FILE_NAMES
+                .every(fileName => bundleFiles[fileName] !== undefined)
+            ? 2
+            : 1);
 
     return {
         artifactSchemaVersion,
         distributedRunId: firstString(
-            asRecord(safeJson(distributedRunText)).distributedRunId,
+            distributedArtifactPipelineJsonRecord(parsed, 'distributed-run.json')
+                .distributedRunId,
             fallbackDistributedRunId,
         ) ?? fallbackDistributedRunId,
         generatedAtEpochMs,
@@ -360,13 +481,29 @@ export function distributedArtifactBundleFromFiles(
 export function distributedArtifactSnapshotsFromFiles(
     files: DistributedRunArtifactFiles,
     generatedAtEpochMs = Date.now(),
+    artifactSchemaVersion?: number,
+): DistributedRunArtifactSnapshots {
+    return distributedArtifactSnapshotsFromPipeline(
+        parseDistributedArtifactPipeline(files, {
+            projection: 'literal-loose-files',
+        }),
+        generatedAtEpochMs,
+        artifactSchemaVersion,
+    );
+}
+
+export function distributedArtifactSnapshotsFromPipeline(
+    parsed: ParsedDistributedArtifactPipeline,
+    generatedAtEpochMs = Date.now(),
+    artifactSchemaVersion?: number,
+    parsedFiles?: ParsedDistributedRunArtifactFiles,
 ): DistributedRunArtifactSnapshots {
     const {
         distributedRunRecord,
         controlRunRecord,
         results,
         events,
-    } = parseDistributedRunArtifactFiles(files);
+    } = parsedFiles ?? parseDistributedRunArtifactPipeline(parsed);
     const distributedRun = normalizeDistributedRunRecord(distributedRunRecord, results);
     const controlRun = normalizeControlRunRecord(
         controlRunRecord,
@@ -377,10 +514,11 @@ export function distributedArtifactSnapshotsFromFiles(
     return {
         distributedRun,
         controlRun,
-        artifactBundle: distributedArtifactBundleFromFiles(
-            files,
+        artifactBundle: distributedArtifactBundleFromPipeline(
+            parsed,
             generatedAtEpochMs,
             distributedRun.distributedRunId,
+            artifactSchemaVersion,
         ),
     };
 }
@@ -390,13 +528,54 @@ function deriveSpaAnalysis(
     controlRun: ControlRunSnapshot,
     artifactBundle: ControlDistributedRunArtifactBundle | undefined,
     warnings: DistributedRunArtifactParseWarning[],
-): DistributedRunAnalysis['spa'] {
+    artifactValidation: DistributedRunArtifactValidation,
+    precomputedMonitor?: DistributedRunMonitor,
+    precomputedReport?: DistributedRunAnalysisReport,
+): Readonly<{
+    spa?: NonNullable<DistributedRunAnalysis['spa']>;
+    monitor?: DistributedRunMonitor;
+    report?: DistributedRunAnalysisReport;
+    telemetry: Readonly<{
+        monitorDerivationCount: number;
+        reportDerivationCount: number;
+    }>;
+}> {
+    let monitor = precomputedMonitor;
+    let report = precomputedReport;
+    let monitorDerivationCount = 0;
+    let reportDerivationCount = 0;
     try {
-        const monitor = deriveDistributedRunMonitor({ distributedRun, controlRun, artifactBundle });
-        const report = deriveDistributedRunAnalysisReport({ distributedRun, controlRun, artifactBundle });
+        if (!monitor) {
+            monitorDerivationCount += 1;
+            monitor = deriveDistributedRunMonitor({
+                distributedRun,
+                controlRun,
+                artifactBundle,
+                artifactValidation,
+            });
+        }
+        if (!report) {
+            reportDerivationCount += 1;
+            report = deriveDistributedRunAnalysisReport({
+                distributedRun,
+                controlRun,
+                artifactBundle,
+                monitor,
+            });
+        }
         return {
+            spa: {
+                report,
+                verdict: deriveRunVerdictView({
+                    distributedRun,
+                    monitor,
+                    report,
+                    artifactBundle,
+                }),
+            },
+            monitor,
             report,
-            verdict: deriveRunVerdictView({ distributedRun, monitor, report, artifactBundle }),
+            telemetry: { monitorDerivationCount, reportDerivationCount },
         };
     } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
@@ -404,7 +583,11 @@ function deriveSpaAnalysis(
             fileName: 'spa-analysis',
             message: `Unable to derive SPA report: ${detail}`,
         });
-        return undefined;
+        return {
+            monitor,
+            report,
+            telemetry: { monitorDerivationCount, reportDerivationCount },
+        };
     }
 }
 
@@ -618,12 +801,28 @@ function deriveFailure(input: Readonly<{
     };
 }
 
+export function deriveDistributedRunSnapshotPerformance(
+    input: DistributedRunSnapshotPerformanceInput,
+): DistributedRunPerformanceAnalysis {
+    return derivePerformance(
+        input.distributedRun,
+        input.controlRun,
+        asRecord(input.fleetReport),
+        arrayRecords(input.artifactResults),
+        input.artifactEvents === undefined
+            ? arrayRecords(input.controlRun.events)
+            : arrayRecords(input.artifactEvents),
+        input.onStreamSampleIndexTelemetry,
+    );
+}
+
 function derivePerformance(
     distributedRun: ControlDistributedRunSnapshot,
     controlRun: ControlRunSnapshot,
     fleetReport: Record<string, unknown>,
     results: readonly Record<string, unknown>[],
     events: readonly Record<string, unknown>[],
+    onStreamSampleIndexTelemetry?: (telemetry: StreamSampleIndexTelemetry) => void,
 ): DistributedRunPerformanceAnalysis {
     const agents = arrayRecords(controlRun.agents);
     const commandTimingSamples = timingSamplesFromControlRun(distributedRun, controlRun);
@@ -633,6 +832,7 @@ function derivePerformance(
         arrayRecords(controlRun.results),
         results,
         events,
+        onStreamSampleIndexTelemetry,
     );
     const streamTiming = streamTimingFromSamples(streamSamples);
     const receiverDelivery = receiverDeliveryFromSamples(
@@ -1017,7 +1217,7 @@ function targetResolutionAnalysis(
     };
 }
 
-type ParsedDistributedRunArtifactFiles = Readonly<{
+export type ParsedDistributedRunArtifactFiles = Readonly<{
     parseWarnings: DistributedRunArtifactParseWarning[];
     distributedRunRecord: Record<string, unknown>;
     controlRunRecord: Record<string, unknown>;
@@ -1031,34 +1231,30 @@ type ParsedDistributedRunArtifactFiles = Readonly<{
     events: readonly Record<string, unknown>[];
 }>;
 
-function parseDistributedRunArtifactFiles(
-    files: DistributedRunArtifactFiles,
+export function parseDistributedRunArtifactPipeline(
+    parsed: ParsedDistributedArtifactPipeline,
 ): ParsedDistributedRunArtifactFiles {
     const parseWarnings: DistributedRunArtifactParseWarning[] = [];
-    const runnerSummary = parseJsonRecord(files['runner-summary.json'], 'runner-summary.json', parseWarnings);
-    const manifestRecord = parseJsonRecord(files['manifest.json'], 'manifest.json', parseWarnings);
-    const controlPostFailure = parseControlPostFailure(files, parseWarnings);
+    const runnerSummary = parsedJsonRecord(parsed, 'runner-summary.json', parseWarnings);
+    const manifestRecord = parsedJsonRecord(parsed, 'manifest.json', parseWarnings);
+    const controlPostFailure = parseControlPostFailureFromParsed(parsed, parseWarnings);
     return {
         parseWarnings,
-        distributedRunRecord: parseDistributedRunRecord(
-            files['distributed-run.json'],
+        distributedRunRecord: parseDistributedRunRecordFromParsed(
+            parsed,
             runnerSummary,
             manifestRecord,
             parseWarnings,
         ),
-        controlRunRecord: parseJsonRecord(files['control-run.json'], 'control-run.json', parseWarnings),
-        fleetReport: parseJsonRecord(files['fleet-report.json'], 'fleet-report.json', parseWarnings),
-        failureBundle: parseJsonRecord(files['failures.json'], 'failures.json', parseWarnings),
-        targetResolutionRecord: parseJsonRecord(
-            files['target-resolution.json'],
-            'target-resolution.json',
-            parseWarnings,
-        ),
+        controlRunRecord: parsedJsonRecord(parsed, 'control-run.json', parseWarnings),
+        fleetReport: parsedJsonRecord(parsed, 'fleet-report.json', parseWarnings),
+        failureBundle: parsedJsonRecord(parsed, 'failures.json', parseWarnings),
+        targetResolutionRecord: parsedJsonRecord(parsed, 'target-resolution.json', parseWarnings),
         runnerSummary,
         manifestRecord,
         controlPostFailure,
-        results: parseJsonl(files['results.jsonl'], 'results.jsonl', parseWarnings),
-        events: parseJsonl(files['events.jsonl'], 'events.jsonl', parseWarnings),
+        results: parsedJsonlRecords(parsed, 'results.jsonl', parseWarnings),
+        events: parsedJsonlRecords(parsed, 'events.jsonl', parseWarnings),
     };
 }
 
@@ -1071,13 +1267,14 @@ function timingFromFleetOrValues(
         const p50Ms = percentile(values, 0.5);
         const p95Ms = percentile(values, 0.95);
         const p99Ms = percentile(values, 0.99);
+        const extrema = numberExtrema(values);
         return {
             count: values.length,
-            minMs: Math.min(...values),
+            minMs: extrema?.min,
             p50Ms,
             p95Ms,
             p99Ms,
-            maxMs: Math.max(...values),
+            maxMs: extrema?.max,
             averageMs: average(values),
             spreadRatio: p50Ms !== undefined && p95Ms !== undefined
                 ? roundMetric(p95Ms / Math.max(1, p50Ms))
@@ -1138,6 +1335,7 @@ type StreamTimingSample = Readonly<{
     agentId?: string;
     commandId?: string;
     identityKey?: string;
+    completeness: 'terminal' | 'partial';
     failed?: boolean;
     nested?: boolean;
     summary: Record<string, unknown>;
@@ -1150,21 +1348,75 @@ type StreamTimingSampleCandidate = Readonly<{
     index: number;
 }>;
 
+type PreparedStreamTimingSampleCandidate = Readonly<{
+    candidate: StreamTimingSampleCandidate;
+    baseKey: string;
+    fingerprint: string;
+}>;
+
+type IndexedStreamSampleGroup = {
+    readonly canonicalKey: string;
+    readonly insertionIndex: number;
+    version: number;
+    prepared: PreparedStreamTimingSampleCandidate;
+};
+
+type StreamSampleGroupHeapEntry = Readonly<{
+    group: IndexedStreamSampleGroup;
+    version: number;
+}>;
+
+type StreamSampleGroupHeap = {
+    entries: StreamSampleGroupHeapEntry[];
+};
+
+type StreamSampleFingerprintIndexes = {
+    readonly identityless: StreamSampleGroupHeap;
+    readonly identityBearing: StreamSampleGroupHeap;
+    readonly nestedIdentity: StreamSampleGroupHeap;
+    readonly nonNestedIdentity: StreamSampleGroupHeap;
+    readonly nonNestedIdentityBySource: Map<number, StreamSampleGroupHeap>;
+};
+
+type StreamSampleBaseBucket = {
+    readonly identityless: StreamSampleGroupHeap;
+    readonly identities: Map<string, StreamSampleGroupHeap>;
+    readonly fingerprints: Map<string, StreamSampleFingerprintIndexes>;
+};
+
+type MutableStreamSampleIndexTelemetry = {
+    candidateCount: number;
+    baseKeyLookupCount: number;
+    fingerprintComputationCount: number;
+    indexLookupCount: number;
+    equivalenceCheckCount: number;
+    indexMaintenanceCount: number;
+    replacementCount: number;
+};
+
+type StreamSampleIndex = {
+    readonly buckets: Map<string, StreamSampleBaseBucket>;
+    readonly groups: IndexedStreamSampleGroup[];
+    readonly groupsByCanonicalKey: Map<string, IndexedStreamSampleGroup>;
+    readonly telemetry: MutableStreamSampleIndexTelemetry;
+};
+
 function streamSamplesFromResultsAndEvents(
     controlResults: readonly Record<string, unknown>[],
     jsonlResults: readonly Record<string, unknown>[],
     events: readonly Record<string, unknown>[],
+    onTelemetry?: (telemetry: StreamSampleIndexTelemetry) => void,
 ): readonly StreamTimingSample[] {
-    const samples = new Map<string, StreamTimingSampleCandidate>();
+    const sampleIndex = createStreamSampleIndex();
     let index = 0;
     for (const result of controlResults) {
         for (const sample of streamSamplesFromResult(result)) {
-            upsertBestStreamSample(samples, { sample, sourcePriority: 40, index: index++ });
+            upsertBestStreamSample(sampleIndex, { sample, sourcePriority: 40, index: index++ });
         }
     }
     for (const result of jsonlResults) {
         for (const sample of streamSamplesFromResult(result)) {
-            upsertBestStreamSample(samples, { sample, sourcePriority: 50, index: index++ });
+            upsertBestStreamSample(sampleIndex, { sample, sourcePriority: 50, index: index++ });
         }
     }
     events.forEach((event) => {
@@ -1172,15 +1424,23 @@ function streamSamplesFromResultsAndEvents(
         if (!sample) {
             return;
         }
-        upsertBestStreamSample(samples, {
+        upsertBestStreamSample(sampleIndex, {
             sample,
             sourcePriority: streamEventPriority(event) * 10,
             index: index++,
         });
     });
-    return [...samples.values()]
-        .sort((left, right) => left.index - right.index)
-        .map(candidate => candidate.sample);
+    const outputGroups = [...sampleIndex.groups]
+        .sort((left, right) => left.prepared.candidate.index - right.prepared.candidate.index);
+    onTelemetry?.({
+        ...sampleIndex.telemetry,
+        groupCount: sampleIndex.groups.length,
+        outputGroupOrder: outputGroups.map(group => ({
+            insertionIndex: group.insertionIndex,
+            winnerIndex: group.prepared.candidate.index,
+        })),
+    });
+    return outputGroups.map(group => group.prepared.candidate.sample);
 }
 
 function streamSamplesFromResult(
@@ -1188,7 +1448,6 @@ function streamSamplesFromResult(
     inheritedAgentId?: string,
     inheritedIdentityKey?: string,
 ): readonly StreamTimingSample[] {
-    const action = firstString(result.action, result.kind, readPath(result, ['result', 'kind']));
     const summary = streamSummaryRecord(result.result) ??
         streamSummaryRecord(result.value) ??
         streamSummaryRecord(result.actual) ??
@@ -1197,15 +1456,16 @@ function streamSamplesFromResult(
     const resultIdentity = streamResultIdentity(result);
     const identityKey = firstString(inheritedIdentityKey, resultIdentity);
     const samples: StreamTimingSample[] = [];
-    if (summary || action === 'rtc.stream') {
+    if (summary) {
         samples.push({
             agentId,
-            commandId: firstString(summary?.commandId, commandIdFromResult(result)),
+            commandId: firstString(summary.commandId, commandIdFromResult(result)),
             identityKey,
+            completeness: 'terminal',
             failed: streamResultHasFailureSignal(result),
             nested: inheritedIdentityKey !== undefined,
-            summary: summary ?? {},
-            observations: arrayRecords(summary?.observations),
+            summary,
+            observations: arrayRecords(summary.observations),
         });
     }
     nestedRecipeResultRecords(result).forEach((nestedResult, nestedIndex) => {
@@ -1266,21 +1526,262 @@ function nestedRecipeResultRecords(result: Record<string, unknown>): readonly Re
 }
 
 function upsertBestStreamSample(
-    samples: Map<string, StreamTimingSampleCandidate>,
+    index: StreamSampleIndex,
     candidate: StreamTimingSampleCandidate,
 ): void {
-    const key = equivalentStreamSampleKey(samples, candidate.sample) ?? streamSampleKey(candidate.sample);
-    const current = samples.get(key);
-    if (!current || compareStreamSampleCandidates(candidate, current) > 0) {
-        samples.set(key, candidate);
+    const prepared = prepareStreamSampleCandidate(candidate, index.telemetry);
+    let bucket = index.buckets.get(prepared.baseKey);
+    if (!bucket) {
+        bucket = createStreamSampleBaseBucket();
+        index.buckets.set(prepared.baseKey, bucket);
     }
+    let currentGroup = equivalentStreamSampleGroup(bucket, prepared, index.telemetry);
+    const canonicalKey = currentGroup ? undefined : streamSampleKey(candidate.sample);
+    if (!currentGroup && canonicalKey) {
+        index.telemetry.indexLookupCount += 1;
+        currentGroup = index.groupsByCanonicalKey.get(canonicalKey);
+    }
+    if (!currentGroup) {
+        const group: IndexedStreamSampleGroup = {
+            canonicalKey: canonicalKey ?? streamSampleKey(candidate.sample),
+            insertionIndex: candidate.index,
+            version: 0,
+            prepared,
+        };
+        index.groups.push(group);
+        index.groupsByCanonicalKey.set(group.canonicalKey, group);
+        registerStreamSampleGroup(bucket, group, index.telemetry);
+        return;
+    }
+    if (compareStreamSampleCandidates(candidate, currentGroup.prepared.candidate) > 0) {
+        currentGroup.version += 1;
+        currentGroup.prepared = prepared;
+        index.telemetry.replacementCount += 1;
+        registerStreamSampleGroup(bucket, currentGroup, index.telemetry);
+    }
+}
+
+function createStreamSampleIndex(): StreamSampleIndex {
+    return {
+        buckets: new Map(),
+        groups: [],
+        groupsByCanonicalKey: new Map(),
+        telemetry: {
+            candidateCount: 0,
+            baseKeyLookupCount: 0,
+            fingerprintComputationCount: 0,
+            indexLookupCount: 0,
+            equivalenceCheckCount: 0,
+            indexMaintenanceCount: 0,
+            replacementCount: 0,
+        },
+    };
+}
+
+function createStreamSampleBaseBucket(): StreamSampleBaseBucket {
+    return {
+        identityless: createStreamSampleGroupHeap(),
+        identities: new Map(),
+        fingerprints: new Map(),
+    };
+}
+
+function createStreamSampleFingerprintIndexes(): StreamSampleFingerprintIndexes {
+    return {
+        identityless: createStreamSampleGroupHeap(),
+        identityBearing: createStreamSampleGroupHeap(),
+        nestedIdentity: createStreamSampleGroupHeap(),
+        nonNestedIdentity: createStreamSampleGroupHeap(),
+        nonNestedIdentityBySource: new Map(),
+    };
+}
+
+function createStreamSampleGroupHeap(): StreamSampleGroupHeap {
+    return { entries: [] };
+}
+
+function prepareStreamSampleCandidate(
+    candidate: StreamTimingSampleCandidate,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): PreparedStreamTimingSampleCandidate {
+    telemetry.candidateCount += 1;
+    telemetry.baseKeyLookupCount += 1;
+    telemetry.fingerprintComputationCount += 1;
+    return {
+        candidate,
+        baseKey: streamSampleBaseKey(candidate.sample),
+        fingerprint: streamSampleFingerprint(candidate.sample),
+    };
+}
+
+function registerStreamSampleGroup(
+    bucket: StreamSampleBaseBucket,
+    group: IndexedStreamSampleGroup,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): void {
+    const { sample, sourcePriority } = group.prepared.candidate;
+    let fingerprintIndexes = bucket.fingerprints.get(group.prepared.fingerprint);
+    if (!fingerprintIndexes) {
+        fingerprintIndexes = createStreamSampleFingerprintIndexes();
+        bucket.fingerprints.set(group.prepared.fingerprint, fingerprintIndexes);
+    }
+    if (!sample.identityKey) {
+        pushStreamSampleGroup(bucket.identityless, group, telemetry);
+        pushStreamSampleGroup(fingerprintIndexes.identityless, group, telemetry);
+        return;
+    }
+
+    let identityHeap = bucket.identities.get(sample.identityKey);
+    if (!identityHeap) {
+        identityHeap = createStreamSampleGroupHeap();
+        bucket.identities.set(sample.identityKey, identityHeap);
+    }
+    pushStreamSampleGroup(identityHeap, group, telemetry);
+    pushStreamSampleGroup(fingerprintIndexes.identityBearing, group, telemetry);
+    if (sample.nested === true) {
+        pushStreamSampleGroup(fingerprintIndexes.nestedIdentity, group, telemetry);
+        return;
+    }
+
+    pushStreamSampleGroup(fingerprintIndexes.nonNestedIdentity, group, telemetry);
+    let sourceHeap = fingerprintIndexes.nonNestedIdentityBySource.get(sourcePriority);
+    if (!sourceHeap) {
+        sourceHeap = createStreamSampleGroupHeap();
+        fingerprintIndexes.nonNestedIdentityBySource.set(sourcePriority, sourceHeap);
+    }
+    pushStreamSampleGroup(sourceHeap, group, telemetry);
+}
+
+function equivalentStreamSampleGroup(
+    bucket: StreamSampleBaseBucket,
+    prepared: PreparedStreamTimingSampleCandidate,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): IndexedStreamSampleGroup | undefined {
+    const possibleGroups = new Set<IndexedStreamSampleGroup>();
+    const { sample, sourcePriority } = prepared.candidate;
+    const fingerprintIndexes = bucket.fingerprints.get(prepared.fingerprint);
+
+    if (!sample.identityKey) {
+        addOldestStreamSampleGroup(possibleGroups, bucket.identityless, telemetry);
+        addOldestStreamSampleGroup(possibleGroups, fingerprintIndexes?.identityBearing, telemetry);
+    } else {
+        addOldestStreamSampleGroup(possibleGroups, bucket.identities.get(sample.identityKey), telemetry);
+        addOldestStreamSampleGroup(possibleGroups, fingerprintIndexes?.identityless, telemetry);
+        if (sample.nested === true) {
+            addOldestStreamSampleGroup(possibleGroups, fingerprintIndexes?.nonNestedIdentity, telemetry);
+        } else {
+            addOldestStreamSampleGroup(possibleGroups, fingerprintIndexes?.nestedIdentity, telemetry);
+            // This internal index has six fixed producer priorities: four event tiers,
+            // the control snapshot, and JSONL. Only one heap minimum is read per tier.
+            for (const [indexedSourcePriority, sourceHeap] of
+                fingerprintIndexes?.nonNestedIdentityBySource ?? []) {
+                if (indexedSourcePriority !== sourcePriority) {
+                    addOldestStreamSampleGroup(possibleGroups, sourceHeap, telemetry);
+                }
+            }
+        }
+    }
+
+    let earliest: IndexedStreamSampleGroup | undefined;
+    for (const group of possibleGroups) {
+        telemetry.equivalenceCheckCount += 1;
+        if (
+            preparedStreamSamplesRepresentSameExecution(
+                group.prepared,
+                prepared,
+                group.prepared.candidate.sourcePriority !== sourcePriority,
+            ) &&
+            (!earliest || group.insertionIndex < earliest.insertionIndex)
+        ) {
+            earliest = group;
+        }
+    }
+    return earliest;
+}
+
+function addOldestStreamSampleGroup(
+    groups: Set<IndexedStreamSampleGroup>,
+    heap: StreamSampleGroupHeap | undefined,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): void {
+    telemetry.indexLookupCount += 1;
+    const group = heap ? oldestStreamSampleGroup(heap, telemetry) : undefined;
+    if (group) {
+        groups.add(group);
+    }
+}
+
+function pushStreamSampleGroup(
+    heap: StreamSampleGroupHeap,
+    group: IndexedStreamSampleGroup,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): void {
+    const entry = { group, version: group.version };
+    heap.entries.push(entry);
+    telemetry.indexMaintenanceCount += 1;
+    let position = heap.entries.length - 1;
+    while (position > 0) {
+        const parent = Math.floor((position - 1) / 2);
+        if (compareStreamSampleGroupHeapEntries(heap.entries[parent], entry) <= 0) {
+            break;
+        }
+        heap.entries[position] = heap.entries[parent];
+        position = parent;
+    }
+    heap.entries[position] = entry;
+}
+
+function oldestStreamSampleGroup(
+    heap: StreamSampleGroupHeap,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): IndexedStreamSampleGroup | undefined {
+    while (heap.entries[0] && heap.entries[0].version !== heap.entries[0].group.version) {
+        removeOldestStreamSampleGroupHeapEntry(heap);
+        telemetry.indexMaintenanceCount += 1;
+    }
+    return heap.entries[0]?.group;
+}
+
+function removeOldestStreamSampleGroupHeapEntry(heap: StreamSampleGroupHeap): void {
+    const replacement = heap.entries.pop();
+    if (!replacement || heap.entries.length === 0) {
+        return;
+    }
+    let position = 0;
+    while (true) {
+        const left = position * 2 + 1;
+        const right = left + 1;
+        if (left >= heap.entries.length) {
+            break;
+        }
+        const child = right < heap.entries.length &&
+                compareStreamSampleGroupHeapEntries(heap.entries[right], heap.entries[left]) < 0
+            ? right
+            : left;
+        if (compareStreamSampleGroupHeapEntries(replacement, heap.entries[child]) <= 0) {
+            break;
+        }
+        heap.entries[position] = heap.entries[child];
+        position = child;
+    }
+    heap.entries[position] = replacement;
+}
+
+function compareStreamSampleGroupHeapEntries(
+    left: StreamSampleGroupHeapEntry,
+    right: StreamSampleGroupHeapEntry,
+): number {
+    return left.group.insertionIndex - right.group.insertionIndex;
 }
 
 function compareStreamSampleCandidates(
     left: StreamTimingSampleCandidate,
     right: StreamTimingSampleCandidate,
 ): number {
-    return streamSampleEvidenceScore(left.sample) - streamSampleEvidenceScore(right.sample) ||
+    const terminalPriority = Number(left.sample.completeness === 'terminal') -
+        Number(right.sample.completeness === 'terminal');
+    return terminalPriority ||
+        streamSampleEvidenceScore(left.sample) - streamSampleEvidenceScore(right.sample) ||
         left.sourcePriority - right.sourcePriority ||
         left.index - right.index;
 }
@@ -1306,6 +1807,10 @@ function streamSampleFromEvent(event: Record<string, unknown>): StreamTimingSamp
     return {
         agentId: firstString(event.agentId),
         commandId: firstString(summary.commandId, event.commandId),
+        completeness: topic === 'rallar.bb.rtc.stream_completed' ||
+                topic === 'rallar.bb.rtc.stream_failed'
+            ? 'terminal'
+            : 'partial',
         failed: topic === 'rallar.bb.rtc.stream_failed' || eventSeverity(event) === 'error',
         summary,
         observations: arrayRecords(summary.observations),
@@ -1317,38 +1822,32 @@ function streamSampleKey(sample: StreamTimingSample): string {
     return sample.identityKey ? `${baseKey}:${sample.identityKey}` : baseKey;
 }
 
-function equivalentStreamSampleKey(
-    samples: Map<string, StreamTimingSampleCandidate>,
-    sample: StreamTimingSample,
-): string | undefined {
-    for (const [key, candidate] of samples) {
-        if (streamSamplesRepresentSameExecution(candidate.sample, sample)) {
-            return key;
-        }
-    }
-    return undefined;
-}
-
-function streamSamplesRepresentSameExecution(left: StreamTimingSample, right: StreamTimingSample): boolean {
-    if (streamSampleBaseKey(left) !== streamSampleBaseKey(right)) {
+function preparedStreamSamplesRepresentSameExecution(
+    left: PreparedStreamTimingSampleCandidate,
+    right: PreparedStreamTimingSampleCandidate,
+    crossSource: boolean,
+): boolean {
+    if (left.baseKey !== right.baseKey) {
         return false;
     }
-    if (left.identityKey && right.identityKey) {
-        if (left.identityKey === right.identityKey) {
+    const leftSample = left.candidate.sample;
+    const rightSample = right.candidate.sample;
+    if (leftSample.identityKey && rightSample.identityKey) {
+        if (leftSample.identityKey === rightSample.identityKey) {
             return true;
         }
-        if (left.nested === true && right.nested === true) {
+        if (leftSample.nested === true && rightSample.nested === true) {
             return false;
         }
-        if (left.nested !== true && right.nested !== true) {
-            return false;
+        if (leftSample.nested !== true && rightSample.nested !== true) {
+            return crossSource && left.fingerprint === right.fingerprint;
         }
-        return streamSampleFingerprint(left) === streamSampleFingerprint(right);
+        return left.fingerprint === right.fingerprint;
     }
-    if (!left.identityKey && !right.identityKey) {
+    if (!leftSample.identityKey && !rightSample.identityKey) {
         return true;
     }
-    return streamSampleFingerprint(left) === streamSampleFingerprint(right);
+    return left.fingerprint === right.fingerprint;
 }
 
 function streamSampleBaseKey(sample: StreamTimingSample): string {
@@ -1534,17 +2033,18 @@ function receiverDeliveryFromSamples(
             ? roundMetric(sample.receivedMessages / sample.expectedInboundMessages)
             : undefined)
         .filter((value): value is number => value !== undefined);
+    const receivedMessageExtrema = numberExtrema(receivedMessages);
 
     return {
         sampleCount: samples.length,
         expectedInboundMessages,
         minExpectedInboundMessages,
         minReceiveRatio,
-        minReceivedMessages: Math.min(...receivedMessages),
+        minReceivedMessages: receivedMessageExtrema?.min,
         medianReceivedMessages: percentile(receivedMessages, 0.5),
         p95ReceivedMessages: percentile(receivedMessages, 0.95),
-        maxReceivedMessages: Math.max(...receivedMessages),
-        minDeliveryRatio: deliveryRatios.length > 0 ? Math.min(...deliveryRatios) : undefined,
+        maxReceivedMessages: receivedMessageExtrema?.max,
+        minDeliveryRatio: numberExtrema(deliveryRatios)?.min,
         medianDeliveryRatio: percentile(deliveryRatios, 0.5),
         p95DeliveryRatio: percentile(deliveryRatios, 0.95),
         lowestAgents: samples
@@ -1576,32 +2076,33 @@ function firstDefinedNumber(values: readonly (number | undefined)[]): number | u
 function streamTimingFromSamples(
     samples: readonly StreamTimingSample[],
 ): DistributedRunPerformanceAnalysis['streamTiming'] {
-    if (samples.length === 0) {
+    if (samples.length === 0 || !samples.every(hasCompleteStreamTimingEvidence)) {
         return undefined;
     }
+    const completeSamples = samples;
 
-    const durations = samples.flatMap(streamSampleObservationDurations);
-    const plannedFrames = sumStreamNumber(samples, 'plannedFrames');
-    const scheduledFrames = sumStreamNumber(samples, 'scheduledFrames');
-    const attemptedFrames = sumStreamNumber(samples, 'attemptedFrames');
-    const completedFrames = sumStreamNumber(samples, 'completedFrames');
-    const failedFrames = sumStreamNumber(samples, 'failedFrames');
-    const droppedFrames = sumStreamNumber(samples, 'droppedFrames');
-    const inFlightLimitDropCount = samples.reduce(
+    const durations = completeSamples.flatMap(streamSampleObservationDurations);
+    const plannedFrames = sumStreamNumber(completeSamples, 'plannedFrames');
+    const scheduledFrames = sumStreamNumber(completeSamples, 'scheduledFrames');
+    const attemptedFrames = sumStreamNumber(completeSamples, 'attemptedFrames');
+    const completedFrames = sumStreamNumber(completeSamples, 'completedFrames');
+    const failedFrames = sumStreamNumber(completeSamples, 'failedFrames');
+    const droppedFrames = sumStreamNumber(completeSamples, 'droppedFrames');
+    const inFlightLimitDropCount = completeSamples.reduce(
         (sum, sample) => sum + streamSampleInFlightLimitDropCount(sample),
         0,
     );
-    const backpressureCount = sumStreamNumber(samples, 'backpressureCount');
-    const maxStartDriftMs = maxDefined(samples.map(sample =>
+    const backpressureCount = sumStreamNumber(completeSamples, 'backpressureCount');
+    const maxStartDriftMs = maxDefined(completeSamples.map(sample =>
         numberValue(readPath(sample.summary, ['pacing', 'maxStartDriftMs']))
     ));
-    const lateFrameCount = samples.reduce(
+    const lateFrameCount = completeSamples.reduce(
         (sum, sample) => sum + (numberValue(readPath(sample.summary, ['pacing', 'lateFrameCount'])) ?? 0),
         0,
     );
 
     return {
-        streamCount: samples.length,
+        streamCount: completeSamples.length,
         plannedFrames,
         scheduledFrames,
         attemptedFrames,
@@ -1613,14 +2114,20 @@ function streamTimingFromSamples(
         sendSuccessRatio: attemptedFrames > 0
             ? roundMetric(completedFrames / attemptedFrames)
             : undefined,
-        requestedRateHz: averageDefined(samples.map(sample => numberValue(sample.summary.requestedRateHz))),
-        achievedScheduleHz: averageDefined(samples.map(sample => numberValue(sample.summary.achievedScheduleHz))),
-        achievedCompletionHz: averageDefined(samples.map(sample => numberValue(sample.summary.achievedCompletionHz))),
+        requestedRateHz: averageDefined(completeSamples.map(sample => numberValue(sample.summary.requestedRateHz))),
+        achievedScheduleHz: averageDefined(completeSamples.map(sample => numberValue(sample.summary.achievedScheduleHz))),
+        achievedCompletionHz: averageDefined(completeSamples.map(sample => numberValue(sample.summary.achievedCompletionHz))),
         maxStartDriftMs,
         lateFrameCount,
-        duration: streamDurationTimingFromSamples(samples, durations),
-        slowestAgents: slowestStreamAgentRows(samples),
+        duration: streamDurationTimingFromSamples(completeSamples, durations),
+        slowestAgents: slowestStreamAgentRows(completeSamples),
     };
+}
+
+function hasCompleteStreamTimingEvidence(sample: StreamTimingSample): boolean {
+    return sample.completeness === 'terminal' && [
+        'plannedFrames', 'completedFrames', 'failedFrames', 'droppedFrames',
+    ].every(key => numberValue(sample.summary[key]) !== undefined);
 }
 
 function sumStreamNumber(samples: readonly StreamTimingSample[], key: string): number {
@@ -1676,7 +2183,12 @@ function slowestStreamAgentRows(
         if (!sample.agentId) {
             continue;
         }
-        byAgent.set(sample.agentId, [...(byAgent.get(sample.agentId) ?? []), sample]);
+        const agentSamples = byAgent.get(sample.agentId);
+        if (agentSamples) {
+            agentSamples.push(sample);
+        } else {
+            byAgent.set(sample.agentId, [sample]);
+        }
     }
     return [...byAgent.entries()]
         .map(([agentId, agentSamples]) => {
@@ -1692,7 +2204,7 @@ function slowestStreamAgentRows(
                 averageMs: average(durations),
                 p95Ms: percentile(durations, 0.95),
                 p99Ms: percentile(durations, 0.99),
-                maxMs: durations.length > 0 ? Math.max(...durations) : undefined,
+                maxMs: maxNumber(durations),
             };
         })
         .sort((left, right) =>
@@ -1796,8 +2308,7 @@ function averageDefined(values: readonly (number | undefined)[]): number | undef
 }
 
 function maxDefined(values: readonly (number | undefined)[]): number | undefined {
-    const defined = values.filter((value): value is number => value !== undefined);
-    return defined.length > 0 ? Math.max(...defined) : undefined;
+    return maxNumber(values);
 }
 
 type CommandTimingSample = Readonly<{
@@ -1881,14 +2392,19 @@ function slowestAgentRows(
         if (!sample.agentId) {
             continue;
         }
-        byAgent.set(sample.agentId, [...(byAgent.get(sample.agentId) ?? []), sample.durationMs]);
+        const durations = byAgent.get(sample.agentId);
+        if (durations) {
+            durations.push(sample.durationMs);
+        } else {
+            byAgent.set(sample.agentId, [sample.durationMs]);
+        }
     }
     return [...byAgent.entries()]
         .map(([agentId, durations]) => ({
             agentId,
             commandCount: durations.length,
             averageMs: average(durations),
-            maxMs: Math.max(...durations),
+            maxMs: maxNumber(durations),
         }))
         .sort((left, right) =>
             (right.maxMs ?? 0) - (left.maxMs ?? 0) ||
@@ -1944,6 +2460,36 @@ function average(values: readonly number[]): number | undefined {
     return roundMetric(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
+function numberExtrema(
+    values: readonly number[],
+): Readonly<{ min: number; max: number }> | undefined {
+    if (values.length === 0) {
+        return undefined;
+    }
+    let min = values[0];
+    let max = values[0];
+    for (let index = 1; index < values.length; index += 1) {
+        const value = values[index];
+        if (value < min) {
+            min = value;
+        }
+        if (value > max) {
+            max = value;
+        }
+    }
+    return { min, max };
+}
+
+function maxNumber(values: readonly (number | undefined)[]): number | undefined {
+    let max: number | undefined;
+    for (const value of values) {
+        if (value !== undefined && (max === undefined || value > max)) {
+            max = value;
+        }
+    }
+    return max;
+}
+
 function roundMetric(value: number): number {
     return Math.round(value * 100) / 100;
 }
@@ -1959,12 +2505,13 @@ function outlierCount(
     return values.filter(value => value >= p95Ms && value > p50Ms).length;
 }
 
-function parseControlPostFailure(
-    files: DistributedRunArtifactFiles,
+function parseControlPostFailureFromParsed(
+    parsed: ParsedDistributedArtifactPipeline,
     warnings: DistributedRunArtifactParseWarning[],
 ): ControlPostFailureArtifact | undefined {
-    const metadata = parseJsonRecord(
-        files['control-post-error-metadata.json'],
+    const files = parsed.projectedFiles;
+    const metadata = parsedJsonRecord(
+        parsed,
         'control-post-error-metadata.json',
         warnings,
     );
@@ -1984,7 +2531,7 @@ function parseControlPostFailure(
         curlStatus: numberValue(metadata.curlStatus),
         exitStatus: numberValue(metadata.exitStatus),
         responseFile: responseFile ?? 'control-post-error-metadata.json',
-        body: responseFile ? parseJsonRecord(files[responseFile], responseFile, warnings) : {},
+        body: responseFile ? parsedJsonRecord(parsed, responseFile, warnings) : {},
     };
 }
 
@@ -1993,13 +2540,15 @@ function controlPostPhaseFromFileName(fileName: string): string | undefined {
     return match?.[1];
 }
 
-function parseDistributedRunRecord(
-    text: string | undefined,
+function parseDistributedRunRecordFromParsed(
+    parsed: ParsedDistributedArtifactPipeline,
     runnerSummary: Record<string, unknown>,
     manifestRecord: Record<string, unknown>,
     warnings: DistributedRunArtifactParseWarning[],
 ): Record<string, unknown> {
-    if (!text || text.trim().length === 0) {
+    const fileName = 'distributed-run.json';
+    const file = distributedArtifactPipelineFile(parsed, fileName);
+    if (file.status === 'missing' || file.status === 'empty') {
         const fallback = distributedRunRecordFromFallback(runnerSummary, manifestRecord);
         if (fallback) {
             warnings.push({
@@ -2011,10 +2560,11 @@ function parseDistributedRunRecord(
         throw new Error('distributed-run.json is required.');
     }
 
-    try {
-        return asRecord(JSON.parse(text));
-    } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
+    if (file.format === 'json' && file.status === 'parsed') {
+        return asRecord(file.value);
+    }
+    {
+        const detail = parsedJsonErrorDetail(fileName, file.message);
         const fallback = distributedRunRecordFromFallback(runnerSummary, manifestRecord);
         if (fallback) {
             warnings.push({
@@ -2085,22 +2635,24 @@ function distributedRunRecordFromFallback(
     };
 }
 
-function parseJsonRecord(
-    text: string | undefined,
+function parsedJsonRecord(
+    parsed: ParsedDistributedArtifactPipeline,
     fileName: string,
     warnings: DistributedRunArtifactParseWarning[],
     required = false,
 ): Record<string, unknown> {
-    if (!text || text.trim().length === 0) {
+    const file = distributedArtifactPipelineFile(parsed, fileName);
+    if (file.status === 'missing' || file.status === 'empty') {
         if (required) {
             throw new Error(`${fileName} is required.`);
         }
         return {};
     }
-    try {
-        return asRecord(JSON.parse(text));
-    } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
+    if (file.format === 'json' && file.status === 'parsed') {
+        return asRecord(file.value);
+    }
+    {
+        const detail = parsedJsonErrorDetail(fileName, file.message);
         if (required) {
             throw new Error(`${fileName} is not valid JSON: ${detail}`);
         }
@@ -2109,32 +2661,34 @@ function parseJsonRecord(
     }
 }
 
-function parseJsonl(
-    text: string | undefined,
+function parsedJsonlRecords(
+    parsed: ParsedDistributedArtifactPipeline,
     fileName: string,
     warnings: DistributedRunArtifactParseWarning[],
 ): readonly Record<string, unknown>[] {
-    if (!text || text.trim().length === 0) {
-        return [];
-    }
     const rows: Record<string, unknown>[] = [];
-    text.split(/\r?\n/).forEach((line, index) => {
-        const trimmed = line.trim();
-        if (trimmed.length === 0) {
-            return;
-        }
-        try {
-            rows.push(asRecord(JSON.parse(trimmed)));
-        } catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
+    distributedArtifactPipelineJsonlRows(parsed, fileName).forEach(row => {
+        if (row.status === 'parsed') {
+            rows.push(asRecord(row.value));
+        } else {
             warnings.push({
                 fileName,
-                lineNumber: index + 1,
-                message: `${fileName}:${index + 1} is not valid JSON: ${detail}`,
+                lineNumber: row.lineNumber,
+                message: row.message ?? `${fileName}:${row.lineNumber} is not valid JSON.`,
             });
         }
     });
     return rows;
+}
+
+function parsedJsonErrorDetail(
+    fileName: string,
+    message: string | undefined,
+): string {
+    const prefix = `${fileName} is not valid JSON: `;
+    return message?.startsWith(prefix)
+        ? message.slice(prefix.length)
+        : message ?? 'Unknown JSON parse error';
 }
 
 function normalizeDistributedRunRecord(
@@ -2144,22 +2698,33 @@ function normalizeDistributedRunRecord(
     const rollup = asRecord(record.rollup);
     const rollupFailures = arrayRecords(rollup.failures).map(normalizeRollupFailureRecord);
     const commandLinks = arrayRecords(record.commandLinks);
+    const rawManifest = asRecord(record.manifest);
+    const distributedRunId = firstString(
+        record.distributedRunId,
+        rawManifest.distributedRunId,
+        'unknown-distributed-run',
+    ) ?? 'unknown-distributed-run';
+    const controlRunId = firstString(
+        record.controlRunId,
+        rawManifest.controlRunId,
+        distributedRunId,
+        'unknown-control-run',
+    ) ?? 'unknown-control-run';
     return {
-        distributedRunId: firstString(record.distributedRunId, 'unknown-distributed-run') ?? 'unknown-distributed-run',
-        controlRunId: firstString(record.controlRunId, record.distributedRunId, 'unknown-control-run') ?? 'unknown-control-run',
+        distributedRunId,
+        controlRunId,
         manifest: ({
-            schemaVersion: numberValue(readPath(record, ['manifest', 'schemaVersion'])) ?? 1,
-            distributedRunId: firstString(readPath(record, ['manifest', 'distributedRunId']), record.distributedRunId, 'unknown-distributed-run') ??
-                'unknown-distributed-run',
-            controlRunId: firstString(readPath(record, ['manifest', 'controlRunId']), record.controlRunId, 'unknown-control-run') ??
-                'unknown-control-run',
-            group: asRecord(readPath(record, ['manifest', 'group'])),
-            recipes: arrayRecords(readPath(record, ['manifest', 'recipes'])) as ControlDistributedRunSnapshot['manifest']['recipes'],
-            targetPolicy: asRecord(readPath(record, ['manifest', 'targetPolicy'])) as ControlDistributedRunSnapshot['manifest']['targetPolicy'],
-            roleAssignments: arrayRecords(readPath(record, ['manifest', 'roleAssignments'])) as ControlDistributedRunSnapshot['manifest']['roleAssignments'],
-            startMode: firstString(readPath(record, ['manifest', 'startMode']), 'manual') as ControlDistributedRunSnapshot['manifest']['startMode'],
-            displayName: firstString(readPath(record, ['manifest', 'displayName'])),
-            metadata: asRecord(readPath(record, ['manifest', 'metadata'])),
+            ...recognizedDistributedManifestFields(rawManifest),
+            schemaVersion: numberValue(rawManifest.schemaVersion) ?? 1,
+            distributedRunId,
+            controlRunId,
+            group: asRecord(rawManifest.group),
+            recipes: arrayRecords(rawManifest.recipes) as ControlDistributedRunSnapshot['manifest']['recipes'],
+            targetPolicy: asRecord(rawManifest.targetPolicy) as ControlDistributedRunSnapshot['manifest']['targetPolicy'],
+            roleAssignments: arrayRecords(rawManifest.roleAssignments) as ControlDistributedRunSnapshot['manifest']['roleAssignments'],
+            startMode: firstString(rawManifest.startMode, 'manual') as ControlDistributedRunSnapshot['manifest']['startMode'],
+            displayName: firstString(rawManifest.displayName),
+            metadata: asRecord(rawManifest.metadata),
         } as unknown as ControlDistributedRunSnapshot['manifest']),
         state: firstString(record.state, 'unknown') as ControlDistributedRunSnapshot['state'],
         createdAtEpochMs: numberValue(record.createdAtEpochMs) ?? numberValue(record.startedAtEpochMs) ?? 0,
@@ -2188,6 +2753,27 @@ function normalizeDistributedRunRecord(
         },
         error: optionalRecord(record.error) as ControlDistributedRunSnapshot['error'],
     };
+}
+
+function recognizedDistributedManifestFields(
+    manifest: Record<string, unknown>,
+): Record<string, unknown> {
+    const recognized: Record<string, unknown> = {};
+    for (const key of [
+        'description',
+        'variables',
+        'secretRefs',
+        'roleAssignmentPolicy',
+        'ackTimeoutMs',
+        'barrier',
+        'startDeadlineEpochMs',
+        'artifactPolicy',
+    ]) {
+        if (manifest[key] !== undefined) {
+            recognized[key] = manifest[key];
+        }
+    }
+    return recognized;
 }
 
 function normalizeControlRunRecord(
@@ -2243,6 +2829,7 @@ function normalizeControlResultRecord(
         protocolVersion: 1,
         runId: firstString(result.runId, fallbackRunId) ?? fallbackRunId,
         agentId: firstString(result.agentId, 'unknown-agent') ?? 'unknown-agent',
+        resultKey: firstString(result.resultKey),
         commandId: commandIdFromResult(result) ?? 'unknown-command',
         ok,
         result: normalizeResultPayload(result),
@@ -2384,12 +2971,4 @@ function formatMs(value: number | undefined): string {
 
 function formatRate(value: number | undefined): string {
     return value === undefined ? '-' : `${roundMetric(value)}Hz`;
-}
-
-function safeJson(text: string): unknown {
-    try {
-        return JSON.parse(text);
-    } catch (_error) {
-        return {};
-    }
 }

@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
     authenticateRallarBlackBox,
     authErrorMessage,
+    bootstrapMatchesAuthSession,
     bootstrapPatchFromAuthSession,
     type RallarBlackBoxAuthFacade,
 } from '../../../apps/rallar-black-box/src/auth-flow.ts';
+import { resolveRallarBlackBoxBootstrapConfig } from '../../../apps/rallar-black-box/src/runtime-store.ts';
 
 function session(username = 'alice') {
     return {
@@ -120,6 +122,48 @@ describe('rallar-black-box auth flow', () => {
                 rallarRegister: false,
                 rallarRestoreSession: true,
             });
+    });
+
+    it('recognizes only the exact auth-session bootstrap merge as ready', () => {
+        const authSession = session('alice');
+        const initial = resolveRallarBlackBoxBootstrapConfig(
+            '?provider=browser-rallar&apiBaseUrl=https%3A%2F%2Fapi.example.test',
+            {},
+        );
+        expect(bootstrapMatchesAuthSession(initial, authSession)).toBe(false);
+
+        const ready = {
+            ...initial,
+            ...bootstrapPatchFromAuthSession(
+                authSession,
+                'https://api.example.test',
+            ),
+        };
+        expect(bootstrapMatchesAuthSession(ready, authSession)).toBe(true);
+        expect(bootstrapMatchesAuthSession(
+            { ...ready, actor: 'mallory' },
+            authSession,
+        )).toBe(false);
+        expect(bootstrapMatchesAuthSession(
+            { ...ready, sessionId: 'other-session' },
+            authSession,
+        )).toBe(false);
+        expect(bootstrapMatchesAuthSession(
+            { ...ready, rallarUsername: 'mallory' },
+            authSession,
+        )).toBe(false);
+        expect(bootstrapMatchesAuthSession(
+            { ...ready, rallarPassword: 'retained-secret' },
+            authSession,
+        )).toBe(false);
+        expect(bootstrapMatchesAuthSession(
+            { ...ready, rallarRegister: true },
+            authSession,
+        )).toBe(false);
+        expect(bootstrapMatchesAuthSession(
+            { ...ready, rallarRestoreSession: false },
+            authSession,
+        )).toBe(false);
     });
 
     it('classifies common login failures', () => {
