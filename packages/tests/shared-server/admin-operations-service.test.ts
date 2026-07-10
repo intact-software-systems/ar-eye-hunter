@@ -13,7 +13,7 @@ const NOW_EPOCH_MS = 1_700_000_000_000;
 const CRDT_DOCUMENT: RallarCrdtDocumentRef = {
   applicationId: 'app-1',
   workspaceId: 'workspace-1',
-  documentScope: 'group',
+  scope: 'group',
   documentType: 'map',
   documentId: 'doc-1',
 };
