@@ -20,8 +20,8 @@ This is not a plan for a generic Rallar admin console. Direct Auth, Groups, WS, 
 
 The existing SPA is capable but too broad for the distributed-recipe job:
 
-- `apps/rallar-black-box/src/App.tsx` is about 28k lines and owns shell, fetching, execution, monitoring, artifact import, recipe authoring, fleet views, direct Rallar tools, and many forms in one file.
-- `apps/rallar-black-box/src/styles.css` is also large, about 7k lines, so a new look and feel should not be achieved by layering more global selectors onto the existing CSS. The rewrite needs an isolated design system and stylesheet boundary.
+- `apps/rallar-black-box/src/App.tsx` is 28,265 lines and owns shell, fetching, execution, monitoring, artifact import, recipe authoring, fleet views, direct Rallar tools, and many forms in one file.
+- `apps/rallar-black-box/src/styles.css` is 7,380 lines, so a new look and feel should not be achieved by layering more global selectors onto the existing CSS. The rewrite needs an isolated design system and stylesheet boundary.
 - The file currently declares 78 top-level capitalized component functions and contains 359 `useState`/`useEffect`/`useMemo`/`useCallback` calls. Even though the final `App()` composition is only the bottom part of the file, component ownership, state ownership, and bug fixes are still coupled by the single module.
 - Several top-level tab panels use `hidden` while their component trees remain mounted. That is useful for a few draft-heavy tools, but it is not a good default strangler mechanism because hidden effects, polling, memory, and static imports still count toward runtime and bundle cost.
 - `apps/rallar-black-box/src/app-tabs.ts` already has a runner-facing top-level model with `recipes`, `runs`, `fleet`, `builder`, `event-stream`, and `advanced`, which is a good migration foothold.
@@ -175,7 +175,7 @@ The default route should open `Execute` with a meaningful current run if availab
 `Analyze`
 
 - Load distributed-run artifacts from the control server or from local files.
-- Validate required files: `distributed-run.json`, `manifest.json`, `control-run.json`, `report.json`, `results.jsonl`, `events.jsonl`, `failures.json`, `metadata.json`.
+- Validate files by bundle profile and schema version. `distributed-run.json`, `manifest.json`, and `control-run.json` form the core distributed bundle; report, result, event, failure, and metadata evidence may be optional. Keep supported partial bundles usable with file-specific warnings.
 - Render the failure verdict, likely cause, next action, minimal fix area, affected agents/regions, evidence file, and verification command.
 - Provide artifact search by agent, command, topic, diagnostic type, payload summary, failure category, and time window.
 - Produce issue-ready summaries from `analysis.summaryMarkdown`, `fixProposalMarkdown`, and `performanceMarkdown`.
@@ -308,7 +308,7 @@ Proposed app responsibilities:
 
 Target ownership:
 
-- `App.tsx`: app bootstrap, providers, auth gate, high-level routing. Target below 1,500 lines before default flip, then below 800 lines when legacy extraction is complete.
+- `App.tsx`: app bootstrap, providers, auth gate, high-level routing. Below 1,500 lines is an intermediate extraction checkpoint; the final target before the Iteration 12 default flip is below 800 lines.
 - `RecipeConsoleApp.tsx`: compose new console routes and shared providers. Target below 400 lines.
 - `LegacySurfaceRouter.tsx`: resolve and lazy-load one legacy route. Target below 250 lines.
 - Feature route files: own orchestration for one workflow. Target below 700 lines.
@@ -386,6 +386,63 @@ Do not persist secrets, raw credentials, large artifact payloads, transient hove
 Parse, validate, normalize, and serialize this state through one typed codec. Incoming links override personal defaults. Use history replacement for high-frequency range/viewport changes and push entries for committed view, selection, filter, comparison, and legacy-route changes. Invalid or stale URL state should fall back visibly while preserving every valid field.
 
 ## Iterative Plan
+
+### Execution ledger
+
+The canonical product contract is the [Recipe Console product spec](../apps/rallar-black-box/docs/recipe-console-product-spec.md), and surface cutover ownership is the [Recipe Console migration register](../apps/rallar-black-box/docs/recipe-console-migration-register.md). This ledger records execution status without duplicating the iteration details below.
+
+| Iteration | Status | Exit tracking |
+| --- | --- | --- |
+| 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
+| 1 — Extract Pure App Helpers | Pending | Broad exit criteria below remain binding and will be delivered as multiple reviewed extraction tasks. |
+| 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
+| 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
+| 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
+| 5 — Monitor MVP | Pending | No Recipe Console monitor cutover is represented as complete. |
+| 6 — Artifact Analysis | Pending | No profile-aware Recipe Console importer cutover is represented as complete. |
+| 7 — Timing And Recipe Tuning Lab | Pending | No timing/tuning acceptance evidence is represented as complete. |
+| 8 — History, Compare, Saved Filters, Retention | Pending | No retention preview or history/compare cutover is represented as complete. |
+| 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
+| 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
+| 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
+| 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
+
+#### Iteration 0 baseline and validation evidence
+
+| Evidence | Recorded result and qualification |
+| --- | --- |
+| Isolation | Worktree `/private/tmp/ar-eye-hunter-worktrees/rallar-black-box-spa`; branch `codex/rallar-black-box-spa-reimplementation`; base `9ce0490`. |
+| Runtime | Local Node `26.5.0`; CI uses Node 24. This variance remains an explicit risk below. |
+| `npm --workspace rallar-black-box run typecheck` | Passed. |
+| Focused five-file Vitest slice | 60/60 passed. |
+| `npm --workspace rallar-black-box run build` | Passed with the existing large-chunk warning; the `index` chunk was about 1.22 MB minified. |
+| Broad app unit run | 310/312 passed in the sandbox. Both failures were caused by denied local IPC/loopback; the focused socket-dependent file then passed 9/9 outside that restriction. The baseline is green with this environmental qualification, not an unqualified 312/312 sandbox claim. |
+| Live/Postgres coverage | Not run in Iteration 0 and not represented as passed. |
+
+#### Binding decisions
+
+- The broad Iteration 1 exit criteria govern. Deliver them through multiple reviewed extraction tasks rather than weakening the criteria.
+- The final `App.tsx` target is below 800 lines. Below 1,500 lines is only an intermediate checkpoint.
+- `control-run-manager.ts` remains the canonical typed control-server client until extraction. `recipe-console/control/control-api.ts` must delegate to or re-export it rather than duplicate endpoints or types.
+- Artifact validation is bundle-profile- and schema-version-aware. Supported partial bundles remain usable with visible file-specific warnings.
+- Iteration 8 retention preview is a backward-compatible, non-destructive dry run, for example an optional `dryRun: true`, followed by explicit destructive confirmation. The existing destructive default must not change silently.
+- Fleet first receives a behavior-preserving legacy extraction. The new Fleet view consumes shared deterministic helpers and must not import a legacy panel.
+- Existing mounted-state guarantees are temporary documented exceptions. Draft, polling, subscription, media, and execution ownership must migrate before the corresponding view is lazily unmounted.
+- Old aliases deterministically open the documented legacy surface during migration. New Recipe Console URLs use the versioned codec.
+- The default flip is an explicit Iteration 12 cutover and occurs only after all 14 Ready-State items have evidence.
+
+#### Remaining risks and evidence ownership
+
+| Remaining risk | Owning iteration(s) | Mitigation and evidence target |
+| --- | --- | --- |
+| Hidden mounted effects, polling, subscriptions, and runtime ownership | 1, 11 | Extract ownership before unmounting and satisfy `packages/tests/rallar-black-box/app-structure.test.ts` — `legacy routes resolve through dynamic imports only` plus `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions`. |
+| Source, DOM, and CSS selector compatibility can regress during extraction | 1, 2, 11 | Preserve source/public boundaries and add the structure assertion plus `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `CSS isolation fixture preserves representative legacy and Recipe Console controls`. |
+| URL/default flip and runner-agent launch compatibility | 2, 12 | Prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL` and `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `runner-agent launch URL opens advanced workbench consumes and scrubs the session-ticket fragment`; stale stored legacy navigation must not win on a blank URL after cutover. |
+| Artifact versions and partial bundles | 6 | Keep parsing profile/version aware and prove `tests/playwright/rallar-black-box/recipe-console-analyze.spec.ts` — `imports a partial bundle offline and focuses the first actionable failure`, including missing, incompatible, and malformed file distinctions. |
+| Retention preview safety | 8 | Add optional dry-run behavior without changing the destructive default, require explicit confirmation, and prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup`. |
+| Qualitative visual and performance gates lack executable thresholds | 2, 9, 12 | Iteration 2 records approved screenshot baselines and an executable drift budget in `recipe-console-shell.spec.ts`; Iteration 9 encodes bounded-render and interaction budgets in `recipe-console-scale.spec.ts`; Iteration 12 encodes viewport, keyboard, touch, reduced-motion, and non-hover gates in `recipe-console-accessibility.spec.ts`. |
+| Local Node 26 differs from CI Node 24 | 1 and every code-changing iteration | Run the focused tests, typecheck, and build on CI Node 24; retain the local Node `26.5.0` result separately so version-specific differences remain visible. |
+| Live services and Postgres were unavailable or not exercised in Iteration 0 | 3-5, 8, 12 | Run the listed Deno control-server tests and configured Playwright/live distributed lifecycle, culminating in `npm run test:e2e:rallar-black-box:full-stack:real:distributed`; do not close live-service gates from mock or sandbox-only evidence. |
 
 ### Iteration 0: Product Cut And Evidence Map
 
@@ -606,7 +663,7 @@ Work:
 - Add history table with URL-backed filters: group, recipe, profile, status, failure category, date range, text.
 - Add saved filter presets stored locally first; leave room for remote saved views later.
 - Add compare view using `compareDistributedRuns(...)`.
-- Add retention preview and cleanup controls against `POST /retention/cleanup`.
+- Add retention preview and cleanup controls against `POST /retention/cleanup`. Preview must use a backward-compatible non-destructive dry run such as optional `dryRun: true`; preserve the existing destructive default and require explicit confirmation before cleanup.
 - Add copy/share link for current filtered or compared view.
 
 Exit criteria:
@@ -648,7 +705,8 @@ Goal: keep fleet analysis useful without turning the SPA into a map app.
 
 Work:
 
-- Move current Fleet panel into `recipe-console/fleet`.
+- First extract the current Fleet panel behavior-preservingly to `src/legacy/runner/LegacyFleetRoute.tsx`.
+- Build the new `recipe-console/fleet` view from shared deterministic helpers; do not import the legacy panel.
 - Keep live board, heatmap, region summaries, repeated failure signatures, timing distributions, and deterministic SVG map.
 - Add links from failure signatures to filtered history and affected agents.
 - Add route evidence only when source/target locations are explicit or documented.
@@ -701,7 +759,7 @@ Work:
 - Contrast and semantic color audit for pass/fail/warn/stale/selected states.
 - Empty, partial, stale, offline, loading, permission, schema-error, and artifact-missing states.
 - Replace default runner workspace with Recipe Console.
-- Flip workflows individually using their migration-register status; the final default changes only after `Execute`, `Monitor`, `Analyze`, and `Tune` core gates are green.
+- Flip workflows individually using their migration-register status. Green `Execute`, `Monitor`, `Analyze`, and `Tune` core gates are necessary but not sufficient; the final default changes only after all 14 Ready-State items have evidence.
 - Keep old runner UI under `Advanced Legacy`. Any future retirement requires a separate explicit plan after parity and usage review.
 
 Exit criteria:
