@@ -134,6 +134,64 @@
       }
     },
     {
+      "name": "rejectInvalidCrdtLifecycle",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/crdt/lifecycle",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "document": {
+            "applicationId": "app-1",
+            "workspaceId": "workspace-1",
+            "documentScope": "group",
+            "documentType": "map",
+            "documentId": "doc-1"
+          },
+          "lifecycle": "destroy"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": "Unsupported CRDT lifecycle: destroy"
+        }
+      }
+    },
+    {
+      "name": "rejectInvalidCrdtErasureMode",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/admin/operations/crdt/erase",
+        "headers": {
+          "Authorization": "{adminAuthHeader}",
+          "x-client-id": "{adminClientId}"
+        },
+        "body": {
+          "document": {
+            "applicationId": "app-1",
+            "workspaceId": "workspace-1",
+            "documentScope": "group",
+            "documentType": "map",
+            "documentId": "doc-1"
+          },
+          "mode": "redact-payload"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": "Unsupported CRDT erasure mode: redact-payload"
+        }
+      }
+    },
+    {
       "name": "openApiListsAdminOperations",
       "type": "http",
       "connection": "api",

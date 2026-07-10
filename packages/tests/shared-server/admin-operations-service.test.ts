@@ -10,6 +10,13 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/services/ti
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/AdminOperationsService.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
+const CRDT_DOCUMENT: RallarCrdtDocumentRef = {
+  applicationId: 'app-1',
+  workspaceId: 'workspace-1',
+  documentScope: 'group',
+  documentType: 'map',
+  documentId: 'doc-1',
+};
 
 describe('AdminOperationsService', () => {
   it('composes overview from read sources and process-local realtime status', async () => {
@@ -355,6 +362,34 @@ describe('AdminOperationsService', () => {
       },
     })).rejects.toThrow(/snapshot document must match/i);
     expect(writeCount).toBe(0);
+  });
+
+  it('rejects invalid CRDT lifecycle and erase mode before repository calls', async () => {
+    const lifecycleCalls: unknown[] = [];
+    const auditCalls: unknown[] = [];
+    const service = createService({
+      crdtAdminRepository: {
+        updateDocumentLifecycle: (input) => {
+          lifecycleCalls.push(input);
+          return Promise.resolve({} as never);
+        },
+        exportDebugBundle: () => Promise.resolve({}),
+      },
+      crdtAuditSink: { record: (event) => { auditCalls.push(event); } },
+    });
+
+    await expect(service.updateCrdtLifecycle({
+      adminSession: createAdminSession(),
+      request: { document: CRDT_DOCUMENT, lifecycle: 'destroy' } as never,
+    })).rejects.toThrow('Unsupported CRDT lifecycle: destroy');
+
+    await expect(service.eraseCrdt({
+      adminSession: createAdminSession(),
+      request: { document: CRDT_DOCUMENT, mode: 'redact-payload' },
+    })).rejects.toThrow('Unsupported CRDT erasure mode: redact-payload');
+
+    expect(lifecycleCalls).toEqual([]);
+    expect(auditCalls).toEqual([]);
   });
 
   it('wraps CRDT debug export with redaction enabled by default', async () => {
