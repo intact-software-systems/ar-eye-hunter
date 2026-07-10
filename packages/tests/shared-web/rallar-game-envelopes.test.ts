@@ -32,6 +32,37 @@ describe('Rallar Game envelopes', () => {
         expect(isRallarGameEnvelope(envelope, 'other.v1')).toBe(false);
     });
 
+    it('isolates envelope acceptance and sequences by match identity', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const matchAEnvelope = createRallarGameEnvelope({
+            protocol: 'test.game.v1',
+            kind: 'input',
+            roomId: 'room-1',
+            senderId: 'peer-1',
+            seq: 10,
+            directorEpoch: 3,
+            sentAtEpochMs: 1_000,
+            matchId: 'match-a',
+            payload: { moveX: 1 },
+        });
+        const matchBEnvelope = createRallarGameEnvelope({
+            ...matchAEnvelope,
+            seq: 1,
+            matchId: 'match-b',
+        });
+
+        expect(matchAEnvelope.matchId).toBe('match-a');
+        expect(tracker.accept(matchAEnvelope, { matchId: 'match-b' })).toEqual({
+            accepted: false,
+            reason: 'wrong-match',
+            envelope: matchAEnvelope,
+        });
+        expect(tracker.accept(matchAEnvelope, { matchId: 'match-a' }))
+            .toMatchObject({ accepted: true });
+        expect(tracker.accept(matchBEnvelope, { matchId: 'match-b' }))
+            .toMatchObject({ accepted: true });
+    });
+
     it('rejects invalid envelope shapes', () => {
         expect(
             isRallarGameEnvelope(
