@@ -186,7 +186,6 @@ import {
     distributedRecipePreflight,
     distributedRecipeStateTone,
     distributedRecipeTargetRows,
-    filterDistributedRuns,
     type DistributedRecipeCatalogItem,
     type DistributedRecipeRolePattern,
     type DistributedRecipeTargetPolicyMode,
@@ -198,13 +197,6 @@ import {
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles,
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import {
-    distributedRecipeSchemaContextText,
-    redactDistributedRecipePromptVariables,
-    renderDistributedRecipePromptTemplate,
-    renderDistributedRecipeValidationFeedback,
-    type DistributedRecipePromptTemplateId,
-} from './distributed-recipe-authoring-prompts.ts';
 import {
     DISTRIBUTED_RUN_SEEDS,
     createSyntheticDistributedRunSeed,
@@ -372,14 +364,8 @@ import { DistributedRecipeCatalogPanel } from './legacy/runner/distributed-recip
 import { DistributedRecipesHeader } from './legacy/runner/distributed-recipes/views/DistributedRecipesHeader.tsx';
 import { DistributedRunControlPanel } from './legacy/runner/distributed-recipes/views/DistributedRunControlPanel.tsx';
 import { DistributedTargetResolutionPanel } from './legacy/runner/distributed-recipes/views/DistributedTargetResolutionPanel.tsx';
-import {
-    DistributedRecipeAuthoringPanel,
-} from './legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringPanel.tsx';
-import {
-    distributedAuthoringDraftPreflights,
-    distributedPromptFeedbackFromValidation,
-    type DistributedAuthoringDraftTarget,
-} from './legacy/runner/distributed-recipes/authoring/distributed-recipe-authoring.ts';
+import { DistributedRecipeAuthoringSection } from './legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringSection.tsx';
+import { DistributedRunHistorySection } from './legacy/runner/distributed-recipes/history/DistributedRunHistorySection.tsx';
 import {
     DISTRIBUTED_RECIPE_CATALOG,
     configuredDistributedRecipeCatalogItem,
@@ -1447,22 +1433,6 @@ function catalogRequirements(
         ),
         ...(entry.prerequisites.requiresPlaywright ? ['Playwright'] : []),
     ];
-}
-
-function dateInputStartEpoch(value: string): number | undefined {
-    if (!value) {
-        return undefined;
-    }
-    const epochMs = new Date(`${value}T00:00:00`).getTime();
-    return Number.isFinite(epochMs) ? epochMs : undefined;
-}
-
-function dateInputEndEpoch(value: string): number | undefined {
-    if (!value) {
-        return undefined;
-    }
-    const epochMs = new Date(`${value}T23:59:59.999`).getTime();
-    return Number.isFinite(epochMs) ? epochMs : undefined;
 }
 
 function artifactEventTitle(event: Record<string, unknown>): string {
@@ -11119,22 +11089,6 @@ function DistributedRecipesPanel({
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [lastAction, setLastAction] = useState<string | undefined>();
-    const [historyQuery, setHistoryQuery] = useState('');
-    const [historyStatus, setHistoryStatus] = useState('');
-    const [historyGroup, setHistoryGroup] = useState('');
-    const [historyRecipe, setHistoryRecipe] = useState('');
-    const [historyProfile, setHistoryProfile] = useState('');
-    const [historyUser, setHistoryUser] = useState('');
-    const [historyFailureType, setHistoryFailureType] = useState('');
-    const [historyFromDate, setHistoryFromDate] = useState('');
-    const [historyToDate, setHistoryToDate] = useState('');
-    const [compareLeftId, setCompareLeftId] = useState('');
-    const [compareRightId, setCompareRightId] = useState('');
-    const [authoringTemplateId, setAuthoringTemplateId] =
-        useState<DistributedRecipePromptTemplateId>('live-group-ack');
-    const [authoringDraftTarget, setAuthoringDraftTarget] =
-        useState<DistributedAuthoringDraftTarget>('distributed-run-manifest');
-    const [authoringDraftText, setAuthoringDraftText] = useState('');
     const didInitialRefresh = useRef(false);
     const groupRef = useMemo(
         () => ({
@@ -11308,108 +11262,6 @@ function DistributedRecipesPanel({
                 : undefined,
         [manifest],
     );
-    const authoringSchemaContextText = useMemo(
-        () => distributedRecipeSchemaContextText(),
-        [],
-    );
-    const authoringDraftValidation = useMemo(
-        () =>
-            authoringDraftText.trim().length > 0
-                ? validateSchemaAuthoringText(
-                      authoringDraftTarget,
-                      authoringDraftText,
-                  )
-                : undefined,
-        [authoringDraftTarget, authoringDraftText],
-    );
-    const authoringDraftPreflights = useMemo(
-        () => distributedAuthoringDraftPreflights(authoringDraftValidation),
-        [authoringDraftValidation],
-    );
-    const authoringValidationFeedback = useMemo(
-        () =>
-            authoringDraftValidation
-                ? distributedPromptFeedbackFromValidation(
-                      authoringDraftValidation,
-                      authoringDraftPreflights,
-                  )
-                : undefined,
-        [authoringDraftPreflights, authoringDraftValidation],
-    );
-    const authoringValidationFeedbackText = useMemo(
-        () =>
-            authoringValidationFeedback
-                ? renderDistributedRecipeValidationFeedback(
-                      authoringValidationFeedback,
-                  )
-                : 'Paste generated JSON to get schema validation and distributed recipe preflight feedback.',
-        [authoringValidationFeedback],
-    );
-    const authoringPromptVariables = useMemo(
-        () => ({
-            apiBaseUrl: globalValues.apiBaseUrl,
-            applicationId: globalValues.applicationId,
-            workspaceId: globalValues.workspaceId,
-            groupId: globalValues.roomId,
-            clientId: globalValues.clientId,
-            sessionId: globalValues.sessionId,
-            controlHttpBaseUrl: baseUrl,
-            controlRunId: selectedRunId,
-            distributedRunId,
-            targetPolicyMode,
-            rolePattern,
-            ackTimeoutMs,
-            barrier: barrierEnabled
-                ? { enabled: true, timeoutMs: barrierTimeoutMs }
-                : undefined,
-            startMode,
-            selectedAgentIds,
-            selectedRecipes: selectedRecipes.map((item) => ({
-                itemId: item.itemId,
-                recipeId: item.recipe.recipeId,
-                title: item.title,
-                live: item.live,
-                profiles: item.profiles,
-            })),
-            controlToken: token,
-        }),
-        [
-            ackTimeoutMs,
-            barrierEnabled,
-            barrierTimeoutMs,
-            baseUrl,
-            distributedRunId,
-            globalValues.apiBaseUrl,
-            globalValues.applicationId,
-            globalValues.clientId,
-            globalValues.roomId,
-            globalValues.sessionId,
-            globalValues.workspaceId,
-            rolePattern,
-            selectedAgentIds,
-            selectedRecipes,
-            selectedRunId,
-            startMode,
-            targetPolicyMode,
-            token,
-        ],
-    );
-    const redactedAuthoringPromptVariables = useMemo(
-        () => redactDistributedRecipePromptVariables(authoringPromptVariables),
-        [authoringPromptVariables],
-    );
-    const authoringPromptText = useMemo(
-        () =>
-            renderDistributedRecipePromptTemplate(authoringTemplateId, {
-                variables: authoringPromptVariables,
-                validationFeedback: authoringValidationFeedback,
-            }),
-        [
-            authoringPromptVariables,
-            authoringTemplateId,
-            authoringValidationFeedback,
-        ],
-    );
     const currentDistributedRuns = useMemo(
         () =>
             distributedRuns
@@ -11419,68 +11271,6 @@ function DistributedRecipesPanel({
                         right.updatedAtEpochMs - left.updatedAtEpochMs,
                 ),
         [distributedRuns, selectedRunId],
-    );
-    const historyStatusOptions = useMemo(
-        () => uniqueValues(distributedRuns.map((item) => item.state)),
-        [distributedRuns],
-    );
-    const historyRecipeOptions = useMemo(
-        () =>
-            uniqueValues(
-                distributedRuns.flatMap((item) =>
-                    item.manifest.recipes.map(
-                        (selection, index) =>
-                            selection.recipeId ??
-                            selection.recipe?.recipeId ??
-                            `recipe-${index + 1}`,
-                    ),
-                ),
-            ),
-        [distributedRuns],
-    );
-    const historyGroupOptions = useMemo(
-        () =>
-            uniqueValues(
-                distributedRuns.map((item) => item.manifest.group.groupId),
-            ),
-        [distributedRuns],
-    );
-    const historyProfileOptions = useMemo(
-        () =>
-            uniqueValues(
-                distributedRuns.flatMap((item) =>
-                    item.manifest.recipes
-                        .map((selection) => selection.profile)
-                        .filter((value): value is string => Boolean(value)),
-                ),
-            ),
-        [distributedRuns],
-    );
-    const historyRows = useMemo(
-        () =>
-            filterDistributedRuns(distributedRuns, {
-                query: historyQuery,
-                groupId: historyGroup,
-                recipeId: historyRecipe,
-                profile: historyProfile,
-                user: historyUser,
-                status: historyStatus,
-                failureType: historyFailureType,
-                fromEpochMs: dateInputStartEpoch(historyFromDate),
-                toEpochMs: dateInputEndEpoch(historyToDate),
-            }),
-        [
-            distributedRuns,
-            historyFailureType,
-            historyFromDate,
-            historyGroup,
-            historyProfile,
-            historyQuery,
-            historyRecipe,
-            historyStatus,
-            historyToDate,
-            historyUser,
-        ],
     );
     const selectedMonitor = useMemo(
         () =>
@@ -11516,38 +11306,6 @@ function DistributedRecipesPanel({
     const distributedTargetAgentSummary = useMemo(
         () => summarizeControlAgentBoardRows(distributedTargetAgentRows),
         [distributedTargetAgentRows],
-    );
-    const compareLeftRun = useMemo(
-        () =>
-            distributedRuns.find(
-                (item) => item.distributedRunId === compareLeftId,
-            ),
-        [compareLeftId, distributedRuns],
-    );
-    const compareRightRun = useMemo(
-        () =>
-            distributedRuns.find(
-                (item) => item.distributedRunId === compareRightId,
-            ),
-        [compareRightId, distributedRuns],
-    );
-    const compareSummary = useMemo(
-        () =>
-            compareLeftRun && compareRightRun
-                ? compareDistributedRuns({
-                      left: compareLeftRun,
-                      right: compareRightRun,
-                      leftControlRun:
-                          compareLeftRun.controlRunId === run?.runId
-                              ? run
-                              : undefined,
-                      rightControlRun:
-                          compareRightRun.controlRunId === run?.runId
-                              ? run
-                              : undefined,
-                  })
-                : undefined,
-        [compareLeftRun, compareRightRun, run],
     );
     const liveSelectedRecipeCount = selectedRecipes.filter(
         (item) => item.live,
@@ -11875,27 +11633,6 @@ function DistributedRecipesPanel({
         setLastAction('Copied distributed artifact files.');
     };
 
-    const copyAuthoringText = async (
-        text: string,
-        label: string,
-    ): Promise<void> => {
-        if (!navigator.clipboard) {
-            setLastAction('Clipboard is unavailable in this browser context.');
-            return;
-        }
-        await navigator.clipboard.writeText(text);
-        setLastAction(label);
-    };
-
-    const useManifestPreviewForAuthoring = (): void => {
-        if (!manifest) {
-            return;
-        }
-        setAuthoringDraftTarget('distributed-run-manifest');
-        setAuthoringDraftText(json(manifest));
-        setLastAction('Loaded manifest preview into Generate With AI draft.');
-    };
-
     const loadDistributedRun = async (id: string): Promise<void> => {
         setDistributedRunId(id);
         setBusyAction('load-distributed-run');
@@ -11988,39 +11725,22 @@ function DistributedRecipesPanel({
                 onRefresh={refresh}
                 onResolveTargets={resolveTargets}
             />
-            <DistributedRecipeAuthoringPanel
-                selectedTemplateId={authoringTemplateId}
-                promptText={authoringPromptText}
-                schemaContextText={authoringSchemaContextText}
-                promptVariables={redactedAuthoringPromptVariables}
-                draftTarget={authoringDraftTarget}
-                draftText={authoringDraftText}
-                draftValidation={authoringDraftValidation}
-                draftPreflights={authoringDraftPreflights}
-                validationFeedbackText={authoringValidationFeedbackText}
-                canUseManifestPreview={Boolean(manifest)}
-                onTemplateChange={setAuthoringTemplateId}
-                onDraftTargetChange={setAuthoringDraftTarget}
-                onDraftTextChange={setAuthoringDraftText}
-                onCopyPrompt={() =>
-                    void copyAuthoringText(
-                        authoringPromptText,
-                        'Copied distributed recipe prompt.',
-                    )
-                }
-                onCopySchemaContext={() =>
-                    void copyAuthoringText(
-                        authoringSchemaContextText,
-                        'Copied distributed recipe schema context.',
-                    )
-                }
-                onCopyValidationFeedback={() =>
-                    void copyAuthoringText(
-                        authoringValidationFeedbackText,
-                        'Copied distributed recipe validation feedback.',
-                    )
-                }
-                onUseManifestPreview={useManifestPreviewForAuthoring}
+            <DistributedRecipeAuthoringSection
+                manifest={manifest}
+                globalValues={globalValues}
+                baseUrl={baseUrl}
+                token={token}
+                selectedRunId={selectedRunId}
+                distributedRunId={distributedRunId}
+                targetPolicyMode={targetPolicyMode}
+                rolePattern={rolePattern}
+                ackTimeoutMs={ackTimeoutMs}
+                barrierEnabled={barrierEnabled}
+                barrierTimeoutMs={barrierTimeoutMs}
+                startMode={startMode}
+                selectedAgentIds={selectedAgentIds}
+                selectedRecipes={selectedRecipes}
+                onLastAction={setLastAction}
             />
             <div className="distributed-layout">
                 <DistributedRecipeCatalogPanel
@@ -12099,185 +11819,11 @@ function DistributedRecipesPanel({
                     manifestAuthoringValidation={manifestAuthoringValidation}
                 />
                 <DistributedRunMonitorPanel monitor={selectedMonitor} />
-                <section className="distributed-subpanel distributed-history-panel">
-                    <div className="section-heading">
-                        <h3>Historical Runs</h3>
-                        <span>
-                            {historyRows.length}/{distributedRuns.length}
-                        </span>
-                    </div>
-                    <div className="distributed-history-filters">
-                        <label className="field">
-                            <span>Search</span>
-                            <input
-                                value={historyQuery}
-                                onChange={(event) =>
-                                    setHistoryQuery(event.target.value)
-                                }
-                                placeholder="run, group, recipe, failure"
-                            />
-                        </label>
-                        <label className="field">
-                            <span>Status</span>
-                            <select
-                                value={historyStatus}
-                                onChange={(event) =>
-                                    setHistoryStatus(event.target.value)
-                                }
-                            >
-                                <option value="">Any</option>
-                                {historyStatusOptions.map((option) => (
-                                    <option key={option} value={option}>
-                                        {option}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <label className="field">
-                            <span>Group</span>
-                            <select
-                                value={historyGroup}
-                                onChange={(event) =>
-                                    setHistoryGroup(event.target.value)
-                                }
-                            >
-                                <option value="">Any</option>
-                                {historyGroupOptions.map((option) => (
-                                    <option key={option} value={option}>
-                                        {option}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <label className="field">
-                            <span>Recipe</span>
-                            <select
-                                value={historyRecipe}
-                                onChange={(event) =>
-                                    setHistoryRecipe(event.target.value)
-                                }
-                            >
-                                <option value="">Any</option>
-                                {historyRecipeOptions.map((option) => (
-                                    <option key={option} value={option}>
-                                        {option}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <label className="field">
-                            <span>Profile</span>
-                            <select
-                                value={historyProfile}
-                                onChange={(event) =>
-                                    setHistoryProfile(event.target.value)
-                                }
-                            >
-                                <option value="">Any</option>
-                                {historyProfileOptions.map((option) => (
-                                    <option key={option} value={option}>
-                                        {option}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <label className="field">
-                            <span>User</span>
-                            <input
-                                value={historyUser}
-                                onChange={(event) =>
-                                    setHistoryUser(event.target.value)
-                                }
-                            />
-                        </label>
-                        <label className="field">
-                            <span>Failure</span>
-                            <select
-                                value={historyFailureType}
-                                onChange={(event) =>
-                                    setHistoryFailureType(event.target.value)
-                                }
-                            >
-                                <option value="">Any</option>
-                                <option value="any">Any failure</option>
-                                <option value="run">Run</option>
-                                <option value="participant">Participant</option>
-                                <option value="recipe">Recipe</option>
-                                <option value="timed-out">Timed out</option>
-                            </select>
-                        </label>
-                        <label className="field">
-                            <span>From</span>
-                            <input
-                                type="date"
-                                value={historyFromDate}
-                                onChange={(event) =>
-                                    setHistoryFromDate(event.target.value)
-                                }
-                            />
-                        </label>
-                        <label className="field">
-                            <span>To</span>
-                            <input
-                                type="date"
-                                value={historyToDate}
-                                onChange={(event) =>
-                                    setHistoryToDate(event.target.value)
-                                }
-                            />
-                        </label>
-                    </div>
-                    <div className="distributed-run-list distributed-history-list">
-                        {historyRows.map((item) => (
-                            <button
-                                type="button"
-                                key={item.distributedRunId}
-                                className={`distributed-run-row ${item.distributedRunId === selectedDistributedRun?.distributedRunId ? 'selected' : ''}`}
-                                onClick={() =>
-                                    void loadDistributedRun(
-                                        item.distributedRunId,
-                                    )
-                                }
-                            >
-                                <span>
-                                    <strong>{item.distributedRunId}</strong>
-                                    <small>
-                                        {item.manifest.group.groupId} -{' '}
-                                        {item.manifest.recipes
-                                            .map(
-                                                (selection, index) =>
-                                                    selection.recipeId ??
-                                                    selection.recipe
-                                                        ?.recipeId ??
-                                                    `recipe-${index + 1}`,
-                                            )
-                                            .join(', ')}
-                                    </small>
-                                </span>
-                                <span
-                                    className={`pill ${distributedRecipeStateTone(item.state)}`}
-                                >
-                                    {item.state}
-                                </span>
-                                <small>
-                                    {formatTime(item.updatedAtEpochMs)}
-                                </small>
-                            </button>
-                        ))}
-                        {historyRows.length === 0 && (
-                            <div className="empty-state">
-                                No distributed runs match the filters
-                            </div>
-                        )}
-                    </div>
-                </section>
-                <DistributedRunComparePanel
-                    runs={distributedRuns}
-                    leftId={compareLeftId}
-                    rightId={compareRightId}
-                    summary={compareSummary}
-                    onLeftChange={setCompareLeftId}
-                    onRightChange={setCompareRightId}
+                <DistributedRunHistorySection
+                    distributedRuns={distributedRuns}
+                    selectedDistributedRun={selectedDistributedRun}
+                    run={run}
+                    loadDistributedRun={loadDistributedRun}
                 />
             </div>
         </section>

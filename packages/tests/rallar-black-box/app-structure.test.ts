@@ -496,8 +496,9 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/authoring/distributed-recipe-authoring.ts',
-                appImport:
-                    './legacy/runner/distributed-recipes/authoring/distributed-recipe-authoring.ts',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringSection.tsx',
+                appImport: './distributed-recipe-authoring.ts',
                 appSeams: [
                     'DistributedAuthoringDraftTarget',
                     'distributedAuthoringDraftPreflights',
@@ -538,8 +539,9 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringPanel.tsx',
-                appImport:
-                    './legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringPanel.tsx',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringSection.tsx',
+                appImport: './DistributedRecipeAuthoringPanel.tsx',
                 appSeams: ['DistributedRecipeAuthoringPanel'],
                 declarations: [
                     {
@@ -635,7 +637,14 @@ describe('rallar-black-box app source ownership', () => {
                     );
             }
 
-            const appImportedSeams = importedSeams(appSource, owner.appImport);
+            const importerSource =
+                'importerPath' in owner
+                    ? repositorySource(owner.importerPath)
+                    : appSource;
+            const appImportedSeams = importedSeams(
+                importerSource,
+                owner.appImport,
+            );
             expect.soft(appImportedSeams, owner.appImport).not.toBe('');
             for (const seam of owner.appSeams) {
                 expect
@@ -884,14 +893,13 @@ describe('rallar-black-box app source ownership', () => {
         );
         const orderedCalls = [
             '<DistributedRecipesHeader',
-            '<DistributedRecipeAuthoringPanel',
+            '<DistributedRecipeAuthoringSection',
             '<DistributedRecipeCatalogPanel',
             '<DistributedTargetResolutionPanel',
             '<DistributedRunControlPanel',
             '<DistributedManifestPreviewPanel',
             '<DistributedRunMonitorPanel',
-            'distributed-history-panel',
-            '<DistributedRunComparePanel',
+            '<DistributedRunHistorySection',
         ].map((marker) => panelSource.indexOf(marker));
         expect.soft(orderedCalls.every((position) => position >= 0), 'render calls').toBe(
             true,
@@ -945,6 +953,309 @@ describe('rallar-black-box app source ownership', () => {
             visit(targetPath);
         }
         expect(cycles, 'distributed recipe view import cycles').toEqual([]);
+    });
+
+    it('keeps distributed recipe secondary state in exact focused section owners', () => {
+        const appSource = repositorySource(appSourcePath);
+        const panelStart = appSource.indexOf('function DistributedRecipesPanel(');
+        const panelEnd = appSource.indexOf('\nfunction BootstrapPanel(', panelStart);
+        const panelSource = appSource.slice(panelStart, panelEnd);
+        const authoringSectionPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringSection.tsx';
+        const historySectionPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/history/DistributedRunHistorySection.tsx';
+        const dateHelperPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/history/date-input-epoch.ts';
+        const sectionOwners = [
+            {
+                path: authoringSectionPath,
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringSection.tsx',
+                declarations: ['DistributedRecipeAuthoringSection'],
+                lineCap: 300,
+            },
+            {
+                path: historySectionPath,
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/distributed-recipes/history/DistributedRunHistorySection.tsx',
+                declarations: ['DistributedRunHistorySection'],
+                lineCap: 380,
+            },
+            {
+                path: dateHelperPath,
+                importerPath: historySectionPath,
+                moduleImport: './date-input-epoch.ts',
+                declarations: ['dateInputStartEpoch', 'dateInputEndEpoch'],
+                lineCap: 30,
+            },
+        ] as const;
+
+        const sourceByPath = new Map<string, string>();
+        for (const owner of sectionOwners) {
+            const ownerExists = existsSync(resolve(repositoryRoot, owner.path));
+            const ownerSource = ownerExists ? repositorySource(owner.path) : '';
+            sourceByPath.set(owner.path, ownerSource);
+
+            expect.soft(ownerExists, owner.path).toBe(true);
+            expect
+                .soft(ownerSource, `${owner.path}: export-star facade`)
+                .not.toMatch(/^\s*export\s*\*(?:\s+as\s+\w+)?\s+from\b/m);
+            expect
+                .soft(ownerSource, `${owner.path}: named re-export facade`)
+                .not.toMatch(/^\s*export\s+(?:type\s+)?{[^}]+}\s*from\s*['"]/m);
+            expect.soft(ownerSource, `${owner.path}: App.tsx import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/,
+            );
+            expect.soft(ownerSource, `${owner.path}: CSS import`).not.toMatch(
+                /\b(?:from\s+|import\s*)['"][^'"]+\.css['"]/,
+            );
+            expect.soft(
+                ownerSource === ''
+                    ? 0
+                    : ownerSource.trimEnd().split(/\r?\n/).length,
+                `${owner.path}: line count`,
+            ).toBeLessThanOrEqual(owner.lineCap);
+
+            for (const declaration of owner.declarations) {
+                expect
+                    .soft(ownerSource, `${owner.path}: ${declaration} declaration`)
+                    .toMatch(
+                        new RegExp(
+                            `^\\s*export\\s+function\\s+${declaration}\\s*\\(`,
+                            'm',
+                        ),
+                    );
+                expect
+                    .soft(ownerSource, `${owner.path}: ${declaration} re-export`)
+                    .not.toMatch(
+                        new RegExp(
+                            `^\\s*export\\s+(?:type\\s+)?{[^}]*\\b${declaration}\\b[^}]*}\\s*from\\s*['"]`,
+                            'm',
+                        ),
+                    );
+            }
+
+            const importerSource =
+                owner.importerPath === appSourcePath
+                    ? appSource
+                    : sourceByPath.get(owner.importerPath) ??
+                      (existsSync(resolve(repositoryRoot, owner.importerPath))
+                          ? repositorySource(owner.importerPath)
+                          : '');
+            const escapedModuleImport = owner.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const directImports = [
+                ...importerSource.matchAll(
+                    new RegExp(
+                        `import\\s+(?:type\\s+)?{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                        'g',
+                    ),
+                ),
+            ];
+            expect.soft(directImports, `${owner.moduleImport}: direct import`).toHaveLength(
+                1,
+            );
+            const importedSeams = directImports[0]?.[1] ?? '';
+            for (const declaration of owner.declarations) {
+                expect
+                    .soft(importedSeams, `${owner.moduleImport}: ${declaration}`)
+                    .toMatch(new RegExp(`\\b${declaration}\\b`));
+            }
+        }
+
+        const targetPaths = new Set(sectionOwners.map((owner) => owner.path));
+        const dependencies = new Map<string, readonly string[]>();
+        for (const owner of sectionOwners) {
+            dependencies.set(
+                owner.path,
+                [...(sourceByPath.get(owner.path) ?? '').matchAll(
+                    /\bfrom\s+['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]/g,
+                )]
+                    .map((match) => match[1] ?? match[2])
+                    .filter((moduleImport) => moduleImport.startsWith('.'))
+                    .map((moduleImport) =>
+                        relative(
+                            repositoryRoot,
+                            resolve(
+                                resolve(repositoryRoot, owner.path),
+                                '..',
+                                moduleImport,
+                            ),
+                        ),
+                    )
+                    .filter((dependency) => targetPaths.has(dependency)),
+            );
+        }
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) {
+                return;
+            }
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) {
+                visit(dependency);
+            }
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const targetPath of targetPaths) {
+            visit(targetPath);
+        }
+        expect(cycles, 'distributed recipe section import cycles').toEqual([]);
+
+        for (const movedState of [
+            'authoringTemplateId',
+            'authoringDraftTarget',
+            'authoringDraftText',
+            'historyQuery',
+            'historyStatus',
+            'historyGroup',
+            'historyRecipe',
+            'historyProfile',
+            'historyUser',
+            'historyFailureType',
+            'historyFromDate',
+            'historyToDate',
+            'compareLeftId',
+            'compareRightId',
+            'dateInputStartEpoch',
+            'dateInputEndEpoch',
+        ] as const) {
+            expect.soft(panelSource, `parent-local ${movedState}`).not.toMatch(
+                new RegExp(`\\b${movedState}\\b`),
+            );
+        }
+
+        for (const helper of ['dateInputStartEpoch', 'dateInputEndEpoch'] as const) {
+            const declarationOwners = sourceFilesUnder(
+                'apps/rallar-black-box/src',
+            ).filter((sourcePath) =>
+                new RegExp(
+                    `^\\s*(?:export\\s+)?function\\s+${helper}\\s*\\(`,
+                    'm',
+                ).test(repositorySource(sourcePath)),
+            );
+            expect(declarationOwners, `${helper}: exact owner`).toEqual([
+                dateHelperPath,
+            ]);
+        }
+
+        const authoringSource = sourceByPath.get(authoringSectionPath) ?? '';
+        expect(
+            authoringSource,
+            'authoring section composes the existing authoring panel',
+        ).toContain('<DistributedRecipeAuthoringPanel');
+        for (const authoringSeam of [
+            'distributedAuthoringDraftPreflights',
+            'distributedPromptFeedbackFromValidation',
+            'distributedRecipeSchemaContextText',
+            'redactDistributedRecipePromptVariables',
+            'renderDistributedRecipePromptTemplate',
+            'renderDistributedRecipeValidationFeedback',
+            'validateSchemaAuthoringText',
+        ] as const) {
+            expect.soft(authoringSource, `authoring helper: ${authoringSeam}`).toMatch(
+                new RegExp(`\\b${authoringSeam}\\b`),
+            );
+        }
+        expect(authoringSource, 'authoring panel declaration').not.toMatch(
+            /^\s*export\s+function\s+DistributedRecipeAuthoringPanel\s*\(/m,
+        );
+
+        const historySource = sourceByPath.get(historySectionPath) ?? '';
+        expect(
+            historySource,
+            'history section composes the existing compare panel',
+        ).toContain('<DistributedRunComparePanel');
+        expect(historySource, 'history compare panel declaration').not.toMatch(
+            /^\s*export\s+function\s+DistributedRunComparePanel\s*\(/m,
+        );
+        expect(historySource, 'control snapshots type-only import').toMatch(
+            /import\s+type\s*{(?=[^}]*\bControlDistributedRunSnapshot\b)(?=[^}]*\bControlRunSnapshot\b)[^}]*}\s*from\s*'\.\.\/\.\.\/\.\.\/\.\.\/control-run-manager\.ts';/s,
+        );
+        expect(historySource, 'control-run-manager runtime import').not.toMatch(
+            /import(?!\s+type\b)\s*{[^}]*}\s*from\s*['"][^'"]*control-run-manager\.ts['"];/s,
+        );
+        expect(historySource, 'control-client runtime import').not.toMatch(
+            /\bfrom\s*['"][^'"]*control-client\.ts['"];/,
+        );
+        for (const forbiddenHistoryBehavior of [
+            /\buseEffect\b/,
+            /\bfetch\s*\(/,
+            /\bsetInterval\s*\(/,
+            /\bsetTimeout\s*\(/,
+            /\bRUNNER_DISTRIBUTED_POLL_MS\b/,
+        ]) {
+            expect
+                .soft(historySource, `history behavior: ${forbiddenHistoryBehavior.source}`)
+                .not.toMatch(forbiddenHistoryBehavior);
+        }
+        const historyPanelPosition = historySource.indexOf(
+            'distributed-history-panel',
+        );
+        const comparePanelPosition = historySource.indexOf(
+            '<DistributedRunComparePanel',
+        );
+        expect.soft(historyPanelPosition, 'history fragment first child').toBeGreaterThan(
+            -1,
+        );
+        expect.soft(comparePanelPosition, 'history fragment second child').toBeGreaterThan(
+            historyPanelPosition,
+        );
+
+        expect(appSource).not.toContain(
+            "from './legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringPanel.tsx';",
+        );
+        for (const sectionCall of [
+            'DistributedRecipeAuthoringSection',
+            'DistributedRunHistorySection',
+        ] as const) {
+            expect(
+                [...panelSource.matchAll(new RegExp(`<${sectionCall}\\b`, 'g'))],
+                `${sectionCall}: exact call count`,
+            ).toHaveLength(1);
+            const callSource = panelSource.match(
+                new RegExp(`<${sectionCall}\\b[\\s\\S]*?\\/>`),
+            )?.[0];
+            expect.soft(callSource, `${sectionCall}: call`).toBeDefined();
+            expect.soft(callSource ?? '', `${sectionCall}: no key reset`).not.toMatch(
+                /\bkey\s*=/,
+            );
+        }
+        expect(panelSource, 'unconditional authoring section child').toMatch(
+            /^ {12}<DistributedRecipeAuthoringSection\b/m,
+        );
+        expect(panelSource, 'unconditional history section child').toMatch(
+            /^ {16}<DistributedRunHistorySection\b/m,
+        );
+
+        const orderedCalls = [
+            '<DistributedRecipesHeader',
+            '<DistributedRecipeAuthoringSection',
+            '<div className="distributed-layout">',
+            '<DistributedRecipeCatalogPanel',
+            '<DistributedTargetResolutionPanel',
+            '<DistributedRunControlPanel',
+            '<DistributedManifestPreviewPanel',
+            '<DistributedRunMonitorPanel',
+            '<DistributedRunHistorySection',
+        ].map((marker) => panelSource.indexOf(marker));
+        expect.soft(orderedCalls.every((position) => position >= 0), 'render calls').toBe(
+            true,
+        );
+        expect.soft(orderedCalls, 'render order').toEqual(
+            [...orderedCalls].sort((left, right) => left - right),
+        );
     });
 
     it('keeps legacy distributed monitor views and helpers in focused modules', () => {
