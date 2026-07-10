@@ -57,7 +57,7 @@ const API_CONFIG_PATH = 'apps/api-v1/deno.json'
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts'
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb'
 const LOG_TAIL_MAX_BYTES = 4096
-const MANAGED_SECRET_ENV_KEY = /(?:PASSWORD|PASSWD|TOKEN|SECRET|DATABASE_URL)/i
+const MANAGED_SECRET_ENV_KEY = /(?:^|_)(?:PASSWORD|PASSWD|TOKEN|SECRET|DATABASE_URL|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)(?:_|$)/i
 const URL_USERINFO_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:)([^@\s/]+)(@)/gi
 const BEARER_CREDENTIAL = /(\bBearer\s+)[^\s,;]+/gi
 const SENSITIVE_QUERY_VALUE = /([?&][^=\s&#]*(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|signature|credential)[^=\s&#]*=)([^&#\s]*)/gi
@@ -368,8 +368,8 @@ export async function waitForManagedApiReady(input: WaitForManagedApiReadyInput)
                 try {
                     const responseWithDisposedBody = Promise.resolve(
                         fetchImpl(url, { signal: controller.signal }),
-                    ).then(async configResponse => {
-                        await cancelResponseBodyBestEffort(configResponse, controller.signal)
+                    ).then(configResponse => {
+                        cancelResponseBodyBestEffort(configResponse)
                         return configResponse
                     })
                     response = await raceWithAbort(
@@ -474,7 +474,15 @@ export async function readBoundedLogTail(
         }
 
         const bytes = new Uint8Array(length)
-        const bytesRead = await file.readAt(size - length, bytes) ?? 0
+        const start = size - length
+        let bytesRead = 0
+        while (bytesRead < length) {
+            const count = await file.readAt(start + bytesRead, bytes.subarray(bytesRead))
+            if (count === null || count <= 0) {
+                break
+            }
+            bytesRead += Math.min(count, length - bytesRead)
+        }
         return normalizeLogTail(new TextDecoder().decode(bytes.subarray(0, bytesRead)))
     } catch (error) {
         return `[unable to read ${logPath}: ${error instanceof Error ? error.message : String(error)}]`
@@ -493,15 +501,7 @@ async function openDenoBoundedLogTailFile(path: string): Promise<BoundedLogTailF
         size: async () => (await file.stat()).size,
         readAt: async (offset, target) => {
             await file.seek(offset, Deno.SeekMode.Start)
-            let total = 0
-            while (total < target.byteLength) {
-                const count = await file.read(target.subarray(total))
-                if (count === null || count === 0) {
-                    break
-                }
-                total += count
-            }
-            return total === 0 ? null : total
+            return await file.read(target)
         },
         close: () => file.close(),
     }
@@ -533,22 +533,20 @@ function normalizeLogTail(contents: string): string {
     return contents.trimEnd() || '(empty)'
 }
 
-async function cancelResponseBodyBestEffort(
+function cancelResponseBodyBestEffort(
     response: Pick<Response, 'body'>,
-    signal: AbortSignal,
-): Promise<void> {
+): void {
     if (!response.body) {
         return
     }
     try {
-        const cancellation = Promise.resolve(response.body.cancel()).catch(() => undefined)
-        await raceWithAbort(cancellation, signal)
+        void Promise.resolve(response.body.cancel()).catch(() => undefined)
     } catch (_error) {
         // Body disposal cannot mask readiness, child-exit, or timeout outcomes.
     }
 }
 
-function managedApiDiagnosticSecrets(env: Record<string, string>): readonly string[] {
+export function managedApiDiagnosticSecrets(env: Record<string, string>): readonly string[] {
     return Object.entries(env)
         .filter(([key, value]) => MANAGED_SECRET_ENV_KEY.test(key) && value.length > 0)
         .map(([, value]) => value)

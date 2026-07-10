@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
+    managedApiDiagnosticSecrets,
     parseApiV1BlackBoxArgs,
     readBoundedLogTail,
     toApiV1BlackBoxEnvironment,
@@ -85,6 +86,16 @@ function expectSecretDiagnosticsRedacted(message: string, secrets: readonly stri
     expect(message).toContain('CONTROL_TOKEN=<redacted>');
     expect(message).toContain('opaque=<redacted>');
     expect(message).toContain('token=<redacted>&safe=visible');
+}
+
+function responseWithPendingCancellation(status: number): {
+    response: Response;
+    cancel: ReturnType<typeof vi.fn>;
+} {
+    const response = new Response('status-only payload', { status });
+    const cancel = vi.fn(() => new Promise<void>(() => undefined));
+    vi.spyOn(response.body!, 'cancel').mockImplementation(cancel);
+    return { response, cancel };
 }
 
 function closeServer(server: Server): Promise<void> {
@@ -288,6 +299,81 @@ describe('api-v1 black-box run helper', () => {
         expect(close).toHaveBeenCalledOnce();
     });
 
+    it('continues partial bounded reads with advancing offsets and shrinking targets', async () => {
+        const bytes = new TextEncoder().encode('x'.repeat(16_384) + 'useful-tail');
+        const reads: Array<{ offset: number; length: number }> = [];
+        const close = vi.fn();
+        const firstOffset = bytes.byteLength - 4096;
+
+        const tail = await readBoundedLogTail('/partial/api-v1.log', {
+            openFile: async () => ({
+                size: async () => bytes.byteLength,
+                readAt: async (offset: number, target: Uint8Array) => {
+                    reads.push({ offset, length: target.byteLength });
+                    const length = Math.min(1024, target.byteLength);
+                    target.set(bytes.subarray(offset, offset + length));
+                    return length;
+                },
+                close,
+            }),
+        });
+
+        expect(reads).toEqual([
+            { offset: firstOffset, length: 4096 },
+            { offset: firstOffset + 1024, length: 3072 },
+            { offset: firstOffset + 2048, length: 2048 },
+            { offset: firstOffset + 3072, length: 1024 },
+        ]);
+        expect(tail.endsWith('useful-tail')).toBe(true);
+        expect(close).toHaveBeenCalledOnce();
+    });
+
+    it('tolerates a UTF-8 suffix starting inside a multibyte code point', async () => {
+        const bytes = new Uint8Array(4098).fill('x'.charCodeAt(0));
+        bytes.set([0xe2, 0x82, 0xac], 0);
+        const suffix = new TextEncoder().encode('useful-tail');
+        bytes.set(suffix, bytes.byteLength - suffix.byteLength);
+        const close = vi.fn();
+
+        const tail = await readBoundedLogTail('/utf8/api-v1.log', {
+            openFile: async () => ({
+                size: async () => bytes.byteLength,
+                readAt: async (offset: number, target: Uint8Array) => {
+                    const source = bytes.subarray(offset, offset + target.byteLength);
+                    target.set(source);
+                    return source.byteLength;
+                },
+                close,
+            }),
+        });
+
+        expect(tail.startsWith('\ufffd')).toBe(true);
+        expect(tail.endsWith('useful-tail')).toBe(true);
+        expect(close).toHaveBeenCalledOnce();
+    });
+
+    it.each(['size', 'readAt'] as const)('closes the bounded tail file after %s failure', async failure => {
+        const close = vi.fn();
+
+        const tail = await readBoundedLogTail(`/failure/${failure}.log`, {
+            openFile: async () => ({
+                size: async () => {
+                    if (failure === 'size') {
+                        throw new Error('size failed');
+                    }
+                    return 64;
+                },
+                readAt: async () => {
+                    throw new Error('readAt failed');
+                },
+                close,
+            }),
+        });
+
+        expect(tail).toContain(`unable to read /failure/${failure}.log`);
+        expect(close).toHaveBeenCalledOnce();
+    });
+
     it('rejects when the managed API child exits while another listener is ready', async () => {
         const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
 
@@ -356,6 +442,87 @@ describe('api-v1 black-box run helper', () => {
         })).resolves.toBeUndefined();
 
         expect(cancel).toHaveBeenCalledOnce();
+    });
+
+    it('does not wait for a never-settling successful response cancellation', async () => {
+        vi.useFakeTimers();
+        try {
+            const { response, cancel } = responseWithPendingCancellation(200);
+            const outcomePromise = observeReadiness(waitForManagedApiReady({
+                baseUrl: 'http://127.0.0.1:18080',
+                logPath: '/tmp/api-v1-server.log',
+                childStatus: new Promise(() => undefined),
+                startup: Promise.resolve(),
+                streamsDrained: Promise.resolve(),
+                fetchImpl: async () => response,
+                readTextFile: async () => 'unused',
+                timeoutMs: 100,
+            }));
+            let settled = false;
+            void outcomePromise.then(() => {
+                settled = true;
+            });
+
+            for (let index = 0; index < 50 && !settled; index += 1) {
+                await Promise.resolve();
+            }
+            const settledPromptly = settled;
+            if (!settled) {
+                await vi.advanceTimersByTimeAsync(100);
+            }
+            const outcome = await outcomePromise;
+
+            expect(settledPromptly).toBe(true);
+            expect(outcome.ok).toBe(true);
+            expect(cancel).toHaveBeenCalledOnce();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('retries without waiting for never-settling response cancellations', async () => {
+        vi.useFakeTimers();
+        try {
+            const retry = responseWithPendingCancellation(503);
+            const success = responseWithPendingCancellation(200);
+            let attempt = 0;
+            const fetchImpl = vi.fn(async () => {
+                attempt += 1;
+                return attempt === 1 ? retry.response : success.response;
+            });
+            const outcomePromise = observeReadiness(waitForManagedApiReady({
+                baseUrl: 'http://127.0.0.1:18080',
+                logPath: '/tmp/api-v1-server.log',
+                childStatus: new Promise(() => undefined),
+                startup: Promise.resolve(),
+                streamsDrained: Promise.resolve(),
+                fetchImpl,
+                readTextFile: async () => 'unused',
+                sleep: async () => undefined,
+                timeoutMs: 100,
+            }));
+            let settled = false;
+            void outcomePromise.then(() => {
+                settled = true;
+            });
+
+            for (let index = 0; index < 50 && !settled; index += 1) {
+                await Promise.resolve();
+            }
+            const settledPromptly = settled;
+            if (!settled) {
+                await vi.advanceTimersByTimeAsync(100);
+            }
+            const outcome = await outcomePromise;
+
+            expect(settledPromptly).toBe(true);
+            expect(outcome.ok).toBe(true);
+            expect(fetchImpl).toHaveBeenCalledTimes(2);
+            expect(retry.cancel).toHaveBeenCalledOnce();
+            expect(success.cancel).toHaveBeenCalledOnce();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('retries a non-OK config response after startup', async () => {
@@ -436,6 +603,77 @@ describe('api-v1 black-box run helper', () => {
             expect(outcome.ok).toBe(false);
             if (!outcome.ok) {
                 expectSecretDiagnosticsRedacted(String(outcome.error), fixture.secrets);
+            }
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('redacts production-derived METERED_API_KEY in child and timeout diagnostics', async () => {
+        const meteredApiKey = 'metered-api-key-value';
+        const accessKey = 'access-key-value';
+        const privateKey = 'private-key-value';
+        const credential = 'credential-value';
+        const diagnosticSecrets = managedApiDiagnosticSecrets({
+            METERED_API_KEY: meteredApiKey,
+            AWS_ACCESS_KEY_ID: accessKey,
+            SIGNING_PRIVATE_KEY: privateKey,
+            CLIENT_CREDENTIAL: credential,
+            PUBLIC_KEY_ID: 'public-key-id',
+            KEYBOARD_LAYOUT: 'us',
+            MONKEY_PATCH: 'enabled',
+        });
+
+        expect(diagnosticSecrets).toEqual(expect.arrayContaining([
+            meteredApiKey,
+            accessKey,
+            privateKey,
+            credential,
+        ]));
+        expect(diagnosticSecrets).not.toEqual(expect.arrayContaining([
+            'public-key-id',
+            'us',
+            'enabled',
+        ]));
+
+        const logTail = `opaque=${meteredApiKey}`;
+        const childOutcome = await observeReadiness(waitForManagedApiReady({
+            baseUrl: 'http://127.0.0.1:18080',
+            logPath: '/tmp/api-v1-server.log',
+            childStatus: Promise.resolve({ success: false, code: 1, signal: null }),
+            startup: new Promise<void>(() => undefined),
+            streamsDrained: Promise.resolve(),
+            fetchImpl: async () => new Response(null, { status: 200 }),
+            readTextFile: async () => logTail,
+            diagnosticSecrets,
+            timeoutMs: 100,
+        }));
+        expect(childOutcome.ok).toBe(false);
+        if (!childOutcome.ok) {
+            expect(String(childOutcome.error)).not.toContain(meteredApiKey);
+            expect(String(childOutcome.error)).toContain('opaque=<redacted>');
+        }
+
+        vi.useFakeTimers();
+        try {
+            const timeoutOutcomePromise = observeReadiness(waitForManagedApiReady({
+                baseUrl: 'http://127.0.0.1:18080',
+                logPath: '/tmp/api-v1-server.log',
+                childStatus: new Promise(() => undefined),
+                startup: new Promise<void>(() => undefined),
+                streamsDrained: Promise.resolve(),
+                fetchImpl: async () => new Response(null, { status: 200 }),
+                readTextFile: async () => logTail,
+                diagnosticSecrets,
+                timeoutMs: 100,
+            }));
+            await vi.advanceTimersByTimeAsync(100);
+            const timeoutOutcome = await timeoutOutcomePromise;
+
+            expect(timeoutOutcome.ok).toBe(false);
+            if (!timeoutOutcome.ok) {
+                expect(String(timeoutOutcome.error)).not.toContain(meteredApiKey);
+                expect(String(timeoutOutcome.error)).toContain('opaque=<redacted>');
             }
         } finally {
             vi.useRealTimers();
