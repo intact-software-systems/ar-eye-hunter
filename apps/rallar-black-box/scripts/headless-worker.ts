@@ -38,6 +38,8 @@ type ShutdownSignal = Readonly<{
   dispose(): void;
 }>;
 
+class HeadlessWorkerSignalShutdownError extends Error {}
+
 const WORKBENCH_UI_CONFIRMATION_TIMEOUT_MS = 5_000;
 const browserTypes = {
   chromium,
@@ -85,8 +87,10 @@ try {
   );
   await waitForWorkerExit(config, activeShutdown);
 } catch (error) {
-  logger.error(error);
-  process.exitCode = 1;
+  if (!(error instanceof HeadlessWorkerSignalShutdownError)) {
+    logger.error(error);
+    process.exitCode = 1;
+  }
 } finally {
   shutdown?.dispose();
   await closeAgents(runningAgents);
@@ -391,7 +395,11 @@ function createShutdownSignal(): ShutdownSignal {
     settled = true;
     removeListeners();
     log(`Received ${signal}; shutting down`);
-    shutdownController.abort(new Error(`Received ${signal}; shutting down`));
+    shutdownController.abort(
+      new HeadlessWorkerSignalShutdownError(
+        `Received ${signal}; shutting down`,
+      ),
+    );
     resolve();
   };
 
