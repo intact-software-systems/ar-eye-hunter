@@ -2770,13 +2770,47 @@ components:
           items:
             $ref: '#/components/schemas/SpaStatisticsWarning'
         group:
-          allOf:
-            - $ref: '#/components/schemas/SpaStatisticsSafeGroupSummary'
-            - type: object
-              required: [groupId]
-              properties:
-                groupId:
-                  type: string
+          type: object
+          required:
+            - groupId
+            - displayName
+            - kind
+            - status
+            - joinMode
+            - memberCount
+            - onlineMemberCount
+            - activeSessionCount
+            - snapshotVersion
+            - presenceVersion
+          properties:
+            groupId:
+              type: string
+            displayName:
+              type: string
+            kind:
+              type: string
+              enum: [party, room, team, custom]
+            status:
+              type: string
+              enum: [active, archived, deleted]
+            joinMode:
+              type: string
+              enum: [invite-only, code, open]
+            memberCount:
+              type: integer
+              format: int64
+            onlineMemberCount:
+              type: integer
+              format: int64
+            activeSessionCount:
+              type: integer
+              format: int64
+            snapshotVersion:
+              type: integer
+              format: int64
+            presenceVersion:
+              type: integer
+              format: int64
         activity:
           type: object
           required: [recentGroupEventCount]
@@ -3193,7 +3227,7 @@ components:
         limitRecentEvents:
           type: integer
           minimum: 1
-          maximum: 500
+          maximum: 50
 
     AdminSupportExplainGroupRequest:
       type: object
@@ -3208,7 +3242,7 @@ components:
         limitRecentEvents:
           type: integer
           minimum: 1
-          maximum: 500
+          maximum: 50
 
     AdminSupportExplainRequestRequest:
       type: object

@@ -309,6 +309,16 @@ Deno.test('OpenAPI JSON includes admin support contracts', async () => {
   assert.ok(json.components.schemas.AdminSupportNarrativeResponse);
   assert.ok(json.components.schemas.AdminSupportExplainQueueItemRequest);
   assert.ok(json.components.schemas.AdminSupportExplainRequestRequest);
+  const explainClientRequest = json.components.schemas
+    .AdminSupportExplainClientRequest as {
+      properties?: Record<string, { maximum?: number }>;
+    };
+  const explainGroupRequest = json.components.schemas
+    .AdminSupportExplainGroupRequest as {
+      properties?: Record<string, { maximum?: number }>;
+    };
+  assert.equal(explainClientRequest.properties?.limitRecentEvents?.maximum, 50);
+  assert.equal(explainGroupRequest.properties?.limitRecentEvents?.maximum, 50);
 });
 
 Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
@@ -350,6 +360,31 @@ Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
   assert.ok(json.components.schemas.WorkspaceSpaStatisticsResponse);
   assert.ok(json.components.schemas.GroupSpaStatisticsResponse);
   assert.ok(json.components.schemas.MyRealtimeSpaStatisticsResponse);
+  const groupStatsResponse = json.components.schemas.GroupSpaStatisticsResponse as {
+    properties?: Record<
+      string,
+      {
+        allOf?: unknown[];
+        required?: string[];
+        properties?: Record<string, unknown>;
+      }
+    >;
+  };
+  const groupStatsGroup = groupStatsResponse.properties?.group;
+  assert.equal(groupStatsGroup?.allOf, undefined);
+  assert.deepEqual(groupStatsGroup?.required, [
+    'groupId',
+    'displayName',
+    'kind',
+    'status',
+    'joinMode',
+    'memberCount',
+    'onlineMemberCount',
+    'activeSessionCount',
+    'snapshotVersion',
+    'presenceVersion',
+  ]);
+  assert.equal(groupStatsGroup?.properties?.groupRef, undefined);
 });
 
 Deno.test('graph topology product docs describe implemented REST and recompute behavior', async () => {
