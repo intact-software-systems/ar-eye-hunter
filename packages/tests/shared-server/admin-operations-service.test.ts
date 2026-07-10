@@ -386,6 +386,9 @@ describe('AdminOperationsService', () => {
   it('rejects an invalid CRDT erasure mode before recording an audit event', async () => {
     const auditCalls: unknown[] = [];
     const service = createService({
+      crdtAdminRepository: {
+        updateDocumentLifecycle: () => Promise.resolve({} as never),
+      },
       crdtAuditSink: { record: (event) => { auditCalls.push(event); } },
     });
 
