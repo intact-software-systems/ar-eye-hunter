@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import type {
+    GroupEvent,
     GroupMember,
     GroupPresenceSession,
     GroupRole,
@@ -342,6 +343,60 @@ describe('SpaStatisticsService', () => {
         expect(summary.activity.recentVisibleGroupEventCount).toEqual({
             count: 20,
             limit: 20,
+            bounded: true,
+        });
+    });
+
+    it('uses the newest events when the recent-events service method is unavailable', async () => {
+        const events = Array.from({ length: 5 }, (_, index) => ({
+            ...TEST_SCOPE,
+            groupId: 'room-1',
+            eventId: `event-${index + 1}`,
+            eventType: 'session-connected' as const,
+            snapshotVersion: index + 1,
+            occurredAtEpochMs: NOW_EPOCH_MS + index,
+            actor: {},
+        }));
+        const orderedEvents = {
+            [Symbol.iterator]: () => events[Symbol.iterator](),
+            slice: (start?: number, end?: number) =>
+                start === -2 && end === undefined
+                    ? events.slice(-2)
+                    : events.slice(0, 1),
+        } as unknown as readonly GroupEvent[];
+        const service = new SpaStatisticsService({
+            now: () => NOW_EPOCH_MS,
+            recentEventLimit: 2,
+            clientStateService: {
+                readSnapshot: () => Promise.resolve(undefined),
+                readPresenceSnapshot: () => Promise.resolve(undefined),
+            },
+            groupStateService: {
+                listSnapshots: () =>
+                    Promise.resolve([
+                        createGroupSnapshot('room-1', [
+                            ['alice', 'member'],
+                        ]),
+                    ]),
+                readSnapshot: () =>
+                    Promise.resolve(
+                        createGroupSnapshot('room-1', [
+                            ['alice', 'member'],
+                        ]),
+                    ),
+                listEvents: () => Promise.resolve(orderedEvents),
+            } as never,
+        });
+
+        const stats = await service.readGroupStats({
+            scope: TEST_SCOPE,
+            groupId: 'room-1',
+            authSession: createAuthSession('alice', 'alice-session'),
+        });
+
+        expect(stats.activity.recentGroupEventCount).toEqual({
+            count: 2,
+            limit: 2,
             bounded: true,
         });
     });

@@ -83,6 +83,23 @@ RALLAR_BB_RUN_ID=manual-$(date +%s) \
 npm run test:api-v1:black-box:recipes
 ```
 
+Recipes-only mode defaults to the portable `api-v1-black-box-recipes` matrix
+profile. It skips scenarios whose success depends on server startup settings
+that the helper cannot apply to an already-running API, such as
+`RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` for `/api/black-box/control-token` and
+usable ICE provider settings for `/api/webrtc/ice`.
+
+To run the full `api-v1-black-box` profile against an already-running API,
+start that API with equivalent managed-run settings, for example
+`RALLAR_ICE_MODE=local` and
+`RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=local-api-v1-black-box-operator-secret`,
+then run:
+
+```bash
+npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:recipes -- \
+  --profile=api-v1-black-box
+```
+
 Artifacts are written under `.artifacts/api-v1-black-box/<backend>` and include
 runner reports, event streams, failure bundles, expanded recipes, matrix
 summary, and `api-v1-server.log` for orchestrated runs.

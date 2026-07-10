@@ -32,6 +32,60 @@ Deno.test('OpenAPI JSON route publishes the forwarded HTTPS server URL', async (
   assert.equal(json.servers?.[0]?.url, 'https://api.rallar.intactss.com');
 });
 
+Deno.test('OpenAPI JSON includes black-box auth support contracts', async () => {
+  const app = init(new Hono());
+  const response = await app.request('/api/openapi.json');
+  const json = await response.json() as {
+    paths: Record<string, {
+      post?: OpenApiOperation;
+    }>;
+    components: {
+      schemas: Record<
+        string,
+        {
+          required?: string[];
+          properties?: Record<string, unknown>;
+        }
+      >;
+    };
+  };
+
+  assertAuthContract(
+    'POST black-box control token',
+    json.paths['/api/black-box/control-token']?.post,
+    ['200', '401', '403', '503'],
+  );
+  assertAuthContract(
+    'POST agent session tickets',
+    json.paths['/api/auth/agent-session-tickets']?.post,
+    ['200', '400', '401'],
+  );
+  assert.ok(
+    json.paths['/api/auth/agent-session-tickets/consume']?.post?.responses?.['200'],
+    'POST consume agent session ticket missing response 200',
+  );
+  assert.ok(
+    json.paths['/api/auth/agent-session-tickets/consume']?.post?.responses?.['400'],
+    'POST consume agent session ticket missing response 400',
+  );
+  assert.ok(
+    json.paths['/api/auth/agent-session-tickets/consume']?.post?.responses?.['404'],
+    'POST consume agent session ticket missing response 404',
+  );
+  assert.deepEqual(
+    json.components.schemas.AgentSessionTicketRequest.required,
+    ['agentIds'],
+  );
+  assert.deepEqual(
+    json.components.schemas.AgentSessionTicketResponse.required,
+    ['tickets'],
+  );
+  assert.deepEqual(
+    json.components.schemas.ConsumeAgentSessionTicketRequest.required,
+    ['ticket'],
+  );
+});
+
 Deno.test('OpenAPI JSON includes scoped graph and topology management contracts', async () => {
   const app = init(new Hono());
   const response = await app.request('/api/openapi.json');
@@ -354,9 +408,11 @@ Deno.test('OpenAPI JSON includes SPA statistics contracts', async () => {
     );
   }
 
-  assert.ok(json.paths[
-    '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/stats'
-  ]?.get?.responses?.['404']);
+  assert.ok(
+    json.paths[
+      '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/stats'
+    ]?.get?.responses?.['404'],
+  );
   assert.ok(json.components.schemas.WorkspaceSpaStatisticsResponse);
   assert.ok(json.components.schemas.GroupSpaStatisticsResponse);
   assert.ok(json.components.schemas.MyRealtimeSpaStatisticsResponse);

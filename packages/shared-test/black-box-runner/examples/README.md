@@ -1,9 +1,11 @@
 # Black-box Runner Examples
 
 This directory contains executable JSON recipes for the black-box runner.
-The runnable recipe matrix in `../recipe-matrix.json` classifies dry-run,
-deterministic, live, remote-browser, and intentional-failure variants for these
-examples.
+The runnable recipe matrix in `../recipe-matrix.json` classifies these
+illustrative examples plus validation recipes from `../tests/`.
+
+API-v1 release-gate recipes live in `../tests/api-v1/` because they are
+service validation fixtures rather than examples.
 
 ## Example Index
 
@@ -13,14 +15,6 @@ examples.
 | `rallar-server-auth-group-ws-smoke.json` | Rallar Server integration | Login, derive redacted auth/WS values with safe transforms, add runner correlation headers to HTTP calls, create or reuse `bb-group`, join it, connect group presence, open authenticated WS, send a self-addressed AL message, close WS, disconnect presence, and logout. |
 | `rallar-server-negative-auth.json` | Rallar Server integration | Verify missing bearer token, missing `x-client-id`, invalid login, and unauthenticated WS-ticket rejection. |
 | `rallar-server-ws-rtc-payload-parity.json` | Rallar Server and browser RTC integration | Send the same payload through authenticated WS and browser-backed `messages.rtc`, then assert parity from the report outputs. |
-| `api-v1-auth-session.json` | API-v1 black-box integration | Register a run-scoped disposable user, login, derive a redacted auth header, logout, and verify negative auth/session cases over REST. |
-| `api-v1-group-presence.json` | API-v1 black-box integration | Login as Alice, create/join an API-v1 group, connect/heartbeat/disconnect group presence, and read group snapshots and event feeds over REST. |
-| `api-v1-client-state.json` | API-v1 black-box integration | Login as Alice and exercise client principal, instance, session, presence, event list, and event page REST endpoints. |
-| `api-v1-websocket-topic-routing.json` | API-v1 black-box integration | Use REST setup plus an authenticated raw `/api/ws/:sessionId` connection to send a self-addressed AL message over WebSocket. |
-| `api-v1-scope-isolation.json` | API-v1 black-box integration | Login as Alice and Bob, create the same logical group id in separate application/workspace scopes, and verify wrong-principal reads are denied. |
-| `api-v1-admin-operations.json` | API-v1 black-box integration | Verify admin operations auth denial, demo-admin overview success, and OpenAPI admin namespace coverage over REST. |
-| `api-v1-admin-support.json` | API-v1 black-box integration | Verify admin support auth denial, explicit QueueBox-key explanation, constrained request warning, and OpenAPI admin support namespace coverage over REST. |
-| `api-v1-spa-statistics.json` | API-v1 black-box integration | Verify SPA statistics auth denial, non-member group denial, scoped success reads, and OpenAPI stats namespace coverage over REST. |
 | `rtc-rallar-memory-delivery-semantics.json` | Generic runner semantics | Use deterministic `rallar-memory` peers to assert direct delivery, room broadcast delivery, delivery metadata, and payload parity between recipients. |
 | `rtc-rallar-memory-routing-failures.json` | Generic runner semantics | Intentionally records no-recipient, closed-target, and send-after-close failures with `failFast: false` so report diagnostics can be inspected. |
 | `rtc-rallar-memory-same-connection-soak.json` | Generic runner semantics | Keeps two deterministic `rallar-memory` RTC connections open, sends repeated bidirectional payloads, records soak metrics, enforces post-run thresholds, and closes both connections once. |
@@ -48,9 +42,10 @@ examples.
 
 ## Provider Choice
 
-API-v1 black-box recipes are no-browser service tests. They use only HTTP, raw
-WS, SET, and ASSERT steps against a running `apps/api-v1`; they must not add
-RTC connections or browser provider requirements.
+API-v1 black-box recipes in `../tests/api-v1/` are no-browser service tests.
+They use only HTTP, raw WS, SET, and ASSERT steps against a running
+`apps/api-v1`; they must not add RTC connections or browser provider
+requirements.
 
 Use `rallar-memory` examples for deterministic runner semantics. Use
 `rallar-browser` examples for real browser-backed Rallar RTC. Use the default

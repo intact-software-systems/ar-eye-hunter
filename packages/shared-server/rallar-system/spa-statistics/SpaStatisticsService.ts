@@ -17,7 +17,10 @@ import {
 } from '../group-policy.ts';
 import type { ClientStateService } from '../services/client-state-service.ts';
 import type { GroupStateService } from '../services/group-state-service.ts';
-import type { StateEventListQuery } from '../state-event-listing.ts';
+import {
+    listRecentStateEvents,
+    type StateEventListQuery,
+} from '../state-event-listing.ts';
 
 const DEFAULT_RECENT_EVENT_LIMIT = 20;
 const DEFAULT_TOP_GROUPS_LIMIT = 10;
@@ -387,7 +390,7 @@ async function listRecentGroupEvents(
         return await service.listRecentEvents(ref, query);
     }
 
-    return (await service.listEvents(ref)).slice(0, query.limit);
+    return listRecentStateEvents(await service.listEvents(ref), query);
 }
 
 function toActor(authSession: AuthSession) {

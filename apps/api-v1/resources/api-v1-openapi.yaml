@@ -156,6 +156,62 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
+  /api/auth/agent-session-tickets:
+    post:
+      tags: [Auth]
+      summary: Create agent auth session tickets
+      description: |
+        Mints short-lived one-time tickets for browser-control agents. Each
+        ticket resolves to a distinct auth session for the same authenticated
+        API-v1 principal and can be consumed once by
+        `/api/auth/agent-session-tickets/consume`.
+      security:
+        - bearerAuth: []
+          clientIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentSessionTicketRequest'
+      responses:
+        '200':
+          description: Agent session tickets issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionTicketResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/agent-session-tickets/consume:
+    post:
+      tags: [Auth]
+      summary: Consume an agent auth session ticket
+      description: |
+        Exchanges a short-lived agent session ticket for the auth session it
+        represents. Tickets are single-use and return 404 after consumption or
+        expiry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsumeAgentSessionTicketRequest'
+      responses:
+        '200':
+          description: Agent auth session restored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/black-box/control-token:
     post:
       tags: [Auth]
@@ -3368,6 +3424,50 @@ components:
         expiresAtEpochMs:
           type: integer
           format: int64
+
+    AgentSessionTicketRequest:
+      type: object
+      required: [agentIds]
+      properties:
+        agentIds:
+          type: array
+          minItems: 1
+          maxItems: 6
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+
+    AgentSessionTicket:
+      type: object
+      required: [agentId, ticket, sessionId, expiresAtEpochMs]
+      properties:
+        agentId:
+          type: string
+        ticket:
+          type: string
+        sessionId:
+          type: string
+        expiresAtEpochMs:
+          type: integer
+          format: int64
+
+    AgentSessionTicketResponse:
+      type: object
+      required: [tickets]
+      properties:
+        tickets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSessionTicket'
+
+    ConsumeAgentSessionTicketRequest:
+      type: object
+      required: [ticket]
+      properties:
+        ticket:
+          type: string
+          minLength: 1
 
     BlackBoxControlTokenResponse:
       type: object
