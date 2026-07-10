@@ -47,14 +47,11 @@ import type {
 } from '@shared/crdt/crdt-types.ts';
 import type { RallarCrdtDocument } from '@shared-web/browser/rallar-crdt.ts';
 import {
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    formatJsonSchemaValidationErrors,
     validateJsonSchema,
 } from '@shared-test/rallar-bb-test/schema.ts';
 import {
     isDistributedRunTerminalState,
-    validateDistributedRunManifestContract,
     type RallarBlackBoxDistributedGroupRef,
     type RallarBlackBoxDistributedRunManifest,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
@@ -131,11 +128,6 @@ import {
     RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
-    RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
-    createRallarBlackBoxProviderParityLiveRecipe,
-    createRallarBlackBoxRtcRealtimeRecipe,
-    createRallarBlackBoxRtcRealtimeStabilityRecipe,
-    createRallarBlackBoxRtcSmokeRecipe,
     normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
     recipeFixtureText,
 } from './recipe-fixtures.ts';
@@ -198,14 +190,12 @@ import {
     deriveDistributedRunMonitor,
     deriveDistributedWorldFleetTargetGate,
     deriveRunVerdictView,
-    distributedRecipeCommandKinds,
     distributedRecipeCommandPreview,
     distributedRecipePreflight,
     distributedRecipeStateTone,
     distributedRecipeTargetRows,
     filterDistributedRuns,
     type DistributedRecipeCatalogItem,
-    type DistributedRecipePreflightSummary,
     type DistributedRecipeRolePattern,
     type DistributedRecipeTargetPolicyMode,
 } from './distributed-recipes.ts';
@@ -217,14 +207,11 @@ import {
     type DistributedRunArtifactFiles,
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
-    DISTRIBUTED_RECIPE_PROMPT_TEMPLATES,
     distributedRecipeSchemaContextText,
     redactDistributedRecipePromptVariables,
     renderDistributedRecipePromptTemplate,
     renderDistributedRecipeValidationFeedback,
     type DistributedRecipePromptTemplateId,
-    type DistributedRecipePromptValidationFeedback,
-    type DistributedRecipePromptVariables,
 } from './distributed-recipe-authoring-prompts.ts';
 import {
     DISTRIBUTED_RUN_SEEDS,
@@ -236,8 +223,6 @@ import {
 import {
     validateSchemaAuthoringText,
     validateSchemaAuthoringValue,
-    type SchemaAuthoringTarget,
-    type SchemaAuthoringValidation,
 } from './schema-authoring.ts';
 import {
     CRDT_EDITOR_TRANSPORTS,
@@ -375,6 +360,8 @@ import {
     SchemaCapabilitySummary,
 } from './legacy/shared/schema/SchemaAuthoringPanel.tsx';
 import { CommandExamplePicker } from './legacy/shared/schema/CommandExamplePicker.tsx';
+import { recordValue } from './legacy/shared/record-value.ts';
+import { safeIdSegment } from './legacy/shared/safe-id-segment.ts';
 import { sameStringArray } from './legacy/shared/same-string-array.ts';
 import { uniqueValues } from './legacy/shared/unique-values.ts';
 import { ControlAgentBoardPanel } from './legacy/runner/agents/ControlAgentBoardPanel.tsx';
@@ -388,6 +375,21 @@ import { RtcPerformancePanel } from './legacy/runner/evidence/rtc/RtcPerformance
 import { DistributedRunAnalysisReportPanel } from './legacy/runner/runs/DistributedRunAnalysisReportPanel.tsx';
 import { ImportedDistributedArtifactAnalysisPanel } from './legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx';
 import { RunManagerPanel } from './legacy/runner/run-manager/RunManagerPanel.tsx';
+import { DistributedRecipePreflightPanel } from './legacy/runner/distributed-recipes/DistributedRecipePreflightPanel.tsx';
+import {
+    DistributedRecipeAuthoringPanel,
+} from './legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringPanel.tsx';
+import {
+    distributedAuthoringDraftPreflights,
+    distributedPromptFeedbackFromValidation,
+    type DistributedAuthoringDraftTarget,
+} from './legacy/runner/distributed-recipes/authoring/distributed-recipe-authoring.ts';
+import {
+    DISTRIBUTED_RECIPE_CATALOG,
+    configuredDistributedRecipeCatalogItem,
+    distributedRecipeMatches,
+} from './legacy/runner/distributed-recipes/distributed-recipe-catalog.ts';
+import { validateDistributedRecipeManifest } from './legacy/runner/distributed-recipes/distributed-manifest-validation.ts';
 import { artifactIssueText } from './legacy/runner/shared/artifact-issue-presentation.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from './legacy/runner/shared/control-snapshot-bounds.ts';
 import {
@@ -857,105 +859,6 @@ const APP_LOCAL_RECIPE_CATALOG: readonly AppLocalRecipeEntry[] = [
         expectedResult: 'RTC connect succeeds and payload is sent',
     },
 ];
-
-const RTC_REALTIME_STABILITY_CATALOG_TITLE = 'RTC Realtime Stability';
-
-const DISTRIBUTED_RECIPE_CATALOG: readonly DistributedRecipeCatalogItem[] =
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES.map((fixture) => {
-        const commandKinds = distributedRecipeCommandKinds(fixture.recipe);
-        const usesNetwork = commandKinds.some(
-            (kind) =>
-                kind.startsWith('rtc') ||
-                kind.startsWith('ws') ||
-                kind === 'http.request',
-        );
-
-        return {
-            itemId: fixture.fixtureId,
-            title: fixture.fixtureId === RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
-                ? RTC_REALTIME_STABILITY_CATALOG_TITLE
-                : fixture.label,
-            description: fixture.description,
-            recipe: fixture.recipe,
-            providerMode: usesNetwork ? 'browser-rallar' : 'simulated',
-            profiles:
-                fixture.fixtureId ===
-                RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
-                    ? ['rtc', 'realtime', 'stability', 'green', 'rtc-realtime-stability']
-                    : fixture.fixtureId ===
-                      RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
-                    ? ['rtc', 'realtime', 'soak']
-                    : [
-                          fixture.fixtureId.includes('rtc') ||
-                          commandKinds.some((kind) => kind.startsWith('rtc'))
-                              ? 'rtc'
-                              : 'general',
-                          fixture.fixtureId.includes('failure')
-                              ? 'negative'
-                              : 'smoke',
-                      ],
-            prerequisites: usesNetwork
-                ? [
-                      'connected browser control agents',
-                      'matching global group',
-                      'live Rallar backend for real delivery',
-                  ]
-                : ['connected browser control agents'],
-            live: usesNetwork,
-            source: 'app-local' as const,
-        };
-    });
-
-function configuredDistributedRecipeCatalogItem(
-    item: DistributedRecipeCatalogItem,
-    input: Readonly<{
-        group: RallarBlackBoxDistributedGroupRef;
-        apiBaseUrl: string;
-        rtcRealtimeDurationSeconds: number;
-    }>,
-): DistributedRecipeCatalogItem {
-    if (item.itemId === 'rtc-smoke') {
-        return {
-            ...item,
-            recipe: createRallarBlackBoxRtcSmokeRecipe({
-                group: input.group,
-            }),
-        };
-    }
-
-    if (item.itemId === 'provider-parity') {
-        return {
-            ...item,
-            recipe: createRallarBlackBoxProviderParityLiveRecipe({
-                group: input.group,
-                apiBaseUrl: input.apiBaseUrl,
-            }),
-        };
-    }
-
-    if (item.itemId === RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID) {
-        return {
-            ...item,
-            recipe: createRallarBlackBoxRtcRealtimeRecipe({
-                durationSeconds: input.rtcRealtimeDurationSeconds,
-                group: input.group,
-            }),
-        };
-    }
-
-    if (item.itemId === RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID) {
-        return {
-            ...item,
-            recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
-                group: input.group,
-                readyPeerCount: 1,
-                readyTimeoutMs: 10_000,
-            }),
-        };
-    }
-
-    return item;
-}
 
 function runnerRecipeCatalog(input: Readonly<{
     group: RallarBlackBoxDistributedGroupRef;
@@ -1550,63 +1453,6 @@ function catalogRequirements(
     ];
 }
 
-function distributedRecipeMatches(
-    item: DistributedRecipeCatalogItem,
-    query: string,
-    profile: string,
-): boolean {
-    if (profile && !item.profiles.includes(profile)) {
-        return false;
-    }
-    const trimmed = query.trim().toLowerCase();
-    if (!trimmed) {
-        return true;
-    }
-
-    const haystack = [
-        item.itemId,
-        item.title,
-        item.description,
-        item.recipe.recipeId,
-        item.providerMode,
-        ...item.profiles,
-        ...item.recipe.commands.map((command) => command.kind),
-    ]
-        .join(' ')
-        .toLowerCase();
-    return haystack.includes(trimmed);
-}
-
-function validateDistributedRecipeManifest(
-    manifest: RallarBlackBoxDistributedRunManifest,
-): string | undefined {
-    const schemaValidation = validateJsonSchema(
-        RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-        manifest,
-    );
-    if (!schemaValidation.ok) {
-        return formatJsonSchemaValidationErrors(schemaValidation.errors);
-    }
-
-    const contractValidation = validateDistributedRunManifestContract(manifest);
-    if (!contractValidation.ok) {
-        return contractValidation.errors
-            .map((error) => `${error.path}: ${error.message}`)
-            .join('\n');
-    }
-
-    return undefined;
-}
-
-function safeIdSegment(value: string): string {
-    return (
-        value
-            .trim()
-            .replace(/[^A-Za-z0-9_.:-]+/g, '-')
-            .replace(/^-+|-+$/g, '') || 'value'
-    );
-}
-
 function dateInputStartEpoch(value: string): number | undefined {
     if (!value) {
         return undefined;
@@ -1621,362 +1467,6 @@ function dateInputEndEpoch(value: string): number | undefined {
     }
     const epochMs = new Date(`${value}T23:59:59.999`).getTime();
     return Number.isFinite(epochMs) ? epochMs : undefined;
-}
-
-type DistributedAuthoringDraftTarget = Extract<
-    SchemaAuthoringTarget,
-    'recipe' | 'distributed-run-manifest'
->;
-
-type DistributedAuthoringDraftPreflightEntry = Readonly<{
-    id: string;
-    title: string;
-    preflight: DistributedRecipePreflightSummary;
-}>;
-
-function DistributedRecipeAuthoringPanel({
-    selectedTemplateId,
-    promptText,
-    schemaContextText,
-    promptVariables,
-    draftTarget,
-    draftText,
-    draftValidation,
-    draftPreflights,
-    validationFeedbackText,
-    canUseManifestPreview,
-    onTemplateChange,
-    onDraftTargetChange,
-    onDraftTextChange,
-    onCopyPrompt,
-    onCopySchemaContext,
-    onCopyValidationFeedback,
-    onUseManifestPreview,
-}: {
-    selectedTemplateId: DistributedRecipePromptTemplateId;
-    promptText: string;
-    schemaContextText: string;
-    promptVariables: DistributedRecipePromptVariables;
-    draftTarget: DistributedAuthoringDraftTarget;
-    draftText: string;
-    draftValidation?: SchemaAuthoringValidation;
-    draftPreflights: readonly DistributedAuthoringDraftPreflightEntry[];
-    validationFeedbackText: string;
-    canUseManifestPreview: boolean;
-    onTemplateChange(id: DistributedRecipePromptTemplateId): void;
-    onDraftTargetChange(target: DistributedAuthoringDraftTarget): void;
-    onDraftTextChange(text: string): void;
-    onCopyPrompt(): void;
-    onCopySchemaContext(): void;
-    onCopyValidationFeedback(): void;
-    onUseManifestPreview(): void;
-}) {
-    const selectedTemplate =
-        DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.find(
-            (template) => template.id === selectedTemplateId,
-        ) ?? DISTRIBUTED_RECIPE_PROMPT_TEMPLATES[0];
-    const visibleVariables = Object.entries(promptVariables).filter(
-        ([, value]) => promptVariableVisible(value),
-    );
-    const preflightErrors = draftPreflights.reduce(
-        (sum, entry) => sum + entry.preflight.errors.length,
-        0,
-    );
-    const preflightWarnings = draftPreflights.reduce(
-        (sum, entry) => sum + entry.preflight.warnings.length,
-        0,
-    );
-
-    return (
-        <section
-            className="distributed-subpanel distributed-ai-authoring-panel"
-            aria-label="Generate With AI"
-        >
-            <div className="section-heading">
-                <h3>Generate With AI</h3>
-                <span>
-                    {DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.length} templates
-                </span>
-            </div>
-            <div className="distributed-ai-authoring-grid">
-                <div className="distributed-ai-controls">
-                    <label className="field">
-                        <span>Prompt Template</span>
-                        <select
-                            aria-label="Prompt Template"
-                            value={selectedTemplateId}
-                            onChange={(event) =>
-                                onTemplateChange(
-                                    event.target
-                                        .value as DistributedRecipePromptTemplateId,
-                                )
-                            }
-                        >
-                            {DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.map(
-                                (template) => (
-                                    <option
-                                        key={template.id}
-                                        value={template.id}
-                                    >
-                                        {template.title}
-                                    </option>
-                                ),
-                            )}
-                        </select>
-                        <small>{selectedTemplate.description}</small>
-                    </label>
-                    <label className="field">
-                        <span>Validate As</span>
-                        <select
-                            aria-label="Validate Generated JSON As"
-                            value={draftTarget}
-                            onChange={(event) =>
-                                onDraftTargetChange(
-                                    event.target
-                                        .value as DistributedAuthoringDraftTarget,
-                                )
-                            }
-                        >
-                            <option value="distributed-run-manifest">
-                                Distributed manifest
-                            </option>
-                            <option value="recipe">Browser-agent recipe</option>
-                        </select>
-                    </label>
-                    <button type="button" onClick={onCopyPrompt}>
-                        Copy Prompt
-                    </button>
-                    <button type="button" onClick={onCopySchemaContext}>
-                        Copy Schema Context
-                    </button>
-                    <button
-                        type="button"
-                        disabled={!draftValidation}
-                        onClick={onCopyValidationFeedback}
-                    >
-                        Copy Validation Feedback
-                    </button>
-                    <button
-                        type="button"
-                        disabled={!canUseManifestPreview}
-                        onClick={onUseManifestPreview}
-                    >
-                        Use Manifest Preview
-                    </button>
-                </div>
-                <div className="distributed-ai-guidance">
-                    <strong>Required Inputs</strong>
-                    <span>
-                        Goal, target shape, group scope, agent roles, expected
-                        evidence, and live-service assumptions.
-                    </span>
-                    <strong>No Provider Dependency</strong>
-                    <span>
-                        Copy the prompt into any AI assistant, then paste JSON
-                        here for schema and preflight checks.
-                    </span>
-                </div>
-                <div
-                    className="distributed-ai-variable-grid"
-                    aria-label="Prompt variables"
-                >
-                    {visibleVariables.map(([key, value]) => (
-                        <div key={key}>
-                            <strong>{key}</strong>
-                            <span>{formatPromptVariableValue(value)}</span>
-                        </div>
-                    ))}
-                </div>
-                <details className="distributed-ai-preview" open>
-                    <summary>Prompt Preview</summary>
-                    <pre aria-label="Prompt template preview">{promptText}</pre>
-                </details>
-                <details className="distributed-ai-preview">
-                    <summary>Schema Context</summary>
-                    <pre aria-label="Schema context preview">
-                        {schemaContextText}
-                    </pre>
-                </details>
-                <label className="field distributed-ai-draft">
-                    <span>Generated JSON</span>
-                    <textarea
-                        aria-label="Generated JSON"
-                        value={draftText}
-                        onChange={(event) =>
-                            onDraftTextChange(event.target.value)
-                        }
-                        placeholder="Paste a generated distributed manifest or browser-agent recipe JSON object."
-                        spellCheck={false}
-                    />
-                </label>
-                <section
-                    className="distributed-ai-validation"
-                    aria-label="Generated JSON validation"
-                >
-                    <div className="schema-authoring-heading">
-                        <strong>Validation Feedback</strong>
-                        <span
-                            className={`pill ${draftValidation ? (draftValidation.ok && preflightErrors === 0 ? 'good' : 'bad') : 'muted'}`}
-                        >
-                            {draftValidation
-                                ? draftValidation.ok && preflightErrors === 0
-                                    ? preflightWarnings > 0
-                                        ? 'valid with warnings'
-                                        : 'valid'
-                                    : 'needs changes'
-                                : 'waiting'}
-                        </span>
-                    </div>
-                    <pre aria-label="Validation feedback copy text">
-                        {validationFeedbackText}
-                    </pre>
-                    {draftValidation ? (
-                        <SchemaAuthoringPanel
-                            validation={draftValidation}
-                            compact
-                        />
-                    ) : (
-                        <div className="schema-capability-empty">
-                            Paste generated JSON to validate it before running.
-                        </div>
-                    )}
-                    {draftPreflights.length > 0 && (
-                        <div className="distributed-ai-preflight-list">
-                            {draftPreflights.map((entry) => (
-                                <details
-                                    key={entry.id}
-                                    open={entry.preflight.errors.length > 0}
-                                >
-                                    <summary>{entry.title} preflight</summary>
-                                    <DistributedRecipePreflightPanel
-                                        preflight={entry.preflight}
-                                        compact
-                                    />
-                                </details>
-                            ))}
-                        </div>
-                    )}
-                </section>
-            </div>
-        </section>
-    );
-}
-
-function distributedAuthoringDraftPreflights(
-    validation: SchemaAuthoringValidation | undefined,
-): readonly DistributedAuthoringDraftPreflightEntry[] {
-    if (!validation?.ok) {
-        return [];
-    }
-
-    if (
-        validation.target === 'recipe' &&
-        isRallarBlackBoxRecipeValue(validation.parsed)
-    ) {
-        return [
-            {
-                id: validation.parsed.recipeId,
-                title: validation.parsed.name ?? validation.parsed.recipeId,
-                preflight: distributedRecipePreflight(validation.parsed),
-            },
-        ];
-    }
-
-    if (
-        validation.target !== 'distributed-run-manifest' ||
-        !isDistributedManifestValue(validation.parsed)
-    ) {
-        return [];
-    }
-
-    return validation.parsed.recipes.flatMap((selection, index) => {
-        const recipe = selection.recipe;
-        if (!isRallarBlackBoxRecipeValue(recipe)) {
-            return [];
-        }
-        const recipeId =
-            selection.recipeId ?? recipe.recipeId ?? `recipe-${index + 1}`;
-        return [
-            {
-                id: `${recipeId}-${index}`,
-                title: recipe.name ?? recipeId,
-                preflight: distributedRecipePreflight(recipe),
-            },
-        ];
-    });
-}
-
-function distributedPromptFeedbackFromValidation(
-    validation: SchemaAuthoringValidation,
-    preflights: readonly DistributedAuthoringDraftPreflightEntry[],
-): DistributedRecipePromptValidationFeedback {
-    const preflightErrors = preflights.flatMap((entry) =>
-        entry.preflight.errors.map((issue) => `${entry.title}: ${issue}`),
-    );
-    const preflightWarnings = preflights.flatMap((entry) =>
-        entry.preflight.warnings.map((issue) => `${entry.title}: ${issue}`),
-    );
-
-    return {
-        target: validation.target,
-        title: validation.title,
-        ok: validation.ok && preflightErrors.length === 0,
-        parseOk: validation.parseOk,
-        schemaErrorText: validation.errorText,
-        issues: validation.errorText
-            ? []
-            : validation.errors.map(
-                  (issue) => `${issue.path}: ${issue.message}`,
-              ),
-        preflightErrors,
-        preflightWarnings,
-    };
-}
-
-function promptVariableVisible(value: unknown): boolean {
-    if (value === undefined || value === null || value === '') {
-        return false;
-    }
-    if (Array.isArray(value)) {
-        return value.length > 0;
-    }
-    if (typeof value === 'object') {
-        return Object.keys(recordValue(value)).length > 0;
-    }
-    return true;
-}
-
-function formatPromptVariableValue(value: unknown): string {
-    if (Array.isArray(value)) {
-        return value
-            .map((entry) =>
-                typeof entry === 'string' ? entry : JSON.stringify(entry),
-            )
-            .join(', ');
-    }
-    if (value && typeof value === 'object') {
-        return JSON.stringify(value);
-    }
-    return String(value);
-}
-
-function isRallarBlackBoxRecipeValue(
-    value: unknown,
-): value is RallarBlackBoxTestRecipe {
-    const record = recordValue(value);
-    return (
-        typeof record.recipeId === 'string' && Array.isArray(record.commands)
-    );
-}
-
-function isDistributedManifestValue(
-    value: unknown,
-): value is RallarBlackBoxDistributedRunManifest {
-    const record = recordValue(value);
-    return (
-        typeof record.distributedRunId === 'string' &&
-        Array.isArray(record.recipes)
-    );
 }
 
 function artifactEventTitle(event: Record<string, unknown>): string {
@@ -3383,12 +2873,6 @@ function manualTransportFrom(
     return transport === 'messages.rtc' || transport === 'ws'
         ? transport
         : 'realtime';
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
-        : {};
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -13382,216 +12866,6 @@ function DistributedRecipesPanel({
                 />
             </div>
         </section>
-    );
-}
-
-function DistributedRecipePreflightPanel({
-    preflight,
-    compact = false,
-}: {
-    preflight: DistributedRecipePreflightSummary;
-    compact?: boolean;
-}) {
-    const treeRows = compact ? preflight.tree.slice(0, 18) : preflight.tree;
-    return (
-        <div
-            className={`distributed-preflight-panel ${compact ? 'compact' : ''}`}
-        >
-            <div className="distributed-preflight-metrics">
-                <Metric
-                    label="Top-level"
-                    value={String(preflight.manifestCommandCount)}
-                />
-                <Metric
-                    label="Effective ops"
-                    value={String(preflight.effectiveCommandCount)}
-                    tone="active"
-                />
-                <Metric label="Max depth" value={String(preflight.maxDepth)} />
-                <Metric
-                    label="Frames"
-                    value={
-                        preflight.effectiveFrameCount === undefined
-                            ? '-'
-                            : String(preflight.effectiveFrameCount)
-                    }
-                    tone={
-                        preflight.effectiveFrameCount === undefined
-                            ? 'muted'
-                            : 'active'
-                    }
-                />
-                <Metric
-                    label="Loops"
-                    value={String(preflight.loops.length)}
-                    tone={preflight.loops.length > 0 ? 'active' : 'muted'}
-                />
-                <Metric
-                    label="Parallel groups"
-                    value={String(
-                        preflight.parallelGroups.reduce(
-                            (sum, entry) => sum + entry.groupCount,
-                            0,
-                        ),
-                    )}
-                    tone={
-                        preflight.parallelGroups.length > 0 ? 'active' : 'muted'
-                    }
-                />
-            </div>
-            <div className="badge-list distributed-preflight-badges">
-                {preflight.serviceBadges.map((badge) => (
-                    <span className={`pill ${badge.tone}`} key={badge.label}>
-                        {badge.label}
-                    </span>
-                ))}
-                {preflight.commandKinds.map((kind) => (
-                    <span className="pill muted" key={kind}>
-                        {kind}
-                    </span>
-                ))}
-            </div>
-            {(preflight.errors.length > 0 || preflight.warnings.length > 0) && (
-                <div className="distributed-preflight-issues">
-                    {preflight.errors.map((issue) => (
-                        <div
-                            className="distributed-preflight-issue error"
-                            key={issue}
-                        >
-                            {issue}
-                        </div>
-                    ))}
-                    {preflight.warnings.map((issue) => (
-                        <div
-                            className="distributed-preflight-issue warning"
-                            key={issue}
-                        >
-                            {issue}
-                        </div>
-                    ))}
-                </div>
-            )}
-            {(preflight.loops.length > 0 ||
-                preflight.parallelGroups.length > 0 ||
-                preflight.waits.length > 0 ||
-                preflight.asserts.length > 0) && (
-                <div className="distributed-preflight-composites">
-                    {preflight.loops.map((loop) => (
-                        <div
-                            className="distributed-preflight-composite"
-                            key={`${loop.path}-loop`}
-                        >
-                            <strong>{loop.commandId ?? loop.path}</strong>
-                            <span>Loop x{loop.estimatedIterations}</span>
-                            <small>
-                                {[
-                                    `${loop.childCommandCount} child`,
-                                    `${loop.effectiveCommandCount} ops`,
-                                    loop.intervalMs === undefined
-                                        ? undefined
-                                        : `${loop.intervalMs} ms interval`,
-                                    loop.durationMs === undefined
-                                        ? undefined
-                                        : `${loop.durationMs} ms duration`,
-                                    loop.frameCount === undefined
-                                        ? undefined
-                                        : `${loop.frameCount} frames`,
-                                ]
-                                    .filter(Boolean)
-                                    .join(' - ')}
-                            </small>
-                        </div>
-                    ))}
-                    {preflight.parallelGroups.map((parallel) => (
-                        <div
-                            className="distributed-preflight-composite"
-                            key={`${parallel.path}-parallel`}
-                        >
-                            <strong>
-                                {parallel.commandId ?? parallel.path}
-                            </strong>
-                            <span>
-                                {parallel.groupCount} parallel group
-                                {parallel.groupCount === 1 ? '' : 's'}
-                            </span>
-                            <small>
-                                concurrency {parallel.maxConcurrency} -{' '}
-                                {parallel.effectiveCommandCount} ops -{' '}
-                                {parallel.groups.join(', ')}
-                            </small>
-                        </div>
-                    ))}
-                    {preflight.waits.map((wait) => (
-                        <div
-                            className="distributed-preflight-composite"
-                            key={`${wait.path}-wait`}
-                        >
-                            <strong>{wait.commandId ?? wait.path}</strong>
-                            <span>Wait/assert guard</span>
-                            <small>
-                                wait {formatDuration(wait.timeoutMs)} -{' '}
-                                {wait.matchSummary}
-                            </small>
-                        </div>
-                    ))}
-                    {preflight.asserts.map((assertion) => (
-                        <div
-                            className="distributed-preflight-composite"
-                            key={`${assertion.path}-assert`}
-                        >
-                            <strong>
-                                {assertion.commandId ?? assertion.path}
-                            </strong>
-                            <span>Assert predicate</span>
-                            <small>{assertion.predicate}</small>
-                        </div>
-                    ))}
-                </div>
-            )}
-            {preflight.liveServiceRequirements.length > 0 && (
-                <div className="distributed-preflight-requirements">
-                    <strong>Live requirements</strong>
-                    <ul>
-                        {preflight.liveServiceRequirements.map(
-                            (requirement) => (
-                                <li key={requirement}>{requirement}</li>
-                            ),
-                        )}
-                    </ul>
-                </div>
-            )}
-            <div
-                className="distributed-preflight-tree"
-                aria-label="Recipe execution tree"
-            >
-                {treeRows.map((row) => (
-                    <div
-                        className="distributed-preflight-tree-row"
-                        key={row.path}
-                        style={{ paddingLeft: `${row.depth * 14}px` }}
-                    >
-                        <strong>{row.label}</strong>
-                        <span className="pill muted">{row.kind}</span>
-                        <span>{row.summary}</span>
-                        <small>
-                            {row.path} - {row.effectiveCommandCount} op
-                            {row.effectiveCommandCount === 1 ? '' : 's'}
-                            {row.details.length > 0
-                                ? ` - ${row.details.join(' - ')}`
-                                : ''}
-                        </small>
-                    </div>
-                ))}
-                {compact && preflight.tree.length > treeRows.length && (
-                    <div className="distributed-preflight-tree-row muted">
-                        <small>
-                            {preflight.tree.length - treeRows.length} more
-                            command row(s) in the raw manifest
-                        </small>
-                    </div>
-                )}
-            </div>
-        </div>
     );
 }
 

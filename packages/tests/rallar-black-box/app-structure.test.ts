@@ -414,6 +414,339 @@ describe('rallar-black-box app source ownership', () => {
         }
     });
 
+    it('keeps distributed recipe leaves in their direct focused owners', () => {
+        const appSource = repositorySource(appSourcePath);
+        const distributedLeafModules = [
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/distributed-recipe-catalog.ts',
+                appImport:
+                    './legacy/runner/distributed-recipes/distributed-recipe-catalog.ts',
+                appSeams: [
+                    'DISTRIBUTED_RECIPE_CATALOG',
+                    'configuredDistributedRecipeCatalogItem',
+                    'distributedRecipeMatches',
+                ],
+                declarations: [
+                    {
+                        seam: 'RTC_REALTIME_STABILITY_CATALOG_TITLE',
+                        pattern:
+                            /^\s*const\s+RTC_REALTIME_STABILITY_CATALOG_TITLE\s*=/m,
+                    },
+                    {
+                        seam: 'DISTRIBUTED_RECIPE_CATALOG',
+                        pattern:
+                            /^\s*export\s+const\s+DISTRIBUTED_RECIPE_CATALOG\s*:/m,
+                    },
+                    {
+                        seam: 'configuredDistributedRecipeCatalogItem',
+                        pattern:
+                            /^\s*export\s+function\s+configuredDistributedRecipeCatalogItem\s*\(/m,
+                    },
+                    {
+                        seam: 'distributedRecipeMatches',
+                        pattern:
+                            /^\s*export\s+function\s+distributedRecipeMatches\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/distributed-manifest-validation.ts',
+                appImport:
+                    './legacy/runner/distributed-recipes/distributed-manifest-validation.ts',
+                appSeams: ['validateDistributedRecipeManifest'],
+                declarations: [
+                    {
+                        seam: 'validateDistributedRecipeManifest',
+                        pattern:
+                            /^\s*export\s+function\s+validateDistributedRecipeManifest\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/shared/safe-id-segment.ts',
+                appImport: './legacy/shared/safe-id-segment.ts',
+                appSeams: ['safeIdSegment'],
+                declarations: [
+                    {
+                        seam: 'safeIdSegment',
+                        pattern: /^\s*export\s+function\s+safeIdSegment\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/shared/record-value.ts',
+                appImport: './legacy/shared/record-value.ts',
+                appSeams: ['recordValue'],
+                declarations: [
+                    {
+                        seam: 'recordValue',
+                        pattern: /^\s*export\s+function\s+recordValue\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/authoring/distributed-recipe-authoring.ts',
+                appImport:
+                    './legacy/runner/distributed-recipes/authoring/distributed-recipe-authoring.ts',
+                appSeams: [
+                    'DistributedAuthoringDraftTarget',
+                    'distributedAuthoringDraftPreflights',
+                    'distributedPromptFeedbackFromValidation',
+                ],
+                declarations: [
+                    {
+                        seam: 'DistributedAuthoringDraftTarget',
+                        pattern:
+                            /^\s*export\s+type\s+DistributedAuthoringDraftTarget\s*=/m,
+                    },
+                    {
+                        seam: 'DistributedAuthoringDraftPreflightEntry',
+                        pattern:
+                            /^\s*export\s+type\s+DistributedAuthoringDraftPreflightEntry\s*=/m,
+                    },
+                    {
+                        seam: 'distributedAuthoringDraftPreflights',
+                        pattern:
+                            /^\s*export\s+function\s+distributedAuthoringDraftPreflights\s*\(/m,
+                    },
+                    {
+                        seam: 'distributedPromptFeedbackFromValidation',
+                        pattern:
+                            /^\s*export\s+function\s+distributedPromptFeedbackFromValidation\s*\(/m,
+                    },
+                    {
+                        seam: 'isRallarBlackBoxRecipeValue',
+                        pattern:
+                            /^\s*function\s+isRallarBlackBoxRecipeValue\s*\(/m,
+                    },
+                    {
+                        seam: 'isDistributedManifestValue',
+                        pattern:
+                            /^\s*function\s+isDistributedManifestValue\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringPanel.tsx',
+                appImport:
+                    './legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringPanel.tsx',
+                appSeams: ['DistributedRecipeAuthoringPanel'],
+                declarations: [
+                    {
+                        seam: 'DistributedRecipeAuthoringPanel',
+                        pattern:
+                            /^\s*export\s+function\s+DistributedRecipeAuthoringPanel\s*\(/m,
+                    },
+                    {
+                        seam: 'promptVariableVisible',
+                        pattern: /^\s*function\s+promptVariableVisible\s*\(/m,
+                    },
+                    {
+                        seam: 'formatPromptVariableValue',
+                        pattern:
+                            /^\s*function\s+formatPromptVariableValue\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipePreflightPanel.tsx',
+                appImport:
+                    './legacy/runner/distributed-recipes/DistributedRecipePreflightPanel.tsx',
+                appSeams: ['DistributedRecipePreflightPanel'],
+                declarations: [
+                    {
+                        seam: 'DistributedRecipePreflightPanel',
+                        pattern:
+                            /^\s*export\s+function\s+DistributedRecipePreflightPanel\s*\(/m,
+                    },
+                ],
+            },
+        ] as const;
+
+        const importedSeams = (source: string, moduleImport: string): string => {
+            const escapedModuleImport = moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            return [
+                ...source.matchAll(
+                    new RegExp(
+                        `import(?:\\s+type)?\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                        'g',
+                    ),
+                ),
+            ]
+                .map((match) => match[1])
+                .join('\n');
+        };
+
+        const sourceByPath = new Map<string, string>();
+        for (const owner of distributedLeafModules) {
+            const ownerExists = existsSync(resolve(repositoryRoot, owner.path));
+            const ownerSource = ownerExists ? repositorySource(owner.path) : '';
+            sourceByPath.set(owner.path, ownerSource);
+
+            expect.soft(ownerExists, owner.path).toBe(true);
+            expect
+                .soft(ownerSource, `${owner.path}: export-star facade`)
+                .not.toMatch(/^\s*export\s*\*(?:\s+as\s+\w+)?\s+from\b/m);
+            expect
+                .soft(ownerSource, `${owner.path}: named re-export facade`)
+                .not.toMatch(
+                    /^\s*export\s+(?:type\s+)?{[^}]+}\s*from\s*['"]/m,
+                );
+            expect.soft(ownerSource, `${owner.path}: App.tsx import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/,
+            );
+            expect.soft(
+                ownerSource === ''
+                    ? 0
+                    : ownerSource.trimEnd().split(/\r?\n/).length,
+                `${owner.path}: line count`,
+            ).toBeLessThanOrEqual(320);
+
+            for (const declaration of owner.declarations) {
+                expect
+                    .soft(
+                        ownerSource,
+                        `${owner.path}: ${declaration.seam} declaration`,
+                    )
+                    .toMatch(declaration.pattern);
+                expect
+                    .soft(
+                        ownerSource,
+                        `${owner.path}: ${declaration.seam} re-export`,
+                    )
+                    .not.toMatch(
+                        new RegExp(
+                            `^\\s*export\\s+(?:type\\s+)?{[^}]*\\b${declaration.seam}\\b[^}]*}\\s*from\\s*['"]`,
+                            'm',
+                        ),
+                    );
+            }
+
+            const appImportedSeams = importedSeams(appSource, owner.appImport);
+            expect.soft(appImportedSeams, owner.appImport).not.toBe('');
+            for (const seam of owner.appSeams) {
+                expect
+                    .soft(appImportedSeams, `${owner.appImport}: ${seam}`)
+                    .toMatch(new RegExp(`\\b${seam}\\b`));
+            }
+        }
+
+        const authoringPanelPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringPanel.tsx';
+        const authoringSupportPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/authoring/distributed-recipe-authoring.ts';
+        const authoringPanelSource = sourceByPath.get(authoringPanelPath) ?? '';
+        const authoringSupportSource = sourceByPath.get(authoringSupportPath) ?? '';
+        const authoringTypeImports = importedSeams(
+            authoringPanelSource,
+            './distributed-recipe-authoring.ts',
+        );
+        for (const authoringType of [
+            'DistributedAuthoringDraftTarget',
+            'DistributedAuthoringDraftPreflightEntry',
+        ]) {
+            expect
+                .soft(
+                    authoringTypeImports,
+                    `authoring panel: ${authoringType}`,
+                )
+                .toMatch(new RegExp(`\\b${authoringType}\\b`));
+        }
+        expect(
+            importedSeams(
+                authoringPanelSource,
+                '../DistributedRecipePreflightPanel.tsx',
+            ),
+            'authoring panel: DistributedRecipePreflightPanel',
+        ).toMatch(/\bDistributedRecipePreflightPanel\b/);
+        expect(
+            importedSeams(authoringSupportSource, '../../../shared/record-value.ts'),
+            'authoring support: recordValue',
+        ).toMatch(/\brecordValue\b/);
+
+        const targetPaths = new Set(
+            distributedLeafModules.map((owner) => owner.path),
+        );
+        const targetDependencies = new Map<string, readonly string[]>();
+        for (const owner of distributedLeafModules) {
+            const dependencies = [
+                ...(sourceByPath.get(owner.path) ?? '').matchAll(
+                    /\bfrom\s+['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]/g,
+                ),
+            ]
+                .map((match) => match[1] ?? match[2])
+                .filter((moduleImport) => moduleImport.startsWith('.'))
+                .map((moduleImport) =>
+                    relative(
+                        repositoryRoot,
+                        resolve(
+                            resolve(repositoryRoot, owner.path),
+                            '..',
+                            moduleImport,
+                        ),
+                    ),
+                )
+                .filter((dependency) => targetPaths.has(dependency));
+            targetDependencies.set(owner.path, dependencies);
+        }
+
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) {
+                return;
+            }
+            active.add(path);
+            for (const dependency of targetDependencies.get(path) ?? []) {
+                visit(dependency);
+            }
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const targetPath of targetPaths) {
+            visit(targetPath);
+        }
+        expect(cycles, 'distributed recipe leaf import cycles').toEqual([]);
+
+        const movedDeclarations = [
+            'RTC_REALTIME_STABILITY_CATALOG_TITLE',
+            'DISTRIBUTED_RECIPE_CATALOG',
+            'configuredDistributedRecipeCatalogItem',
+            'distributedRecipeMatches',
+            'validateDistributedRecipeManifest',
+            'safeIdSegment',
+            'recordValue',
+            'DistributedAuthoringDraftTarget',
+            'DistributedAuthoringDraftPreflightEntry',
+            'distributedAuthoringDraftPreflights',
+            'distributedPromptFeedbackFromValidation',
+            'isRallarBlackBoxRecipeValue',
+            'isDistributedManifestValue',
+            'DistributedRecipeAuthoringPanel',
+            'promptVariableVisible',
+            'formatPromptVariableValue',
+            'DistributedRecipePreflightPanel',
+        ] as const;
+        for (const movedDeclaration of movedDeclarations) {
+            expect
+                .soft(appSource, `App.tsx: ${movedDeclaration}`)
+                .not.toMatch(
+                    new RegExp(
+                        `^\\s*(?:export\\s+)?(?:(?:const|let|var|function|interface|class)\\s+${movedDeclaration}\\b|type\\s+${movedDeclaration}\\s*=)`,
+                        'm',
+                    ),
+                );
+        }
+    });
+
     it('keeps legacy distributed monitor views and helpers in focused modules', () => {
         const appSource = repositorySource(appSourcePath);
         const monitorPath =
