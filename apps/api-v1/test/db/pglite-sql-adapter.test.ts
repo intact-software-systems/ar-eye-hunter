@@ -7,6 +7,8 @@ import {
   ResourceInboxResultsRepository,
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
   PSqlClientStateEventRepository,
   PSqlGroupStateEventRepository,
@@ -146,6 +148,50 @@ Deno.test('PSqlRuntimeStateRepository treats encoded prefix characters literally
     assert.deepEqual(page.map((entry) => entry.key), [
       `${literalPrefix}:group=room-a`,
     ]);
+  });
+});
+
+Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async () => {
+  await withPGliteSql(async (sql) => {
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const clients = new ClientStateRepository(runtime);
+    const groups = new GroupStateRepository(runtime);
+
+    await clients.putPrincipal({
+      applicationId: 'app',
+      workspaceId: 'foo',
+      principalId: 'alice',
+      presenceVersion: 1,
+    } as never);
+    await clients.putPrincipal({
+      applicationId: 'app',
+      workspaceId: 'foobar',
+      principalId: 'bob',
+      presenceVersion: 1,
+    } as never);
+    await groups.putGroup({
+      applicationId: 'app',
+      workspaceId: 'foo',
+      groupId: 'room',
+      status: 'active',
+    } as never);
+    await groups.putGroup({
+      applicationId: 'app',
+      workspaceId: 'foobar',
+      groupId: 'room',
+      status: 'active',
+    } as never);
+
+    assert.deepEqual(
+      (await clients.listPrincipals({ applicationId: 'app', workspaceId: 'foo' }))
+        .map((value) => value.workspaceId),
+      ['foo'],
+    );
+    assert.deepEqual(
+      (await groups.listGroups({ applicationId: 'app', workspaceId: 'foo' }))
+        .map((value) => value.workspaceId),
+      ['foo'],
+    );
   });
 });
 

@@ -24,10 +24,10 @@ describe('Relic scene objective derivation', () => {
 
         expect(objective).toMatchObject({
             eyebrow: 'Entrance',
-            title: 'Move to Storage',
+            title: 'Move to Hallway',
             recommendedAction: {
                 kind: 'move',
-                targetRoomId: 'storage',
+                targetRoomId: 'hallway',
             },
         });
     });
@@ -194,11 +194,17 @@ describe('Relic scene objective derivation', () => {
         const snapshot = planningSnapshot();
         const foundRelicSnapshot = {
             ...snapshot,
-            relics: snapshot.relics.map((relic) =>
-                relic.roomId === 'storage'
-                    ? { ...relic, foundBy: 'alice-session', carriedBy: 'alice-session' }
-                    : relic
-            ),
+            relics: [
+                {
+                    id: 'sun-disk',
+                    name: 'Sun Disk',
+                    value: 6,
+                    roomId: 'storage',
+                    foundBy: 'alice-session',
+                    carriedBy: 'alice-session',
+                },
+                ...snapshot.relics.slice(1),
+            ],
         };
         const investigatedSnapshot = {
             ...snapshot,

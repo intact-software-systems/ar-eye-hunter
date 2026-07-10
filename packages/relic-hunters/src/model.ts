@@ -28,6 +28,11 @@ export type RelicExpeditionSetupMetadata = Readonly<{
     blueprintId?: string;
 }>;
 
+export type RelicPublicSetupMetadata = Omit<
+    RelicExpeditionSetupMetadata,
+    'seed' | 'blueprintId'
+>;
+
 export type RelicCharacterId =
     | 'kael-ironstride'
     | 'nyra-vale'
@@ -218,7 +223,7 @@ export type RelicPublicSnapshot = Readonly<{
     submittedPlayerIds: readonly string[];
     events: readonly RelicEvent[];
     winnerIds: readonly string[];
-    setup?: RelicExpeditionSetupMetadata;
+    setup?: RelicPublicSetupMetadata;
 }>;
 
 export type RelicCommand =
@@ -291,14 +296,58 @@ export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapsho
         roundTimeLimitMs: state.roundTimeLimitMs,
         roundStartedAtEpochMs: state.roundStartedAtEpochMs,
         map: state.map,
-        relics: state.relics,
+        relics: toPublicRelics(state.relics),
+        // A relic-found investigation is created only after the relic is marked
+        // found/carried above, so its relic and clue references are public state.
         roomInvestigations: maybeLegacy.roomInvestigations ?? [],
         players: state.players,
         submittedPlayerIds: state.pendingActions.map((action) => action.playerId),
         events: state.events.slice(-48),
         winnerIds: state.winnerIds,
-        setup: state.setup,
+        setup: toPublicSetup(state.setup),
     };
+}
+
+function toPublicRelics(
+    relics: readonly RelicDefinition[],
+): readonly RelicDefinition[] {
+    const discovered = relics.filter((relic) =>
+        relic.foundBy || relic.carriedBy || relic.escapedBy
+    );
+    const occupiedIds = new Set(discovered.map((relic) => relic.id));
+    const hidden = Array.from(
+        { length: relics.length - discovered.length },
+        (_, index): RelicDefinition => {
+            let id = `__hidden-relic-${index + 1}`;
+            while (occupiedIds.has(id)) {
+                id = `_${id}`;
+            }
+            occupiedIds.add(id);
+            return {
+                id,
+                name: 'Unknown relic',
+                value: 0,
+                roomId: '',
+            };
+        },
+    );
+
+    // Preserve HUD cardinality without retaining a hidden relic's source index.
+    return [...discovered, ...hidden];
+}
+
+function toPublicSetup(
+    setup: RelicExpeditionSetupMetadata | undefined,
+): RelicPublicSetupMetadata | undefined {
+    if (!setup) {
+        return undefined;
+    }
+    const {
+        seed: _serverOnlySeed,
+        blueprintId: _serverOnlyBlueprintId,
+        ...publicSetup
+    } = setup;
+    return publicSetup;
 }
 
 export function isRelicCommand(value: unknown): value is RelicCommand {
@@ -344,9 +393,177 @@ export function isRelicSnapshot(value: unknown): value is RelicPublicSnapshot {
     return isRecord(value) &&
         value.protocolVersion === RELIC_PROTOCOL_VERSION &&
         typeof value.gameId === 'string' &&
-        typeof value.round === 'number' &&
+        typeof value.roomId === 'string' &&
+        isRelicGamePhase(value.phase) &&
+        isFiniteNumber(value.round) &&
+        isFiniteNumber(value.maxRounds) &&
+        isFiniteNumber(value.updatedAtEpochMs) &&
+        isOptionalString(value.adminPlayerId) &&
+        isFiniteNumber(value.roundTimeLimitMs) &&
+        isOptionalFiniteNumber(value.roundStartedAtEpochMs) &&
+        Array.isArray(value.map) && value.map.every(isRelicRoom) &&
+        Array.isArray(value.relics) && value.relics.every(isRelicDefinition) &&
         Array.isArray(value.roomInvestigations) &&
-        Array.isArray(value.players);
+        value.roomInvestigations.every(isRelicRoomInvestigation) &&
+        Array.isArray(value.players) && value.players.every(isRelicPlayer) &&
+        Array.isArray(value.submittedPlayerIds) && value.submittedPlayerIds.every(isString) &&
+        Array.isArray(value.events) && value.events.every(isRelicEvent) &&
+        Array.isArray(value.winnerIds) && value.winnerIds.every(isString) &&
+        (value.setup === undefined || isRelicPublicSetupMetadata(value.setup));
+}
+
+function isRelicGamePhase(value: unknown): value is RelicGamePhase {
+    return value === 'lobby' || value === 'planning' || value === 'review' ||
+        value === 'finished';
+}
+
+function isRelicRoom(value: unknown): value is RelicRoom {
+    return isRecord(value) &&
+        typeof value.id === 'string' &&
+        typeof value.name === 'string' &&
+        isRelicRoomKind(value.kind) &&
+        isFiniteNumber(value.x) &&
+        isFiniteNumber(value.z) &&
+        Array.isArray(value.neighbors) && value.neighbors.every(isString) &&
+        isOptionalBoolean(value.collapsed) &&
+        isOptionalBoolean(value.unstable);
+}
+
+function isRelicRoomKind(value: unknown): value is RelicRoomKind {
+    return value === 'entrance' || value === 'hallway' || value === 'storage' ||
+        value === 'shrine' || value === 'trap' || value === 'treasure' ||
+        value === 'monster' || value === 'exit';
+}
+
+function isRelicDefinition(value: unknown): value is RelicDefinition {
+    return isRecord(value) &&
+        typeof value.id === 'string' &&
+        typeof value.name === 'string' &&
+        isFiniteNumber(value.value) &&
+        typeof value.roomId === 'string' &&
+        isOptionalString(value.foundBy) &&
+        isOptionalString(value.carriedBy) &&
+        isOptionalString(value.escapedBy);
+}
+
+function isRelicRoomInvestigation(
+    value: unknown,
+): value is RelicRoomInvestigation {
+    return isRecord(value) &&
+        typeof value.roomId === 'string' &&
+        typeof value.searchedByPlayerId === 'string' &&
+        typeof value.searchedByUsername === 'string' &&
+        isFiniteNumber(value.searchedAtRound) &&
+        isFiniteNumber(value.searchedAtEpochMs) &&
+        (value.result === 'empty' || value.result === 'relic-found') &&
+        typeof value.summary === 'string' &&
+        typeof value.hint === 'string' &&
+        isRelicRoomInvestigationEffect(value.effect) &&
+        isOptionalString(value.danger) &&
+        isOptionalString(value.revealedRoomId) &&
+        isOptionalString(value.relicId);
+}
+
+function isRelicRoomInvestigationEffect(
+    value: unknown,
+): value is RelicRoomInvestigationEffect {
+    return value === 'ordinary-search' || value === 'map-fragment' ||
+        value === 'rune-reading' || value === 'safe-path' ||
+        value === 'treasure-trail' || value === 'monster-trace' ||
+        value === 'exit-route';
+}
+
+function isRelicPlayer(value: unknown): value is RelicPlayer {
+    return isRecord(value) &&
+        typeof value.playerId === 'string' &&
+        typeof value.username === 'string' &&
+        isRelicCharacterId(value.characterId) &&
+        typeof value.roomId === 'string' &&
+        isFiniteNumber(value.health) &&
+        typeof value.escaped === 'boolean' &&
+        typeof value.defeated === 'boolean' &&
+        isFiniteNumber(value.score) &&
+        Array.isArray(value.relicIds) && value.relicIds.every(isString);
+}
+
+function isRelicEvent(value: unknown): value is RelicEvent {
+    return isRecord(value) &&
+        typeof value.id === 'string' &&
+        isFiniteNumber(value.round) &&
+        isRelicEventType(value.type) &&
+        typeof value.message === 'string' &&
+        (value.animationCue === undefined || isRelicAnimationCue(value.animationCue)) &&
+        (value.tone === undefined || value.tone === 'neutral' ||
+            value.tone === 'success' || value.tone === 'danger' ||
+            value.tone === 'mystery') &&
+        isFiniteNumber(value.createdAtEpochMs);
+}
+
+function isRelicEventType(value: unknown): value is RelicEventType {
+    return value === 'game_waiting' || value === 'player_joined' ||
+        value === 'round_started' || value === 'action_submitted' ||
+        value === 'action_revealed' || value === 'player_moved' ||
+        value === 'player_searched' || value === 'relic_found' ||
+        value === 'relic_picked_up' || value === 'steal_succeeded' ||
+        value === 'steal_failed' || value === 'escape_failed' ||
+        value === 'player_escaped' || value === 'noise_pulse' ||
+        value === 'player_damaged' || value === 'room_unstable' ||
+        value === 'room_collapsed' || value === 'game_finished';
+}
+
+function isRelicAnimationCue(value: unknown): value is RelicAnimationCue {
+    return isRecord(value) &&
+        isRelicAnimationCueType(value.type) &&
+        isOptionalString(value.roomId) &&
+        isOptionalString(value.fromRoomId) &&
+        isOptionalString(value.playerId) &&
+        isOptionalString(value.targetPlayerId) &&
+        isOptionalString(value.relicId) &&
+        isOptionalFiniteNumber(value.durationMs) &&
+        (value.intensity === undefined || value.intensity === 'low' ||
+            value.intensity === 'medium' || value.intensity === 'high');
+}
+
+function isRelicAnimationCueType(
+    value: unknown,
+): value is RelicAnimationCueType {
+    return value === 'camera_move' || value === 'search_altar' ||
+        value === 'relic_reveal' || value === 'relic_pickup' ||
+        value === 'steal_attempt' || value === 'escape_run' ||
+        value === 'noise_pulse' || value === 'damage_shake' ||
+        value === 'room_collapse' || value === 'heart_relic_victory';
+}
+
+function isRelicPublicSetupMetadata(
+    value: unknown,
+): value is RelicPublicSetupMetadata {
+    return isRecord(value) &&
+        value.schemaVersion === 1 &&
+        (value.source === 'default' || value.source === 'procedural' ||
+            value.source === 'rallar-ai' || value.source === 'mock') &&
+        isOptionalString(value.theme) &&
+        !('seed' in value) &&
+        !('blueprintId' in value);
+}
+
+function isString(value: unknown): value is string {
+    return typeof value === 'string';
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isOptionalString(value: unknown): value is string | undefined {
+    return value === undefined || typeof value === 'string';
+}
+
+function isOptionalFiniteNumber(value: unknown): value is number | undefined {
+    return value === undefined || isFiniteNumber(value);
+}
+
+function isOptionalBoolean(value: unknown): value is boolean | undefined {
+    return value === undefined || typeof value === 'boolean';
 }
 
 function isRelicActionKind(value: unknown): value is RelicActionKind {

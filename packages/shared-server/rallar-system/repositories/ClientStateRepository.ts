@@ -88,7 +88,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     ): Promise<readonly ClientPrincipal[]> {
         return await this.listValues<ClientPrincipal>(
             PRINCIPALS_NAMESPACE,
-            this.scopePrefix(scope),
+            this.scopeChildPrefix(scope),
         );
     }
 
@@ -99,11 +99,11 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             this.listPrincipals(scope),
             this.listValues<ClientInstance>(
                 INSTANCES_NAMESPACE,
-                this.scopePrefix(scope),
+                this.scopeChildPrefix(scope),
             ),
             this.listValues<ClientSession>(
                 SESSIONS_NAMESPACE,
-                this.scopePrefix(scope),
+                this.scopeChildPrefix(scope),
             ),
         ]);
         const instancesByPrincipalId = new Map<string, ClientInstance[]>();
@@ -155,7 +155,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     ): Promise<readonly ClientInstance[]> {
         return await this.listValues<ClientInstance>(
             INSTANCES_NAMESPACE,
-            this.instancePrefix(ref),
+            this.principalChildPrefix(ref),
         );
     }
 
@@ -187,7 +187,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     ): Promise<readonly ClientSession[]> {
         return await this.listValues<ClientSession>(
             SESSIONS_NAMESPACE,
-            this.sessionPrefix(ref),
+            this.instanceChildPrefix(ref),
         );
     }
 
@@ -196,7 +196,7 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     ): Promise<readonly ClientSession[]> {
         return await this.listValues<ClientSession>(
             SESSIONS_NAMESPACE,
-            this.instancePrefix(ref),
+            this.principalChildPrefix(ref),
         );
     }
 
@@ -338,10 +338,6 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         return Number.isFinite(next) ? next : undefined;
     }
 
-    private scopePrefix(scope: ClientScope): string {
-        return this.scopeKey(scope);
-    }
-
     private principalKey(ref: ClientPrincipalRef): string {
         return [this.scopeKey(ref), this.idKey('principal', ref.principalId)].join(
             ':',
@@ -355,8 +351,8 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         return [this.principalKey(ref), this.idKey('request', requestId)].join(':');
     }
 
-    private instancePrefix(ref: ClientPrincipalRef): string {
-        return this.principalKey(ref);
+    private principalChildPrefix(ref: ClientPrincipalRef): string {
+        return this.childKeyPrefix(this.principalKey(ref));
     }
 
     private instanceKey(ref: ClientInstanceRef): string {
@@ -366,8 +362,8 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         ].join(':');
     }
 
-    private sessionPrefix(ref: ClientInstanceRef): string {
-        return this.instanceKey(ref);
+    private instanceChildPrefix(ref: ClientInstanceRef): string {
+        return this.childKeyPrefix(this.instanceKey(ref));
     }
 
     private sessionKey(ref: ClientSessionRef): string {

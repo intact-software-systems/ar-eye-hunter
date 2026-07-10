@@ -380,7 +380,7 @@ describe('Relic Hunters browser app', () => {
         });
 
         await waitFor(() => container.textContent?.includes('Suggestion ready') === true);
-        expect(container.textContent).toContain('Move toward Storage');
+        expect(container.textContent).toContain('Move toward Hallway');
         expect(rallarMock.wsSend).toHaveBeenCalledWith(
             expect.objectContaining({
                 topicId: 'room.relic.ai.planning',
@@ -406,7 +406,7 @@ describe('Relic Hunters browser app', () => {
             aiPrimeButton()?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         });
 
-        expect(targetRoomButton('storage')?.getAttribute('aria-pressed')).toBe('true');
+        expect(targetRoomButton('hallway')?.getAttribute('aria-pressed')).toBe('true');
         expect(container.textContent).toContain('Step into an adjacent room');
     });
 
@@ -432,7 +432,7 @@ describe('Relic Hunters browser app', () => {
         expect(fetchMock.mock.calls.some(([url, init]) =>
             String(url).includes('/commands') &&
             String(init?.body).includes('"kind":"submit-action"') &&
-            String(init?.body).includes('"targetRoomId":"storage"')
+            String(init?.body).includes('"targetRoomId":"hallway"')
         )).toBe(true);
     });
 

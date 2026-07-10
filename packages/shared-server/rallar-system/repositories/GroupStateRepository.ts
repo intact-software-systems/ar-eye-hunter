@@ -110,17 +110,17 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     async listGroups(scope: GroupScope): Promise<readonly Group[]> {
         return await this.listValues<Group>(
             GROUPS_NAMESPACE,
-            this.scopePrefix(scope),
+            this.scopeChildPrefix(scope),
         );
     }
 
     async listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]> {
         const [groups, members, sessions] = await Promise.all([
             this.listGroups(scope),
-            this.listValues<GroupMember>(MEMBERS_NAMESPACE, this.scopePrefix(scope)),
+            this.listValues<GroupMember>(MEMBERS_NAMESPACE, this.scopeChildPrefix(scope)),
             this.listValues<GroupPresenceSession>(
                 SESSIONS_NAMESPACE,
-                this.scopePrefix(scope),
+                this.scopeChildPrefix(scope),
             ),
         ]);
         const membersByGroupId = new Map<string, GroupMember[]>();
@@ -367,14 +367,6 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
     }
 
-    private scopePrefix(scope: GroupScope): string {
-        return this.scopeKey(scope);
-    }
-
-    private scopeChildPrefix(scope: GroupScope): string {
-        return `${this.scopePrefix(scope)}:`;
-    }
-
     private groupKey(ref: GroupRef): string {
         return [this.scopeKey(ref), this.idKey('group', ref.groupId)].join(':');
     }
@@ -384,7 +376,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     private memberPrefix(ref: GroupRef): string {
-        return this.groupKey(ref);
+        return this.childKeyPrefix(this.groupKey(ref));
     }
 
     private memberKey(
@@ -396,7 +388,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     private sessionPrefix(ref: GroupRef): string {
-        return this.groupKey(ref);
+        return this.childKeyPrefix(this.groupKey(ref));
     }
 
     private sessionKey(

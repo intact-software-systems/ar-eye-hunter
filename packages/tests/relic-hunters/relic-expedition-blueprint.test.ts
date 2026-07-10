@@ -132,7 +132,11 @@ describe('Relic expedition blueprints', () => {
             foundBy: 'alice',
             escapedBy: 'alice',
         });
-        expect(toPublicRelicSnapshot(state).setup?.blueprintId).toBe('test-blueprint');
+        expect(toPublicRelicSnapshot(state).setup).toMatchObject({
+            source: 'mock',
+        });
+        expect(toPublicRelicSnapshot(state).setup?.seed).toBeUndefined();
+        expect(toPublicRelicSnapshot(state).setup?.blueprintId).toBeUndefined();
     });
 });
 

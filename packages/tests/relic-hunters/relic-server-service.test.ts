@@ -170,20 +170,20 @@ describe('Relic Hunter server game service', () => {
         const ensured = await service.ensureSnapshot('room-1');
         expect(ensured.setup).toMatchObject({
             source: 'procedural',
-            seed: 'ensure-1',
         });
+        expect(ensured.setup?.seed).toBeUndefined();
 
         const joined = await service.applyCommand(joinCommand('room-2'), 'alice-session');
         expect(joined.setup).toMatchObject({
             source: 'procedural',
-            seed: 'command-2',
         });
+        expect(joined.setup?.seed).toBeUndefined();
 
         const reset = await service.reset('room-1');
         expect(reset.setup).toMatchObject({
             source: 'procedural',
-            seed: 'reset-3',
         });
+        expect(reset.setup?.seed).toBeUndefined();
         expect(calls).toEqual([
             'ensure:room-1',
             'command:room-2',

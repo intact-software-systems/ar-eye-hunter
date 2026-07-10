@@ -3,8 +3,12 @@ import {
     RELIC_PROTOCOL_VERSION,
     type RelicCommand,
     type RelicGameState,
+    type RelicPublicSnapshot,
     applyRelicCommand,
+    createProceduralRelicExpeditionBlueprint,
     createRelicGame,
+    createRelicGameFromBlueprint,
+    isRelicSnapshot,
     toPublicRelicSnapshot,
 } from '@relic-hunters/mod.ts';
 
@@ -490,6 +494,83 @@ describe('Relic Hunters game rules', () => {
         expect(toPublicRelicSnapshot(state).roomInvestigations).toEqual(state.roomInvestigations);
     });
 
+    it('redacts undiscovered relic identity, value, and location from public snapshots', () => {
+        const state = createRelicGame('room-1', 'room-1', 1);
+        const snapshot = toPublicRelicSnapshot(state);
+        expect(snapshot.relics).toHaveLength(state.relics.length);
+        expect(snapshot.relics.every((relic) => relic.name === 'Unknown relic' && relic.value === 0 && relic.roomId === '')).toBe(true);
+        expect(JSON.stringify(snapshot)).not.toContain(state.relics[0].name);
+        expect(snapshot.relics.every((relic) => relic.roomId !== state.relics[0].roomId)).toBe(true);
+    });
+
+    it('keeps hidden placeholder IDs collision-free and independent of source ordering', () => {
+        const state = createRelicGame('room-1', 'room-1', 1);
+        const firstFound = toPublicRelicSnapshot({
+            ...state,
+            relics: [
+                { ...state.relics[0], id: 'hidden-relic-2', foundBy: 'alice' },
+                state.relics[1],
+            ],
+        });
+        const secondFound = toPublicRelicSnapshot({
+            ...state,
+            relics: [
+                state.relics[0],
+                { ...state.relics[1], foundBy: 'alice' },
+            ],
+        });
+
+        expect(new Set(firstFound.relics.map((relic) => relic.id)).size).toBe(firstFound.relics.length);
+        expect(hiddenPlaceholderIds(firstFound)).toEqual(hiddenPlaceholderIds(secondFound));
+    });
+
+    it('does not publish the deterministic expedition seed', () => {
+        const blueprint = createProceduralRelicExpeditionBlueprint({
+            seed: 'server-only-seed',
+            theme: 'Hidden Keep',
+        });
+        const state = createRelicGameFromBlueprint(
+            'room-1',
+            'room-1',
+            blueprint,
+            1,
+            {
+                source: 'procedural',
+                seed: blueprint.seed,
+                theme: blueprint.theme,
+                blueprintId: `procedural:${blueprint.seed}`,
+            },
+        );
+
+        const snapshot = toPublicRelicSnapshot(state);
+        expect(snapshot.setup?.seed).toBeUndefined();
+        expect(snapshot.setup?.blueprintId).toBeUndefined();
+        expect(JSON.stringify(snapshot)).not.toContain(blueprint.seed);
+    });
+
+    it('rejects malformed required and nested snapshot fields', () => {
+        const valid = toPublicRelicSnapshot(createRelicGame('room-1', 'room-1', 1));
+        const malformed = [
+            { ...valid, round: Number.NaN },
+            { ...valid, roundTimeLimitMs: undefined },
+            { ...valid, adminPlayerId: 1 },
+            { ...valid, roundStartedAtEpochMs: 'soon' },
+            { ...valid, map: [null] },
+            { ...valid, relics: [null] },
+            { ...valid, roomInvestigations: [null] },
+            { ...valid, players: [null] },
+            { ...valid, submittedPlayerIds: [null] },
+            { ...valid, events: [null] },
+            { ...valid, winnerIds: [null] },
+            { ...valid, setup: { schemaVersion: 2, source: 'procedural' } },
+            { ...valid, setup: { ...valid.setup, seed: 'leaked-seed' } },
+            { ...valid, setup: { ...valid.setup, blueprintId: 'procedural:leaked-seed' } },
+        ];
+
+        expect(isRelicSnapshot(valid)).toBe(true);
+        expect(malformed.every((candidate) => !isRelicSnapshot(candidate))).toBe(true);
+    });
+
     it('adds room-specific notes to empty investigations', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = {
@@ -541,6 +622,19 @@ describe('Relic Hunters game rules', () => {
         }
 
         expect(state.roomInvestigations).toContainEqual({
+            roomId: 'storage',
+            searchedByPlayerId: 'alice',
+            searchedByUsername: 'Alice',
+            searchedAtRound: 2,
+            searchedAtEpochMs: 5,
+            result: 'relic-found',
+            summary: 'Sun Disk was recovered here.',
+            hint: 'Carry the relic toward the Exit before the castle closes.',
+            effect: 'map-fragment',
+            revealedRoomId: 'trap',
+            relicId: 'sun-disk',
+        });
+        expect(toPublicRelicSnapshot(state).roomInvestigations).toContainEqual({
             roomId: 'storage',
             searchedByPlayerId: 'alice',
             searchedByUsername: 'Alice',
@@ -611,6 +705,12 @@ describe('Relic Hunters game rules', () => {
         expect(state.winnerIds).toEqual(['alice']);
     });
 });
+
+function hiddenPlaceholderIds(snapshot: RelicPublicSnapshot): readonly string[] {
+    return snapshot.relics
+        .filter((relic) => relic.name === 'Unknown relic')
+        .map((relic) => relic.id);
+}
 
 function join(playerId: string, username: string): RelicCommand {
     return {

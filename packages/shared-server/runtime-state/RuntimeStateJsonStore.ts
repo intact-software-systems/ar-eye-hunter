@@ -91,6 +91,14 @@ export class RuntimeStateJsonStore {
         ].join(':');
     }
 
+    protected scopeChildPrefix(scope: ScopedRef): string {
+        return this.childKeyPrefix(this.scopeKey(scope));
+    }
+
+    protected childKeyPrefix(parentKey: string): string {
+        return `${parentKey}:`;
+    }
+
     protected idKey(name: string, value: string): string {
         return this.toKeyPart(name, value);
     }
