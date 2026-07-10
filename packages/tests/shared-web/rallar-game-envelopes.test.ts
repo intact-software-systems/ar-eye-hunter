@@ -32,7 +32,64 @@ describe('Rallar Game envelopes', () => {
         expect(isRallarGameEnvelope(envelope, 'other.v1')).toBe(false);
     });
 
-    it('isolates envelope acceptance and sequences by match identity', () => {
+    it('retains a supplied match identity', () => {
+        const envelope = createRallarGameEnvelope({
+            protocol: 'test.game.v1',
+            kind: 'input',
+            roomId: 'room-1',
+            senderId: 'peer-1',
+            seq: 10,
+            directorEpoch: 3,
+            sentAtEpochMs: 1_000,
+            matchId: 'match-a',
+            payload: { moveX: 1 },
+        });
+
+        expect(envelope.matchId).toBe('match-a');
+    });
+
+    it('rejects a different configured match identity', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const envelope = createRallarGameEnvelope({
+            protocol: 'test.game.v1',
+            kind: 'input',
+            roomId: 'room-1',
+            senderId: 'peer-1',
+            seq: 10,
+            directorEpoch: 3,
+            sentAtEpochMs: 1_000,
+            matchId: 'match-a',
+            payload: { moveX: 1 },
+        });
+
+        expect(tracker.accept(envelope, { matchId: 'match-b' })).toEqual({
+            accepted: false,
+            reason: 'wrong-match',
+            envelope,
+        });
+    });
+
+    it('rejects a missing match identity when one is configured', () => {
+        const tracker = createRallarGameSequenceTracker();
+        const envelope = createRallarGameEnvelope({
+            protocol: 'test.game.v1',
+            kind: 'input',
+            roomId: 'room-1',
+            senderId: 'peer-1',
+            seq: 10,
+            directorEpoch: 3,
+            sentAtEpochMs: 1_000,
+            payload: { moveX: 1 },
+        });
+
+        expect(tracker.accept(envelope, { matchId: 'match-b' })).toEqual({
+            accepted: false,
+            reason: 'wrong-match',
+            envelope,
+        });
+    });
+
+    it('keeps sequences independent per match identity', () => {
         const tracker = createRallarGameSequenceTracker();
         const matchAEnvelope = createRallarGameEnvelope({
             protocol: 'test.game.v1',
@@ -51,16 +108,38 @@ describe('Rallar Game envelopes', () => {
             matchId: 'match-b',
         });
 
-        expect(matchAEnvelope.matchId).toBe('match-a');
-        expect(tracker.accept(matchAEnvelope, { matchId: 'match-b' })).toEqual({
-            accepted: false,
-            reason: 'wrong-match',
-            envelope: matchAEnvelope,
-        });
         expect(tracker.accept(matchAEnvelope, { matchId: 'match-a' }))
             .toMatchObject({ accepted: true });
         expect(tracker.accept(matchBEnvelope, { matchId: 'match-b' }))
             .toMatchObject({ accepted: true });
+    });
+
+    it('identifies envelopes with an explicit undefined match identity', () => {
+        expect(isRallarGameEnvelope({
+            ...validEnvelope,
+            matchId: undefined,
+        }, 'test.game.v1')).toBe(true);
+    });
+
+    it('rejects a null match identity', () => {
+        expect(isRallarGameEnvelope({
+            ...validEnvelope,
+            matchId: null,
+        }, 'test.game.v1')).toBe(false);
+    });
+
+    it('rejects a numeric match identity', () => {
+        expect(isRallarGameEnvelope({
+            ...validEnvelope,
+            matchId: 1,
+        }, 'test.game.v1')).toBe(false);
+    });
+
+    it('rejects an object match identity', () => {
+        expect(isRallarGameEnvelope({
+            ...validEnvelope,
+            matchId: { id: 'match-a' },
+        }, 'test.game.v1')).toBe(false);
     });
 
     it('rejects invalid envelope shapes', () => {
@@ -224,3 +303,14 @@ describe('Rallar Game envelopes', () => {
         ).toMatchObject({ accepted: true });
     });
 });
+
+const validEnvelope = {
+    protocol: 'test.game.v1',
+    kind: 'input',
+    roomId: 'room-1',
+    senderId: 'peer-1',
+    seq: 1,
+    directorEpoch: 1,
+    sentAtEpochMs: 1_000,
+    payload: {},
+};

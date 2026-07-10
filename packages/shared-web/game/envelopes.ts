@@ -48,6 +48,7 @@ export function isRallarGameEnvelope(
         RALLAR_GAME_ENVELOPE_KINDS.has(envelope.kind as RallarGameEnvelopeKind) &&
         typeof envelope.roomId === 'string' &&
         envelope.roomId.length > 0 &&
+        (envelope.matchId === undefined || typeof envelope.matchId === 'string') &&
         typeof envelope.senderId === 'string' &&
         envelope.senderId.length > 0 &&
         typeof envelope.seq === 'number' &&

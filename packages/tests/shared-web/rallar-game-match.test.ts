@@ -484,46 +484,79 @@ describe('Rallar Game match', () => {
         expect(onSnapshot.mock.calls[0][0].payload).toEqual({ tick: 2 });
     });
 
-    it('rejects realtime and relay traffic for a different match identity', async () => {
+    it('rejects realtime input from a different match identity', async () => {
         const fake = createFakeRallar({
             directorPeerId: 'peer-a',
             directorIsFresh: true,
         });
         const onInput = vi.fn();
-        const onSnapshot = vi.fn();
         const match = createMatch(fake, {
             matchId: 'match-b',
             onInput,
+        });
+        await match.start();
+
+        await fake.emitRealtime(
+            'game-input',
+            'peer-b',
+            envelope('input', 'peer-b', { x: 4 }, 1, 'match-a'),
+        );
+
+        expect(onInput).not.toHaveBeenCalled();
+    });
+
+    it('rejects relay snapshots from a different match identity', async () => {
+        const fake = createFakeRallar({
+            directorPeerId: 'peer-a',
+            directorIsFresh: true,
+        });
+        const onSnapshot = vi.fn();
+        const match = createMatch(fake, {
+            matchId: 'match-b',
             onSnapshot,
         });
         await match.start();
 
-        const input = envelope('input', 'peer-b', { x: 4 }, 1, 'match-a');
-        const snapshot = envelope(
-            'snapshot',
-            'peer-a',
-            { tick: 1 },
-            2,
-            'match-a',
-        );
-        await fake.emitRealtime('game-input', 'peer-b', input);
-        await fake.relayConfig?.onSnapshot?.({
-            transport: 'rtc',
-            senderId: 'peer-a',
-            data: snapshot,
-            envelope: {
-                protocol: 'rallar.director.relay.v1',
-                topicId: 'game.topic',
-                typeId: 'game.topic.snapshot.v1',
-                roomId: 'room-1',
-                epoch: 1,
-                sentAtEpochMs: 1_002,
-                payload: snapshot,
-            },
-            receivedAtEpochMs: 1_003,
+        await emitRelaySnapshot(fake, 'match-a');
+
+        expect(onSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('rejects realtime input without a configured match identity', async () => {
+        const fake = createFakeRallar({
+            directorPeerId: 'peer-a',
+            directorIsFresh: true,
         });
+        const onInput = vi.fn();
+        const match = createMatch(fake, {
+            matchId: 'match-b',
+            onInput,
+        });
+        await match.start();
+
+        await fake.emitRealtime(
+            'game-input',
+            'peer-b',
+            envelope('input', 'peer-b', { x: 4 }, 1),
+        );
 
         expect(onInput).not.toHaveBeenCalled();
+    });
+
+    it('rejects relay snapshots without a configured match identity', async () => {
+        const fake = createFakeRallar({
+            directorPeerId: 'peer-a',
+            directorIsFresh: true,
+        });
+        const onSnapshot = vi.fn();
+        const match = createMatch(fake, {
+            matchId: 'match-b',
+            onSnapshot,
+        });
+        await match.start();
+
+        await emitRelaySnapshot(fake);
+
         expect(onSnapshot).not.toHaveBeenCalled();
     });
 
@@ -686,6 +719,34 @@ function envelope<T>(
         directorEpoch: 1,
         sentAtEpochMs: 1_000 + seq,
         payload,
+    });
+}
+
+async function emitRelaySnapshot(
+    fake: ReturnType<typeof createFakeRallar>,
+    matchId?: string,
+): Promise<void> {
+    const snapshot = envelope(
+        'snapshot',
+        'peer-a',
+        { tick: 1 },
+        2,
+        matchId,
+    );
+    await fake.relayConfig?.onSnapshot?.({
+        transport: 'rtc',
+        senderId: 'peer-a',
+        data: snapshot,
+        envelope: {
+            protocol: 'rallar.director.relay.v1',
+            topicId: 'game.topic',
+            typeId: 'game.topic.snapshot.v1',
+            roomId: 'room-1',
+            epoch: 1,
+            sentAtEpochMs: 1_002,
+            payload: snapshot,
+        },
+        receivedAtEpochMs: 1_003,
     });
 }
 
