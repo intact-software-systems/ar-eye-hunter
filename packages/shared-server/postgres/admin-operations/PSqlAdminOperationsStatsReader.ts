@@ -408,10 +408,12 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
             where store_namespace = 'group-state:groups'
               and expire_at_ts > now()
               and store_value::jsonb ->> 'status' = 'active'
-              and (
-                store_value::jsonb ->> 'expiresAtEpochMs' is null
-                or (store_value::jsonb ->> 'expiresAtEpochMs')::double precision > ${this.options.now()}
-              )
+              and case
+                when store_value::jsonb -> 'expiresAtEpochMs' is null then true
+                when jsonb_typeof(store_value::jsonb -> 'expiresAtEpochMs') = 'number'
+                  then (store_value::jsonb ->> 'expiresAtEpochMs')::double precision > ${this.options.now()}
+                else false
+              end
         `)[0]?.count,
     );
   }
@@ -927,7 +929,8 @@ function isFutureEpochMs(value: unknown, nowEpochMs: number): boolean {
 }
 
 function isAbsentOrFutureEpochMs(value: unknown, nowEpochMs: number): boolean {
-  return value === undefined || value === null || isFutureEpochMs(value, nowEpochMs);
+  return value === undefined || value === null ||
+    (typeof value === 'number' && Number.isFinite(value) && value > nowEpochMs);
 }
 
 function readRuntimeStateValue(row: RuntimeStateRow): Record<string, unknown> {
