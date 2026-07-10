@@ -89,18 +89,17 @@ describe('Rallar server storage schema docs', () => {
         expect(migration).toContain('ANALYZE resource_inbox');
     });
 
-    it('builds the runtime-state prefix index without blocking live writes', () => {
+    it('builds the runtime-state prefix index with retry-safe transactional DDL', () => {
         const migration = readWorkspaceFile(
             'apps/api-v1/prisma/migrations/20260710221500_runtime_state_store_c_prefix_index/migration.sql',
         );
-        const dropStatement =
-            'DROP INDEX CONCURRENTLY IF EXISTS runtime_state_store_namespace_key_c_ix';
-        const createStatement =
-            'CREATE INDEX CONCURRENTLY runtime_state_store_namespace_key_c_ix';
+        const dropStatement = 'DROP INDEX IF EXISTS runtime_state_store_namespace_key_c_ix';
+        const createStatement = 'CREATE INDEX runtime_state_store_namespace_key_c_ix';
 
         expect(migration).toContain(dropStatement);
         expect(migration).toContain(createStatement);
         expect(migration.indexOf(dropStatement)).toBeLessThan(migration.indexOf(createStatement));
+        expect(migration).not.toContain('CONCURRENTLY');
         expect(migration).toContain('store_key COLLATE "C"');
     });
 
