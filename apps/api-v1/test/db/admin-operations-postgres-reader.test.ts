@@ -135,6 +135,7 @@ Deno.test('PSqlAdminOperationsStatsReader excludes malformed group expiries in b
     for (
       const [key, value] of [
         [`${keyPrefix}:group=no-expiry`, { status: 'active' }],
+        [`${keyPrefix}:group=explicit-null-expiry`, { status: 'active', expiresAtEpochMs: null }],
         [
           `${keyPrefix}:group=future-expiry`,
           { status: 'active', expiresAtEpochMs: nowEpochMs + 1 },
@@ -161,8 +162,8 @@ Deno.test('PSqlAdminOperationsStatsReader excludes malformed group expiries in b
     const globalState = await reader.readState({ adminSession: createAdminSession() });
     const scopedState = await reader.readState({ adminSession: createAdminSession(), scope });
 
-    assert.equal(globalState.groups.activeGroups, 2);
-    assert.equal(scopedState.groups.activeGroups, 2);
+    assert.equal(globalState.groups.activeGroups, 3);
+    assert.equal(scopedState.groups.activeGroups, 3);
   });
 });
 

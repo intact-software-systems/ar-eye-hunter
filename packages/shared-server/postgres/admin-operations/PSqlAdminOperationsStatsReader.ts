@@ -409,7 +409,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
               and expire_at_ts > now()
               and store_value::jsonb ->> 'status' = 'active'
               and case
-                when store_value::jsonb -> 'expiresAtEpochMs' is null then true
+                when store_value::jsonb ->> 'expiresAtEpochMs' is null then true
                 when jsonb_typeof(store_value::jsonb -> 'expiresAtEpochMs') = 'number'
                   then (store_value::jsonb ->> 'expiresAtEpochMs')::double precision > ${this.options.now()}
                 else false
