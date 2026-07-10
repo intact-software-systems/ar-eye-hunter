@@ -1,6 +1,7 @@
 # Rallar Black Box SPA Reimplementation Plan
 
 Date: 2026-07-06
+Last reviewed: 2026-07-10
 
 ## Goal
 
@@ -21,6 +22,8 @@ The existing SPA is capable but too broad for the distributed-recipe job:
 
 - `apps/rallar-black-box/src/App.tsx` is about 28k lines and owns shell, fetching, execution, monitoring, artifact import, recipe authoring, fleet views, direct Rallar tools, and many forms in one file.
 - `apps/rallar-black-box/src/styles.css` is also large, about 7k lines, so a new look and feel should not be achieved by layering more global selectors onto the existing CSS. The rewrite needs an isolated design system and stylesheet boundary.
+- The file currently declares 78 top-level capitalized component functions and contains 359 `useState`/`useEffect`/`useMemo`/`useCallback` calls. Even though the final `App()` composition is only the bottom part of the file, component ownership, state ownership, and bug fixes are still coupled by the single module.
+- Several top-level tab panels use `hidden` while their component trees remain mounted. That is useful for a few draft-heavy tools, but it is not a good default strangler mechanism because hidden effects, polling, memory, and static imports still count toward runtime and bundle cost.
 - `apps/rallar-black-box/src/app-tabs.ts` already has a runner-facing top-level model with `recipes`, `runs`, `fleet`, `builder`, `event-stream`, and `advanced`, which is a good migration foothold.
 - The current Distributed Recipes surface already implements the hard backend workflow: create/list/read/stage/start/cancel/export through the control server.
 - `packages/shared-test/rallar-bb-test` already owns the right contracts: schemas, distributed-run manifest, target resolution, rollups, monitor derivation, composite result normalization, fleet reports, artifact analysis, and runtime diagnostics.
@@ -47,14 +50,20 @@ Alternatives:
 
 The proposed direction is doable and desirable: new UI elements can have a new, more modern, more interactive look and feel while existing UI elements remain available. The key is to make "new" and "legacy" explicit product and code boundaries.
 
+Feasibility is high with the current stack. The app already uses React and Vite, so CSS Modules, dynamic imports, `React.lazy`, and route-level `Suspense` boundaries do not require a framework migration. The difficult work is state and ownership separation, not drawing the new controls. The main risks are global CSS leakage, hidden legacy effects continuing to run, and moving 28k lines into differently named mega-files; the controls below address those risks directly.
+
+The recommended isolation level is a namespaced Recipe Console root plus CSS Modules and separate lazy route trees. Shadow DOM would complicate focus, portals, testing, and shared providers; an iframe would complicate auth/runtime state and deep links. Neither buys enough isolation for this SPA.
+
 Recommended policy:
 
 - Build the Recipe Console as a new UI surface with its own shell, tokens, components, CSS namespace, and interaction model.
 - Preserve existing UI elements as `Legacy` or `Advanced Legacy` surfaces. Do not delete them during the rewrite.
-- Hide legacy panels from the primary path by default. They should remain reachable through explicit advanced navigation, deep links, or contextual "open legacy diagnostic" actions.
+- Hide each legacy panel from the primary path only after its replacement workflow passes its cutover gate. Until then, keep that legacy workflow visible or make the new workflow explicitly opt-in.
+- After cutover, hide legacy panels from primary navigation, not merely with CSS. Keep them reachable through explicit advanced navigation, old deep links, or contextual "open legacy diagnostic" actions.
 - Do not restyle all legacy panels as part of the first rewrite. That would spend effort on surfaces that are no longer primary and would increase regression risk.
 - Do not mix new and legacy components in one view unless the legacy component is inside a clearly framed compatibility slot.
 - Keep old query aliases working. Existing `tab=distributed-recipes`, `tab=run-manager`, and `advancedSurface=...` links should redirect or open the matching legacy/advanced surface.
+- Load legacy surfaces through route-level dynamic imports where practical. Keeping a surface available does not require shipping and mounting all of it on the Recipe Console's default route.
 - New bug fixes should land in extracted modules or shared helpers, not as more code inside `App.tsx`.
 
 This means the user-facing product gets a fresh interaction layer, while the operational escape hatches stay available. It also avoids the risky "big bang redesign" failure mode where the old UI is removed before the new workflow proves itself.
@@ -75,7 +84,9 @@ Visual direction:
 
 Implementation direction:
 
-- Create a new token layer, for example `recipe-console/tokens.css`, and a namespaced stylesheet, for example `.recipe-console`.
+- Create a small root token/reset layer under `.recipe-console`, then use co-located CSS Modules for shell, primitives, and feature views. Do not replace the 7k-line global stylesheet with one new giant `recipe-console.css`.
+- Keep existing global CSS loaded for legacy routes during migration, but add a CSS leakage test page containing representative legacy and Recipe Console controls side by side.
+- Import Recipe Console styles after the legacy global sheet, give every new control an explicit local class, and inspect computed styles in the leakage fixture. Avoid broad `all: initial` resets that would damage accessibility and native control behavior.
 - Keep component radii modest, around 6-8px, matching an operational tool rather than a playful landing page.
 - Use icon buttons for common actions where possible: refresh, copy, export, cancel, start, filter, search, open inspector, close drawer.
 - Keep text code-native and selectable. Do not bake labels into SVG or images.
@@ -86,15 +97,18 @@ Implementation direction:
 
 Existing UI elements should be kept, but progressively isolated:
 
-- First: hide existing runner panels behind `Advanced Legacy` while the new Recipe Console handles the main path.
-- Second: extract legacy panels from `App.tsx` into `src/legacy/...` without changing behavior.
-- Third: route contextual diagnostic links from the new UI into the relevant legacy panel with current run/group/agent context.
-- Fourth: preserve legacy panels until the new UI covers the workflow, tests prove parity, and a separate explicit retirement task says a panel is no longer needed.
+- First: register every current surface in a migration matrix with an owner, destination, route alias, state requirements, and cutover test.
+- Second: extract legacy panels from `App.tsx` into one file per surface under `src/legacy/...` without changing behavior or styling.
+- Third: introduce the Recipe Console workflow beside its legacy equivalent. Keep the legacy surface primary until the replacement passes its workflow-specific cutover gate.
+- Fourth: hide the replaced surface from primary navigation and route contextual diagnostic links into either the new inspector or the relevant legacy panel with current run/group/agent context.
+- Fifth: preserve legacy routes until a separate explicit retirement task has usage evidence, parity tests, and a rollback plan. The strangler project itself does not delete them.
 
 Legacy mounting rule:
 
-- Legacy panels that preserve drafts or long-running local state may stay mounted while hidden during the transition.
-- Heavy legacy panels should be mounted lazily when opened if they do not need background state.
+- "Hidden" normally means absent from primary navigation and unmounted from the DOM.
+- Heavy legacy panels should be loaded with `React.lazy(...)` or equivalent route-level dynamic imports and mounted only when opened.
+- Legacy panels that preserve unsaved drafts or legitimately own a long-running local task may temporarily stay mounted. Record that exception in the migration matrix, then move serializable drafts to explicit persistence before unmounting them.
+- Background execution and polling should belong to a store/service with a lifecycle independent of panel visibility. Do not keep an entire panel mounted only to preserve a request loop.
 - New panels should not rely on legacy component internals. They should consume shared helpers and control-server APIs directly.
 
 `App.tsx` rule:
@@ -104,6 +118,28 @@ Legacy mounting rule:
 - New work goes under `src/recipe-console/**`.
 - Legacy extraction goes under `src/legacy/**`.
 - Shared deterministic behavior goes under `packages/shared-test/**` when it is useful outside the SPA.
+
+Structural rule:
+
+- Do not create `LegacyRunnerSurfaces.tsx` or `RecipeConsoleApp.tsx` as replacement monoliths. A surface registry may be central, but each substantial route, controller hook, table, inspector, and visualization gets a focused module.
+- Extract behavior and rendering separately when a panel mixes network effects, derived data, and large JSX. Prefer `use<Feature>Controller.ts` plus focused view components over transferring the whole function unchanged into another huge file.
+- Temporary adapters may translate existing props into a new route contract. They must not become a second source of recipe, rollup, timing, or target-resolution logic.
+
+### Initial Strangler Matrix
+
+| Current surface | New destination | Transition treatment | Cutover proof |
+| --- | --- | --- | --- |
+| `RunnerRecipesPanel` | `Execute` | Keep as legacy recipe launcher while the new guided flow is opt-in | Select recipe, resolve targets, stage, start, cancel, export, and restore deep link through visible controls |
+| `DistributedRecipesPanel` | `Execute` and `Monitor` | Preserve under `Advanced Legacy`; use as the operational fallback during early cutovers | Control-server create/list/read/stage/start/cancel/export parity, including error and stale-agent states |
+| `RunnerRunsPanel` and `DistributedRunMonitorPanel` | `Monitor` | Keep old run links valid and offer `Open legacy monitor` from the new run inspector | Running, pass, failure, timeout, cancellation, reconnect, and selected evidence Playwright coverage |
+| `ImportedDistributedArtifactAnalysisPanel` and `DistributedRunAnalysisReportPanel` | `Analyze` | Preserve legacy artifact analysis until import and issue-summary parity | Import valid/partial/invalid bundles and find the first actionable failure without raw JSON |
+| `DistributedRunComparePanel` | `Tune` and `History/Compare` | Reuse shared comparison derivation; retain legacy comparison deep link | Baseline selection, timing deltas, participant/failure deltas, and URL restoration |
+| `RunnerFleetPanel` and fleet helpers | `Fleet` | Move feature by feature; keep existing fleet route as fallback | Filters, failure signatures, timing evidence, map layers, and URL state restore |
+| `FlowBuilderPanel` and authoring panels | `Advanced Legacy`, then focused authoring entry points | Keep available; do not block the core execution cutover on a full builder redesign | Existing authoring and schema tests plus a visible create/edit/run flow |
+| `RunManagerPanel`, `WorkbenchPanel`, `SharedTestPanel` | `Advanced Legacy` | Lazy-load and deep-link with current context | Existing actions still work and returning to Recipe Console preserves selected run |
+| Auth, Groups, WS, RTC, Data, CRDT, Media, Server, Trace, and Event Stream panels | `Advanced` diagnostics | Keep as contextual diagnostics; do not visually merge them into the new shell | Failure-to-diagnostic links open the right surface with group/agent/command context |
+
+Each row can cut over independently. There is no single release where every old panel must become hidden at once.
 
 ## Product Shape
 
@@ -223,10 +259,11 @@ packages/shared-test/rallar-bb-test/
 apps/rallar-black-box/src/recipe-console/
   app/RecipeConsoleApp.tsx
   app/RecipeConsoleShell.tsx
+  app/RecipeConsoleShell.module.css
   app/navigation.ts
   app/url-state.ts
   design/tokens.css
-  design/recipe-console.css
+  design/reset.css
   control/control-api.ts
   control/control-query.ts
   execute/
@@ -238,9 +275,16 @@ apps/rallar-black-box/src/recipe-console/
   ui/
 
 apps/rallar-black-box/src/legacy/
-  LegacyRunnerSurfaces.tsx
-  LegacyDirectRallarSurfaces.tsx
-  legacy-navigation.ts
+  LegacyAppShell.tsx
+  LegacySurfaceRouter.tsx
+  legacy-surface-registry.ts
+  runner/LegacyRecipesRoute.tsx
+  runner/LegacyRunsRoute.tsx
+  runner/LegacyDistributedRecipesRoute.tsx
+  runner/LegacyRunManagerRoute.tsx
+  runner/LegacyFleetRoute.tsx
+  runner/LegacyBuilderRoute.tsx
+  diagnostics/
 ```
 
 Proposed app responsibilities:
@@ -248,23 +292,28 @@ Proposed app responsibilities:
 - `control-api.ts`: typed fetch wrappers around existing control server endpoints. It can start by wrapping functions from `src/control-run-manager.ts`.
 - `control-query.ts`: polling, stale state, refresh cadence, and snapshot bounds.
 - `url-state.ts`: URL-backed workspace state: view, run IDs, filters, selected agent, selected command, compare IDs, timing metric.
-- `design/tokens.css`: new Recipe Console design tokens. Keep it independent from existing app-wide panel styles.
-- `design/recipe-console.css`: namespaced layout/component styling under `.recipe-console`.
+- `design/tokens.css`: new Recipe Console design tokens scoped to `.recipe-console`. Keep it independent from existing app-wide panel styles.
+- `design/reset.css`: a narrow Recipe Console normalization boundary, not a whole-application reset.
+- `*.module.css`: co-located shell, primitive, and feature styles. Keep each module focused and avoid new broad selectors.
 - `execute/`: recipe catalog, target resolution, manifest builder, stage/start/cancel actions.
 - `monitor/`: verdict, progress matrix, timeline, diagnostics, composite drilldowns, selected-inspector routing.
 - `analyze/`: artifact import, artifact validation, failure analysis, issue summary, artifact search.
 - `tune/`: timing distributions, stream disposition, baseline comparison, recipe tuning hints.
 - `fleet/`: fleet board, heatmap, region summaries, map, report export.
-- `advanced/`: compatibility bridge to legacy direct Rallar tools while they are hidden, extracted, or moved behind contextual diagnostics.
+- `advanced/`: compatibility bridge to legacy direct Rallar tools while they are hidden, extracted, or moved behind contextual diagnostics. It owns links and route context, not the legacy implementations.
 - `ui/`: compact reusable primitives: button, segmented control, metric, status pill, table, empty/error/stale state, disclosure, drawer, toolbar, inspector.
-- `legacy/`: extracted current UI panels that remain available but are not primary surfaces.
+- `legacy/LegacySurfaceRouter.tsx`: the only compatibility mounting boundary used by Recipe Console.
+- `legacy/legacy-surface-registry.ts`: stable IDs, labels, dynamic imports, old query aliases, context codecs, and cutover status.
+- `legacy/runner/**` and `legacy/diagnostics/**`: one route adapter per substantial existing surface. The adapter may compose smaller extracted files, but there is no aggregate mega-component.
 
 Target ownership:
 
 - `App.tsx`: app bootstrap, providers, auth gate, high-level routing. Target below 1,500 lines before default flip, then below 800 lines when legacy extraction is complete.
 - `RecipeConsoleApp.tsx`: compose new console routes and shared providers. Target below 400 lines.
+- `LegacySurfaceRouter.tsx`: resolve and lazy-load one legacy route. Target below 250 lines.
 - Feature route files: own orchestration for one workflow. Target below 700 lines.
 - Component files: presentational and focused. Target below 300 lines unless a table/chart renderer needs more.
+- CSS Modules: target below 400 lines. Split by feature or component when selectors stop sharing one ownership boundary.
 - Shared helpers: pure functions with tests; move to `packages/shared-test` when both live UI and artifact/CI analysis need them.
 
 Keep these in `packages/shared-test` or move them there if currently app-local:
@@ -277,12 +326,34 @@ Keep these in `packages/shared-test` or move them there if currently app-local:
 - compare-run derivation
 - fleet aggregation and failure signatures
 
-Do not import legacy React panels into new Recipe Console views except through `advanced/LegacyBridge` or equivalent compatibility boundary.
+Do not import legacy React panels into new Recipe Console views except through `LegacySurfaceRouter` or an equivalent compatibility boundary. The imports behind that boundary should be dynamic so the default Recipe Console chunk does not eagerly include every legacy panel.
+
+### `App.tsx` Decomposition Sequence
+
+Do the split as behavior-preserving slices. Do not combine a panel move with its redesign.
+
+1. Move navigation parsing/writing, legacy alias resolution, and route normalization behind typed modules while keeping current tests green.
+2. Extract the login/bootstrap/provider gates from `App()` into focused shell components. Keep runtime store and auth behavior unchanged.
+3. Extract the current tab composition into `LegacyAppShell.tsx`; `App.tsx` selects `RecipeConsoleApp` or `LegacyAppShell` and supplies only shared bootstrap context.
+4. Extract one leaf surface at a time, starting with the five distributed-run panels named in Iteration 1. Move its private controller hook, view components, and styles together.
+5. Replace static legacy imports in the route registry with dynamic imports. Verify that inactive surfaces no longer mount effects or appear in the initial Recipe Console bundle.
+6. Move deterministic derivation used by both old and new views into `packages/shared-test`; keep app adapters thin and preserve public exports.
+7. Flip each workflow to Recipe Console only after its matrix cutover proof passes. Keep the old route and rollback switch.
+8. Make Recipe Console the default only after all core workflow gates pass; leave `Advanced Legacy` available.
+
+Add a focused structure test, for example `packages/tests/rallar-black-box/app-structure.test.ts`, that guards these invariants:
+
+- `App.tsx` declares no feature `*Panel` components.
+- Recipe Console modules do not import from `src/legacy/**` except the compatibility router contract.
+- Legacy surface entries resolve through dynamic imports.
+- The default Recipe Console entry does not statically import direct Rallar diagnostics.
 
 ## State Contract
 
 Use the URL for shareable operational state:
 
+- `v` for the URL-state schema version
+- `experience` with `recipe-console` or `legacy` during migration
 - `view`
 - `controlRunId`
 - `distributedRunId`
@@ -300,6 +371,7 @@ Use the URL for shareable operational state:
 - `timingMetric`
 - `fleetRegion`
 - `fleetMapLayers`
+- `legacySurface` only when an advanced legacy route is active
 
 Use local storage only for personal defaults:
 
@@ -311,6 +383,8 @@ Use local storage only for personal defaults:
 
 Do not persist secrets, raw credentials, large artifact payloads, transient hover state, pointer positions, or animation state in the URL or local storage.
 
+Parse, validate, normalize, and serialize this state through one typed codec. Incoming links override personal defaults. Use history replacement for high-frequency range/viewport changes and push entries for committed view, selection, filter, comparison, and legacy-route changes. Invalid or stale URL state should fall back visibly while preserving every valid field.
+
 ## Iterative Plan
 
 ### Iteration 0: Product Cut And Evidence Map
@@ -320,6 +394,7 @@ Goal: lock the lean scope before code movement.
 Work:
 
 - Inventory current runner surfaces in `App.tsx` and map each one to `Execute`, `Monitor`, `Analyze`, `Tune`, `Fleet`, or `Advanced`.
+- Turn the initial strangler matrix above into a checked-in migration register with route alias, mount policy, owner, parity status, and rollback route for each surface.
 - Mark top-level hiding/re-homing: direct Rallar tabs no longer appear in primary runner navigation, but they remain reachable through `Advanced Legacy` or contextual diagnostic links.
 - Write acceptance stories for:
   - create and run ACK recipe
@@ -332,6 +407,7 @@ Work:
 Exit criteria:
 
 - A short product spec exists and every current runner feature is kept in the new primary flow, moved to advanced, or preserved as legacy.
+- No surface is marked hidden until its cutover proof and rollback route are named.
 
 Validation:
 
@@ -345,6 +421,7 @@ Goal: reduce rewrite risk by moving derivation out of React before changing UI, 
 Work:
 
 - Add an explicit code comment or module boundary note near the top-level route composition: new Recipe Console work belongs under `src/recipe-console/**`; old UI extraction belongs under `src/legacy/**`.
+- Add `packages/tests/rallar-black-box/app-structure.test.ts` before moving panels so the module boundaries are executable constraints.
 - Move app-local derivations still buried in `App.tsx` into focused modules:
   - history filters
   - diagnostic filters
@@ -358,19 +435,23 @@ Work:
   - `DistributedRecipesPanel`
   - `DistributedRunMonitorPanel`
   - `ImportedDistributedArtifactAnalysisPanel`
-- Keep imports stable through temporary barrels.
+- Extract these as separate route/controller/view modules, not one aggregate legacy file.
+- Keep imports stable through temporary barrels and compatibility adapters.
+- Extract `LegacyAppShell.tsx` so `App.tsx` stops owning the complete tab tree before Recipe Console feature work begins.
 - Add or expand Vitest coverage in `packages/tests/rallar-black-box`.
 
 Exit criteria:
 
 - `App.tsx` becomes visibly thinner without UI changes.
+- `App.tsx` contains bootstrap/provider/experience routing only and declares no feature panel components.
 - There is a documented rule that no new Recipe Console panel is added directly to `App.tsx`.
 - The first extracted helper modules have tests or are covered by existing tests.
 - Existing runner and distributed recipe tests still pass.
+- The structure test fails if Recipe Console imports a legacy panel directly or if a new feature panel is declared in `App.tsx`.
 
 Validation:
 
-- `npx vitest run packages/tests/rallar-black-box/distributed-recipes.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts`
+- `npx vitest run packages/tests/rallar-black-box/app-structure.test.ts packages/tests/rallar-black-box/distributed-recipes.test.ts packages/tests/rallar-black-box/control-run-manager.test.ts`
 - `npm --workspace rallar-black-box run typecheck`
 
 ### Iteration 2: New Recipe Console Shell
@@ -379,14 +460,18 @@ Goal: add the lean shell beside the legacy UI with a distinct modern look and is
 
 Work:
 
+- Produce and approve a compact concept set before implementation: desktop `Execute`, desktop failed `Monitor` with inspector open, mobile portrait `Monitor`, and mobile landscape timing/matrix. Treat the accepted concepts as the visual contract for density, hierarchy, typography, palette, component geometry, and interaction states.
+- Record a color-role ledger for neutral context, primary accent, selected/focus, running, pass, fail, warning, stale, partial, and disabled. Pair every operational color with text/icon/shape so verdicts do not depend on color alone.
 - Create `src/recipe-console/app/RecipeConsoleApp.tsx`.
 - Create `RecipeConsoleShell` with top command bar, left navigation, main work surface, and inspector rail.
-- Create `src/recipe-console/design/tokens.css` and `src/recipe-console/design/recipe-console.css` with `.recipe-console` namespacing.
+- Create `src/recipe-console/design/tokens.css` and `src/recipe-console/design/reset.css` under `.recipe-console`, then co-locate shell and component styles in CSS Modules.
 - Add a small component set for the new visual system: icon button, command bar item, status pill, metric strip, selectable row, matrix cell, drawer, inspector, empty/stale/error state.
 - Add `view` routing for `execute`, `monitor`, `analyze`, `tune`, `fleet`, and `advanced`.
-- Bridge from existing `App.tsx` with a feature flag or workspace route, for example `workspace=recipe-console`, without removing existing tabs.
+- Bridge from existing `App.tsx` with the URL-backed migration switch `experience=recipe-console`, without removing existing tabs.
+- Load `RecipeConsoleApp` and `LegacyAppShell` as separate experience chunks. A legacy surface opened from Recipe Console is a further lazy route.
 - Add compact UI primitives with stable dimensions and explicit control typography.
 - Add a visual comparison checklist for the new shell: desktop, mobile portrait, mobile landscape, reduced motion, keyboard focus, stale state.
+- Add a side-by-side CSS isolation fixture containing representative new and legacy controls, tables, status pills, forms, and dialogs.
 
 Exit criteria:
 
@@ -394,11 +479,14 @@ Exit criteria:
 - Legacy runner surfaces remain reachable.
 - The new shell is visually distinct from the old panels without CSS leakage into legacy UI.
 - No new shell styling depends on broad `.panel`, `.metric`, `.workspace-grid`, or legacy tab selectors.
+- Browser screenshots match the approved concepts closely enough that hierarchy, density, palette, typography, and selected/error states have no unexplained drift.
+- The Recipe Console default chunk does not contain every legacy diagnostic surface.
 
 Validation:
 
 - `npm --workspace rallar-black-box run typecheck`
 - Playwright smoke: load the new shell, switch views, verify no overflow at desktop and mobile widths.
+- Playwright visual/interaction smoke for the CSS isolation fixture, keyboard focus, drawer behavior, and reduced motion.
 
 ### Iteration 3: Control Connection And Agent Board
 
@@ -586,17 +674,19 @@ Work:
   - no peer/no route to RTC Diagnostics
   - missing group/member to Groups/Clients
   - server status failures to Rallar Server
-- Keep legacy UI mounted only when opened if practical.
+- Lazy-load and mount legacy UI only when opened unless its migration-register entry documents a stateful exception.
+- Move background polling or execution ownership out of panel visibility before unmounting a surface that currently depends on staying mounted.
 - Preserve existing query aliases and old tab links. A link that used to open `tab=distributed-recipes` should still open the legacy distributed recipe surface or redirect to the matching Recipe Console view with a visible legacy fallback.
 
 Exit criteria:
 
 - The core SPA is lean, but no important diagnostic path disappears.
 - Legacy surfaces are hidden from the primary path but still findable and testable.
+- Opening Recipe Console without `Advanced Legacy` leaves legacy route chunks unloaded and legacy polling effects inactive.
 
 Validation:
 
-- Existing app-tabs and mode-boundary tests.
+- `npx vitest run packages/tests/rallar-black-box/app-tabs.test.ts packages/tests/rallar-black-box/rallar-mode-boundary.test.ts packages/tests/rallar-black-box/app-structure.test.ts`
 - Playwright: advanced links open with context and return to selected run.
 
 ### Iteration 12: Polish, Accessibility, And Default Flip
@@ -611,11 +701,13 @@ Work:
 - Contrast and semantic color audit for pass/fail/warn/stale/selected states.
 - Empty, partial, stale, offline, loading, permission, schema-error, and artifact-missing states.
 - Replace default runner workspace with Recipe Console.
+- Flip workflows individually using their migration-register status; the final default changes only after `Execute`, `Monitor`, `Analyze`, and `Tune` core gates are green.
 - Keep old runner UI under `Advanced Legacy`. Any future retirement requires a separate explicit plan after parity and usage review.
 
 Exit criteria:
 
 - Opening `apps/rallar-black-box` gives a tidy SPA ready to execute and analyze distributed recipes.
+- `App.tsx` meets the ownership rule and target size; no replacement shell or legacy registry has become a new monolith.
 
 Validation:
 
@@ -643,6 +735,7 @@ The SPA is ready when these are true:
 - Large event/result lists are bounded or virtualized.
 - Direct Rallar tools exist as advanced diagnostics, not primary navigation.
 - Existing legacy UI elements remain reachable through advanced/contextual routes, even when hidden from the main flow.
+- Hidden legacy routes are not mounted or loaded on the default path unless a documented state-preservation exception requires it.
 - Desktop and mobile views are usable without hidden hover-only evidence.
 
 ## Risks And Guardrails
@@ -654,5 +747,7 @@ The SPA is ready when these are true:
 - Do not loosen recipe thresholds before target readiness and transport diagnostics are clean.
 - Do not use maps or 3D unless location or depth is real evidence.
 - Do not remove existing UI elements as part of the strangler rewrite unless a separate explicit retirement task says so.
+- Do not use `hidden` or `display: none` as the default long-term migration mechanism. Hide from primary navigation, retain a route, and unmount/lazy-load the implementation.
 - Do not let `App.tsx` continue to grow. New surfaces go under `src/recipe-console/**`; old surfaces move toward `src/legacy/**`.
+- Do not create a second monolith in `RecipeConsoleApp.tsx`, `LegacyAppShell.tsx`, a surface registry, or one global Recipe Console stylesheet.
 - Preserve public exports and existing control-server endpoints unless a later task explicitly introduces a breaking migration.
