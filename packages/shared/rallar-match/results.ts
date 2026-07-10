@@ -34,5 +34,5 @@ export function createRallarMatchResultIdempotencyKey(
         input.authority.id,
         String(input.authority.epoch),
         String(input.finishedAtEpochMs),
-    ].join(':');
+    ].map(encodeURIComponent).join(':');
 }

@@ -1967,3 +1967,9 @@ Implement Tasks 1-6 as written. Any expansion into consumer migration, formal te
 - Commands: RED `npx vitest run packages/tests/shared/rallar-match.test.ts` failed as expected because `@shared/rallar-match/mod.ts` did not exist; GREEN `npx vitest run packages/tests/shared/rallar-match.test.ts` passed (1 file, 5 tests); `npx tsc -p packages/shared/tsconfig.json --noEmit` passed.
 - Blockers: none.
 - Remaining validation: Tasks 2-6 and their final focused match, adjacent Rallar Game, public-surface, and shared/shared-web/shared-server typecheck matrix remain.
+
+### Task 1 Review Fix - 2026-07-10T12:39:00+02:00
+
+- Fixed: percent-encoded each result idempotency-key component before joining with `:` so delimiter-bearing match and authority IDs cannot collide while ordinary keys retain their existing format.
+- Files changed: `packages/shared/rallar-match/results.ts` and `packages/tests/shared/rallar-match.test.ts`.
+- Validation: RED `npx vitest run packages/tests/shared/rallar-match.test.ts` reproduced the collision (1 failed, 5 passed); GREEN passed (1 file, 6 tests); `npx tsc -p packages/shared/tsconfig.json --noEmit` passed.

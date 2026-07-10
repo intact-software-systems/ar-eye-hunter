@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
+    createRallarMatchResultIdempotencyKey,
     createRallarMatchResult,
     deriveRallarMatchDiagnostics,
     deriveRallarMatchParticipants,
@@ -190,6 +191,21 @@ describe('Rallar match shared helpers', () => {
         );
         expect(result.trust).toBe('room-trusted');
         expect(result.summary).toEqual({ reason: 'finished' });
+    });
+
+    it('creates collision-safe result idempotency keys', () => {
+        const serverKey = createRallarMatchResultIdempotencyKey({
+            matchId: 'match-1:browser-director',
+            authority: { kind: 'server', id: 'id', epoch: 1 },
+            finishedAtEpochMs: 2_000,
+        });
+        const browserDirectorKey = createRallarMatchResultIdempotencyKey({
+            matchId: 'match-1',
+            authority: { kind: 'browser-director', id: 'server:id', epoch: 1 },
+            finishedAtEpochMs: 2_000,
+        });
+
+        expect(serverKey).not.toBe(browserDirectorKey);
     });
 
     it('reports generic match diagnostics', () => {
