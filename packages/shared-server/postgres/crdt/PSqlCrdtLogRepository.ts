@@ -45,6 +45,7 @@ import {
     type RallarCrdtAuditSink,
 } from '@shared/crdt/mod.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
+import { readAdminCrdtLifecycle } from '../../rallar-system/admin-operations/crdt-admin-validation.ts';
 
 export type PSqlCrdtLogRepositoryOptions = Readonly<{
     now?: () => number;
@@ -331,6 +332,7 @@ export class PSqlCrdtLogRepository<
     async updateDocumentLifecycle(
         input: RallarCrdtLifecycleInput,
     ): Promise<RallarCrdtDocumentMetadata> {
+        const lifecycle = readAdminCrdtLifecycle(input.lifecycle);
         const documentKey = toRallarCrdtDocumentKey(input.document);
         const changedAtEpochMs = input.changedAtEpochMs ?? this.now();
 
@@ -338,17 +340,17 @@ export class PSqlCrdtLogRepository<
             await ensureDocument(tx, input.document, changedAtEpochMs);
             const current = await requireDocumentMetadataByKey(tx, documentKey);
             const archivedAtEpochMs =
-                input.lifecycle === 'archived'
+                lifecycle === 'archived'
                     ? changedAtEpochMs
                     : current.archivedAtEpochMs;
             const destroyedAtEpochMs =
-                input.lifecycle === 'destroyed'
+                lifecycle === 'destroyed'
                     ? changedAtEpochMs
                     : current.destroyedAtEpochMs;
 
             await tx`
                 update crdt_documents
-                set lifecycle       = ${input.lifecycle},
+                set lifecycle       = ${lifecycle},
                     updated_at_ts   = ${toPgDate(changedAtEpochMs)},
                     archived_at_ts  = ${toNullablePgDate(archivedAtEpochMs)},
                     destroyed_at_ts = ${toNullablePgDate(destroyedAtEpochMs)},
@@ -364,10 +366,10 @@ export class PSqlCrdtLogRepository<
 
             return await requireDocumentMetadataByKey(tx, documentKey);
         });
-        const auditKind = toLifecycleAuditKind(input.lifecycle);
+        const auditKind = toLifecycleAuditKind(lifecycle);
         if (auditKind) {
             this.recordAudit(auditKind, documentKey, {
-                lifecycle: input.lifecycle,
+                lifecycle,
             });
         }
         return metadata;

@@ -14,6 +14,9 @@ export function createRallarMatchResult<TSummary>(
 ): RallarRoomTrustedMatchResult<TSummary>;
 export function createRallarMatchResult<TSummary>(
     input: RallarMatchResultInput<TSummary>,
+): RallarLocalMatchResult<TSummary> | RallarRoomTrustedMatchResult<TSummary>;
+export function createRallarMatchResult<TSummary>(
+    input: RallarMatchResultInput<TSummary>,
 ): RallarLocalMatchResult<TSummary> | RallarRoomTrustedMatchResult<TSummary> {
     if ((input as Readonly<{ trust?: unknown }>).trust === 'server-validated') {
         throw new Error(
@@ -47,9 +50,7 @@ export function createRallarMatchResultIdempotencyKey(
         | 'finishedAtEpochMs'
     >,
 ): string {
-    const workspace = input.roomRef.workspaceId === undefined
-        ? 'workspace:absent'
-        : `workspace:present:${input.roomRef.workspaceId}`;
+    const workspace = `workspace:${input.roomRef.workspaceId ?? ''}`;
 
     return [
         input.roomRef.applicationId,

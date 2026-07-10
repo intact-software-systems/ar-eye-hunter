@@ -38,6 +38,10 @@ import {
   type RallarTimingSink,
   recordRallarTiming,
 } from '../services/timing.ts';
+import {
+  readAdminCrdtErasureMode,
+  readAdminCrdtLifecycle,
+} from './crdt-admin-validation.ts';
 
 export type AdminOperationsReadInput = Readonly<{
   adminSession: AuthSession;
@@ -375,12 +379,14 @@ export class AdminOperationsService {
     input: AdminOperationsWriteInput<RallarCrdtLifecycleInput>,
   ): Promise<unknown> {
     return await this.timeWrite('crdt.lifecycle', input, async () => {
-      const body = input.request;
+      const body = readObject(input.request);
+      const lifecycle = readAdminCrdtLifecycle(body.lifecycle);
       return await this.requireCrdtRepository('updateDocumentLifecycle')
         .updateDocumentLifecycle({
           ...body,
+          lifecycle,
           changedAtEpochMs: body.changedAtEpochMs ?? this.options.now(),
-        });
+        } as RallarCrdtLifecycleInput);
     });
   }
 
@@ -393,7 +399,7 @@ export class AdminOperationsService {
         mode?: RallarCrdtErasureRequest['mode'];
       };
       const document = readDocument(input.request);
-      const mode = body.mode === 'redact-payloads' ? 'redact-payloads' : 'destroy-document';
+      const mode = readAdminCrdtErasureMode(body.mode);
       const reason = readReason(body, 'api-v1-admin-operations-erasure');
       const request: RallarCrdtErasureRequest = {
         document,

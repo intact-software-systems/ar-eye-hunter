@@ -14,20 +14,17 @@ import {
   type HeadlessWorkerConfig,
   readHeadlessWorkerConfig,
 } from "../src/headless-worker-config.ts";
-
-type ControlRunAgentSnapshot = Readonly<{
-  agentId?: string;
-  connected?: boolean;
-  status?: string;
-}>;
-
-type ControlRunSnapshot = Readonly<{
-  agents?: readonly ControlRunAgentSnapshot[];
-}>;
-
-type DistributedRunSnapshot = Readonly<{
-  state?: string;
-}>;
+import {
+  attachHeadlessWorkerPageLogging,
+  createHeadlessWorkerLogger,
+  type HeadlessWorkerRegistrationSnapshot,
+  headlessWorkerLogSecretsFromEnv,
+  type HeadlessWorkerLogger,
+  logHeadlessWorkerUiConfirmationFailure,
+  waitForDistributedRunTerminal,
+  waitForHeadlessWorkerAgentRegistration,
+  waitForHeadlessWorkerExit,
+} from "../src/headless-worker-runtime.ts";
 
 type RunningAgent = Readonly<{
   agent: HeadlessWorkerAgentConfig;
@@ -35,21 +32,38 @@ type RunningAgent = Readonly<{
   page: Page;
 }>;
 
+type ShutdownSignal = Readonly<{
+  signal: AbortSignal;
+  wait(signal?: AbortSignal): Promise<void>;
+  dispose(): void;
+}>;
+
+class HeadlessWorkerSignalShutdownError extends Error {}
+
 const WORKBENCH_UI_CONFIRMATION_TIMEOUT_MS = 5_000;
-const TERMINAL_DISTRIBUTED_RUN_STATES = new Set(["passed", "failed", "cancelled", "timed-out"]);
 const browserTypes = {
   chromium,
   firefox,
   webkit,
 } satisfies Record<HeadlessWorkerBrowserEngine, BrowserType>;
 
-const config = readHeadlessWorkerConfig({ env: process.env });
-const shutdown = createShutdownSignal();
-
 let browser: Browser | undefined;
 let runningAgents: readonly RunningAgent[] = [];
+let shutdown: ShutdownSignal | undefined;
+const bootstrapLogSecrets = headlessWorkerLogSecretsFromEnv(process.env);
+let logger = createWorkerLogger(bootstrapLogSecrets);
 
 try {
+  const config = readHeadlessWorkerConfig({ env: process.env });
+  logger = createWorkerLogger([
+    ...bootstrapLogSecrets,
+    config.controlToken,
+    config.controlReadToken,
+    ...config.agentControlTokens,
+    ...config.agentCredentials.map((credentials) => credentials.password),
+  ]);
+  const activeShutdown = createShutdownSignal();
+  shutdown = activeShutdown;
   log(
     `Starting rallar-black-box headless worker run=${config.runId} ` +
       `agents=${config.agentCount} entry=${config.headlessEntry} ` +
@@ -62,18 +76,23 @@ try {
   });
 
   runningAgents = await Promise.all(
-    config.agents.map((agent) => openAgent(browser!, agent)),
+    config.agents.map((agent) =>
+      openAgent(browser!, agent, config, activeShutdown.signal)
+    ),
   );
 
   log(
     `All ${runningAgents.length} rallar-black-box headless agents are registered. ` +
       "Waiting for control-server commands.",
   );
-  await waitForWorkerExit(config, shutdown);
+  await waitForWorkerExit(config, activeShutdown);
 } catch (error) {
-  console.error(`[rallar-black-box-worker] ${errorMessage(error)}`);
-  process.exitCode = 1;
+  if (!(error instanceof HeadlessWorkerSignalShutdownError)) {
+    logger.error(error);
+    process.exitCode = 1;
+  }
 } finally {
+  shutdown?.dispose();
   await closeAgents(runningAgents);
   await browser?.close().catch(() => undefined);
   log("Rallar black-box headless worker stopped.");
@@ -82,43 +101,33 @@ try {
 async function openAgent(
   browser: Browser,
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
+  signal: AbortSignal,
 ): Promise<RunningAgent> {
-  log(`Opening agent ${agent.agentId} url=${redactAgentUrlForLog(agent.url)}`);
+  log(`Opening agent ${agent.agentId} url=${agent.url}`);
   const context = await browser.newContext();
   const page = await context.newPage();
-  page.on("console", (message) => {
-    const type = message.type();
-    if (shouldLogBrowserConsole(type)) {
-      log(`agent=${agent.agentId} browser.console.${type}: ${message.text()}`);
-    }
+  attachHeadlessWorkerPageLogging({
+    agentId: agent.agentId,
+    browserLogLevel: config.browserLogLevel,
+    page,
+    logger,
   });
-  page.on("pageerror", (error) => {
-    log(`agent=${agent.agentId} browser.pageerror: ${error.message}`);
-  });
-  if (config.browserLogLevel === "debug") {
-    page.on("requestfailed", (request) => {
-      const failure = request.failure()?.errorText ?? "unknown";
-      log(
-        `agent=${agent.agentId} browser.requestfailed: ${request.method()} ` +
-          `${redactUrlForLog(request.url())} ${failure}`,
-      );
-    });
-  }
 
   await page.goto(agent.url, {
     waitUntil: "domcontentloaded",
     timeout: config.readyTimeoutMs,
   });
 
-  await signInIfLoginGateIsVisible(page, agent);
-  await waitForAgentRegistration(agent);
+  await signInIfLoginGateIsVisible(page, agent, config);
+  await waitForAgentRegistration(agent, config, signal);
   log(`Agent ${agent.agentId} registered in control server`);
-  void confirmAgentRegistrationUi(page, agent).catch((error) => {
-    log(
-      `Agent ${agent.agentId} registered in control server; UI confirmation skipped: ${
-        errorMessage(error)
-      }`,
-    );
+  void confirmAgentRegistrationUi(page, agent, config).catch((error) => {
+    logHeadlessWorkerUiConfirmationFailure({
+      agentId: agent.agentId,
+      error,
+      logger,
+    });
   });
   return {
     agent,
@@ -130,18 +139,20 @@ async function openAgent(
 async function confirmAgentRegistrationUi(
   page: Page,
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
 ): Promise<void> {
   if (config.headlessEntry === "operator-spa") {
-    await confirmWorkbenchRegistrationUi(page, agent);
+    await confirmWorkbenchRegistrationUi(page, agent, config);
     return;
   }
 
-  await confirmHeadlessRegistrationUi(page, agent);
+  await confirmHeadlessRegistrationUi(page, agent, config);
 }
 
 async function signInIfLoginGateIsVisible(
   page: Page,
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
 ): Promise<void> {
   const signIn = page.getByRole("button", { name: "Sign in" });
   const visible = await signIn.isVisible({ timeout: 5_000 }).catch(() => false);
@@ -155,42 +166,24 @@ async function signInIfLoginGateIsVisible(
 
 async function waitForAgentRegistration(
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
+  signal: AbortSignal,
 ): Promise<void> {
-  const deadline = Date.now() + config.readyTimeoutMs;
-  let lastState = "not seen";
-  while (Date.now() < deadline) {
-    const snapshot = await fetchControlRunSnapshot(config).catch((error) => {
-      lastState = errorMessage(error);
-      return undefined;
-    });
-    const registeredAgent = snapshot?.agents?.find((candidate) =>
-      candidate.agentId === agent.agentId
-    );
-    if (registeredAgent?.connected) {
-      if (registeredAgent.status === "failed") {
-        throw new Error(
-          `Agent ${agent.agentId} registered with failed runtime status.`,
-        );
-      }
-      return;
-    }
-    lastState = registeredAgent
-      ? `connected=${registeredAgent.connected} status=${
-        registeredAgent.status ?? "unknown"
-      }`
-      : "not in run snapshot";
-    await delay(500);
-  }
-
-  throw new Error(
-    `Timed out waiting ${config.readyTimeoutMs}ms for agent ${agent.agentId} ` +
-      `to register in control server snapshot. Last state: ${lastState}`,
-  );
+  await waitForHeadlessWorkerAgentRegistration({
+    agentId: agent.agentId,
+    timeoutMs: config.readyTimeoutMs,
+    pollIntervalMs: 500,
+    signal,
+    fetchSnapshot: (signal) => fetchControlRunSnapshot(config, signal),
+    sleep: delay,
+    now: Date.now,
+  });
 }
 
 async function confirmWorkbenchRegistrationUi(
   page: Page,
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
 ): Promise<void> {
   const timeout = Math.min(
     config.readyTimeoutMs,
@@ -217,6 +210,7 @@ async function confirmWorkbenchRegistrationUi(
 async function confirmHeadlessRegistrationUi(
   page: Page,
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
 ): Promise<void> {
   const timeout = Math.min(
     config.readyTimeoutMs,
@@ -236,10 +230,11 @@ async function confirmHeadlessRegistrationUi(
 
 async function fetchControlRunSnapshot(
   config: HeadlessWorkerConfig,
-): Promise<ControlRunSnapshot> {
+  signal: AbortSignal,
+): Promise<HeadlessWorkerRegistrationSnapshot> {
   const response = await fetch(
     controlRunSnapshotUrlFromControlUrl(config.controlUrl, config.runId),
-    { headers: controlReadHeaders(config) },
+    { headers: controlReadHeaders(config), signal },
   );
   if (!response.ok) {
     throw new Error(
@@ -247,12 +242,12 @@ async function fetchControlRunSnapshot(
         `${await response.text()}`,
     );
   }
-  return await response.json() as ControlRunSnapshot;
+  return await response.json() as HeadlessWorkerRegistrationSnapshot;
 }
 
 async function waitForWorkerExit(
   config: HeadlessWorkerConfig,
-  shutdown: Readonly<{ wait(): Promise<void> }>,
+  shutdown: ShutdownSignal,
 ): Promise<void> {
   if (config.exitMode === "signal") {
     await shutdown.wait();
@@ -260,19 +255,28 @@ async function waitForWorkerExit(
   }
 
   if (config.exitMode === "after-idle-ms") {
-    if (!config.idleExitMs) {
+    const idleExitMs = config.idleExitMs;
+    if (!idleExitMs) {
       throw new Error("RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer");
     }
-    log(`Worker will stop after idle timeout ${config.idleExitMs}ms.`);
-    await Promise.race([shutdown.wait(), delay(config.idleExitMs)]);
+    log(`Worker will stop after idle timeout ${idleExitMs}ms.`);
+    await waitForHeadlessWorkerExit({
+      waitForShutdown: (signal) => shutdown.wait(signal),
+      waitForCompletion: (signal) => delay(idleExitMs, signal),
+    });
     return;
   }
 
-  await Promise.race([shutdown.wait(), waitForDistributedRunTerminal(config)]);
+  await waitForHeadlessWorkerExit({
+    waitForShutdown: (signal) => shutdown.wait(signal),
+    waitForCompletion: (signal) =>
+      waitForConfiguredDistributedRunTerminal(config, signal),
+  });
 }
 
-async function waitForDistributedRunTerminal(
+async function waitForConfiguredDistributedRunTerminal(
   config: HeadlessWorkerConfig,
+  signal: AbortSignal,
 ): Promise<void> {
   const runId = config.targetDistributedRunId;
   if (!runId) {
@@ -281,78 +285,21 @@ async function waitForDistributedRunTerminal(
     );
   }
 
-  const url = distributedRunUrl(config);
-  const deadline = config.idleExitMs === undefined
-    ? undefined
-    : Date.now() + config.idleExitMs;
-  let lastObservedState = "";
-  let malformedJsonCount = 0;
-
-  while (deadline === undefined || Date.now() < deadline) {
-    const response = await fetch(url, { headers: controlReadHeaders(config) });
-    if (response.status === 404) {
-      const state = "not-created";
-      if (lastObservedState !== state) {
-        log(`Distributed run ${runId} is not created yet.`);
-        lastObservedState = state;
-      }
-      malformedJsonCount = 0;
-      await delay(config.distributedPollIntervalMs);
-      continue;
-    }
-
-    if (response.status === 401 || response.status === 403) {
-      throw new Error(
-        `Distributed run ${runId} returned HTTP ${response.status}; ` +
-          `check GitHub/operator control token configuration for ${
-            redactUrlForLog(url)
-          }.`,
-      );
-    }
-
-    if (!response.ok) {
-      const state = `http-${response.status}`;
-      if (lastObservedState !== state) {
-        log(`Distributed run ${runId} returned HTTP ${response.status}; retrying.`);
-        lastObservedState = state;
-      }
-      malformedJsonCount = 0;
-      await delay(config.distributedPollIntervalMs);
-      continue;
-    }
-
-    let snapshot: DistributedRunSnapshot;
-    try {
-      snapshot = await response.json() as DistributedRunSnapshot;
-    } catch {
-      malformedJsonCount += 1;
-      if (malformedJsonCount >= 3) {
-        throw new Error(
-          `Distributed run ${runId} returned malformed JSON from ${
-            redactUrlForLog(url)
-          } for ${malformedJsonCount} consecutive polls.`,
-        );
-      }
-      await delay(config.distributedPollIntervalMs);
-      continue;
-    }
-
-    malformedJsonCount = 0;
-    const state = snapshot.state ?? "unknown";
-    if (lastObservedState !== state) {
-      log(`Distributed run ${runId} state=${state}`);
-      lastObservedState = state;
-    }
-    if (TERMINAL_DISTRIBUTED_RUN_STATES.has(state)) {
-      return;
-    }
-    await delay(config.distributedPollIntervalMs);
-  }
-
-  throw new Error(
-    `Timed out after ${config.idleExitMs}ms waiting for distributed run ${runId} ` +
-      `to become terminal at ${redactUrlForLog(url)}.`,
-  );
+  await waitForDistributedRunTerminal({
+    runId,
+    url: distributedRunUrl(config),
+    headers: controlReadHeaders(config),
+    deadline: config.idleExitMs === undefined
+      ? undefined
+      : Date.now() + config.idleExitMs,
+    timeoutMs: config.idleExitMs,
+    pollIntervalMs: config.distributedPollIntervalMs,
+    signal,
+    fetch,
+    sleep: delay,
+    now: Date.now,
+    log,
+  });
 }
 
 function distributedRunUrl(config: HeadlessWorkerConfig): string {
@@ -382,8 +329,31 @@ function controlReadHeaders(config: HeadlessWorkerConfig): HeadersInit | undefin
   };
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+        timeout = undefined;
+      }
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(signal?.reason ?? new Error("Operation aborted"));
+    };
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+  });
 }
 
 async function closeAgents(agents: readonly RunningAgent[]): Promise<void> {
@@ -395,68 +365,86 @@ async function closeAgents(agents: readonly RunningAgent[]): Promise<void> {
   );
 }
 
-function createShutdownSignal(): Readonly<{ wait(): Promise<void> }> {
+function createShutdownSignal(): ShutdownSignal {
+  const shutdownController = new AbortController();
   let resolve!: () => void;
+  let settled = false;
   const waitPromise = new Promise<void>((innerResolve) => {
     resolve = innerResolve;
   });
+  const onSigint = () => stop("SIGINT");
+  const onSigterm = () => stop("SIGTERM");
+  const removeListeners = () => {
+    process.removeListener("SIGINT", onSigint);
+    process.removeListener("SIGTERM", onSigterm);
+  };
+  const dispose = () => {
+    removeListeners();
+    if (!shutdownController.signal.aborted) {
+      shutdownController.abort(new Error("Headless worker shutdown disposed"));
+    }
+    if (!settled) {
+      settled = true;
+      resolve();
+    }
+  };
   const stop = (signal: string) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    removeListeners();
     log(`Received ${signal}; shutting down`);
+    shutdownController.abort(
+      new HeadlessWorkerSignalShutdownError(
+        `Received ${signal}; shutting down`,
+      ),
+    );
     resolve();
   };
 
-  process.once("SIGINT", () => stop("SIGINT"));
-  process.once("SIGTERM", () => stop("SIGTERM"));
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
   return {
-    wait: () => waitPromise,
+    signal: shutdownController.signal,
+    wait: (signal) => {
+      if (!signal) {
+        return waitPromise;
+      }
+      return new Promise<void>((innerResolve, reject) => {
+        const cleanup = () => signal.removeEventListener("abort", onAbort);
+        const onAbort = () => {
+          cleanup();
+          dispose();
+          reject(signal.reason ?? new Error("Operation aborted"));
+        };
+
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+        waitPromise.then(() => {
+          cleanup();
+          innerResolve();
+        });
+      });
+    },
+    dispose,
   };
 }
 
 function log(message: string): void {
-  console.log(
-    `[rallar-black-box-worker] ${new Date().toISOString()} ${message}`,
-  );
+  logger.log(message);
 }
 
-function shouldLogBrowserConsole(type: string): boolean {
-  if (config.browserLogLevel === "debug") {
-    return true;
-  }
-  if (config.browserLogLevel === "info") {
-    return type !== "debug";
-  }
-  return type === "error" || type === "warning";
-}
-
-function redactUrlForLog(value: string): string {
-  return redactAgentUrlForLog(value);
-}
-
-function redactAgentUrlForLog(value: string): string {
-  const sensitiveParams = new Set([
-    "controlToken",
-    "rallarPassword",
-    "rallarToken",
-    "token",
-    "password",
-    "secret",
-  ]);
-  try {
-    const url = new URL(value);
-    for (const key of url.searchParams.keys()) {
-      if (sensitiveParams.has(key) || /(token|password|secret)/i.test(key)) {
-        url.searchParams.set(key, "[REDACTED]");
-      }
-    }
-    return url.toString();
-  } catch {
-    return value.replace(
-      /((?:token|password|secret)=)[^&\s]+/gi,
-      "$1[REDACTED]",
-    );
-  }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.stack ?? error.message : String(error);
+function createWorkerLogger(
+  secrets: readonly (string | undefined)[],
+): HeadlessWorkerLogger {
+  return createHeadlessWorkerLogger({
+    secrets,
+    now: () => new Date(),
+    writeLog: console.log,
+    writeError: console.error,
+  });
 }

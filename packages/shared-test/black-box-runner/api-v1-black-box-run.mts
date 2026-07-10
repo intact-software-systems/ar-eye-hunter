@@ -13,11 +13,55 @@ export type ApiV1BlackBoxOptions = Readonly<{
     recipesOnly: boolean
 }>
 
+export type WaitForManagedApiReadyInput = Readonly<{
+    baseUrl: string
+    logPath: string
+    childStatus: PromiseLike<Readonly<{
+        success: boolean
+        code: number
+        signal: string | null
+    }>>
+    startup: PromiseLike<void>
+    streamsDrained: PromiseLike<void>
+    timeoutMs?: number
+    fetchImpl?: (
+        url: string,
+        init?: Readonly<{ signal?: AbortSignal }>,
+    ) => Promise<Pick<Response, 'ok' | 'status' | 'body'>>
+    diagnosticSecrets?: readonly string[]
+    readLogTail?: (path: string) => Promise<string>
+    readTextFile?: (path: string) => Promise<string>
+    now?: () => number
+    sleep?: (ms: number, signal?: AbortSignal) => Promise<void>
+}>
+
+export type BoundedLogTailFile = Readonly<{
+    size: () => Promise<number>
+    readAt: (offset: number, target: Uint8Array) => Promise<number | null>
+    close: () => void
+}>
+
+export type ReadBoundedLogTailOptions = Readonly<{
+    openFile?: (path: string) => Promise<BoundedLogTailFile>
+}>
+
+type ManagedApiServer = Readonly<{
+    child: Deno.ChildProcess
+    startup: Promise<void>
+    streamsDrained: Promise<void>
+}>
+
 const SCRIPT_DIR = new URL('.', import.meta.url)
 const REPO_ROOT = new URL('../../../', SCRIPT_DIR)
 const API_CONFIG_PATH = 'apps/api-v1/deno.json'
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts'
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb'
+const LOG_TAIL_MAX_BYTES = 4096
+const MANAGED_SECRET_ENV_KEY = /(?:^|_)(?:PASSWORD|PASSWD|TOKEN|SECRET|DATABASE_URL|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)(?:_|$)/i
+const URL_USERINFO_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:)([^@\s/]+)(@)/gi
+const BEARER_CREDENTIAL = /(\bBearer\s+)[^\s,;]+/gi
+const SENSITIVE_QUERY_VALUE = /([?&][^=\s&#]*(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|signature|credential)[^=\s&#]*=)([^&#\s]*)/gi
+const SENSITIVE_ASSIGNMENT = /(\b[A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|APIKEY|CREDENTIAL)[A-Z0-9_]*\s*[:=]\s*)([^\s,;&]+)/gi
 
 export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOptions {
     const values = new Map<string, string | boolean>()
@@ -163,7 +207,7 @@ function startServer(
     options: ApiV1BlackBoxOptions,
     env: Record<string, string>,
     logPath: string,
-): Deno.ChildProcess {
+): ManagedApiServer {
     const [command, ...args] = toApiV1ServerCommand(options)
     const child = new Deno.Command(command, {
         args,
@@ -173,17 +217,43 @@ function startServer(
         stderr: 'piped',
     }).spawn()
 
+    const expectedStartupMarker = `Server started on port ${options.port}.`
+    const stdoutDecoder = new TextDecoder()
+    let stdoutTail = ''
+    let startupObserved = false
+    let resolveStartup!: () => void
+    const startup = new Promise<void>(resolve => {
+        resolveStartup = resolve
+    })
+    const observeStdout = (chunk: Uint8Array): void => {
+        const text = stdoutTail + stdoutDecoder.decode(chunk, { stream: true })
+        if (!startupObserved && text.includes(expectedStartupMarker)) {
+            startupObserved = true
+            resolveStartup()
+        }
+        stdoutTail = text.slice(-(expectedStartupMarker.length - 1))
+    }
+    const streamPumps: Promise<void>[] = []
+
     if (child.stdout) {
-        void appendStreamToFile(child.stdout, logPath)
+        streamPumps.push(appendStreamToFile(child.stdout, logPath, observeStdout))
     }
     if (child.stderr) {
-        void appendStreamToFile(child.stderr, logPath)
+        streamPumps.push(appendStreamToFile(child.stderr, logPath))
     }
 
-    return child
+    return {
+        child,
+        startup,
+        streamsDrained: Promise.allSettled(streamPumps).then(() => undefined),
+    }
 }
 
-async function appendStreamToFile(stream: ReadableStream<Uint8Array>, path: string): Promise<void> {
+async function appendStreamToFile(
+    stream: ReadableStream<Uint8Array>,
+    path: string,
+    observe?: (chunk: Uint8Array) => void,
+): Promise<void> {
     const reader = stream.getReader()
     const file = await Deno.open(path, {
         append: true,
@@ -198,6 +268,7 @@ async function appendStreamToFile(stream: ReadableStream<Uint8Array>, path: stri
             }
             if (value) {
                 await file.write(value)
+                observe?.(value)
             }
         }
     } finally {
@@ -206,31 +277,356 @@ async function appendStreamToFile(stream: ReadableStream<Uint8Array>, path: stri
     }
 }
 
-async function waitForApiConfig(baseUrl: string, timeoutMs = 30000): Promise<void> {
-    const deadline = Date.now() + timeoutMs
-    const url = baseUrl.replace(/\/+$/, '') + '/api/config'
+export async function waitForManagedApiReady(input: WaitForManagedApiReadyInput): Promise<void> {
+    const timeoutMs = input.timeoutMs ?? 30000
+    const fetchImpl = input.fetchImpl ?? globalThis.fetch
+    const readLogTail = resolveLogTailReader(input)
+    const diagnosticSecrets = normalizeDiagnosticSecrets(input.diagnosticSecrets ?? [])
+    const now = input.now ?? Date.now
+    const sleepImpl = input.sleep ?? sleep
+    const deadline = now() + timeoutMs
+    const url = input.baseUrl.replace(/\/+$/, '') + '/api/config'
+    const controller = new AbortController()
+    let winner: 'ready' | 'child' | 'timeout' | 'error' | undefined
+    let startupObserved = false
     let lastError: unknown
+    let resolveCompletion!: () => void
+    let rejectCompletion!: (error: unknown) => void
+    const completion = new Promise<void>((resolve, reject) => {
+        resolveCompletion = resolve
+        rejectCompletion = reject
+    })
 
-    while (Date.now() < deadline) {
-        try {
-            const response = await fetch(url)
-            if (response.ok) {
-                return
-            }
-            lastError = new Error(`${url} returned ${response.status}`)
-        } catch (error) {
-            lastError = error
+    const claim = (candidate: NonNullable<typeof winner>): boolean => {
+        if (winner) {
+            return false
         }
-        await sleep(250)
+        winner = candidate
+        return true
     }
 
-    throw new Error(
-        `Timed out waiting for ${url}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
-    )
+    const abort = (reason: Error): void => {
+        if (!controller.signal.aborted) {
+            controller.abort(reason)
+        }
+    }
+
+    const settleUnexpectedError = (error: unknown): void => {
+        if (!claim('error')) {
+            return
+        }
+        const reason = error instanceof Error ? error : new Error(String(error))
+        abort(reason)
+        rejectCompletion(reason)
+    }
+
+    const triggerTimeout = (): void => {
+        if (!claim('timeout')) {
+            return
+        }
+        abort(new Error(`Timed out waiting for ${url}`))
+        void managedApiTimeoutError(
+            url,
+            startupObserved,
+            lastError,
+            input.logPath,
+            readLogTail,
+            diagnosticSecrets,
+        ).then(rejectCompletion, rejectCompletion)
+    }
+
+    const checkDeadline = (): void => {
+        if (!winner && now() >= deadline) {
+            triggerTimeout()
+        }
+    }
+
+    void Promise.resolve(input.childStatus).then(async status => {
+        if (!claim('child')) {
+            return
+        }
+        abort(new Error(`API-v1 child exited before readiness (code ${status.code})`))
+        await Promise.resolve(input.streamsDrained).catch(() => undefined)
+        rejectCompletion(await managedApiChildExitError(
+            status,
+            input.logPath,
+            readLogTail,
+            diagnosticSecrets,
+        ))
+    }, settleUnexpectedError)
+
+    const timeout = setTimeout(triggerTimeout, Math.max(0, timeoutMs))
+
+    const readinessLoop = (async () => {
+        try {
+            await raceWithAbort(input.startup, controller.signal)
+            startupObserved = true
+            checkDeadline()
+
+            while (!winner) {
+                let response: Pick<Response, 'ok' | 'status' | 'body'> | undefined
+                try {
+                    const responseWithDisposedBody = Promise.resolve(
+                        fetchImpl(url, { signal: controller.signal }),
+                    ).then(configResponse => {
+                        cancelResponseBodyBestEffort(configResponse)
+                        return configResponse
+                    })
+                    response = await raceWithAbort(
+                        responseWithDisposedBody,
+                        controller.signal,
+                    )
+                } catch (error) {
+                    if (winner) {
+                        return
+                    }
+                    lastError = error
+                }
+
+                checkDeadline()
+                if (winner) {
+                    return
+                }
+                if (response?.ok) {
+                    if (claim('ready')) {
+                        abort(new Error('API-v1 managed readiness completed'))
+                        resolveCompletion()
+                    }
+                    return
+                }
+                if (response) {
+                    lastError = new Error(`${url} returned ${response.status}`)
+                }
+
+                try {
+                    await raceWithAbort(
+                        sleepImpl(250, controller.signal),
+                        controller.signal,
+                    )
+                } catch (error) {
+                    if (winner) {
+                        return
+                    }
+                    throw error
+                }
+                checkDeadline()
+            }
+        } catch (error) {
+            if (!winner) {
+                settleUnexpectedError(error)
+            }
+        }
+    })()
+
+    try {
+        await completion
+    } finally {
+        clearTimeout(timeout)
+        abort(new Error('API-v1 managed readiness stopped'))
+        await readinessLoop
+    }
 }
 
-function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+async function managedApiTimeoutError(
+    url: string,
+    startupObserved: boolean,
+    lastError: unknown,
+    logPath: string,
+    readLogTail: (path: string) => Promise<string>,
+    diagnosticSecrets: readonly string[],
+): Promise<Error> {
+    const reason = startupObserved
+        ? lastError instanceof Error ? lastError.message : String(lastError ?? 'no successful response')
+        : 'API-v1 child startup marker was not observed'
+    const logTail = await readLogTailSafely(logPath, readLogTail)
+    return new Error(redactManagedApiDiagnostic(
+        `Timed out waiting for ${url}: ${reason}\nLatest API-v1 log tail:\n${logTail}`,
+        diagnosticSecrets,
+    ))
+}
+
+async function managedApiChildExitError(
+    status: Awaited<WaitForManagedApiReadyInput['childStatus']>,
+    logPath: string,
+    readLogTail: (path: string) => Promise<string>,
+    diagnosticSecrets: readonly string[],
+): Promise<Error> {
+    const signal = status.signal ? `, signal ${status.signal}` : ''
+    const logTail = await readLogTailSafely(logPath, readLogTail)
+    return new Error(redactManagedApiDiagnostic(
+        `API-v1 child exited before readiness (code ${status.code}${signal})`
+        + `\nLatest API-v1 log tail:\n${logTail}`,
+        diagnosticSecrets,
+    ))
+}
+
+export async function readBoundedLogTail(
+    logPath: string,
+    options: ReadBoundedLogTailOptions = {},
+): Promise<string> {
+    let file: BoundedLogTailFile | undefined
+    try {
+        file = await (options.openFile ?? openDenoBoundedLogTailFile)(logPath)
+        const size = Math.max(0, await file.size())
+        const length = Math.min(size, LOG_TAIL_MAX_BYTES)
+        if (length === 0) {
+            return '(empty)'
+        }
+
+        const bytes = new Uint8Array(length)
+        const start = size - length
+        let bytesRead = 0
+        while (bytesRead < length) {
+            const count = await file.readAt(start + bytesRead, bytes.subarray(bytesRead))
+            if (count === null || count <= 0) {
+                break
+            }
+            bytesRead += Math.min(count, length - bytesRead)
+        }
+        return normalizeLogTail(new TextDecoder().decode(bytes.subarray(0, bytesRead)))
+    } catch (error) {
+        return `[unable to read ${logPath}: ${error instanceof Error ? error.message : String(error)}]`
+    } finally {
+        try {
+            file?.close()
+        } catch (_error) {
+            // Diagnostic cleanup must not replace the readiness outcome.
+        }
+    }
+}
+
+async function openDenoBoundedLogTailFile(path: string): Promise<BoundedLogTailFile> {
+    const file = await Deno.open(path, { read: true })
+    return {
+        size: async () => (await file.stat()).size,
+        readAt: async (offset, target) => {
+            await file.seek(offset, Deno.SeekMode.Start)
+            return await file.read(target)
+        },
+        close: () => file.close(),
+    }
+}
+
+function resolveLogTailReader(input: WaitForManagedApiReadyInput): (path: string) => Promise<string> {
+    if (input.readLogTail) {
+        return input.readLogTail
+    }
+    if (input.readTextFile) {
+        const readTextFile = input.readTextFile
+        return async path => normalizeLogTail((await readTextFile(path)).slice(-LOG_TAIL_MAX_BYTES))
+    }
+    return readBoundedLogTail
+}
+
+async function readLogTailSafely(
+    path: string,
+    readLogTail: (path: string) => Promise<string>,
+): Promise<string> {
+    try {
+        return normalizeLogTail(await readLogTail(path))
+    } catch (error) {
+        return `[unable to read ${path}: ${error instanceof Error ? error.message : String(error)}]`
+    }
+}
+
+function normalizeLogTail(contents: string): string {
+    return contents.trimEnd() || '(empty)'
+}
+
+function cancelResponseBodyBestEffort(
+    response: Pick<Response, 'body'>,
+): void {
+    if (!response.body) {
+        return
+    }
+    try {
+        void Promise.resolve(response.body.cancel()).catch(() => undefined)
+    } catch (_error) {
+        // Body disposal cannot mask readiness, child-exit, or timeout outcomes.
+    }
+}
+
+export function managedApiDiagnosticSecrets(env: Record<string, string>): readonly string[] {
+    return Object.entries(env)
+        .filter(([key, value]) => MANAGED_SECRET_ENV_KEY.test(key) && value.length > 0)
+        .map(([, value]) => value)
+}
+
+function normalizeDiagnosticSecrets(secrets: readonly string[]): readonly string[] {
+    return [...new Set(secrets.filter(secret => secret.length > 0))]
+        .sort((left, right) => right.length - left.length)
+}
+
+function redactManagedApiDiagnostic(value: string, diagnosticSecrets: readonly string[]): string {
+    let redacted = value
+        .replace(URL_USERINFO_PASSWORD, '$1<redacted>$3')
+        .replace(BEARER_CREDENTIAL, '$1<redacted>')
+        .replace(SENSITIVE_QUERY_VALUE, '$1<redacted>')
+        .replace(SENSITIVE_ASSIGNMENT, '$1<redacted>')
+
+    for (const secret of diagnosticSecrets) {
+        redacted = redacted.replaceAll(secret, '<redacted>')
+    }
+    return redacted
+}
+
+function raceWithAbort<T>(value: PromiseLike<T>, signal: AbortSignal): Promise<T> {
+    return new Promise((resolve, reject) => {
+        let settled = false
+        const finish = (callback: () => void): void => {
+            if (settled) {
+                return
+            }
+            settled = true
+            signal.removeEventListener('abort', onAbort)
+            callback()
+        }
+        const onAbort = (): void => {
+            finish(() => reject(abortReason(signal)))
+        }
+
+        if (signal.aborted) {
+            onAbort()
+            return
+        }
+
+        signal.addEventListener('abort', onAbort, { once: true })
+        Promise.resolve(value).then(
+            result => finish(() => resolve(result)),
+            error => finish(() => reject(error)),
+        )
+    })
+}
+
+function abortReason(signal: AbortSignal): unknown {
+    return signal.reason ?? new Error('Operation aborted')
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        const cleanup = (): void => {
+            if (timeout !== undefined) {
+                clearTimeout(timeout)
+            }
+            signal?.removeEventListener('abort', onAbort)
+        }
+        const onAbort = (): void => {
+            cleanup()
+            reject(signal ? abortReason(signal) : new Error('Operation aborted'))
+        }
+
+        if (signal?.aborted) {
+            onAbort()
+            return
+        }
+
+        signal?.addEventListener('abort', onAbort, { once: true })
+        timeout = setTimeout(() => {
+            cleanup()
+            resolve()
+        }, ms)
+    })
 }
 
 async function runRecipeMatrix(
@@ -271,7 +667,7 @@ async function main(): Promise<void> {
     const env = toApiV1BlackBoxEnvironment(options, Deno.env.toObject())
     const artifactDir = resolveArtifactDir(options.artifactDir)
     const logPath = artifactDir.replace(/\/+$/, '') + '/api-v1-server.log'
-    let server: Deno.ChildProcess | undefined
+    let server: ManagedApiServer | undefined
 
     await Deno.mkdir(artifactDir, { recursive: true })
     if (options.runMigrations) {
@@ -282,12 +678,19 @@ async function main(): Promise<void> {
         if (!options.recipesOnly) {
             await Deno.writeTextFile(logPath, '')
             server = startServer(options, env, logPath)
-            await waitForApiConfig(env.RALLAR_API_BASE_URL)
+            await waitForManagedApiReady({
+                baseUrl: env.RALLAR_API_BASE_URL,
+                logPath,
+                childStatus: server.child.status,
+                startup: server.startup,
+                streamsDrained: server.streamsDrained,
+                diagnosticSecrets: managedApiDiagnosticSecrets(env),
+            })
         }
 
         await runRecipeMatrix(options, env, artifactDir)
     } finally {
-        await stopServer(server)
+        await stopServer(server?.child)
     }
 }
 

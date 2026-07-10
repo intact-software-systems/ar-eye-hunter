@@ -9,8 +9,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: hetzner-supported-distributed-manifests-main
+  group: hetzner-production-distributed-recipe
   cancel-in-progress: false
+  queue: max
 
 jobs:
   run:

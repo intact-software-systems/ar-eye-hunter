@@ -195,6 +195,7 @@ export type RallarGameEnvelope<T> = Readonly<{
     protocol: string;
     kind: RallarGameEnvelopeKind;
     roomId: string;
+    matchId?: string;
     senderId: string;
     seq: number;
     sentAtEpochMs: number;
@@ -206,6 +207,7 @@ export type RallarGameEnvelopeCreateInput<T> = Readonly<{
     protocol: string;
     kind: RallarGameEnvelopeKind;
     roomId: string;
+    matchId?: string;
     senderId: string;
     seq: number;
     directorEpoch: number;
@@ -216,6 +218,7 @@ export type RallarGameEnvelopeCreateInput<T> = Readonly<{
 export type RallarGameEnvelopeRejectReason =
     | 'wrong-protocol'
     | 'wrong-room'
+    | 'wrong-match'
     | 'wrong-sender'
     | 'wrong-kind'
     | 'stale-epoch'
@@ -225,6 +228,7 @@ export type RallarGameEnvelopeRejectReason =
 export type RallarGameSequenceAcceptConstraints = Readonly<{
     protocol?: string;
     roomId?: string;
+    matchId?: string;
     senderId?: string;
     minDirectorEpoch?: number;
     kinds?: readonly RallarGameEnvelopeKind[];
@@ -252,7 +256,7 @@ export type RallarGameSequenceTracker = Readonly<{
             | RallarGameEnvelope<unknown>
             | Pick<
                 RallarGameEnvelope<unknown>,
-                'roomId' | 'directorEpoch' | 'senderId' | 'kind'
+                'roomId' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'
             >,
     ): number | undefined;
     reset(): void;
@@ -411,6 +415,7 @@ export type RallarGameMatchConfig<
     rallar: RallarGameRallarFacade;
     protocol: string;
     topicId: string;
+    matchId?: string;
     roomId?: string;
     roomRef?: GroupRef;
     laneIds?: Partial<RallarGameLaneIds>;

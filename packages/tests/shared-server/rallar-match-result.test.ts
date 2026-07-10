@@ -35,7 +35,7 @@ describe('Rallar server match result helper', () => {
         expectTypeOf(result.authority.kind).toEqualTypeOf<'server'>();
         expect(result.trust).toBe('server-validated');
         expect(result.idempotencyKey).toBe(
-            'app-1:workspace%3Apresent%3Aworkspace-1:room-1:example.authority.v1:match-1:server:server-1:2:5000',
+            'app-1:workspace%3Aworkspace-1:room-1:example.authority.v1:match-1:server:server-1:2:5000',
         );
     });
 

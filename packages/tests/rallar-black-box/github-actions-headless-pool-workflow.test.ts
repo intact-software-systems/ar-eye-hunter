@@ -1,14 +1,80 @@
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(__dirname, "../../..");
+const require = createRequire(path.join(repoRoot, "package.json"));
+const { load: loadYaml } = require("js-yaml") as {
+  load(source: string): unknown;
+};
+const productionConcurrency = {
+  group: "hetzner-production-distributed-recipe",
+  "cancel-in-progress": false,
+  queue: "max",
+};
+const workflowPath = path.join(
+  repoRoot,
+  ".github/workflows/github-free-distributed-recipe.yml",
+);
+
+interface WorkflowStep {
+  readonly name?: string;
+  readonly uses?: string;
+  readonly with?: Readonly<Record<string, unknown>>;
+  readonly env?: Readonly<Record<string, unknown>>;
+  readonly run?: string;
+}
+
+interface WorkflowJob {
+  readonly environment?: unknown;
+  readonly needs?: unknown;
+  readonly with?: Readonly<Record<string, unknown>>;
+  readonly steps?: readonly WorkflowStep[];
+}
+
+interface WorkflowDocument {
+  readonly concurrency?: Readonly<Record<string, unknown>>;
+  readonly on?: {
+    readonly workflow_dispatch?: {
+      readonly inputs?: Readonly<
+        Record<string, { readonly default?: unknown }>
+      >;
+    };
+  };
+  readonly jobs?: Readonly<Record<string, WorkflowJob>>;
+}
+
+const readWorkflow = async (): Promise<WorkflowDocument> =>
+  loadYaml(await readFile(workflowPath, "utf8")) as WorkflowDocument;
+
+const required = <T>(value: T | undefined, description: string): T => {
+  if (value === undefined) {
+    throw new Error(`Missing ${description}`);
+  }
+  return value;
+};
+
+const findStep = (job: WorkflowJob, name: string): WorkflowStep =>
+  required(
+    job.steps?.find((step) => step.name === name),
+    `step ${name}`,
+  );
 
 describe("GitHub Free distributed recipe workflow", () => {
+  it("locks the complete production run with the shared queued group", async () => {
+    const workflow = await readWorkflow();
+
+    expect(workflow.concurrency).toEqual(productionConcurrency);
+  });
+
   it("defines the GitHub Free headless agent pool workflow", async () => {
     const workflow = await readFile(
-      path.join(repoRoot, ".github/workflows/github-free-distributed-recipe.yml"),
+      path.join(
+        repoRoot,
+        ".github/workflows/github-free-distributed-recipe.yml",
+      ),
       "utf8",
     );
 
@@ -25,7 +91,9 @@ describe("GitHub Free distributed recipe workflow", () => {
     expect(workflow).toContain("operator_phase: prepare");
     expect(workflow).toContain("operator_phase: run");
     expect(workflow).toContain("control_url: ${{ inputs.control_url }}");
-    expect(workflow).toContain("control_http_url: ${{ inputs.control_http_url }}");
+    expect(workflow).toContain(
+      "control_http_url: ${{ inputs.control_http_url }}",
+    );
     expect(workflow).toContain("needs: [plan, prepare-hetzner]");
     expect(workflow).toContain("fromJSON(needs.plan.outputs.matrix)");
     expect(workflow).toContain(
@@ -38,18 +106,6 @@ describe("GitHub Free distributed recipe workflow", () => {
     expect(workflow).toContain(
       "npm --workspace rallar-black-box run worker:headless",
     );
-    expect(workflow).toContain("name: Mint per-agent control run tokens");
-    expect(workflow).toContain("/runs/${encoded_run_id}/agents/${encoded_agent_id}/tokens");
-    expect(workflow).toContain("RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN");
-    expect(workflow).toContain(
-      "RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_READ_TOKEN || secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}",
-    );
-    expect(workflow).toContain(
-      'source "${RUNNER_TEMP}/rallar-github-headless-token.env"',
-    );
-    expect(workflow).not.toContain(
-      "RALLAR_BLACK_BOX_CONTROL_TOKEN: ${{ secrets.RALLAR_BLACK_BOX_CONTROL_TOKEN }}",
-    );
     expect(workflow).toContain("agent_source: external");
     expect(workflow).toContain(
       "uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml",
@@ -60,13 +116,17 @@ describe("GitHub Free distributed recipe workflow", () => {
   });
 
   it("plans deterministic GitHub Free worker shards", () => {
-    const result = spawnSync(process.execPath, [
-      "scripts/github-actions/plan-github-free-headless-matrix.mjs",
-      "--target-agent-count=50",
-      "--agents-per-job=3",
-      "--max-parallel-jobs=17",
-      "--run-id=gh-free-test",
-    ], { cwd: repoRoot, encoding: "utf8" });
+    const result = spawnSync(
+      process.execPath,
+      [
+        "scripts/github-actions/plan-github-free-headless-matrix.mjs",
+        "--target-agent-count=50",
+        "--agents-per-job=3",
+        "--max-parallel-jobs=17",
+        "--run-id=gh-free-test",
+      ],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
 
     expect(result.status).toBe(0);
     const output = JSON.parse(result.stdout) as {
@@ -90,13 +150,17 @@ describe("GitHub Free distributed recipe workflow", () => {
   });
 
   it("rejects an agent matrix that leaves no GitHub Free slot for the operator", () => {
-    const unsafe = spawnSync(process.execPath, [
-      "scripts/github-actions/plan-github-free-headless-matrix.mjs",
-      "--target-agent-count=20",
-      "--agents-per-job=1",
-      "--max-parallel-jobs=20",
-      "--run-id=gh-free-unsafe",
-    ], { cwd: repoRoot, encoding: "utf8" });
+    const unsafe = spawnSync(
+      process.execPath,
+      [
+        "scripts/github-actions/plan-github-free-headless-matrix.mjs",
+        "--target-agent-count=20",
+        "--agents-per-job=1",
+        "--max-parallel-jobs=20",
+        "--run-id=gh-free-unsafe",
+      ],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
 
     expect(unsafe.status).not.toBe(0);
     expect(unsafe.stderr).toContain(
@@ -106,26 +170,31 @@ describe("GitHub Free distributed recipe workflow", () => {
 
   it("preflights free-tier manifests before planning the matrix", async () => {
     const workflow = await readFile(
-      path.join(repoRoot, ".github/workflows/github-free-distributed-recipe.yml"),
+      path.join(
+        repoRoot,
+        ".github/workflows/github-free-distributed-recipe.yml",
+      ),
       "utf8",
     );
 
-    expect(workflow).toContain("jq -r '.targetPolicy.expectedParticipantCount // empty'");
+    expect(workflow).toContain(
+      "jq -r '.targetPolicy.expectedParticipantCount // empty'",
+    );
     expect(workflow).toContain("jq -r '.targetPolicy.mode // empty'");
-    expect(workflow).toContain("jq -r '[.targetPolicy.roles[]?[]?, .roleAssignments[]?.agentId] | unique | @json'");
+    expect(workflow).toContain(
+      "jq -r '[.targetPolicy.roles[]?[]?, .roleAssignments[]?.agentId] | unique | @json'",
+    );
     expect(workflow).toContain("jq -r '.barrier.enabled // false'");
     expect(workflow).toContain("jq -r '.barrier.timeoutMs // empty'");
     expect(workflow).toContain("jq -r '.metadata.rtcTopologyEnv // empty'");
-    expect(workflow).toContain("jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty'");
     expect(workflow).toContain(
-      "::error::Manifest expectedParticipantCount",
+      "jq -r '.metadata.recommendedTerminalTimeoutSeconds // empty'",
     );
+    expect(workflow).toContain("::error::Manifest expectedParticipantCount");
     expect(workflow).toContain(
       "::error::GitHub free multi-agent runs require barrier.enabled=true.",
     );
-    expect(workflow).toContain(
-      "::error::Role-map unique agent count",
-    );
+    expect(workflow).toContain("::error::Role-map unique agent count");
     expect(workflow).toContain(
       "::error::Role-map agent ${agent_id} must match selected agent_prefix",
     );
@@ -135,9 +204,111 @@ describe("GitHub Free distributed recipe workflow", () => {
     expect(workflow).toContain("requires_topology_prepare=true");
   });
 
+  it("pins the actual checkout and reusable-runner scopes to the workflow commit", async () => {
+    const workflow = await readWorkflow();
+    const dispatchInputs = required(
+      workflow.on?.workflow_dispatch?.inputs,
+      "workflow dispatch inputs",
+    );
+    const jobs = required(workflow.jobs, "workflow jobs");
+    const plan = required(jobs.plan, "plan job");
+    const prepare = required(jobs["prepare-hetzner"], "prepare-hetzner job");
+    const githubAgents = required(jobs["github-agents"], "github-agents job");
+    const operator = required(jobs.operator, "operator job");
+    const planCheckout = findStep(plan, "Checkout repo");
+    const agentCheckout = findStep(githubAgents, "Checkout repo");
+
+    expect(dispatchInputs).not.toHaveProperty("ref");
+    expect(dispatchInputs.register_before_login?.default).toBe(true);
+    expect(githubAgents.environment).toBe("production");
+    expect(githubAgents.needs).toEqual(["plan", "prepare-hetzner"]);
+    expect(operator.needs).toEqual(["plan", "prepare-hetzner"]);
+    expect(planCheckout.uses).toBe("actions/checkout@v4");
+    expect(planCheckout.with?.ref).toBe("${{ github.sha }}");
+    expect(prepare.with?.ref).toBe("${{ github.sha }}");
+    expect(agentCheckout.uses).toBe("actions/checkout@v4");
+    expect(agentCheckout.with?.ref).toBe("${{ github.sha }}");
+    expect(operator.with?.ref).toBe("${{ github.sha }}");
+  });
+
+  it("scopes per-agent credentials to the mint and worker steps", async () => {
+    const workflow = await readWorkflow();
+    const githubAgents = required(
+      workflow.jobs?.["github-agents"],
+      "github-agents job",
+    );
+    const mint = findStep(githubAgents, "Mint per-agent control run tokens");
+    const worker = findStep(githubAgents, "Run headless worker shard");
+    const mintRun = required(mint.run, "mint step run body");
+
+    expect(mint.env?.RALLAR_BLACK_BOX_PASSWORD).toBe(
+      "${{ secrets.RALLAR_BLACK_BOX_PASSWORD }}",
+    );
+    expect(mintRun).toContain('chmod 600 "${token_env_file}"');
+    expect(mintRun).toContain("quote() { printf '%q' \"$1\"; }");
+    expect(mintRun).toContain(
+      'echo "::add-mask::${RALLAR_BLACK_BOX_PASSWORD}"',
+    );
+    expect(mintRun).toContain(
+      'env_key="RALLAR_BLACK_BOX_AGENT_${local_index}_CONTROL_TOKEN"',
+    );
+    expect(mintRun).toContain(
+      'printf \'%s=%s\\n\' "${env_key}" "$(quote "${token}")" >> "${token_env_file}"',
+    );
+    expect(mintRun).toContain(
+      'printf \'%s=%s\\n\' "RALLAR_BLACK_BOX_AGENT_${local_index}_USERNAME" "$(quote "${agent_id}")" >> "${token_env_file}"',
+    );
+    expect(mintRun).toContain(
+      'printf \'%s=%s\\n\' "RALLAR_BLACK_BOX_AGENT_${local_index}_PASSWORD" "$(quote "${RALLAR_BLACK_BOX_PASSWORD}")" >> "${token_env_file}"',
+    );
+    expect(worker.env).not.toHaveProperty("RALLAR_BLACK_BOX_USERNAME");
+    expect(worker.env).not.toHaveProperty("RALLAR_BLACK_BOX_PASSWORD");
+    expect(worker.run).toContain(
+      'source "${RUNNER_TEMP}/rallar-github-headless-token.env"',
+    );
+  });
+
+  it("rejects registration-disabled multi-agent plans before manifest processing", async () => {
+    const workflow = await readWorkflow();
+    const plan = required(workflow.jobs?.plan, "plan job");
+    const buildMatrix = findStep(plan, "Build matrix");
+
+    expect(buildMatrix.env?.REGISTER_BEFORE_LOGIN).toBe(
+      "${{ inputs.register_before_login }}",
+    );
+
+    const result = spawnSync(
+      "bash",
+      ["-c", required(buildMatrix.run, "Build matrix run body")],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          INPUT_RUN_ID: "gh-free-registration-contract",
+          TARGET_AGENT_COUNT: "2",
+          AGENTS_PER_JOB: "1",
+          MAX_PARALLEL_JOBS: "1",
+          AGENT_PREFIX: "controller",
+          MANIFEST_PATH: path.join(repoRoot, "missing-manifest.json"),
+          REGISTER_BEFORE_LOGIN: "false",
+        },
+      },
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "GitHub free multi-agent runs require register_before_login=true.",
+    );
+    expect(result.stderr).not.toContain("Manifest path does not exist");
+  });
+
   it("documents the GitHub Free operator runbook", async () => {
     const runbook = await readFile(
-      path.join(repoRoot, "plans/github-actions-rallar-black-box-headless-runbook.md"),
+      path.join(
+        repoRoot,
+        "plans/github-actions-rallar-black-box-headless-runbook.md",
+      ),
       "utf8",
     );
 
@@ -151,5 +322,17 @@ describe("GitHub Free distributed recipe workflow", () => {
       "RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal",
     );
     expect(runbook).toContain("2,000 included minutes");
+    expect(runbook).toContain("immutable `${{ github.sha }}`");
+    expect(runbook).toContain(
+      "`production` environment must restrict deployment branches",
+    );
+    expect(runbook).toContain(
+      "Each global `agentId` must have one registered username",
+    );
+    expect(runbook).toMatch(
+      /`RALLAR_BLACK_BOX_USERNAME` remains required by the Hetzner operator reusable\s+runner/,
+    );
+    expect(runbook).toContain("both `prepare-hetzner` and `operator` phases");
+    expect(runbook).toContain("not a GitHub-hosted per-agent username");
   });
 });

@@ -16,8 +16,11 @@ import type {
 } from '../../rallar-system/admin-operations/AdminOperationsService.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 
+const DEFAULT_RECENT_EVENT_WINDOW_MS = 15 * 60 * 1_000;
+
 export type PSqlAdminOperationsStatsReaderOptions = Readonly<{
   now: () => number;
+  recentEventWindowMs?: number;
   serverId?: string;
   sqlBackend?: string;
   dbPubSub?: string;
@@ -109,8 +112,8 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       this.readLiveRuntimeRows('group-state:groups', scope),
       this.readLiveRuntimeRows('group-state:members', scope),
       this.readLiveRuntimeRows('group-state:sessions', scope),
-      this.countClientEvents(scope),
-      this.countGroupEvents(scope),
+      this.countRecentClientEvents(scope),
+      this.countRecentGroupEvents(scope),
     ]);
     const nowEpochMs = this.options.now();
     const activeClientSessions = clientSessionRows.filter((row) =>
@@ -137,7 +140,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         activeSessions: activeClientSessions.length,
       },
       groups: {
-        activeGroups: groupRows.filter(isActiveGroupRow).length,
+        activeGroups: groupRows.filter((row) => isActiveGroupRow(row, nowEpochMs)).length,
         totalActiveMembers: activeMembers.length,
         onlineMembers: activeMembers.filter((member) => {
           const identity = readGroupMemberIdentity(member);
@@ -165,11 +168,11 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       this.countLiveRuntimeRows('client-state:principals'),
       this.countGlobalActiveClientPrincipals(),
       this.countGlobalActiveClientSessions(),
-      this.countGlobalStatusRows('group-state:groups', 'active'),
+      this.countGlobalActiveGroups(),
       this.countGlobalStatusRows('group-state:members', 'active'),
       this.countGlobalOnlineGroupMembers(),
-      this.countClientEvents(),
-      this.countGroupEvents(),
+      this.countRecentClientEvents(),
+      this.countRecentGroupEvents(),
     ]);
 
     return {
@@ -397,6 +400,24 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     );
   }
 
+  private async countGlobalActiveGroups(): Promise<number> {
+    return toNumber(
+      (await this.sql<CountRow[]>`
+            select count(*) as count
+            from runtime_state_store
+            where store_namespace = 'group-state:groups'
+              and expire_at_ts > now()
+              and store_value::jsonb ->> 'status' = 'active'
+              and case
+                when store_value::jsonb ->> 'expiresAtEpochMs' is null then true
+                when jsonb_typeof(store_value::jsonb -> 'expiresAtEpochMs') = 'number'
+                  then (store_value::jsonb ->> 'expiresAtEpochMs')::double precision > ${this.options.now()}
+                else false
+              end
+        `)[0]?.count,
+    );
+  }
+
   private async countGlobalActiveClientSessions(): Promise<number> {
     return toNumber(
       (await this.sql<CountRow[]>`
@@ -511,6 +532,52 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     return toNumber(
       (await this.sql<CountRow[]>`
             select count(*) as count from group_state_events
+        `)[0]?.count,
+    );
+  }
+
+  private async countRecentClientEvents(scope?: StateScope): Promise<number> {
+    const recentSinceEpochMs = this.options.now() -
+      (this.options.recentEventWindowMs ?? DEFAULT_RECENT_EVENT_WINDOW_MS);
+    if (scope) {
+      return toNumber(
+        (await this.sql<CountRow[]>`
+                select count(*) as count
+                from client_state_events
+                where application_id = ${scope.applicationId}
+                  and workspace_key = ${scope.workspaceId}
+                  and occurred_at_epoch_ms >= ${recentSinceEpochMs}
+            `)[0]?.count,
+      );
+    }
+    return toNumber(
+      (await this.sql<CountRow[]>`
+            select count(*) as count
+            from client_state_events
+            where occurred_at_epoch_ms >= ${recentSinceEpochMs}
+        `)[0]?.count,
+    );
+  }
+
+  private async countRecentGroupEvents(scope?: StateScope): Promise<number> {
+    const recentSinceEpochMs = this.options.now() -
+      (this.options.recentEventWindowMs ?? DEFAULT_RECENT_EVENT_WINDOW_MS);
+    if (scope) {
+      return toNumber(
+        (await this.sql<CountRow[]>`
+                select count(*) as count
+                from group_state_events
+                where application_id = ${scope.applicationId}
+                  and workspace_key = ${scope.workspaceId}
+                  and occurred_at_epoch_ms >= ${recentSinceEpochMs}
+            `)[0]?.count,
+      );
+    }
+    return toNumber(
+      (await this.sql<CountRow[]>`
+            select count(*) as count
+            from group_state_events
+            where occurred_at_epoch_ms >= ${recentSinceEpochMs}
         `)[0]?.count,
     );
   }
@@ -799,8 +866,9 @@ function isActiveClientSessionRow(row: RuntimeStateRow, nowEpochMs: number): boo
     isFutureEpochMs(value.expiresAtEpochMs, nowEpochMs);
 }
 
-function isActiveGroupRow(row: RuntimeStateRow): boolean {
-  return readRuntimeStateValue(row).status === 'active';
+function isActiveGroupRow(row: RuntimeStateRow, nowEpochMs: number): boolean {
+  const value = readRuntimeStateValue(row);
+  return value.status === 'active' && isAbsentOrFutureEpochMs(value.expiresAtEpochMs, nowEpochMs);
 }
 
 function isActiveGroupMemberRow(row: RuntimeStateRow): boolean {
@@ -858,6 +926,11 @@ function toIdentityKey(parts: readonly (string | undefined)[]): string | undefin
 function isFutureEpochMs(value: unknown, nowEpochMs: number): boolean {
   const epochMs = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(epochMs) && epochMs > nowEpochMs;
+}
+
+function isAbsentOrFutureEpochMs(value: unknown, nowEpochMs: number): boolean {
+  return value === undefined || value === null ||
+    (typeof value === 'number' && Number.isFinite(value) && value > nowEpochMs);
 }
 
 function readRuntimeStateValue(row: RuntimeStateRow): Record<string, unknown> {

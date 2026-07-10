@@ -100,6 +100,7 @@ export function createRallarBrowserMatch<
         rallar: config.rallar,
         protocol: config.protocol,
         topicId: config.topicId,
+        matchId: config.matchId,
         roomId: config.roomId,
         roomRef: config.roomRef,
         laneIds: config.laneIds,

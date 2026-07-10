@@ -25,6 +25,7 @@ export function createRallarGameEnvelope<T>(
         protocol: input.protocol,
         kind: input.kind,
         roomId: input.roomId,
+        ...(input.matchId === undefined ? {} : { matchId: input.matchId }),
         senderId: input.senderId,
         seq: input.seq,
         sentAtEpochMs: input.sentAtEpochMs ?? Date.now(),
@@ -47,6 +48,7 @@ export function isRallarGameEnvelope(
         RALLAR_GAME_ENVELOPE_KINDS.has(envelope.kind as RallarGameEnvelopeKind) &&
         typeof envelope.roomId === 'string' &&
         envelope.roomId.length > 0 &&
+        (envelope.matchId === undefined || typeof envelope.matchId === 'string') &&
         typeof envelope.senderId === 'string' &&
         envelope.senderId.length > 0 &&
         typeof envelope.seq === 'number' &&
@@ -124,6 +126,13 @@ function rejectByConstraints(
         return 'wrong-room';
     }
 
+    if (
+        constraints.matchId !== undefined &&
+        envelope.matchId !== constraints.matchId
+    ) {
+        return 'wrong-match';
+    }
+
     if (constraints.senderId && envelope.senderId !== constraints.senderId) {
         return 'wrong-sender';
     }
@@ -148,11 +157,12 @@ function rejectByConstraints(
 function sequenceKey(
     envelope: Pick<
         RallarGameEnvelope<unknown>,
-        'roomId' | 'directorEpoch' | 'senderId' | 'kind'
+        'roomId' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'
     >,
 ): string {
     return [
         envelope.roomId,
+        envelope.matchId ?? '',
         envelope.directorEpoch,
         envelope.senderId,
         envelope.kind,

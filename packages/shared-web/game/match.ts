@@ -957,6 +957,7 @@ export function createRallarGameMatch<
         const accepted = sequenceTracker.accept(envelope, {
             protocol: config.protocol,
             roomId: room.roomId,
+            matchId: config.matchId,
             senderId,
             minDirectorEpoch: directorEpoch,
             kinds: [kind],
@@ -1155,6 +1156,7 @@ export function createRallarGameMatch<
             protocol: config.protocol,
             kind,
             roomId,
+            matchId: config.matchId,
             senderId,
             seq: nextSeq++,
             directorEpoch: options.directorEpoch,

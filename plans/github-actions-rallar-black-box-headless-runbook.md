@@ -17,8 +17,17 @@ the distributed run.
   admin/operator token; the workflow uses it to mint short-lived per-agent run
   tokens and to poll protected read endpoints. `RALLAR_BLACK_BOX_CONTROL_TOKEN`
   remains a legacy fallback for older deployments.
+  `RALLAR_BLACK_BOX_USERNAME` remains required by the Hetzner operator reusable
+  runner in both `prepare-hetzner` and `operator` phases. It is the reusable
+  runner's operator credential, not a GitHub-hosted per-agent username; the
+  `github-agents` job uses each global agent ID as that agent's username.
 - Public endpoint inputs point at production or the intended staging target:
   `spa_url`, `api_base_url`, `control_url`, and `control_http_url`.
+- The workflow always runs the immutable `${{ github.sha }}` associated with
+  the workflow dispatch; it does not accept a caller-selected Git ref. The
+  `production` environment must restrict deployment branches to the trusted
+  production branch or branches so only commits from those branches can read
+  production secrets.
 - The selected manifest role map matches the workflow `agent_prefix`.
 - GitHub Actions minutes are available. GitHub Free includes 2,000 included minutes
   per month for private repositories, and long 50-agent runs can use a large
@@ -54,9 +63,13 @@ after it reaches `passed`, `failed`, `cancelled`, or `timed-out`.
 
 Before launching a shard, the workflow calls
 `POST /runs/{runId}/agents/{agentId}/tokens` for each local agent and exports
-the returned values as `RALLAR_BLACK_BOX_AGENT_<N>_CONTROL_TOKEN`. Those
-short-lived run tokens are the only control tokens forwarded into browser-agent
-URLs. The admin/operator read token stays in the Node-side worker environment.
+the returned values as `RALLAR_BLACK_BOX_AGENT_<N>_CONTROL_TOKEN`. It also
+writes `RALLAR_BLACK_BOX_AGENT_<N>_USERNAME` using that global `agentId` and
+the configured password as `RALLAR_BLACK_BOX_AGENT_<N>_PASSWORD`. Registration
+is enabled by default and every global agent ID therefore registers and uses
+one distinct username. The short-lived run tokens are the only control tokens
+forwarded into browser-agent URLs. The admin/operator read token stays in the
+Node-side worker environment.
 
 ## Smoke Progression
 
@@ -132,10 +145,10 @@ For acceptance, inspect the artifacts and confirm:
 - The role-map receivers resolve to `controller-02` through `controller-50`.
 - Connected agent metadata includes `RALLAR_AGENT_PROVIDER=github-actions`.
 
-If shared username/password credentials collapse multiple browser sessions into
-one client identity, stop before the 60-minute run and wire the existing
-per-agent `RALLAR_BLACK_BOX_AGENT_N_USERNAME` and
-`RALLAR_BLACK_BOX_AGENT_N_PASSWORD` values.
+Each global `agentId` must have one registered username and a distinct browser
+principal. The workflow supplies the existing per-agent
+`RALLAR_BLACK_BOX_AGENT_N_USERNAME` and
+`RALLAR_BLACK_BOX_AGENT_N_PASSWORD` values for every shard.
 
 ## Common Failures
 

@@ -500,6 +500,15 @@ Deno.test('PSqlCrdtLogRepository runs against PGlite SQL adapter', async () => {
     const first = createCrdtUpdate('update-1');
     const second = createCrdtUpdate('update-2');
 
+    await assert.rejects(
+      repository.updateDocumentLifecycle({
+        document: CRDT_DOCUMENT_REF,
+        lifecycle: 'destroy',
+      } as never),
+      { message: 'Unsupported CRDT lifecycle: destroy' },
+    );
+    assert.equal(await repository.readDocumentMetadata(CRDT_DOCUMENT_REF), undefined);
+
     const accepted = await repository.append(toCrdtAppendInput(first));
     const duplicate = await repository.append(toCrdtAppendInput(first));
     await repository.append(toCrdtAppendInput(second));

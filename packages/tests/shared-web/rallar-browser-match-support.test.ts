@@ -56,6 +56,26 @@ describe('Rallar browser match support', () => {
         expect(game.sendIntent).toHaveBeenCalledWith({ kind: 'move', x: 3 });
     });
 
+    it('sends command envelopes with the browser match identity', async () => {
+        const onCommand = vi.fn();
+        const match = createRallarBrowserMatch<Command, Snapshot, Event>({
+            rallar: fakeRallarFacade(),
+            protocol: 'example.match.v1',
+            topicId: 'room.example.match',
+            matchId: 'match-1',
+            onCommand,
+        });
+        await match.start();
+
+        await match.submitCommand({ kind: 'move', x: 3 });
+
+        expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({
+            kind: 'intent',
+            matchId: 'match-1',
+            payload: { kind: 'move', x: 3 },
+        }));
+    });
+
     it('derives standings with the app-provided comparator', () => {
         const game = fakeGameMatch();
         const match = createRallarBrowserMatch<Command, Snapshot, Event>({
