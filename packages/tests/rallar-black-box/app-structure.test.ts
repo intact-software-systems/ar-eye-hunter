@@ -705,6 +705,254 @@ describe('rallar-black-box app source ownership', () => {
         }
     });
 
+    it('keeps the legacy run manager and its dependencies in focused modules', () => {
+        const appSource = repositorySource(appSourcePath);
+        const runManagerPath =
+            'apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerPanel.tsx';
+        const runManagerModules = [
+            {
+                path: runManagerPath,
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/run-manager/RunManagerPanel.tsx',
+                seams: ['RunManagerPanel'],
+                declarations: [
+                    {
+                        seam: 'RunManagerPanel',
+                        pattern:
+                            /^\s*export\s+function\s+RunManagerPanel\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerAgentRow.tsx',
+                importerPath: runManagerPath,
+                moduleImport: './RunManagerAgentRow.tsx',
+                seams: ['RunManagerAgentRow'],
+                declarations: [
+                    {
+                        seam: 'RunManagerAgentRow',
+                        pattern:
+                            /^\s*export\s+function\s+RunManagerAgentRow\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerCommandList.tsx',
+                importerPath: runManagerPath,
+                moduleImport: './RunManagerCommandList.tsx',
+                seams: ['RunManagerCommandList'],
+                declarations: [
+                    {
+                        seam: 'RunManagerCommandList',
+                        pattern:
+                            /^\s*export\s+function\s+RunManagerCommandList\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/run-manager/run-manager-command.ts',
+                importerPath: runManagerPath,
+                moduleImport: './run-manager-command.ts',
+                seams: [
+                    'parseRunManagerCommandText',
+                    'runManagerCommandPrefix',
+                ],
+                declarations: [
+                    {
+                        seam: 'parseRunManagerCommandText',
+                        pattern:
+                            /^\s*export\s+function\s+parseRunManagerCommandText\s*\(/m,
+                    },
+                    {
+                        seam: 'runManagerCommandPrefix',
+                        pattern:
+                            /^\s*export\s+function\s+runManagerCommandPrefix\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/shared/control-snapshot-bounds.ts',
+                importerPath: runManagerPath,
+                moduleImport: '../shared/control-snapshot-bounds.ts',
+                seams: ['RUN_MANAGER_SNAPSHOT_BOUNDS'],
+                declarations: [
+                    {
+                        seam: 'RUN_MANAGER_SNAPSHOT_BOUNDS',
+                        pattern:
+                            /^\s*export\s+const\s+RUN_MANAGER_SNAPSHOT_BOUNDS\s*=/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/shared/same-string-array.ts',
+                importerPath: runManagerPath,
+                moduleImport: '../../shared/same-string-array.ts',
+                seams: ['sameStringArray'],
+                declarations: [
+                    {
+                        seam: 'sameStringArray',
+                        pattern:
+                            /^\s*export\s+function\s+sameStringArray\s*\(/m,
+                    },
+                ],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/shared/artifact-issue-presentation.ts',
+                importerPath: runManagerPath,
+                moduleImport: '../shared/artifact-issue-presentation.ts',
+                seams: ['artifactIssueText'],
+                declarations: [
+                    {
+                        seam: 'artifactIssueText',
+                        pattern:
+                            /^\s*export\s+function\s+artifactIssueText\s*\(/m,
+                    },
+                ],
+            },
+        ] as const;
+
+        for (const runManagerModule of runManagerModules) {
+            const ownerExists = existsSync(
+                resolve(repositoryRoot, runManagerModule.path),
+            );
+            const ownerSource = ownerExists
+                ? repositorySource(runManagerModule.path)
+                : '';
+            const importerExists = existsSync(
+                resolve(repositoryRoot, runManagerModule.importerPath),
+            );
+            const importerSource = importerExists
+                ? repositorySource(runManagerModule.importerPath)
+                : '';
+            const escapedModuleImport = runManagerModule.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importedSeams = importerSource.match(
+                new RegExp(
+                    `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                ),
+            )?.[1];
+
+            expect.soft(ownerExists, runManagerModule.path).toBe(true);
+            expect
+                .soft(ownerSource, `${runManagerModule.path}: export-star barrel`)
+                .not.toMatch(/^\s*export\s*\*(?:\s+as\s+\w+)?\s+from\b/m);
+            expect.soft(importedSeams, runManagerModule.moduleImport).toBeDefined();
+            for (const seam of runManagerModule.seams) {
+                expect
+                    .soft(
+                        importedSeams ?? '',
+                        `${runManagerModule.moduleImport}: ${seam}`,
+                    )
+                    .toMatch(new RegExp(`\\b${seam}\\b`));
+            }
+            for (const declaration of runManagerModule.declarations) {
+                expect
+                    .soft(
+                        ownerSource,
+                        `${runManagerModule.path}: ${declaration.seam} declaration`,
+                    )
+                    .toMatch(declaration.pattern);
+                expect
+                    .soft(
+                        ownerSource,
+                        `${runManagerModule.path}: ${declaration.seam} re-export`,
+                    )
+                    .not.toMatch(
+                        new RegExp(
+                            `^\\s*export\\s+(?:type\\s+)?{[^}]*\\b${declaration.seam}\\b[^}]*}\\s*from\\s*['\"]`,
+                            'm',
+                        ),
+                    );
+            }
+        }
+
+        const appSharedImports = [
+            {
+                moduleImport:
+                    './legacy/runner/shared/control-snapshot-bounds.ts',
+                seam: 'RUN_MANAGER_SNAPSHOT_BOUNDS',
+            },
+            {
+                moduleImport: './legacy/shared/same-string-array.ts',
+                seam: 'sameStringArray',
+            },
+            {
+                moduleImport:
+                    './legacy/runner/shared/artifact-issue-presentation.ts',
+                seam: 'artifactIssueText',
+            },
+        ] as const;
+
+        for (const appSharedImport of appSharedImports) {
+            const escapedModuleImport = appSharedImport.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importedSeams = appSource.match(
+                new RegExp(
+                    `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                ),
+            )?.[1];
+
+            expect.soft(importedSeams, appSharedImport.moduleImport).toBeDefined();
+            expect
+                .soft(
+                    importedSeams ?? '',
+                    `${appSharedImport.moduleImport}: ${appSharedImport.seam}`,
+                )
+                .toMatch(new RegExp(`\\b${appSharedImport.seam}\\b`));
+        }
+
+        const runManagerSource = existsSync(resolve(repositoryRoot, runManagerPath))
+            ? repositorySource(runManagerPath)
+            : '';
+        const importedLocalDuplicates = [
+            'RunManagerAgentRow',
+            'RunManagerCommandList',
+            'parseRunManagerCommandText',
+            'runManagerCommandPrefix',
+            'RUN_MANAGER_SNAPSHOT_BOUNDS',
+            'sameStringArray',
+            'artifactIssueText',
+        ] as const;
+
+        for (const localDuplicate of importedLocalDuplicates) {
+            expect
+                .soft(runManagerSource, `run-manager-local ${localDuplicate}`)
+                .not.toMatch(
+                    new RegExp(
+                        `^\\s*(?:export\\s+)?(?:const|let|var|function)\\s+${localDuplicate}\\b`,
+                        'm',
+                    ),
+                );
+        }
+
+        const movedDeclarations = [
+            'RunManagerPanel',
+            'RunManagerAgentRow',
+            'RunManagerCommandList',
+            'parseRunManagerCommandText',
+            'runManagerCommandPrefix',
+            'RUN_MANAGER_SNAPSHOT_BOUNDS',
+            'sameStringArray',
+            'artifactIssueText',
+        ] as const;
+
+        for (const movedDeclaration of movedDeclarations) {
+            expect
+                .soft(appSource, `App.tsx: ${movedDeclaration}`)
+                .not.toMatch(
+                    new RegExp(
+                        `^\\s*(?:export\\s+)?(?:const|let|var|function)\\s+${movedDeclaration}\\b`,
+                        'm',
+                    ),
+                );
+        }
+    });
+
     it('keeps distributed compare formatters in the canonical time module', () => {
         const panelSource = repositorySource(
             'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunComparePanel.tsx',
