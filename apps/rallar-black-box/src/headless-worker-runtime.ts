@@ -1,3 +1,5 @@
+import type { ConsoleMessage, Page, Request } from "playwright";
+
 type DistributedRunSnapshot = Readonly<{
   state?: string;
 }>;
@@ -13,6 +15,7 @@ export type WaitForDistributedRunTerminalInput = Readonly<{
   url: string;
   headers?: HeadersInit;
   deadline: number | undefined;
+  timeoutMs?: number;
   pollIntervalMs: number;
   fetch: (
     url: string,
@@ -22,6 +25,28 @@ export type WaitForDistributedRunTerminalInput = Readonly<{
   now: () => number;
   log: (message: string) => void;
 }>;
+
+export type HeadlessWorkerLogger = Readonly<{
+  log(message: string): void;
+  error(error: unknown): void;
+}>;
+
+export type CreateHeadlessWorkerLoggerInput = Readonly<{
+  secrets: readonly (string | undefined)[];
+  now: () => Date;
+  writeLog: (message: string) => void;
+  writeError: (message: string) => void;
+}>;
+
+export type AttachHeadlessWorkerPageLoggingInput = Readonly<{
+  agentId: string;
+  browserLogLevel: string;
+  page: Pick<Page, "on">;
+  logger: HeadlessWorkerLogger;
+}>;
+
+const HEADLESS_WORKER_SECRET_ENV_KEY =
+  /^RALLAR_BLACK_BOX_(?:PASSWORD|CONTROL_TOKEN|CONTROL_READ_TOKEN|AGENT_\d+_(?:PASSWORD|CONTROL_TOKEN))$/;
 
 const TERMINAL_DISTRIBUTED_RUN_STATES = new Set([
   "passed",
@@ -44,6 +69,76 @@ export function redactHeadlessWorkerLogText(
   return withoutKnownSecrets.replace(
     /((?:token|password|secret)[^=&\s]*=)[^&#\s]*/gi,
     "$1[REDACTED]",
+  );
+}
+
+export function headlessWorkerLogSecretsFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): readonly string[] {
+  return Object.entries(env)
+    .filter(([key]) => HEADLESS_WORKER_SECRET_ENV_KEY.test(key))
+    .map(([, value]) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+}
+
+export function createHeadlessWorkerLogger(
+  input: CreateHeadlessWorkerLoggerInput,
+): HeadlessWorkerLogger {
+  const redact = (message: string) =>
+    redactHeadlessWorkerLogText(message, input.secrets);
+
+  return {
+    log: (message) => {
+      input.writeLog(
+        `[rallar-black-box-worker] ${input.now().toISOString()} ${redact(message)}`,
+      );
+    },
+    error: (error) => {
+      input.writeError(
+        `[rallar-black-box-worker] ${redact(headlessWorkerErrorMessage(error))}`,
+      );
+    },
+  };
+}
+
+export function attachHeadlessWorkerPageLogging(
+  input: AttachHeadlessWorkerPageLoggingInput,
+): void {
+  input.page.on("console", (message: ConsoleMessage) => {
+    const type = message.type();
+    if (shouldLogHeadlessWorkerBrowserConsole(input.browserLogLevel, type)) {
+      input.logger.log(
+        `agent=${input.agentId} browser.console.${type}: ${message.text()}`,
+      );
+    }
+  });
+  input.page.on("pageerror", (error: Error) => {
+    input.logger.log(
+      `agent=${input.agentId} browser.pageerror: ${error.message}`,
+    );
+  });
+  if (input.browserLogLevel === "debug") {
+    input.page.on("requestfailed", (request: Request) => {
+      const failure = request.failure()?.errorText ?? "unknown";
+      input.logger.log(
+        `agent=${input.agentId} browser.requestfailed: ${request.method()} ` +
+          `${request.url()} ${failure}`,
+      );
+    });
+  }
+}
+
+export function logHeadlessWorkerUiConfirmationFailure(
+  input: Readonly<{
+    agentId: string;
+    error: unknown;
+    logger: HeadlessWorkerLogger;
+  }>,
+): void {
+  input.logger.log(
+    `Agent ${input.agentId} registered in control server; UI confirmation skipped: ${
+      headlessWorkerErrorMessage(input.error)
+    }`,
   );
 }
 
@@ -129,8 +224,25 @@ export async function waitForDistributedRunTerminal(
   }
 
   throw new Error(
-    `Timed out after ${input.deadline}ms waiting for distributed run ${
+    `Timed out after ${input.timeoutMs ?? input.deadline}ms waiting for distributed run ${
       input.runId
     } to become terminal at ${redactHeadlessWorkerLogText(input.url, [])}.`,
   );
+}
+
+function shouldLogHeadlessWorkerBrowserConsole(
+  browserLogLevel: string,
+  type: string,
+): boolean {
+  if (browserLogLevel === "debug") {
+    return true;
+  }
+  if (browserLogLevel === "info") {
+    return type !== "debug";
+  }
+  return type === "error" || type === "warning";
+}
+
+function headlessWorkerErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.stack ?? error.message : String(error);
 }

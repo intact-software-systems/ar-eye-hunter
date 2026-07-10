@@ -1,8 +1,26 @@
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = path.resolve(__dirname, "../../..");
+
+async function runHeadlessWorker(
+  env: NodeJS.ProcessEnv,
+): Promise<Readonly<{ exitCode: number | null; output: string }>> {
+  return await new Promise((resolve, reject) => {
+    const worker = spawn(
+      path.join(repoRoot, "node_modules", ".bin", "tsx"),
+      ["apps/rallar-black-box/scripts/headless-worker.ts"],
+      { cwd: repoRoot, env },
+    );
+    let output = "";
+    worker.stdout.on("data", (chunk) => output += String(chunk));
+    worker.stderr.on("data", (chunk) => output += String(chunk));
+    worker.once("error", reject);
+    worker.once("close", (exitCode) => resolve({ exitCode, output }));
+  });
+}
 
 describe("rallar-black-box headless worker script", () => {
   it("launches the configured Playwright browser engine", async () => {
@@ -22,14 +40,15 @@ describe("rallar-black-box headless worker script", () => {
     expect(source).toContain("engine=${config.browserEngine}");
   });
 
-  it("logs the selected entry and redacted per-agent URLs", async () => {
+  it("logs the selected entry and per-agent URLs through the runtime logger", async () => {
     const source = await readFile(
       path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
       "utf8",
     );
 
     expect(source).toContain("entry=${config.headlessEntry}");
-    expect(source).toContain("redactHeadlessWorkerLogText(agent.url, [])");
+    expect(source).toContain("Opening agent ${agent.agentId} url=${agent.url}");
+    expect(source).toContain("createWorkerLogger(bootstrapLogSecrets)");
     expect(source).toContain("headless-worker-runtime.ts");
   });
 
@@ -63,24 +82,43 @@ describe("rallar-black-box headless worker script", () => {
     expect(runtime).toContain("[REDACTED]");
   });
 
-  it("routes all worker output through the configured central redactor", async () => {
+  it("keeps the runtime logger wired into worker startup and browser events", async () => {
     const script = await readFile(
       path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
       "utf8",
     );
 
-    expect(script).toContain("const headlessWorkerLogSecrets = [");
-    expect(script).toContain("config.controlReadToken");
-    expect(script).toContain("...config.agentControlTokens");
-    expect(script).toContain(
-      "...config.agentCredentials.map((credentials) => credentials.password)",
-    );
-    expect(script).toContain(
-      "redactHeadlessWorkerLogText(message, headlessWorkerLogSecrets)",
-    );
-    expect(script).toMatch(
-      /redactHeadlessWorkerLogText\(\s*errorMessage\(error\),\s*headlessWorkerLogSecrets,?\s*\)/,
-    );
+    expect(script).toContain("headlessWorkerLogSecretsFromEnv(process.env)");
+    expect(script).toContain("createHeadlessWorkerLogger({");
+    expect(script).toContain("attachHeadlessWorkerPageLogging({");
+    expect(script).toContain("logHeadlessWorkerUiConfirmationFailure({");
+  });
+
+  it("redacts malformed credential-bearing startup configuration errors", async () => {
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
+      RALLAR_BLACK_BOX_CONTROL_URL:
+        "ftp://operator:startup-password@control.example.test/?controlToken=startup-token",
+      RALLAR_API_BASE_URL: "https://api.example.test",
+      RALLAR_BLACK_BOX_RUN_ID: "run-1",
+      RALLAR_BLACK_BOX_ROOM_ID: "room-1",
+      RALLAR_BLACK_BOX_AGENT_COUNT: "1",
+      RALLAR_BLACK_BOX_USERNAME: "operator",
+      RALLAR_BLACK_BOX_PASSWORD: "startup-password",
+      RALLAR_BLACK_BOX_CONTROL_TOKEN: "startup-token",
+      RALLAR_BLACK_BOX_CONTROL_READ_TOKEN: "startup-read-token",
+    };
+    delete env.RALLAR_CONTROL_HTTP_URL;
+
+    const result = await runHeadlessWorker(env);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).not.toContain("startup-password");
+    expect(result.output).not.toContain("startup-token");
+    expect(result.output).not.toContain("startup-read-token");
+    expect(result.output).toContain("Control URL must use ws, wss, http, or https");
+    expect(result.output).toContain("controlToken=[REDACTED]");
   });
 
   it("authenticates Node-side control-server reads when a control token is configured", async () => {

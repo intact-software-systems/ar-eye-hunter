@@ -15,7 +15,11 @@ import {
   readHeadlessWorkerConfig,
 } from "../src/headless-worker-config.ts";
 import {
-  redactHeadlessWorkerLogText,
+  attachHeadlessWorkerPageLogging,
+  createHeadlessWorkerLogger,
+  headlessWorkerLogSecretsFromEnv,
+  type HeadlessWorkerLogger,
+  logHeadlessWorkerUiConfirmationFailure,
   waitForDistributedRunTerminal,
 } from "../src/headless-worker-runtime.ts";
 
@@ -42,19 +46,21 @@ const browserTypes = {
   webkit,
 } satisfies Record<HeadlessWorkerBrowserEngine, BrowserType>;
 
-const config = readHeadlessWorkerConfig({ env: process.env });
-const shutdown = createShutdownSignal();
-const headlessWorkerLogSecrets = [
-  config.controlToken,
-  config.controlReadToken,
-  ...config.agentControlTokens,
-  ...config.agentCredentials.map((credentials) => credentials.password),
-];
-
 let browser: Browser | undefined;
 let runningAgents: readonly RunningAgent[] = [];
+const bootstrapLogSecrets = headlessWorkerLogSecretsFromEnv(process.env);
+let logger = createWorkerLogger(bootstrapLogSecrets);
 
 try {
+  const config = readHeadlessWorkerConfig({ env: process.env });
+  logger = createWorkerLogger([
+    ...bootstrapLogSecrets,
+    config.controlToken,
+    config.controlReadToken,
+    ...config.agentControlTokens,
+    ...config.agentCredentials.map((credentials) => credentials.password),
+  ]);
+  const shutdown = createShutdownSignal();
   log(
     `Starting rallar-black-box headless worker run=${config.runId} ` +
       `agents=${config.agentCount} entry=${config.headlessEntry} ` +
@@ -67,7 +73,7 @@ try {
   });
 
   runningAgents = await Promise.all(
-    config.agents.map((agent) => openAgent(browser!, agent)),
+    config.agents.map((agent) => openAgent(browser!, agent, config)),
   );
 
   log(
@@ -76,12 +82,7 @@ try {
   );
   await waitForWorkerExit(config, shutdown);
 } catch (error) {
-  console.error(
-    `[rallar-black-box-worker] ${redactHeadlessWorkerLogText(
-      errorMessage(error),
-      headlessWorkerLogSecrets,
-    )}`,
-  );
+  logger.error(error);
   process.exitCode = 1;
 } finally {
   await closeAgents(runningAgents);
@@ -92,43 +93,32 @@ try {
 async function openAgent(
   browser: Browser,
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
 ): Promise<RunningAgent> {
-  log(`Opening agent ${agent.agentId} url=${redactHeadlessWorkerLogText(agent.url, [])}`);
+  log(`Opening agent ${agent.agentId} url=${agent.url}`);
   const context = await browser.newContext();
   const page = await context.newPage();
-  page.on("console", (message) => {
-    const type = message.type();
-    if (shouldLogBrowserConsole(type)) {
-      log(`agent=${agent.agentId} browser.console.${type}: ${message.text()}`);
-    }
+  attachHeadlessWorkerPageLogging({
+    agentId: agent.agentId,
+    browserLogLevel: config.browserLogLevel,
+    page,
+    logger,
   });
-  page.on("pageerror", (error) => {
-    log(`agent=${agent.agentId} browser.pageerror: ${error.message}`);
-  });
-  if (config.browserLogLevel === "debug") {
-    page.on("requestfailed", (request) => {
-      const failure = request.failure()?.errorText ?? "unknown";
-      log(
-        `agent=${agent.agentId} browser.requestfailed: ${request.method()} ` +
-          `${redactHeadlessWorkerLogText(request.url(), [])} ${failure}`,
-      );
-    });
-  }
 
   await page.goto(agent.url, {
     waitUntil: "domcontentloaded",
     timeout: config.readyTimeoutMs,
   });
 
-  await signInIfLoginGateIsVisible(page, agent);
-  await waitForAgentRegistration(agent);
+  await signInIfLoginGateIsVisible(page, agent, config);
+  await waitForAgentRegistration(agent, config);
   log(`Agent ${agent.agentId} registered in control server`);
-  void confirmAgentRegistrationUi(page, agent).catch((error) => {
-    log(
-      `Agent ${agent.agentId} registered in control server; UI confirmation skipped: ${
-        errorMessage(error)
-      }`,
-    );
+  void confirmAgentRegistrationUi(page, agent, config).catch((error) => {
+    logHeadlessWorkerUiConfirmationFailure({
+      agentId: agent.agentId,
+      error,
+      logger,
+    });
   });
   return {
     agent,
@@ -140,18 +130,20 @@ async function openAgent(
 async function confirmAgentRegistrationUi(
   page: Page,
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
 ): Promise<void> {
   if (config.headlessEntry === "operator-spa") {
-    await confirmWorkbenchRegistrationUi(page, agent);
+    await confirmWorkbenchRegistrationUi(page, agent, config);
     return;
   }
 
-  await confirmHeadlessRegistrationUi(page, agent);
+  await confirmHeadlessRegistrationUi(page, agent, config);
 }
 
 async function signInIfLoginGateIsVisible(
   page: Page,
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
 ): Promise<void> {
   const signIn = page.getByRole("button", { name: "Sign in" });
   const visible = await signIn.isVisible({ timeout: 5_000 }).catch(() => false);
@@ -165,12 +157,13 @@ async function signInIfLoginGateIsVisible(
 
 async function waitForAgentRegistration(
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
 ): Promise<void> {
   const deadline = Date.now() + config.readyTimeoutMs;
   let lastState = "not seen";
   while (Date.now() < deadline) {
     const snapshot = await fetchControlRunSnapshot(config).catch((error) => {
-      lastState = errorMessage(error);
+      lastState = error instanceof Error ? error.stack ?? error.message : String(error);
       return undefined;
     });
     const registeredAgent = snapshot?.agents?.find((candidate) =>
@@ -201,6 +194,7 @@ async function waitForAgentRegistration(
 async function confirmWorkbenchRegistrationUi(
   page: Page,
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
 ): Promise<void> {
   const timeout = Math.min(
     config.readyTimeoutMs,
@@ -227,6 +221,7 @@ async function confirmWorkbenchRegistrationUi(
 async function confirmHeadlessRegistrationUi(
   page: Page,
   agent: HeadlessWorkerAgentConfig,
+  config: HeadlessWorkerConfig,
 ): Promise<void> {
   const timeout = Math.min(
     config.readyTimeoutMs,
@@ -301,6 +296,7 @@ async function waitForConfiguredDistributedRunTerminal(
     deadline: config.idleExitMs === undefined
       ? undefined
       : Date.now() + config.idleExitMs,
+    timeoutMs: config.idleExitMs,
     pollIntervalMs: config.distributedPollIntervalMs,
     fetch,
     sleep: delay,
@@ -367,23 +363,16 @@ function createShutdownSignal(): Readonly<{ wait(): Promise<void> }> {
 }
 
 function log(message: string): void {
-  console.log(
-    `[rallar-black-box-worker] ${new Date().toISOString()} ${
-      redactHeadlessWorkerLogText(message, headlessWorkerLogSecrets)
-    }`,
-  );
+  logger.log(message);
 }
 
-function shouldLogBrowserConsole(type: string): boolean {
-  if (config.browserLogLevel === "debug") {
-    return true;
-  }
-  if (config.browserLogLevel === "info") {
-    return type !== "debug";
-  }
-  return type === "error" || type === "warning";
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.stack ?? error.message : String(error);
+function createWorkerLogger(
+  secrets: readonly (string | undefined)[],
+): HeadlessWorkerLogger {
+  return createHeadlessWorkerLogger({
+    secrets,
+    now: () => new Date(),
+    writeLog: console.log,
+    writeError: console.error,
+  });
 }
