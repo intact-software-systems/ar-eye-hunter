@@ -449,6 +449,20 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   composition remain; therefore the below-800-line/no-feature-panel exit is not
   yet satisfied.
 
+#### Worktree recovery checkpoint — `5d86e17` (2026-07-11)
+
+- The OS removed the original `/private/tmp` linked-worktree directory after
+  W3 was committed. Git retained the complete branch and all milestone commits.
+- The same `codex/rallar-black-box-spa-reimplementation` branch is now checked
+  out at the repository's ignored, persistent
+  `tmp/worktrees/rallar-black-box-spa` path; the main checkout remains clean.
+- Recovery verification passed the five-file focused slice (65/65) and app
+  typecheck at `5d86e17`. No unavailable live-service test is inferred from
+  this recovery evidence.
+- `App.tsx` is 8,012 lines after the exact WebSocket controller cutover. Media
+  is the next tests-first extraction slice; Iteration 1 exit criteria remain
+  unsatisfied.
+
 #### Remaining risks and evidence ownership
 
 | Remaining risk | Owning iteration(s) | Mitigation and evidence target |

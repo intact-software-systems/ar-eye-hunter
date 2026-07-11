@@ -1,7 +1,7 @@
 # Recipe Console Migration Register
 
 Status: canonical migration register; Iteration 1 extraction in progress
-Evidence/status date: 2026-07-10
+Evidence/status date: 2026-07-11
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
@@ -23,6 +23,13 @@ row's cutover, hide, mount, or rollback status.
 At this checkpoint `App.tsx` is 9,242 lines, down from the 28,265-line
 baseline. No surface has been newly hidden, no legacy deep link has changed,
 and no temporary mounted-state exception is represented as resolved.
+
+Worktree recovery note (2026-07-11): the OS removed the original
+`/private/tmp` worktree after the committed WebSocket W3 cutover. The same
+branch was recovered without history loss at the repository-ignored
+`tmp/worktrees/rallar-black-box-spa` path. Recovery verification passed 65/65
+focused tests and typecheck at `5d86e17`; `App.tsx` is 8,012 lines. This changes
+no surface cutover, hide, mount, rollback, or deep-link status.
 
 ## Compatibility inputs that must remain deterministic
 
