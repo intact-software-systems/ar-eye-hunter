@@ -239,6 +239,18 @@ function task9aAstFingerprintOmittingNode(
         .digest('hex');
 }
 
+function task9aMoveOnlyDeclarationFingerprint(
+    statement: ts.Statement,
+): string {
+    const sourcePath = statement.getSourceFile().fileName;
+    const declarationSource = statement
+        .getText(statement.getSourceFile())
+        .replace(/^export\s+/, '');
+    const reparsed = task9aSourceFile(sourcePath, declarationSource);
+    const declaration = reparsed.statements[0];
+    return declaration ? task9aAstFingerprint([declaration]) : '';
+}
+
 function task9aNamedFunction(
     sourceFile: ts.SourceFile,
     name: string,
@@ -8919,8 +8931,18 @@ describe('rallar-black-box app source ownership', () => {
                 `App local ${declaration}`,
             ).toBe(false);
         }
-        expect.soft(appSource, 'later Groups/Server helper remains local')
-            .toMatch(/^function\s+findStringDeep\b/m);
+        const roomsDerivationsPresent = existsSync(resolve(
+            repositoryRoot,
+            'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-derivations.ts',
+        ));
+        const deepStringOwnerPresent = existsSync(resolve(
+            repositoryRoot,
+            'apps/rallar-black-box/src/legacy/diagnostics/shared/deep-string-value.ts',
+        ));
+        expect.soft(
+            /^function\s+findStringDeep\b/m.test(appSource),
+            'Groups/Server helper moves only when its focused owner exists',
+        ).toBe(!deepStringOwnerPresent);
         expect.soft(task9aImportEdges(appAst)).toContain(
             './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
         );
@@ -9072,7 +9094,9 @@ describe('rallar-black-box app source ownership', () => {
             './legacy/diagnostics/events/StatsPanel.tsx|value:StatsPanel',
             './legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx|value:CommandCenterActionFeedbackPanel',
             './legacy/diagnostics/shared/action-feedback.ts|type:CommandCenterActionFeedback,value:completedActionFeedback,value:idleActionFeedback,value:runningActionFeedback',
-            './legacy/shared/finite-number.ts|value:optionalNumber',
+            ...(roomsDerivationsPresent
+                ? []
+                : ['./legacy/shared/finite-number.ts|value:optionalNumber']),
             './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
             './legacy/shared/use-now.ts|value:useNow',
             './legacy/shell/RallarBrowserTraceBar.tsx|value:RallarBrowserTraceBar',
@@ -11029,10 +11053,30 @@ describe('rallar-black-box app source ownership', () => {
             'refreshHealth', 'copyRecipe',
         ];
         if (sources.has(controllerPath)) {
+            const roomsDerivationsPath =
+                'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-derivations.ts';
+            const roomsDerivationsPresent = existsSync(
+                resolve(repositoryRoot, roomsDerivationsPath),
+            );
+            const roomsDerivationsAst = roomsDerivationsPresent
+                ? task9aSourceFile(
+                      roomsDerivationsPath,
+                      repositorySource(roomsDerivationsPath),
+                  )
+                : undefined;
             expect.soft(
                 [...appSource.matchAll(/\brecordArray\s*\(/g)],
-                'all nine remaining App recordArray call sites survive the move',
-            ).toHaveLength(9);
+                'App owns only the Rooms panel recordArray sites after R1',
+            ).toHaveLength(roomsDerivationsPresent ? 2 : 9);
+            expect.soft(
+                [
+                    ...(roomsDerivationsPresent
+                        ? repositorySource(roomsDerivationsPath)
+                        : ''
+                    ).matchAll(/\brecordArray\s*\(/g),
+                ],
+                'Rooms derivations own the seven moved recordArray call sites',
+            ).toHaveLength(roomsDerivationsPresent ? 7 : 0);
             expect.soft(
                 [
                     ...sources
@@ -11054,18 +11098,20 @@ describe('rallar-black-box app source ownership', () => {
                     'rowsFromStateEvents',
                     '470c7ee6823911dc723b4d322ca1bc5d5fc641cf9fb2c2acd32dda65b97c0a99',
                 ],
-                [
-                    'RoomsClientsPanel',
-                    'c7fe946335be41d27b620a07f591490fd635d5586f8e0675ae944ff5c5af6da5',
-                ],
             ] as const) {
                 expect.soft(
-                    task9aAstFingerprint([
-                        task9aNamedFunction(appAst, name),
-                    ]),
+                    task9aMoveOnlyDeclarationFingerprint(
+                        task9aNamedFunction(roomsDerivationsAst ?? appAst, name),
+                    ),
                     `${name}: unchanged shared recordArray consumer`,
                 ).toBe(expectedHash);
             }
+            expect.soft(
+                task9aAstFingerprint([
+                    task9aNamedFunction(appAst, 'RoomsClientsPanel'),
+                ]),
+                'RoomsClientsPanel: unchanged App-local recordArray consumer',
+            ).toBe('c7fe946335be41d27b620a07f591490fd635d5586f8e0675ae944ff5c5af6da5');
             const controllerReturn = statements[returnIndex];
             const controllerModel = controllerReturn &&
                     ts.isReturnStatement(controllerReturn)
@@ -13616,6 +13662,303 @@ describe('rallar-black-box app source ownership', () => {
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
                 .digest('hex'),
             'Auth extraction leaves the complete stylesheet unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
+    it('extracts exact Rooms and Clients contracts and derivations into focused legacy owners', () => {
+        const contractsPath =
+            'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-contracts.ts';
+        const derivationsPath =
+            'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-derivations.ts';
+        const deepStringPath =
+            'apps/rallar-black-box/src/legacy/diagnostics/shared/deep-string-value.ts';
+        const ownerPaths = [contractsPath, derivationsPath, deepStringPath] as const;
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const ownerAsts = new Map<string, ts.SourceFile>();
+
+        for (const ownerPath of ownerPaths) {
+            const ownerPresent = existsSync(resolve(repositoryRoot, ownerPath));
+            expect.soft(ownerPresent, `${ownerPath}: owner exists`).toBe(true);
+            if (ownerPresent) {
+                ownerAsts.set(
+                    ownerPath,
+                    task9aSourceFile(ownerPath, repositorySource(ownerPath)),
+                );
+            }
+        }
+
+        const inventories = new Map<string, readonly string[]>([
+            [
+                contractsPath,
+                [
+                    'type:RoomsClientsActionId',
+                    'type:RoomsClientsAction',
+                    'type:RoomsClientsActionCategory',
+                    'type:RoomStateRow',
+                    'type:ClientStateRow',
+                    'type:GroupSortId',
+                    'type:ClientSortId',
+                    'type:StateEventRow',
+                    'const:GROUP_SORT_OPTIONS',
+                    'const:CLIENT_SORT_OPTIONS',
+                    'const:ROOMS_CLIENTS_ACTION_GROUPS',
+                    'const:ROOMS_CLIENTS_ACTIONS',
+                ],
+            ],
+            [
+                derivationsPath,
+                [
+                    'function:numberOrZero',
+                    'function:auditAtEpochMs',
+                    'function:maxNumber',
+                    'function:compareNumberDesc',
+                    'function:compareText',
+                    'function:firstComparison',
+                    'function:stringOrDash',
+                    'function:rowsFromGroupSnapshots',
+                    'function:rowsFromClientSnapshots',
+                    'function:sortGroupRows',
+                    'function:sortClientRows',
+                    'function:rowsFromStateEvents',
+                ],
+            ],
+            [deepStringPath, ['function:findStringDeep']],
+        ]);
+        const lineCaps = new Map<string, number>([
+            [contractsPath, 260],
+            [derivationsPath, 340],
+            [deepStringPath, 40],
+        ]);
+        const expectedImports = new Map<string, readonly string[]>([
+            [contractsPath, []],
+            [
+                derivationsPath,
+                [
+                    '../../shared/finite-number.ts|value:optionalNumber',
+                    '../../shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
+                    './rooms-clients-contracts.ts|type:ClientSortId,type:ClientStateRow,type:GroupSortId,type:RoomStateRow,type:StateEventRow',
+                ].sort(),
+            ],
+            [deepStringPath, []],
+        ]);
+        const expectedExports = new Map<string, readonly string[]>([
+            [
+                contractsPath,
+                [
+                    'type:ClientSortId',
+                    'type:ClientStateRow',
+                    'type:GroupSortId',
+                    'type:RoomStateRow',
+                    'type:RoomsClientsAction',
+                    'type:RoomsClientsActionCategory',
+                    'type:RoomsClientsActionId',
+                    'type:StateEventRow',
+                    'value:CLIENT_SORT_OPTIONS',
+                    'value:GROUP_SORT_OPTIONS',
+                    'value:ROOMS_CLIENTS_ACTIONS',
+                    'value:ROOMS_CLIENTS_ACTION_GROUPS',
+                ].sort(),
+            ],
+            [
+                derivationsPath,
+                [
+                    'value:rowsFromClientSnapshots',
+                    'value:rowsFromGroupSnapshots',
+                    'value:rowsFromStateEvents',
+                    'value:sortClientRows',
+                    'value:sortGroupRows',
+                ].sort(),
+            ],
+            [deepStringPath, ['value:findStringDeep']],
+        ]);
+
+        const inventory = (sourceFile: ts.SourceFile): readonly string[] =>
+            sourceFile.statements.flatMap((statement) => {
+                if (ts.isImportDeclaration(statement)) return [];
+                if (ts.isTypeAliasDeclaration(statement)) {
+                    return [`type:${statement.name.text}`];
+                }
+                if (ts.isFunctionDeclaration(statement)) {
+                    return [`function:${statement.name?.text ?? '<anonymous>'}`];
+                }
+                if (ts.isVariableStatement(statement)) {
+                    return statement.declarationList.declarations.map(
+                        (declaration) =>
+                            `const:${ts.isIdentifier(declaration.name)
+                                ? declaration.name.text
+                                : declaration.name.getText(sourceFile)}`,
+                    );
+                }
+                return [`unexpected:${ts.SyntaxKind[statement.kind]}`];
+            });
+
+        for (const ownerPath of ownerPaths) {
+            const ownerAst = ownerAsts.get(ownerPath);
+            if (!ownerAst) continue;
+            const ownerSource = repositorySource(ownerPath);
+            expect.soft(
+                ownerSource.trimEnd().split(/\r?\n/).length,
+                `${ownerPath}: line cap`,
+            ).toBeLessThanOrEqual(lineCaps.get(ownerPath)!);
+            expect.soft(
+                task9aImportEdges(ownerAst),
+                `${ownerPath}: exact direct imports`,
+            ).toEqual(expectedImports.get(ownerPath));
+            expect.soft(
+                task9aExportSeams(ownerAst),
+                `${ownerPath}: exact direct exports`,
+            ).toEqual(expectedExports.get(ownerPath));
+            expect.soft(
+                inventory(ownerAst),
+                `${ownerPath}: exact top-level inventory`,
+            ).toEqual(inventories.get(ownerPath));
+            expect.soft(
+                ownerSource,
+                `${ownerPath}: no reverse/App/CSS/barrel edge`,
+            ).not.toMatch(
+                /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"]|^\s*export\s+(?:\*|{)[^;]*\s+from\s+)/m,
+            );
+        }
+
+        if (ownerAsts.size === ownerPaths.length) {
+            const ownerConsumers = new Map(
+                ownerPaths.map((ownerPath) => [
+                    ownerPath,
+                    sourceFilesUnder('apps/rallar-black-box/src')
+                        .filter((sourcePath) => {
+                            if (sourcePath === ownerPath) return false;
+                            const sourceFile = task9aSourceFile(
+                                sourcePath,
+                                repositorySource(sourcePath),
+                            );
+                            return task9aModuleSpecifiers(sourceFile).some(
+                                (moduleImport) =>
+                                    task9aResolveRelativeTypeScriptDependency(
+                                        sourcePath,
+                                        moduleImport,
+                                        (path) =>
+                                            existsSync(resolve(repositoryRoot, path)),
+                                    ) === ownerPath,
+                            );
+                        })
+                        .sort(),
+                ]),
+            );
+            expect.soft(
+                ownerConsumers.get(contractsPath),
+                'contracts owner has only App and derivations consumers',
+            ).toEqual([appSourcePath, derivationsPath].sort());
+            expect.soft(
+                ownerConsumers.get(derivationsPath),
+                'derivations owner has only App as consumer',
+            ).toEqual([appSourcePath]);
+            expect.soft(
+                ownerConsumers.get(deepStringPath),
+                'deep-string owner has only App as consumer',
+            ).toEqual([appSourcePath]);
+            const graph = task9aReachableRelativeTypeScriptGraph(
+                ownerPaths,
+                repositorySource,
+                (path) => existsSync(resolve(repositoryRoot, path)),
+            );
+            expect.soft(
+                task9aDependencyCycles(graph),
+                'Rooms and Clients owner dependency graph has no cycles',
+            ).toEqual([]);
+        }
+
+        const appOwnerImports = task9aImportEdges(appAst).filter(
+            (edge) =>
+                edge.startsWith(
+                    './legacy/diagnostics/rooms-clients/',
+                ) || edge.startsWith(
+                    './legacy/diagnostics/shared/deep-string-value.ts|',
+                ),
+        );
+        expect.soft(
+            appOwnerImports,
+            'App imports exactly the Rooms and Clients R1 owner seams',
+        ).toEqual([
+            './legacy/diagnostics/rooms-clients/rooms-clients-contracts.ts|type:ClientSortId,type:GroupSortId,type:RoomsClientsAction,type:RoomsClientsActionId,value:CLIENT_SORT_OPTIONS,value:GROUP_SORT_OPTIONS,value:ROOMS_CLIENTS_ACTIONS,value:ROOMS_CLIENTS_ACTION_GROUPS',
+            './legacy/diagnostics/rooms-clients/rooms-clients-derivations.ts|value:rowsFromClientSnapshots,value:rowsFromGroupSnapshots,value:rowsFromStateEvents,value:sortClientRows,value:sortGroupRows',
+            './legacy/diagnostics/shared/deep-string-value.ts|value:findStringDeep',
+        ]);
+
+        const declarationCases = [
+            [contractsPath, 'RoomsClientsActionId', 'bacf6f962699b1058e4434761d0800f272bac4cc90fa2bdc4d353561ae864f66'],
+            [contractsPath, 'RoomsClientsAction', '7ecd0b44fd73844e6a4adf3eb5b9e7c16db5dfb3acf8eabb42e48a357563204d'],
+            [contractsPath, 'RoomsClientsActionCategory', '5f31ac801f26716c178ed686137ea07387a3dac817b7fdb96a2fde8df5c05a12'],
+            [contractsPath, 'RoomStateRow', 'd854fd8f31f8b71779acd45c0ef8e221c6f9e984b318e71985ce8744b67a1ba6'],
+            [contractsPath, 'ClientStateRow', '23500c371a75bee6df7834a4f604aa4da167273b5107c69c1737cae798e35181'],
+            [contractsPath, 'GroupSortId', '85ea81c871aa7599ec0c4451546807f143d00df111bc575c73571ca7fcfb4fe8'],
+            [contractsPath, 'ClientSortId', '08dcd3666f97798837df91a7402c9d085e06f06e28220a61c750edaa0d18ff52'],
+            [contractsPath, 'StateEventRow', '21eeece635345396afc8cd0598aa1d88ef66c6d37602bc16b4d6753e5b42de47'],
+            [contractsPath, 'GROUP_SORT_OPTIONS', '2798079af21b5c51ca02c30ce2eed30964b7f65f44af859ac0cf02fc94c20368'],
+            [contractsPath, 'CLIENT_SORT_OPTIONS', '75d49b50f3e4a83dcf615c2bb5c1c998c4569df40023cebff07f7081a583fbb7'],
+            [contractsPath, 'ROOMS_CLIENTS_ACTION_GROUPS', 'f63252c362611448015ff96761623d960756bce04c0d5b707574cc1deba41b54'],
+            [contractsPath, 'ROOMS_CLIENTS_ACTIONS', 'ffa4118831c3b56ee5ccd979fd3be8501fbe2c3dbcffe5bba7d46c3f7a1eb7b6'],
+            [deepStringPath, 'findStringDeep', '55bb710c853d318988855e651c60e85887588042a41e95082e1074e90b16a5f1'],
+            [derivationsPath, 'numberOrZero', 'c805848ee986b0c1fefe7b9d1289567c3109358b3d8d6e49acc256bdde12ffbb'],
+            [derivationsPath, 'auditAtEpochMs', '70b5b27637a56ceb3a0ef423d4c8379b360735b43323e8b750524639306c7e42'],
+            [derivationsPath, 'maxNumber', '435970c54667fd62c4b11c58991a43fe06ec10bcdd9742acce519d987435bec3'],
+            [derivationsPath, 'compareNumberDesc', '09c6d26d020138388094abaf7beaed0cee384e43ed9d661eb7a0b77856f92002'],
+            [derivationsPath, 'compareText', 'e20a90f144a0cb48b4066b92579ef956425099d25aaf8e7d9ab9e52cdbdecc29'],
+            [derivationsPath, 'firstComparison', 'd8d489b22274bd48cd2a658bdd17d464c5a9d2e5b180ab9e45dedb38f1ccc049'],
+            [derivationsPath, 'stringOrDash', '2f1a3d1809ee14e40cb20b7eb92683ebf432731a3daacbb4fd4e1bc43b87431f'],
+            [derivationsPath, 'rowsFromGroupSnapshots', 'a6f8cc7bf5e303da377fd893eb36dda35220b6d3df5370900e73c1b72ff0f862'],
+            [derivationsPath, 'rowsFromClientSnapshots', '244d50c521f6593f58d3d9aeb21145663db34b908d55c574be3a0c1a8bd7ddb0'],
+            [derivationsPath, 'sortGroupRows', '03863983ef1ef767f9c8dcf603e358fa28cc3667b213dce29465c53902f61d78'],
+            [derivationsPath, 'sortClientRows', '4c1a26e101d3a32a3b961ab55b314005777bcc6a20e212a3f4192a7f7821d1d1'],
+            [derivationsPath, 'rowsFromStateEvents', '470c7ee6823911dc723b4d322ca1bc5d5fc641cf9fb2c2acd32dda65b97c0a99'],
+        ] as const;
+        const movedNames = declarationCases.map(([, name]) => name);
+        const findDeclaration = (
+            sourceFile: ts.SourceFile,
+            name: string,
+        ): ts.Statement | undefined =>
+            sourceFile.statements.find((statement) =>
+                (ts.isTypeAliasDeclaration(statement) &&
+                    statement.name.text === name) ||
+                (ts.isFunctionDeclaration(statement) &&
+                    statement.name?.text === name) ||
+                (ts.isVariableStatement(statement) &&
+                    statement.declarationList.declarations.some(
+                        (declaration) =>
+                            ts.isIdentifier(declaration.name) &&
+                            declaration.name.text === name,
+                    ))
+            );
+        for (const [ownerPath, name, expectedHash] of declarationCases) {
+            const declaration = findDeclaration(
+                ownerAsts.get(ownerPath) ?? appAst,
+                name,
+            );
+            expect.soft(
+                declaration,
+                `${name} remains in its owner/App fallback`,
+            ).toBeDefined();
+            if (declaration) {
+                expect.soft(
+                    task9aMoveOnlyDeclarationFingerprint(declaration),
+                    `${name}: exact move-only declaration semantics`,
+                ).toBe(expectedHash);
+            }
+        }
+
+        expect.soft(
+            movedNames.filter((name) => findDeclaration(appAst, name)),
+            'App owns none of the Rooms and Clients R1 declarations',
+        ).toEqual([]);
+        expect.soft(
+            task9aAstFingerprint([task9aNamedFunction(appAst, 'App')]),
+            'Rooms and Clients R1 leaves the App function unchanged',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'Rooms and Clients R1 leaves the complete stylesheet unchanged',
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
     });
 
