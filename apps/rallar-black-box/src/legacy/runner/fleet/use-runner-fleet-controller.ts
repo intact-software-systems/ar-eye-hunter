@@ -34,13 +34,12 @@ import {
 } from './fleet-derivations.ts';
 import {
     applyFleetLabelOverrides,
+    buildFleetShareUrl,
     fleetReportFilterFromUi,
     parseFleetLabelOverrides,
     readFleetFiltersFromUrl,
     readFleetWorldMapLayersFromUrl,
-    writeFleetFiltersToSearchParams,
     writeFleetFiltersToUrl,
-    writeFleetWorldMapLayersToSearchParams,
     writeFleetWorldMapLayersToUrl,
 } from './fleet-helpers.ts';
 import {
@@ -305,12 +304,9 @@ export function useRunnerFleetController({
         if (typeof window === 'undefined') {
             return;
         }
-        const url = new URL(window.location.href);
-        url.searchParams.set('mode', 'black-box-runner');
-        url.searchParams.set('tab', 'fleet');
-        writeFleetFiltersToSearchParams(url.searchParams, filters);
-        writeFleetWorldMapLayersToSearchParams(url.searchParams, mapLayers);
-        await navigator.clipboard?.writeText(url.toString());
+        await navigator.clipboard?.writeText(
+            buildFleetShareUrl(window.location.href, filters, mapLayers),
+        );
     };
 
     const exportSelectedReport = async (): Promise<void> => {

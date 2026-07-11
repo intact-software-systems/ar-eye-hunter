@@ -104,6 +104,19 @@ export function writeFleetWorldMapLayersToSearchParams(
     }
 }
 
+export function buildFleetShareUrl(
+    currentHref: string,
+    filters: FleetFilterState,
+    layers: FleetWorldMapLayerState,
+): string {
+    const url = new URL(currentHref);
+    url.searchParams.set('mode', 'black-box-runner');
+    url.searchParams.set('tab', 'fleet');
+    writeFleetFiltersToSearchParams(url.searchParams, filters);
+    writeFleetWorldMapLayersToSearchParams(url.searchParams, layers);
+    return url.toString();
+}
+
 function parseFleetWorldMapLayers(
     value: string | null,
 ): FleetWorldMapLayerState {

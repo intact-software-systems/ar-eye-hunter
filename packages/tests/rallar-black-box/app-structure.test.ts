@@ -8219,7 +8219,7 @@ describe('rallar-black-box app source ownership', () => {
             { path: controllerPath, cap: 460, exports: ['type:RunnerFleetControllerModel', 'type:UseRunnerFleetControllerInput', 'value:useRunnerFleetController'] },
             { path: panelPath, cap: 210, exports: ['value:RunnerFleetPanel'] },
             { path: `${fleetRoot}/fleet-types.ts`, cap: 80, exports: ['type:FleetAgentHeatmapRow', 'type:FleetFilterState', 'type:FleetLabelOverride', 'type:FleetTimingGroup'] },
-            { path: `${fleetRoot}/fleet-helpers.ts`, cap: 280, exports: ['value:applyFleetLabelOverrides', 'value:fleetReportFilterFromUi', 'value:parseFleetLabelOverrides', 'value:readFleetFiltersFromUrl', 'value:readFleetWorldMapLayersFromUrl', 'value:writeFleetFiltersToSearchParams', 'value:writeFleetFiltersToUrl', 'value:writeFleetWorldMapLayersToSearchParams', 'value:writeFleetWorldMapLayersToUrl'] },
+            { path: `${fleetRoot}/fleet-helpers.ts`, cap: 300, exports: ['value:applyFleetLabelOverrides', 'value:buildFleetShareUrl', 'value:fleetReportFilterFromUi', 'value:parseFleetLabelOverrides', 'value:readFleetFiltersFromUrl', 'value:readFleetWorldMapLayersFromUrl', 'value:writeFleetFiltersToSearchParams', 'value:writeFleetFiltersToUrl', 'value:writeFleetWorldMapLayersToSearchParams', 'value:writeFleetWorldMapLayersToUrl'] },
             { path: `${fleetRoot}/fleet-derivations.ts`, cap: 210, exports: ['value:fleetAgentDetail', 'value:fleetHeatmapRows', 'value:fleetMissingLabelAgents', 'value:fleetRegionRows'] },
             { path: `${fleetRoot}/fleet-timing.ts`, cap: 140, exports: ['value:fleetTimingDistribution', 'value:fleetTimingGroupsByRecipe', 'value:fleetTimingGroupsByRegion'] },
             { path: `${fleetRoot}/fleet-rollups.ts`, cap: 190, exports: ['value:fleetDisplaySummary', 'value:fleetFailureRows'] },
@@ -8267,7 +8267,7 @@ describe('rallar-black-box app source ownership', () => {
                 '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
                 '../shared/control-snapshot-bounds.ts|value:RUN_MANAGER_SNAPSHOT_BOUNDS',
                 './fleet-derivations.ts|value:fleetAgentDetail,value:fleetHeatmapRows,value:fleetMissingLabelAgents,value:fleetRegionRows',
-                './fleet-helpers.ts|value:applyFleetLabelOverrides,value:fleetReportFilterFromUi,value:parseFleetLabelOverrides,value:readFleetFiltersFromUrl,value:readFleetWorldMapLayersFromUrl,value:writeFleetFiltersToSearchParams,value:writeFleetFiltersToUrl,value:writeFleetWorldMapLayersToSearchParams,value:writeFleetWorldMapLayersToUrl',
+                './fleet-helpers.ts|value:applyFleetLabelOverrides,value:buildFleetShareUrl,value:fleetReportFilterFromUi,value:parseFleetLabelOverrides,value:readFleetFiltersFromUrl,value:readFleetWorldMapLayersFromUrl,value:writeFleetFiltersToUrl,value:writeFleetWorldMapLayersToUrl',
                 './fleet-rollups.ts|value:fleetDisplaySummary,value:fleetFailureRows',
                 './fleet-timing.ts|value:fleetTimingGroupsByRecipe,value:fleetTimingGroupsByRegion',
                 './fleet-types.ts|type:FleetFilterState',
@@ -8377,7 +8377,8 @@ describe('rallar-black-box app source ownership', () => {
             'FleetLabelOverride', 'DEFAULT_FLEET_FILTERS',
             'FleetTimingGroupList', 'FleetTimingStrip',
             'readFleetFiltersFromUrl', 'writeFleetFiltersToUrl',
-            'writeFleetFiltersToSearchParams', 'readFleetWorldMapLayersFromUrl',
+            'writeFleetFiltersToSearchParams', 'buildFleetShareUrl',
+            'readFleetWorldMapLayersFromUrl',
             'writeFleetWorldMapLayersToUrl', 'writeFleetWorldMapLayersToSearchParams',
             'parseFleetWorldMapLayers', 'fleetWorldMapLayersEqual',
             'parseFleetWindow', 'fleetReportFilterFromUi',
@@ -8416,12 +8417,13 @@ describe('rallar-black-box app source ownership', () => {
                     'readFleetWorldMapLayersFromUrl',
                     'writeFleetWorldMapLayersToUrl',
                     'writeFleetWorldMapLayersToSearchParams',
+                    'buildFleetShareUrl',
                     'parseFleetWorldMapLayers', 'fleetWorldMapLayersEqual',
                     'parseFleetWindow', 'fleetReportFilterFromUi',
                     'parseFleetLabelOverrides', 'isFleetRecord',
                     'applyFleetLabelOverrides',
                 ],
-                '7ff4ee70fc130f886238efefdd4a5e6032bb8d402a0e35cb8c5b4f236d4cce9b',
+                '58c1c9cf6f42d8f8d6478f3ba6dbb1b171aeb8ad530e08888c410f991fc831f0',
             ],
             [
                 ownerAst('fleet-derivations.ts'),
@@ -8496,7 +8498,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint(preReturn),
             'token-complete Fleet controller hook',
-        ).toBe('68e62590dd3ece0d091f1ee7c5dc62e005e348a0f4fe30e31957173c3aa894c4');
+        ).toBe('a25155422c3fc74dbaacfb7b049dff94c6629a485a9d0f6108b4aad3f3362e26');
         expect.soft(
             task9aAstFingerprint(preReturn.filter((statement) =>
                 /\buse(?:State|Memo|Ref|Effect)\s*(?:<|\()/.test(statement.getText()),
@@ -8556,7 +8558,7 @@ describe('rallar-black-box app source ownership', () => {
             ['updateFilter', '51638c3a885ede605336508a72f68d8b344b9a927451bd0763751d7154aec0e1'],
             ['updateMapLayer', '6522b1bd4ec0b8938d770990d19e40f2c4857dda91133d2f7af65805fd14d49d'],
             ['selectMapRegion', '86bfd70e981c7f6b484a3cd4ac9561ba084aba4270023385803f2f28c8ecdce4'],
-            ['copyShareLink', '822c50a5152ab37c7ebabf51fec4fa28849d5f46045e352cb736a579156afe48'],
+            ['copyShareLink', 'd2459825288edaeb169f4ab277b9c8bfb9e576a816153377587b1273235f1465'],
             ['exportSelectedReport', '0e94ae28777f92968fafe356eeae4d21edbd447cae834ad0bd8c0b48189daf2a'],
         ] as const) {
             const statement = controllerDeclarations.get(name);

@@ -7,6 +7,7 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
 import {
     applyFleetLabelOverrides,
+    buildFleetShareUrl,
     fleetReportFilterFromUi,
     parseFleetLabelOverrides,
     readFleetFiltersFromUrl,
@@ -245,6 +246,28 @@ describe('fleet analysis helpers', () => {
             'observed-routes': false,
         });
         expect(params.get('fleetMapLayers')).toBe('none');
+    });
+
+    it('builds a fleet share URL without losing unrelated query or fragment state', () => {
+        expect(buildFleetShareUrl(
+            'https://fleet.test/app?keep=yes&mode=rallar&tab=media&region=old&window=1h#trace',
+            {
+                region: 'eu-north',
+                provider: 'hetzner',
+                recipeId: '',
+                groupId: 'group-a',
+                state: '',
+                window: 'all',
+            },
+            {
+                'live-agents': true,
+                'historical-regions': false,
+                failures: true,
+                'observed-routes': false,
+            },
+        )).toBe(
+            'https://fleet.test/app?keep=yes&mode=black-box-runner&tab=fleet&region=eu-north&window=all&provider=hetzner&groupId=group-a&fleetMapLayers=live-agents%2Cfailures#trace',
+        );
     });
 
     it('builds fresh filter bounds and normalizes label overrides', () => {
