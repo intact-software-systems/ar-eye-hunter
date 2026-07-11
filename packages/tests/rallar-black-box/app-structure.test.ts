@@ -3016,6 +3016,14 @@ describe('rallar-black-box app source ownership', () => {
                           'apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts',
                       )
                     : '',
+                ...[
+                    'apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts',
+                    'apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-recipes.ts',
+                ].map((path) =>
+                    existsSync(resolve(repositoryRoot, path))
+                        ? repositorySource(path)
+                        : '',
+                ),
             ].flatMap((source) => [...source.matchAll(/\bstringValue\s*\(/g)]),
             'all unaffected stringValue consumers use the shared import',
         ).toHaveLength(42);
@@ -11275,6 +11283,473 @@ describe('rallar-black-box app source ownership', () => {
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
                 .digest('hex'),
             'RTC extraction leaves complete stylesheet unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
+    it('keeps WebSocket command-center support in exact deterministic owners', () => {
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const root =
+            'apps/rallar-black-box/src/legacy/diagnostics/websocket';
+        const sharedTicketPath =
+            'apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts';
+        const contractsPath = `${root}/websocket-contracts.ts`;
+        const presetsPath = `${root}/websocket-presets.ts`;
+        const routingPath = `${root}/websocket-routing.ts`;
+        const recipesPath = `${root}/websocket-recipes.ts`;
+        const diagnosticsPath = `${root}/websocket-diagnostics.ts`;
+        const owners = [
+            {
+                path: sharedTicketPath,
+                cap: 25,
+                exports: ['type:AuthCommandCenterTicket'],
+                appImport:
+                    './legacy/diagnostics/shared/auth-command-center-ticket.ts',
+                appSeams: ['type:AuthCommandCenterTicket'],
+                imports: [],
+            },
+            {
+                path: contractsPath,
+                cap: 130,
+                exports: [
+                    'type:WebSocketCommandCenterValues',
+                    'type:WebSocketDiagnostic',
+                    'type:WebSocketEventRow',
+                    'type:WebSocketPayloadPreset',
+                    'type:WebSocketReceivedMessageRow',
+                    'type:WebSocketRoutePreview',
+                    'type:WebSocketSubscriptionState',
+                ],
+                appImport:
+                    './legacy/diagnostics/websocket/websocket-contracts.ts',
+                appSeams: [
+                    'type:WebSocketCommandCenterValues',
+                    'type:WebSocketDiagnostic',
+                    'type:WebSocketEventRow',
+                    'type:WebSocketPayloadPreset',
+                    'type:WebSocketReceivedMessageRow',
+                    'type:WebSocketRoutePreview',
+                    'type:WebSocketSubscriptionState',
+                ],
+                imports: [
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestEventKind',
+                ],
+            },
+            {
+                path: presetsPath,
+                cap: 150,
+                exports: [
+                    'value:DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID',
+                    'value:WEBSOCKET_PAYLOAD_PRESETS',
+                    'value:webSocketPayloadPresetById',
+                    'value:webSocketPayloadPresetText',
+                ],
+                appImport:
+                    './legacy/diagnostics/websocket/websocket-presets.ts',
+                appSeams: [
+                    'value:DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID',
+                    'value:WEBSOCKET_PAYLOAD_PRESETS',
+                    'value:webSocketPayloadPresetById',
+                    'value:webSocketPayloadPresetText',
+                ],
+                imports: [
+                    '../../shared/json-presentation.ts|value:json',
+                    './websocket-contracts.ts|type:WebSocketPayloadPreset',
+                ],
+            },
+            {
+                path: routingPath,
+                cap: 280,
+                exports: [
+                    'value:defaultWebSocketApiUrl',
+                    'value:defaultWebSocketScope',
+                    'value:defaultWebSocketTopicId',
+                    'value:defaultWebSocketTypeId',
+                    'value:defaultWebSocketValuesFromContext',
+                    'value:resolveWebSocketUrlTemplate',
+                    'value:webSocketRoutePreview',
+                    'value:webSocketSendData',
+                ],
+                appImport:
+                    './legacy/diagnostics/websocket/websocket-routing.ts',
+                appSeams: [
+                    'value:defaultWebSocketApiUrl',
+                    'value:defaultWebSocketScope',
+                    'value:defaultWebSocketTopicId',
+                    'value:defaultWebSocketTypeId',
+                    'value:defaultWebSocketValuesFromContext',
+                    'value:resolveWebSocketUrlTemplate',
+                    'value:webSocketRoutePreview',
+                ],
+                imports: [
+                    '@shared/api/api-config.ts|type:AuthSession',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestConfig',
+                    '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
+                    '../../shared/record-value.ts|value:recordValue->optionalRecord',
+                    '../../shared/string-value.ts|value:stringValue',
+                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                    '../../shell/rallar-browser-status.ts|type:RallarBrowserStatusSummary',
+                    '../shared/auth-command-center-ticket.ts|type:AuthCommandCenterTicket',
+                    './websocket-contracts.ts|type:WebSocketCommandCenterValues,type:WebSocketDiagnostic,type:WebSocketRoutePreview',
+                    './websocket-presets.ts|value:DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID,value:webSocketPayloadPresetById',
+                ],
+            },
+            {
+                path: recipesPath,
+                cap: 280,
+                exports: [
+                    'value:webSocketCommandCenterRecipe',
+                ],
+                appImport:
+                    './legacy/diagnostics/websocket/websocket-recipes.ts',
+                appSeams: [
+                    'value:webSocketCommandCenterRecipe',
+                ],
+                imports: [
+                    '@shared/api/api-config.ts|type:AuthSession',
+                    '@shared-test/rallar-bb-test/redaction.ts|value:redactRallarBlackBoxValue',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestCommand',
+                    '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
+                    '../../shared/json-presentation.ts|value:json',
+                    '../../shared/redaction-presentation.ts|value:uiSecretValues',
+                    './websocket-contracts.ts|type:WebSocketCommandCenterValues',
+                    './websocket-routing.ts|value:webSocketSendData',
+                ],
+            },
+            {
+                path: diagnosticsPath,
+                cap: 180,
+                exports: ['value:deriveWebSocketDiagnostics'],
+                appImport:
+                    './legacy/diagnostics/websocket/websocket-diagnostics.ts',
+                appSeams: ['value:deriveWebSocketDiagnostics'],
+                imports: [
+                    '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxCommandHistory,value:selectRallarBlackBoxEvents',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                    '../../shared/record-value.ts|value:recordValue->optionalRecord',
+                    './websocket-contracts.ts|type:WebSocketDiagnostic',
+                ],
+            },
+        ] as const;
+        const ownerStatementInventories = new Map<string, readonly string[]>([
+            [sharedTicketPath, [
+                'type:AuthCommandCenterTicket',
+            ]],
+            [contractsPath, [
+                'type:WebSocketPayloadPreset',
+                'type:WebSocketRoutePreview',
+                'type:WebSocketCommandCenterValues',
+                'type:WebSocketEventRow',
+                'type:WebSocketReceivedMessageRow',
+                'type:WebSocketDiagnostic',
+                'type:WebSocketSubscriptionState',
+            ]],
+            [presetsPath, [
+                'variable:WEBSOCKET_PAYLOAD_PRESETS',
+                'variable:DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID',
+                'function:webSocketPayloadPresetText',
+                'function:webSocketPayloadPresetById',
+            ]],
+            [routingPath, [
+                'function:defaultWebSocketApiUrl',
+                'function:resolveWebSocketUrlTemplate',
+                'function:defaultWebSocketTypeId',
+                'function:defaultWebSocketTopicId',
+                'function:defaultWebSocketScope',
+                'function:defaultWebSocketValuesFromContext',
+                'function:webSocketSendData',
+                'function:webSocketRoutePreview',
+            ]],
+            [recipesPath, [
+                'function:webSocketConfigureCommand',
+                'function:webSocketOpenCommand',
+                'function:webSocketSendCommand',
+                'function:webSocketCloseCommand',
+                'function:webSocketCommandCenterRecipe',
+            ]],
+            [diagnosticsPath, [
+                'function:deriveWebSocketDiagnostics',
+            ]],
+        ]);
+        const sources = new Map<string, string>();
+        const appImportEdges = task9aImportEdges(appAst);
+
+        for (const owner of owners) {
+            const present = existsSync(resolve(repositoryRoot, owner.path));
+            expect.soft(present, `${owner.path}: owner exists`).toBe(true);
+            if (present) {
+                const source = repositorySource(owner.path);
+                const sourceFile = task9aSourceFile(owner.path, source);
+                sources.set(owner.path, source);
+                expect.soft(
+                    source.trimEnd().split(/\r?\n/).length,
+                    `${owner.path}: line cap`,
+                ).toBeLessThanOrEqual(owner.cap);
+                expect.soft(
+                    task9aExportSeams(sourceFile),
+                    `${owner.path}: exact exports`,
+                ).toEqual([...owner.exports].sort());
+                expect.soft(
+                    source,
+                    `${owner.path}: no reverse/App/CSS/barrel edge`,
+                ).not.toMatch(
+                    /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"])/,
+                );
+                expect.soft(
+                    task9aImportEdges(sourceFile),
+                    `${owner.path}: complete exact imports`,
+                ).toEqual([...owner.imports].sort());
+                const statementInventory = sourceFile.statements.flatMap(
+                    (statement): readonly string[] => {
+                        if (ts.isImportDeclaration(statement)) return [];
+                        if (ts.isTypeAliasDeclaration(statement)) {
+                            return [`type:${statement.name.text}`];
+                        }
+                        if (ts.isFunctionDeclaration(statement)) {
+                            return [
+                                `function:${statement.name?.text ?? '<anonymous>'}`,
+                            ];
+                        }
+                        if (ts.isVariableStatement(statement)) {
+                            return statement.declarationList.declarations.map(
+                                (declaration) =>
+                                    ts.isIdentifier(declaration.name)
+                                        ? `variable:${declaration.name.text}`
+                                        : `variable:${declaration.name.getText(sourceFile)}`,
+                            );
+                        }
+                        return [`unexpected:${ts.SyntaxKind[statement.kind]}`];
+                    },
+                );
+                expect.soft(
+                    statementInventory,
+                    `${owner.path}: exact deterministic top-level inventory`,
+                ).toEqual(ownerStatementInventories.get(owner.path));
+            }
+
+            const expectedAppImport = `${owner.appImport}|${[
+                ...owner.appSeams,
+            ].sort().join(',')}`;
+            expect.soft(
+                appImportEdges.filter((edge) => edge.startsWith(
+                    `${owner.appImport}|`,
+                )),
+                `${owner.appImport}: one exact direct App import`,
+            ).toEqual([expectedAppImport]);
+        }
+
+        const movedDeclarations = [
+            'AuthCommandCenterTicket',
+            'WebSocketPayloadPreset',
+            'WebSocketRoutePreview',
+            'WebSocketCommandCenterValues',
+            'WebSocketEventRow',
+            'WebSocketReceivedMessageRow',
+            'WebSocketDiagnostic',
+            'WebSocketSubscriptionState',
+            'WEBSOCKET_PAYLOAD_PRESETS',
+            'DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID',
+            'defaultWebSocketApiUrl',
+            'resolveWebSocketUrlTemplate',
+            'webSocketPayloadPresetText',
+            'defaultWebSocketTypeId',
+            'defaultWebSocketTopicId',
+            'defaultWebSocketScope',
+            'webSocketPayloadPresetById',
+            'defaultWebSocketValuesFromContext',
+            'webSocketSendData',
+            'webSocketRoutePreview',
+            'webSocketConfigureCommand',
+            'webSocketOpenCommand',
+            'webSocketSendCommand',
+            'webSocketCloseCommand',
+            'webSocketCommandCenterRecipe',
+            'deriveWebSocketDiagnostics',
+        ] as const;
+        for (const declaration of movedDeclarations) {
+            expect.soft(
+                appSource,
+                `App.tsx: moved ${declaration} declaration`,
+            ).not.toMatch(
+                new RegExp(
+                    `^\\s*(?:type|interface|const|let|var|function)\\s+${declaration}\\b`,
+                    'm',
+                ),
+            );
+        }
+
+        const topLevelDeclaration = (
+            sourceFile: ts.SourceFile,
+            name: string,
+        ): ts.Statement | undefined => sourceFile.statements.find((statement) => {
+            if (
+                (ts.isTypeAliasDeclaration(statement) ||
+                    ts.isInterfaceDeclaration(statement) ||
+                    ts.isFunctionDeclaration(statement) ||
+                    ts.isClassDeclaration(statement) ||
+                    ts.isEnumDeclaration(statement)) &&
+                statement.name?.text === name
+            ) return true;
+            return ts.isVariableStatement(statement) &&
+                statement.declarationList.declarations.some(
+                    (declaration) =>
+                        ts.isIdentifier(declaration.name) &&
+                        declaration.name.text === name,
+                );
+        });
+        const declarationFromOwnerOrApp = (
+            ownerPath: string,
+            name: string,
+        ): ts.Statement => {
+            const ownerSource = sources.get(ownerPath);
+            const sourceFile = ownerSource
+                ? task9aSourceFile(ownerPath, ownerSource)
+                : appAst;
+            const declaration = topLevelDeclaration(sourceFile, name);
+            if (!declaration) {
+                throw new Error(`Missing WebSocket seam ${name}`);
+            }
+            return declaration;
+        };
+        const semanticNodes = (statement: ts.Statement): readonly ts.Node[] => {
+            if (ts.isFunctionDeclaration(statement)) {
+                if (!statement.body) throw new Error('Missing function body');
+                return [...statement.parameters, statement.body];
+            }
+            if (ts.isVariableStatement(statement)) {
+                return [statement.declarationList];
+            }
+            if (ts.isTypeAliasDeclaration(statement)) {
+                return [
+                    statement.name,
+                    ...(statement.typeParameters ?? []),
+                    statement.type,
+                ];
+            }
+            if (ts.isInterfaceDeclaration(statement)) {
+                return [
+                    statement.name,
+                    ...(statement.typeParameters ?? []),
+                    ...statement.heritageClauses ?? [],
+                    ...statement.members,
+                ];
+            }
+            throw new Error(
+                `Unsupported WebSocket seam ${ts.SyntaxKind[statement.kind]}`,
+            );
+        };
+        const contractNodes = [
+            ...semanticNodes(declarationFromOwnerOrApp(
+                sharedTicketPath,
+                'AuthCommandCenterTicket',
+            )),
+            ...[
+                'WebSocketPayloadPreset',
+                'WebSocketRoutePreview',
+                'WebSocketCommandCenterValues',
+                'WebSocketEventRow',
+                'WebSocketReceivedMessageRow',
+                'WebSocketDiagnostic',
+                'WebSocketSubscriptionState',
+            ].flatMap((name) => semanticNodes(
+                declarationFromOwnerOrApp(contractsPath, name),
+            )),
+        ];
+        expect.soft(
+            task9aAstFingerprint(contractNodes),
+            'exact moved WebSocket contracts and shared ticket',
+        ).toBe('2f1f713b22722fc5277a53add023c8ac9bfb1b77d0de0a44a5554b3b64a8d3da');
+        const groups = [
+            [
+                presetsPath,
+                [
+                    'WEBSOCKET_PAYLOAD_PRESETS',
+                    'DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID',
+                    'webSocketPayloadPresetText',
+                    'webSocketPayloadPresetById',
+                ],
+                'bf275ddf45d34a817f80c1e874f4537371f02fd1e4ca54e5715b6a2e58ff5675',
+            ],
+            [
+                routingPath,
+                [
+                    'defaultWebSocketApiUrl',
+                    'resolveWebSocketUrlTemplate',
+                    'defaultWebSocketTypeId',
+                    'defaultWebSocketTopicId',
+                    'defaultWebSocketScope',
+                    'defaultWebSocketValuesFromContext',
+                    'webSocketSendData',
+                    'webSocketRoutePreview',
+                ],
+                'f3747e3f41e499e5e0c325b1fadac182e147ebce07fa1dcca2ce93bdaaa6c705',
+            ],
+            [
+                recipesPath,
+                [
+                    'webSocketConfigureCommand',
+                    'webSocketOpenCommand',
+                    'webSocketSendCommand',
+                    'webSocketCloseCommand',
+                    'webSocketCommandCenterRecipe',
+                ],
+                'f689d278973df0589530fa5885c61571fba154dcbe9f80dfb6f3aee801c97652',
+            ],
+            [
+                diagnosticsPath,
+                ['deriveWebSocketDiagnostics'],
+                '7e32f0877b28ba62ff050ea8feca9c5ed8cae0062425cb8642d11daf85dbf147',
+            ],
+        ] as const;
+        for (const [ownerPath, declarations, expectedHash] of groups) {
+            expect.soft(
+                task9aAstFingerprint(
+                    declarations.flatMap((name) => semanticNodes(
+                        declarationFromOwnerOrApp(ownerPath, name),
+                    )),
+                ),
+                `${ownerPath}: exact moved declaration group`,
+            ).toBe(expectedHash);
+        }
+
+        const panel = task9aNamedFunction(
+            appAst,
+            'WebSocketCommandCenterPanel',
+        );
+        expect.soft(
+            task9aAstFingerprint([...panel.parameters, panel.body!]),
+            'complete WebSocket panel remains exact in App',
+        ).toBe('f352a7e02092e4bbe3154e9e3f6c3b05ee67969b8ee94c95960f76bc824d6b7f');
+        expect.soft(
+            task9aJsxRuntimeFingerprint(task9aReturnExpression(panel)),
+            'complete WebSocket panel JSX remains exact',
+        ).toBe('3a61aca27c3848e23c37f55083d850101d8c8effa709f3864e4950690ab80881');
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'WebSocketCommandCenterPanel');
+        expect.soft(mounts, 'one always-mounted WebSocket panel')
+            .toHaveLength(1);
+        expect.soft(
+            task9aAstFingerprint(mounts),
+            'exact WebSocket App mount',
+        ).toBe('023a6a866bf37b3d17c915c257a712cfd5ae97703920339eae6159a5bc7b6b17');
+        let ancestor: ts.Node | undefined = mounts[0];
+        while (ancestor && !ts.isJsxElement(ancestor)) ancestor = ancestor.parent;
+        expect.soft(
+            ancestor ? task9aAstFingerprint([ancestor]) : '',
+            'exact hidden-capable WebSocket ancestor',
+        ).toBe('9f5270848d5ad12d3102e23af1c1029f69dfc37c4178d60cb8c33e388f8f1894');
+        expect.soft(
+            task9aAstFingerprint([app]),
+            'unchanged App function',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(appSource, 'no WebSocket lazy/Suspense cutover')
+            .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'WebSocket support extraction leaves complete stylesheet unchanged',
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
     });
 
