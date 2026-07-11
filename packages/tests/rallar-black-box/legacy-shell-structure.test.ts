@@ -143,6 +143,9 @@ const shellModelOwners = [
     {
         path: 'apps/rallar-black-box/src/legacy/runner/shell/runner-shell-model.ts',
         moduleImport: './legacy/runner/shell/runner-shell-model.ts',
+        consumerPath:
+            'apps/rallar-black-box/src/legacy/runner/shell/use-runner-shell-state.ts',
+        consumerModuleImport: './runner-shell-model.ts',
         declarations: [
             {
                 name: 'deriveQueue',
@@ -171,6 +174,9 @@ const shellModelOwners = [
     {
         path: 'apps/rallar-black-box/src/legacy/shell/global-context-model.ts',
         moduleImport: './legacy/shell/global-context-model.ts',
+        consumerPath:
+            'apps/rallar-black-box/src/legacy/shell/use-command-center-global-context.ts',
+        consumerModuleImport: './global-context-model.ts',
         declarations: [
             {
                 name: 'commandCenterGlobalValuesFromState',
@@ -236,6 +242,109 @@ const shellModelOwners = [
             'export-function:consumeBootstrapAgentSessionTicket',
         ],
         lineCap: 65,
+    },
+] as const;
+
+const shellControllerOwners = [
+    {
+        path: 'apps/rallar-black-box/src/legacy/shell/use-legacy-navigation.ts',
+        moduleImport: './legacy/shell/use-legacy-navigation.ts',
+        exports: ['useLegacyNavigation'],
+        fingerprints: {
+            useLegacyNavigation:
+                'a4deed6c27f2835a636b45ebe638a030d26fdc6bc2a9c5da85d6dedcd6110af4',
+        },
+        imports: [
+            '../../app-tabs.ts|type:AppModeId',
+            '../../app-tabs.ts|type:AppTabId',
+            '../../app-tabs.ts|type:RunnerAdvancedSurfaceId',
+            '../../app-tabs.ts|value:appModeForTab',
+            '../../app-tabs.ts|value:appTabInMode',
+            '../../app-tabs.ts|value:defaultAppTabForMode',
+            '../../app-tabs.ts|value:visibleAppTabForTab',
+            './navigation.ts|type:AppNavigationState',
+            './navigation.ts|value:normalizeAppNavigation',
+            './navigation.ts|value:readInitialAppNavigation',
+            './navigation.ts|value:writeAppNavigationToUrl',
+            'react|value:useEffect',
+            'react|value:useState',
+        ],
+        hooks: { useState: 1, useMemo: 0, useRef: 0, useEffect: 1 },
+        inventory: ['export-function:useLegacyNavigation'],
+        staleAppPattern:
+            /useState<AppNavigationState>|\bhandlePopState\b|const selectNavigation\s*=|const selectTab\s*=|const selectMode\s*=/,
+        lineCap: 100,
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shell/use-command-center-global-context.ts',
+        moduleImport:
+            './legacy/shell/use-command-center-global-context.ts',
+        exports: ['useCommandCenterGlobalContext'],
+        fingerprints: {
+            useCommandCenterGlobalContext:
+                '41249fad729b61cf5bb82e32e05fb0f056f70b6a4297099a64a93d308bd8c5ad',
+        },
+        imports: [
+            '../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
+            '../../runtime-store.ts|value:rallarBlackBoxRuntimeStore',
+            './global-context-model.ts|type:CommandCenterGlobalValues',
+            './global-context-model.ts|value:bootstrapPatchFromGlobalValues',
+            './global-context-model.ts|value:commandCenterGlobalValuesFromState',
+            './global-context-model.ts|value:sameCommandCenterGlobalValues',
+            './rallar-browser-status.ts|value:deriveRallarBrowserStatus',
+            '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+            '@shared/api/api-config.ts|type:AuthSession',
+            'react|value:useEffect',
+            'react|value:useMemo',
+            'react|value:useRef',
+            'react|value:useState',
+        ],
+        hooks: { useState: 2, useMemo: 2, useRef: 1, useEffect: 1 },
+        inventory: ['export-function:useCommandCenterGlobalContext'],
+        staleAppPattern:
+            /useState<CommandCenterGlobalValues>|\blastGlobalAuthKey\b|const updateGlobalValue\s*=|const resetGlobalValues\s*=/,
+        lineCap: 150,
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/shell/use-runner-shell-state.ts',
+        moduleImport:
+            './legacy/runner/shell/use-runner-shell-state.ts',
+        exports: [
+            'useRunnerShellState',
+            'useRunnerShellSelectionSync',
+        ],
+        fingerprints: {
+            useRunnerShellState:
+                '99b1483102958463c041259b3ceec86003eb976cd72f672f9216fb1edfb3354e',
+            useRunnerShellSelectionSync:
+                'd31ee132b03905c4edbe251f851e4a2cbecfff04f83fb1d22cace4431c79d3e3',
+        },
+        imports: [
+            '../../../ui-persistence.ts|value:readStoredSelectedCommandId',
+            '../../../ui-persistence.ts|value:writeStoredSelectedCommandId',
+            '../../shared/use-now.ts|value:useNow',
+            '../../shell/browser-ui-storage.ts|value:browserUiStorage',
+            '../runner-contracts.ts|type:RunnerDistributedRunSelection',
+            './runner-shell-model.ts|value:deriveQueue',
+            './runner-shell-model.ts|value:findSelectedResult',
+            '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxActiveCommand',
+            '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxCommandHistory',
+            '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestResult',
+            '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+            'react|type:Dispatch',
+            'react|type:SetStateAction',
+            'react|value:useEffect',
+            'react|value:useMemo',
+            'react|value:useState',
+        ],
+        hooks: { useState: 2, useMemo: 1, useRef: 0, useEffect: 2 },
+        inventory: [
+            'export-function:useRunnerShellState',
+            'export-function:useRunnerShellSelectionSync',
+        ],
+        staleAppPattern:
+            /useMemo\(\(\) => deriveQueue|\buseNow\(250\)|readStoredSelectedCommandId|writeStoredSelectedCommandId|useState<RunnerDistributedRunSelection/,
+        lineCap: 120,
     },
 ] as const;
 
@@ -522,7 +631,7 @@ describe('rallar-black-box legacy shell ownership', () => {
         expect.soft(
             appDeclaration ? fingerprint([appDeclaration]) : '',
             'shell extraction leaves App bootstrap/routing behavior exact',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe('d003e2d8c32b090c60d87de0cedb35e43a39e6539a5a39c8aaf87b41a937b3ec');
         expect.soft(
             createHash('sha256')
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
@@ -540,6 +649,16 @@ describe('rallar-black-box legacy shell ownership', () => {
             expect.soft(present, `${owner.path}: focused model owner exists`).toBe(true);
             const ownerSource = present ? repositorySource(owner.path) : appSource;
             const ownerFile = sourceFile(present ? owner.path : appPath, ownerSource);
+            const consumerPath = 'consumerPath' in owner
+                ? owner.consumerPath
+                : appPath;
+            const consumer = sourceFile(
+                consumerPath,
+                repositorySource(consumerPath),
+            );
+            const consumerModuleImport = 'consumerModuleImport' in owner
+                ? owner.consumerModuleImport
+                : owner.moduleImport;
 
             for (const expectedDeclaration of owner.declarations) {
                 const declaration =
@@ -556,8 +675,8 @@ describe('rallar-black-box legacy shell ownership', () => {
                     ).toBe(expectedDeclaration.fingerprint);
                 }
                 expect.soft(
-                    importedNames(app, owner.moduleImport),
-                    `App imports ${expectedDeclaration.name} from ${owner.moduleImport}`,
+                    importedNames(consumer, consumerModuleImport),
+                    `${consumerPath} imports ${expectedDeclaration.name} from ${consumerModuleImport}`,
                 ).toContain(expectedDeclaration.name);
                 expect.soft(
                     Boolean(namedFunction(app, expectedDeclaration.name)),
@@ -607,5 +726,142 @@ describe('rallar-black-box legacy shell ownership', () => {
                 );
             }
         }
+    });
+
+    it('moves shell orchestration into focused hooks without changing effect topology', () => {
+        const appSource = repositorySource(appPath);
+        const app = sourceFile(appPath, appSource);
+
+        for (const owner of shellControllerOwners) {
+            const present = existsSync(resolve(repositoryRoot, owner.path));
+            expect.soft(present, `${owner.path}: focused hook owner exists`).toBe(true);
+            if (!present) continue;
+
+            const ownerSource = repositorySource(owner.path);
+            const ownerFile = sourceFile(owner.path, ownerSource);
+            for (const exportedHook of owner.exports) {
+                const declaration = namedFunction(ownerFile, exportedHook);
+                expect.soft(
+                    declaration,
+                    `${owner.path}: ${exportedHook} exists`,
+                ).toBeDefined();
+                expect.soft(
+                    importedNames(app, owner.moduleImport),
+                    `App imports ${exportedHook} from ${owner.moduleImport}`,
+                ).toContain(exportedHook);
+            }
+            for (const [hookName, expectedFingerprint] of Object.entries(
+                owner.fingerprints,
+            )) {
+                const declaration = namedFunction(ownerFile, hookName);
+                expect.soft(
+                    declaration ? moveOnlyFingerprint(declaration) : '',
+                    `${owner.path}: exact ${hookName}`,
+                ).toBe(expectedFingerprint);
+            }
+            expect.soft(
+                importInventory(ownerFile),
+                `${owner.path}: exact hook imports and kinds`,
+            ).toEqual([...owner.imports].sort());
+            expect.soft(
+                topLevelInventory(ownerFile),
+                `${owner.path}: exact hook export inventory`,
+            ).toEqual(owner.inventory);
+            expect.soft(
+                localImportCycles(owner.path),
+                `${owner.path}: acyclic hook dependency graph`,
+            ).toEqual([]);
+            expect.soft(
+                ownerSource.trimEnd().split('\n').length,
+                `${owner.path}: focused hook line cap`,
+            ).toBeLessThanOrEqual(owner.lineCap);
+            expect.soft(ownerSource, `${owner.path}: no App back-edge`).not.toMatch(
+                /(?:from\s+['"][^'"]*App(?:\.tsx)?['"]|import\s*\([^)]*App)/,
+            );
+            expect.soft(
+                ownerSource,
+                `${owner.path}: controller stays free of panels, JSX, CSS, and callback memoization`,
+            ).not.toMatch(/\b(?:[A-Z][A-Za-z]+Panel|[A-Z][A-Za-z]+Section|useCallback|Suspense|lazy)\b|\.css['"]/);
+            for (const [hookName, expectedCount] of Object.entries(owner.hooks)) {
+                expect.soft(
+                    hookCount(ownerFile, hookName),
+                    `${owner.path}: exact ${hookName} topology`,
+                ).toBe(expectedCount);
+            }
+            expect.soft(
+                appSource,
+                `${owner.path}: App no longer owns moved orchestration`,
+            ).not.toMatch(owner.staleAppPattern);
+        }
+
+        const appDeclaration = namedFunction(app, 'App');
+        expect.soft(appDeclaration, 'App function remains present').toBeDefined();
+        if (appDeclaration?.body) {
+            expect.soft(
+                {
+                    useState: hookCount(appDeclaration, 'useState'),
+                    useMemo: hookCount(appDeclaration, 'useMemo'),
+                    useRef: hookCount(appDeclaration, 'useRef'),
+                    useEffect: hookCount(appDeclaration, 'useEffect'),
+                },
+                'App direct hook topology after controller cutover',
+            ).toEqual({
+                useState: 3,
+                useMemo: 0,
+                useRef: 0,
+                useEffect: 4,
+            });
+
+            const orderedHookNames: string[] = [];
+            const trackedHooks = new Set([
+                'useRallarBlackBoxRuntimeStore',
+                'useRunnerShellState',
+                'useLegacyNavigation',
+                'useState',
+                'useEffect',
+                'useCommandCenterGlobalContext',
+                'useRunnerShellSelectionSync',
+            ]);
+            for (const statement of appDeclaration.body.statements) {
+                const calls: ts.CallExpression[] = [];
+                const visit = (node: ts.Node): void => {
+                    if (
+                        ts.isCallExpression(node) &&
+                        ts.isIdentifier(node.expression) &&
+                        trackedHooks.has(node.expression.text)
+                    ) {
+                        calls.push(node);
+                    }
+                    ts.forEachChild(node, visit);
+                };
+                visit(statement);
+                orderedHookNames.push(
+                    ...calls
+                        .sort((left, right) => left.pos - right.pos)
+                        .map((call) => (call.expression as ts.Identifier).text),
+                );
+            }
+            expect.soft(
+                orderedHookNames,
+                'App preserves transitive effect-registration order',
+            ).toEqual([
+                'useRallarBlackBoxRuntimeStore',
+                'useRunnerShellState',
+                'useLegacyNavigation',
+                'useState',
+                'useState',
+                'useState',
+                'useEffect',
+                'useEffect',
+                'useEffect',
+                'useCommandCenterGlobalContext',
+                'useEffect',
+                'useRunnerShellSelectionSync',
+            ]);
+        }
+        expect.soft(
+            appSource.trimEnd().split('\n').length,
+            'App clears the Iteration 1 below-800 checkpoint',
+        ).toBeLessThan(800);
     });
 });

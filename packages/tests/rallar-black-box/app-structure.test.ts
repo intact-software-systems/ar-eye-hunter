@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const appSourcePath = 'apps/rallar-black-box/src/App.tsx';
+const expectedAppFunctionFingerprint =
+    'd003e2d8c32b090c60d87de0cedb35e43a39e6539a5a39c8aaf87b41a937b3ec';
 const recipeConsoleSourcePath = 'apps/rallar-black-box/src/recipe-console';
 const runnerAdvancedSourcePath =
     'apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx';
@@ -62,12 +64,27 @@ const extractedModulePaths = [
     'apps/rallar-black-box/src/legacy/runner/runner-contracts.ts',
     'apps/rallar-black-box/src/legacy/rallar/load-browser-rallar-facade.ts',
 ] as const;
-const extractedModuleImports = [
-    './legacy/shell/browser-ui-storage.ts',
-    './legacy/shell/navigation.ts',
-    './legacy/shell/global-context-model.ts',
-    './legacy/runner/runner-contracts.ts',
-    './legacy/rallar/load-browser-rallar-facade.ts',
+const extractedModuleConsumers = [
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/shell/use-runner-shell-state.ts',
+        moduleImport: '../../shell/browser-ui-storage.ts',
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shell/use-legacy-navigation.ts',
+        moduleImport: './navigation.ts',
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shell/use-command-center-global-context.ts',
+        moduleImport: './global-context-model.ts',
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/shell/use-runner-shell-state.ts',
+        moduleImport: '../runner-contracts.ts',
+    },
+    {
+        path: appSourcePath,
+        moduleImport: './legacy/rallar/load-browser-rallar-facade.ts',
+    },
 ] as const;
 const presentationModules = [
     {
@@ -676,11 +693,12 @@ describe('rallar-black-box app source ownership', () => {
         }
     });
 
-    it('imports every extracted legacy contract directly from App.tsx', () => {
-        const source = repositorySource(appSourcePath);
-
-        for (const moduleImport of extractedModuleImports) {
-            expect(source, moduleImport).toContain(`from '${moduleImport}';`);
+    it('imports every extracted legacy contract from its focused consumer', () => {
+        for (const consumer of extractedModuleConsumers) {
+            expect(
+                repositorySource(consumer.path),
+                `${consumer.path}: ${consumer.moduleImport}`,
+            ).toContain(`from '${consumer.moduleImport}';`);
         }
     });
 
@@ -8790,7 +8808,7 @@ describe('rallar-black-box app source ownership', () => {
             'unchanged Fleet mount section',
         ).toBe('2f31f7b75b335708b31ef66b3756380a6f96e3e8244b970004af065d62e76f92');
         expect.soft(task9aAstFingerprint([app]), 'unchanged App function')
-            .toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+            .toBe(expectedAppFunctionFingerprint);
         expect.soft(
             task9aImportEdges(appAst).filter((edge) =>
                 edge.startsWith('./legacy/runner/fleet/'),
@@ -9225,9 +9243,7 @@ describe('rallar-black-box app source ownership', () => {
             ...(roomsDerivationsPresent
                 ? []
                 : ['./legacy/shared/finite-number.ts|value:optionalNumber']),
-            './legacy/shared/use-now.ts|value:useNow',
             './legacy/shell/RallarBrowserTraceBar.tsx|value:RallarBrowserTraceBar',
-            './legacy/shell/rallar-browser-status.ts|value:deriveRallarBrowserStatus',
         ]);
         const components = [
             ['apps/rallar-black-box/src/legacy/shell/RallarBrowserTraceBar.tsx',
@@ -9435,7 +9451,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([app]),
             'exact unchanged App bootstrap/controller/routing body',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(appSource, 'no lazy/Suspense lifetime cutover')
             .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
 
@@ -9965,7 +9981,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([app]),
             'unchanged App function and lifetime policy',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(appSource, 'no lazy/Suspense lifetime cutover')
             .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
 
@@ -10738,7 +10754,7 @@ describe('rallar-black-box app source ownership', () => {
             'exact hidden-capable always-mounted Quick ancestor',
         ).toBe('15085c9859abf9d7e36f8887661fb4cecfd1628a51070e91ed830fa1510dadd9');
         expect.soft(task9aAstFingerprint([app]), 'unchanged App function')
-            .toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+            .toBe(expectedAppFunctionFingerprint);
         expect.soft(appSource, 'no Quick lazy/Suspense cutover')
             .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
         expect.soft(
@@ -11627,7 +11643,7 @@ describe('rallar-black-box app source ownership', () => {
             'exact hidden-capable RTC ancestor',
         ).toBe('3100cd447ab9c6e91e700daf6beaadc3c18f1f5859026e85759b6a13b4d0fdac');
         expect.soft(task9aAstFingerprint([app]), 'unchanged App function')
-            .toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+            .toBe(expectedAppFunctionFingerprint);
         expect.soft(appSource, 'no RTC lazy/Suspense cutover')
             .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
         expect.soft(
@@ -12132,7 +12148,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([app]),
             'unchanged App function',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(appSource, 'no WebSocket lazy/Suspense cutover')
             .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
         expect.soft(
@@ -12719,7 +12735,7 @@ describe('rallar-black-box app source ownership', () => {
             'exact hidden-capable WebSocket ancestor',
         ).toBe('9f5270848d5ad12d3102e23af1c1029f69dfc37c4178d60cb8c33e388f8f1894');
         expect.soft(task9aAstFingerprint([app]), 'unchanged App function')
-            .toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+            .toBe(expectedAppFunctionFingerprint);
         expect.soft(appSource, 'no WebSocket lazy/Suspense cutover')
             .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
         expect.soft(
@@ -13319,7 +13335,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([app]),
             'unchanged App function through W3',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(
             appSource,
             'no WebSocket lazy/Suspense lifetime cutover',
@@ -13794,7 +13810,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([app]),
             'unchanged App function through Auth extraction',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(appSource, 'no Auth lazy/Suspense lifetime cutover').not.toMatch(
             /(?:lazy\s*\(|<Suspense\b)/,
         );
@@ -14152,7 +14168,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([task9aNamedFunction(appAst, 'App')]),
             'Rooms and Clients R1 leaves the App function unchanged',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(
             createHash('sha256')
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
@@ -14661,7 +14677,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([app]),
             'Rooms R2 leaves the App function unchanged',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(appSource, 'no Rooms lazy/Suspense lifetime cutover')
             .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
         expect.soft(
@@ -15353,7 +15369,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([app]),
             'Rallar Server extraction leaves the App function unchanged',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(
             createHash('sha256')
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
@@ -16295,7 +16311,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([app]),
             'CRDT extraction leaves the App function unchanged',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(
             createHash('sha256')
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
@@ -16744,7 +16760,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([app]),
             'unchanged App function through Rallar Data extraction',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(
             appSource,
             'no Rallar Data lazy/Suspense lifetime cutover',
@@ -17224,7 +17240,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([app]),
             'unchanged App function through Media extraction',
-        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        ).toBe(expectedAppFunctionFingerprint);
         expect.soft(
             appSource,
             'no Media lazy/Suspense lifetime cutover',

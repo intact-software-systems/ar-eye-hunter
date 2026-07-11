@@ -1,10 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
-import {
-    selectRallarBlackBoxActiveCommand,
-    selectRallarBlackBoxCommandHistory,
-} from '@shared-test/rallar-bb-test/selectors.ts';
 import {
     rallarBlackBoxRuntimeStore,
     useRallarBlackBoxRuntimeStore,
@@ -14,20 +10,6 @@ import {
     bootstrapPatchFromAuthSession,
 } from './auth-flow.ts';
 import { readAuthSessionFromRallarAuthState } from './auth-lifecycle.ts';
-import {
-    appModeForTab,
-    appTabInMode,
-    defaultAppTabForMode,
-    visibleAppTabForTab,
-    type AppModeId,
-    type AppTabId,
-    type RunnerAdvancedSurfaceId,
-} from './app-tabs.ts';
-import {
-    readStoredSelectedCommandId,
-    writeStoredSelectedCommandId,
-} from './ui-persistence.ts';
-import { browserUiStorage } from './legacy/shell/browser-ui-storage.ts';
 import { AppModeSwitch } from './legacy/shell/AppModeSwitch.tsx';
 import { AppTabs } from './legacy/shell/AppTabs.tsx';
 import { DirectRallarBoundaryPanel } from './legacy/shell/DirectRallarBoundaryPanel.tsx';
@@ -38,28 +20,16 @@ import {
     consumeBootstrapAgentSessionTicket,
     scrubAgentSessionTicketFromUrl,
 } from './legacy/shell/auth/agent-session-ticket.ts';
-import {
-    normalizeAppNavigation,
-    readInitialAppNavigation,
-    writeAppNavigationToUrl,
-    type AppNavigationState,
-} from './legacy/shell/navigation.ts';
 import { RunnerModeBoundaryPanel } from './legacy/shell/RunnerModeBoundaryPanel.tsx';
 import {
-    bootstrapPatchFromGlobalValues,
-    commandCenterGlobalValuesFromState,
-    sameCommandCenterGlobalValues,
-    type CommandCenterGlobalValues,
-} from './legacy/shell/global-context-model.ts';
-import type { RunnerDistributedRunSelection } from './legacy/runner/runner-contracts.ts';
-import {
-    deriveQueue,
-    findSelectedResult,
-} from './legacy/runner/shell/runner-shell-model.ts';
+    useRunnerShellSelectionSync,
+    useRunnerShellState,
+} from './legacy/runner/shell/use-runner-shell-state.ts';
 import { loadBrowserRallarFacade } from './legacy/rallar/load-browser-rallar-facade.ts';
 import { uiRedactionOptions } from './legacy/shared/redaction-presentation.ts';
-import { useNow } from './legacy/shared/use-now.ts';
 import { readCurrentAuthSession } from './legacy/shell/read-current-auth-session.ts';
+import { useCommandCenterGlobalContext } from './legacy/shell/use-command-center-global-context.ts';
+import { useLegacyNavigation } from './legacy/shell/use-legacy-navigation.ts';
 import { AuthCommandCenterPanel } from './legacy/diagnostics/auth/AuthCommandCenterPanel.tsx';
 import { RoomsClientsPanel } from './legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx';
 import { RallarServerPanel } from './legacy/diagnostics/rallar-server/RallarServerPanel.tsx';
@@ -68,7 +38,6 @@ import { ExecutionFocusPanel } from './legacy/diagnostics/events/ExecutionFocusP
 import { EventStreamPanel } from './legacy/diagnostics/events/EventStreamPanel.tsx';
 import { RallarTracePanel } from './legacy/diagnostics/events/RallarTracePanel.tsx';
 import { StatsPanel } from './legacy/diagnostics/events/StatsPanel.tsx';
-import { deriveRallarBrowserStatus } from './legacy/shell/rallar-browser-status.ts';
 import { RallarBrowserTraceBar } from './legacy/shell/RallarBrowserTraceBar.tsx';
 import { RtcDiagnosticsPanel } from './legacy/diagnostics/rtc/RtcDiagnosticsPanel.tsx';
 import { TopologyGraphPanel } from './legacy/diagnostics/topology/TopologyGraphPanel.tsx';
@@ -103,23 +72,25 @@ export default function App() {
         loadedFixtureId,
         bootstrap,
     } = useRallarBlackBoxRuntimeStore();
-    const queueRows = useMemo(() => deriveQueue(state), [state]);
-    const history = selectRallarBlackBoxCommandHistory(state);
-    const activeCommand = selectRallarBlackBoxActiveCommand(state);
-    const now = useNow(250);
-    const [selectedCommandId, setSelectedCommandId] = useState<
-        string | undefined
-    >(() => readStoredSelectedCommandId(browserUiStorage()));
-    const [runnerDistributedSelection, setRunnerDistributedSelection] =
-        useState<RunnerDistributedRunSelection | undefined>();
-    const [navigation, setNavigation] = useState<AppNavigationState>(() =>
-        readInitialAppNavigation(),
-    );
     const {
-        mode: activeMode,
-        tab: activeTab,
-        advancedSurface: activeAdvancedSurface,
-    } = navigation;
+        queueRows,
+        history,
+        activeCommand,
+        now,
+        selectedCommandId,
+        setSelectedCommandId,
+        runnerDistributedSelection,
+        setRunnerDistributedSelection,
+        selectedResult,
+    } = useRunnerShellState(state);
+    const {
+        activeMode,
+        activeTab,
+        activeAdvancedSurface,
+        selectNavigation,
+        selectTab,
+        selectMode,
+    } = useLegacyNavigation();
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(
         () =>
             bootstrap.rallarAgentSessionTicket
@@ -128,44 +99,8 @@ export default function App() {
     );
     const [authBusy, setAuthBusy] = useState(false);
     const [authError, setAuthError] = useState<string | undefined>();
-    const defaultGlobalValues = useMemo(
-        () => commandCenterGlobalValuesFromState(state, bootstrap, authSession),
-        [
-            authSession?.clientId,
-            authSession?.sessionId,
-            authSession?.username,
-            bootstrap.actor,
-            bootstrap.apiBaseUrl,
-            bootstrap.roomId,
-            bootstrap.sessionId,
-            state.currentConfig,
-        ],
-    );
-    const [globalValues, setGlobalValues] =
-        useState<CommandCenterGlobalValues>(defaultGlobalValues);
-    const [globalValuesEdited, setGlobalValuesEdited] = useState(false);
-    const browserStatus = useMemo(
-        () => deriveRallarBrowserStatus(state, globalValues),
-        [globalValues, state],
-    );
-    const lastGlobalAuthKey = useRef<string | undefined>(
-        authSession
-            ? `${authSession.clientId ?? authSession.username}:${authSession.sessionId}`
-            : undefined,
-    );
     const requiresLogin = bootstrap.providerMode === 'browser-rallar';
     const canEnterApp = !requiresLogin || Boolean(authSession);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') {
-            return;
-        }
-
-        const handlePopState = (): void =>
-            setNavigation(readInitialAppNavigation());
-        window.addEventListener('popstate', handlePopState);
-        return () => window.removeEventListener('popstate', handlePopState);
-    }, []);
 
     useEffect(() => {
         if (!requiresLogin) {
@@ -271,53 +206,13 @@ export default function App() {
         requiresLogin,
     ]);
 
-    useEffect(() => {
-        const authKey = authSession
-            ? `${authSession.clientId ?? authSession.username}:${authSession.sessionId}`
-            : undefined;
-        const authChanged = authKey !== lastGlobalAuthKey.current;
-        lastGlobalAuthKey.current = authKey;
-
-        setGlobalValues((current) => {
-            if (!globalValuesEdited) {
-                return sameCommandCenterGlobalValues(
-                    current,
-                    defaultGlobalValues,
-                )
-                    ? current
-                    : defaultGlobalValues;
-            }
-
-            const nextValues = {
-                ...current,
-                apiBaseUrl:
-                    current.apiBaseUrl || defaultGlobalValues.apiBaseUrl,
-                applicationId:
-                    current.applicationId || defaultGlobalValues.applicationId,
-                workspaceId:
-                    current.workspaceId || defaultGlobalValues.workspaceId,
-                roomId: current.roomId || defaultGlobalValues.roomId,
-                clientId:
-                    authChanged && authSession
-                        ? (authSession.clientId ?? authSession.username)
-                        : current.clientId || defaultGlobalValues.clientId,
-                sessionId:
-                    authChanged && authSession
-                        ? authSession.sessionId
-                        : current.sessionId || defaultGlobalValues.sessionId,
-            };
-
-            return sameCommandCenterGlobalValues(current, nextValues)
-                ? current
-                : nextValues;
-        });
-    }, [
-        authSession?.clientId,
-        authSession?.sessionId,
-        authSession?.username,
-        defaultGlobalValues,
+    const {
+        globalValues,
         globalValuesEdited,
-    ]);
+        browserStatus,
+        updateGlobalValue,
+        resetGlobalValues,
+    } = useCommandCenterGlobalContext({ state, bootstrap, authSession });
 
     useEffect(() => {
         if (canEnterApp && activeMode === 'black-box-runner') {
@@ -325,74 +220,12 @@ export default function App() {
         }
     }, [activeMode, canEnterApp]);
 
-    useEffect(() => {
-        if (activeCommand) {
-            setSelectedCommandId(activeCommand.commandId);
-            return;
-        }
-
-        if (!selectedCommandId && history.length > 0) {
-            setSelectedCommandId(history.at(-1)?.commandId);
-        }
-    }, [activeCommand, history, selectedCommandId]);
-
-    useEffect(() => {
-        writeStoredSelectedCommandId(browserUiStorage(), selectedCommandId);
-    }, [selectedCommandId]);
-
-    const selectedResult = findSelectedResult(history, selectedCommandId);
-    const selectNavigation = (nextNavigation: AppNavigationState): void => {
-        setNavigation(nextNavigation);
-        writeAppNavigationToUrl(nextNavigation);
-    };
-    const selectTab = (
-        tab: AppTabId,
-        advancedSurface?: RunnerAdvancedSurfaceId,
-    ): void => {
-        const visibleTab = visibleAppTabForTab(tab);
-        const mode = appTabInMode(visibleTab, activeMode)
-            ? activeMode
-            : appModeForTab(visibleTab);
-        selectNavigation(
-            normalizeAppNavigation({
-                mode,
-                tab,
-                advancedSurface,
-            }),
-        );
-    };
-    const selectMode = (mode: AppModeId): void => {
-        selectNavigation(
-            normalizeAppNavigation({
-                mode,
-                tab: appTabInMode(activeTab, mode)
-                    ? activeTab
-                    : defaultAppTabForMode(mode),
-                advancedSurface: activeAdvancedSurface,
-            }),
-        );
-    };
-    const updateGlobalValue = <K extends keyof CommandCenterGlobalValues>(
-        key: K,
-        value: CommandCenterGlobalValues[K],
-    ): void => {
-        const nextValues = {
-            ...globalValues,
-            [key]: value,
-        };
-        setGlobalValues(nextValues);
-        setGlobalValuesEdited(true);
-        rallarBlackBoxRuntimeStore.updateBootstrapConfig(
-            bootstrapPatchFromGlobalValues(nextValues),
-        );
-    };
-    const resetGlobalValues = (): void => {
-        setGlobalValues(defaultGlobalValues);
-        setGlobalValuesEdited(false);
-        rallarBlackBoxRuntimeStore.updateBootstrapConfig(
-            bootstrapPatchFromGlobalValues(defaultGlobalValues),
-        );
-    };
+    useRunnerShellSelectionSync({
+        activeCommand,
+        history,
+        selectedCommandId,
+        setSelectedCommandId,
+    });
 
     const logout = async (): Promise<void> => {
         setAuthBusy(true);
