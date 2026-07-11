@@ -394,7 +394,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Iteration | Status | Exit tracking |
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
-| 1 — Extract Pure App Helpers | Pending | Broad exit criteria below remain binding and will be delivered as multiple reviewed extraction tasks. |
+| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 9,242 lines through `63e7b2c`; the broad exit criteria still bind, and shell/bootstrap plus remaining direct-diagnostic owners must still move before this iteration is complete. |
 | 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
@@ -430,6 +430,24 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 - Existing mounted-state guarantees are temporary documented exceptions. Draft, polling, subscription, media, and execution ownership must migrate before the corresponding view is lazily unmounted.
 - Old aliases deterministically open the documented legacy surface during migration. New Recipe Console URLs use the versioned codec.
 - The default flip is an explicit Iteration 12 cutover and occurs only after all 14 Ready-State items have evidence.
+
+#### Iteration 1 checkpoint — `63e7b2c`
+
+- The structure gate and module-boundary note are active. Extracted owners now
+  cover the legacy distributed monitor/run manager/distributed recipes,
+  advanced workbench/manual/shared-test/runner recipes/runner runs/flow builder/
+  fleet surfaces, diagnostic evidence leaves, Quick Test, RTC Realtime, and the
+  WebSocket deterministic/presentation seams.
+- Every completed slice retained exact App mount, owning ancestor, JSX/runtime,
+  controller/effect, and stylesheet parity where applicable. Focused tests,
+  typecheck, builds, mutation probes, browser QA, and independent reviews are
+  recorded per local milestone.
+- No surface has been newly hidden, no default or URL behavior has flipped, and
+  the documented mounted-state exceptions remain in force.
+- `App.tsx` is 9,242 lines at this checkpoint. The WebSocket controller, other
+  direct diagnostic surfaces, auth/bootstrap gates, and complete legacy tab
+  composition remain; therefore the below-800-line/no-feature-panel exit is not
+  yet satisfied.
 
 #### Remaining risks and evidence ownership
 

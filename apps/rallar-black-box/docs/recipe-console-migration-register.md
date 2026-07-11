@@ -1,11 +1,28 @@
 # Recipe Console Migration Register
 
-Status: canonical Iteration 0 migration baseline
+Status: canonical migration register; Iteration 1 extraction in progress
 Evidence/status date: 2026-07-10
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 1 extraction checkpoint — `63e7b2c`
+
+This checkpoint records code ownership movement only; it does not change any
+row's cutover, hide, mount, or rollback status.
+
+| Slice | Current extracted owners | Parity evidence | Remaining ownership |
+| --- | --- | --- | --- |
+| Runner/distributed workflows | Focused modules under `src/legacy/runner/{advanced,builder,distributed,distributed-recipes,fleet,recipes,run-manager,runs,shared-test,workbench}/**` | Exact controller/view/JSX/App/CSS locks, focused tests, builds, mutation probes, browser QA, and independent reviews at their milestone commits | Shell composition and remaining shared App-local orchestration |
+| Shared diagnostic evidence | Focused modules under `src/legacy/diagnostics/{events,rtc,topology}/**` | Exact presentation and App-mount parity plus focused validation | Remaining direct diagnostic controllers and shell routing |
+| Quick Test | `QuickRallarTestPanel.tsx`, `QuickRallarTestView.tsx`, and `use-quick-rallar-controller.ts` | Controller/effect/JSX/mount parity; operational desktop/mobile QA | Its documented hidden-mounted subscription/state exception remains |
+| RTC Realtime | `RtcRealtimePanel.tsx`, `RtcRealtimeView.tsx`, and `use-rtc-realtime-controller.ts` | Controller/effect/JSX/mount parity; operational desktop/mobile QA | Its documented hidden-mounted RTC ownership exception remains |
+| WebSocket | Pure contracts/presets/routing/recipes/diagnostics plus `WebSocketCommandCenterView.tsx` | W1/W2 exact helper, 50-statement controller, effect, JSX/runtime, App/CSS and operational parity through `63e7b2c` | Controller is the next extraction slice; socket/subscription lifetime exception remains |
+
+At this checkpoint `App.tsx` is 9,242 lines, down from the 28,265-line
+baseline. No surface has been newly hidden, no legacy deep link has changed,
+and no temporary mounted-state exception is represented as resolved.
 
 ## Compatibility inputs that must remain deterministic
 
