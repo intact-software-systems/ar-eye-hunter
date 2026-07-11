@@ -394,7 +394,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Iteration | Status | Exit tracking |
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
-| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 6,361 lines through Auth M1; the broad exit criteria still bind, and shell/bootstrap plus remaining direct-diagnostic owners must still move before this iteration is complete. |
+| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 3,433 lines through Rallar Server M1; the broad exit criteria still bind, and shell/bootstrap plus remaining direct-diagnostic owners must still move before this iteration is complete. |
 | 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
@@ -611,6 +611,45 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   explicit Iteration 12 accessibility debt. No route, alias, public export,
   server contract, navigation visibility, or cutover status changed in R2.
 
+#### Iteration 1 Rallar Server M1 checkpoint — `e2408f0` (2026-07-11)
+
+- The complete Rallar Server workbench is now a six-owner composition under
+  `src/legacy/diagnostics/rallar-server/**`: the request-feedback contract (14
+  lines), collection parsers (34), feedback panel (84), exact controller
+  (762), exact view (561), and thin root (18). `App.tsx` is 3,433 lines and
+  imports only that root. The exact 55 controller statements, 25 state slots,
+  seven memos, three effects, request/collection actions, redaction, runtime
+  events, JSX, App mount, hidden ancestor, styles, and server contracts remain
+  unchanged.
+- Untouched-production RED passed 39/40 app-structure tests with exactly eight
+  intended soft ownership failures while mode-boundary stayed green 8/8.
+  Final listed Iteration 1 validation passed 107/107; typecheck/build passed
+  (369 modules); six semantic mutation probes were caught; and two independent
+  final reviews approved the extraction. The existing large-chunk warning
+  remains (`index` 1,258.36 kB minified) for the later experience-route
+  code-splitting cutover rather than being represented as resolved here.
+- The in-app Browser inspection, four simulated Rallar Server flows plus the
+  mobile guardrail (5/5), and temporary reduced-motion desktop/portrait/
+  landscape matrix (3/3) proved success and failure feedback, collection
+  assertions/extraction, redacted reload persistence, one hidden-mounted owner,
+  state retention, keyboard selection, CSS isolation, zero document/panel
+  overflow, and no browser errors. The temporary QA spec was removed.
+- The two exhaustive Postgres scenarios were **skipped, not passed**, for this
+  exact reason: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed
+  apps/api-v1, apps/rallar-black-box-control-server, and
+  apps/rallar-black-box available.` The four general full-stack scenarios were
+  separately **skipped, not passed**, for this exact reason: `Set
+  RALLAR_BLACK_BOX_FULL_STACK=1 and provide either Postgres env files or
+  RALLAR_BLACK_BOX_API_MODE=memory for apps/api-v1 full-stack Rallar Black Box
+  tests.`
+- The hidden-mounted exception remains explicit for invalid editable JSON,
+  OpenAPI presets, feedback, response and collection results, and busy/error
+  state in addition to the redacted persisted drafts. Server action controls
+  measure 42px at all three viewports, and arrow-key selection still does not
+  transfer DOM focus. Both remain Iteration 12 accessibility debt. No route,
+  alias, public export, server contract, navigation visibility, hide, mount,
+  rollback, or cutover status changed in M1.
+
 #### Remaining risks and evidence ownership
 
 | Remaining risk | Owning iteration(s) | Mitigation and evidence target |
@@ -622,7 +661,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Retention preview safety | 8 | Add optional dry-run behavior without changing the destructive default, require explicit confirmation, and prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup`. |
 | Qualitative visual and performance gates lack executable thresholds | 2, 9, 12 | Iteration 2 records approved screenshot baselines and an executable drift budget in `recipe-console-shell.spec.ts`; Iteration 9 encodes bounded-render and interaction budgets in `recipe-console-scale.spec.ts`; Iteration 12 encodes viewport, keyboard, touch, reduced-motion, and non-hover gates in `recipe-console-accessibility.spec.ts`. |
 | Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
-| Preserved legacy Auth and Groups/Clients action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact parity extractions unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
+| Preserved legacy Auth, Groups/Clients, and Rallar Server action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact parity extractions unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
 | Legacy tab arrow keys update selection without transferring DOM focus to the selected tab | 12 | Preserve Iteration 1 parity, then make roving focus follow keyboard selection and encode the behavior in `recipe-console-accessibility.spec.ts`. |
 | Local Node 26 differs from CI Node 24 | 1 and every code-changing iteration | Run the focused tests, typecheck, and build on CI Node 24; retain the local Node `26.5.0` result separately so version-specific differences remain visible. |
 | Live services and Postgres were unavailable or not exercised in Iteration 0 | 3-5, 8, 12 | Run the listed Deno control-server tests and configured Playwright/live distributed lifecycle, culminating in `npm run test:e2e:rallar-black-box:full-stack:real:distributed`; do not close live-service gates from mock or sandbox-only evidence. |
