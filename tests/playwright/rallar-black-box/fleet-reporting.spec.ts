@@ -185,7 +185,7 @@ async function mockFleetApi(
     fixture: ReturnType<typeof fleetFixture>,
     requestedUrls: string[],
 ): Promise<void> {
-    await page.route('**/runs**', async (route: Route) => {
+    await page.route(/\/runs(?:\?.*)?$/, async (route: Route) => {
         const url = new URL(route.request().url());
         if (url.pathname === '/runs') {
             await route.fulfill({

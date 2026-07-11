@@ -32,6 +32,26 @@ const flowBuilderPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPanel.tsx',
     import.meta.url,
 );
+const runnerFleetControlsSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetControls.tsx',
+    import.meta.url,
+);
+const runnerFleetOverviewSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetOverview.tsx',
+    import.meta.url,
+);
+const runnerFleetAnalysisSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetReportAnalysis.tsx',
+    import.meta.url,
+);
+const runnerFleetDetailsSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetSelectedDetails.tsx',
+    import.meta.url,
+);
+const runnerFleetTimingSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/FleetTimingGroupList.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -235,7 +255,19 @@ describe('rallar-black-box Rallar mode boundary', () => {
             runnerDistributedAnalysisSourcePath,
             runsPanel,
         );
-        const fleetPanel = sourceBetween(source, 'function RunnerFleetPanel', 'function FleetTimingGroupList');
+        const fleetController = sourceBetween(
+            source,
+            'function RunnerFleetPanel',
+            'function RtcDiagnosticsPanel',
+        );
+        const fleetViewsFallback = fleetController;
+        const fleetViews = [
+            sourceOrFallback(runnerFleetControlsSourcePath, fleetViewsFallback),
+            sourceOrFallback(runnerFleetOverviewSourcePath, fleetViewsFallback),
+            sourceOrFallback(runnerFleetAnalysisSourcePath, fleetViewsFallback),
+            sourceOrFallback(runnerFleetDetailsSourcePath, fleetViewsFallback),
+            sourceOrFallback(runnerFleetTimingSourcePath, fleetViewsFallback),
+        ].join('\n');
         const rtcDiagnosticsPanel = sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel');
 
         expect(runsPanel).toContain('RunVerdictPanel');
@@ -250,9 +282,9 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(runsDistributedView).toContain('Synthetic seed');
         expect(runsDistributedView).toContain('Synthetic evidence');
         expect(runsDistributedView).toContain('Clear seed');
-        expect(fleetPanel).toContain('Live Fleet');
-        expect(fleetPanel).toContain('title="Live Fleet Agents"');
-        expect(fleetPanel).toContain('fetchControlServerSnapshot');
+        expect(fleetViews).toContain('Live Fleet');
+        expect(fleetViews).toContain('title="Live Fleet Agents"');
+        expect(fleetController).toContain('fetchControlServerSnapshot');
         expect(recipesPanel).toContain('resolveBlackBoxControlToken');
         expect(recipesPanel).toContain('brokeredControlToken');
         expect(recipesPanel).toContain('Session control token valid until');

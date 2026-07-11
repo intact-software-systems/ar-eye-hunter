@@ -11,6 +11,14 @@ const runnerAdvancedSourcePath =
     'apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx';
 const flowBuilderPreviewsSourcePath =
     'apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPreviews.tsx';
+const fleetOverviewSourcePath =
+    'apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetOverview.tsx';
+const fleetAnalysisSourcePath =
+    'apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetReportAnalysis.tsx';
+const fleetDetailsSourcePath =
+    'apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetSelectedDetails.tsx';
+const fleetTimingSourcePath =
+    'apps/rallar-black-box/src/legacy/runner/fleet/views/FleetTimingGroupList.tsx';
 const extractedModulePaths = [
     'apps/rallar-black-box/src/legacy/shell/browser-ui-storage.ts',
     'apps/rallar-black-box/src/legacy/shell/navigation.ts',
@@ -138,8 +146,25 @@ const runAnalysisModules = [
     },
     {
         path: 'apps/rallar-black-box/src/legacy/runner/shared/performance-format.ts',
-        moduleImport: './legacy/runner/shared/performance-format.ts',
+        importerPath: existsSync(resolve(repositoryRoot, fleetOverviewSourcePath))
+            ? fleetOverviewSourcePath
+            : appSourcePath,
+        moduleImport: existsSync(resolve(repositoryRoot, fleetOverviewSourcePath))
+            ? '../../shared/performance-format.ts'
+            : './legacy/runner/shared/performance-format.ts',
         seams: ['formatPercent', 'formatFleetDuration'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/shared/performance-format.ts',
+        importerPath: fleetAnalysisSourcePath,
+        moduleImport: '../../shared/performance-format.ts',
+        seams: ['formatPercent', 'formatFleetDuration'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/shared/performance-format.ts',
+        importerPath: fleetTimingSourcePath,
+        moduleImport: '../../shared/performance-format.ts',
+        seams: ['formatFleetDuration'],
     },
 ] as const;
 
@@ -504,8 +529,12 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/agents/ControlAgentBoardPanel.tsx',
-                importerPath: appSourcePath,
-                moduleImport: './legacy/runner/agents/ControlAgentBoardPanel.tsx',
+                importerPath: existsSync(resolve(repositoryRoot, fleetOverviewSourcePath))
+                    ? fleetOverviewSourcePath
+                    : appSourcePath,
+                moduleImport: existsSync(resolve(repositoryRoot, fleetOverviewSourcePath))
+                    ? '../../agents/ControlAgentBoardPanel.tsx'
+                    : './legacy/runner/agents/ControlAgentBoardPanel.tsx',
                 seams: ['ControlAgentBoardPanel'],
             },
             {
@@ -526,8 +555,22 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/shared/run-id-presentation.ts',
-                importerPath: appSourcePath,
-                moduleImport: './legacy/runner/shared/run-id-presentation.ts',
+                importerPath: existsSync(resolve(repositoryRoot, fleetAnalysisSourcePath))
+                    ? fleetAnalysisSourcePath
+                    : appSourcePath,
+                moduleImport: existsSync(resolve(repositoryRoot, fleetAnalysisSourcePath))
+                    ? '../../shared/run-id-presentation.ts'
+                    : './legacy/runner/shared/run-id-presentation.ts',
+                seams: ['shortRunId'],
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/shared/run-id-presentation.ts',
+                importerPath: existsSync(resolve(repositoryRoot, fleetDetailsSourcePath))
+                    ? fleetDetailsSourcePath
+                    : appSourcePath,
+                moduleImport: existsSync(resolve(repositoryRoot, fleetDetailsSourcePath))
+                    ? '../../shared/run-id-presentation.ts'
+                    : './legacy/runner/shared/run-id-presentation.ts',
                 seams: ['shortRunId'],
             },
             {
@@ -7845,6 +7888,462 @@ describe('rallar-black-box app source ownership', () => {
         };
         for (const owner of owners) visit(owner.path);
         expect(cycles, 'Builder recursive owner import cycles').toEqual([]);
+    });
+
+    it('extracts exact Fleet helpers and controlled views while preserving the App controller', () => {
+        const appSource = repositorySource(appSourcePath);
+        const fleetRoot = 'apps/rallar-black-box/src/legacy/runner/fleet';
+        const owners = [
+            { path: `${fleetRoot}/fleet-types.ts`, cap: 80, exports: ['type:FleetAgentHeatmapRow', 'type:FleetFilterState', 'type:FleetLabelOverride', 'type:FleetTimingGroup'] },
+            { path: `${fleetRoot}/fleet-helpers.ts`, cap: 280, exports: ['value:applyFleetLabelOverrides', 'value:fleetReportFilterFromUi', 'value:parseFleetLabelOverrides', 'value:readFleetFiltersFromUrl', 'value:readFleetWorldMapLayersFromUrl', 'value:writeFleetFiltersToSearchParams', 'value:writeFleetFiltersToUrl', 'value:writeFleetWorldMapLayersToSearchParams', 'value:writeFleetWorldMapLayersToUrl'] },
+            { path: `${fleetRoot}/fleet-derivations.ts`, cap: 210, exports: ['value:fleetAgentDetail', 'value:fleetHeatmapRows', 'value:fleetMissingLabelAgents', 'value:fleetRegionRows'] },
+            { path: `${fleetRoot}/fleet-timing.ts`, cap: 140, exports: ['value:fleetTimingDistribution', 'value:fleetTimingGroupsByRecipe', 'value:fleetTimingGroupsByRegion'] },
+            { path: `${fleetRoot}/fleet-rollups.ts`, cap: 190, exports: ['value:fleetDisplaySummary', 'value:fleetFailureRows'] },
+            { path: `${fleetRoot}/fleet-presentation.ts`, cap: 100, exports: ['value:fleetAgentStateTone', 'value:fleetCellTitle', 'value:fleetFailureTone', 'value:fleetRegionKey', 'value:fleetRegionLabel', 'value:shortSignatureId'] },
+            { path: `${fleetRoot}/views/RunnerFleetControls.tsx`, cap: 210, exports: ['value:RunnerFleetControls'] },
+            { path: `${fleetRoot}/views/RunnerFleetOverview.tsx`, cap: 230, exports: ['value:RunnerFleetOverview'] },
+            { path: `${fleetRoot}/views/RunnerFleetReportAnalysis.tsx`, cap: 300, exports: ['value:RunnerFleetReportAnalysis'] },
+            { path: `${fleetRoot}/views/RunnerFleetSelectedDetails.tsx`, cap: 180, exports: ['value:RunnerFleetSelectedDetails'] },
+            { path: `${fleetRoot}/views/FleetTimingGroupList.tsx`, cap: 100, exports: ['value:FleetTimingGroupList'] },
+        ] as const;
+        const sources = new Map<string, string>();
+        for (const owner of owners) {
+            const exists = existsSync(resolve(repositoryRoot, owner.path));
+            const source = exists ? repositorySource(owner.path) : '';
+            sources.set(owner.path, source);
+            expect.soft(exists, `${owner.path}: exists`).toBe(true);
+            expect.soft(
+                source === '' ? 0 : source.trimEnd().split(/\r?\n/).length,
+                `${owner.path}: line cap`,
+            ).toBeLessThanOrEqual(owner.cap);
+            expect.soft(source, `${owner.path}: no App import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/
+            );
+            expect.soft(source, `${owner.path}: no CSS import`).not.toMatch(
+                /\b(?:from\s+|import\s*)['"][^'"]+\.css['"]/
+            );
+            expect.soft(source, `${owner.path}: no barrel facade`).not.toMatch(
+                /^\s*export\s+(?:\*|(?:type\s+)?{[^}]+}\s+from)\b/m,
+            );
+            expect.soft(
+                task9aExportSeams(task9aSourceFile(owner.path, source)),
+                `${owner.path}: exact exports`,
+            ).toEqual([...owner.exports].sort());
+        }
+
+        const exactImports = new Map<string, readonly string[]>([
+            [`${fleetRoot}/fleet-types.ts`, [
+                '../../../control-run-manager.ts|type:ControlFleetAgentRunOutcome,type:ControlFleetTimingDistribution',
+            ]],
+            [`${fleetRoot}/fleet-helpers.ts`, [
+                '../../../control-run-manager.ts|type:ControlFleetReportFilter,type:ControlFleetRunReport',
+                '../../../world-map-model.ts|type:FleetWorldMapLayerId,type:FleetWorldMapLayerState,value:DEFAULT_FLEET_WORLD_MAP_LAYER_STATE,value:FLEET_WORLD_MAP_LAYER_IDS',
+                './fleet-types.ts|type:FleetFilterState,type:FleetLabelOverride',
+            ]],
+            [`${fleetRoot}/fleet-presentation.ts`, [
+                '../../../control-run-manager.ts|type:ControlFleetAgentRunOutcome,type:ControlFleetFailureSignature',
+            ]],
+            [`${fleetRoot}/fleet-timing.ts`, [
+                '../../../control-run-manager.ts|type:ControlFleetRunReport,type:ControlFleetTimingDistribution',
+                './fleet-presentation.ts|value:fleetRegionKey',
+                './fleet-types.ts|type:FleetTimingGroup',
+            ]],
+            [`${fleetRoot}/fleet-derivations.ts`, [
+                '../../../control-run-manager.ts|type:ControlFleetAgentRunOutcome,type:ControlFleetRunReport',
+                './fleet-presentation.ts|value:fleetRegionKey',
+                './fleet-timing.ts|value:fleetTimingDistribution',
+                './fleet-types.ts|type:FleetAgentHeatmapRow',
+            ]],
+            [`${fleetRoot}/fleet-rollups.ts`, [
+                '../../../control-run-manager.ts|type:ControlFleetFailureSignature,type:ControlFleetReportsResponse,type:ControlFleetRunReport',
+                './fleet-presentation.ts|value:fleetRegionKey',
+                './fleet-timing.ts|value:fleetTimingDistribution',
+            ]],
+            [`${fleetRoot}/views/RunnerFleetControls.tsx`, [
+                '../../../../control-run-manager.ts|type:ControlFleetRunReport',
+                '../../../shared/time-format.ts|value:formatTime',
+                '../fleet-types.ts|type:FleetFilterState',
+            ]],
+            [`${fleetRoot}/views/RunnerFleetOverview.tsx`, [
+                '../../../../control-agent-board.ts|type:ControlAgentBoardRow,type:ControlAgentBoardSummary',
+                '../../../../control-run-manager.ts|type:ControlFleetRunReport,type:ControlRunSnapshot,type:ControlServerSnapshot',
+                '../../../../fleet-world-map.tsx|value:FleetWorldMap',
+                '../../../../world-map-model.ts|type:FleetWorldMapLayerId,type:FleetWorldMapLayerState,type:FleetWorldMapRegion,type:FleetWorldMapViewModel',
+                '../../../shared/Metric.tsx|value:Metric',
+                '../../../shared/json-presentation.ts|value:json',
+                '../../../shared/time-format.ts|value:formatTime',
+                '../../agents/ControlAgentBoardPanel.tsx|value:ControlAgentBoardPanel',
+                '../../shared/performance-format.ts|value:formatFleetDuration,value:formatPercent',
+            ]],
+            [`${fleetRoot}/views/RunnerFleetReportAnalysis.tsx`, [
+                '../../../../control-run-manager.ts|type:ControlFleetFailureSignature,type:ControlFleetReportBundle,type:ControlFleetRunReport,type:ControlFleetTimingDistribution',
+                '../../shared/performance-format.ts|value:formatFleetDuration,value:formatPercent',
+                '../../shared/run-id-presentation.ts|value:shortRunId',
+                '../fleet-presentation.ts|value:fleetAgentStateTone,value:fleetCellTitle,value:fleetFailureTone,value:shortSignatureId',
+                '../fleet-types.ts|type:FleetAgentHeatmapRow,type:FleetTimingGroup',
+                './FleetTimingGroupList.tsx|value:FleetTimingGroupList',
+            ]],
+            [`${fleetRoot}/views/RunnerFleetSelectedDetails.tsx`, [
+                '../../../../control-run-manager.ts|type:ControlFleetFailureSignature',
+                '../../../shared/time-format.ts|value:formatTime',
+                '../../shared/run-id-presentation.ts|value:shortRunId',
+                '../fleet-derivations.ts|type:fleetAgentDetail',
+                '../fleet-presentation.ts|value:fleetAgentStateTone,value:fleetRegionLabel',
+            ]],
+            [`${fleetRoot}/views/FleetTimingGroupList.tsx`, [
+                '../../../../control-run-manager.ts|type:ControlFleetTimingDistribution',
+                '../../shared/performance-format.ts|value:formatFleetDuration',
+                '../fleet-types.ts|type:FleetTimingGroup',
+            ]],
+        ]);
+        for (const [path, expected] of exactImports) {
+            expect.soft(
+                task9aImportEdges(task9aSourceFile(path, sources.get(path) ?? '')),
+                `${path}: exact imports/kinds/DAG edges`,
+            ).toEqual([...expected].sort());
+        }
+        for (const path of [
+            `${fleetRoot}/fleet-types.ts`, `${fleetRoot}/fleet-helpers.ts`,
+            `${fleetRoot}/fleet-derivations.ts`, `${fleetRoot}/fleet-timing.ts`,
+            `${fleetRoot}/fleet-rollups.ts`, `${fleetRoot}/fleet-presentation.ts`,
+        ]) {
+            const source = sources.get(path) ?? '';
+            const sourceFile = task9aSourceFile(path, source);
+            let hasJsx = false;
+            const visit = (node: ts.Node): void => {
+                if (
+                    ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) ||
+                    ts.isJsxFragment(node)
+                ) hasJsx = true;
+                ts.forEachChild(node, visit);
+            };
+            visit(sourceFile);
+            expect.soft(source, `${path}: no React/hooks`).not.toMatch(
+                /\b(?:react|useState|useMemo|useEffect|useRef|useCallback)\b/,
+            );
+            expect.soft(hasJsx, `${path}: no JSX`).toBe(false);
+        }
+
+        for (const declaration of [
+            'FleetFilterState', 'FleetAgentHeatmapRow', 'FleetTimingGroup',
+            'FleetLabelOverride', 'DEFAULT_FLEET_FILTERS',
+            'FleetTimingGroupList', 'FleetTimingStrip',
+            'readFleetFiltersFromUrl', 'writeFleetFiltersToUrl',
+            'writeFleetFiltersToSearchParams', 'readFleetWorldMapLayersFromUrl',
+            'writeFleetWorldMapLayersToUrl', 'writeFleetWorldMapLayersToSearchParams',
+            'parseFleetWorldMapLayers', 'fleetWorldMapLayersEqual',
+            'parseFleetWindow', 'fleetReportFilterFromUi',
+            'parseFleetLabelOverrides', 'isFleetRecord',
+            'applyFleetLabelOverrides', 'fleetDisplaySummary',
+            'fleetHeatmapRows', 'fleetRegionRows', 'fleetFailureRows',
+            'fleetTimingGroupsByRegion', 'fleetTimingGroupsByRecipe',
+            'fleetTimingDistribution', 'percentile', 'fleetMissingLabelAgents',
+            'fleetAgentDetail', 'fleetRegionKey', 'fleetRegionLabel',
+            'fleetAgentStateTone', 'fleetFailureTone', 'fleetCellTitle',
+            'shortSignatureId', 'minDefined', 'maxDefined',
+        ] as const) {
+            expect.soft(appSource, `App local ${declaration}`).not.toMatch(
+                new RegExp(`^\\s*(?:export\\s+)?(?:type|const|let|var|function)\\s+${declaration}\\b`, 'm'),
+            );
+        }
+
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const ownerAst = (name: string): ts.SourceFile => {
+            const path = `${fleetRoot}/${name}`;
+            return task9aSourceFile(path, sources.get(path) ?? '');
+        };
+        const parameterAndBodyNodes = (
+            sourceFile: ts.SourceFile,
+            names: readonly string[],
+        ): readonly ts.Node[] => names.flatMap((name) => {
+            const declaration = task9aNamedFunction(sourceFile, name);
+            return [...declaration.parameters, declaration.body!];
+        });
+        const supportFingerprints = [
+            [
+                ownerAst('fleet-helpers.ts'),
+                [
+                    'readFleetFiltersFromUrl', 'writeFleetFiltersToUrl',
+                    'writeFleetFiltersToSearchParams',
+                    'readFleetWorldMapLayersFromUrl',
+                    'writeFleetWorldMapLayersToUrl',
+                    'writeFleetWorldMapLayersToSearchParams',
+                    'parseFleetWorldMapLayers', 'fleetWorldMapLayersEqual',
+                    'parseFleetWindow', 'fleetReportFilterFromUi',
+                    'parseFleetLabelOverrides', 'isFleetRecord',
+                    'applyFleetLabelOverrides',
+                ],
+                '7ff4ee70fc130f886238efefdd4a5e6032bb8d402a0e35cb8c5b4f236d4cce9b',
+            ],
+            [
+                ownerAst('fleet-derivations.ts'),
+                ['fleetHeatmapRows', 'fleetRegionRows', 'fleetMissingLabelAgents', 'fleetAgentDetail'],
+                '6a876cd493b99195541623f4134a2b361b38b7632cf502cf4ceb2bf476d305f7',
+            ],
+            [
+                ownerAst('fleet-timing.ts'),
+                ['fleetTimingGroupsByRegion', 'fleetTimingGroupsByRecipe', 'fleetTimingDistribution', 'percentile'],
+                '9f85f91e3feb4c42a8df8ab85df139c55b10b3d985bda79d3be5b55abc1febf8',
+            ],
+            [
+                ownerAst('fleet-rollups.ts'),
+                ['fleetDisplaySummary', 'fleetFailureRows', 'minDefined', 'maxDefined'],
+                '6349987408e5f4798688589cda005feca9d5ee935a1eee27191f29fda6cd5cd4',
+            ],
+            [
+                ownerAst('fleet-presentation.ts'),
+                ['fleetRegionKey', 'fleetRegionLabel', 'fleetAgentStateTone', 'fleetFailureTone', 'fleetCellTitle', 'shortSignatureId'],
+                'ab350e7cc2faa8408b94372cc27f0b1ebcbd4c6ca1a03045851d839988c72470',
+            ],
+        ] as const;
+        for (const [sourceFile, names, expectedFingerprint] of supportFingerprints) {
+            expect.soft(
+                task9aAstFingerprint(parameterAndBodyNodes(sourceFile, names)),
+                `${sourceFile.fileName}: exact parameters and bodies`,
+            ).toBe(expectedFingerprint);
+        }
+        const typesAst = ownerAst('fleet-types.ts');
+        const typeNodes = [
+            'FleetFilterState', 'FleetAgentHeatmapRow',
+            'FleetTimingGroup', 'FleetLabelOverride',
+        ].flatMap((name) => {
+            const declaration = typesAst.statements.find(
+                (statement): statement is ts.TypeAliasDeclaration =>
+                    ts.isTypeAliasDeclaration(statement) && statement.name.text === name,
+            );
+            return declaration ? [declaration.name, declaration.type] : [];
+        });
+        expect.soft(task9aAstFingerprint(typeNodes), 'exact Fleet type declarations')
+            .toBe('8d17b621058f85094d88653aa2e8da5f2a8a853e93bf303cb34abf86b9f8a399');
+        const helpersAst = ownerAst('fleet-helpers.ts');
+        const defaultFilters = helpersAst.statements
+            .filter(ts.isVariableStatement)
+            .flatMap((statement) => [...statement.declarationList.declarations])
+            .find((declaration) =>
+                ts.isIdentifier(declaration.name) &&
+                declaration.name.text === 'DEFAULT_FLEET_FILTERS',
+            )?.initializer;
+        expect.soft(
+            defaultFilters ? task9aAstFingerprint([defaultFilters]) : '',
+            'exact Fleet defaults initializer',
+        ).toBe('2e5f3d85bc30369ca762432ec090c1cb48c322e8fe009139bf929512180f56be');
+
+        const panel = appAst.statements.find(
+            (statement): statement is ts.FunctionDeclaration =>
+                ts.isFunctionDeclaration(statement) &&
+                statement.name?.text === 'RunnerFleetPanel',
+        );
+        expect.soft(panel, 'App-local RunnerFleetPanel controller').toBeDefined();
+        const panelStatements = panel?.body?.statements ?? [];
+        const returnIndex = panelStatements.findIndex(ts.isReturnStatement);
+        const preReturn = returnIndex >= 0 ? panelStatements.slice(0, returnIndex) : [];
+        expect.soft(preReturn, '46 exact pre-return controller statements').toHaveLength(46);
+        expect.soft(
+            task9aAstFingerprint(preReturn),
+            'token-complete App-local Fleet controller',
+        ).toBe('68e62590dd3ece0d091f1ee7c5dc62e005e348a0f4fe30e31957173c3aa894c4');
+        expect.soft(
+            task9aAstFingerprint(preReturn.filter((statement) =>
+                /\buse(?:State|Memo|Ref|Effect)\s*(?:<|\()/.test(statement.getText()),
+            )),
+            'exact Fleet hook-bearing statements',
+        ).toBe('dc15e915d5585804686e36a0844e70986bfdbe12aed6e83ec8a8aa911ab17b7b');
+        const hookCalls = { useState: 0, useMemo: 0, useRef: 0, useEffect: 0, useCallback: 0 };
+        if (panel) {
+            const visit = (node: ts.Node): void => {
+                if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text in hookCalls) {
+                    hookCalls[node.expression.text as keyof typeof hookCalls] += 1;
+                }
+                ts.forEachChild(node, visit);
+            };
+            visit(panel);
+        }
+        expect.soft(hookCalls, 'Fleet controller hook topology').toEqual({
+            useState: 15, useMemo: 17, useRef: 1, useEffect: 4, useCallback: 0,
+        });
+        const effects: ts.CallExpression[] = [];
+        if (panel) {
+            const visit = (node: ts.Node): void => {
+                if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'useEffect') effects.push(node);
+                ts.forEachChild(node, visit);
+            };
+            visit(panel);
+        }
+        expect.soft(effects.map((effect) => task9aAstFingerprint([effect])), 'exact Fleet effects').toEqual([
+            '12a49a857f746ca8e6fcdc92ad09893d333631bf88dad1bdeffe380b74b91ba4',
+            '9016a31a96ecc30de10cc5047a74e80b9ebb6eebec46e2a06ce1fe39f11acb50',
+            'afcd6dbc355b0833cf12a8cd8bd0d872ae93c7d2bbfb140c4f4770394fb90ab5',
+            '568263a7b6f1fafd7e1566e41530534bcae773d9aafc8c0196fa272906198890',
+        ]);
+        expect.soft(
+            preReturn
+                .filter((statement) =>
+                    ts.isExpressionStatement(statement) &&
+                    ts.isCallExpression(statement.expression) &&
+                    ts.isIdentifier(statement.expression.expression) &&
+                    statement.expression.expression.text === 'useEffect',
+                )
+                .map((statement) => task9aAstFingerprint([statement])),
+            'exact Fleet effect statements',
+        ).toEqual([
+            'e105809fc0853fd897ef3af0f7651efffd9191965562c1a56584b9f657aa3f80',
+            'a6a50c52b0f7061c6327bae9af01dfcf710c1e9d4fdf5a2aeb27783eb3b6cf00',
+            '9cd28a1de469aee9cc5a98be7938479156c3a6740d406ddbdc529e28985389a7',
+            'c05e7daa34881115888d79c0c1e8cb77de5119e800815bff35bbdc8e5e698912',
+        ]);
+        const controllerDeclarations = new Map<string, ts.VariableStatement>();
+        for (const statement of preReturn) {
+            if (!ts.isVariableStatement(statement)) continue;
+            for (const declaration of statement.declarationList.declarations) {
+                if (ts.isIdentifier(declaration.name)) {
+                    controllerDeclarations.set(declaration.name.text, statement);
+                }
+            }
+        }
+        for (const [name, fingerprint] of [
+            ['refreshFleet', '1e0554fb6f15ddf51599c5872c828912dacfddab158d44597ee5bded0a66608c'],
+            ['updateFilter', '51638c3a885ede605336508a72f68d8b344b9a927451bd0763751d7154aec0e1'],
+            ['updateMapLayer', '6522b1bd4ec0b8938d770990d19e40f2c4857dda91133d2f7af65805fd14d49d'],
+            ['selectMapRegion', '86bfd70e981c7f6b484a3cd4ac9561ba084aba4270023385803f2f28c8ecdce4'],
+            ['copyShareLink', '822c50a5152ab37c7ebabf51fec4fa28849d5f46045e352cb736a579156afe48'],
+            ['exportSelectedReport', '0e94ae28777f92968fafe356eeae4d21edbd447cae834ad0bd8c0b48189daf2a'],
+        ] as const) {
+            const statement = controllerDeclarations.get(name);
+            expect.soft(
+                statement ? task9aAstFingerprint([statement]) : '',
+                `${name}: exact controller action`,
+            ).toBe(fingerprint);
+        }
+
+        const viewNames = [
+            'RunnerFleetControls', 'RunnerFleetOverview',
+            'RunnerFleetReportAnalysis', 'RunnerFleetSelectedDetails',
+            'FleetTimingGroupList',
+        ] as const;
+        for (const viewName of viewNames) {
+            const source = [...sources.entries()].find(([path]) => path.endsWith(`${viewName}.tsx`))?.[1] ?? '';
+            expect.soft(source, `${viewName}: controlled and hook-free`).not.toMatch(
+                /\b(?:useState|useMemo|useEffect|useRef|useCallback|fetch|navigator\.|localStorage|sessionStorage)\b/,
+            );
+        }
+        for (const [fileName, viewName, expectedFingerprint] of [
+            ['RunnerFleetControls.tsx', 'RunnerFleetControls', 'b51a812b3a271473e57ccc9592ed0f53e87a78e08830c263330611994773bbf9'],
+            ['RunnerFleetOverview.tsx', 'RunnerFleetOverview', '33d316930d4a637e56c94dc9fc10214054d6054717f1b3558be86865206db28b'],
+            ['RunnerFleetReportAnalysis.tsx', 'RunnerFleetReportAnalysis', '710090eab559a3b19404a5eaa4bf33a955947e11edcc86798a619ce28db51c6a'],
+            ['RunnerFleetSelectedDetails.tsx', 'RunnerFleetSelectedDetails', '57a36bccbbc71a489862417615213ff8154c728cf3b0ecdf38bdda5436a1d46c'],
+            ['FleetTimingGroupList.tsx', 'FleetTimingGroupList', 'a7cd54fbe357e341013790eda3928eb950741d02c2a9edde49b59b588f92e49b'],
+            ['FleetTimingGroupList.tsx', 'FleetTimingStrip', 'bd606bd77e3000be8c6e96c48ec6977ad95c4144bf9ca34032cddf5448d68ab8'],
+        ] as const) {
+            const path = `${fleetRoot}/views/${fileName}`;
+            const sourceFile = task9aSourceFile(path, sources.get(path) ?? '');
+            const declaration = task9aNamedFunction(sourceFile, viewName);
+            const returnExpression = task9aReturnExpression(declaration);
+            expect.soft(
+                task9aJsxRuntimeFingerprint(returnExpression),
+                `${viewName}: exact compiled return`,
+            ).toBe(expectedFingerprint);
+            if (viewName === 'FleetTimingStrip') {
+                expect.soft(
+                    task9aAstFingerprint([
+                        ...declaration.parameters,
+                        declaration.body!,
+                    ]),
+                    'FleetTimingStrip exact parameters and full body',
+                ).toBe('0184d6bcb6c2963441fbcebfb730d8857ba806c4427af85f8e57a77a63433f0a');
+            }
+            if (viewName !== 'FleetTimingStrip') {
+                expect.soft(
+                    ts.isJsxFragment(returnExpression),
+                    `${viewName}: direct controlled root`,
+                ).toBe(viewName !== 'FleetTimingGroupList');
+            }
+        }
+        expect.soft(
+            panel ? task9aJsxRuntimeFingerprint(task9aReturnExpression(panel)) : '',
+            'RunnerFleetPanel exact compiled composition return',
+        ).toBe('4a768da66b1c3c081eac174d6dec4a00e9d124e7763cc4802272620237c02ae8');
+        expect.soft(panel ? task9aAstFingerprint(task9aJsxCalls(panel, 'RunnerFleetControls')) : '', 'exact Controls call')
+            .toBe('932b84f212980887f48ea7c113a9873521c82809f22059e63bdee1f252f06a17');
+        expect.soft(panel ? task9aAstFingerprint(task9aJsxCalls(panel, 'RunnerFleetOverview')) : '', 'exact Overview call')
+            .toBe('2c536663d4748522ef3d494d2455e0b524b6d7bc32f9874de2de6d5a86a62c97');
+        expect.soft(panel ? task9aAstFingerprint(task9aJsxCalls(panel, 'RunnerFleetReportAnalysis')) : '', 'exact Analysis call')
+            .toBe('ab05adba075aa2d1b52ab6581119a4a8bbc4cda05ba1dcbfc230805fed17a1ab');
+        expect.soft(panel ? task9aAstFingerprint(task9aJsxCalls(panel, 'RunnerFleetSelectedDetails')) : '', 'exact Details call')
+            .toBe('05130b7c686aae0b6466398d42ab70493c9be599cd55b67ef18116a885b2f192');
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'RunnerFleetPanel');
+        expect.soft(task9aAstFingerprint(mounts), 'unchanged three-prop Fleet mount')
+            .toBe('be98d0d14b67833f30c5b15313ad2effdee490d2ed79da67c000ccfeb1bd01bf');
+        let guard: ts.Node | undefined = mounts[0];
+        while (guard && !ts.isJsxExpression(guard)) guard = guard.parent;
+        expect.soft(guard ? task9aAstFingerprint([guard]) : '', 'unchanged Fleet guard')
+            .toBe('5d583f66a7974b0dccd1d157795ac15cb73ec8526fd928fc47212c6f62528680');
+        let mountSection: ts.Node | undefined = mounts[0];
+        while (mountSection && !ts.isJsxElement(mountSection)) {
+            mountSection = mountSection.parent;
+        }
+        expect.soft(
+            mountSection ? task9aAstFingerprint([mountSection]) : '',
+            'unchanged Fleet mount section',
+        ).toBe('2f31f7b75b335708b31ef66b3756380a6f96e3e8244b970004af065d62e76f92');
+        expect.soft(task9aAstFingerprint([app]), 'unchanged App function')
+            .toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(
+            task9aImportEdges(appAst).filter((edge) =>
+                edge.startsWith('./legacy/runner/fleet/'),
+            ),
+            'App exact direct Fleet controller dependencies',
+        ).toEqual([
+            './legacy/runner/fleet/fleet-derivations.ts|value:fleetAgentDetail,value:fleetHeatmapRows,value:fleetMissingLabelAgents,value:fleetRegionRows',
+            './legacy/runner/fleet/fleet-helpers.ts|value:applyFleetLabelOverrides,value:fleetReportFilterFromUi,value:parseFleetLabelOverrides,value:readFleetFiltersFromUrl,value:readFleetWorldMapLayersFromUrl,value:writeFleetFiltersToSearchParams,value:writeFleetFiltersToUrl,value:writeFleetWorldMapLayersToSearchParams,value:writeFleetWorldMapLayersToUrl',
+            './legacy/runner/fleet/fleet-rollups.ts|value:fleetDisplaySummary,value:fleetFailureRows',
+            './legacy/runner/fleet/fleet-timing.ts|value:fleetTimingGroupsByRecipe,value:fleetTimingGroupsByRegion',
+            './legacy/runner/fleet/fleet-types.ts|type:FleetFilterState',
+            './legacy/runner/fleet/views/RunnerFleetControls.tsx|value:RunnerFleetControls',
+            './legacy/runner/fleet/views/RunnerFleetOverview.tsx|value:RunnerFleetOverview',
+            './legacy/runner/fleet/views/RunnerFleetReportAnalysis.tsx|value:RunnerFleetReportAnalysis',
+            './legacy/runner/fleet/views/RunnerFleetSelectedDetails.tsx|value:RunnerFleetSelectedDetails',
+        ]);
+        const appEdges = task9aImportEdges(appAst);
+        for (const movedViewDependency of [
+            './fleet-world-map.tsx|',
+            './legacy/runner/agents/ControlAgentBoardPanel.tsx|',
+            './legacy/runner/shared/performance-format.ts|',
+            './legacy/runner/shared/run-id-presentation.ts|',
+        ]) {
+            expect.soft(
+                appEdges.some((edge) => edge.startsWith(movedViewDependency)),
+                `App no stale direct ${movedViewDependency}`,
+            ).toBe(false);
+        }
+
+        const dependencies = new Map<string, readonly string[]>();
+        const discover = (path: string): void => {
+            if (dependencies.has(path)) return;
+            const source = existsSync(resolve(repositoryRoot, path)) ? repositorySource(path) : '';
+            const direct = task9aImportEdges(task9aSourceFile(path, source))
+                .map((edge) => edge.slice(0, edge.indexOf('|')))
+                .filter((moduleImport) => moduleImport.startsWith('.'))
+                .map((moduleImport) => relative(repositoryRoot, resolve(resolve(repositoryRoot, path), '..', moduleImport)))
+                .filter((dependency) => ['.ts', '.tsx'].includes(extname(dependency)) && existsSync(resolve(repositoryRoot, dependency)));
+            dependencies.set(path, direct);
+            for (const dependency of direct) discover(dependency);
+        };
+        for (const owner of owners) discover(owner.path);
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) { cycles.push(path); return; }
+            if (visited.has(path)) return;
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) visit(dependency);
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const owner of owners) visit(owner.path);
+        expect(cycles, 'Fleet recursive owner import cycles').toEqual([]);
     });
 
     it('keeps distributed compare formatters in the canonical time module', () => {
