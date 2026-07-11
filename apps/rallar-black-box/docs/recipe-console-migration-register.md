@@ -31,6 +31,18 @@ branch was recovered without history loss at the repository-ignored
 focused tests and typecheck at `5d86e17`; `App.tsx` is 8,012 lines. This changes
 no surface cutover, hide, mount, rollback, or deep-link status.
 
+Media M1 ownership checkpoint (2026-07-11): the exact private Media console is
+now owned by
+`src/legacy/diagnostics/media/MediaConsolePanel.tsx` (457 lines), reducing
+`App.tsx` to 7,575 lines. Tests-first extraction proof, 57/57 focused tests,
+typecheck/build, declaration/cleanup/action/JSX mutation probes, desktop and
+mobile Playwright, hidden-mounted lifetime/state checks, and independent review
+passed. The exhaustive live-service scenario was skipped because the required
+Postgres-backed API, control server, and app stack were unavailable. Landscape
+action controls remain 30px high and are registered Iteration 12 touch-target
+debt. This checkpoint changes no row's cutover, hide, mount, rollback, or
+deep-link status; `direct.media` retains its temporary stateful exception.
+
 ## Compatibility inputs that must remain deterministic
 
 | Compatibility input | Required destination during migration | Exact compatibility URL |
