@@ -4,6 +4,10 @@ import { appTabsForMode } from '../../../apps/rallar-black-box/src/app-tabs.ts';
 
 const appSourcePath = new URL('../../../apps/rallar-black-box/src/App.tsx', import.meta.url);
 const styleSourcePath = new URL('../../../apps/rallar-black-box/src/styles.css', import.meta.url);
+const legacyRunHeaderSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/shell/LegacyRunHeader.tsx',
+    import.meta.url,
+);
 const runnerRecipesPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/recipes/RunnerRecipesPanel.tsx',
     import.meta.url,
@@ -407,7 +411,9 @@ describe('rallar-black-box Rallar mode boundary', () => {
 
     it('keeps runner sample controls and bootstrap behind black-box-runner mode', () => {
         const source = appSource();
-        const header = sourceBetween(source, 'function Header', 'function AppTabs');
+        const header = existsSync(legacyRunHeaderSourcePath)
+            ? readFileSync(legacyRunHeaderSourcePath, 'utf8')
+            : sourceBetween(source, 'function Header', 'function AppTabs');
 
         expect(header).toContain("mode === 'black-box-runner'");
         expect(header).toContain('rallarBlackBoxRuntimeStore.runSample()');

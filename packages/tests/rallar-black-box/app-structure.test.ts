@@ -72,7 +72,9 @@ const extractedModuleImports = [
 const presentationModules = [
     {
         path: 'apps/rallar-black-box/src/legacy/shared/Metric.tsx',
-        moduleImport: './legacy/shared/Metric.tsx',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/shell/LegacyRunHeader.tsx',
+        moduleImport: '../shared/Metric.tsx',
         seams: ['Metric'],
     },
     {
@@ -84,7 +86,9 @@ const presentationModules = [
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/CollapsiblePanelSection.tsx',
-        moduleImport: './legacy/shared/CollapsiblePanelSection.tsx',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/diagnostics/media/MediaConsolePanel.tsx',
+        moduleImport: '../../shared/CollapsiblePanelSection.tsx',
         seams: ['CollapsiblePanelSection'],
     },
     {
@@ -107,7 +111,9 @@ const presentationModules = [
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/json-presentation.ts',
-        moduleImport: './legacy/shared/json-presentation.ts',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts',
+        moduleImport: '../../shared/json-presentation.ts',
         seams: ['parseJsonText', 'splitCsvValues'],
     },
     {
@@ -127,7 +133,14 @@ const presentationModules = [
     {
         path: 'apps/rallar-black-box/src/legacy/shared/redaction-presentation.ts',
         moduleImport: './legacy/shared/redaction-presentation.ts',
-        seams: ['uiRedactionOptions', 'redactedJson'],
+        seams: ['uiRedactionOptions'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/redaction-presentation.ts',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/shell/DirectRallarBoundaryPanel.tsx',
+        moduleImport: '../shared/redaction-presentation.ts',
+        seams: ['redactedJson'],
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/redaction-presentation.ts',
@@ -146,7 +159,21 @@ const presentationModules = [
     {
         path: 'apps/rallar-black-box/src/legacy/shared/command-presentation.ts',
         moduleImport: './legacy/shared/command-presentation.ts',
-        seams: ['commandId', 'statusTone', 'resultSummary'],
+        seams: ['commandId'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/command-presentation.ts',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/shell/LegacyRunHeader.tsx',
+        moduleImport: '../shared/command-presentation.ts',
+        seams: ['statusTone'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/command-presentation.ts',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/runner/advanced/CommandHistoryPanel.tsx',
+        moduleImport: '../../shared/command-presentation.ts',
+        seams: ['resultSummary'],
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/schema/SchemaAuthoringPanel.tsx',
@@ -9192,7 +9219,7 @@ describe('rallar-black-box app source ownership', () => {
                 : './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
             './legacy/shared/use-now.ts|value:useNow',
             './legacy/shell/RallarBrowserTraceBar.tsx|value:RallarBrowserTraceBar',
-            './legacy/shell/rallar-browser-status.ts|type:RallarBrowserStatusSummary,value:deriveRallarBrowserStatus',
+            './legacy/shell/rallar-browser-status.ts|value:deriveRallarBrowserStatus',
         ]);
         const components = [
             ['apps/rallar-black-box/src/legacy/shell/RallarBrowserTraceBar.tsx',
@@ -13763,7 +13790,21 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(appSource, 'no Auth lazy/Suspense lifetime cutover').not.toMatch(
             /(?:lazy\s*\(|<Suspense\b)/,
         );
-        expect.soft(appSource).toContain('function LoginScreen');
+        const loginScreenOwnerPath =
+            'apps/rallar-black-box/src/legacy/shell/LoginScreen.tsx';
+        const loginScreenOwnerPresent = existsSync(
+            resolve(repositoryRoot, loginScreenOwnerPath),
+        );
+        const loginScreenSource = loginScreenOwnerPresent
+            ? repositorySource(loginScreenOwnerPath)
+            : appSource;
+        expect.soft(loginScreenSource).toContain('function LoginScreen');
+        if (loginScreenOwnerPresent) {
+            expect.soft(appSource).not.toContain('function LoginScreen');
+            expect.soft(loginScreenSource).not.toMatch(
+                /(?:consumeBootstrapAgentSessionTicket|scrubAgentSessionTicketFromUrl|pendingAgentSessionTicketConsume)/,
+            );
+        }
         expect.soft(appSource).toContain('consumeBootstrapAgentSessionTicket');
         expect.soft(appSource).toContain('scrubAgentSessionTicketFromUrl');
         if (panelAst) {
