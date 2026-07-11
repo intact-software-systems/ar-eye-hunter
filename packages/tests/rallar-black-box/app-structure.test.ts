@@ -73,7 +73,9 @@ const presentationModules = [
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/schema/CommandExamplePicker.tsx',
-        moduleImport: './legacy/shared/schema/CommandExamplePicker.tsx',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/runner/workbench/WorkbenchPanel.tsx',
+        moduleImport: '../../shared/schema/CommandExamplePicker.tsx',
         seams: ['CommandExamplePicker'],
     },
 ] as const;
@@ -1962,6 +1964,452 @@ describe('rallar-black-box app source ownership', () => {
         for (const declaration of movedDeclarations) {
             expect.soft(declaration.test(appSource), declaration.source).toBe(false);
         }
+    });
+
+    it('keeps the advanced workbench leaves in exact focused owners', () => {
+        const appSource = repositorySource(appSourcePath);
+        const localWorkbenchPath =
+            'apps/rallar-black-box/src/legacy/runner/workbench/LocalWorkbenchSection.tsx';
+        const workbenchOwners = [
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/workbench/WorkbenchPanel.tsx',
+                seam: 'WorkbenchPanel',
+                lineCap: 230,
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/workbench/ControlPanel.tsx',
+                seam: 'ControlPanel',
+                lineCap: 150,
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/workbench/BootstrapPanel.tsx',
+                seam: 'BootstrapPanel',
+                lineCap: 80,
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/workbench/ConfigurationPanel.tsx',
+                seam: 'ConfigurationPanel',
+                lineCap: 75,
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/workbench/CommandQueuePanel.tsx',
+                seam: 'CommandQueuePanel',
+                lineCap: 90,
+            },
+            {
+                path: localWorkbenchPath,
+                seam: 'LocalWorkbenchSection',
+                lineCap: 100,
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/advanced/CommandHistoryPanel.tsx',
+                seam: 'CommandHistoryPanel',
+                lineCap: 90,
+            },
+            {
+                path: 'apps/rallar-black-box/src/legacy/runner/advanced/ReportPanel.tsx',
+                seam: 'ReportPanel',
+                lineCap: 120,
+            },
+        ] as const;
+        const sourceByPath = new Map<string, string>();
+
+        for (const owner of workbenchOwners) {
+            const ownerExists = existsSync(resolve(repositoryRoot, owner.path));
+            const ownerSource = ownerExists ? repositorySource(owner.path) : '';
+            sourceByPath.set(owner.path, ownerSource);
+
+            expect.soft(ownerExists, `${owner.path}: missing owner`).toBe(true);
+            expect
+                .soft(ownerSource, `${owner.path}: direct export`)
+                .toMatch(
+                    new RegExp(
+                        `^\\s*export\\s+function\\s+${owner.seam}\\s*\\(`,
+                        'm',
+                    ),
+                );
+            expect
+                .soft(ownerSource, `${owner.path}: export-star barrel`)
+                .not.toMatch(/^\s*export\s*\*(?:\s+as\s+\w+)?\s+from\b/m);
+            expect
+                .soft(ownerSource, `${owner.path}: named re-export facade`)
+                .not.toMatch(/^\s*export\s+(?:type\s+)?{[^}]+}\s*from\s*['"]/m);
+            expect.soft(ownerSource, `${owner.path}: App.tsx import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/,
+            );
+            expect.soft(ownerSource, `${owner.path}: CSS import`).not.toMatch(
+                /\b(?:from\s+|import\s*)['"][^'"]+\.css['"]/,
+            );
+            expect.soft(
+                ownerSource === ''
+                    ? 0
+                    : ownerSource.trimEnd().split(/\r?\n/).length,
+                `${owner.path}: line count`,
+            ).toBeLessThanOrEqual(owner.lineCap);
+
+            const declarationOwners = sourceFilesUnder(
+                'apps/rallar-black-box/src',
+            ).filter((sourcePath) =>
+                new RegExp(
+                    `^\\s*(?:export\\s+)?function\\s+${owner.seam}\\s*\\(`,
+                    'm',
+                ).test(repositorySource(sourcePath)),
+            );
+            expect.soft(declarationOwners, `${owner.seam}: exact owner`).toEqual([
+                owner.path,
+            ]);
+        }
+
+        const directImports = [
+            {
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/workbench/LocalWorkbenchSection.tsx',
+                seam: 'LocalWorkbenchSection',
+            },
+            {
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/advanced/CommandHistoryPanel.tsx',
+                seam: 'CommandHistoryPanel',
+            },
+            {
+                importerPath: appSourcePath,
+                moduleImport: './legacy/runner/advanced/ReportPanel.tsx',
+                seam: 'ReportPanel',
+            },
+            {
+                importerPath: localWorkbenchPath,
+                moduleImport: './WorkbenchPanel.tsx',
+                seam: 'WorkbenchPanel',
+            },
+            {
+                importerPath: localWorkbenchPath,
+                moduleImport: './ControlPanel.tsx',
+                seam: 'ControlPanel',
+            },
+            {
+                importerPath: localWorkbenchPath,
+                moduleImport: './BootstrapPanel.tsx',
+                seam: 'BootstrapPanel',
+            },
+            {
+                importerPath: localWorkbenchPath,
+                moduleImport: './ConfigurationPanel.tsx',
+                seam: 'ConfigurationPanel',
+            },
+            {
+                importerPath: localWorkbenchPath,
+                moduleImport: './CommandQueuePanel.tsx',
+                seam: 'CommandQueuePanel',
+            },
+            {
+                importerPath: localWorkbenchPath,
+                moduleImport: '../advanced/ReportPanel.tsx',
+                seam: 'ReportPanel',
+            },
+        ] as const;
+
+        for (const directImport of directImports) {
+            const importerSource =
+                directImport.importerPath === appSourcePath
+                    ? appSource
+                    : sourceByPath.get(directImport.importerPath) ?? '';
+            const escapedModuleImport = directImport.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importMatches = [
+                ...importerSource.matchAll(
+                    new RegExp(
+                        `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                        'g',
+                    ),
+                ),
+            ];
+
+            expect.soft(
+                importMatches,
+                `${directImport.importerPath}: ${directImport.moduleImport}`,
+            ).toHaveLength(1);
+            expect
+                .soft(
+                    importMatches[0]?.[1] ?? '',
+                    `${directImport.moduleImport}: ${directImport.seam}`,
+                )
+                .toMatch(new RegExp(`\\b${directImport.seam}\\b`));
+        }
+
+        for (const movedDeclaration of [
+            'WorkbenchPanel',
+            'ControlPanel',
+            'BootstrapPanel',
+            'ConfigurationPanel',
+            'CommandQueuePanel',
+            'CommandHistoryPanel',
+            'ReportPanel',
+            'createReportSnapshot',
+        ] as const) {
+            expect
+                .soft(appSource, `App.tsx local ${movedDeclaration}`)
+                .not.toMatch(
+                    new RegExp(
+                        `^\\s*(?:export\\s+)?function\\s+${movedDeclaration}\\s*\\(`,
+                        'm',
+                    ),
+                );
+        }
+
+        const localWorkbenchSource = sourceByPath.get(localWorkbenchPath) ?? '';
+        const childMarkers = [
+            '<WorkbenchPanel',
+            '<ControlPanel',
+            '<BootstrapPanel',
+            '<ConfigurationPanel',
+            '<CommandQueuePanel',
+            '<ReportPanel',
+        ] as const;
+        const childPositions = childMarkers.map((marker) =>
+            localWorkbenchSource.indexOf(marker),
+        );
+        expect.soft(
+            childPositions.every((position) => position >= 0),
+            'LocalWorkbenchSection: six children',
+        ).toBe(true);
+        expect.soft(childPositions, 'LocalWorkbenchSection: child order').toEqual(
+            [...childPositions].sort((left, right) => left - right),
+        );
+        for (const childMarker of childMarkers) {
+            expect.soft(
+                [...localWorkbenchSource.matchAll(new RegExp(childMarker, 'g'))],
+                `LocalWorkbenchSection: ${childMarker}`,
+            ).toHaveLength(1);
+        }
+        expect(localWorkbenchSource, 'LocalWorkbenchSection: fragment return').toMatch(
+            /return\s*\(\s*<>[\s\S]*<\/\>\s*\);/,
+        );
+        expect(localWorkbenchSource, 'LocalWorkbenchSection: no wrapper').not.toMatch(
+            /<(?:section|div)\b/,
+        );
+        expect(
+            [...localWorkbenchSource.matchAll(/\buseState(?:<[^>]+>)?\s*\(/g)],
+            'LocalWorkbenchSection: no local state',
+        ).toHaveLength(0);
+        expect(localWorkbenchSource, 'LocalWorkbenchSection: no key').not.toMatch(
+            /\bkey\s*=/,
+        );
+
+        const sectionCalls = [
+            ...appSource.matchAll(/<LocalWorkbenchSection\b[\s\S]*?\/>/g),
+        ].map((match) => match[0]);
+        expect(sectionCalls, 'App.tsx: two live workbench instances').toHaveLength(2);
+        for (const sectionCall of sectionCalls) {
+            for (const prop of [
+                'state',
+                'bootstrap',
+                'control',
+                'authSession',
+                'busy',
+                'runState',
+                'loadedFixtureId',
+                'lastError',
+                'queueRows',
+                'selectedCommandId',
+                'onSelectCommand',
+            ] as const) {
+                expect.soft(sectionCall, `LocalWorkbenchSection prop: ${prop}`).toMatch(
+                    new RegExp(`\\b${prop}\\s*=`),
+                );
+            }
+            expect.soft(sectionCall, 'LocalWorkbenchSection call: no key').not.toMatch(
+                /\bkey\s*=/,
+            );
+        }
+        expect(
+            [...appSource.matchAll(/^ {20}<LocalWorkbenchSection\b/gm)],
+            'App.tsx: both workbenches mount as unconditional direct children',
+        ).toHaveLength(2);
+
+        const runnerWrapper = appSource.match(
+            /<div\s+id="panel-local-workbench"[\s\S]*?<\/div>/,
+        )?.[0] ?? '';
+        expect(runnerWrapper, 'RunnerAdvanced local workbench wrapper').toContain(
+            'className="workspace-grid tab-workspace workbench-tab-grid"',
+        );
+        expect(runnerWrapper, 'RunnerAdvanced hidden ownership').toContain(
+            "hidden={surface !== 'workbench'}",
+        );
+        expect(
+            [...runnerWrapper.matchAll(/<LocalWorkbenchSection\b/g)],
+            'RunnerAdvanced local instance',
+        ).toHaveLength(1);
+
+        const legacyWrapper = appSource.match(
+            /<section\s+id="legacy-panel-local-workbench"[\s\S]*?<\/section>/,
+        )?.[0] ?? '';
+        for (const wrapperMarker of [
+            'className="workspace-grid tab-workspace workbench-tab-grid"',
+            'role="tabpanel"',
+            'aria-labelledby="tab-local-workbench"',
+            "hidden={activeTab !== 'local-workbench'}",
+        ] as const) {
+            expect.soft(
+                legacyWrapper,
+                `legacy local workbench wrapper: ${wrapperMarker}`,
+            ).toContain(wrapperMarker);
+        }
+        expect(
+            [...legacyWrapper.matchAll(/<LocalWorkbenchSection\b/g)],
+            'legacy local workbench instance',
+        ).toHaveLength(1);
+
+        const workbenchSource =
+            sourceByPath.get(workbenchOwners[0].path) ?? '';
+        const controlSource = sourceByPath.get(workbenchOwners[1].path) ?? '';
+        const reportSource = sourceByPath.get(workbenchOwners[7].path) ?? '';
+        expect(
+            [...workbenchSource.matchAll(/\buseState(?:<[^>]+>)?\s*\(/g)],
+            'WorkbenchPanel: exact state count',
+        ).toHaveLength(4);
+        expect(
+            [...workbenchSource.matchAll(/\buseMemo\s*\(/g)],
+            'WorkbenchPanel: exact validation memo count',
+        ).toHaveLength(2);
+        expect(
+            [...workbenchSource.matchAll(/\buseEffect\s*\(/g)],
+            'WorkbenchPanel: no effects',
+        ).toHaveLength(0);
+        expect(workbenchSource, 'WorkbenchPanel: no loaded fixture sync').not.toMatch(
+            /useEffect[\s\S]*loadedFixtureId/,
+        );
+        const runtimeOperations = [
+            'loadRecipeFromJson',
+            'runLoadedRecipe',
+            'cancelRecipe',
+            'resetWorkbench',
+            'executeCommandFromJson',
+        ] as const;
+        const operationPositions = runtimeOperations.map((operation) =>
+            workbenchSource.indexOf(`rallarBlackBoxRuntimeStore.${operation}`),
+        );
+        expect.soft(
+            operationPositions.every((position) => position >= 0),
+            'WorkbenchPanel: runtime-store operations',
+        ).toBe(true);
+        expect.soft(operationPositions, 'WorkbenchPanel: runtime-store call order').toEqual(
+            [...operationPositions].sort((left, right) => left - right),
+        );
+
+        expect(
+            [...controlSource.matchAll(/\buseState(?:<[^>]+>)?\s*\(/g)],
+            'ControlPanel: exact state count',
+        ).toHaveLength(3);
+        expect(
+            [...controlSource.matchAll(/\buseEffect\s*\(/g)],
+            'ControlPanel: exact effect count',
+        ).toHaveLength(2);
+        expect(controlSource, 'ControlPanel: config backfill dependencies').toMatch(
+            /}, \[agentId, config\?\.agentId, config\?\.runId, runId\]\);/,
+        );
+        expect(controlSource, 'ControlPanel: URL backfill dependencies').toMatch(
+            /}, \[control\.url, url\.length\]\);/,
+        );
+
+        expect(reportSource, 'ReportPanel: private snapshot helper').toMatch(
+            /^\s*function\s+createReportSnapshot\s*\(/m,
+        );
+        expect(reportSource, 'ReportPanel: snapshot helper is not exported').not.toMatch(
+            /^\s*export\s+function\s+createReportSnapshot\s*\(/m,
+        );
+        expect(
+            [...reportSource.matchAll(/\bDate\.now\(\)/g)],
+            'ReportPanel: exact snapshot clock call',
+        ).toHaveLength(1);
+        expect(
+            [...reportSource.matchAll(/\buseState(?:<[^>]+>)?\s*\(/g)],
+            'ReportPanel: visibility state',
+        ).toHaveLength(1);
+        expect(reportSource, 'ReportPanel: snapshot recomputation site').toMatch(
+            /useMemo\(\s*\(\) => redactedJson\(createReportSnapshot\(state\), state, authSession\),\s*\[authSession, state],\s*\)/,
+        );
+
+        for (const owner of workbenchOwners) {
+            const ownerSource = sourceByPath.get(owner.path) ?? '';
+            expect.soft(ownerSource, `${owner.path}: no useCallback`).not.toMatch(
+                /\buseCallback\b/,
+            );
+            expect.soft(ownerSource, `${owner.path}: no polling`).not.toMatch(
+                /\b(?:setInterval|setTimeout)\s*\(/,
+            );
+            expect.soft(ownerSource, `${owner.path}: no native fetch`).not.toMatch(
+                /\bfetch\s*\(/,
+            );
+        }
+        for (const ownerIndex of [2, 3, 4, 6] as const) {
+            const owner = workbenchOwners[ownerIndex];
+            const ownerSource = sourceByPath.get(owner.path) ?? '';
+            expect.soft(ownerSource, `${owner.path}: no effects`).not.toMatch(
+                /\buseEffect\b/,
+            );
+            expect.soft(ownerSource, `${owner.path}: no runtime API`).not.toMatch(
+                /\brallarBlackBoxRuntimeStore\b/,
+            );
+        }
+
+        expect(
+            [...appSource.matchAll(/<CommandHistoryPanel\b/g)],
+            'App.tsx: all command history consumers',
+        ).toHaveLength(3);
+        expect(
+            [...appSource.matchAll(/<ReportPanel\b/g)],
+            'App.tsx: non-workbench report consumer',
+        ).toHaveLength(1);
+
+        const targetPaths = new Set(workbenchOwners.map((owner) => owner.path));
+        const dependencies = new Map<string, readonly string[]>();
+        for (const owner of workbenchOwners) {
+            dependencies.set(
+                owner.path,
+                [...(sourceByPath.get(owner.path) ?? '').matchAll(
+                    /\bfrom\s+['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]/g,
+                )]
+                    .map((match) => match[1] ?? match[2])
+                    .filter((moduleImport) => moduleImport.startsWith('.'))
+                    .map((moduleImport) =>
+                        relative(
+                            repositoryRoot,
+                            resolve(
+                                resolve(repositoryRoot, owner.path),
+                                '..',
+                                moduleImport,
+                            ),
+                        ),
+                    )
+                    .filter((dependency) => targetPaths.has(dependency)),
+            );
+        }
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) {
+                return;
+            }
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) {
+                visit(dependency);
+            }
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const targetPath of targetPaths) {
+            visit(targetPath);
+        }
+        expect(cycles, 'advanced workbench import cycles').toEqual([]);
     });
 
     it('keeps the legacy run manager and its dependencies in focused modules', () => {

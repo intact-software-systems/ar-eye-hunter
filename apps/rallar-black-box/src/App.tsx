@@ -112,12 +112,7 @@ import {
     resolveBlackBoxControlToken,
     type BlackBoxControlTokenSession,
 } from './control-operator-token.ts';
-import {
-    RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
-    RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
-    recipeFixtureText,
-} from './recipe-fixtures.ts';
+import { RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS } from './recipe-fixtures.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
 import {
     DEFAULT_MANUAL_WORKBENCH_VALUES,
@@ -333,11 +328,12 @@ import {
 import {
     SchemaAuthoringPanel,
 } from './legacy/shared/schema/SchemaAuthoringPanel.tsx';
-import { CommandExamplePicker } from './legacy/shared/schema/CommandExamplePicker.tsx';
 import { recordValue } from './legacy/shared/record-value.ts';
 import { safeIdSegment } from './legacy/shared/safe-id-segment.ts';
 import { uniqueValues } from './legacy/shared/unique-values.ts';
 import { ControlAgentBoardPanel } from './legacy/runner/agents/ControlAgentBoardPanel.tsx';
+import { CommandHistoryPanel } from './legacy/runner/advanced/CommandHistoryPanel.tsx';
+import { ReportPanel } from './legacy/runner/advanced/ReportPanel.tsx';
 import { DistributedRunComparePanel } from './legacy/runner/distributed/DistributedRunComparePanel.tsx';
 import { DistributedRunMonitorPanel } from './legacy/runner/distributed/DistributedRunMonitorPanel.tsx';
 import { DistributedRunSummary } from './legacy/runner/distributed/DistributedRunSummary.tsx';
@@ -348,6 +344,7 @@ import { RtcPerformancePanel } from './legacy/runner/evidence/rtc/RtcPerformance
 import { DistributedRunAnalysisReportPanel } from './legacy/runner/runs/DistributedRunAnalysisReportPanel.tsx';
 import { ImportedDistributedArtifactAnalysisPanel } from './legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx';
 import { RunManagerPanel } from './legacy/runner/run-manager/RunManagerPanel.tsx';
+import { LocalWorkbenchSection } from './legacy/runner/workbench/LocalWorkbenchSection.tsx';
 import { DistributedRecipePreflightPanel } from './legacy/runner/distributed-recipes/DistributedRecipePreflightPanel.tsx';
 import { DistributedRecipesPanel } from './legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
 import {
@@ -2726,41 +2723,6 @@ function parseRallarServerCollectionVariablesText(
         throw new Error('Collection variables must be a JSON object.');
     }
     return value as RallarServerRestCollectionVariables;
-}
-
-function createReportSnapshot(state: RallarBlackBoxTestState): unknown {
-    const providerMode = rallarBlackBoxProviderModeFromConfig(
-        state.currentConfig,
-    );
-    return {
-        reportId: `local-report-${state.currentConfig?.runId ?? 'unconfigured'}`,
-        runId: state.currentConfig?.runId,
-        agentId: state.currentConfig?.agentId,
-        providerMode,
-        generatedAtEpochMs: Date.now(),
-        status: state.status,
-        config: state.currentConfig,
-        loadedRecipe: state.loadedRecipe
-            ? {
-                  recipeId: state.loadedRecipe.recipeId,
-                  name: state.loadedRecipe.name,
-                  commandCount: state.loadedRecipe.commands.length,
-              }
-            : undefined,
-        summary: {
-            providerMode,
-            commands: state.commandHistory.length,
-            failures: state.failures.length,
-            events: state.events.length,
-            firstFailureCommandId: state.failures[0]?.commandId,
-        },
-        stats: state.latestStats,
-        results: state.commandHistory.map((result) => ({
-            ...result,
-            providerMode,
-        })),
-        events: state.events,
-    };
 }
 
 function deriveQueue(
@@ -9048,23 +9010,18 @@ function RunnerAdvancedPanel({
                     className="workspace-grid tab-workspace workbench-tab-grid"
                     hidden={surface !== 'workbench'}
                 >
-                    <WorkbenchPanel
+                    <LocalWorkbenchSection
+                        state={state}
+                        bootstrap={bootstrap}
+                        control={control}
+                        authSession={authSession}
                         busy={busy}
                         runState={runState}
                         loadedFixtureId={loadedFixtureId}
                         lastError={lastError}
-                    />
-                    <ControlPanel state={state} control={control} />
-                    <BootstrapPanel bootstrap={bootstrap} />
-                    <ConfigurationPanel state={state} />
-                    <CommandQueuePanel
-                        rows={queueRows}
+                        queueRows={queueRows}
                         selectedCommandId={selectedCommandId}
-                        onSelect={onSelectCommand}
-                    />
-                    <ReportPanel
-                        state={state}
-                        authSession={authSession}
+                        onSelectCommand={onSelectCommand}
                     />
                 </div>
                 {surface === 'distributed' && (
@@ -9126,193 +9083,6 @@ function RunnerAdvancedPanel({
                     </div>
                 )}
             </div>
-        </section>
-    );
-}
-
-function WorkbenchPanel({
-    busy,
-    runState,
-    loadedFixtureId,
-    lastError,
-}: {
-    busy: boolean;
-    runState: string;
-    loadedFixtureId?: string;
-    lastError?: string;
-}) {
-    const [fixtureId, setFixtureId] = useState(
-        loadedFixtureId ?? RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId,
-    );
-    const [recipeText, setRecipeText] = useState(() =>
-        recipeFixtureText(fixtureId),
-    );
-    const [commandText, setCommandText] = useState(() =>
-        JSON.stringify(RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE, null, 2),
-    );
-    const [localError, setLocalError] = useState<string | undefined>();
-    const recipeValidation = useMemo(
-        () => validateSchemaAuthoringText('recipe', recipeText),
-        [recipeText],
-    );
-    const commandValidation = useMemo(
-        () => validateSchemaAuthoringText('command', commandText),
-        [commandText],
-    );
-
-    const runAction = async (action: () => Promise<void>): Promise<void> => {
-        setLocalError(undefined);
-        try {
-            await action();
-        } catch (error) {
-            setLocalError(
-                error instanceof Error ? error.message : String(error),
-            );
-        }
-    };
-
-    const selectFixture = (nextFixtureId: string): void => {
-        setFixtureId(nextFixtureId);
-        setRecipeText(recipeFixtureText(nextFixtureId));
-        setLocalError(undefined);
-    };
-
-    const fixture =
-        RALLAR_BLACK_BOX_RECIPE_FIXTURES.find(
-            (entry) => entry.fixtureId === fixtureId,
-        ) ?? RALLAR_BLACK_BOX_RECIPE_FIXTURES[0];
-
-    return (
-        <section className="panel workbench-panel">
-            <div className="panel-heading">
-                <h2>Local Workbench</h2>
-                <span className={`pill ${statusTone(runState)}`}>
-                    {runState}
-                </span>
-            </div>
-            <CollapsiblePanelSection
-                title="Workbench Inputs"
-                meta={fixture.label}
-            >
-                <div className="workbench-controls">
-                    <label className="field">
-                        <span>Fixture</span>
-                        <select
-                            value={fixtureId}
-                            onChange={(event) =>
-                                selectFixture(event.target.value)
-                            }
-                            disabled={busy}
-                        >
-                            {RALLAR_BLACK_BOX_RECIPE_FIXTURES.map((entry) => (
-                                <option
-                                    key={entry.fixtureId}
-                                    value={entry.fixtureId}
-                                >
-                                    {entry.label}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <p className="fixture-description">{fixture.description}</p>
-                    <div className="workbench-actions">
-                        <button
-                            type="button"
-                            onClick={() =>
-                                runAction(() =>
-                                    rallarBlackBoxRuntimeStore.loadRecipeFromJson(
-                                        recipeText,
-                                        fixtureId,
-                                    ),
-                                )
-                            }
-                            disabled={busy || !recipeValidation.ok}
-                        >
-                            Load
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() =>
-                                runAction(() =>
-                                    rallarBlackBoxRuntimeStore.runLoadedRecipe(),
-                                )
-                            }
-                            disabled={busy}
-                        >
-                            Run
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() =>
-                                runAction(() =>
-                                    rallarBlackBoxRuntimeStore.cancelRecipe(),
-                                )
-                            }
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() =>
-                                runAction(() =>
-                                    rallarBlackBoxRuntimeStore.resetWorkbench(),
-                                )
-                            }
-                            disabled={busy}
-                        >
-                            Reset
-                        </button>
-                    </div>
-                </div>
-                <label className="json-editor">
-                    <span>Recipe JSON</span>
-                    <textarea
-                        value={recipeText}
-                        onChange={(event) => setRecipeText(event.target.value)}
-                        spellCheck={false}
-                        disabled={busy}
-                    />
-                </label>
-                <SchemaAuthoringPanel validation={recipeValidation} />
-                <div className="manual-command">
-                    <label className="json-editor">
-                        <span>Manual Command JSON</span>
-                        <textarea
-                            value={commandText}
-                            onChange={(event) =>
-                                setCommandText(event.target.value)
-                            }
-                            spellCheck={false}
-                            disabled={busy}
-                        />
-                    </label>
-                    <SchemaAuthoringPanel validation={commandValidation} />
-                    <CommandExamplePicker
-                        onInsert={setCommandText}
-                        onCopy={(text) =>
-                            void navigator.clipboard?.writeText(text)
-                        }
-                    />
-                    <button
-                        type="button"
-                        onClick={() =>
-                            runAction(() =>
-                                rallarBlackBoxRuntimeStore.executeCommandFromJson(
-                                    commandText,
-                                ),
-                            )
-                        }
-                        disabled={busy || !commandValidation.ok}
-                    >
-                        Execute Command
-                    </button>
-                </div>
-            </CollapsiblePanelSection>
-            {(localError || lastError) && (
-                <div className="workbench-error" role="status">
-                    {localError ?? lastError}
-                </div>
-            )}
         </section>
     );
 }
@@ -10883,122 +10653,6 @@ function TopologyGraphPanel({
     );
 }
 
-function ControlPanel({
-    state,
-    control,
-}: {
-    state: RallarBlackBoxTestState;
-    control: RallarBlackBoxControlSnapshot;
-}) {
-    const config = selectRallarBlackBoxCurrentConfig(state);
-    const [url, setUrl] = useState(control.url ?? '');
-    const [runId, setRunId] = useState(control.runId ?? config?.runId ?? '');
-    const [agentId, setAgentId] = useState(
-        control.agentId ?? config?.agentId ?? '',
-    );
-    const connected = control.state === 'registered';
-    const connecting =
-        control.state === 'connecting' || control.state === 'reconnecting';
-
-    useEffect(() => {
-        if (!runId && config?.runId) setRunId(config.runId);
-        if (!agentId && config?.agentId) setAgentId(config.agentId);
-    }, [agentId, config?.agentId, config?.runId, runId]);
-
-    useEffect(() => {
-        if (control.url && url.length === 0) {
-            setUrl(control.url);
-        }
-    }, [control.url, url.length]);
-
-    return (
-        <section className="panel control-panel">
-            <div className="panel-heading">
-                <h2>Control Client</h2>
-                <span className={`pill ${statusTone(control.state)}`}>
-                    {control.state}
-                </span>
-            </div>
-            <div className="control-grid">
-                <label className="field">
-                    <span>WebSocket URL</span>
-                    <input
-                        value={url}
-                        onChange={(event) => setUrl(event.target.value)}
-                        disabled={connected || connecting}
-                    />
-                </label>
-                <label className="field">
-                    <span>Run ID</span>
-                    <input
-                        value={runId}
-                        onChange={(event) => setRunId(event.target.value)}
-                        disabled={connected || connecting}
-                    />
-                </label>
-                <label className="field">
-                    <span>Agent ID</span>
-                    <input
-                        value={agentId}
-                        onChange={(event) => setAgentId(event.target.value)}
-                        disabled={connected || connecting}
-                    />
-                </label>
-            </div>
-            <div className="control-actions">
-                <button
-                    type="button"
-                    disabled={!url || connected || connecting}
-                    onClick={() =>
-                        rallarBlackBoxRuntimeStore.connectControl(
-                            url,
-                            runId,
-                            agentId,
-                        )
-                    }
-                >
-                    Connect
-                </button>
-                <button
-                    type="button"
-                    disabled={
-                        control.state === 'idle' ||
-                        control.state === 'disconnected'
-                    }
-                    onClick={() =>
-                        rallarBlackBoxRuntimeStore.disconnectControl()
-                    }
-                >
-                    Disconnect
-                </button>
-            </div>
-            <dl className="control-stats">
-                <div>
-                    <dt>Sent</dt>
-                    <dd>{control.sentCount}</dd>
-                </div>
-                <div>
-                    <dt>Received</dt>
-                    <dd>{control.receivedCount}</dd>
-                </div>
-                <div>
-                    <dt>Reconnects</dt>
-                    <dd>{control.reconnectAttempt}</dd>
-                </div>
-                <div>
-                    <dt>Heartbeat</dt>
-                    <dd>{formatTime(control.lastHeartbeatAtEpochMs)}</dd>
-                </div>
-            </dl>
-            {control.lastError && (
-                <div className="workbench-error" role="status">
-                    {control.lastError}
-                </div>
-            )}
-        </section>
-    );
-}
-
 const DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS = {
     commands: 500,
     results: 500,
@@ -11009,129 +10663,6 @@ const DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS = {
 } as const;
 
 const RUNNER_DISTRIBUTED_POLL_MS = 1_000;
-
-function BootstrapPanel({
-    bootstrap,
-}: {
-    bootstrap: RallarBlackBoxBootstrapConfig;
-}) {
-    return (
-        <section className="panel bootstrap-panel">
-            <div className="panel-heading">
-                <h2>Bootstrap</h2>
-                <span
-                    className={`pill ${bootstrap.mode === 'control-agent' ? 'active' : 'muted'}`}
-                >
-                    {bootstrap.mode}
-                </span>
-            </div>
-            <dl className="config-grid">
-                <div>
-                    <dt>Source</dt>
-                    <dd>{bootstrap.source}</dd>
-                </div>
-                <div>
-                    <dt>Provider</dt>
-                    <dd>{bootstrap.providerMode}</dd>
-                </div>
-                <div>
-                    <dt>Auto Connect</dt>
-                    <dd>{bootstrap.autoConnect ? 'enabled' : 'disabled'}</dd>
-                </div>
-                <div>
-                    <dt>Control URL</dt>
-                    <dd>{bootstrap.controlUrl}</dd>
-                </div>
-                <div>
-                    <dt>Run</dt>
-                    <dd>{bootstrap.runId ?? 'generated'}</dd>
-                </div>
-                <div>
-                    <dt>Agent</dt>
-                    <dd>{bootstrap.agentId}</dd>
-                </div>
-            </dl>
-        </section>
-    );
-}
-
-function ConfigurationPanel({ state }: { state: RallarBlackBoxTestState }) {
-    const config = selectRallarBlackBoxCurrentConfig(state);
-    const providerMode = rallarBlackBoxProviderModeFromConfig(config);
-
-    return (
-        <section className="panel config-panel">
-            <div className="panel-heading">
-                <h2>Configuration</h2>
-                <span className="pill muted">redacted</span>
-            </div>
-            <dl className="config-list">
-                <div>
-                    <dt>Provider</dt>
-                    <dd>{providerMode}</dd>
-                </div>
-                <div>
-                    <dt>API base</dt>
-                    <dd>{config?.apiBaseUrl ?? 'not configured'}</dd>
-                </div>
-                <div>
-                    <dt>Transport</dt>
-                    <dd>{config?.transport ?? 'not selected'}</dd>
-                </div>
-                <div>
-                    <dt>Room</dt>
-                    <dd>{config?.roomId ?? 'not joined'}</dd>
-                </div>
-                <div>
-                    <dt>Control mode</dt>
-                    <dd>{String(config?.control?.mode ?? 'local')}</dd>
-                </div>
-            </dl>
-            <pre className="json-block">{redactedJson(config, state)}</pre>
-        </section>
-    );
-}
-
-function CommandQueuePanel({
-    rows,
-    selectedCommandId,
-    onSelect,
-}: {
-    rows: readonly CommandQueueRow[];
-    selectedCommandId?: string;
-    onSelect(commandId: string): void;
-}) {
-    return (
-        <section className="panel queue-panel">
-            <div className="panel-heading">
-                <h2>Command Queue</h2>
-                <span>{rows.length} commands</span>
-            </div>
-            <div className="queue-list">
-                {rows.map((row) => (
-                    <button
-                        type="button"
-                        key={row.id}
-                        className={`queue-row ${selectedCommandId === row.id ? 'selected' : ''}`}
-                        onClick={() => onSelect(row.id)}
-                    >
-                        <span className={`status-dot ${row.status}`} />
-                        <span className="queue-main">
-                            <strong>{row.label}</strong>
-                            <small>{row.id}</small>
-                        </span>
-                        <span className={`pill ${statusTone(row.status)}`}>
-                            {row.status}
-                        </span>
-                        <span className="queue-time">
-                            {row.timeoutMs ? `${row.timeoutMs} ms` : '-'}
-                        </span>
-                    </button>
-                ))}
-            </div>
-        </section>
-    );
-}
 
 function ExecutionFocusPanel({
     result,
@@ -11222,55 +10753,6 @@ function ExecutionFocusPanel({
                     ),
                 )}
             </pre>
-        </section>
-    );
-}
-
-function CommandHistoryPanel({
-    history,
-    selectedCommandId,
-    onSelect,
-}: {
-    history: readonly RallarBlackBoxTestResult[];
-    selectedCommandId?: string;
-    onSelect(commandId: string): void;
-}) {
-    return (
-        <section className="panel history-panel">
-            <div className="panel-heading">
-                <h2>Completed Commands</h2>
-                <span>{history.length} results</span>
-            </div>
-            <div className="history-list">
-                {history
-                    .slice(-30)
-                    .reverse()
-                    .map((result, index) => (
-                        <button
-                            type="button"
-                            key={`${result.commandId}-${index}`}
-                            className={`history-row ${selectedCommandId === result.commandId ? 'selected' : ''}`}
-                            onClick={() => onSelect(result.commandId)}
-                        >
-                            <span
-                                className={`status-dot ${result.ok ? 'completed' : 'failed'}`}
-                            />
-                            <span className="history-main">
-                                <strong>{result.commandId}</strong>
-                                <small>{result.kind}</small>
-                            </span>
-                            <span>{formatDuration(result.durationMs)}</span>
-                            <span
-                                className={`pill ${statusTone(result.status)}`}
-                            >
-                                {result.status}
-                            </span>
-                            <small className="history-summary">
-                                {resultSummary(result)}
-                            </small>
-                        </button>
-                    ))}
-            </div>
         </section>
     );
 }
@@ -11763,42 +11245,6 @@ function FailurePanel({
             <pre className="json-block">
                 {redactedJson(firstFailure ?? { ok: true }, state, authSession)}
             </pre>
-        </section>
-    );
-}
-
-function ReportPanel({
-    state,
-    authSession,
-}: {
-    state: RallarBlackBoxTestState;
-    authSession?: AuthSession;
-}) {
-    const [visible, setVisible] = useState(false);
-    const reportText = useMemo(
-        () => redactedJson(createReportSnapshot(state), state, authSession),
-        [authSession, state],
-    );
-
-    return (
-        <section className="panel report-panel">
-            <div className="panel-heading">
-                <h2>Report Snapshot</h2>
-                <button
-                    type="button"
-                    onClick={() => setVisible((current) => !current)}
-                >
-                    {visible ? 'Hide' : 'Show'}
-                </button>
-            </div>
-            {visible && (
-                <textarea
-                    className="report-output"
-                    value={reportText}
-                    readOnly
-                    spellCheck={false}
-                />
-            )}
         </section>
     );
 }
@@ -21663,21 +21109,19 @@ export default function App() {
                     aria-labelledby="tab-local-workbench"
                     hidden={activeTab !== 'local-workbench'}
                 >
-                    <WorkbenchPanel
+                    <LocalWorkbenchSection
+                        state={state}
+                        bootstrap={bootstrap}
+                        control={control}
+                        authSession={authSession}
                         busy={busy}
                         runState={runState}
                         loadedFixtureId={loadedFixtureId}
                         lastError={lastError}
-                    />
-                    <ControlPanel state={state} control={control} />
-                    <BootstrapPanel bootstrap={bootstrap} />
-                    <ConfigurationPanel state={state} />
-                    <CommandQueuePanel
-                        rows={queueRows}
+                        queueRows={queueRows}
                         selectedCommandId={selectedCommandId}
-                        onSelect={setSelectedCommandId}
+                        onSelectCommand={setSelectedCommandId}
                     />
-                    <ReportPanel state={state} authSession={authSession} />
                 </section>
                 <section
                     id="legacy-panel-run-manager"
