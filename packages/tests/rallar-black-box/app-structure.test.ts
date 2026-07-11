@@ -198,19 +198,33 @@ function task9aSourceFile(path: string, source: string): ts.SourceFile {
     );
 }
 
-function task9aAstShape(node: ts.Node): string {
+function task9aAstShape(node: ts.Node, omittedNode?: ts.Node): string {
+    if (node === omittedNode) return '';
     const text = task9aAstTextKinds.has(node.kind)
         ? String((node as ts.Node & { text: string }).text)
         : '';
     const children = node
         .getChildren(node.getSourceFile())
-        .map((child) => task9aAstShape(child));
+        .map((child) => task9aAstShape(child, omittedNode));
     return `(${node.kind}:${JSON.stringify(text)}${children.join('')})`;
 }
 
 function task9aAstFingerprint(nodes: readonly ts.Node[]): string {
     return createHash('sha256')
         .update(nodes.map(task9aAstShape).join('\n'))
+        .digest('hex');
+}
+
+function task9aAstFingerprintOmittingNode(
+    nodes: readonly ts.Node[],
+    omittedNode: ts.Node,
+): string {
+    return createHash('sha256')
+        .update(
+            nodes
+                .map((node) => task9aAstShape(node, omittedNode))
+                .join('\n'),
+        )
         .digest('hex');
 }
 
@@ -323,6 +337,128 @@ function task9aImportEdges(sourceFile: ts.SourceFile): readonly string[] {
                 `${moduleImport}|${[...seams].sort().join(',')}`,
         )
         .sort();
+}
+
+function task9aModuleSpecifiers(sourceFile: ts.SourceFile): readonly string[] {
+    const moduleImports = new Set<string>();
+    const addModuleImport = (node: ts.Node | undefined): void => {
+        if (node && ts.isStringLiteralLike(node)) {
+            moduleImports.add(node.text);
+        }
+    };
+    const visit = (node: ts.Node): void => {
+        if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+            addModuleImport(node.moduleSpecifier);
+        } else if (
+            ts.isImportEqualsDeclaration(node) &&
+            ts.isExternalModuleReference(node.moduleReference)
+        ) {
+            addModuleImport(node.moduleReference.expression);
+        } else if (
+            ts.isImportTypeNode(node) &&
+            ts.isLiteralTypeNode(node.argument)
+        ) {
+            addModuleImport(node.argument.literal);
+        } else if (
+            ts.isCallExpression(node) &&
+            node.expression.kind === ts.SyntaxKind.ImportKeyword
+        ) {
+            addModuleImport(node.arguments[0]);
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return [...moduleImports].sort();
+}
+
+function task9aResolveRelativeTypeScriptDependency(
+    importerPath: string,
+    moduleImport: string,
+    pathExists: (path: string) => boolean,
+): string | undefined {
+    if (!moduleImport.startsWith('.')) return undefined;
+    const absoluteModulePath = resolve(
+        resolve(repositoryRoot, importerPath),
+        '..',
+        moduleImport,
+    );
+    const moduleExtension = extname(absoluteModulePath);
+    const candidates = moduleExtension === ''
+        ? [
+              `${absoluteModulePath}.ts`,
+              `${absoluteModulePath}.tsx`,
+              join(absoluteModulePath, 'index.ts'),
+              join(absoluteModulePath, 'index.tsx'),
+          ]
+        : moduleExtension === '.js' || moduleExtension === '.jsx'
+          ? [
+                `${absoluteModulePath.slice(0, -moduleExtension.length)}.ts`,
+                `${absoluteModulePath.slice(0, -moduleExtension.length)}.tsx`,
+            ]
+          : moduleExtension === '.ts' || moduleExtension === '.tsx'
+            ? [absoluteModulePath]
+            : [];
+    return candidates
+        .map((candidate) => relative(repositoryRoot, candidate))
+        .find(pathExists);
+}
+
+function task9aReachableRelativeTypeScriptGraph(
+    entryPaths: readonly string[],
+    readSource: (path: string) => string,
+    pathExists: (path: string) => boolean,
+): ReadonlyMap<string, readonly string[]> {
+    const graph = new Map<string, readonly string[]>();
+    const pending = [...entryPaths];
+    while (pending.length > 0) {
+        const path = pending.shift()!;
+        if (graph.has(path)) continue;
+        const sourceFile = task9aSourceFile(path, readSource(path));
+        const dependencies = [
+            ...new Set(
+                task9aModuleSpecifiers(sourceFile)
+                    .map((moduleImport) =>
+                        task9aResolveRelativeTypeScriptDependency(
+                            path,
+                            moduleImport,
+                            pathExists,
+                        )
+                    )
+                    .filter(
+                        (dependency): dependency is string =>
+                            dependency !== undefined,
+                    ),
+            ),
+        ].sort();
+        graph.set(path, dependencies);
+        for (const dependency of dependencies) {
+            if (!graph.has(dependency)) pending.push(dependency);
+        }
+    }
+    return graph;
+}
+
+function task9aDependencyCycles(
+    graph: ReadonlyMap<string, readonly string[]>,
+): readonly string[] {
+    const active = new Set<string>();
+    const visited = new Set<string>();
+    const cycles = new Set<string>();
+    const visit = (path: string): void => {
+        if (active.has(path)) {
+            cycles.add(path);
+            return;
+        }
+        if (visited.has(path)) return;
+        active.add(path);
+        for (const dependency of graph.get(path) ?? []) {
+            visit(dependency);
+        }
+        active.delete(path);
+        visited.add(path);
+    };
+    for (const path of graph.keys()) visit(path);
+    return [...cycles].sort();
 }
 
 function task9aExportSeams(sourceFile: ts.SourceFile): readonly string[] {
@@ -13084,85 +13220,67 @@ describe('rallar-black-box app source ownership', () => {
                     sourcePath,
                     repositorySource(sourcePath),
                 );
-                return task9aImportEdges(sourceFile).some((edge) => {
-                    const moduleImport = edge.slice(0, edge.indexOf('|'));
-                    if (!moduleImport.startsWith('.')) return false;
-                    return relative(
-                        repositoryRoot,
-                        resolve(
-                            resolve(repositoryRoot, sourcePath),
-                            '..',
+                return task9aModuleSpecifiers(sourceFile).some(
+                    (moduleImport) =>
+                        task9aResolveRelativeTypeScriptDependency(
+                            sourcePath,
                             moduleImport,
-                        ),
-                    ) === ownerPath;
-                });
+                            (path) =>
+                                existsSync(resolve(repositoryRoot, path)),
+                        ) === ownerPath,
+                );
             });
             expect.soft(
                 ownerConsumers,
                 'App is the only Media console owner consumer',
             ).toEqual([appSourcePath]);
 
-            const ownerPaths = new Set<string>([ownerPath]);
-            for (const edge of task9aImportEdges(ownerAst)) {
-                const moduleImport = edge.slice(0, edge.indexOf('|'));
-                if (!moduleImport.startsWith('.')) continue;
-                const dependency = relative(
-                    repositoryRoot,
-                    resolve(
-                        resolve(repositoryRoot, ownerPath),
-                        '..',
-                        moduleImport,
-                    ),
-                );
-                if (existsSync(resolve(repositoryRoot, dependency))) {
-                    ownerPaths.add(dependency);
-                }
-            }
-            const graph = new Map<string, readonly string[]>();
-            for (const path of ownerPaths) {
-                const sourceFile = task9aSourceFile(
-                    path,
-                    repositorySource(path),
-                );
-                graph.set(
-                    path,
-                    task9aImportEdges(sourceFile)
-                        .map((edge) => edge.slice(0, edge.indexOf('|')))
-                        .filter((moduleImport) =>
-                            moduleImport.startsWith('.')
-                        )
-                        .map((moduleImport) => relative(
-                            repositoryRoot,
-                            resolve(
-                                resolve(repositoryRoot, path),
-                                '..',
-                                moduleImport,
-                            ),
-                        ))
-                        .filter((dependency) => ownerPaths.has(dependency)),
-                );
-            }
-            const active = new Set<string>();
-            const visited = new Set<string>();
-            const cycles: string[] = [];
-            const visit = (path: string): void => {
-                if (active.has(path)) {
-                    cycles.push(path);
-                    return;
-                }
-                if (visited.has(path)) return;
-                active.add(path);
-                for (const dependency of graph.get(path) ?? []) {
-                    visit(dependency);
-                }
-                active.delete(path);
-                visited.add(path);
-            };
-            for (const path of ownerPaths) visit(path);
+            const graph = task9aReachableRelativeTypeScriptGraph(
+                [ownerPath],
+                repositorySource,
+                (path) => existsSync(resolve(repositoryRoot, path)),
+            );
             expect.soft(
-                cycles,
+                task9aDependencyCycles(graph),
                 'Media owner dependency graph has no cycles',
             ).toEqual([]);
+
+            const fixtureRoot =
+                'packages/tests/rallar-black-box/.media-cycle/owner.ts';
+            const fixtureLevelOne =
+                'packages/tests/rallar-black-box/.media-cycle/level-one.ts';
+            const fixtureLevelTwo =
+                'packages/tests/rallar-black-box/.media-cycle/level-two.tsx';
+            const fixtureSources = new Map<string, string>([
+                [fixtureRoot, `import './level-one';`],
+                [
+                    fixtureLevelOne,
+                    `type LevelTwo = import('./level-two').LevelTwo;`,
+                ],
+                [
+                    fixtureLevelTwo,
+                    `export type { LevelOne } from './level-one';\nexport type LevelTwo = Readonly<{ ok: true }>;`,
+                ],
+            ]);
+            const fixtureGraph = task9aReachableRelativeTypeScriptGraph(
+                [fixtureRoot],
+                (path) => {
+                    const source = fixtureSources.get(path);
+                    if (source === undefined) {
+                        throw new Error(`Missing Media cycle fixture ${path}`);
+                    }
+                    return source;
+                },
+                (path) => fixtureSources.has(path),
+            );
+            expect.soft(
+                [...fixtureGraph.keys()].sort(),
+                'Media graph recursively discovers depth-2 TS/TSX dependencies',
+            ).toEqual([...fixtureSources.keys()].sort());
+            expect.soft(
+                task9aDependencyCycles(fixtureGraph),
+                'Media graph detects a depth-2 ImportTypeNode cycle',
+            ).toEqual([fixtureLevelOne]);
         }
 
         const appMediaImports = task9aImportEdges(appAst).filter((edge) =>
@@ -13228,14 +13346,23 @@ describe('rallar-black-box app source ownership', () => {
             'MediaConsolePanel remains in the owner/App fallback',
         ).toBeDefined();
         if (panel?.body) {
+            const exportModifiers = (ts.getModifiers(panel) ?? []).filter(
+                (modifier) =>
+                    modifier.kind === ts.SyntaxKind.ExportKeyword,
+            );
             expect.soft(
-                task9aAstFingerprint([
-                    panel.name!,
-                    ...panel.parameters,
-                    panel.body,
-                ]),
+                exportModifiers,
+                'MediaConsolePanel has one intentional export modifier',
+            ).toHaveLength(1);
+            expect.soft(
+                exportModifiers[0]
+                    ? task9aAstFingerprintOmittingNode(
+                          [panel],
+                          exportModifiers[0],
+                      )
+                    : task9aAstFingerprint([panel]),
                 'exact complete MediaConsolePanel component',
-            ).toBe('3e2787aa128ba46670b467204b3853bdc68079b8e2daad14f2e6f991a4f7d4e0');
+            ).toBe('272d90bf79bdc119a662cc2dedaf0590036e31736d5c0ce4a1c8d2853d6313cf');
             const parameter = panel.parameters[0];
             const parameterKeys = parameter &&
                     ts.isObjectBindingPattern(parameter.name)
