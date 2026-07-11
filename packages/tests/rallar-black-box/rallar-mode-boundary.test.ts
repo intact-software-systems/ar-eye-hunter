@@ -120,6 +120,10 @@ const mediaConsolePanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/media/MediaConsolePanel.tsx',
     import.meta.url,
 );
+const rallarDataPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-data/RallarDataPanel.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -265,6 +269,19 @@ function mediaConsoleOwnerSource(source: string): string {
     return sourceOrFallback(mediaConsolePanelSourcePath, fallback);
 }
 
+function rallarDataOwnerSource(source: string): string {
+    const fallback = existsSync(rallarDataPanelSourcePath)
+        ? ''
+        : sourceBetween(
+              source,
+              'function RallarDataPanel',
+              existsSync(mediaConsolePanelSourcePath)
+                  ? 'function AuthCommandCenterPanel'
+                  : 'function MediaConsolePanel',
+          );
+    return sourceOrFallback(rallarDataPanelSourcePath, fallback);
+}
+
 describe('rallar-black-box Rallar mode boundary', () => {
     it('does not expose black-box-runner command tabs in Rallar mode', () => {
         expect(appTabsForMode('rallar').map(tab => tab.id)).not.toEqual(
@@ -314,13 +331,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             diagnostics.topologyPanel,
             webSocketCommandCenterOwnerSource(source),
             rtcRealtimeOwnerSource(source),
-            sourceBetween(
-                source,
-                'function RallarDataPanel',
-                existsSync(mediaConsolePanelSourcePath)
-                    ? 'function AuthCommandCenterPanel'
-                    : 'function MediaConsolePanel',
-            ),
+            rallarDataOwnerSource(source),
             mediaConsoleOwnerSource(source),
             sourceBetween(source, 'function AuthCommandCenterPanel', 'function RoomsClientsPanel'),
             sourceBetween(source, 'function RoomsClientsPanel', 'function RallarServerRequestFeedbackPanel'),

@@ -13130,6 +13130,459 @@ describe('rallar-black-box app source ownership', () => {
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
     });
 
+    it('extracts the exact Rallar Data console into one focused legacy owner', () => {
+        const ownerPath =
+            'apps/rallar-black-box/src/legacy/diagnostics/rallar-data/RallarDataPanel.tsx';
+        const ownerModuleImport =
+            './legacy/diagnostics/rallar-data/RallarDataPanel.tsx';
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const ownerPresent = existsSync(resolve(repositoryRoot, ownerPath));
+
+        expect.soft(ownerPresent, `${ownerPath}: owner exists`).toBe(true);
+
+        let ownerAst: ts.SourceFile | undefined;
+        if (ownerPresent) {
+            const ownerSource = repositorySource(ownerPath);
+            ownerAst = task9aSourceFile(ownerPath, ownerSource);
+            expect.soft(
+                ownerSource.trimEnd().split(/\r?\n/).length,
+                `${ownerPath}: line cap`,
+            ).toBeLessThanOrEqual(700);
+            expect.soft(
+                task9aExportSeams(ownerAst),
+                `${ownerPath}: exact direct exports`,
+            ).toEqual(['value:RallarDataPanel']);
+            expect.soft(
+                task9aImportEdges(ownerAst),
+                `${ownerPath}: complete exact imports`,
+            ).toEqual([
+                '../../../client-defaults.ts|value:RALLAR_BLACK_BOX_CLIENT_DEFAULTS',
+                '../../../direct-rallar-operations.ts|value:createDirectRallarRuntimeEvent',
+                '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig,value:rallarBlackBoxRuntimeStore',
+                '../../rallar/load-browser-rallar-facade.ts|value:loadBrowserRallarFacade',
+                '../../shared/CollapsiblePanelSection.tsx|value:CollapsiblePanelSection',
+                '../../shared/Metric.tsx|value:Metric',
+                '../../shared/json-presentation.ts|value:json,value:parseJsonText',
+                '../../shared/record-value.ts|value:recordValue->optionalRecord',
+                '../../shared/redaction-presentation.ts|value:redactedJson',
+                '../../shared/time-format.ts|value:formatTime',
+                '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestSeverity,type:RallarBlackBoxTestState',
+                '@shared/api/api-config.ts|type:AuthSession',
+                'react|value:useEffect,value:useRef,value:useState',
+            ].sort());
+            expect.soft(
+                ownerAst.statements.flatMap((statement) => {
+                    if (ts.isImportDeclaration(statement)) return [];
+                    if (ts.isTypeAliasDeclaration(statement)) {
+                        return [`type:${statement.name.text}`];
+                    }
+                    if (ts.isFunctionDeclaration(statement)) {
+                        return [
+                            `function:${statement.name?.text ?? '<anonymous>'}`,
+                        ];
+                    }
+                    return [`unexpected:${ts.SyntaxKind[statement.kind]}`];
+                }),
+                `${ownerPath}: exact top-level inventory`,
+            ).toEqual([
+                'type:RallarDataOperation',
+                'type:RallarDataChangeRow',
+                'type:RallarDataUiStore',
+                'function:RallarDataPanel',
+            ]);
+            expect.soft(
+                ownerSource,
+                `${ownerPath}: no reverse/App/CSS/barrel edge`,
+            ).not.toMatch(
+                /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"]|^\s*export\s+(?:\*|{)[^;]*\s+from\s+)/m,
+            );
+
+            const ownerConsumers = sourceFilesUnder(
+                'apps/rallar-black-box/src',
+            ).filter((sourcePath) => {
+                if (sourcePath === ownerPath) return false;
+                const sourceFile = task9aSourceFile(
+                    sourcePath,
+                    repositorySource(sourcePath),
+                );
+                return task9aModuleSpecifiers(sourceFile).some(
+                    (moduleImport) =>
+                        task9aResolveRelativeTypeScriptDependency(
+                            sourcePath,
+                            moduleImport,
+                            (path) =>
+                                existsSync(resolve(repositoryRoot, path)),
+                        ) === ownerPath,
+                );
+            });
+            expect.soft(
+                ownerConsumers,
+                'App is the only Rallar Data owner consumer',
+            ).toEqual([appSourcePath]);
+            const graph = task9aReachableRelativeTypeScriptGraph(
+                [ownerPath],
+                repositorySource,
+                (path) => existsSync(resolve(repositoryRoot, path)),
+            );
+            expect.soft(
+                task9aDependencyCycles(graph),
+                'Rallar Data owner dependency graph has no cycles',
+            ).toEqual([]);
+        }
+
+        const appDataImports = task9aImportEdges(appAst).filter((edge) =>
+            edge.startsWith('./legacy/diagnostics/rallar-data/'),
+        );
+        expect.soft(
+            appDataImports,
+            'App imports only the Rallar Data panel owner',
+        ).toEqual([`${ownerModuleImport}|value:RallarDataPanel`]);
+
+        const privateTypeNames = [
+            'RallarDataOperation',
+            'RallarDataChangeRow',
+            'RallarDataUiStore',
+        ] as const;
+        const appPrivateTypes = appAst.statements
+            .filter(
+                (statement): statement is ts.TypeAliasDeclaration =>
+                    ts.isTypeAliasDeclaration(statement) &&
+                    privateTypeNames.includes(
+                        statement.name.text as (typeof privateTypeNames)[number],
+                    ),
+            )
+            .map((statement) => statement.name.text);
+        expect.soft(
+            appPrivateTypes,
+            'App has no local Rallar Data private types',
+        ).toEqual([]);
+        const appPanel = appAst.statements.find(
+            (statement): statement is ts.FunctionDeclaration =>
+                ts.isFunctionDeclaration(statement) &&
+                statement.name?.text === 'RallarDataPanel',
+        );
+        expect.soft(
+            Boolean(appPanel),
+            'App has no local RallarDataPanel',
+        ).toBe(false);
+
+        const declarationSource = ownerAst ?? appAst;
+        const expectedTypeHashes = new Map([
+            [
+                'RallarDataOperation',
+                [
+                    'a7e3f8d04712bf99fce7eb5aaa387058e235e9ef33a8d004e1604622e89fd1e1',
+                    '6b5914caa0905ec3880fbc5987ccc243887719a3fc28d60a831c97d9f11436a6',
+                ],
+            ],
+            [
+                'RallarDataChangeRow',
+                [
+                    '31ad65695eedc960c2337cfd961708ac24a0b25fe00a01f77f10ebc694a102e6',
+                    '74d9dbb0e67e5dc1639a2609b73713dd2e9f9d0f41f98b4ec8ad231cec1290b8',
+                ],
+            ],
+            [
+                'RallarDataUiStore',
+                [
+                    '3ccb8bc493000cab1021a6467e5b2dbf00f9e6ea372e81e5577b9c8115ed0780',
+                    '7924f5f5eaf4bb517a4c1324271c5081f8aec8bf7303882aebbdcd41d5500470',
+                ],
+            ],
+        ] as const);
+        for (const [name, [semanticHash, declarationHash]] of expectedTypeHashes) {
+            const declaration = declarationSource.statements.find(
+                (statement): statement is ts.TypeAliasDeclaration =>
+                    ts.isTypeAliasDeclaration(statement) &&
+                    statement.name.text === name,
+            );
+            expect.soft(
+                declaration,
+                `${name} remains in the Rallar Data owner/App fallback`,
+            ).toBeDefined();
+            if (declaration) {
+                expect.soft(
+                    task9aAstFingerprint([declaration.name, declaration.type]),
+                    `exact private ${name} semantics`,
+                ).toBe(semanticHash);
+                expect.soft(
+                    task9aAstFingerprint([declaration]),
+                    `exact private ${name} declaration`,
+                ).toBe(declarationHash);
+            }
+        }
+
+        const panel = declarationSource.statements.find(
+            (statement): statement is ts.FunctionDeclaration =>
+                ts.isFunctionDeclaration(statement) &&
+                statement.name?.text === 'RallarDataPanel',
+        );
+        expect.soft(
+            panel?.body,
+            'RallarDataPanel remains in the owner/App fallback',
+        ).toBeDefined();
+        if (panel?.body) {
+            const exportModifiers = (ts.getModifiers(panel) ?? []).filter(
+                (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+            );
+            if (ownerAst) {
+                expect.soft(
+                    exportModifiers,
+                    'RallarDataPanel owner has one intentional export modifier',
+                ).toHaveLength(1);
+                expect.soft(
+                    exportModifiers[0]
+                        ? task9aAstFingerprintOmittingNode(
+                              [panel],
+                              exportModifiers[0],
+                          )
+                        : task9aAstFingerprint([panel]),
+                    'exact complete exported RallarDataPanel owner',
+                ).toBe('27a85e9edeec2c42b4fed8740da2e32f355dc3879a802819304a0ff504255f40');
+            } else {
+                expect.soft(
+                    exportModifiers,
+                    'legacy App fallback RallarDataPanel has no export modifier',
+                ).toHaveLength(0);
+                expect.soft(
+                    task9aAstFingerprint([panel]),
+                    'exact complete legacy App fallback RallarDataPanel',
+                ).toBe('b30fd6ba8338cc18cda5b7dd9fcf13780ae9bef47a6292cbf4bc2255a7a51cff');
+            }
+
+            const parameter = panel.parameters[0];
+            const parameterKeys =
+                parameter && ts.isObjectBindingPattern(parameter.name)
+                    ? parameter.name.elements.map((element) =>
+                          element.name.getText(declarationSource),
+                      )
+                    : [];
+            expect.soft(
+                panel.parameters,
+                'RallarDataPanel has one exact props parameter',
+            ).toHaveLength(1);
+            expect.soft(
+                parameterKeys,
+                'exact RallarDataPanel prop order',
+            ).toEqual(['state', 'bootstrap', 'authSession', 'globalValues']);
+            expect.soft(
+                parameter?.type
+                    ? task9aAstFingerprint([parameter.name, parameter.type])
+                    : '',
+                'exact four-prop RallarDataPanel contract',
+            ).toBe('e9015ce65973f4708f5c4b1a6b7902da460356d5df2117345871a4a16fa16bc9');
+
+            const statements = [...panel.body.statements];
+            const returnIndex = statements.findIndex(ts.isReturnStatement);
+            expect.soft(
+                statements,
+                'complete Rallar Data component statement inventory',
+            ).toHaveLength(34);
+            expect.soft(
+                returnIndex,
+                'Rallar Data component final return index',
+            ).toBe(33);
+            expect.soft(
+                task9aAstFingerprint(statements.slice(0, returnIndex)),
+                'exact Rallar Data pre-return controller and operations',
+            ).toBe('dbc81102e648cc9342434b1548d11692257274f274668a621005e30345cefe03');
+
+            const hookCalls: string[] = [];
+            const visitHooks = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    /^use[A-Z]/.test(node.expression.text)
+                ) {
+                    hookCalls.push(node.expression.text);
+                }
+                ts.forEachChild(node, visitHooks);
+            };
+            visitHooks(panel);
+            expect.soft(
+                hookCalls,
+                'exact Rallar Data hook inventory and order',
+            ).toEqual([
+                ...Array.from({ length: 15 }, () => 'useState'),
+                'useRef',
+                'useRef',
+                'useEffect',
+            ]);
+
+            const effectStatement = statements[21];
+            const effectCall =
+                effectStatement &&
+                ts.isExpressionStatement(effectStatement) &&
+                ts.isCallExpression(effectStatement.expression)
+                    ? effectStatement.expression
+                    : undefined;
+            const cleanup =
+                effectCall?.arguments[0] &&
+                ts.isArrowFunction(effectCall.arguments[0]) &&
+                ts.isArrowFunction(effectCall.arguments[0].body)
+                    ? effectCall.arguments[0].body
+                    : undefined;
+            const cleanupBody = cleanup && ts.isBlock(cleanup.body)
+                ? cleanup.body
+                : undefined;
+            expect.soft(
+                cleanupBody?.statements.map((statement) =>
+                    statement.getText(declarationSource),
+                ) ?? [],
+                'Rallar Data cleanup unsubscribes then closes the store',
+            ).toEqual([
+                'unsubscribeRef.current?.();',
+                'void storeRef.current?.close();',
+            ]);
+            expect.soft(
+                effectCall?.arguments[1] &&
+                        ts.isArrayLiteralExpression(effectCall.arguments[1])
+                    ? effectCall.arguments[1].elements
+                    : undefined,
+                'Rallar Data cleanup effect has an empty dependency list',
+            ).toHaveLength(0);
+
+            const actionInventory = statements.slice(22, 33).map(
+                (statement) => {
+                    if (!ts.isVariableStatement(statement)) {
+                        return `unexpected:${ts.SyntaxKind[statement.kind]}`;
+                    }
+                    const declaration = statement.declarationList.declarations[0];
+                    return declaration && ts.isIdentifier(declaration.name)
+                        ? declaration.name.text
+                        : 'unexpected-binding';
+                },
+            );
+            expect.soft(
+                actionInventory,
+                'exact Rallar Data controller/action topology',
+            ).toEqual([
+                'options',
+                'recordDataEvent',
+                'loadFacade',
+                'attachChangeListener',
+                'openStore',
+                'resetOpenStore',
+                'parseValue',
+                'parseExpected',
+                'runOperation',
+                'copyDiagnostics',
+                'operations',
+            ]);
+            expect.soft(
+                task9aAstFingerprint([statements[30]]),
+                'exact Rallar Data operation dispatch including get-all',
+            ).toBe('7e3987f76864440d660c9f2d85c55edec2f7ed54590d2d3d79639f1aa85ee087');
+
+            const operationsStatement = statements[32];
+            const operationsDeclaration =
+                operationsStatement && ts.isVariableStatement(operationsStatement)
+                    ? operationsStatement.declarationList.declarations[0]
+                    : undefined;
+            const operationsInitializer = operationsDeclaration?.initializer;
+            const operations =
+                operationsInitializer && ts.isArrayLiteralExpression(operationsInitializer)
+                    ? operationsInitializer.elements.flatMap((element) =>
+                          ts.isStringLiteral(element) ? [element.text] : [],
+                      )
+                    : [];
+            expect.soft(
+                operations,
+                'exact Rallar Data operation order',
+            ).toEqual([
+                'define', 'open', 'lookup', 'hydrate', 'when-idle', 'read',
+                'get', 'keys', 'list-keys', 'read-entries', 'get-entries',
+                'read-all', 'get-all', 'set', 'update', 'update-or-create',
+                'set-if-absent', 'compare-and-set', 'get-and-set', 'delete',
+                'delete-expired', 'clear', 'flush', 'export',
+                'estimate-usage', 'close', 'destroy', 'close-scope',
+                'clear-scope', 'destroy-scope',
+            ]);
+
+            const runtimeTopics: string[] = [];
+            const visitTopics = (node: ts.Node): void => {
+                if (
+                    ts.isStringLiteral(node) &&
+                    node.text.startsWith('rallar.direct.data.')
+                ) {
+                    runtimeTopics.push(node.text);
+                }
+                ts.forEachChild(node, visitTopics);
+            };
+            visitTopics(panel);
+            expect.soft(
+                runtimeTopics,
+                'exact Rallar Data runtime event topics',
+            ).toEqual([
+                'rallar.direct.data.change',
+                'rallar.direct.data.operation.completed',
+                'rallar.direct.data.operation.failed',
+            ]);
+
+            const returnExpression = task9aReturnExpression(panel);
+            expect.soft(
+                task9aAstFingerprint([returnExpression]),
+                'Rallar Data owner owns exact legacy JSX AST',
+            ).toBe('b2a37ccb68d4c530ab0cf320e84a091e9d5bbb0cea97e745d5175153b762dae6');
+            expect.soft(
+                task9aJsxRuntimeFingerprint(returnExpression),
+                'Rallar Data owner owns exact legacy compiled JSX',
+            ).toBe('3a0563e642387d82f3c69f967da5d526960a0826aefdda858196fd0d8393b833');
+        }
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'RallarDataPanel');
+        expect.soft(
+            mounts,
+            'one unconditional hidden-tab Rallar Data panel mount',
+        ).toHaveLength(1);
+        expect.soft(
+            task9aAstFingerprint(mounts),
+            'exact Rallar Data App mount',
+        ).toBe('1902c197becc061511ed1745d73d4e1e5f70d5d2daf23defc4aaa0e25be29059');
+        let ancestor: ts.Node | undefined = mounts[0];
+        while (ancestor && !ts.isJsxElement(ancestor)) {
+            ancestor = ancestor.parent;
+        }
+        expect.soft(
+            ancestor ? task9aAstFingerprint([ancestor]) : '',
+            'exact hidden-capable Rallar Data ancestor',
+        ).toBe('3bd2b2caf01c2cd1c7d4bac74277b8d3591624e03a393e148961350f88803c34');
+        const conditionalMountAncestors: string[] = [];
+        let current: ts.Node | undefined = mounts[0]?.parent;
+        while (current && current !== app) {
+            if (
+                ts.isConditionalExpression(current) ||
+                (ts.isBinaryExpression(current) &&
+                    current.operatorToken.kind ===
+                        ts.SyntaxKind.AmpersandAmpersandToken)
+            ) {
+                conditionalMountAncestors.push(ts.SyntaxKind[current.kind]);
+            }
+            current = current.parent;
+        }
+        expect.soft(
+            conditionalMountAncestors,
+            'Rallar Data panel stays mounted while its tab is hidden',
+        ).toEqual([]);
+        expect.soft(
+            task9aAstFingerprint([app]),
+            'unchanged App function through Rallar Data extraction',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(
+            appSource,
+            'no Rallar Data lazy/Suspense lifetime cutover',
+        ).not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'Rallar Data extraction leaves the complete stylesheet unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
     it('extracts the exact Media console into one focused legacy owner', () => {
         const ownerPath =
             'apps/rallar-black-box/src/legacy/diagnostics/media/MediaConsolePanel.tsx';
