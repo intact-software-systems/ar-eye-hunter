@@ -588,8 +588,9 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcDiagnosticsTimeseriesPanel.tsx',
-                importerPath: appSourcePath,
-                moduleImport: './legacy/runner/evidence/rtc/RtcDiagnosticsTimeseriesPanel.tsx',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/diagnostics/rtc/RtcDiagnosticsPanel.tsx',
+                moduleImport: '../../runner/evidence/rtc/RtcDiagnosticsTimeseriesPanel.tsx',
                 seams: ['RtcDiagnosticsTimeseriesPanel'],
             },
             {
@@ -612,8 +613,9 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/evidence/rtc/RtcPerformancePanel.tsx',
-                importerPath: appSourcePath,
-                moduleImport: './legacy/runner/evidence/rtc/RtcPerformancePanel.tsx',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/diagnostics/rtc/RtcDiagnosticsPanel.tsx',
+                moduleImport: '../../runner/evidence/rtc/RtcPerformancePanel.tsx',
                 seams: ['RtcPerformancePanel'],
             },
         ] as const;
@@ -9113,6 +9115,533 @@ describe('rallar-black-box app source ownership', () => {
         };
         for (const path of ownerPaths) visit(path);
         expect(cycles, 'diagnostic evidence owner import cycles').toEqual([]);
+    });
+
+    it('extracts exact RTC and Topology diagnostics without changing hidden-tab lifetimes', () => {
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const rtcRoot = 'apps/rallar-black-box/src/legacy/diagnostics/rtc';
+        const topologyRoot =
+            'apps/rallar-black-box/src/legacy/diagnostics/topology';
+        const presentationPath = `${rtcRoot}/rtc-diagnostics-presentation.ts`;
+        const controllerPath = `${rtcRoot}/use-rtc-diagnostics-controller.ts`;
+        const rtcPanelPath = `${rtcRoot}/RtcDiagnosticsPanel.tsx`;
+        const topologyPanelPath = `${topologyRoot}/TopologyGraphPanel.tsx`;
+        const owners = [
+            [presentationPath, 40, [
+                'value:formatList', 'value:stageTone',
+            ]],
+            [controllerPath, 240, [
+                'type:RtcDiagnosticsControllerModel',
+                'type:UseRtcDiagnosticsControllerInput',
+                'value:useRtcDiagnosticsController',
+            ]],
+            [rtcPanelPath, 240, ['value:RtcDiagnosticsPanel']],
+            [topologyPanelPath, 330, ['value:TopologyGraphPanel']],
+        ] as const;
+        const sources = new Map<string, string>();
+        for (const [path, cap, expectedExports] of owners) {
+            const present = existsSync(resolve(repositoryRoot, path));
+            expect.soft(present, `${path}: owner exists`).toBe(true);
+            if (!present) continue;
+            const source = repositorySource(path);
+            sources.set(path, source);
+            expect.soft(source.split('\n').length, `${path}: line cap`)
+                .toBeLessThanOrEqual(cap);
+            const sourceFile = task9aSourceFile(path, source);
+            expect.soft(task9aExportSeams(sourceFile), `${path}: exact exports`)
+                .toEqual(expectedExports);
+            expect.soft(source, `${path}: no reverse/App/CSS/barrel edge`)
+                .not.toMatch(/(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"])/);
+        }
+
+        const expectedImports = new Map<string, readonly string[]>([
+            [presentationPath, [
+                '../../../rtc-diagnostics.ts|type:RtcConnectStageStatus',
+            ]],
+            [controllerPath, [
+                '../../../client-defaults.ts|value:RALLAR_BLACK_BOX_CLIENT_DEFAULTS',
+                '../../../direct-rallar-operations.ts|value:configureDirectRallarFacade,value:createDirectRallarRuntimeEvent,value:runDirectRallarStatusCheck',
+                '../../../manual-workbench.ts|type:ManualWorkbenchAction,value:DEFAULT_MANUAL_WORKBENCH_VALUES',
+                '../../../rtc-diagnostics.ts|value:deriveRtcDiagnostics,value:deriveRtcPerformanceView',
+                '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig,value:rallarBlackBoxRuntimeStore',
+                '../../rallar/load-browser-rallar-facade.ts|value:loadBrowserRallarFacade',
+                '../../shared/redaction-presentation.ts|value:redactedJson',
+                '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestRuntimeEventInput,type:RallarBlackBoxTestState',
+                '@shared/api/api-config.ts|type:AuthSession',
+                'react|value:useMemo,value:useState',
+            ]],
+            [rtcPanelPath, [
+                '../../runner/evidence/rtc/RtcDiagnosticsTimeseriesPanel.tsx|value:RtcDiagnosticsTimeseriesPanel',
+                '../../runner/evidence/rtc/RtcPerformancePanel.tsx|value:RtcPerformancePanel',
+                '../../shared/Metric.tsx|value:Metric',
+                '../../shared/redaction-presentation.ts|value:uiRedactionOptions',
+                '../../shared/time-format.ts|value:formatDuration',
+                './rtc-diagnostics-presentation.ts|value:formatList,value:stageTone',
+                './use-rtc-diagnostics-controller.ts|type:UseRtcDiagnosticsControllerInput,value:useRtcDiagnosticsController',
+                '@shared-test/rallar-bb-test/redaction.ts|value:redactRallarBlackBoxValue',
+            ]],
+            [topologyPanelPath, [
+                '../../../topology-graph.ts|type:RallarTopologyFilter,value:deriveRallarTopologyGraph,value:visibleTopologyCounts',
+                '../../shared/Metric.tsx|value:Metric',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                'react|value:useEffect,value:useMemo,value:useRef,value:useState',
+                'sigma|value:default->Sigma',
+            ]],
+        ]);
+        for (const [path] of owners) {
+            expect.soft(
+                task9aImportEdges(
+                    task9aSourceFile(path, sources.get(path) ?? ''),
+                ),
+                `${path}: exact import kinds and edges`,
+            ).toEqual(expectedImports.get(path));
+        }
+
+        const ownerSource = (path: string): string =>
+            sources.get(path) ?? appSource;
+        const ownerAst = (path: string): ts.SourceFile =>
+            task9aSourceFile(
+                sources.has(path) ? path : appSourcePath,
+                ownerSource(path),
+            );
+        const functionNodes = (
+            sourceFile: ts.SourceFile,
+            names: readonly string[],
+        ): readonly ts.Node[] => names.flatMap((name) => {
+            const declaration = task9aNamedFunction(sourceFile, name);
+            return [...declaration.parameters, declaration.body!];
+        });
+
+        const presentationAst = ownerAst(presentationPath);
+        expect.soft(
+            task9aAstFingerprint(functionNodes(
+                presentationAst,
+                ['stageTone', 'formatList'],
+            )),
+            'exact RTC presentation helpers',
+        ).toBe('65948146090cde45b8308553a11c89a4a9ab452bdc95f95c9aeaf1919c7a2842');
+
+        const controllerPresent = sources.has(controllerPath);
+        const controllerAst = ownerAst(controllerPath);
+        const controller = task9aNamedFunction(
+            controllerAst,
+            controllerPresent
+                ? 'useRtcDiagnosticsController'
+                : 'RtcDiagnosticsPanel',
+        );
+        if (!controllerPresent) {
+            expect.soft(
+                task9aAstFingerprint([
+                    ...controller.parameters,
+                    controller.body!,
+                ]),
+                'exact legacy RTC source before extraction',
+            ).toBe('45c0ae99b021780a1594455fdd40c91a3e025975fa11b6219f2dd4f8ed02f3cd');
+        }
+        const controllerStatements = controller.body?.statements ?? [];
+        const returnIndex = controllerStatements.findIndex(ts.isReturnStatement);
+        const preReturn = returnIndex >= 0
+            ? controllerStatements.slice(0, returnIndex)
+            : [];
+        expect.soft(preReturn, 'exact RTC controller statement count')
+            .toHaveLength(12);
+        expect.soft(
+            task9aAstFingerprint(preReturn),
+            'exact RTC controller sequence',
+        ).toBe('c9037ffe1969e6ecc54d1b40aba27b4cb74e5bdd671e209459f67b1e28b27bf2');
+        const hookCounts = {
+            useState: 0,
+            useMemo: 0,
+            useEffect: 0,
+            useRef: 0,
+            useCallback: 0,
+        };
+        const visitControllerHooks = (node: ts.Node): void => {
+            if (
+                ts.isCallExpression(node) &&
+                ts.isIdentifier(node.expression) &&
+                node.expression.text in hookCounts
+            ) {
+                hookCounts[node.expression.text as keyof typeof hookCounts] += 1;
+            }
+            ts.forEachChild(node, visitControllerHooks);
+        };
+        visitControllerHooks(controller);
+        expect.soft(hookCounts, 'exact RTC controller hook topology').toEqual({
+            useState: 3,
+            useMemo: 3,
+            useEffect: 0,
+            useRef: 0,
+            useCallback: 0,
+        });
+        const controllerDeclarations = new Map<string, ts.VariableStatement>();
+        for (const statement of preReturn) {
+            if (!ts.isVariableStatement(statement)) continue;
+            for (const declaration of statement.declarationList.declarations) {
+                if (ts.isIdentifier(declaration.name)) {
+                    controllerDeclarations.set(declaration.name.text, statement);
+                }
+            }
+        }
+        for (const [name, expectedHash] of [
+            ['directContext', '5caa8bf764230a2d96ca6d964b27a812b0ac336ff88cb7e135fdca880c14da71'],
+            ['recordRtcDiagnostic', 'b037e3506a8b344c2dac3c61410697c3d614b592dd6d4e3ca8f0a45c84e0da0c'],
+            ['runAction', '4f1bbee807661e6d8c4930d107dac66eaa86fea7eabeda38a07c3faff9716508'],
+            ['copyBundle', '0efb7f1e163fb1861ee630cc5af2f9a895ebf822e92f894069f35c07c506af00'],
+        ] as const) {
+            const statement = controllerDeclarations.get(name);
+            expect.soft(
+                statement ? task9aAstFingerprint([statement]) : '',
+                `${name}: exact RTC controller action`,
+            ).toBe(expectedHash);
+        }
+
+        const inputAlias = controllerAst.statements.find(
+            (statement): statement is ts.TypeAliasDeclaration =>
+                ts.isTypeAliasDeclaration(statement) &&
+                statement.name.text === 'UseRtcDiagnosticsControllerInput',
+        );
+        const expectedInputAst = task9aSourceFile(
+            'expected-rtc-controller-input.ts',
+            `type Expected = Readonly<{
+                state: RallarBlackBoxTestState;
+                bootstrap: RallarBlackBoxBootstrapConfig;
+                authSession?: AuthSession;
+                globalValues?: CommandCenterGlobalValues;
+                busy: boolean;
+                onSelectCommand(commandId: string): void;
+            }>;`,
+        ).statements[0] as ts.TypeAliasDeclaration;
+        expect.soft(
+            inputAlias ? task9aAstFingerprint([inputAlias.type]) : '',
+            'exact RTC controller input contract',
+        ).toBe(task9aAstFingerprint([expectedInputAst.type]));
+        const modelAlias = controllerAst.statements.find(
+            (statement): statement is ts.TypeAliasDeclaration =>
+                ts.isTypeAliasDeclaration(statement) &&
+                statement.name.text === 'RtcDiagnosticsControllerModel',
+        );
+        const expectedModelAst = task9aSourceFile(
+            'expected-rtc-controller-model.ts',
+            'type Expected = ReturnType<typeof useRtcDiagnosticsController>;',
+        ).statements[0] as ts.TypeAliasDeclaration;
+        expect.soft(
+            modelAlias ? task9aAstFingerprint([modelAlias.type]) : '',
+            'exact inferred RTC controller model alias',
+        ).toBe(task9aAstFingerprint([expectedModelAst.type]));
+        const controllerParameter = controller.parameters[0];
+        const controllerParameterKeys = controllerParameter &&
+                ts.isObjectBindingPattern(controllerParameter.name)
+            ? controllerParameter.name.elements.map((element) =>
+                  element.name.getText(controllerAst)
+              )
+            : [];
+        expect.soft(controllerParameterKeys, 'exact six RTC controller inputs')
+            .toEqual([
+                'state', 'bootstrap', 'authSession', 'globalValues',
+                'busy', 'onSelectCommand',
+            ]);
+        expect.soft(
+            controllerParameter?.type?.getText(controllerAst) ?? '',
+            'RTC hook uses the named input contract',
+        ).toBe('UseRtcDiagnosticsControllerInput');
+        const controllerReturn = returnIndex >= 0
+            ? (controllerStatements[returnIndex] as ts.ReturnStatement).expression
+            : undefined;
+        const returnedKeys = controllerReturn &&
+                ts.isObjectLiteralExpression(controllerReturn)
+            ? controllerReturn.properties.map((property) =>
+                  ts.isShorthandPropertyAssignment(property)
+                      ? property.name.text
+                      : property.getText(controllerAst)
+              )
+            : [];
+        const modelKeys = [
+            'diagnostics', 'rtcPerformance', 'bundleVisible',
+            'setBundleVisible', 'canRunDirect', 'bundleText', 'localError',
+            'runAction', 'copyBundle',
+        ] as const;
+        expect.soft(returnedKeys, 'exact RTC controller return order')
+            .toEqual(modelKeys);
+        expect.soft(
+            controllerStatements.filter(ts.isReturnStatement),
+            'one final RTC controller return',
+        ).toHaveLength(1);
+        let controllerHasJsx = false;
+        const visitControllerJsx = (node: ts.Node): void => {
+            if (
+                ts.isJsxElement(node) ||
+                ts.isJsxSelfClosingElement(node) ||
+                ts.isJsxFragment(node)
+            ) controllerHasJsx = true;
+            ts.forEachChild(node, visitControllerJsx);
+        };
+        visitControllerJsx(controller);
+        expect.soft(controllerHasJsx, 'RTC controller has no JSX').toBe(false);
+
+        const rtcPanelAst = ownerAst(rtcPanelPath);
+        const rtcPanel = task9aNamedFunction(rtcPanelAst, 'RtcDiagnosticsPanel');
+        expect.soft(
+            task9aJsxRuntimeFingerprint(task9aReturnExpression(rtcPanel)),
+            'exact RTC Panel compiled JSX',
+        ).toBe('acbf8e8af6a85cf023b6af06da6095c8f44e67327d5cf32677a2a444ea8ef7b5');
+        const panelControllerCalls: ts.CallExpression[] = [];
+        const visitPanelController = (node: ts.Node): void => {
+            if (
+                ts.isCallExpression(node) &&
+                ts.isIdentifier(node.expression) &&
+                node.expression.text === 'useRtcDiagnosticsController'
+            ) panelControllerCalls.push(node);
+            ts.forEachChild(node, visitPanelController);
+        };
+        visitPanelController(rtcPanel);
+        expect.soft(panelControllerCalls, 'Panel calls RTC controller once')
+            .toHaveLength(1);
+        const expectedHookCallAst = task9aSourceFile(
+            'expected-rtc-hook-call.ts',
+            `useRtcDiagnosticsController({
+                state, bootstrap, authSession, globalValues, busy,
+                onSelectCommand,
+            });`,
+        );
+        const expectedHookCall = (
+            expectedHookCallAst.statements[0] as ts.ExpressionStatement
+        ).expression as ts.CallExpression;
+        expect.soft(
+            task9aAstFingerprint(panelControllerCalls),
+            'exact RTC controller call props',
+        ).toBe(task9aAstFingerprint([expectedHookCall]));
+        const panelStatements = rtcPanel.body?.statements ?? [];
+        const panelReturnIndex = panelStatements.findIndex(ts.isReturnStatement);
+        const panelPreReturn = panelReturnIndex >= 0
+            ? panelStatements.slice(0, panelReturnIndex)
+            : [];
+        expect.soft(panelPreReturn, 'Panel has one controller destructure')
+            .toHaveLength(1);
+        const panelBinding = panelPreReturn
+            .filter(ts.isVariableStatement)
+            .flatMap((statement) => [...statement.declarationList.declarations])
+            .find((declaration) => ts.isObjectBindingPattern(declaration.name));
+        const panelBindingKeys = panelBinding &&
+                ts.isObjectBindingPattern(panelBinding.name)
+            ? panelBinding.name.elements.map((element) =>
+                  element.name.getText(rtcPanelAst)
+              )
+            : [];
+        expect.soft(panelBindingKeys, 'Panel exact model destructure order')
+            .toEqual(modelKeys);
+        expect.soft(
+            rtcPanel.parameters[0]?.type?.getText(rtcPanelAst) ?? '',
+            'RTC Panel consumes named input contract',
+        ).toBe('UseRtcDiagnosticsControllerInput');
+        expect.soft(
+            ownerSource(rtcPanelPath),
+            'RTC view has no controller state/action/derivation internals',
+        ).not.toMatch(
+            /\b(?:useState|useMemo|useEffect|useRef|useCallback|deriveRtcDiagnostics|deriveRtcPerformanceView|loadBrowserRallarFacade|configureDirectRallarFacade|createDirectRallarRuntimeEvent|rallarBlackBoxRuntimeStore|sequence|setSequence|directContext|recordRtcDiagnostic)\b/,
+        );
+
+        const topologyAst = ownerAst(topologyPanelPath);
+        const topologyPanel = task9aNamedFunction(
+            topologyAst,
+            'TopologyGraphPanel',
+        );
+        expect.soft(
+            task9aAstFingerprint([
+                ...topologyPanel.parameters,
+                topologyPanel.body!,
+            ]),
+            'exact full Topology panel',
+        ).toBe('da487933c566806da4f62ff577afa2d014d1f64cb630e1d86aba003b7491a9e3');
+        expect.soft(
+            task9aJsxRuntimeFingerprint(task9aReturnExpression(topologyPanel)),
+            'exact Topology compiled JSX',
+        ).toBe('03e1d0789ad2d1f7bb878609542c35aa5d1351f0b2f8d02cf297227bbaf7ab8a');
+        expect.soft(
+            task9aAstFingerprint(functionNodes(
+                topologyAst,
+                ['topologyFilterLabel'],
+            )),
+            'exact private topology filter label',
+        ).toBe('af343377ef1b2d87f29bfcbd0cc47fc3502bfbd74b1c9b60c941bd8d8d2642db');
+        const topologyHooks = {
+            useState: 0,
+            useMemo: 0,
+            useRef: 0,
+            useEffect: 0,
+            useCallback: 0,
+        };
+        const topologyEffects: ts.CallExpression[] = [];
+        const visitTopologyHooks = (node: ts.Node): void => {
+            if (
+                ts.isCallExpression(node) &&
+                ts.isIdentifier(node.expression) &&
+                node.expression.text in topologyHooks
+            ) {
+                topologyHooks[node.expression.text as keyof typeof topologyHooks] += 1;
+                if (node.expression.text === 'useEffect') {
+                    topologyEffects.push(node);
+                }
+            }
+            ts.forEachChild(node, visitTopologyHooks);
+        };
+        visitTopologyHooks(topologyPanel);
+        expect.soft(topologyHooks, 'exact Topology hook topology').toEqual({
+            useState: 3,
+            useMemo: 6,
+            useRef: 1,
+            useEffect: 1,
+            useCallback: 0,
+        });
+        expect.soft(
+            topologyEffects.map((effect) => task9aAstFingerprint([effect])),
+            'exact Topology renderer effect and dependencies',
+        ).toEqual([
+            '2c1ae2c48a1890569c9636742ae5e90f986020d13dbe5e2b524b13cb34ae86cc',
+        ]);
+        expect.soft(
+            topologyEffects[0]?.getText(topologyAst) ?? '',
+            'Topology renderer cleanup kills Sigma',
+        ).toContain('return () => renderer.kill();');
+
+        const appLocalDeclarations = new Set(
+            appAst.statements.flatMap((statement): readonly string[] => {
+                if (
+                    (ts.isTypeAliasDeclaration(statement) ||
+                        ts.isInterfaceDeclaration(statement) ||
+                        ts.isFunctionDeclaration(statement)) &&
+                    statement.name
+                ) return [statement.name.text];
+                if (ts.isVariableStatement(statement)) {
+                    return statement.declarationList.declarations.flatMap(
+                        (declaration) => ts.isIdentifier(declaration.name)
+                            ? [declaration.name.text]
+                            : [],
+                    );
+                }
+                return [];
+            }),
+        );
+        for (const declaration of [
+            'stageTone', 'formatList', 'topologyFilterLabel',
+            'RtcDiagnosticsPanel', 'TopologyGraphPanel',
+        ] as const) {
+            expect.soft(
+                appLocalDeclarations.has(declaration),
+                `App local ${declaration}`,
+            ).toBe(false);
+        }
+        expect.soft(appSource, 'App has no RTC/Topology controller internals')
+            .not.toMatch(
+                /\b(?:useRtcDiagnosticsController|deriveRtcPerformanceView|deriveRallarTopologyGraph|visibleTopologyCounts|containerRef|recordRtcDiagnostic|copyBundle)\b/,
+            );
+        const task10A2Modules = new Set([
+            './legacy/diagnostics/rtc/rtc-diagnostics-presentation.ts',
+            './legacy/diagnostics/rtc/use-rtc-diagnostics-controller.ts',
+            './legacy/diagnostics/rtc/RtcDiagnosticsPanel.tsx',
+            './legacy/diagnostics/topology/TopologyGraphPanel.tsx',
+        ]);
+        expect.soft(
+            task9aImportEdges(appAst).filter((edge) =>
+                task10A2Modules.has(edge.slice(0, edge.indexOf('|'))),
+            ),
+            'App imports only the two RTC/Topology root panels',
+        ).toEqual([
+            './legacy/diagnostics/rtc/RtcDiagnosticsPanel.tsx|value:RtcDiagnosticsPanel',
+            './legacy/diagnostics/topology/TopologyGraphPanel.tsx|value:TopologyGraphPanel',
+        ]);
+        for (const staleModule of [
+            'sigma', './topology-graph.ts',
+            './legacy/runner/evidence/rtc/RtcDiagnosticsTimeseriesPanel.tsx',
+            './legacy/runner/evidence/rtc/RtcPerformancePanel.tsx',
+        ] as const) {
+            expect.soft(
+                task9aImportEdges(appAst).some((edge) =>
+                    edge.startsWith(`${staleModule}|`)
+                ),
+                `App no stale ${staleModule} import`,
+            ).toBe(false);
+        }
+        expect.soft(
+            task9aImportEdges(appAst).filter((edge) =>
+                edge.startsWith('./rtc-diagnostics.ts|')
+            ),
+            'App retains only the still-shared RTC derivation edge',
+        ).toEqual([
+            './rtc-diagnostics.ts|value:deriveRtcDiagnostics',
+        ]);
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mountAncestorFingerprints = (
+            calls: readonly ts.JsxSelfClosingElement[],
+        ): readonly string[] => calls.map((call) => {
+            let ancestor: ts.Node | undefined = call.parent;
+            while (ancestor && !ts.isJsxElement(ancestor)) {
+                ancestor = ancestor.parent;
+            }
+            return ancestor ? task9aAstFingerprint([ancestor]) : '';
+        });
+        for (const [name, expectedCallHash, expectedAncestorHash] of [
+            [
+                'RtcDiagnosticsPanel',
+                '38c18708cac6760e27a6dddcf2e479b8ebedb1b0adbe4c7b76b97aa0e37e10f2',
+                'd5959ee02765a7ad12f8637986401f1583d692e8e15df90a8c18342e14c9eab5',
+            ],
+            [
+                'TopologyGraphPanel',
+                'c992c603445a071f3e5e096e1f09e6ce00c3bba3ef81e8bf0b06ac1f2a07599d',
+                '18267537358fa91ea149bbe8d3495a8f74b8882c49f18066a6eb3c0b5bff3b66',
+            ],
+        ] as const) {
+            const calls = task9aJsxCalls(app, name);
+            expect.soft(calls, `${name}: one exact always-mounted call`)
+                .toHaveLength(1);
+            expect.soft(
+                task9aAstFingerprint(calls),
+                `${name}: exact App call props`,
+            ).toBe(expectedCallHash);
+            expect.soft(
+                mountAncestorFingerprints(calls),
+                `${name}: exact hidden-capable mount ancestor and guard`,
+            ).toEqual([expectedAncestorHash]);
+        }
+        expect.soft(
+            task9aAstFingerprint([app]),
+            'unchanged App function and lifetime policy',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(appSource, 'no lazy/Suspense lifetime cutover')
+            .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+
+        const ownerPaths = new Set(owners.map(([path]) => path));
+        const graph = new Map<string, readonly string[]>();
+        for (const path of ownerPaths) {
+            const dependencies = task9aImportEdges(
+                task9aSourceFile(path, sources.get(path) ?? ''),
+            )
+                .map((edge) => edge.slice(0, edge.indexOf('|')))
+                .filter((moduleImport) => moduleImport.startsWith('.'))
+                .map((moduleImport) => relative(
+                    repositoryRoot,
+                    resolve(resolve(repositoryRoot, path), '..', moduleImport),
+                ))
+                .filter((dependency) => ownerPaths.has(dependency));
+            graph.set(path, dependencies);
+        }
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) { cycles.push(path); return; }
+            if (visited.has(path)) return;
+            active.add(path);
+            for (const dependency of graph.get(path) ?? []) visit(dependency);
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const path of ownerPaths) visit(path);
+        expect(cycles, 'RTC/Topology owner import cycles').toEqual([]);
     });
 
     it('keeps distributed compare formatters in the canonical time module', () => {

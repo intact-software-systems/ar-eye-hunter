@@ -60,6 +60,18 @@ const actionFeedbackPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx',
     import.meta.url,
 );
+const rtcDiagnosticsControllerSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc/use-rtc-diagnostics-controller.ts',
+    import.meta.url,
+);
+const rtcDiagnosticsPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc/RtcDiagnosticsPanel.tsx',
+    import.meta.url,
+);
+const topologyGraphPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/topology/TopologyGraphPanel.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -95,6 +107,52 @@ function sourceBetween(source: string, startMarker: string, endMarker: string): 
     expect(endIndex, `Missing end marker ${endMarker}`).toBeGreaterThan(startIndex);
 
     return source.slice(startIndex, endIndex);
+}
+
+function diagnosticOwnerSources(source: string): Readonly<{
+    rtcController: string;
+    rtcPanel: string;
+    topologyPanel: string;
+    quickPanel: string;
+}> {
+    const rtcFallback =
+        existsSync(rtcDiagnosticsControllerSourcePath) &&
+        existsSync(rtcDiagnosticsPanelSourcePath)
+            ? ''
+            : sourceBetween(
+                  source,
+                  'function RtcDiagnosticsPanel',
+                  'function TopologyGraphPanel',
+              );
+    const topologyFallback = existsSync(topologyGraphPanelSourcePath)
+        ? ''
+        : sourceBetween(
+              source,
+              'function TopologyGraphPanel',
+              'function WebSocketCommandCenterPanel',
+          );
+    const extracted =
+        existsSync(rtcDiagnosticsControllerSourcePath) &&
+        existsSync(rtcDiagnosticsPanelSourcePath) &&
+        existsSync(topologyGraphPanelSourcePath);
+    return {
+        rtcController: sourceOrFallback(
+            rtcDiagnosticsControllerSourcePath,
+            rtcFallback,
+        ),
+        rtcPanel: sourceOrFallback(rtcDiagnosticsPanelSourcePath, rtcFallback),
+        topologyPanel: sourceOrFallback(
+            topologyGraphPanelSourcePath,
+            topologyFallback,
+        ),
+        quickPanel: sourceBetween(
+            source,
+            'function QuickRallarTestPanel',
+            extracted
+                ? 'function WebSocketCommandCenterPanel'
+                : 'function RtcDiagnosticsPanel',
+        ),
+    };
 }
 
 describe('rallar-black-box Rallar mode boundary', () => {
@@ -138,13 +196,12 @@ describe('rallar-black-box Rallar mode boundary', () => {
 
     it('does not execute black-box runtime commands from direct Rallar panels', () => {
         const source = appSource();
+        const diagnostics = diagnosticOwnerSources(source);
         const directPanels = [
-            sourceBetween(
-                source,
-                'function QuickRallarTestPanel',
-                'function RtcDiagnosticsPanel',
-            ),
-            sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel'),
+            diagnostics.quickPanel,
+            diagnostics.rtcController,
+            diagnostics.rtcPanel,
+            diagnostics.topologyPanel,
             sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel'),
             sourceBetween(source, 'function RtcRealtimePanel', 'function RallarDataPanel'),
             sourceBetween(source, 'function RallarDataPanel', 'function MediaConsolePanel'),
@@ -170,22 +227,18 @@ describe('rallar-black-box Rallar mode boundary', () => {
 
     it('uses the shared browser Rallar facade for direct WebSocket and RTC actions', () => {
         const source = appSource();
+        const diagnostics = diagnosticOwnerSources(source);
         const websocketPanel = sourceBetween(
             source,
             'function WebSocketCommandCenterPanel',
             'function RtcRealtimePanel',
         );
-        const rtcDiagnosticsPanel = sourceBetween(
-            source,
-            'function RtcDiagnosticsPanel',
-            'function TopologyGraphPanel',
-        );
 
         expect(websocketPanel).toContain('runDirectRallarWsSend');
         expect(websocketPanel).toContain('runDirectRallarWsSubscribe');
         expect(websocketPanel).toContain('loadBrowserRallarFacade');
-        expect(rtcDiagnosticsPanel).toContain('loadBrowserRallarFacade');
-        expect(rtcDiagnosticsPanel).toContain('facade.start');
+        expect(diagnostics.rtcController).toContain('loadBrowserRallarFacade');
+        expect(diagnostics.rtcController).toContain('facade.start');
     });
 
     it('keeps RTC sends on the direct facade fast path after the room is joined', () => {
@@ -206,6 +259,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
 
     it('surfaces action feedback and live subscription state in direct command panels', () => {
         const source = appSource();
+        const diagnostics = diagnosticOwnerSources(source);
         const actionFeedbackPanelFallback = existsSync(
             actionFeedbackPanelSourcePath,
         )
@@ -222,7 +276,6 @@ describe('rallar-black-box Rallar mode boundary', () => {
         const roomsClientsPanel = sourceBetween(source, 'function RoomsClientsPanel', 'function RallarServerRequestFeedbackPanel');
         const websocketPanel = sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel');
         const rtcRealtimePanel = sourceBetween(source, 'function RtcRealtimePanel', 'function RallarDataPanel');
-        const rtcDiagnosticsPanel = sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel');
 
         expect(actionFeedbackPanel).toContain('feedback.state');
         expect(actionFeedbackPanel).toContain('aria-live="polite"');
@@ -232,11 +285,12 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(rtcRealtimePanel).toContain('CommandCenterActionFeedbackPanel');
         expect(rtcRealtimePanel).toContain('Realtime sub');
         expect(rtcRealtimePanel).toContain('RTC message sub');
-        expect(rtcDiagnosticsPanel).toContain('RtcDiagnosticsTimeseriesPanel');
+        expect(diagnostics.rtcPanel).toContain('RtcDiagnosticsTimeseriesPanel');
     });
 
     it('keeps runner analysis evidence before setup controls and adds RTC performance surfaces', () => {
         const source = appSource();
+        const diagnostics = diagnosticOwnerSources(source);
         const styles = styleSource();
         const recipesControllerFallback = existsSync(
             runnerRecipesControllerSourcePath,
@@ -297,7 +351,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             sourceOrFallback(runnerFleetDetailsSourcePath, fleetViewsFallback),
             sourceOrFallback(runnerFleetTimingSourcePath, fleetViewsFallback),
         ].join('\n');
-        const rtcDiagnosticsPanel = sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel');
+        const rtcDiagnosticsPanel = diagnostics.rtcPanel;
 
         expect(runsPanel).toContain('RunVerdictPanel');
         expect(runsPanel).toContain('CausalTrailPanel');
@@ -356,10 +410,10 @@ describe('rallar-black-box Rallar mode boundary', () => {
             recipesPanel.indexOf('<RunnerAgentSetupPanel'),
         );
         expect(rtcDiagnosticsPanel).toContain('RtcPerformancePanel');
-        expect(rtcDiagnosticsPanel.indexOf('RtcPerformancePanel')).toBeLessThan(
-            rtcDiagnosticsPanel.indexOf('RtcDiagnosticsTimeseriesPanel'),
+        expect(rtcDiagnosticsPanel.indexOf('<RtcPerformancePanel')).toBeLessThan(
+            rtcDiagnosticsPanel.indexOf('<RtcDiagnosticsTimeseriesPanel'),
         );
-        expect(rtcDiagnosticsPanel.indexOf('RtcPerformancePanel')).toBeLessThan(
+        expect(rtcDiagnosticsPanel.indexOf('<RtcPerformancePanel')).toBeLessThan(
             rtcDiagnosticsPanel.indexOf('rtc-stage-list'),
         );
         expect(styles).toContain('.run-verdict-band');
