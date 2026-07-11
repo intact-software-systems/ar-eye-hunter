@@ -394,7 +394,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Iteration | Status | Exit tracking |
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
-| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 1,849 lines through CRDT M1; the broad exit criteria still bind, and shell/bootstrap plus remaining direct-diagnostic owners must still move before this iteration is complete. |
+| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 1,065 lines through legacy shell L1; the broad exit criteria still bind, and pure helpers, focused controllers, tab composition, and the below-800 App boundary remain before this iteration is complete. |
 | 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
@@ -688,6 +688,41 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   and last result. Arrow-key selection still does not transfer DOM focus. No
   route, alias, public export, server contract, navigation visibility, hide,
   mount, rollback, or cutover status changed in M1.
+
+#### Iteration 1 legacy shell leaves L1 checkpoint — `12c0ea2` (2026-07-11)
+
+- Seven focused legacy shell owners now hold the exact login screen (149
+  lines), run header (203), tabs (58), global context bar (112), mode switch
+  (35), direct-operation boundary (210), and runner boundary (29).
+  `App.tsx` is 1,065 lines and retains the exact 833-line App function; stale
+  moved-owner imports were removed. No aggregate shell-leaf module, App
+  back-edge, style owner, route change, mount change, or lazy-unmount cutover
+  was introduced.
+- The untouched-production shell gate failed only its 21 intended missing
+  owner/import/stale-declaration assertions while the prior structure/mode
+  slice stayed green 49/49. The final focused shell validation passed 75/75;
+  typecheck/build passed (382 modules); five mutation probes caught runner
+  guard, arrow direction, direct telemetry, App mount guard, and unexpected
+  top-level state drift; and independent final review approved the slice. The
+  strengthened gate locks exact component AST, import symbols/aliases/type
+  kinds, export/top-level inventory, local hook topology, transitive local
+  acyclicity, App AST, and stylesheet parity. The existing main-chunk warning
+  remains (`index` 1,260.69 kB minified).
+- Existing desktop/portrait shell flows passed 3/3. A temporary reduced-motion
+  desktop, 430x932 portrait, and 932x430 landscape matrix passed 3/3 and proved
+  header expansion, global-context editing and retention, arrow-key tab
+  selection, both workspace boundaries, auth-gate isolation, mode round trips,
+  CSS isolation, zero page overflow, and no browser/page errors. The temporary
+  spec was removed.
+- The two exhaustive authenticated shell scenarios were **skipped, not
+  passed**, for this exact reason: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with
+  Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
+  apps/rallar-black-box available.`
+- This is not the Iteration 1 exit: pure models and ticket helpers remain
+  App-local, `App()` still owns eight state slots, eight effects, and the
+  complete tab tree,
+  `LegacyAppShell` does not yet exist, and the required below-800
+  bootstrap/provider/routing boundary remains unsatisfied.
 
 #### Remaining risks and evidence ownership
 
