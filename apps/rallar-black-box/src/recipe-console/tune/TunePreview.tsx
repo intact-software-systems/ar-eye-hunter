@@ -53,38 +53,47 @@ export function TunePreview({ model, metric, onMetricChange, onInspectAgent }: T
                     {model.agentMeans.map((agent, index) => {
                         const cells = model.matrixCells.filter(cell => cell.laneId === agent.agentId);
                         return (
-                            <button
-                                aria-label={`${agent.agentId} · ${agent.meanMs.toLocaleString('en-US')} ms`}
+                            <div
                                 className={styles.agentRow}
-                                data-tune-agent={agent.agentId}
                                 key={agent.agentId}
-                                onClick={() => onInspectAgent(agent.agentId)}
-                                onFocus={() => setActiveIndex(index)}
-                                onKeyDown={(event) => {
-                                    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
-                                        event.preventDefault();
-                                        moveFocus(index, 1);
-                                    } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
-                                        event.preventDefault();
-                                        moveFocus(index, -1);
-                                    } else if (event.key === 'Enter' || event.key === ' ') {
-                                        event.preventDefault();
-                                        onInspectAgent(agent.agentId);
-                                    }
-                                }}
-                                ref={element => { agentRefs.current[index] = element; }}
-                                role="gridcell"
-                                tabIndex={activeIndex === index ? 0 : -1}
-                                type="button"
+                                role="row"
                             >
-                                <strong>{agent.agentId}</strong>
-                                <span>{formatMs(agent.meanMs)}</span>
+                                <button
+                                    aria-label={`${agent.agentId} · ${agent.meanMs.toLocaleString('en-US')} ms`}
+                                    className={styles.agentButton}
+                                    data-tune-agent={agent.agentId}
+                                    onClick={() => onInspectAgent(agent.agentId)}
+                                    onFocus={() => setActiveIndex(index)}
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+                                            event.preventDefault();
+                                            moveFocus(index, 1);
+                                        } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+                                            event.preventDefault();
+                                            moveFocus(index, -1);
+                                        } else if (event.key === 'Enter' || event.key === ' ') {
+                                            event.preventDefault();
+                                            onInspectAgent(agent.agentId);
+                                        }
+                                    }}
+                                    ref={element => { agentRefs.current[index] = element; }}
+                                    role="gridcell"
+                                    tabIndex={activeIndex === index ? 0 : -1}
+                                    type="button"
+                                >
+                                    <strong>{agent.agentId}</strong>
+                                </button>
+                                <span role="gridcell">{formatMs(agent.meanMs)}</span>
                                 {cells.map(cell => (
-                                    <span data-metric={cell.metric} key={`${cell.laneId}:${cell.metric}`}>
+                                    <span
+                                        data-metric={cell.metric}
+                                        key={`${cell.laneId}:${cell.metric}`}
+                                        role="gridcell"
+                                    >
                                         {cell.value}
                                     </span>
                                 ))}
-                            </button>
+                            </div>
                         );
                     })}
                 </div>

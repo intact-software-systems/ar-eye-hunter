@@ -75,22 +75,30 @@
 .agentRow {
     width: 100%;
     min-height: 48px;
-    border: 0;
     border-top: 1px solid var(--rc-border);
     color: var(--rc-text);
     background: var(--rc-surface);
-    font: inherit;
     text-align: left;
 }
 
 .agentRow:hover,
-.agentRow:focus-visible {
+.agentRow:focus-within {
     color: var(--rc-selected-text);
     background: var(--rc-selected-bg);
 }
 
 .agentRow > span:not(:nth-child(2)) {
     text-align: center;
+}
+
+.agentButton {
+    min-width: 0;
+    min-height: 47px;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: left;
 }
 
 .percentiles {

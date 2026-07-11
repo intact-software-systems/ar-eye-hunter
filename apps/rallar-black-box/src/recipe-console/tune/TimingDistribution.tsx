@@ -49,14 +49,23 @@ export function TimingDistribution({ points, histogram }: TimingDistributionProp
                     </g>
                 );
             })}
-            {points.map((point, index) => (
-                <g data-duration-point key={point.agentId ?? point.commandId}>
-                    <circle className={styles.point} cx={pointX(point.durationMs)} cy={48 + index * 30} r="5" />
-                    <text className={styles.pointLabel} x={pointX(point.durationMs) + 9} y={52 + index * 30}>
-                        {point.agentId ?? point.commandId} · {point.durationMs.toLocaleString('en-US')} ms
-                    </text>
-                </g>
-            ))}
+            {points.map((point, index) => {
+                const x = pointX(point.durationMs);
+                const labelOnLeft = x > PLOT_LEFT + PLOT_WIDTH * 0.62;
+                return (
+                    <g data-duration-point key={point.agentId ?? point.commandId}>
+                        <circle className={styles.point} cx={x} cy={48 + index * 30} r="5" />
+                        <text
+                            className={styles.pointLabel}
+                            textAnchor={labelOnLeft ? 'end' : 'start'}
+                            x={x + (labelOnLeft ? -9 : 9)}
+                            y={52 + index * 30}
+                        >
+                            {point.agentId ?? point.commandId} · {point.durationMs.toLocaleString('en-US')} ms
+                        </text>
+                    </g>
+                );
+            })}
         </svg>
     );
 }

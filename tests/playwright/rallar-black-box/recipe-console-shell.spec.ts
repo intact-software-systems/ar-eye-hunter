@@ -20,6 +20,15 @@ test('renders command-duration Tune without invented stream evidence', async ({ 
     expect((matrixBox?.width ?? 0) / ((matrixBox?.width ?? 0) + (timingBox?.width ?? 0)))
         .toBeCloseTo(0.52, 1);
     await expect(matrixPane.locator('[data-tune-agent]')).toHaveCount(3);
+    const timingGrid = matrixPane.getByRole('grid', { name: 'Tune agent timing matrix' });
+    await expect(timingGrid.getByRole('row')).toHaveCount(4);
+    for (const agentId of ['seed-agent-a', 'seed-agent-b', 'seed-agent-c']) {
+        const agentRow = timingGrid.getByRole('row').filter({
+            has: page.locator(`[data-tune-agent="${agentId}"]`),
+        });
+        await expect(agentRow).toHaveCount(1);
+        await expect(agentRow.getByRole('gridcell')).toHaveCount(8);
+    }
     await expect(matrixPane.getByText('seed-agent-a', { exact: true })).toBeVisible();
     await expect(matrixPane.getByText('seed-agent-b', { exact: true })).toBeVisible();
     await expect(matrixPane.getByText('seed-agent-c', { exact: true })).toBeVisible();
@@ -38,6 +47,14 @@ test('renders command-duration Tune without invented stream evidence', async ({ 
     await expect(distribution.locator('[data-histogram-bar]')).toHaveCount(4);
     await expect(distribution.locator('[data-duration-point]')).toHaveCount(3);
     await expect(distribution).toContainText('Duration (ms)');
+    const distributionBounds = await distribution.boundingBox();
+    expect(distributionBounds).not.toBeNull();
+    for (const label of await distribution.locator('[data-duration-point] text').all()) {
+        const labelBounds = await label.boundingBox();
+        expect(labelBounds).not.toBeNull();
+        expect((labelBounds?.x ?? 0) + (labelBounds?.width ?? 0))
+            .toBeLessThanOrEqual((distributionBounds?.x ?? 0) + (distributionBounds?.width ?? 0) + 1);
+    }
 
     const agentA = matrixPane.getByRole('gridcell', { name: /seed-agent-a/ });
     const agentB = matrixPane.getByRole('gridcell', { name: /seed-agent-b/ });
@@ -86,6 +103,12 @@ test('routes bounded Analyze Fleet and Advanced previews', async ({ page }) => {
     await expect(analyze.getByText('Core bundle', { exact: true })).toBeVisible();
     await expect(analyze.getByText('Evidence bundle', { exact: true })).toBeVisible();
     await expect(analyze.getByText('Partial bundle', { exact: true })).toBeVisible();
+    const coreBundle = analyze.locator('li').filter({ hasText: 'Core bundle' });
+    await expect(coreBundle).toContainText('distributed-run.json, manifest.json, and control-run.json');
+    await expect(coreBundle).not.toContainText('report.json');
+    const evidenceBundle = analyze.locator('li').filter({ hasText: 'Evidence bundle' });
+    await expect(evidenceBundle).toContainText('report.json');
+    await expect(evidenceBundle).toContainText('results.jsonl');
     await expect(analyze.locator('input[type="file"]')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Fleet', exact: true }).click();
