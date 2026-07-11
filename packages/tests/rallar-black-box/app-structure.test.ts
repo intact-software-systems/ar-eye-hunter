@@ -21,6 +21,14 @@ const fleetTimingSourcePath =
     'apps/rallar-black-box/src/legacy/runner/fleet/views/FleetTimingGroupList.tsx';
 const authCommandCenterPanelSourcePath =
     'apps/rallar-black-box/src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx';
+const roomsClientsPanelSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx';
+const roomsClientsRequestSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-request.ts';
+const roomsClientsControllerSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/use-rooms-clients-controller.ts';
+const roomsClientsViewSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsView.tsx';
 const extractedModulePaths = [
     'apps/rallar-black-box/src/legacy/shell/browser-ui-storage.ts',
     'apps/rallar-black-box/src/legacy/shell/navigation.ts',
@@ -954,7 +962,16 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/shared/record-value.ts',
-                appImport: './legacy/shared/record-value.ts',
+                importerPath: existsSync(
+                    resolve(repositoryRoot, roomsClientsControllerSourcePath),
+                )
+                    ? roomsClientsControllerSourcePath
+                    : appSourcePath,
+                appImport: existsSync(
+                    resolve(repositoryRoot, roomsClientsControllerSourcePath),
+                )
+                    ? '../../shared/record-value.ts'
+                    : './legacy/shared/record-value.ts',
                 appSeams: ['recordArray', 'recordValue'],
                 declarations: [
                     {
@@ -8935,6 +8952,19 @@ describe('rallar-black-box app source ownership', () => {
             repositoryRoot,
             'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-derivations.ts',
         ));
+        const roomsClientsPanelPresent = existsSync(resolve(
+            repositoryRoot,
+            roomsClientsPanelSourcePath,
+        ));
+        const roomsClientsPresentationAst = existsSync(resolve(
+            repositoryRoot,
+            roomsClientsViewSourcePath,
+        ))
+            ? task9aSourceFile(
+                  roomsClientsViewSourcePath,
+                  repositorySource(roomsClientsViewSourcePath),
+              )
+            : appAst;
         const deepStringOwnerPresent = existsSync(resolve(
             repositoryRoot,
             'apps/rallar-black-box/src/legacy/diagnostics/shared/deep-string-value.ts',
@@ -8944,7 +8974,9 @@ describe('rallar-black-box app source ownership', () => {
             'Groups/Server helper moves only when its focused owner exists',
         ).toBe(!deepStringOwnerPresent);
         expect.soft(task9aImportEdges(appAst)).toContain(
-            './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
+            roomsClientsPanelPresent
+                ? './legacy/shared/record-value.ts|value:recordValue->optionalRecord'
+                : './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
         );
 
         const ownerAst = (path: string): ts.SourceFile =>
@@ -9092,12 +9124,18 @@ describe('rallar-black-box app source ownership', () => {
             './legacy/diagnostics/events/ExecutionFocusPanel.tsx|value:ExecutionFocusPanel',
             './legacy/diagnostics/events/RallarTracePanel.tsx|value:RallarTracePanel',
             './legacy/diagnostics/events/StatsPanel.tsx|value:StatsPanel',
-            './legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx|value:CommandCenterActionFeedbackPanel',
-            './legacy/diagnostics/shared/action-feedback.ts|type:CommandCenterActionFeedback,value:completedActionFeedback,value:idleActionFeedback,value:runningActionFeedback',
+            ...(roomsClientsPanelPresent
+                ? []
+                : [
+                      './legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx|value:CommandCenterActionFeedbackPanel',
+                      './legacy/diagnostics/shared/action-feedback.ts|type:CommandCenterActionFeedback,value:completedActionFeedback,value:idleActionFeedback,value:runningActionFeedback',
+                  ]),
             ...(roomsDerivationsPresent
                 ? []
                 : ['./legacy/shared/finite-number.ts|value:optionalNumber']),
-            './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
+            roomsClientsPanelPresent
+                ? './legacy/shared/record-value.ts|value:recordValue->optionalRecord'
+                : './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
             './legacy/shared/use-now.ts|value:useNow',
             './legacy/shell/RallarBrowserTraceBar.tsx|value:RallarBrowserTraceBar',
             './legacy/shell/rallar-browser-status.ts|type:RallarBrowserStatusSummary,value:deriveRallarBrowserStatus',
@@ -9254,8 +9292,8 @@ describe('rallar-black-box app source ownership', () => {
                 `${name}: exact mount ancestors, hidden guards, and siblings`,
             ).toEqual(ancestorFingerprints);
         }
-        const appActionFeedbackCalls = task9aJsxCalls(
-            appAst,
+        const roomsClientsActionFeedbackCalls = task9aJsxCalls(
+            roomsClientsPresentationAst,
             'CommandCenterActionFeedbackPanel',
         );
         const rtcRealtimeViewPath =
@@ -9284,21 +9322,11 @@ describe('rallar-black-box app source ownership', () => {
                   'CommandCenterActionFeedbackPanel',
               )
             : [];
-        const actionFeedbackCalls = webSocketActionFeedbackCalls.length > 0
-            ? [
-                  ...webSocketActionFeedbackCalls,
-                  ...rtcRealtimeActionFeedbackCalls,
-                  ...appActionFeedbackCalls,
-              ]
-            : rtcRealtimeActionFeedbackCalls.length > 0
-            ? [
-                  appActionFeedbackCalls[0],
-                  ...rtcRealtimeActionFeedbackCalls,
-                  ...appActionFeedbackCalls.slice(1),
-              ].filter(
-                  (call): call is ts.JsxSelfClosingElement => Boolean(call),
-              )
-            : appActionFeedbackCalls;
+        const actionFeedbackCalls = [
+            ...webSocketActionFeedbackCalls,
+            ...rtcRealtimeActionFeedbackCalls,
+            ...roomsClientsActionFeedbackCalls,
+        ];
         expect.soft(
             actionFeedbackCalls,
             'three direct-panel action feedback consumers',
@@ -9805,9 +9833,11 @@ describe('rallar-black-box app source ownership', () => {
                 edge.startsWith('./rtc-diagnostics.ts|')
             ),
             'App retains only the still-shared RTC derivation edge',
-        ).toEqual([
-            './rtc-diagnostics.ts|value:deriveRtcDiagnostics',
-        ]);
+        ).toEqual(
+            existsSync(resolve(repositoryRoot, roomsClientsPanelSourcePath))
+                ? []
+                : ['./rtc-diagnostics.ts|value:deriveRtcDiagnostics'],
+        );
 
         const app = task9aNamedFunction(appAst, 'App');
         const mountAncestorFingerprints = (
@@ -11064,10 +11094,29 @@ describe('rallar-black-box app source ownership', () => {
                       repositorySource(roomsDerivationsPath),
                   )
                 : undefined;
+            const roomsClientsPanelPresent = existsSync(
+                resolve(repositoryRoot, roomsClientsPanelSourcePath),
+            );
+            const roomsClientsControllerPresent = existsSync(
+                resolve(repositoryRoot, roomsClientsControllerSourcePath),
+            );
+            const roomsClientsControllerSource = roomsClientsControllerPresent
+                ? repositorySource(roomsClientsControllerSourcePath)
+                : '';
             expect.soft(
                 [...appSource.matchAll(/\brecordArray\s*\(/g)],
-                'App owns only the Rooms panel recordArray sites after R1',
-            ).toHaveLength(roomsDerivationsPresent ? 2 : 9);
+                'App relinquishes the Rooms panel recordArray sites after R2',
+            ).toHaveLength(
+                roomsClientsPanelPresent
+                    ? 0
+                    : roomsDerivationsPresent
+                      ? 2
+                      : 9,
+            );
+            expect.soft(
+                [...roomsClientsControllerSource.matchAll(/\brecordArray\s*\(/g)],
+                'Rooms controller owner keeps its two recordArray call sites',
+            ).toHaveLength(roomsClientsControllerPresent ? 2 : 0);
             expect.soft(
                 [
                     ...(roomsDerivationsPresent
@@ -11106,12 +11155,14 @@ describe('rallar-black-box app source ownership', () => {
                     `${name}: unchanged shared recordArray consumer`,
                 ).toBe(expectedHash);
             }
-            expect.soft(
-                task9aAstFingerprint([
-                    task9aNamedFunction(appAst, 'RoomsClientsPanel'),
-                ]),
-                'RoomsClientsPanel: unchanged App-local recordArray consumer',
-            ).toBe('c7fe946335be41d27b620a07f591490fd635d5586f8e0675ae944ff5c5af6da5');
+            if (!roomsClientsPanelPresent) {
+                expect.soft(
+                    task9aMoveOnlyDeclarationFingerprint(
+                        task9aNamedFunction(appAst, 'RoomsClientsPanel'),
+                    ),
+                    'RoomsClientsPanel: unchanged pre-R2 fallback',
+                ).toBe('c7fe946335be41d27b620a07f591490fd635d5586f8e0675ae944ff5c5af6da5');
+            }
             const controllerReturn = statements[returnIndex];
             const controllerModel = controllerReturn &&
                     ts.isReturnStatement(controllerReturn)
@@ -13222,9 +13273,16 @@ describe('rallar-black-box app source ownership', () => {
             }
         }
 
+        const roomsClientsPanelPresent = existsSync(
+            resolve(repositoryRoot, roomsClientsPanelSourcePath),
+        );
         const expectedAppAuthImports = [
             './legacy/diagnostics/auth/AuthCommandCenterPanel.tsx|value:AuthCommandCenterPanel',
-            './legacy/diagnostics/shared/rest-action-log.ts|type:CommandCenterRestActionLog,value:restLogEntry',
+            ...(roomsClientsPanelPresent
+                ? []
+                : [
+                      './legacy/diagnostics/shared/rest-action-log.ts|type:CommandCenterRestActionLog,value:restLogEntry',
+                  ]),
             './legacy/shell/read-current-auth-session.ts|value:readCurrentAuthSession',
         ].sort();
         const appAuthImports = task9aImportEdges(appAst).filter((edge) =>
@@ -13397,9 +13455,12 @@ describe('rallar-black-box app source ownership', () => {
                         .sort(),
                 ]),
             );
-            expect.soft(consumers.get(restOwnerPath)).toEqual(
-                [appSourcePath, panelOwnerPath].sort(),
-            );
+            expect.soft(consumers.get(restOwnerPath)).toEqual([
+                panelOwnerPath,
+                roomsClientsPanelPresent
+                    ? roomsClientsControllerSourcePath
+                    : appSourcePath,
+            ].sort());
             expect.soft(consumers.get(recipeOwnerPath)).toEqual([
                 panelOwnerPath,
             ]);
@@ -13676,6 +13737,9 @@ describe('rallar-black-box app source ownership', () => {
         const appSource = repositorySource(appSourcePath);
         const appAst = task9aSourceFile(appSourcePath, appSource);
         const ownerAsts = new Map<string, ts.SourceFile>();
+        const roomsClientsPanelPresent = existsSync(
+            resolve(repositoryRoot, roomsClientsPanelSourcePath),
+        );
 
         for (const ownerPath of ownerPaths) {
             const ownerPresent = existsSync(resolve(repositoryRoot, ownerPath));
@@ -13847,16 +13911,33 @@ describe('rallar-black-box app source ownership', () => {
             );
             expect.soft(
                 ownerConsumers.get(contractsPath),
-                'contracts owner has only App and derivations consumers',
-            ).toEqual([appSourcePath, derivationsPath].sort());
+                'contracts owner has only derivations, controller, and view consumers',
+            ).toEqual([
+                derivationsPath,
+                ...(roomsClientsPanelPresent
+                    ? [
+                          roomsClientsControllerSourcePath,
+                          roomsClientsViewSourcePath,
+                      ]
+                    : [appSourcePath]),
+            ].sort());
             expect.soft(
                 ownerConsumers.get(derivationsPath),
-                'derivations owner has only App as consumer',
-            ).toEqual([appSourcePath]);
+                'derivations owner has only the panel consumer',
+            ).toEqual([
+                roomsClientsPanelPresent
+                    ? roomsClientsControllerSourcePath
+                    : appSourcePath,
+            ]);
             expect.soft(
                 ownerConsumers.get(deepStringPath),
-                'deep-string owner has only App as consumer',
-            ).toEqual([appSourcePath]);
+                'deep-string owner has App plus the extracted panel consumer',
+            ).toEqual([
+                appSourcePath,
+                ...(roomsClientsPanelPresent
+                    ? [roomsClientsControllerSourcePath]
+                    : []),
+            ].sort());
             const graph = task9aReachableRelativeTypeScriptGraph(
                 ownerPaths,
                 repositorySource,
@@ -13879,11 +13960,18 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             appOwnerImports,
             'App imports exactly the Rooms and Clients R1 owner seams',
-        ).toEqual([
-            './legacy/diagnostics/rooms-clients/rooms-clients-contracts.ts|type:ClientSortId,type:GroupSortId,type:RoomsClientsAction,type:RoomsClientsActionId,value:CLIENT_SORT_OPTIONS,value:GROUP_SORT_OPTIONS,value:ROOMS_CLIENTS_ACTIONS,value:ROOMS_CLIENTS_ACTION_GROUPS',
-            './legacy/diagnostics/rooms-clients/rooms-clients-derivations.ts|value:rowsFromClientSnapshots,value:rowsFromGroupSnapshots,value:rowsFromStateEvents,value:sortClientRows,value:sortGroupRows',
-            './legacy/diagnostics/shared/deep-string-value.ts|value:findStringDeep',
-        ]);
+        ).toEqual(
+            roomsClientsPanelPresent
+                ? [
+                      './legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx|value:RoomsClientsPanel',
+                      './legacy/diagnostics/shared/deep-string-value.ts|value:findStringDeep',
+                  ]
+                : [
+                      './legacy/diagnostics/rooms-clients/rooms-clients-contracts.ts|type:ClientSortId,type:GroupSortId,type:RoomsClientsAction,type:RoomsClientsActionId,value:CLIENT_SORT_OPTIONS,value:GROUP_SORT_OPTIONS,value:ROOMS_CLIENTS_ACTIONS,value:ROOMS_CLIENTS_ACTION_GROUPS',
+                      './legacy/diagnostics/rooms-clients/rooms-clients-derivations.ts|value:rowsFromClientSnapshots,value:rowsFromGroupSnapshots,value:rowsFromStateEvents,value:sortClientRows,value:sortGroupRows',
+                      './legacy/diagnostics/shared/deep-string-value.ts|value:findStringDeep',
+                  ],
+        );
 
         const declarationCases = [
             [contractsPath, 'RoomsClientsActionId', 'bacf6f962699b1058e4434761d0800f272bac4cc90fa2bdc4d353561ae864f66'],
@@ -13959,6 +14047,517 @@ describe('rallar-black-box app source ownership', () => {
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
                 .digest('hex'),
             'Rooms and Clients R1 leaves the complete stylesheet unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
+    it('extracts the stateful Rooms and Clients panel into focused controller and view owners', () => {
+        const ownerPaths = [
+            roomsClientsRequestSourcePath,
+            roomsClientsControllerSourcePath,
+            roomsClientsViewSourcePath,
+            roomsClientsPanelSourcePath,
+        ] as const;
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const ownerAsts = new Map<string, ts.SourceFile>();
+
+        for (const ownerPath of ownerPaths) {
+            const present = existsSync(resolve(repositoryRoot, ownerPath));
+            expect.soft(present, `${ownerPath}: owner exists`).toBe(true);
+            if (present) {
+                ownerAsts.set(
+                    ownerPath,
+                    task9aSourceFile(ownerPath, repositorySource(ownerPath)),
+                );
+            }
+        }
+
+        const expectedImports = new Map<string, readonly string[]>([
+            [
+                roomsClientsRequestSourcePath,
+                [
+                    '../../../rallar-server-workbench.ts|type:RallarServerEndpointPreset,type:RallarServerRestRequestInput,type:RallarServerWorkbenchVariables,value:RALLAR_SERVER_ENDPOINT_PRESETS,value:applyRallarServerEndpointPreset',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                ].sort(),
+            ],
+            [
+                roomsClientsControllerSourcePath,
+                [
+                    '../../../direct-rallar-operations.ts|value:configureDirectRallarFacade,value:createDirectRallarRuntimeEvent',
+                    '../../../rallar-server-workbench.ts|type:RallarServerRestResponse,type:RallarServerWorkbenchVariables,value:defaultRallarServerWorkbenchVariables,value:executeRallarServerRestRequest,value:toRallarServerBlackBoxCommand',
+                    '../../../rtc-diagnostics.ts|value:deriveRtcDiagnostics',
+                    '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig,value:rallarBlackBoxRuntimeStore',
+                    '../../rallar/load-browser-rallar-facade.ts|value:loadBrowserRallarFacade',
+                    '../../shared/json-presentation.ts|value:json',
+                    '../../shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
+                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                    '../shared/action-feedback.ts|type:CommandCenterActionFeedback,value:completedActionFeedback,value:idleActionFeedback,value:runningActionFeedback',
+                    '../shared/deep-string-value.ts|value:findStringDeep',
+                    '../shared/rest-action-log.ts|type:CommandCenterRestActionLog,value:restLogEntry',
+                    './rooms-clients-contracts.ts|type:ClientSortId,type:GroupSortId,type:RoomsClientsAction,type:RoomsClientsActionId,value:ROOMS_CLIENTS_ACTIONS',
+                    './rooms-clients-derivations.ts|value:rowsFromClientSnapshots,value:rowsFromGroupSnapshots,value:rowsFromStateEvents,value:sortClientRows,value:sortGroupRows',
+                    './rooms-clients-request.ts|value:buildPresetRequestInput',
+                    '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxCurrentConfig',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                    'react|value:useEffect,value:useMemo,value:useState',
+                ].sort(),
+            ],
+            [
+                roomsClientsViewSourcePath,
+                [
+                    '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
+                    '../../shared/CollapsiblePanelSection.tsx|value:CollapsiblePanelSection',
+                    '../../shared/Metric.tsx|value:Metric',
+                    '../../shared/redaction-presentation.ts|value:uiRedactionOptions',
+                    '../../shared/time-format.ts|value:formatDuration,value:formatTime',
+                    '../shared/CommandCenterActionFeedbackPanel.tsx|value:CommandCenterActionFeedbackPanel',
+                    './rooms-clients-contracts.ts|type:ClientSortId,type:GroupSortId,value:CLIENT_SORT_OPTIONS,value:GROUP_SORT_OPTIONS,value:ROOMS_CLIENTS_ACTION_GROUPS',
+                    './use-rooms-clients-controller.ts|type:RoomsClientsControllerModel',
+                    '@shared-test/rallar-bb-test/redaction.ts|value:redactRallarBlackBoxValue',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                ].sort(),
+            ],
+            [
+                roomsClientsPanelSourcePath,
+                [
+                    './RoomsClientsView.tsx|value:RoomsClientsView',
+                    './use-rooms-clients-controller.ts|type:UseRoomsClientsControllerInput,value:useRoomsClientsController',
+                ].sort(),
+            ],
+        ]);
+        const expectedExports = new Map<string, readonly string[]>([
+            [roomsClientsRequestSourcePath, ['value:buildPresetRequestInput']],
+            [
+                roomsClientsControllerSourcePath,
+                [
+                    'type:RoomsClientsControllerModel',
+                    'type:UseRoomsClientsControllerInput',
+                    'value:useRoomsClientsController',
+                ],
+            ],
+            [roomsClientsViewSourcePath, ['value:RoomsClientsView']],
+            [roomsClientsPanelSourcePath, ['value:RoomsClientsPanel']],
+        ]);
+        const expectedInventories = new Map<string, readonly string[]>([
+            [
+                roomsClientsRequestSourcePath,
+                [
+                    'function:rallarServerPresetById',
+                    'function:buildPresetRequestInput',
+                ],
+            ],
+            [
+                roomsClientsControllerSourcePath,
+                [
+                    'type:UseRoomsClientsControllerInput',
+                    'function:useRoomsClientsController',
+                    'type:RoomsClientsControllerModel',
+                ],
+            ],
+            [roomsClientsViewSourcePath, ['function:RoomsClientsView']],
+            [roomsClientsPanelSourcePath, ['function:RoomsClientsPanel']],
+        ]);
+        const lineCaps = new Map<string, number>([
+            [roomsClientsRequestSourcePath, 100],
+            [roomsClientsControllerSourcePath, 760],
+            [roomsClientsViewSourcePath, 600],
+            [roomsClientsPanelSourcePath, 80],
+        ]);
+        const inventory = (sourceFile: ts.SourceFile): readonly string[] =>
+            sourceFile.statements.flatMap((statement) => {
+                if (ts.isImportDeclaration(statement)) return [];
+                if (ts.isTypeAliasDeclaration(statement)) {
+                    return [`type:${statement.name.text}`];
+                }
+                if (ts.isFunctionDeclaration(statement)) {
+                    return [`function:${statement.name?.text ?? '<anonymous>'}`];
+                }
+                return [`unexpected:${ts.SyntaxKind[statement.kind]}`];
+            });
+
+        for (const ownerPath of ownerPaths) {
+            const ownerAst = ownerAsts.get(ownerPath);
+            if (!ownerAst) continue;
+            const ownerSource = repositorySource(ownerPath);
+            expect.soft(
+                ownerSource.trimEnd().split(/\r?\n/).length,
+                `${ownerPath}: focused line cap`,
+            ).toBeLessThanOrEqual(lineCaps.get(ownerPath)!);
+            expect.soft(
+                task9aImportEdges(ownerAst),
+                `${ownerPath}: exact direct imports`,
+            ).toEqual(expectedImports.get(ownerPath));
+            expect.soft(
+                task9aExportSeams(ownerAst),
+                `${ownerPath}: exact direct exports`,
+            ).toEqual(expectedExports.get(ownerPath));
+            expect.soft(
+                inventory(ownerAst),
+                `${ownerPath}: exact top-level inventory`,
+            ).toEqual(expectedInventories.get(ownerPath));
+            expect.soft(
+                ownerSource,
+                `${ownerPath}: no reverse/App/CSS/barrel edge`,
+            ).not.toMatch(
+                /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"]|^\s*export\s+(?:\*|{)[^;]*\s+from\s+)/m,
+            );
+        }
+
+        if (ownerAsts.size === ownerPaths.length) {
+            const consumers = new Map(
+                ownerPaths.map((ownerPath) => [
+                    ownerPath,
+                    sourceFilesUnder('apps/rallar-black-box/src')
+                        .filter((sourcePath) => {
+                            if (sourcePath === ownerPath) return false;
+                            const sourceFile = task9aSourceFile(
+                                sourcePath,
+                                repositorySource(sourcePath),
+                            );
+                            return task9aModuleSpecifiers(sourceFile).some(
+                                (moduleImport) =>
+                                    task9aResolveRelativeTypeScriptDependency(
+                                        sourcePath,
+                                        moduleImport,
+                                        (path) =>
+                                            existsSync(resolve(repositoryRoot, path)),
+                                    ) === ownerPath,
+                            );
+                        })
+                        .sort(),
+                ]),
+            );
+            expect.soft(consumers.get(roomsClientsRequestSourcePath)).toEqual([
+                roomsClientsControllerSourcePath,
+            ]);
+            expect.soft(consumers.get(roomsClientsControllerSourcePath)).toEqual([
+                roomsClientsPanelSourcePath,
+                roomsClientsViewSourcePath,
+            ].sort());
+            expect.soft(consumers.get(roomsClientsViewSourcePath)).toEqual([
+                roomsClientsPanelSourcePath,
+            ]);
+            expect.soft(consumers.get(roomsClientsPanelSourcePath)).toEqual([
+                appSourcePath,
+            ]);
+            const graph = task9aReachableRelativeTypeScriptGraph(
+                ownerPaths,
+                repositorySource,
+                (path) => existsSync(resolve(repositoryRoot, path)),
+            );
+            expect.soft(
+                task9aDependencyCycles(graph),
+                'Rooms R2 owner dependency graph has no cycles',
+            ).toEqual([]);
+        }
+
+        const appRoomsImports = task9aImportEdges(appAst).filter((edge) =>
+            edge.startsWith('./legacy/diagnostics/rooms-clients/'),
+        );
+        expect.soft(
+            appRoomsImports,
+            'App imports only the thin RoomsClientsPanel root',
+        ).toEqual([
+            './legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx|value:RoomsClientsPanel',
+        ]);
+
+        const appLocalPanel = appAst.statements.find(
+            (statement): statement is ts.FunctionDeclaration =>
+                ts.isFunctionDeclaration(statement) &&
+                statement.name?.text === 'RoomsClientsPanel',
+        );
+        expect.soft(
+            Boolean(appLocalPanel),
+            'App has no local RoomsClientsPanel after R2',
+        ).toBe(false);
+
+        const appEdges = task9aImportEdges(appAst);
+        const movedOnlyModules = new Set([
+            './rtc-diagnostics.ts',
+            './legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx',
+            './legacy/diagnostics/shared/action-feedback.ts',
+            './legacy/diagnostics/shared/rest-action-log.ts',
+            './legacy/diagnostics/rooms-clients/rooms-clients-contracts.ts',
+            './legacy/diagnostics/rooms-clients/rooms-clients-derivations.ts',
+        ]);
+        const staleAppEdges = appEdges.filter((edge) => {
+            const moduleImport = edge.slice(0, edge.indexOf('|'));
+            return movedOnlyModules.has(moduleImport) ||
+                (moduleImport === './legacy/shared/record-value.ts' &&
+                    edge.includes('recordArray'));
+        });
+        expect.soft(
+            staleAppEdges,
+            'App has no Rooms controller/view-only direct seams',
+        ).toEqual([]);
+
+        const findFunction = (
+            sourceFile: ts.SourceFile,
+            name: string,
+        ): ts.FunctionDeclaration | undefined =>
+            sourceFile.statements.find(
+                (statement): statement is ts.FunctionDeclaration =>
+                    ts.isFunctionDeclaration(statement) &&
+                    statement.name?.text === name,
+            );
+        const requestAst = ownerAsts.get(roomsClientsRequestSourcePath) ?? appAst;
+        for (const [name, expectedHash] of [
+            [
+                'rallarServerPresetById',
+                '1b967a97092b04d5230ab4fdff958c465df384f244137241be315405c251057a',
+            ],
+            [
+                'buildPresetRequestInput',
+                '0d7a99f44c07f55b8c14734009149bcb3087d919a8129290c74ad7a86bf7e3dd',
+            ],
+        ] as const) {
+            const declaration = findFunction(requestAst, name);
+            expect.soft(declaration, `${name}: owner/App fallback`).toBeDefined();
+            if (declaration) {
+                expect.soft(
+                    task9aMoveOnlyDeclarationFingerprint(declaration),
+                    `${name}: exact request-helper move`,
+                ).toBe(expectedHash);
+            }
+        }
+
+        const controllerAst =
+            ownerAsts.get(roomsClientsControllerSourcePath) ?? appAst;
+        const controllerName = ownerAsts.has(roomsClientsControllerSourcePath)
+            ? 'useRoomsClientsController'
+            : 'RoomsClientsPanel';
+        const controller = task9aNamedFunction(controllerAst, controllerName);
+        const controllerStatements = [...controller.body!.statements];
+        expect.soft(
+            controllerStatements,
+            'controller keeps 44 legacy statements plus one final return',
+        ).toHaveLength(45);
+        expect.soft(
+            task9aAstFingerprint(controllerStatements.slice(0, 44)),
+            'exact complete Rooms controller before its model return',
+        ).toBe('83966f12259fabc9ce2f016061bbed8f2f24a93866139ef1ab5e0c100b590993');
+        const hookCounts = {
+            useState: 0,
+            useMemo: 0,
+            useRef: 0,
+            useEffect: 0,
+            useCallback: 0,
+        };
+        const effectStatements: ts.Statement[] = [];
+        for (const statement of controllerStatements.slice(0, 44)) {
+            const visit = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text in hookCounts
+                ) {
+                    hookCounts[
+                        node.expression.text as keyof typeof hookCounts
+                    ] += 1;
+                }
+                ts.forEachChild(node, visit);
+            };
+            visit(statement);
+            if (
+                ts.isExpressionStatement(statement) &&
+                ts.isCallExpression(statement.expression) &&
+                ts.isIdentifier(statement.expression.expression) &&
+                statement.expression.expression.text === 'useEffect'
+            ) {
+                effectStatements.push(statement);
+            }
+        }
+        expect.soft(hookCounts, 'exact Rooms controller hook topology').toEqual({
+            useState: 16,
+            useMemo: 2,
+            useRef: 0,
+            useEffect: 2,
+            useCallback: 0,
+        });
+        expect.soft(
+            effectStatements.map((statement) =>
+                task9aAstFingerprint([statement]),
+            ),
+            'exact Rooms synchronization effects and dependencies',
+        ).toEqual([
+            '18ed77bb96b631ce9cd56274555ac97f73f817e042bfe1059caf6c525e3bd984',
+            '70e8c8fa2ab1480b63efe621fdb8adadc54fa8ab966950065d169ccb5e07390b',
+        ]);
+        const declarations = new Map<string, ts.VariableStatement>();
+        for (const statement of controllerStatements.slice(0, 44)) {
+            if (!ts.isVariableStatement(statement)) continue;
+            for (const declaration of statement.declarationList.declarations) {
+                if (ts.isIdentifier(declaration.name)) {
+                    declarations.set(declaration.name.text, statement);
+                }
+            }
+        }
+        for (const [name, expectedHash] of [
+            ['defaultVariables', '3bc69c0ffa1a87ce2d7e5132c1a3d4a890a51d4c14310e50cdf3ab339d488553'],
+            ['updateVariable', 'e294808a0b3b2be3295d93c7587bc673c33200f14181614185511e72e0d06bba'],
+            ['promoteGroupToGlobal', '5e0de53a52472e41e45bd5b8696c90cf5bed9296aeef4bee9ceaa2e1d2930d05'],
+            ['applyResponseBody', '8d6a8558a51cbd212edb70d2a979d83fec4305815ab3c8fd5c81f91043de4f2f'],
+            ['runPresetAction', '3e377f76701c520aeaa02a5c0aa90dfd9cc3de9ea888bded6d78d90f9140af8d'],
+            ['refreshState', '46e87edb5cf897034d0c8511fb8dcd7068df7907865ae693302432f3e129ff1c'],
+            ['runDirectRoomsAction', '974adc523b7e28c892c676ab18c0ba75eb6c1091344932103737ae61f57b566e'],
+            ['copyStateRecipe', '6e5f8c388b7b0c40257a074c752b95ccbcf7d92e3c296539ee80cf34a36e0e5a'],
+            ['stateEvents', '6a1ac82ea21f141958fff184269d889a3bd38854df5af70428591eab2448b41d'],
+            ['expectedOtherClientVisible', '6910da36e95f596e0410df06f3239d76887e6e70be52bfe42650aded43295e08'],
+        ] as const) {
+            const statement = declarations.get(name);
+            expect.soft(
+                statement ? task9aAstFingerprint([statement]) : '',
+                `${name}: exact Rooms controller statement`,
+            ).toBe(expectedHash);
+        }
+
+        if (ownerAsts.has(roomsClientsControllerSourcePath)) {
+            let controllerHasJsx = false;
+            const visitJsx = (node: ts.Node): void => {
+                if (
+                    ts.isJsxElement(node) ||
+                    ts.isJsxSelfClosingElement(node) ||
+                    ts.isJsxFragment(node)
+                ) {
+                    controllerHasJsx = true;
+                }
+                ts.forEachChild(node, visitJsx);
+            };
+            visitJsx(controller);
+            expect.soft(controllerHasJsx, 'Rooms controller has no JSX').toBe(false);
+
+            const controllerReturn = controllerStatements[44];
+            const model =
+                controllerReturn && ts.isReturnStatement(controllerReturn)
+                    ? controllerReturn.expression
+                    : undefined;
+            const expectedModelKeys = [
+                'apiBaseUrl', 'setApiBaseUrl', 'variables', 'timeoutMs',
+                'setTimeoutMs', 'busyAction', 'localError', 'actionFeedback',
+                'actions', 'onlyGroupsWithMembers', 'setOnlyGroupsWithMembers',
+                'onlyOnlineClients', 'setOnlyOnlineClients', 'groupSort',
+                'setGroupSort', 'clientSort', 'setClientSort',
+                'expectedOtherClient', 'setExpectedOtherClient',
+                'updateVariable', 'runPresetAction', 'refreshState',
+                'runDirectRoomsAction', 'copyStateRecipe', 'groupRows',
+                'clientRows', 'visibleGroupRows', 'visibleClientRows',
+                'sortedGroupRows', 'sortedClientRows', 'stateEvents',
+                'expectedClients', 'observedClients', 'missingClients',
+                'currentSessionInGroup', 'currentClientOnline',
+                'expectedOtherClientVisible',
+            ];
+            expect.soft(
+                model && ts.isObjectLiteralExpression(model)
+                    ? model.properties.map((property) =>
+                          property.name?.getText(controllerAst),
+                      )
+                    : [],
+                'exact explicit Rooms controller model key order',
+            ).toEqual(expectedModelKeys);
+            expect.soft(
+                model && ts.isObjectLiteralExpression(model)
+                    ? model.properties.every(ts.isShorthandPropertyAssignment)
+                    : false,
+                'Rooms controller returns matching shorthand model fields',
+            ).toBe(true);
+        }
+
+        const presentationAst =
+            ownerAsts.get(roomsClientsViewSourcePath) ?? appAst;
+        const presentationName = ownerAsts.has(roomsClientsViewSourcePath)
+            ? 'RoomsClientsView'
+            : 'RoomsClientsPanel';
+        const presentation = task9aNamedFunction(
+            presentationAst,
+            presentationName,
+        );
+        if (ownerAsts.has(roomsClientsViewSourcePath)) {
+            expect.soft(
+                presentation.body!.statements,
+                'Rooms view has one model destructure and one JSX return',
+            ).toHaveLength(2);
+        }
+        const presentationReturn = presentation.body!.statements.find(
+            ts.isReturnStatement,
+        );
+        expect.soft(
+            presentationReturn?.expression
+                ? task9aAstFingerprint([presentationReturn.expression])
+                : '',
+            'Rooms view owns exact legacy JSX AST',
+        ).toBe('345723285b5449b7f4b35d3337d070dce93da50f25ec9f6e49829f31ef312a4c');
+        expect.soft(
+            presentationReturn?.expression
+                ? task9aJsxRuntimeFingerprint(presentationReturn.expression)
+                : '',
+            'Rooms view owns exact compiled legacy JSX',
+        ).toBe('a902441031e4b73c0c8f686a6d3afdd1637d472ca2a2cb1b7b0fd3fbad7e50fd');
+
+        if (ownerAsts.has(roomsClientsPanelSourcePath)) {
+            const panel = task9aNamedFunction(
+                ownerAsts.get(roomsClientsPanelSourcePath)!,
+                'RoomsClientsPanel',
+            );
+            expect.soft(
+                panel.body!.statements,
+                'thin Rooms root has one controller call and one View return',
+            ).toHaveLength(2);
+            expect.soft(
+                panel.parameters[0]?.type?.getText(panel.getSourceFile()),
+                'thin Rooms root consumes the controller input contract',
+            ).toBe('UseRoomsClientsControllerInput');
+        } else {
+            expect.soft(
+                task9aMoveOnlyDeclarationFingerprint(
+                    task9aNamedFunction(appAst, 'RoomsClientsPanel'),
+                ),
+                'exact complete Rooms panel fallback before R2',
+            ).toBe('c7fe946335be41d27b620a07f591490fd635d5586f8e0675ae944ff5c5af6da5');
+        }
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'RoomsClientsPanel');
+        expect.soft(mounts, 'one hidden-mounted Rooms panel instance').toHaveLength(1);
+        expect.soft(
+            task9aAstFingerprint(mounts),
+            'exact Rooms App mount',
+        ).toBe('e5f7a61702351690ccf62fa6e5bbdf2f34ae09b63a574c917112880f58653f05');
+        let ancestor: ts.Node | undefined = mounts[0];
+        while (ancestor && !ts.isJsxElement(ancestor)) ancestor = ancestor.parent;
+        expect.soft(
+            ancestor ? task9aAstFingerprint([ancestor]) : '',
+            'exact hidden Rooms tab-section ancestor',
+        ).toBe('ad3b15bdbde6041d799fde403082a3e2cae5f65fd1b73c30d90fb59b7b4a0ff5');
+        const conditionalAncestors: string[] = [];
+        let current: ts.Node | undefined = mounts[0]?.parent;
+        while (current && current !== app) {
+            if (
+                ts.isConditionalExpression(current) ||
+                (ts.isBinaryExpression(current) &&
+                    current.operatorToken.kind ===
+                        ts.SyntaxKind.AmpersandAmpersandToken)
+            ) {
+                conditionalAncestors.push(ts.SyntaxKind[current.kind]);
+            }
+            current = current.parent;
+        }
+        expect.soft(
+            conditionalAncestors,
+            'Rooms panel remains mounted while its tab is hidden',
+        ).toEqual([]);
+        expect.soft(
+            task9aAstFingerprint([app]),
+            'Rooms R2 leaves the App function unchanged',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(appSource, 'no Rooms lazy/Suspense lifetime cutover')
+            .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'Rooms R2 leaves the complete stylesheet unchanged',
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
     });
 
