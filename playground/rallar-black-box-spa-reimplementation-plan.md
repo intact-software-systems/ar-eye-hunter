@@ -394,7 +394,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Iteration | Status | Exit tracking |
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
-| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 926 lines through legacy shell-model M1; fleet share-link ownership is also complete at M2. The broad exit criteria still bind, and focused controllers, tab composition, `LegacyAppShell`, and the below-800 App boundary remain before this iteration is complete. |
+| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 759 lines through shell-controller M3; pure/share-link ownership and the below-800 checkpoint are satisfied. The broad exit criteria still bind, and focused tab composition plus `LegacyAppShell` remain before this iteration is complete. |
 | 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
@@ -777,6 +777,43 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   minified). This completes the Iteration 1 share-link-builder item but does
   not change App size, mounts, navigation, cutover, or the remaining shell
   controller/composition exit work.
+
+#### Iteration 1 legacy shell controllers M3 checkpoint — `0ecade8` (2026-07-11)
+
+- Navigation state, popstate lifetime, alias normalization, and URL writes now
+  live in the 79-line `src/legacy/shell/use-legacy-navigation.ts` owner.
+  Global-context defaults, edited/auth synchronization, browser status, and
+  explicit bootstrap updates live in the 128-line
+  `use-command-center-global-context.ts` owner. Runner queue/history/clock,
+  selected command/result, distributed-run handoff state, late selection sync,
+  and persistence live in the 75-line
+  `src/legacy/runner/shell/use-runner-shell-state.ts` owner.
+- The split preserves the authoritative effect order even while auth gates
+  render: `useNow` interval, popstate, three auth effects, global sync,
+  bootstrap activation, selection sync, and selected-ID persistence. App is
+  now 759 lines with only three direct state slots, four direct effects, and no
+  direct memo/ref; the transitive hook topology and complete JSX tree remain
+  exact. The Iteration 1 below-800 checkpoint is therefore satisfied.
+- Tests-first proof began with only the three intended missing-owner failures.
+  The final 12-file focused slice passed 108/108; typecheck/build passed (388
+  modules), with the existing large-chunk warning still present (`index`
+  1,262.00 kB minified). Five controlled mutations caught missing URL writes,
+  broken popstate cleanup, auth-merge drift, omitted edited-state marking, and
+  a 250-to-500 ms clock change. Independent review approved the final restored
+  state with no findings.
+- Focused Chromium browser verification passed 28/28 across URL/default/deep
+  links, runner/direct mode boundaries, operational panels, hidden-state
+  retention, fresh-load persistence, two fresh agent sessions, and ticket
+  fragment scrubbing. The exact JSX/style locks retain the prior reduced-motion
+  desktop/portrait/landscape and CSS-isolation evidence because this slice
+  moved controllers only.
+- Exhaustive authenticated shell coverage remains unavailable and is **not
+  represented as passed** for this exact harness reason: `Set
+  RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+  This is not the Iteration 1 exit: App still imports every feature panel and
+  owns the complete 473-line legacy shell/tab JSX; focused tab groups and a
+  thin `LegacyAppShell` remain mandatory.
 
 #### Remaining risks and evidence ownership
 

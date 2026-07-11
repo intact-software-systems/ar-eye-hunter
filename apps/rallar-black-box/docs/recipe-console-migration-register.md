@@ -19,7 +19,7 @@ row's cutover, hide, mount, or rollback status.
 | Quick Test | `QuickRallarTestPanel.tsx`, `QuickRallarTestView.tsx`, and `use-quick-rallar-controller.ts` | Controller/effect/JSX/mount parity; operational desktop/mobile QA | Its documented hidden-mounted subscription/state exception remains |
 | RTC Realtime | `RtcRealtimePanel.tsx`, `RtcRealtimeView.tsx`, and `use-rtc-realtime-controller.ts` | Controller/effect/JSX/mount parity; operational desktop/mobile QA | Its documented hidden-mounted RTC ownership exception remains |
 | WebSocket | Focused contracts/presets/routing/recipes/diagnostics, controller, view, and thin panel under `src/legacy/diagnostics/websocket/**` | Exact helper/controller/effect/JSX/runtime/App/CSS and operational parity through W3 | Socket/subscription lifetime exception remains; no hide/cutover occurred |
-| Legacy shell and models | Focused login, header, tabs, global context, mode switch, two boundary owners, global-context derivation, one-time ticket service, runner queue/selection model, and pure fleet share-link builder under `src/legacy/**` | Exact component/model/import/export/hook/DAG/App/CSS locks, focused behavior tests, mutation probes, desktop/mobile/reduced-motion QA, browser ticket proof, and independent reviews through `0939161`; share-link proof at `ff79d28` | Focused controllers, tab composition, `LegacyAppShell`, and final below-800 App boundary remain |
+| Legacy shell, models, and controllers | Focused leaves, global-context/ticket/runner models, pure fleet share-link builder, navigation/global-context controllers, and two-phase runner shell state/sync under `src/legacy/**` | Exact component/model/controller/import/export/hook/order/DAG/App/CSS locks, focused tests, mutation probes, desktop/mobile/reduced-motion QA, 28/28 browser proof, and independent reviews through `0ecade8` | Focused tab composition and `LegacyAppShell` remain; the below-800 App checkpoint is satisfied at 759 lines |
 
 At this checkpoint `App.tsx` is 9,242 lines, down from the 28,265-line
 baseline. No surface has been newly hidden, no legacy deep link has changed,
@@ -201,6 +201,25 @@ This completes share-link ownership without changing App size, routes, mounts,
 navigation, cutover, public exports, or server contracts. Focused shell
 controllers, tab composition, `LegacyAppShell`, and the below-800 App boundary
 remain.
+
+Legacy shell controllers M3 ownership checkpoint (2026-07-11): navigation and
+popstate ownership now live in the 79-line `use-legacy-navigation.ts`, global
+context synchronization and update/reset ownership in the 128-line
+`use-command-center-global-context.ts`, and runner queue/history/clock,
+selection, distributed handoff state, and late sync/persistence in the 75-line
+`use-runner-shell-state.ts`. This reduces `App.tsx` to 759 lines with three
+direct auth state slots, four direct auth/bootstrap effects, and no direct
+memo/ref, satisfying the below-800 checkpoint while preserving the exact
+transitive effect order and complete JSX/style tree. The final focused slice
+passed 108/108; typecheck/build passed; five semantic mutations were caught;
+Chromium passed 28/28 navigation, operational, persistence, and ticket flows;
+and independent review approved `0ecade8`. Exhaustive authenticated shell
+coverage remains unavailable and is not represented as passed for this exact
+reason: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.` No
+route, alias, mount, hide, cutover, public export, server contract, or style
+changed. Focused tab groups and a thin `LegacyAppShell` remain before Iteration
+1 can exit.
 
 ## Compatibility inputs that must remain deterministic
 
