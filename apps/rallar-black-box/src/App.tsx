@@ -33,7 +33,6 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestEventKind,
     RallarBlackBoxTestResult,
-    RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestRedactionOptions,
     RallarBlackBoxTestRuntimeEventInput,
@@ -46,10 +45,7 @@ import type {
     RallarCrdtTransportStrategy,
 } from '@shared/crdt/crdt-types.ts';
 import type { RallarCrdtDocument } from '@shared-web/browser/rallar-crdt.ts';
-import {
-    isDistributedRunTerminalState,
-    type RallarBlackBoxDistributedGroupRef,
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import {
     type RallarBlackBoxBootstrapConfig,
@@ -158,11 +154,9 @@ import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     deriveRunVerdictView,
-    distributedRecipeCommandPreview,
     distributedRecipePreflight,
     distributedRecipeStateTone,
     distributedRecipeTargetRows,
-    type DistributedRecipeCatalogItem,
 } from './distributed-recipes.ts';
 import {
     analyzeDistributedRunArtifactFiles,
@@ -256,15 +250,10 @@ import {
     type RallarServerWorkbenchDraft,
 } from './ui-persistence.ts';
 import {
-    RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG,
-} from './shared-test-handoff-fixtures.ts';
-import {
     runnerDisabledReason,
     runnerFriendlyErrorMessage,
     runnerReadinessStatus,
     type RecipeLaunchState,
-    type RunnerReadinessCheck,
-    type RunnerServiceProbeStatus,
     type RunnerTurnProbeStatus,
 } from './runner-readiness.ts';
 import { browserUiStorage } from './legacy/shell/browser-ui-storage.ts';
@@ -327,13 +316,26 @@ import { RunManagerPanel } from './legacy/runner/run-manager/RunManagerPanel.tsx
 import { LocalWorkbenchSection } from './legacy/runner/workbench/LocalWorkbenchSection.tsx';
 import { ManualRallarSection } from './legacy/runner/manual/ManualRallarSection.tsx';
 import { SharedTestPanel } from './legacy/runner/shared-test/SharedTestPanel.tsx';
-import { catalogRequirements } from './legacy/runner/shared-test/shared-test-catalog.ts';
-import { DistributedRecipePreflightPanel } from './legacy/runner/distributed-recipes/DistributedRecipePreflightPanel.tsx';
 import { DistributedRecipesPanel } from './legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
 import {
-    DISTRIBUTED_RECIPE_CATALOG,
-    configuredDistributedRecipeCatalogItem,
-} from './legacy/runner/distributed-recipes/distributed-recipe-catalog.ts';
+    runnerRecipeCatalog,
+    runnerRecipeMatches,
+    type RunnerRecipeCatalogEntry,
+    type RunnerRecipeSource,
+} from './legacy/runner/recipes/runner-recipe-catalog.ts';
+import {
+    runnerLaunchStateFromRunState,
+    type RunnerServiceProbe,
+} from './legacy/runner/recipes/runner-launch-presentation.ts';
+import {
+    runnerApiEndpointUrl,
+    runnerApiProbeUrl,
+    runnerBrowserOrigin,
+    runnerControlWsUrlFromHttpBaseUrl,
+} from './legacy/runner/recipes/runner-endpoints.ts';
+import { RunnerRecipesOverview } from './legacy/runner/recipes/views/RunnerRecipesOverview.tsx';
+import { RunnerRecipeCatalogList } from './legacy/runner/recipes/views/RunnerRecipeCatalogList.tsx';
+import { RunnerRecipeDetail } from './legacy/runner/recipes/views/RunnerRecipeDetail.tsx';
 import { validateDistributedRecipeManifest } from './legacy/runner/distributed-recipes/distributed-manifest-validation.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from './legacy/runner/shared/control-snapshot-bounds.ts';
 import {
@@ -406,30 +408,6 @@ type CommandCenterActionFeedback = Readonly<{
     durationMs?: number;
     message?: string;
     atEpochMs?: number;
-}>;
-
-type RunnerRecipeSource = 'app-local' | 'shared-test';
-
-type RunnerRecipeCatalogEntry = Readonly<{
-    id: string;
-    title: string;
-    description: string;
-    source: RunnerRecipeSource;
-    path: string;
-    providerMode: string;
-    profiles: readonly string[];
-    requirements: readonly string[];
-    expectedResult: string;
-    live: boolean;
-    recipe?: RallarBlackBoxTestRecipe;
-    distributedItem?: DistributedRecipeCatalogItem;
-    copyCommand: string;
-    commandCount?: number;
-}>;
-
-type RunnerServiceProbe = Readonly<{
-    status: RunnerServiceProbeStatus;
-    detail: string;
 }>;
 
 type CommandCenterRestActionLog = Readonly<{
@@ -762,192 +740,6 @@ const CLIENT_SORT_OPTIONS: readonly Readonly<{
     { value: 'name-asc', label: 'Name / ID' },
     { value: 'status-asc', label: 'Status' },
 ];
-
-function runnerRecipeCatalog(input: Readonly<{
-    group: RallarBlackBoxDistributedGroupRef;
-    apiBaseUrl: string;
-    rtcRealtimeDurationSeconds: number;
-}>): readonly RunnerRecipeCatalogEntry[] {
-    const distributedItems = DISTRIBUTED_RECIPE_CATALOG.map((item) =>
-        configuredDistributedRecipeCatalogItem(item, input),
-    );
-    const fixtureEntries = distributedItems.map((item) => {
-        const preview = distributedRecipeCommandPreview(item.recipe);
-        return {
-            id: `fixture:${item.itemId}`,
-            title: item.title,
-            description: item.description,
-            source: 'app-local' as const,
-            path: `fixture:${item.itemId}`,
-            providerMode: item.providerMode,
-            profiles: item.profiles,
-            requirements: item.prerequisites,
-            expectedResult: preview.label,
-            live: item.live,
-            recipe: item.recipe,
-            distributedItem: item,
-            copyCommand: json({
-                kind: 'recipe.run',
-                recipe: item.recipe,
-            }),
-            commandCount: item.recipe.commands.length,
-        } satisfies RunnerRecipeCatalogEntry;
-    });
-    const sharedEntries = RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG.entries.map(
-        (entry) => ({
-            id: `shared:${entry.id}`,
-            title: entry.title,
-            description: entry.description,
-            source: 'shared-test' as const,
-            path: entry.recipePath,
-            providerMode: entry.providerMode,
-            profiles: entry.profiles,
-            requirements: catalogRequirements(entry),
-            expectedResult: entry.expectedResult,
-            live: entry.support.live,
-            copyCommand: entry.commands[0]?.command ?? entry.recipePath,
-            commandCount: entry.commands.length,
-        } satisfies RunnerRecipeCatalogEntry),
-    );
-
-    return [...fixtureEntries, ...sharedEntries].sort(
-        (left, right) =>
-            runnerRecipeDefaultScore(left) - runnerRecipeDefaultScore(right) ||
-            (left.commandCount ?? Number.MAX_SAFE_INTEGER) -
-                (right.commandCount ?? Number.MAX_SAFE_INTEGER) ||
-            left.title.localeCompare(right.title),
-    );
-}
-
-function runnerRecipeDefaultScore(entry: RunnerRecipeCatalogEntry): number {
-    return (
-        (entry.recipe ? 0 : 100) +
-        (entry.live ? 40 : 0) +
-        (entry.source === 'shared-test' ? 20 : 0)
-    );
-}
-
-function runnerRecipeMatches(
-    entry: RunnerRecipeCatalogEntry,
-    query: string,
-    profile: string,
-    source: RunnerRecipeSource | 'all',
-): boolean {
-    if (source !== 'all' && entry.source !== source) {
-        return false;
-    }
-    if (profile && !entry.profiles.includes(profile)) {
-        return false;
-    }
-    const trimmed = query.trim().toLowerCase();
-    if (!trimmed) {
-        return true;
-    }
-    return [
-        entry.id,
-        entry.title,
-        entry.description,
-        entry.path,
-        entry.providerMode,
-        entry.expectedResult,
-        ...entry.profiles,
-        ...entry.requirements,
-    ]
-        .join(' ')
-        .toLowerCase()
-        .includes(trimmed);
-}
-
-function runnerLaunchStateFromRunState(
-    runState: RallarBlackBoxTestRuntimeStatus | string,
-): RecipeLaunchState {
-    if (runState === 'running') {
-        return 'running';
-    }
-    if (runState === 'passed' || runState === 'completed') {
-        return 'passed';
-    }
-    if (runState === 'failed' || runState === 'cancelled') {
-        return 'failed';
-    }
-    return 'idle';
-}
-
-function runnerLaunchTone(state: RecipeLaunchState): string {
-    if (state === 'passed') {
-        return 'good';
-    }
-    if (state === 'failed') {
-        return 'bad';
-    }
-    if (state === 'preparing' || state === 'running') {
-        return 'active';
-    }
-    return 'muted';
-}
-
-function runnerProbeUrl(baseUrl: string, path: string): string {
-    try {
-        return new URL(path, baseUrl).toString();
-    } catch (_error) {
-        return path;
-    }
-}
-
-function runnerApiProbeUrl(baseUrl: string): string {
-    const trimmed = baseUrl.trim();
-    const normalizedBase = trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
-    try {
-        const url = new URL(normalizedBase);
-        const apiBasePath = url.pathname.replace(/\/+$/, '');
-        return new URL(
-            apiBasePath.endsWith('/api') ? 'config' : 'api/config',
-            url,
-        ).toString();
-    } catch (_error) {
-        return '/api/config';
-    }
-}
-
-function runnerApiEndpointUrl(baseUrl: string, path: string): string {
-    const normalizedBase = baseUrl.trim().replace(/\/+$/, '');
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    return `${normalizedBase}${normalizedPath}`;
-}
-
-function runnerControlWsUrlFromHttpBaseUrl(value: string): string {
-    try {
-        const url = new URL(value);
-        if (url.protocol === 'http:') {
-            url.protocol = 'ws:';
-        } else if (url.protocol === 'https:') {
-            url.protocol = 'wss:';
-        }
-        url.pathname = '/control';
-        url.search = '';
-        url.hash = '';
-        return url.toString();
-    } catch (_error) {
-        return 'ws://localhost:5180/control';
-    }
-}
-
-function runnerBrowserOrigin(): string {
-    return globalThis.location?.origin ?? 'http://localhost:5176';
-}
-
-function runnerReadinessCheckTone(check: RunnerReadinessCheck): string {
-    if (check.status === 'ready') {
-        return 'good';
-    }
-    if (check.status === 'warning') {
-        return 'warn';
-    }
-    if (check.status === 'checking') {
-        return 'active';
-    }
-    return 'bad';
-}
 
 const WEBSOCKET_PAYLOAD_PRESETS: readonly WebSocketPayloadPreset[] = [
     {
@@ -4707,266 +4499,6 @@ function QuickRallarTestPanel({
     );
 }
 
-function RunnerReadinessPanel({
-    checks,
-    message,
-    refreshing,
-    onRefresh,
-    onOpenAgentTabs,
-}: {
-    checks: readonly RunnerReadinessCheck[];
-    message: string;
-    refreshing: boolean;
-    onRefresh(): void;
-    onOpenAgentTabs?(): void;
-}) {
-    return (
-        <section className="runner-readiness-panel" aria-label="Runner Readiness">
-            <div className="section-heading">
-                <h3>Runner Readiness</h3>
-                <button type="button" disabled={refreshing} onClick={onRefresh}>
-                    {refreshing ? 'Checking...' : 'Refresh'}
-                </button>
-            </div>
-            <div className="runner-readiness-grid">
-                {checks.map((check) => (
-                    <article
-                        className={`runner-readiness-check ${runnerReadinessCheckTone(check)}`}
-                        key={check.id}
-                    >
-                        <div>
-                            <strong>{check.label}</strong>
-                            <span className={`pill ${runnerReadinessCheckTone(check)}`}>
-                                {check.status}
-                            </span>
-                        </div>
-                        <p>{check.message}</p>
-                        {check.action && <small>{check.action}</small>}
-                        {check.id === 'agents' && onOpenAgentTabs && (
-                            <button
-                                type="button"
-                                className="runner-readiness-inline-action"
-                                onClick={onOpenAgentTabs}
-                            >
-                                Open agent tabs
-                            </button>
-                        )}
-                    </article>
-                ))}
-            </div>
-            <div className="runner-readiness-summary" role="status">
-                {message}
-            </div>
-        </section>
-    );
-}
-
-function RunnerAgentSetupPanel({
-    runId,
-    agentPrefix,
-    agentCount,
-    restoreSession,
-    providerMode,
-    authSession,
-    controlWsUrl,
-    groupId,
-    connectedAgents,
-    launchUrls,
-    launchMessage,
-    showConnectedAgents = true,
-    onRunIdChange,
-    onAgentPrefixChange,
-    onAgentCountChange,
-    onRestoreSessionChange,
-    onOpenAgents,
-    onCopyLinks,
-}: {
-    runId: string;
-    agentPrefix: string;
-    agentCount: number;
-    restoreSession: boolean;
-    providerMode: RallarBlackBoxBootstrapConfig['providerMode'];
-    authSession?: AuthSession;
-    controlWsUrl: string;
-    groupId: string;
-    connectedAgents: ControlRunSnapshot['agents'];
-    launchUrls: readonly string[];
-    launchMessage?: string;
-    showConnectedAgents?: boolean;
-    onRunIdChange(value: string): void;
-    onAgentPrefixChange(value: string): void;
-    onAgentCountChange(value: number): void;
-    onRestoreSessionChange(value: boolean): void;
-    onOpenAgents(): void;
-    onCopyLinks(): void;
-}) {
-    const canOpenAgents =
-        runId.trim().length > 0 &&
-        groupId.trim().length > 0 &&
-        agentPrefix.trim().length > 0 &&
-        launchUrls.length > 0;
-    const activeAgents = connectedAgents.filter((agent) => agent.connected);
-    const previewAgentIds = launchUrls.map((url) => {
-        try {
-            return new URL(url).searchParams.get('agentId') ?? '';
-        } catch (_error) {
-            return '';
-        }
-    }).filter((agentId) => agentId.length > 0);
-
-    return (
-        <section className="runner-agent-setup" aria-label="Connect Agents">
-            <div className="section-heading">
-                <div>
-                    <h3>Connect Agents</h3>
-                    <p>
-                        {activeAgents.length > 0
-                            ? `${activeAgents.length} connected.`
-                            : 'No agents connected.'}
-                    </p>
-                </div>
-                <span className={`pill ${activeAgents.length > 0 ? 'good' : 'bad'}`}>
-                    {activeAgents.length}/{connectedAgents.length}
-                </span>
-            </div>
-            <div className="runner-agent-grid">
-                <label className="field">
-                    <span>Run ID</span>
-                    <input
-                        value={runId}
-                        onChange={(event) => onRunIdChange(event.target.value)}
-                    />
-                </label>
-                <label className="field">
-                    <span>Agent Prefix</span>
-                    <input
-                        value={agentPrefix}
-                        onChange={(event) =>
-                            onAgentPrefixChange(event.target.value)
-                        }
-                    />
-                </label>
-                <label className="field">
-                    <span>Agent Tabs</span>
-                    <input
-                        min={1}
-                        max={6}
-                        type="number"
-                        value={agentCount}
-                        onChange={(event) =>
-                            onAgentCountChange(
-                                Math.min(
-                                    6,
-                                    Math.max(1, Number(event.target.value) || 1),
-                                ),
-                            )
-                        }
-                    />
-                </label>
-                <label className="toggle-field runner-agent-restore">
-                    <input
-                        type="checkbox"
-                        checked={restoreSession}
-                        onChange={(event) =>
-                            onRestoreSessionChange(event.target.checked)
-                        }
-                    />
-                    <span>Mint fresh per-tab sessions from current login</span>
-                </label>
-            </div>
-            <div className="runner-agent-actions">
-                <button
-                    type="button"
-                    disabled={!canOpenAgents}
-                    title={
-                        canOpenAgents
-                            ? undefined
-                            : 'Set run ID, group, and agent prefix first.'
-                    }
-                    onClick={onOpenAgents}
-                >
-                    Open agent tabs
-                </button>
-                <button
-                    type="button"
-                    disabled={!canOpenAgents}
-                    onClick={onCopyLinks}
-                >
-                    Copy agent links
-                </button>
-            </div>
-            <div className="runner-agent-preview" aria-label="Agent IDs">
-                <strong>Next agent IDs</strong>
-                <span>
-                    {previewAgentIds.join(', ')}
-                </span>
-            </div>
-            <dl className="config-list runner-agent-meta">
-                <div>
-                    <dt>Control WS</dt>
-                    <dd>{controlWsUrl}</dd>
-                </div>
-                <div>
-                    <dt>Group</dt>
-                    <dd>{groupId || 'missing'}</dd>
-                </div>
-                <div>
-                    <dt>Provider</dt>
-                    <dd>{providerMode}</dd>
-                </div>
-                <div>
-                    <dt>Login</dt>
-                    <dd>
-                        {authSession
-                            ? `${authSession.username} fresh per-tab sessions`
-                            : restoreSession
-                              ? 'fresh per-tab sessions requested'
-                              : 'agent signs in'}
-                    </dd>
-                </div>
-            </dl>
-            {showConnectedAgents && activeAgents.length > 0 ? (
-                <div className="runner-agent-list" aria-label="Connected agents">
-                    {activeAgents.map((agent) => (
-                        <article
-                            className="runner-agent-row"
-                            key={agent.agentId}
-                        >
-                            <span>
-                                <strong>{agent.agentId}</strong>
-                                <small>
-                                    {agent.identity?.principalId ??
-                                        agent.identity?.sessionId ??
-                                        'no identity'}
-                                </small>
-                            </span>
-                            <span
-                                className={`pill ${agent.connected ? 'good' : 'bad'}`}
-                            >
-                                {agent.connected ? 'connected' : 'offline'}
-                            </span>
-                        </article>
-                    ))}
-                </div>
-            ) : showConnectedAgents ? (
-                <div className="empty-state">
-                    Open an agent tab with a one-time link, then Refresh.
-                </div>
-            ) : undefined}
-            {showConnectedAgents && connectedAgents.length > activeAgents.length && (
-                <small className="runner-agent-offline-note">
-                    {connectedAgents.length - activeAgents.length} offline agent{connectedAgents.length - activeAgents.length === 1 ? '' : 's'} hidden
-                </small>
-            )}
-            {launchMessage && (
-                <div className="command-center-status" role="status">
-                    {launchMessage}
-                </div>
-            )}
-        </section>
-    );
-}
-
 function RunnerRecipesPanel({
     state,
     bootstrap,
@@ -5708,589 +5240,98 @@ function RunnerRecipesPanel({
 
     return (
         <section className="panel runner-recipes-panel">
-            <div className="panel-heading">
-                <h2>Recipes</h2>
-                <span className={`pill ${runnerLaunchTone(launchState)}`}>
-                    {busyAction ?? launchState}
-                </span>
-            </div>
-            {selectedRecipe && (
-                <div className="runner-quick-launch-strip runner-evidence-first">
-                    <div>
-                        <span>Selected recipe</span>
-                        <strong>{selectedRecipe.title}</strong>
-                        <small>{selectedRecipe.expectedResult}</small>
-                    </div>
-                    <div className="runner-recipe-actions-primary">
-                        <button
-                            type="button"
-                            disabled={
-                                Boolean(localDisabledReason) || localRunning
-                            }
-                            title={localDisabledReason}
-                            onClick={() => void runLocalRecipe()}
-                        >
-                            Run in this browser
-                        </button>
-                        <button
-                            type="button"
-                            disabled={
-                                Boolean(distributedDisabledReason) ||
-                                localRunning
-                            }
-                            title={distributedDisabledReason}
-                            onClick={() => void runDistributedRecipe()}
-                        >
-                            Run on connected agents
-                        </button>
-                    </div>
-                    {(localDisabledReason || distributedDisabledReason) && (
-                        <small className="runner-quick-launch-reason">
-                            {localDisabledReason
-                                ? `Local: ${localDisabledReason}`
-                                : `Distributed: ${distributedDisabledReason}`}
-                        </small>
-                    )}
-                </div>
-            )}
-            <RunnerReadinessPanel
-                checks={readiness.checks}
-                message={readiness.primaryMessage}
-                refreshing={busyAction === 'refresh-readiness'}
-                onRefresh={() => void refreshReadiness()}
-                onOpenAgentTabs={openAgentTabs}
-            />
-            <ControlAgentBoardPanel
-                title="Targetable Agents"
-                subtitle={
-                    selectedRecipe
-                        ? `${selectedRecipe.title} against ${groupRef.groupId || 'missing group'}`
-                        : 'Select a recipe to resolve connected agents.'
-                }
-                rows={recipeAgentRows}
-                summary={recipeAgentSummary}
-                emptyMessage="No control agents in the selected run. Open agent tabs, wait for registration, then refresh."
-                compact
-            />
-            <RunnerAgentSetupPanel
-                runId={agentRunId}
+            <RunnerRecipesOverview
+                selectedRecipe={selectedRecipe}
+                launchState={launchState}
+                busyAction={busyAction}
+                localDisabledReason={localDisabledReason}
+                localRunning={localRunning}
+                distributedDisabledReason={distributedDisabledReason}
+                runLocalRecipe={runLocalRecipe}
+                runDistributedRecipe={runDistributedRecipe}
+                readiness={readiness}
+                refreshReadiness={refreshReadiness}
+                openAgentTabs={openAgentTabs}
+                groupRef={groupRef}
+                recipeAgentRows={recipeAgentRows}
+                recipeAgentSummary={recipeAgentSummary}
+                agentRunId={agentRunId}
                 agentPrefix={agentPrefix}
                 agentCount={agentCount}
-                restoreSession={agentRestoreSession}
-                providerMode={bootstrap.providerMode}
+                agentRestoreSession={agentRestoreSession}
+                bootstrap={bootstrap}
                 authSession={authSession}
-                controlWsUrl={agentControlWsUrl}
-                groupId={globalValues.roomId}
-                connectedAgents={controlRun?.agents ?? []}
-                launchUrls={agentLaunchUrls}
-                launchMessage={agentLaunchMessage}
-                showConnectedAgents={false}
-                onRunIdChange={(value) => {
-                    setAgentRunId(value);
-                    setControlRunId(value);
-                    setControlRun(undefined);
-                }}
-                onAgentPrefixChange={setAgentPrefix}
-                onAgentCountChange={setAgentCount}
-                onRestoreSessionChange={setAgentRestoreSession}
-                onOpenAgents={openAgentTabs}
-                onCopyLinks={() => void copyAgentLinks()}
+                agentControlWsUrl={agentControlWsUrl}
+                globalValues={globalValues}
+                controlRun={controlRun}
+                agentLaunchUrls={agentLaunchUrls}
+                agentLaunchMessage={agentLaunchMessage}
+                setAgentRunId={setAgentRunId}
+                setControlRunId={setControlRunId}
+                setControlRun={setControlRun}
+                setAgentPrefix={setAgentPrefix}
+                setAgentCount={setAgentCount}
+                setAgentRestoreSession={setAgentRestoreSession}
+                copyAgentLinks={copyAgentLinks}
+                query={query}
+                setQuery={setQuery}
+                profile={profile}
+                setProfile={setProfile}
+                profileOptions={profileOptions}
+                sourceFilter={sourceFilter}
+                setSourceFilter={setSourceFilter}
+                controlBaseUrl={controlBaseUrl}
+                setControlBaseUrl={setControlBaseUrl}
+                controlToken={controlToken}
+                setControlToken={setControlToken}
+                brokeredControlToken={brokeredControlToken}
+                brokeredControlTokenError={brokeredControlTokenError}
+                filteredRecipes={filteredRecipes}
+                catalog={catalog}
+                apiProbe={apiProbe}
+                controlProbe={controlProbe}
+                targetableRows={targetableRows}
+                connectedAgentCount={connectedAgentCount}
             />
-            <div className="runner-recipes-toolbar">
-                <label className="field runner-recipes-search">
-                    <span>Search Recipes</span>
-                    <input
-                        value={query}
-                        onChange={(event) => setQuery(event.target.value)}
-                        placeholder="recipe, transport, profile, evidence"
-                    />
-                </label>
-                <label className="field">
-                    <span>Profile</span>
-                    <select
-                        value={profile}
-                        onChange={(event) => setProfile(event.target.value)}
-                    >
-                        <option value="">All profiles</option>
-                        {profileOptions.map((option) => (
-                            <option key={option} value={option}>
-                                {option}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Source</span>
-                    <select
-                        value={sourceFilter}
-                        onChange={(event) =>
-                            setSourceFilter(
-                                event.target.value as RunnerRecipeSource | 'all',
-                            )
-                        }
-                    >
-                        <option value="all">All sources</option>
-                        <option value="app-local">App-local</option>
-                        <option value="shared-test">Shared-test</option>
-                    </select>
-                </label>
-                <label className="field">
-                    <span>Control URL</span>
-                    <input
-                        value={controlBaseUrl}
-                        onChange={(event) =>
-                            setControlBaseUrl(event.target.value)
-                        }
-                    />
-                </label>
-                <label className="field">
-                    <span>Control Token</span>
-                    <input
-                        value={controlToken}
-                        type="password"
-                        autoComplete="off"
-                        onChange={(event) => setControlToken(event.target.value)}
-                    />
-                    {!controlToken.trim() && authSession && brokeredControlToken && (
-                        <small className="runner-control-token-status">
-                            Session control token valid until {formatTime(
-                                brokeredControlToken.expiresAtEpochMs,
-                            )}
-                        </small>
-                    )}
-                    {!controlToken.trim() && authSession && !brokeredControlToken && (
-                        <small className="runner-control-token-status">
-                            Session control token will be requested when needed.
-                        </small>
-                    )}
-                    {!controlToken.trim() && brokeredControlTokenError && (
-                        <small className="runner-control-token-error">
-                            {brokeredControlTokenError}
-                        </small>
-                    )}
-                </label>
-            </div>
-            <div className="runner-recipes-summary-grid">
-                <Metric
-                    label="Visible"
-                    value={String(filteredRecipes.length)}
-                    tone="active"
-                />
-                <Metric
-                    label="App-local"
-                    value={String(
-                        catalog.filter((entry) => entry.source === 'app-local')
-                            .length,
-                    )}
-                />
-                <Metric
-                    label="Shared-test"
-                    value={String(
-                        catalog.filter((entry) => entry.source === 'shared-test')
-                            .length,
-                    )}
-                />
-                <Metric label="API" value={apiProbe.detail} tone={apiProbe.status === 'online' ? 'good' : apiProbe.status === 'checking' ? 'active' : 'bad'} />
-                <Metric label="Control" value={controlProbe.detail} tone={controlProbe.status === 'online' ? 'good' : controlProbe.status === 'checking' ? 'active' : 'bad'} />
-                <Metric
-                    label="Agents"
-                    value={`${targetableRows.length}/${connectedAgentCount}`}
-                    tone={targetableRows.length > 0 ? 'good' : 'bad'}
-                />
-            </div>
             <div className="runner-recipes-layout">
-                <section className="runner-recipe-list" aria-label="Recipe catalog">
-                    {filteredRecipes.map((entry) => {
-                        const selected = selectedRecipe?.id === entry.id;
-                        const preview = entry.recipe
-                            ? distributedRecipeCommandPreview(entry.recipe)
-                            : undefined;
-                        return (
-                            <article
-                                className={`runner-recipe-card ${selected ? 'selected' : ''}`}
-                                key={entry.id}
-                            >
-                                <button
-                                    type="button"
-                                    className="runner-recipe-select"
-                                    onClick={() => setSelectedRecipeId(entry.id)}
-                                >
-                                    <span>
-                                        <strong>{entry.title}</strong>
-                                        <small>{entry.path}</small>
-                                    </span>
-                                    <span
-                                        className={`pill ${entry.source === 'app-local' ? 'active' : 'muted'}`}
-                                    >
-                                        {entry.source}
-                                    </span>
-                                </button>
-                                <p>{entry.description}</p>
-                                <div className="badge-list">
-                                    <span className="pill muted">
-                                        {entry.providerMode}
-                                    </span>
-                                    <span
-                                        className={`pill ${entry.live ? 'warn' : 'good'}`}
-                                    >
-                                        {entry.live ? 'live' : 'local-safe'}
-                                    </span>
-                                    <span className="pill active">
-                                        {preview?.label ??
-                                            `${entry.commandCount ?? 0} command${entry.commandCount === 1 ? '' : 's'}`}
-                                    </span>
-                                </div>
-                                {selected && (
-                                    <div className="runner-recipe-card-actions">
-                                        <button
-                                            type="button"
-                                            disabled={
-                                                Boolean(localDisabledReason) ||
-                                                localRunning
-                                            }
-                                            title={localDisabledReason}
-                                            onClick={() =>
-                                                void runLocalRecipe()
-                                            }
-                                        >
-                                            Run in this browser
-                                        </button>
-                                        <button
-                                            type="button"
-                                            disabled={
-                                                Boolean(
-                                                    distributedDisabledReason,
-                                                ) || localRunning
-                                            }
-                                            title={distributedDisabledReason}
-                                            onClick={() =>
-                                                void runDistributedRecipe()
-                                            }
-                                        >
-                                            Run on connected agents
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setShowEditor((value) => !value)
-                                            }
-                                        >
-                                            Open in editor
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                void copyText(
-                                                    entry.copyCommand,
-                                                    'Copied recipe command.',
-                                                )
-                                            }
-                                        >
-                                            Copy command
-                                        </button>
-                                    </div>
-                                )}
-                            </article>
-                        );
-                    })}
-                    {filteredRecipes.length === 0 && (
-                        <div className="empty-state">
-                            No recipes match the filters
-                        </div>
-                    )}
-                </section>
-                <section className="runner-recipe-detail">
-                    <div className="section-heading">
-                        <h3>{selectedRecipe?.title ?? 'No recipe selected'}</h3>
-                        <span
-                            className={`pill ${runnerLaunchTone(launchState)}`}
-                        >
-                            {launchState}
-                        </span>
-                    </div>
-                    {selectedRecipe ? (
-                        <>
-                            <div className="runner-recipe-actions-primary">
-                                <button
-                                    type="button"
-                                    disabled={
-                                        Boolean(localDisabledReason) ||
-                                        localRunning
-                                    }
-                                    title={localDisabledReason}
-                                    onClick={() => void runLocalRecipe()}
-                                >
-                                    Run in this browser
-                                </button>
-                                <button
-                                    type="button"
-                                    disabled={
-                                        Boolean(distributedDisabledReason) ||
-                                        localRunning
-                                    }
-                                    title={distributedDisabledReason}
-                                    onClick={() => void runDistributedRecipe()}
-                                >
-                                    Run on connected agents
-                                </button>
-                            </div>
-                            {(localDisabledReason ||
-                                distributedDisabledReason) && (
-                                <div className="runner-disabled-reasons">
-                                    {localDisabledReason && (
-                                        <span>
-                                            Local: {localDisabledReason}
-                                        </span>
-                                    )}
-                                    {distributedDisabledReason && (
-                                        <span>
-                                            Distributed:{' '}
-                                            {distributedDisabledReason}
-                                        </span>
-                                    )}
-                                </div>
-                            )}
-                            <dl className="config-list runner-recipe-meta">
-                                <div>
-                                    <dt>Expected result</dt>
-                                    <dd>{selectedRecipe.expectedResult}</dd>
-                                </div>
-                                <div>
-                                    <dt>Provider</dt>
-                                    <dd>{selectedRecipe.providerMode}</dd>
-                                </div>
-                                <div>
-                                    <dt>Control run</dt>
-                                    <dd>{controlRunId || 'missing'}</dd>
-                                </div>
-                                <div>
-                                    <dt>Group</dt>
-                                    <dd>{globalValues.roomId || 'missing'}</dd>
-                                </div>
-                            </dl>
-                            <div className="runner-requirements">
-                                <h3>Prerequisites</h3>
-                                {selectedRecipe.requirements.length === 0 ? (
-                                    <div className="empty-state">
-                                        No additional prerequisites
-                                    </div>
-                                ) : (
-                                    <ul>
-                                        {selectedRecipe.requirements.map(
-                                            (requirement) => (
-                                                <li key={requirement}>
-                                                    {requirement}
-                                                </li>
-                                            ),
-                                        )}
-                                    </ul>
-                                )}
-                            </div>
-                            {recipePreflight && (
-                                <details className="runner-preflight" open>
-                                    <summary>Recipe preflight</summary>
-                                    <DistributedRecipePreflightPanel
-                                        preflight={recipePreflight}
-                                        compact
-                                    />
-                                </details>
-                            )}
-                            <div
-                                className={`runner-launch-result ${runnerLaunchTone(launchState)}`}
-                                role="status"
-                            >
-                                <strong>{launchMessage}</strong>
-                                {(launchError || lastError) && (
-                                    <span>
-                                        {launchError ??
-                                            runnerFriendlyErrorMessage(
-                                                lastError,
-                                            )}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="runner-result-grid">
-                                <Metric
-                                    label="Runtime state"
-                                    value={runState}
-                                    tone={statusTone(runState)}
-                                />
-                                <Metric
-                                    label="Commands"
-                                    value={String(history.length)}
-                                />
-                                <Metric
-                                    label="Failures"
-                                    value={String(failures.length)}
-                                    tone={failures.length > 0 ? 'bad' : 'good'}
-                                />
-                                <Metric
-                                    label="Last result"
-                                    value={
-                                        latestResult
-                                            ? resultSummary(latestResult)
-                                            : '-'
-                                    }
-                                    tone={
-                                        latestResult?.ok === false
-                                            ? 'bad'
-                                            : latestResult
-                                              ? 'good'
-                                              : 'muted'
-                                    }
-                                />
-                            </div>
-                            {firstFailure && (
-                                <div className="runner-failure-focus">
-                                    <strong>First failed step</strong>
-                                    <span>{resultSummary(firstFailure)}</span>
-                                    <small>
-                                        Likely cause: {firstFailure.error?.message ?? 'runtime evidence did not match the recipe expectation.'}
-                                    </small>
-                                    <small>
-                                        Next action: fix readiness, inspect Event Stream, then rerun this recipe.
-                                    </small>
-                                </div>
-                            )}
-                            {distributedRun && (
-                                <div className="distributed-run-summary runner-distributed-summary">
-                                    <Metric
-                                        label="Distributed run"
-                                        value={distributedRun.distributedRunId}
-                                    />
-                                    <Metric
-                                        label="State"
-                                        value={distributedRun.state}
-                                        tone={distributedRecipeStateTone(
-                                            distributedRun.state,
-                                        )}
-                                    />
-                                    <Metric
-                                        label="Targets"
-                                        value={String(
-                                            distributedRun.targetAgentIds.length,
-                                        )}
-                                    />
-                                    <Metric
-                                        label="Blocking failures"
-                                        value={String(
-                                            distributedRun.rollup.summary
-                                                .blockingFailures,
-                                        )}
-                                        tone={
-                                            distributedRun.rollup.summary
-                                                .blockingFailures > 0
-                                                ? 'bad'
-                                                : 'good'
-                                        }
-                                    />
-                                </div>
-                            )}
-                            {artifactBundle && (
-                                <div
-                                    className="distributed-artifact-summary runner-artifact-summary"
-                                    aria-label="Artifact summary"
-                                >
-                                    <Metric
-                                        label="Artifact"
-                                        value={`schema ${artifactBundle.artifactSchemaVersion}`}
-                                    />
-                                    <Metric
-                                        label="Files"
-                                        value={String(
-                                            Object.keys(artifactBundle.files)
-                                                .length,
-                                        )}
-                                        tone="good"
-                                    />
-                                    <Metric
-                                        label="Generated"
-                                        value={formatTime(
-                                            artifactBundle.generatedAtEpochMs,
-                                        )}
-                                    />
-                                </div>
-                            )}
-                            {!artifactBundle && history.length > 0 && (
-                                <div
-                                    className="runner-artifact-summary"
-                                    aria-label="Artifact summary"
-                                >
-                                    <Metric
-                                        label="Artifact"
-                                        value="local replay"
-                                        tone="good"
-                                    />
-                                    <Metric
-                                        label="Commands"
-                                        value={String(history.length)}
-                                    />
-                                    <Metric
-                                        label="Events"
-                                        value={String(state.events.length)}
-                                    />
-                                    <Metric
-                                        label="Replay"
-                                        value={latestResult?.commandId ?? '-'}
-                                        tone={latestResult ? 'active' : 'muted'}
-                                    />
-                                </div>
-                            )}
-                            {showEditor && (
-                                <div className="runner-inline-editor">
-                                    <div className="section-heading">
-                                        <h3>Recipe JSON</h3>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                selectedRecipe.recipe
-                                                    ? void copyText(
-                                                          json(
-                                                              selectedRecipe.recipe,
-                                                          ),
-                                                          'Copied recipe JSON.',
-                                                      )
-                                                    : void copyText(
-                                                          selectedRecipe.copyCommand,
-                                                          'Copied recipe command.',
-                                                      )
-                                            }
-                                        >
-                                            Copy
-                                        </button>
-                                    </div>
-                                    <pre className="json-block">
-                                        {selectedRecipe.recipe
-                                            ? json(selectedRecipe.recipe)
-                                            : selectedRecipe.copyCommand}
-                                    </pre>
-                                </div>
-                            )}
-                            <div className="runner-secondary-actions">
-                                <button
-                                    type="button"
-                                    onClick={() => onOpenTab('runs')}
-                                >
-                                    Open Runs
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => onOpenTab('builder')}
-                                >
-                                    Open Builder
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => onOpenTab('advanced')}
-                                >
-                                    Open Advanced
-                                </button>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="empty-state">No recipe selected</div>
-                    )}
-                </section>
+                <RunnerRecipeCatalogList
+                    filteredRecipes={filteredRecipes}
+                    selectedRecipe={selectedRecipe}
+                    localDisabledReason={localDisabledReason}
+                    localRunning={localRunning}
+                    distributedDisabledReason={distributedDisabledReason}
+                    setSelectedRecipeId={setSelectedRecipeId}
+                    runLocalRecipe={runLocalRecipe}
+                    runDistributedRecipe={runDistributedRecipe}
+                    setShowEditor={setShowEditor}
+                    copyText={copyText}
+                />
+                <RunnerRecipeDetail
+                    selectedRecipe={selectedRecipe}
+                    launchState={launchState}
+                    localDisabledReason={localDisabledReason}
+                    localRunning={localRunning}
+                    distributedDisabledReason={distributedDisabledReason}
+                    runLocalRecipe={runLocalRecipe}
+                    runDistributedRecipe={runDistributedRecipe}
+                    controlRunId={controlRunId}
+                    globalValues={globalValues}
+                    recipePreflight={recipePreflight}
+                    launchMessage={launchMessage}
+                    launchError={launchError}
+                    lastError={lastError}
+                    runState={runState}
+                    history={history}
+                    failures={failures}
+                    latestResult={latestResult}
+                    firstFailure={firstFailure}
+                    distributedRun={distributedRun}
+                    artifactBundle={artifactBundle}
+                    state={state}
+                    showEditor={showEditor}
+                    copyText={copyText}
+                    onOpenTab={onOpenTab}
+                />
             </div>
         </section>
     );

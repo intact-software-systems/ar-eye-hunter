@@ -1,9 +1,23 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { appTabsForMode } from '../../../apps/rallar-black-box/src/app-tabs.ts';
 
 const appSourcePath = new URL('../../../apps/rallar-black-box/src/App.tsx', import.meta.url);
 const styleSourcePath = new URL('../../../apps/rallar-black-box/src/styles.css', import.meta.url);
+const runnerRecipeViewSourcePaths = [
+    new URL(
+        '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
+        import.meta.url,
+    ),
+    new URL(
+        '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipeCatalogList.tsx',
+        import.meta.url,
+    ),
+    new URL(
+        '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipeDetail.tsx',
+        import.meta.url,
+    ),
+] as const;
 
 function appSource(): string {
     return readFileSync(appSourcePath, 'utf8');
@@ -11,6 +25,10 @@ function appSource(): string {
 
 function styleSource(): string {
     return readFileSync(styleSourcePath, 'utf8');
+}
+
+function sourceOrFallback(path: URL, fallback: string): string {
+    return existsSync(path) ? readFileSync(path, 'utf8') : fallback;
 }
 
 function sourceBetween(source: string, startMarker: string, endMarker: string): string {
@@ -65,7 +83,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
     it('does not execute black-box runtime commands from direct Rallar panels', () => {
         const source = appSource();
         const directPanels = [
-            sourceBetween(source, 'function QuickRallarTestPanel', 'function RunnerReadinessPanel'),
+            sourceBetween(source, 'function QuickRallarTestPanel', 'function RunnerRecipesPanel'),
             sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel'),
             sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel'),
             sourceBetween(source, 'function RtcRealtimePanel', 'function RallarDataPanel'),
@@ -139,7 +157,17 @@ describe('rallar-black-box Rallar mode boundary', () => {
     it('keeps runner analysis evidence before setup controls and adds RTC performance surfaces', () => {
         const source = appSource();
         const styles = styleSource();
-        const recipesPanel = sourceBetween(source, 'function RunnerRecipesPanel', 'function RunnerRunsPanel');
+        const recipesController = sourceBetween(
+            source,
+            'function RunnerRecipesPanel',
+            'function RunnerRunsPanel',
+        );
+        const recipesPanel = [
+            recipesController,
+            ...runnerRecipeViewSourcePaths.map((path) =>
+                sourceOrFallback(path, recipesController),
+            ),
+        ].join('\n');
         const runsPanel = sourceBetween(source, 'function RunnerRunsPanel', 'function RunnerFleetPanel');
         const fleetPanel = sourceBetween(source, 'function RunnerFleetPanel', 'function FleetTimingGroupList');
         const rtcDiagnosticsPanel = sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel');
@@ -166,20 +194,26 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(recipesPanel).toContain('const distributedControlToken');
         expect(recipesPanel).toContain('token: distributedControlToken');
         expect(recipesPanel).toContain('controlToken,');
-        expect(recipesPanel.indexOf('runnerAgentLaunchUrl({')).toBeLessThan(
-            recipesPanel.indexOf('const distributedControlToken'),
+        const launchUrlPosition = recipesController.indexOf(
+            'createRunnerAgentLaunchUrl({',
         );
+        const distributedControlTokenPosition = recipesController.indexOf(
+            'const distributedControlToken',
+        );
+        expect(launchUrlPosition).toBeGreaterThanOrEqual(0);
+        expect(distributedControlTokenPosition).toBeGreaterThanOrEqual(0);
+        expect(launchUrlPosition).toBeLessThan(distributedControlTokenPosition);
         expect(runsPanel.indexOf('RunVerdictPanel')).toBeLessThan(runsPanel.indexOf('runner-distributed-analysis'));
         expect(runsPanel).toContain('selectedMonitor');
         expect(runsPanel).toContain('distributedMonitor: selectedMonitor');
         expect(recipesPanel.indexOf('runner-quick-launch-strip')).toBeLessThan(
-            recipesPanel.indexOf('RunnerReadinessPanel'),
+            recipesPanel.indexOf('<RunnerReadinessPanel'),
         );
-        expect(recipesPanel.indexOf('RunnerReadinessPanel')).toBeLessThan(
+        expect(recipesPanel.indexOf('<RunnerReadinessPanel')).toBeLessThan(
             recipesPanel.indexOf('title="Targetable Agents"'),
         );
         expect(recipesPanel.indexOf('title="Targetable Agents"')).toBeLessThan(
-            recipesPanel.indexOf('RunnerAgentSetupPanel'),
+            recipesPanel.indexOf('<RunnerAgentSetupPanel'),
         );
         expect(rtcDiagnosticsPanel).toContain('RtcPerformancePanel');
         expect(rtcDiagnosticsPanel.indexOf('RtcPerformancePanel')).toBeLessThan(
