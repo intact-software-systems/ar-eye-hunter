@@ -395,7 +395,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
 | 1 — Extract Pure App Helpers | **Complete** | Behavior-preserving helper, presentation, controller, and shell-composition slices reduce `App.tsx` from 28,265 to 234 lines. `App` now owns runtime/bootstrap, auth gates, shared shell controllers, and experience composition only; `LegacyAppShell` delegates the exact tab tree to six bounded hook-free groups. The exit evidence below passed without a hide, cutover, route, public-export, control-contract, or stylesheet change. |
-| 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
+| 2 — New Recipe Console Shell | **In progress** | Direction A, Signal Ledger, was approved on 2026-07-11 with four checked-in concept states and a repository-truth design contract. No shell, codec, CSS-isolation proof, chunk proof, or workflow cutover is represented as complete yet. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
 | 5 — Monitor MVP | Pending | No Recipe Console monitor cutover is represented as complete. |
@@ -430,6 +430,25 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 - Existing mounted-state guarantees are temporary documented exceptions. Draft, polling, subscription, media, and execution ownership must migrate before the corresponding view is lazily unmounted.
 - Old aliases deterministically open the documented legacy surface during migration. New Recipe Console URLs use the versioned codec.
 - The default flip is an explicit Iteration 12 cutover and occurs only after all 14 Ready-State items have evidence.
+
+#### Iteration 2 visual approval checkpoint — 2026-07-11
+
+- The user approved Direction A, **Signal Ledger**, after reviewing desktop
+  Execute, desktop failed Monitor, portrait Monitor, and short-landscape Tune
+  concepts. The native concept files live under
+  `apps/rallar-black-box/docs/recipe-console-concepts/**`.
+- The approved implementation contract is
+  `docs/superpowers/specs/2026-07-11-rallar-recipe-console-signal-ledger-design.md`.
+  Concepts govern hierarchy, density, palette, typography, geometry, states,
+  and responsive transformation; repository fixtures and deterministic
+  derivations govern displayed recipe/run/evidence data.
+- The implementation keeps blank and old-alias URLs on the legacy experience,
+  accepts the explicit `experience=recipe-console` migration switch, emits
+  canonical `v=1` links, and mounts Recipe Console and Legacy Experience as
+  mutually exclusive lazy chunks.
+- This checkpoint approves direction only. It does not prove the Iteration 2
+  runtime, fidelity, accessibility, CSS-isolation, or chunk exit criteria and
+  does not cut over or hide any legacy surface.
 
 #### Iteration 1 checkpoint — `63e7b2c`
 

@@ -1,11 +1,23 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Iteration 1 extraction complete
+Status: canonical migration register; Iteration 2 Signal Ledger implementation in progress
 Evidence/status date: 2026-07-11
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 2 visual approval checkpoint — 2026-07-11
+
+Direction A, **Signal Ledger**, is the approved Recipe Console visual and
+interaction contract. Four concept states are checked in under
+`docs/recipe-console-concepts/**`; the executable design contract is
+`../../../docs/superpowers/specs/2026-07-11-rallar-recipe-console-signal-ledger-design.md`.
+The concepts govern visual composition while repository fixtures and
+deterministic derivations govern product data. Implementation, CSS isolation,
+lazy-chunk, URL/history, accessibility, responsive, and fidelity proof remain
+in progress. This approval changes no row's cutover, hide, mount, or rollback
+status.
 
 ## Iteration 1 extraction checkpoint — `63e7b2c`
 
