@@ -546,6 +546,38 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   unchanged stylesheet. This remains explicit Iteration 12 debt against the
   44px touch-target gate.
 
+#### Iteration 1 Groups/Clients R1 checkpoint — `1332f60` (2026-07-11)
+
+- The exact private action/sort/state contracts and constants moved to
+  `src/legacy/diagnostics/rooms-clients/rooms-clients-contracts.ts` (216
+  lines), deterministic snapshot/event normalization and sorting moved to
+  `rooms-clients-derivations.ts` (292 lines), and the shared recursive string
+  lookup moved to `diagnostics/shared/deep-string-value.ts` (32 lines).
+  `App.tsx` is 5,848 lines. `BrowserRallarFacade`, the complete stateful
+  `RoomsClientsPanel`, its request/direct actions, lifecycle, and its one
+  hidden-mounted instance remain App-owned. Routes, CSS, public exports, and
+  server contracts are unchanged; this is ownership movement only.
+- Untouched-production RED passed 37/38 with exactly five intended soft
+  ownership failures while every fallback fingerprint remained green. Final
+  listed Iteration 1 validation passed 79/79 and the combined mode-boundary
+  slice passed 87/87; typecheck/build passed (360 modules), four independent
+  mutations were caught, and two independent reviews approved the move with no
+  remaining findings.
+- The in-app Browser inspection, preserved authenticated state/sort/filter
+  flow, mobile usability guardrail (2/2), and temporary reduced-motion
+  desktop/portrait/landscape matrix (3/3) proved one hidden-mounted owner,
+  draft/filter retention, arrow-key selection, a visible 2px focus outline,
+  CSS isolation, zero document overflow, and no browser errors. The temporary
+  QA spec was removed.
+- The exhaustive real Groups/Clients lifecycle was **skipped, not passed**, for
+  this exact reason: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed
+  apps/api-v1, apps/rallar-black-box-control-server, and
+  apps/rallar-black-box available.`
+- The matrix exposed existing tab behavior: arrow keys update selection, but
+  focus does not follow the newly selected tab. The exact App-function hash
+  proves this is not extraction drift; it remains explicit Iteration 12
+  keyboard-accessibility debt.
+
 #### Remaining risks and evidence ownership
 
 | Remaining risk | Owning iteration(s) | Mitigation and evidence target |
@@ -558,6 +590,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Qualitative visual and performance gates lack executable thresholds | 2, 9, 12 | Iteration 2 records approved screenshot baselines and an executable drift budget in `recipe-console-shell.spec.ts`; Iteration 9 encodes bounded-render and interaction budgets in `recipe-console-scale.spec.ts`; Iteration 12 encodes viewport, keyboard, touch, reduced-motion, and non-hover gates in `recipe-console-accessibility.spec.ts`. |
 | Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
 | Preserved legacy Auth action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact Auth parity extraction unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
+| Legacy tab arrow keys update selection without transferring DOM focus to the selected tab | 12 | Preserve Iteration 1 parity, then make roving focus follow keyboard selection and encode the behavior in `recipe-console-accessibility.spec.ts`. |
 | Local Node 26 differs from CI Node 24 | 1 and every code-changing iteration | Run the focused tests, typecheck, and build on CI Node 24; retain the local Node `26.5.0` result separately so version-specific differences remain visible. |
 | Live services and Postgres were unavailable or not exercised in Iteration 0 | 3-5, 8, 12 | Run the listed Deno control-server tests and configured Playwright/live distributed lifecycle, culminating in `npm run test:e2e:rallar-black-box:full-stack:real:distributed`; do not close live-service gates from mock or sandbox-only evidence. |
 
