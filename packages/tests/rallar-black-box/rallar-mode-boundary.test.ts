@@ -4,6 +4,18 @@ import { appTabsForMode } from '../../../apps/rallar-black-box/src/app-tabs.ts';
 
 const appSourcePath = new URL('../../../apps/rallar-black-box/src/App.tsx', import.meta.url);
 const styleSourcePath = new URL('../../../apps/rallar-black-box/src/styles.css', import.meta.url);
+const runnerRecipesPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/recipes/RunnerRecipesPanel.tsx',
+    import.meta.url,
+);
+const runnerRecipesControllerSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/recipes/use-runner-recipes-controller.ts',
+    import.meta.url,
+);
+const runnerAgentActionsSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/recipes/runner-agent-launch-actions.ts',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -83,7 +95,13 @@ describe('rallar-black-box Rallar mode boundary', () => {
     it('does not execute black-box runtime commands from direct Rallar panels', () => {
         const source = appSource();
         const directPanels = [
-            sourceBetween(source, 'function QuickRallarTestPanel', 'function RunnerRecipesPanel'),
+            sourceBetween(
+                source,
+                'function QuickRallarTestPanel',
+                existsSync(runnerRecipesPanelSourcePath)
+                    ? 'function RunnerRunsPanel'
+                    : 'function RunnerRecipesPanel',
+            ),
             sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel'),
             sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel'),
             sourceBetween(source, 'function RtcRealtimePanel', 'function RallarDataPanel'),
@@ -157,15 +175,25 @@ describe('rallar-black-box Rallar mode boundary', () => {
     it('keeps runner analysis evidence before setup controls and adds RTC performance surfaces', () => {
         const source = appSource();
         const styles = styleSource();
-        const recipesController = sourceBetween(
-            source,
-            'function RunnerRecipesPanel',
-            'function RunnerRunsPanel',
+        const recipesControllerFallback = existsSync(
+            runnerRecipesControllerSourcePath,
+        )
+            ? ''
+            : sourceBetween(
+                  source,
+                  'function RunnerRecipesPanel',
+                  'function RunnerRunsPanel',
+              );
+        const recipesController = sourceOrFallback(
+            runnerRecipesControllerSourcePath,
+            recipesControllerFallback,
         );
         const recipesPanel = [
+            sourceOrFallback(runnerAgentActionsSourcePath, recipesControllerFallback),
             recipesController,
+            sourceOrFallback(runnerRecipesPanelSourcePath, recipesControllerFallback),
             ...runnerRecipeViewSourcePaths.map((path) =>
-                sourceOrFallback(path, recipesController),
+                sourceOrFallback(path, recipesControllerFallback),
             ),
         ].join('\n');
         const runsPanel = sourceBetween(source, 'function RunnerRunsPanel', 'function RunnerFleetPanel');
@@ -194,10 +222,10 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(recipesPanel).toContain('const distributedControlToken');
         expect(recipesPanel).toContain('token: distributedControlToken');
         expect(recipesPanel).toContain('controlToken,');
-        const launchUrlPosition = recipesController.indexOf(
+        const launchUrlPosition = recipesPanel.indexOf(
             'createRunnerAgentLaunchUrl({',
         );
-        const distributedControlTokenPosition = recipesController.indexOf(
+        const distributedControlTokenPosition = recipesPanel.indexOf(
             'const distributedControlToken',
         );
         expect(launchUrlPosition).toBeGreaterThanOrEqual(0);

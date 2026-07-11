@@ -688,8 +688,10 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/distributed-manifest-validation.ts',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/runner/recipes/use-runner-recipes-controller.ts',
                 appImport:
-                    './legacy/runner/distributed-recipes/distributed-manifest-validation.ts',
+                    '../distributed-recipes/distributed-manifest-validation.ts',
                 appSeams: ['validateDistributedRecipeManifest'],
                 declarations: [
                     {
@@ -701,7 +703,9 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/shared/safe-id-segment.ts',
-                appImport: './legacy/shared/safe-id-segment.ts',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/runner/recipes/use-runner-recipes-controller.ts',
+                appImport: '../../shared/safe-id-segment.ts',
                 appSeams: ['safeIdSegment'],
                 declarations: [
                     {
@@ -4402,10 +4406,17 @@ describe('rallar-black-box app source ownership', () => {
 
     it('keeps runner recipe support and controlled views in exact owners', () => {
         const appSource = repositorySource(appSourcePath);
-        const controllerSource = appSource.slice(
-            appSource.indexOf('function RunnerRecipesPanel'),
-            appSource.indexOf('function RunnerRunsPanel'),
+        const extractedPanelPath =
+            'apps/rallar-black-box/src/legacy/runner/recipes/RunnerRecipesPanel.tsx';
+        const hasExtractedPanel = existsSync(
+            resolve(repositoryRoot, extractedPanelPath),
         );
+        const controllerSource = hasExtractedPanel
+            ? repositorySource(extractedPanelPath)
+            : appSource.slice(
+                  appSource.indexOf('function RunnerRecipesPanel'),
+                  appSource.indexOf('function RunnerRunsPanel'),
+              );
         const appAst = task9aSourceFile(appSourcePath, appSource);
         const tokenCollisionProbes = [
             'const probe = !value;',
@@ -4669,14 +4680,20 @@ describe('rallar-black-box app source ownership', () => {
                 edge.startsWith('./legacy/runner/recipes/'),
             ),
             'App exact direct runner recipe owner edges',
-        ).toEqual([
-            './legacy/runner/recipes/runner-endpoints.ts|value:runnerApiEndpointUrl,value:runnerApiProbeUrl,value:runnerBrowserOrigin,value:runnerControlWsUrlFromHttpBaseUrl',
-            './legacy/runner/recipes/runner-launch-presentation.ts|type:RunnerServiceProbe,value:runnerLaunchStateFromRunState',
-            './legacy/runner/recipes/runner-recipe-catalog.ts|type:RunnerRecipeCatalogEntry,type:RunnerRecipeSource,value:runnerRecipeCatalog,value:runnerRecipeMatches',
-            './legacy/runner/recipes/views/RunnerRecipeCatalogList.tsx|value:RunnerRecipeCatalogList',
-            './legacy/runner/recipes/views/RunnerRecipeDetail.tsx|value:RunnerRecipeDetail',
-            './legacy/runner/recipes/views/RunnerRecipesOverview.tsx|value:RunnerRecipesOverview',
-        ]);
+        ).toEqual(
+            hasExtractedPanel
+                ? [
+                      './legacy/runner/recipes/RunnerRecipesPanel.tsx|value:RunnerRecipesPanel',
+                  ]
+                : [
+                      './legacy/runner/recipes/runner-endpoints.ts|value:runnerApiEndpointUrl,value:runnerApiProbeUrl,value:runnerBrowserOrigin,value:runnerControlWsUrlFromHttpBaseUrl',
+                      './legacy/runner/recipes/runner-launch-presentation.ts|type:RunnerServiceProbe,value:runnerLaunchStateFromRunState',
+                      './legacy/runner/recipes/runner-recipe-catalog.ts|type:RunnerRecipeCatalogEntry,type:RunnerRecipeSource,value:runnerRecipeCatalog,value:runnerRecipeMatches',
+                      './legacy/runner/recipes/views/RunnerRecipeCatalogList.tsx|value:RunnerRecipeCatalogList',
+                      './legacy/runner/recipes/views/RunnerRecipeDetail.tsx|value:RunnerRecipeDetail',
+                      './legacy/runner/recipes/views/RunnerRecipesOverview.tsx|value:RunnerRecipesOverview',
+                  ],
+        );
         const appDirectImports = [
             {
                 moduleImport:
@@ -4718,7 +4735,7 @@ describe('rallar-black-box app source ownership', () => {
                 seams: ['RunnerRecipeDetail'],
             },
         ] as const;
-        for (const directImport of appDirectImports) {
+        for (const directImport of hasExtractedPanel ? [] : appDirectImports) {
             const escapedModuleImport = directImport.moduleImport.replace(
                 /[.*+?^${}()|[\]\\]/g,
                 '\\$&',
@@ -4767,10 +4784,22 @@ describe('rallar-black-box app source ownership', () => {
                 ),
             );
         }
-        expect(appSource, 'RunnerRecipesPanel remains App-local').toMatch(
-            /^\s*function\s+RunnerRecipesPanel\s*\(/m,
+        expect(
+            hasExtractedPanel ? controllerSource : appSource,
+            'RunnerRecipesPanel direct declaration owner',
+        ).toMatch(/^\s*(?:export\s+)?function\s+RunnerRecipesPanel\s*\(/m);
+        if (hasExtractedPanel) {
+            expect(appSource, 'RunnerRecipesPanel absent from App').not.toMatch(
+                /^\s*function\s+RunnerRecipesPanel\s*\(/m,
+            );
+        }
+        const controllerAst = task9aNamedFunction(
+            task9aSourceFile(
+                hasExtractedPanel ? extractedPanelPath : appSourcePath,
+                controllerSource,
+            ),
+            'RunnerRecipesPanel',
         );
-        const controllerAst = task9aNamedFunction(appAst, 'RunnerRecipesPanel');
         const controllerReturnIndex = controllerAst.body!.statements.findIndex(
             ts.isReturnStatement,
         );
@@ -4778,14 +4807,16 @@ describe('rallar-black-box app source ownership', () => {
             controllerReturnIndex,
             'RunnerRecipes has one final top-level return',
         ).toBe(controllerAst.body!.statements.length - 1);
-        expect.soft(
-            task9aAstFingerprint(
-                controllerAst.body!.statements.slice(0, controllerReturnIndex),
-            ),
-            'RunnerRecipes exact pre-return controller AST',
-        ).toBe(
-            '9b281a50b4bca6bb1421d9da543ca80cd319828125862f416b9b560b1b34e29d',
-        );
+        if (!hasExtractedPanel) {
+            expect.soft(
+                task9aAstFingerprint(
+                    controllerAst.body!.statements.slice(0, controllerReturnIndex),
+                ),
+                'RunnerRecipes exact pre-return controller AST',
+            ).toBe(
+                '9b281a50b4bca6bb1421d9da543ca80cd319828125862f416b9b560b1b34e29d',
+            );
+        }
 
         for (const viewPath of [
             readinessPath,
@@ -4825,6 +4856,7 @@ describe('rallar-black-box app source ownership', () => {
             );
         }
 
+        if (!hasExtractedPanel) {
         expect(
             [...controllerSource.matchAll(/\buseState(?:<|\s*\()/g)],
             'RunnerRecipes exact state count',
@@ -4942,6 +4974,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(distributedSequence, 'distributed create-stage-start order').toEqual(
             [...distributedSequence].sort((left, right) => left - right),
         );
+        }
 
         const viewCalls = [
             {
@@ -5229,6 +5262,542 @@ describe('rallar-black-box app source ownership', () => {
             /onDistributedRunStarted=\{\(selection\) => \{\s*setRunnerDistributedSelection\(selection\);\s*selectTab\('runs'\);\s*}}/,
         );
         expect(appCall, 'RunnerRecipes call has no key').not.toMatch(/\bkey\s*=/);
+    });
+
+    it('cuts the runner recipes controller into exact focused owners', () => {
+        const appSource = repositorySource(appSourcePath);
+        const recipesRoot =
+            'apps/rallar-black-box/src/legacy/runner/recipes';
+        const catalogHookPath = `${recipesRoot}/use-runner-recipe-catalog.ts`;
+        const agentHookPath = `${recipesRoot}/use-runner-agent-launch-state.ts`;
+        const agentActionsPath = `${recipesRoot}/runner-agent-launch-actions.ts`;
+        const controllerPath = `${recipesRoot}/use-runner-recipes-controller.ts`;
+        const panelPath = `${recipesRoot}/RunnerRecipesPanel.tsx`;
+        const owners = [
+            {
+                path: catalogHookPath,
+                lineCap: 150,
+                declarations: [
+                    /^export function useRunnerRecipeCatalog\(/m,
+                    /^export type RunnerRecipeCatalogModel\s*=/m,
+                ],
+            },
+            {
+                path: agentHookPath,
+                lineCap: 180,
+                declarations: [
+                    /^export function useRunnerAgentLaunchState\(/m,
+                    /^export type RunnerAgentLaunchStateModel\s*=/m,
+                ],
+            },
+            {
+                path: agentActionsPath,
+                lineCap: 240,
+                declarations: [
+                    /^export function createRunnerAgentLaunchActions\(/m,
+                ],
+            },
+            {
+                path: controllerPath,
+                lineCap: 700,
+                declarations: [
+                    /^export type UseRunnerRecipesControllerInput\s*=/m,
+                    /^export function useRunnerRecipesController\(/m,
+                    /^export type RunnerRecipesControllerModel\s*=/m,
+                ],
+            },
+            {
+                path: panelPath,
+                lineCap: 260,
+                declarations: [
+                    /^export function RunnerRecipesPanel\(/m,
+                ],
+            },
+        ] as const;
+        const sources = new Map<string, string>();
+        for (const owner of owners) {
+            const exists = existsSync(resolve(repositoryRoot, owner.path));
+            const source = exists ? repositorySource(owner.path) : '';
+            sources.set(owner.path, source);
+            expect.soft(exists, `${owner.path}: exists`).toBe(true);
+            expect.soft(
+                source === '' ? 0 : source.trimEnd().split(/\r?\n/).length,
+                `${owner.path}: line cap`,
+            ).toBeLessThanOrEqual(owner.lineCap);
+            for (const declaration of owner.declarations) {
+                expect.soft(source, `${owner.path}: ${declaration.source}`).toMatch(
+                    declaration,
+                );
+            }
+            expect.soft(source, `${owner.path}: no App import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/
+            );
+            expect.soft(source, `${owner.path}: no CSS import`).not.toMatch(
+                /\b(?:from\s+|import\s*)['"][^'"]+\.css['"]/
+            );
+        }
+
+        const catalogHook = sources.get(catalogHookPath) ?? '';
+        const agentHook = sources.get(agentHookPath) ?? '';
+        const agentActions = sources.get(agentActionsPath) ?? '';
+        const controller = sources.get(controllerPath) ?? '';
+        const panel = sources.get(panelPath) ?? '';
+
+        expect.soft(appSource, 'RunnerRecipesPanel absent from App').not.toMatch(
+            /^function RunnerRecipesPanel\(/m,
+        );
+        expect.soft(appSource, 'App direct RunnerRecipesPanel import').toMatch(
+            /import\s*{\s*RunnerRecipesPanel\s*}\s*from\s*'\.\/legacy\/runner\/recipes\/RunnerRecipesPanel\.tsx';/,
+        );
+        const appCalls = [
+            ...appSource.matchAll(/<RunnerRecipesPanel\b([\s\S]*?)\/>/g),
+        ];
+        expect.soft(appCalls, 'one App RunnerRecipesPanel call').toHaveLength(1);
+        const appCall = appCalls[0]?.[0] ?? '';
+        expect.soft(
+            [...appCall.matchAll(/^\s+(\w+)=\{/gm)].map((match) => match[1]),
+            'App exact ten-prop RunnerRecipesPanel call',
+        ).toEqual([
+            'state',
+            'bootstrap',
+            'control',
+            'authSession',
+            'globalValues',
+            'busy',
+            'runState',
+            'lastError',
+            'onDistributedRunStarted',
+            'onOpenTab',
+        ]);
+        expect.soft(appCall, 'App RunnerRecipesPanel call has no key').not.toMatch(
+            /\bkey\s*=/,
+        );
+        expect.soft(appCall, 'selection set before Runs navigation').toMatch(
+            /setRunnerDistributedSelection\(selection\);\s*selectTab\('runs'\);/,
+        );
+
+        const stateNames = (source: string): readonly string[] => [
+            ...source.matchAll(/const \[(\w+),\s*\w+\]\s*=\s*useState/g),
+        ].map((match) => match[1]);
+        const memoNames = (source: string): readonly string[] => [
+            ...source.matchAll(/const (\w+) = useMemo\s*\(/g),
+        ].map((match) => match[1]);
+        expect.soft(stateNames(catalogHook), 'catalog exact states').toEqual([
+            'query',
+            'profile',
+            'sourceFilter',
+            'selectedRecipeId',
+            'showEditor',
+        ]);
+        expect.soft(memoNames(catalogHook), 'catalog exact memos').toEqual([
+            'groupRef',
+            'catalog',
+            'profileOptions',
+            'filteredRecipes',
+            'recipePreflight',
+        ]);
+        expect.soft(catalogHook, 'catalog fallback order').toMatch(
+            /catalog\.find\([\s\S]*?\)\s*\?\?\s*filteredRecipes\[0\]\s*\?\?\s*catalog\[0\]/,
+        );
+        expect.soft(catalogHook, 'catalog has no effects/ref/callback').not.toMatch(
+            /\buse(?:Effect|Ref|Callback)\b/,
+        );
+
+        expect.soft(stateNames(agentHook), 'agent exact states').toEqual([
+            'agentRunId',
+            'agentPrefix',
+            'agentCount',
+            'agentLaunchSuffix',
+            'agentRestoreSession',
+            'agentLaunchMessage',
+        ]);
+        expect.soft(memoNames(agentHook), 'agent exact memos').toEqual([
+            'agentIds',
+            'agentLaunchUrls',
+        ]);
+        expect.soft(agentHook, 'agent has no effects/ref/callback').not.toMatch(
+            /\buse(?:Effect|Ref|Callback)\b/,
+        );
+
+        expect.soft(stateNames(controller), 'central exact states').toEqual([
+            'controlBaseUrl',
+            'controlToken',
+            'brokeredControlToken',
+            'brokeredControlTokenError',
+            'controlRunId',
+            'apiProbe',
+            'controlProbe',
+            'turnProbe',
+            'controlRun',
+            'controlSnapshot',
+            'distributedRun',
+            'artifactBundle',
+            'busyAction',
+            'launchState',
+            'launchMessage',
+            'launchError',
+        ]);
+        expect.soft(memoNames(controller), 'central exact memos').toEqual([
+            'targetRows',
+            'recipeAgentRows',
+            'recipeAgentSummary',
+        ]);
+        const aggregate = [catalogHook, agentHook, controller].join('\n');
+        expect.soft([...aggregate.matchAll(/\buseState(?:<|\s*\()/g)]).toHaveLength(27);
+        expect.soft([...aggregate.matchAll(/\buseMemo\s*\(/g)]).toHaveLength(10);
+        expect.soft([...aggregate.matchAll(/\buseEffect\s*\(/g)]).toHaveLength(4);
+        expect.soft([...aggregate.matchAll(/\buseRef\s*\(/g)]).toHaveLength(1);
+        expect.soft([...aggregate.matchAll(/\buseCallback\s*\(/g)]).toHaveLength(0);
+
+        expect.soft(agentActions, 'actions have no React import').not.toMatch(
+            /\bfrom\s*['"]react['"]|\buse[A-Z]\w*\b/,
+        );
+        expect.soft(agentActions, 'copy agent action').toContain(
+            'const copyAgentLinks = async',
+        );
+        expect.soft(agentActions, 'open tabs action').toContain(
+            'const openAgentTabs = async',
+        );
+        const openTabs = agentActions.slice(
+            agentActions.indexOf('const openAgentTabs'),
+        );
+        expect.soft(openTabs.indexOf("globalThis.open?.('about:blank'"))
+            .toBeGreaterThanOrEqual(0);
+        expect.soft(openTabs.indexOf('await createBrokeredAgentLaunchUrls()'))
+            .toBeGreaterThan(openTabs.indexOf("globalThis.open?.('about:blank'"));
+
+        expect.soft(panel, 'panel has no built-in hooks').not.toMatch(
+            /\buse(?:State|Memo|Effect|Ref|Callback|Reducer|Context|LayoutEffect)\b/,
+        );
+        expect.soft(panel, 'panel has no runtime/network/storage').not.toMatch(
+            /\bfetch\s*\(|rallarBlackBoxRuntimeStore|localStorage|sessionStorage|browserUiStorage/,
+        );
+        expect.soft(
+            [...panel.matchAll(/\buseRunnerRecipesController\s*\(/g)],
+            'panel calls controller once',
+        ).toHaveLength(1);
+        const panelOrder = [
+            '<RunnerRecipesOverview',
+            'className="runner-recipes-layout"',
+            '<RunnerRecipeCatalogList',
+            '<RunnerRecipeDetail',
+        ].map((marker) => panel.indexOf(marker));
+        expect.soft(panelOrder.every((position) => position >= 0)).toBe(true);
+        expect.soft(panelOrder).toEqual(
+            [...panelOrder].sort((left, right) => left - right),
+        );
+
+        const exactImports = new Map<string, readonly string[]>([
+            [
+                catalogHookPath,
+                [
+                    '../../../distributed-recipes.ts|value:distributedRecipePreflight',
+                    '../../../recipe-fixtures.ts|value:RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS',
+                    '../../shared/unique-values.ts|value:uniqueValues',
+                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                    './runner-recipe-catalog.ts|type:RunnerRecipeSource,value:runnerRecipeCatalog,value:runnerRecipeMatches',
+                    'react|value:useMemo,value:useState',
+                ],
+            ],
+            [
+                agentHookPath,
+                [
+                    '../../../control-client.ts|type:RallarBlackBoxControlSnapshot',
+                    '../../../runner-agent-launch.ts|value:createRunnerAgentLaunchUrl,value:runnerAgentId,value:runnerNewAgentLaunchSuffix',
+                    '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
+                    '../../shared/safe-id-segment.ts|value:safeIdSegment',
+                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                    './runner-endpoints.ts|value:runnerBrowserOrigin,value:runnerControlWsUrlFromHttpBaseUrl',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                    'react|value:useMemo,value:useState',
+                ],
+            ],
+            [
+                agentActionsPath,
+                [
+                    '../../../runner-agent-launch.ts|value:createRunnerAgentLaunchUrl,value:runnerNewAgentLaunchSuffix',
+                    '../../../runner-readiness.ts|value:runnerFriendlyErrorMessage',
+                    '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
+                    './runner-endpoints.ts|value:runnerBrowserOrigin',
+                    '@shared-web/browser/api-client-config.ts|value:configureApiClient',
+                    '@shared-web/browser/api-integration.ts|value:issueAgentSessionTickets',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                ],
+            ],
+            [
+                controllerPath,
+                [
+                    '../../../control-agent-board.ts|value:deriveControlAgentBoardRows,value:summarizeControlAgentBoardRows',
+                    '../../../control-client.ts|type:RallarBlackBoxControlSnapshot',
+                    '../../../control-operator-token.ts|type:BlackBoxControlTokenSession,value:resolveBlackBoxControlToken',
+                    '../../../control-run-manager.ts|type:ControlDistributedRunArtifactBundle,type:ControlDistributedRunSnapshot,type:ControlRunSnapshot,type:ControlServerSnapshot,value:controlHttpBaseUrlFromWsUrl,value:createDistributedRun,value:fetchControlRunSnapshot,value:fetchControlServerSnapshot,value:fetchDistributedRun,value:stageDistributedRun,value:startDistributedRun',
+                    '../../../distributed-recipes.ts|value:buildDistributedRunManifest,value:defaultDistributedRecipeTargetIds,value:distributedRecipePreflight,value:distributedRecipeTargetRows',
+                    '../../../runner-readiness.ts|type:RecipeLaunchState,type:RunnerTurnProbeStatus,value:runnerDisabledReason,value:runnerFriendlyErrorMessage,value:runnerReadinessStatus',
+                    '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig,value:rallarBlackBoxRuntimeStore',
+                    '../../shared/json-presentation.ts|value:json',
+                    '../../shared/safe-id-segment.ts|value:safeIdSegment',
+                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                    '../distributed-recipes/distributed-manifest-validation.ts|value:validateDistributedRecipeManifest',
+                    '../runner-contracts.ts|type:RunnerDistributedRunSelection',
+                    '../shared/control-snapshot-bounds.ts|value:RUN_MANAGER_SNAPSHOT_BOUNDS',
+                    './runner-agent-launch-actions.ts|value:createRunnerAgentLaunchActions',
+                    './runner-endpoints.ts|value:runnerApiEndpointUrl,value:runnerApiProbeUrl',
+                    './runner-launch-presentation.ts|type:RunnerServiceProbe,value:runnerLaunchStateFromRunState',
+                    './use-runner-agent-launch-state.ts|value:useRunnerAgentLaunchState',
+                    './use-runner-recipe-catalog.ts|value:useRunnerRecipeCatalog',
+                    '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxCommandHistory,value:selectRallarBlackBoxFailures,value:selectRallarBlackBoxFirstFailure',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                    'react|value:useEffect,value:useMemo,value:useRef,value:useState',
+                ],
+            ],
+            [
+                panelPath,
+                [
+                    '../../../app-tabs.ts|type:AppTabId',
+                    './use-runner-recipes-controller.ts|type:UseRunnerRecipesControllerInput,value:useRunnerRecipesController',
+                    './views/RunnerRecipeCatalogList.tsx|value:RunnerRecipeCatalogList',
+                    './views/RunnerRecipeDetail.tsx|value:RunnerRecipeDetail',
+                    './views/RunnerRecipesOverview.tsx|value:RunnerRecipesOverview',
+                ],
+            ],
+        ]);
+        for (const [path, expectedImports] of exactImports) {
+            expect.soft(
+                task9aImportEdges(
+                    task9aSourceFile(path, sources.get(path) ?? ''),
+                ),
+                `${path}: exact imports/kinds/edges`,
+            ).toEqual([...expectedImports].sort());
+        }
+
+        const exactExports = new Map<string, readonly string[]>([
+            [
+                catalogHookPath,
+                [
+                    'type:RunnerRecipeCatalogModel',
+                    'value:useRunnerRecipeCatalog',
+                ],
+            ],
+            [
+                agentHookPath,
+                [
+                    'type:RunnerAgentLaunchStateModel',
+                    'value:useRunnerAgentLaunchState',
+                ],
+            ],
+            [agentActionsPath, ['value:createRunnerAgentLaunchActions']],
+            [
+                controllerPath,
+                [
+                    'type:RunnerRecipesControllerModel',
+                    'type:UseRunnerRecipesControllerInput',
+                    'value:useRunnerRecipesController',
+                ],
+            ],
+            [panelPath, ['value:RunnerRecipesPanel']],
+        ]);
+        for (const [path, expectedExports] of exactExports) {
+            expect.soft(
+                task9aExportSeams(
+                    task9aSourceFile(path, sources.get(path) ?? ''),
+                ),
+                `${path}: exact exports`,
+            ).toEqual(expectedExports);
+        }
+
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        expect.soft(
+            task9aImportEdges(appAst).filter((edge) =>
+                edge.startsWith('./legacy/runner/recipes/'),
+            ),
+            'App imports only the RunnerRecipesPanel owner',
+        ).toEqual([
+            './legacy/runner/recipes/RunnerRecipesPanel.tsx|value:RunnerRecipesPanel',
+        ]);
+        const appCallNodes = task9aJsxCalls(appAst, 'RunnerRecipesPanel');
+        expect.soft(
+            task9aAstFingerprint(appCallNodes),
+            'App exact RunnerRecipesPanel call AST',
+        ).toBe(
+            'ca66bbe872757d895bbe5df47df3af8c907109db41b842c3025d292b8ac1a253',
+        );
+        let appGuardNode: ts.Node | undefined = appCallNodes[0];
+        while (appGuardNode && !ts.isJsxExpression(appGuardNode)) {
+            appGuardNode = appGuardNode.parent;
+        }
+        expect.soft(
+            appGuardNode ? task9aAstFingerprint([appGuardNode]) : '',
+            'App exact Recipes guard/callback AST',
+        ).toBe(
+            '2be228145b4d7199f7ae5436cea2e35063c6c1201486a4f3c69f69e47f4b761b',
+        );
+
+        const functionDeclaration = (
+            path: string,
+            name: string,
+        ): ts.FunctionDeclaration | undefined => {
+            const source = sources.get(path) ?? '';
+            return task9aSourceFile(path, source).statements.find(
+                (statement): statement is ts.FunctionDeclaration =>
+                    ts.isFunctionDeclaration(statement) &&
+                    statement.name?.text === name,
+            );
+        };
+        for (const [path, name, expectedFingerprint] of [
+            [catalogHookPath, 'useRunnerRecipeCatalog', '4bf50cb94592de66fdc974223a5659e76ed261a3932d647acd7225650b79a584'],
+            [agentHookPath, 'useRunnerAgentLaunchState', 'a01124ddab504f883eedc382ba31afb593e406a7884a6331ef62072999ba02c1'],
+            [agentActionsPath, 'createRunnerAgentLaunchActions', '3501b2153573cdfed7b3e8d2f47dc512217d12562e0fad6de7c526c71c8e181f'],
+            [controllerPath, 'useRunnerRecipesController', 'fe9ad4ae358e5f206983c3cff2bfa9e20fa0124d92985b93bd7a18fee9a36a76'],
+            [panelPath, 'RunnerRecipesPanel', 'ec8f1d339081250a5760d16b43587177836f9bf10cfbc22bbd94161096e6d650'],
+        ] as const) {
+            const declaration = functionDeclaration(path, name);
+            expect.soft(
+                declaration ? task9aAstFingerprint([declaration]) : '',
+                `${name}: token-complete declaration AST`,
+            ).toBe(expectedFingerprint);
+        }
+
+        const controllerDeclaration = functionDeclaration(
+            controllerPath,
+            'useRunnerRecipesController',
+        );
+        const effectCalls: ts.CallExpression[] = [];
+        if (controllerDeclaration) {
+            const visit = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text === 'useEffect'
+                ) {
+                    effectCalls.push(node);
+                }
+                ts.forEachChild(node, visit);
+            };
+            visit(controllerDeclaration);
+        }
+        expect.soft(effectCalls, 'four exact central effects').toHaveLength(4);
+        expect.soft(
+            effectCalls.map((call) => task9aAstFingerprint([call])),
+            'central effect registration/body/dependency fingerprints',
+        ).toEqual([
+            '8f43bfaf1fd16a64b47556e02ceadb351e0b06ea1734f97956c8cfd93892f80f',
+            '8af41adc7940438971685cd314d6aa15304ee5871c71bc18d213381b103ad364',
+            '8afcc03c7abec76625fb5ffa951197e83e83c542c4f91dc171db7fae4e7bdd1f',
+            '7f42af89a9324e46ef01e5221f32d622e8a02e95545e2f7336efb0ed8d227e1a',
+        ]);
+
+        const panelDeclaration = functionDeclaration(
+            panelPath,
+            'RunnerRecipesPanel',
+        );
+        const panelControllerCalls = panelDeclaration
+            ? (() => {
+                  const calls: ts.CallExpression[] = [];
+                  const visit = (node: ts.Node): void => {
+                      if (
+                          ts.isCallExpression(node) &&
+                          ts.isIdentifier(node.expression) &&
+                          node.expression.text === 'useRunnerRecipesController'
+                      ) {
+                          calls.push(node);
+                      }
+                      ts.forEachChild(node, visit);
+                  };
+                  visit(panelDeclaration);
+                  return calls;
+              })()
+            : [];
+        expect.soft(
+            task9aAstFingerprint(panelControllerCalls),
+            'Panel exact controller call initializer AST',
+        ).toBe(
+            '369625156c825d13c3b886cae68e02fa41c6cf09022db8e7eaf6aca74e5428eb',
+        );
+        expect.soft(
+            panelDeclaration
+                ? task9aJsxRuntimeFingerprint(
+                      task9aReturnExpression(panelDeclaration),
+                  )
+                : '',
+            'Panel exact compiled return AST',
+        ).toBe(
+            '3d78f25aaeb5bc4414be93dbb276bc2cf1f63863a25695913148ebfef3bbe632',
+        );
+        for (const [viewName, expectedFingerprint] of [
+            [
+                'RunnerRecipesOverview',
+                'b118bbf976a5fe659345396b76a2245ccd868afae7936131203d8d1df5763897',
+            ],
+            [
+                'RunnerRecipeCatalogList',
+                '437eae66976db2ba8ce7bc06437c442cde57739c4877f7d39b16a6a1b8294b9b',
+            ],
+            [
+                'RunnerRecipeDetail',
+                '23aff1008690a8a6f0004b2ff81f929f51b6712a75ed7eef6729537ecbd7c432',
+            ],
+        ] as const) {
+            expect.soft(
+                panelDeclaration
+                    ? task9aAstFingerprint(
+                          task9aJsxCalls(panelDeclaration, viewName),
+                      )
+                    : '',
+                `${viewName}: unchanged Task 9A call AST`,
+            ).toBe(expectedFingerprint);
+        }
+
+        const dependencies = new Map<string, readonly string[]>();
+        const discoverDependencies = (sourcePath: string): void => {
+            if (dependencies.has(sourcePath)) return;
+            const source = existsSync(resolve(repositoryRoot, sourcePath))
+                ? repositorySource(sourcePath)
+                : '';
+            const directDependencies = task9aImportEdges(
+                task9aSourceFile(sourcePath, source),
+            )
+                .map((edge) => edge.slice(0, edge.indexOf('|')))
+                .filter((moduleImport) => moduleImport.startsWith('.'))
+                .map((moduleImport) =>
+                    relative(
+                        repositoryRoot,
+                        resolve(
+                            resolve(repositoryRoot, sourcePath),
+                            '..',
+                            moduleImport,
+                        ),
+                    ),
+                )
+                .filter(
+                    (dependency) =>
+                        ['.ts', '.tsx'].includes(extname(dependency)) &&
+                        existsSync(resolve(repositoryRoot, dependency)),
+                );
+            dependencies.set(sourcePath, directDependencies);
+            for (const dependency of directDependencies) {
+                discoverDependencies(dependency);
+            }
+        };
+        for (const owner of owners) discoverDependencies(owner.path);
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) return;
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) {
+                visit(dependency);
+            }
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const owner of owners) visit(owner.path);
+        expect(cycles, 'Task 9B recursive owner import cycles').toEqual([]);
     });
 
     it('keeps the legacy run manager and its dependencies in focused modules', () => {
