@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const appSourcePath = 'apps/rallar-black-box/src/App.tsx';
 const expectedAppFunctionFingerprint =
-    'ef9928876624d1493b24735e540137bbb00a97fa8a679fa0d6abcbb63326b3a7';
+    '32262623d52e4353839ed6ce14a46ebacd38a0d42b2ebbeb920092d86344ae94';
 const legacyAppShellSourcePath =
     'apps/rallar-black-box/src/legacy/shell/LegacyAppShell.tsx';
 const legacyDiagnosticDrawerSourcePath =
@@ -9654,8 +9654,10 @@ describe('rallar-black-box app source ownership', () => {
             task9aAstFingerprint([app]),
             'exact unchanged App bootstrap/controller/routing body',
         ).toBe(expectedAppFunctionFingerprint);
-        expect.soft(appSource, 'no lazy/Suspense lifetime cutover')
-            .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+        expect.soft(appSource.match(/lazy\s*\(/g), 'two lazy experience edges')
+            .toHaveLength(2);
+        expect.soft(appSource.match(/<Suspense\b/g), 'one experience boundary')
+            .toHaveLength(1);
 
         const ownerPaths = new Set(owners.map(([path]) => path));
         const graph = new Map<string, readonly string[]>();
@@ -10187,8 +10189,10 @@ describe('rallar-black-box app source ownership', () => {
             task9aAstFingerprint([app]),
             'unchanged App function and lifetime policy',
         ).toBe(expectedAppFunctionFingerprint);
-        expect.soft(appSource, 'no lazy/Suspense lifetime cutover')
-            .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+        expect.soft(appSource.match(/lazy\s*\(/g), 'two lazy experience edges')
+            .toHaveLength(2);
+        expect.soft(appSource.match(/<Suspense\b/g), 'one experience boundary')
+            .toHaveLength(1);
 
         const ownerPaths = new Set(owners.map(([path]) => path));
         const graph = new Map<string, readonly string[]>();

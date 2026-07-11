@@ -4,6 +4,10 @@ import { appTabsForMode } from '../../../apps/rallar-black-box/src/app-tabs.ts';
 
 const appSourcePath = new URL('../../../apps/rallar-black-box/src/App.tsx', import.meta.url);
 const styleSourcePath = new URL('../../../apps/rallar-black-box/src/styles.css', import.meta.url);
+const legacyExperienceSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx',
+    import.meta.url,
+);
 const legacyRunHeaderSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/shell/LegacyRunHeader.tsx',
     import.meta.url,
@@ -411,22 +415,24 @@ describe('rallar-black-box Rallar mode boundary', () => {
 
     it('keeps runner sample controls and bootstrap behind black-box-runner mode', () => {
         const source = appSource();
+        const legacyExperience = readFileSync(legacyExperienceSourcePath, 'utf8');
         const header = existsSync(legacyRunHeaderSourcePath)
             ? readFileSync(legacyRunHeaderSourcePath, 'utf8')
             : sourceBetween(source, 'function Header', 'function AppTabs');
 
         expect(header).toContain("mode === 'black-box-runner'");
         expect(header).toContain('rallarBlackBoxRuntimeStore.runSample()');
-        expect(source).toContain(
-            "if (canEnterApp && navigation.activeMode === 'black-box-runner')",
+        expect(legacyExperience).toContain(
+            "if (canBootstrap && navigation.activeMode === 'black-box-runner')",
         );
-        expect(source).toContain(
-            '}, [navigation.activeMode, canEnterApp]);',
+        expect(legacyExperience).toContain(
+            '}, [canBootstrap, navigation.activeMode]);',
         );
+        expect(legacyExperience).toContain('bootstrapMatchesAuthSession');
     });
 
     it('does not reset the browser-rallar runtime when runner mode is first opened', () => {
-        const source = appSource();
+        const legacyExperience = readFileSync(legacyExperienceSourcePath, 'utf8');
         const runtimeBootstrap = readFileSync(
             new URL('../../../apps/rallar-black-box/src/runtime-store.ts', import.meta.url),
             'utf8',
@@ -439,11 +445,11 @@ describe('rallar-black-box Rallar mode boundary', () => {
 
         expect(configureLocalWorkbenchOnly).toContain('await this.configureRuntime(runNumber)');
         expect(configureLocalWorkbenchOnly).not.toContain('resetForRun');
-        expect(source).toContain(
-            "if (canEnterApp && navigation.activeMode === 'black-box-runner')",
+        expect(legacyExperience).toContain(
+            "if (canBootstrap && navigation.activeMode === 'black-box-runner')",
         );
-        expect(source).toContain(
-            '}, [navigation.activeMode, canEnterApp]);',
+        expect(legacyExperience).toContain(
+            '}, [canBootstrap, navigation.activeMode]);',
         );
     });
 

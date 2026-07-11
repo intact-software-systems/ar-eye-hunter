@@ -564,6 +564,12 @@ function importedNames(file: ts.SourceFile, moduleImport: string): readonly stri
         : [];
 }
 
+function legacyExperienceModuleImport(moduleImport: string): string {
+    return moduleImport
+        .replace('./legacy/runner/', '../runner/')
+        .replace('./legacy/shell/', './');
+}
+
 function hookCount(root: ts.Node, hookName: string): number {
     let count = 0;
     const visit = (node: ts.Node): void => {
@@ -581,6 +587,26 @@ function hookCount(root: ts.Node, hookName: string): number {
 }
 
 describe('rallar-black-box legacy shell ownership', () => {
+    it('moves all legacy shell orchestration behind LegacyExperience', () => {
+        const legacyExperiencePath =
+            'apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx';
+        expect(existsSync(resolve(repositoryRoot, legacyExperiencePath))).toBe(true);
+        if (!existsSync(resolve(repositoryRoot, legacyExperiencePath))) return;
+
+        const legacyExperience = repositorySource(legacyExperiencePath);
+        const app = repositorySource(appPath);
+        for (const name of [
+            'useRunnerShellState',
+            'useLegacyNavigation',
+            'useCommandCenterGlobalContext',
+            'ensureBootstrapped',
+            'useRunnerShellSelectionSync',
+        ]) {
+            expect.soft(legacyExperience, `${name}: wrapper owner`).toContain(name);
+            expect.soft(app, `${name}: absent from App`).not.toContain(name);
+        }
+    });
+
     it('moves each legacy shell leaf into one focused exact owner', () => {
         const appSource = repositorySource(appPath);
         const app = sourceFile(appPath, appSource);
@@ -660,8 +686,8 @@ describe('rallar-black-box legacy shell ownership', () => {
         expect.soft(appDeclaration, 'App function remains present').toBeDefined();
         expect.soft(
             appDeclaration ? fingerprint([appDeclaration]) : '',
-            'shell extraction leaves App bootstrap/routing behavior exact',
-        ).toBe('ef9928876624d1493b24735e540137bbb00a97fa8a679fa0d6abcbb63326b3a7');
+            'lazy experience cutover leaves App bootstrap/routing behavior exact',
+        ).toBe('32262623d52e4353839ed6ce14a46ebacd38a0d42b2ebbeb920092d86344ae94');
         expect.soft(
             createHash('sha256')
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
@@ -761,6 +787,12 @@ describe('rallar-black-box legacy shell ownership', () => {
     it('moves shell orchestration into focused hooks without changing effect topology', () => {
         const appSource = repositorySource(appPath);
         const app = sourceFile(appPath, appSource);
+        const legacyExperiencePath =
+            'apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx';
+        const legacyExperience = sourceFile(
+            legacyExperiencePath,
+            repositorySource(legacyExperiencePath),
+        );
 
         for (const owner of shellControllerOwners) {
             const present = existsSync(resolve(repositoryRoot, owner.path));
@@ -776,8 +808,11 @@ describe('rallar-black-box legacy shell ownership', () => {
                     `${owner.path}: ${exportedHook} exists`,
                 ).toBeDefined();
                 expect.soft(
-                    importedNames(app, owner.moduleImport),
-                    `App imports ${exportedHook} from ${owner.moduleImport}`,
+                    importedNames(
+                        legacyExperience,
+                        legacyExperienceModuleImport(owner.moduleImport),
+                    ),
+                    `LegacyExperience imports ${exportedHook} from ${owner.moduleImport}`,
                 ).toContain(exportedHook);
             }
             for (const [hookName, expectedFingerprint] of Object.entries(
@@ -839,12 +874,13 @@ describe('rallar-black-box legacy shell ownership', () => {
                 useState: 3,
                 useMemo: 0,
                 useRef: 0,
-                useEffect: 4,
+                useEffect: 3,
             });
 
             const orderedHookNames: string[] = [];
             const trackedHooks = new Set([
                 'useRallarBlackBoxRuntimeStore',
+                'useExperienceRoute',
                 'useRunnerShellState',
                 'useLegacyNavigation',
                 'useState',
@@ -876,19 +912,43 @@ describe('rallar-black-box legacy shell ownership', () => {
                 'App preserves transitive effect-registration order',
             ).toEqual([
                 'useRallarBlackBoxRuntimeStore',
-                'useRunnerShellState',
-                'useLegacyNavigation',
                 'useState',
                 'useState',
                 'useState',
+                'useExperienceRoute',
                 'useEffect',
                 'useEffect',
                 'useEffect',
-                'useCommandCenterGlobalContext',
-                'useEffect',
-                'useRunnerShellSelectionSync',
             ]);
         }
+        expect.soft(
+            {
+                useRunnerShellState: hookCount(
+                    legacyExperience,
+                    'useRunnerShellState',
+                ),
+                useLegacyNavigation: hookCount(
+                    legacyExperience,
+                    'useLegacyNavigation',
+                ),
+                useCommandCenterGlobalContext: hookCount(
+                    legacyExperience,
+                    'useCommandCenterGlobalContext',
+                ),
+                useEffect: hookCount(legacyExperience, 'useEffect'),
+                useRunnerShellSelectionSync: hookCount(
+                    legacyExperience,
+                    'useRunnerShellSelectionSync',
+                ),
+            },
+            'LegacyExperience owns the moved controller registration topology',
+        ).toEqual({
+            useRunnerShellState: 1,
+            useLegacyNavigation: 1,
+            useCommandCenterGlobalContext: 1,
+            useEffect: 1,
+            useRunnerShellSelectionSync: 1,
+        });
         expect.soft(
             appSource.trimEnd().split('\n').length,
             'App clears the Iteration 1 below-800 checkpoint',

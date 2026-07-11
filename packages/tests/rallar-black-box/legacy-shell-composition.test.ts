@@ -86,24 +86,22 @@ const expectedGuardFingerprints = new Map<string, string>([
 
 const expectedImportInventory = new Map<string, readonly string[]>([
     [appPath, [
+        './app/use-experience-route.ts|value:useExperienceRoute',
         './auth-flow.ts|value:authErrorMessage',
         './auth-flow.ts|value:bootstrapPatchFromAuthSession',
         './auth-lifecycle.ts|value:readAuthSessionFromRallarAuthState',
         './legacy/rallar/load-browser-rallar-facade.ts|value:loadBrowserRallarFacade',
-        './legacy/runner/shell/use-runner-shell-state.ts|value:useRunnerShellSelectionSync',
-        './legacy/runner/shell/use-runner-shell-state.ts|value:useRunnerShellState',
-        './legacy/shell/LegacyAppShell.tsx|value:LegacyAppShell',
         './legacy/shell/LoginScreen.tsx|value:LoginScreen',
         './legacy/shell/auth/agent-session-ticket.ts|value:consumeBootstrapAgentSessionTicket',
         './legacy/shell/auth/agent-session-ticket.ts|value:scrubAgentSessionTicketFromUrl',
         './legacy/shell/read-current-auth-session.ts|value:readCurrentAuthSession',
-        './legacy/shell/use-command-center-global-context.ts|value:useCommandCenterGlobalContext',
-        './legacy/shell/use-legacy-navigation.ts|value:useLegacyNavigation',
         './runtime-store.ts|value:rallarBlackBoxRuntimeStore',
         './runtime-store.ts|value:useRallarBlackBoxRuntimeStore',
         '@shared/api/api-config.ts|type:AuthSession',
         '@shared/api/auth.ts|value:clearSession',
         '@shared/api/auth.ts|value:writeSession',
+        'react|value:Suspense',
+        'react|value:lazy',
         'react|value:useEffect',
         'react|value:useState',
     ]],
@@ -218,7 +216,11 @@ const expectedImportInventory = new Map<string, readonly string[]>([
 ]);
 
 const expectedTopLevelInventory = new Map<string, readonly string[]>([
-    [appPath, ['export-default-function:App']],
+    [appPath, [
+        'variable:RecipeConsoleApp',
+        'variable:LegacyExperience',
+        'export-default-function:App',
+    ]],
     [`${shellRoot}/legacy-shell-contracts.ts`, [
         'export-type:LegacyShellRuntime',
         'export-type:LegacyShellAuth',
@@ -237,7 +239,7 @@ const expectedTopLevelInventory = new Map<string, readonly string[]>([
 ]);
 
 const expectedLocalEdges = new Map<string, readonly string[]>([
-    [appPath, [`${shellRoot}/LegacyAppShell.tsx`]],
+    [appPath, []],
     [`${shellRoot}/legacy-shell-contracts.ts`, []],
     [`${shellRoot}/LegacyAppShell.tsx`, [
         `${shellRoot}/LegacyDiagnosticDrawer.tsx`,
@@ -481,6 +483,21 @@ function hookCount(root: ts.Node): number {
 }
 
 describe('legacy shell composition boundary', () => {
+    it('routes legacy composition through a lazy experience wrapper', () => {
+        const appSource = repositorySource(appPath);
+        const wrapperPath = `${shellRoot}/LegacyExperience.tsx`;
+        expect(existsSync(resolve(repositoryRoot, wrapperPath))).toBe(true);
+        if (!existsSync(resolve(repositoryRoot, wrapperPath))) return;
+
+        expect(appSource).toContain(
+            "import('./legacy/shell/LegacyExperience.tsx')",
+        );
+        expect(appSource).not.toContain(
+            "from './legacy/shell/LegacyAppShell.tsx';",
+        );
+        expect(repositorySource(wrapperPath)).toContain('<LegacyAppShell');
+    });
+
     it('owns shell composition in focused bounded modules', () => {
         for (const owner of compositionOwners) {
             const present = existsSync(resolve(repositoryRoot, owner.path));
@@ -513,8 +530,8 @@ describe('legacy shell composition boundary', () => {
             ).toEqual(expectedTopLevelInventory.get(path));
             expect.soft(
                 dynamicImportCount(file),
-                `${path}: no dynamic composition back-edge`,
-            ).toBe(0);
+                `${path}: only App owns the two experience edges`,
+            ).toBe(path === appPath ? 2 : 0);
 
             graph.set(
                 path,
@@ -542,8 +559,8 @@ describe('legacy shell composition boundary', () => {
             appSource.trimEnd().split('\n').length,
             'App provider/bootstrap/routing line cap',
         ).toBeLessThanOrEqual(280);
-        expect.soft(appSource, 'App imports the thin legacy shell').toContain(
-            "from './legacy/shell/LegacyAppShell.tsx';",
+        expect.soft(appSource, 'App lazy-loads the thin legacy experience').toContain(
+            "import('./legacy/shell/LegacyExperience.tsx')",
         );
         expect.soft(appSource, 'App has no feature imports').not.toMatch(
             /from ['"]\.\/legacy\/(?:diagnostics\/|runner\/(?!shell\/))[^'"]+['"]/,

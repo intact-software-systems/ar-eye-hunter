@@ -66,6 +66,18 @@ export function bootstrapPatchFromAuthSession(
     };
 }
 
+export function bootstrapMatchesAuthSession(
+    bootstrap: RallarBlackBoxBootstrapConfig,
+    session: AuthSession,
+): boolean {
+    return bootstrap.actor === session.username &&
+        bootstrap.sessionId === session.sessionId &&
+        bootstrap.rallarUsername === session.username &&
+        bootstrap.rallarPassword === undefined &&
+        bootstrap.rallarRegister === false &&
+        bootstrap.rallarRestoreSession === true;
+}
+
 export function authErrorMessage(error: unknown): string {
     const message = error instanceof Error ? error.message : String(error);
     if (

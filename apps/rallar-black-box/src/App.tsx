@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
 import {
@@ -10,28 +10,27 @@ import {
     bootstrapPatchFromAuthSession,
 } from './auth-flow.ts';
 import { readAuthSessionFromRallarAuthState } from './auth-lifecycle.ts';
+import { useExperienceRoute } from './app/use-experience-route.ts';
 import { loadBrowserRallarFacade } from './legacy/rallar/load-browser-rallar-facade.ts';
-import {
-    useRunnerShellSelectionSync,
-    useRunnerShellState,
-} from './legacy/runner/shell/use-runner-shell-state.ts';
-import { LegacyAppShell } from './legacy/shell/LegacyAppShell.tsx';
 import { LoginScreen } from './legacy/shell/LoginScreen.tsx';
 import {
     consumeBootstrapAgentSessionTicket,
     scrubAgentSessionTicketFromUrl,
 } from './legacy/shell/auth/agent-session-ticket.ts';
 import { readCurrentAuthSession } from './legacy/shell/read-current-auth-session.ts';
-import { useCommandCenterGlobalContext } from './legacy/shell/use-command-center-global-context.ts';
-import { useLegacyNavigation } from './legacy/shell/use-legacy-navigation.ts';
 
 // Recipe Console work belongs under `src/recipe-console/**`; legacy extraction belongs under `src/legacy/**`; no new feature panel belongs in `App.tsx`.
 
+const RecipeConsoleApp = lazy(() =>
+    import('./recipe-console/app/RecipeConsoleApp.tsx')
+);
+const LegacyExperience = lazy(() =>
+    import('./legacy/shell/LegacyExperience.tsx')
+);
+
 export default function App() {
     const runtime = useRallarBlackBoxRuntimeStore();
-    const { state, bootstrap } = runtime;
-    const runnerSelection = useRunnerShellState(state);
-    const navigation = useLegacyNavigation();
+    const { bootstrap } = runtime;
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(
         () =>
             bootstrap.rallarAgentSessionTicket
@@ -40,8 +39,8 @@ export default function App() {
     );
     const [authBusy, setAuthBusy] = useState(false);
     const [authError, setAuthError] = useState<string | undefined>();
+    const experience = useExperienceRoute();
     const requiresLogin = bootstrap.providerMode === 'browser-rallar';
-    const canEnterApp = !requiresLogin || Boolean(authSession);
 
     useEffect(() => {
         if (!requiresLogin) {
@@ -147,20 +146,6 @@ export default function App() {
         requiresLogin,
     ]);
 
-    const globalContext = useCommandCenterGlobalContext({
-        state,
-        bootstrap,
-        authSession,
-    });
-
-    useEffect(() => {
-        if (canEnterApp && navigation.activeMode === 'black-box-runner') {
-            rallarBlackBoxRuntimeStore.ensureBootstrapped();
-        }
-    }, [navigation.activeMode, canEnterApp]);
-
-    useRunnerShellSelectionSync(runnerSelection);
-
     const logout = async (): Promise<void> => {
         setAuthBusy(true);
         setAuthError(undefined);
@@ -216,19 +201,25 @@ export default function App() {
         );
     }
 
+    const auth = {
+        authSession,
+        authBusy,
+        authError,
+        setAuthSession,
+        logout,
+    };
+
     return (
-        <LegacyAppShell
-            runtime={runtime}
-            auth={{
-                authSession,
-                authBusy,
-                authError,
-                setAuthSession,
-                logout,
-            }}
-            navigation={navigation}
-            globalContext={globalContext}
-            runnerSelection={runnerSelection}
-        />
+        <Suspense fallback={<main className="auth-shell">Loading experience…</main>}>
+            {experience === 'recipe-console'
+                ? <RecipeConsoleApp
+                    authSession={authSession}
+                    authBusy={authBusy}
+                    authError={authError}
+                    onLogout={logout}
+                />
+                : <LegacyExperience runtime={runtime} auth={auth}/>
+            }
+        </Suspense>
     );
 }
