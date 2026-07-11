@@ -1,19 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
-import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import { consumeAgentSessionTicket } from '@shared-web/browser/api-integration.ts';
 import {
     selectRallarBlackBoxActiveCommand,
     selectRallarBlackBoxCommandHistory,
-    selectRallarBlackBoxCurrentConfig,
 } from '@shared-test/rallar-bb-test/selectors.ts';
-import type {
-    RallarBlackBoxTestResult,
-    RallarBlackBoxTestState,
-} from '@shared-test/rallar-bb-test/types.ts';
 import {
-    type RallarBlackBoxBootstrapConfig,
     rallarBlackBoxRuntimeStore,
     useRallarBlackBoxRuntimeStore,
 } from './runtime-store.ts';
@@ -22,7 +14,6 @@ import {
     bootstrapPatchFromAuthSession,
 } from './auth-flow.ts';
 import { readAuthSessionFromRallarAuthState } from './auth-lifecycle.ts';
-import { DEFAULT_MANUAL_WORKBENCH_VALUES } from './manual-workbench.ts';
 import {
     appModeForTab,
     appTabInMode,
@@ -44,22 +35,29 @@ import { GlobalContextBar } from './legacy/shell/GlobalContextBar.tsx';
 import { Header } from './legacy/shell/LegacyRunHeader.tsx';
 import { LoginScreen } from './legacy/shell/LoginScreen.tsx';
 import {
+    consumeBootstrapAgentSessionTicket,
+    scrubAgentSessionTicketFromUrl,
+} from './legacy/shell/auth/agent-session-ticket.ts';
+import {
     normalizeAppNavigation,
     readInitialAppNavigation,
     writeAppNavigationToUrl,
     type AppNavigationState,
 } from './legacy/shell/navigation.ts';
 import { RunnerModeBoundaryPanel } from './legacy/shell/RunnerModeBoundaryPanel.tsx';
-import type { CommandCenterGlobalValues } from './legacy/shell/global-context-model.ts';
-import type {
-    CommandQueueRow,
-    RunnerDistributedRunSelection,
-} from './legacy/runner/runner-contracts.ts';
+import {
+    bootstrapPatchFromGlobalValues,
+    commandCenterGlobalValuesFromState,
+    sameCommandCenterGlobalValues,
+    type CommandCenterGlobalValues,
+} from './legacy/shell/global-context-model.ts';
+import type { RunnerDistributedRunSelection } from './legacy/runner/runner-contracts.ts';
+import {
+    deriveQueue,
+    findSelectedResult,
+} from './legacy/runner/shell/runner-shell-model.ts';
 import { loadBrowserRallarFacade } from './legacy/rallar/load-browser-rallar-facade.ts';
 import { uiRedactionOptions } from './legacy/shared/redaction-presentation.ts';
-import { commandId } from './legacy/shared/command-presentation.ts';
-import { recordValue as optionalRecord } from './legacy/shared/record-value.ts';
-import { stringValue } from './legacy/shared/string-value.ts';
 import { useNow } from './legacy/shared/use-now.ts';
 import { readCurrentAuthSession } from './legacy/shell/read-current-auth-session.ts';
 import { AuthCommandCenterPanel } from './legacy/diagnostics/auth/AuthCommandCenterPanel.tsx';
@@ -92,143 +90,6 @@ import { FlowBuilderPanel } from './legacy/runner/builder/FlowBuilderPanel.tsx';
 import { RunnerFleetPanel } from './legacy/runner/fleet/RunnerFleetPanel.tsx';
 
 // Recipe Console work belongs under `src/recipe-console/**`; legacy extraction belongs under `src/legacy/**`; no new feature panel belongs in `App.tsx`.
-
-function deriveQueue(
-    state: RallarBlackBoxTestState,
-): readonly CommandQueueRow[] {
-    const activeCommand = selectRallarBlackBoxActiveCommand(state);
-    const resultCache = state.resultCache;
-    return (state.loadedRecipe?.commands ?? []).map((command, index) => {
-        const id = commandId(command, index);
-        const result = resultCache[id];
-        const isActive = activeCommand?.commandId === id;
-        return {
-            id,
-            kind: command.kind,
-            label: command.label ?? command.kind,
-            timeoutMs: command.timeoutMs,
-            status: isActive
-                ? 'running'
-                : result
-                  ? result.ok
-                      ? 'completed'
-                      : 'failed'
-                  : 'pending',
-        };
-    });
-}
-
-function findSelectedResult(
-    history: readonly RallarBlackBoxTestResult[],
-    selectedCommandId: string | undefined,
-): RallarBlackBoxTestResult | undefined {
-    if (!selectedCommandId) {
-        return history.at(-1);
-    }
-
-    return (
-        history.find((result) => result.commandId === selectedCommandId) ??
-        history.at(-1)
-    );
-}
-
-function commandCenterGlobalValuesFromState(
-    state: RallarBlackBoxTestState,
-    bootstrap: RallarBlackBoxBootstrapConfig,
-    authSession?: AuthSession,
-): CommandCenterGlobalValues {
-    const config = selectRallarBlackBoxCurrentConfig(state);
-    const configRallar = optionalRecord(config?.rallar);
-    return {
-        apiBaseUrl: config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
-        applicationId:
-            stringValue(
-                config?.defaults?.applicationId ?? configRallar.applicationId,
-            ) ?? DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId,
-        workspaceId:
-            stringValue(
-                config?.defaults?.workspaceId ?? configRallar.workspaceId,
-            ) ?? DEFAULT_MANUAL_WORKBENCH_VALUES.workspaceId,
-        clientId:
-            authSession?.clientId ??
-            authSession?.username ??
-            config?.actor ??
-            bootstrap.actor,
-        sessionId:
-            authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
-        roomId: config?.roomId ?? bootstrap.roomId,
-    };
-}
-
-function sameCommandCenterGlobalValues(
-    left: CommandCenterGlobalValues,
-    right: CommandCenterGlobalValues,
-): boolean {
-    return (
-        left.apiBaseUrl === right.apiBaseUrl &&
-        left.applicationId === right.applicationId &&
-        left.workspaceId === right.workspaceId &&
-        left.clientId === right.clientId &&
-        left.sessionId === right.sessionId &&
-        left.roomId === right.roomId
-    );
-}
-
-function bootstrapPatchFromGlobalValues(
-    values: CommandCenterGlobalValues,
-): Partial<RallarBlackBoxBootstrapConfig> {
-    return {
-        apiBaseUrl: values.apiBaseUrl,
-        actor: values.clientId,
-        sessionId: values.sessionId,
-        roomId: values.roomId,
-    };
-}
-
-
-function scrubAgentSessionTicketFromUrl(): void {
-    if (typeof window === 'undefined') {
-        return;
-    }
-
-    const hashParams = new URLSearchParams(
-        window.location.hash.startsWith('#')
-            ? window.location.hash.slice(1)
-            : window.location.hash,
-    );
-    if (!hashParams.has('agentSessionTicket')) {
-        return;
-    }
-
-    hashParams.delete('agentSessionTicket');
-    const nextUrl = new URL(window.location.href);
-    nextUrl.hash = hashParams.toString();
-    window.history.replaceState(null, document.title, nextUrl.toString());
-}
-
-let pendingAgentSessionTicketConsume: Readonly<{
-    ticket: string;
-    promise: Promise<AuthSession>;
-}> | undefined;
-
-function consumeBootstrapAgentSessionTicket(
-    ticket: string,
-    apiBaseUrl: string,
-): Promise<AuthSession> {
-    if (pendingAgentSessionTicketConsume?.ticket === ticket) {
-        return pendingAgentSessionTicketConsume.promise;
-    }
-
-    configureApiClient({ apiBaseUrl });
-    const promise = consumeAgentSessionTicket({ ticket })
-        .finally(() => {
-            if (pendingAgentSessionTicketConsume?.ticket === ticket) {
-                pendingAgentSessionTicketConsume = undefined;
-            }
-        });
-    pendingAgentSessionTicketConsume = { ticket, promise };
-    return promise;
-}
 
 export default function App() {
     const {

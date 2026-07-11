@@ -158,7 +158,9 @@ const presentationModules = [
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/command-presentation.ts',
-        moduleImport: './legacy/shared/command-presentation.ts',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/runner/shell/runner-shell-model.ts',
+        moduleImport: '../../shared/command-presentation.ts',
         seams: ['commandId'],
     },
     {
@@ -3141,8 +3143,9 @@ describe('rallar-black-box app source ownership', () => {
                       : '');
         const directImports = [
             {
-                importerPath: appSourcePath,
-                moduleImport: './legacy/shared/string-value.ts',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/shell/global-context-model.ts',
+                moduleImport: '../shared/string-value.ts',
                 seams: ['stringValue'],
             },
             {
@@ -3253,6 +3256,9 @@ describe('rallar-black-box app source ownership', () => {
         expect(
             [
                 appSource,
+                repositorySource(
+                    'apps/rallar-black-box/src/legacy/shell/global-context-model.ts',
+                ),
                 repositorySource(
                     'apps/rallar-black-box/src/legacy/diagnostics/events/event-presentation.ts',
                 ),
@@ -9054,10 +9060,14 @@ describe('rallar-black-box app source ownership', () => {
             /^function\s+findStringDeep\b/m.test(appSource),
             'Groups/Server helper moves only when its focused owner exists',
         ).toBe(!deepStringOwnerPresent);
-        expect.soft(task9aImportEdges(appAst)).toContain(
-            roomsClientsPanelPresent
-                ? './legacy/shared/record-value.ts|value:recordValue->optionalRecord'
-                : './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
+        const globalContextModelPath =
+            'apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
+        const globalContextModelAst = task9aSourceFile(
+            globalContextModelPath,
+            repositorySource(globalContextModelPath),
+        );
+        expect.soft(task9aImportEdges(globalContextModelAst)).toContain(
+            '../shared/record-value.ts|value:recordValue->optionalRecord',
         );
 
         const ownerAst = (path: string): ts.SourceFile =>
@@ -9190,7 +9200,6 @@ describe('rallar-black-box app source ownership', () => {
             './legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx',
             './legacy/diagnostics/shared/action-feedback.ts',
             './legacy/shared/finite-number.ts',
-            './legacy/shared/record-value.ts',
             './legacy/shared/use-now.ts',
             './legacy/shell/RallarBrowserTraceBar.tsx',
             './legacy/shell/rallar-browser-status.ts',
@@ -9214,9 +9223,6 @@ describe('rallar-black-box app source ownership', () => {
             ...(roomsDerivationsPresent
                 ? []
                 : ['./legacy/shared/finite-number.ts|value:optionalNumber']),
-            roomsClientsPanelPresent
-                ? './legacy/shared/record-value.ts|value:recordValue->optionalRecord'
-                : './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
             './legacy/shared/use-now.ts|value:useNow',
             './legacy/shell/RallarBrowserTraceBar.tsx|value:RallarBrowserTraceBar',
             './legacy/shell/rallar-browser-status.ts|value:deriveRallarBrowserStatus',

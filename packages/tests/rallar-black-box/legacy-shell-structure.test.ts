@@ -139,6 +139,106 @@ const shellOwners = [
     },
 ] as const;
 
+const shellModelOwners = [
+    {
+        path: 'apps/rallar-black-box/src/legacy/runner/shell/runner-shell-model.ts',
+        moduleImport: './legacy/runner/shell/runner-shell-model.ts',
+        declarations: [
+            {
+                name: 'deriveQueue',
+                fingerprint:
+                    '2e2bf9e998f7b03da207aa95a205db27fcbbb15674e8e6f11bc459bb83b764a8',
+            },
+            {
+                name: 'findSelectedResult',
+                fingerprint:
+                    'b05ea1f6e80ee9ec7be455039afc360b93de2bc2ad74558498212d5a92a80e60',
+            },
+        ],
+        imports: [
+            '../../shared/command-presentation.ts|value:commandId',
+            '../runner-contracts.ts|type:CommandQueueRow',
+            '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxActiveCommand',
+            '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestResult',
+            '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+        ],
+        inventory: [
+            'export-function:deriveQueue',
+            'export-function:findSelectedResult',
+        ],
+        lineCap: 65,
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shell/global-context-model.ts',
+        moduleImport: './legacy/shell/global-context-model.ts',
+        declarations: [
+            {
+                name: 'commandCenterGlobalValuesFromState',
+                fingerprint:
+                    '803b1f60b5757295e9fa072581b1799b1991fd4d8e54ca787fe3a2f2ea013eb5',
+            },
+            {
+                name: 'sameCommandCenterGlobalValues',
+                fingerprint:
+                    '1be5249c05b049d9f3cfe7140064749306337e4b83cfc649ea182ddd6b63f968',
+            },
+            {
+                name: 'bootstrapPatchFromGlobalValues',
+                fingerprint:
+                    'f3e32c3fea671e2f18692a91cfaad9400bb01e44c376a4b0cb0817254e95c75c',
+            },
+        ],
+        imports: [
+            '../../manual-workbench.ts|value:DEFAULT_MANUAL_WORKBENCH_VALUES',
+            '../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
+            '../shared/record-value.ts|value:recordValue->optionalRecord',
+            '../shared/string-value.ts|value:stringValue',
+            '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxCurrentConfig',
+            '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+            '@shared/api/api-config.ts|type:AuthSession',
+        ],
+        inventory: [
+            'export-type:CommandCenterGlobalValues',
+            'export-function:commandCenterGlobalValuesFromState',
+            'export-function:sameCommandCenterGlobalValues',
+            'export-function:bootstrapPatchFromGlobalValues',
+        ],
+        lineCap: 100,
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shell/auth/agent-session-ticket.ts',
+        moduleImport: './legacy/shell/auth/agent-session-ticket.ts',
+        declarations: [
+            {
+                name: 'scrubAgentSessionTicketFromUrl',
+                fingerprint:
+                    'b317987437379cfb9d790e831d9aada8dbb04f12888d8be00bd8a4abc5f85479',
+            },
+            {
+                name: 'consumeBootstrapAgentSessionTicket',
+                fingerprint:
+                    'd260fc54254279ff69f206d3a6b8385a04ce4671d4060a8f89583b68b440cd90',
+            },
+        ],
+        variable: {
+            name: 'pendingAgentSessionTicketConsume',
+            fingerprint:
+                '91e80d14b0cef62b4ae659ca019c847f8db4389f6799fc72c7811c8e5afeb9ad',
+        },
+        imports: [
+            '@shared-web/browser/api-client-config.ts|value:configureApiClient',
+            '@shared-web/browser/api-integration.ts|value:consumeAgentSessionTicket',
+            '@shared/api/api-config.ts|type:AuthSession',
+        ],
+        inventory: [
+            'export-function:scrubAgentSessionTicketFromUrl',
+            'variable:pendingAgentSessionTicketConsume',
+            'export-function:consumeBootstrapAgentSessionTicket',
+        ],
+        lineCap: 65,
+    },
+] as const;
+
 const astTextKinds = new Set<ts.SyntaxKind>([
     ts.SyntaxKind.Identifier,
     ts.SyntaxKind.PrivateIdentifier,
@@ -177,6 +277,19 @@ function namedFunction(
     );
 }
 
+function namedVariable(
+    file: ts.SourceFile,
+    name: string,
+): ts.VariableStatement | undefined {
+    return file.statements.find(
+        (statement): statement is ts.VariableStatement =>
+            ts.isVariableStatement(statement) &&
+            statement.declarationList.declarations.some(
+                (declaration) => declaration.name.getText(file) === name,
+            ),
+    );
+}
+
 function astShape(node: ts.Node): string {
     const text = astTextKinds.has(node.kind)
         ? String((node as ts.Node & { text: string }).text)
@@ -193,7 +306,7 @@ function fingerprint(nodes: readonly ts.Node[]): string {
         .digest('hex');
 }
 
-function moveOnlyFingerprint(declaration: ts.FunctionDeclaration): string {
+function moveOnlyFingerprint(declaration: ts.Statement): string {
     const declarationSource = declaration
         .getText(declaration.getSourceFile())
         .replace(/^export\s+/, '');
@@ -244,13 +357,24 @@ function topLevelInventory(file: ts.SourceFile): readonly string[] {
     return file.statements
         .filter((statement) => !ts.isImportDeclaration(statement))
         .map((statement) => {
-            const exported = statement.modifiers?.some(
+            const modifiers = ts.canHaveModifiers(statement)
+                ? ts.getModifiers(statement)
+                : undefined;
+            const exported = modifiers?.some(
                 (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
             );
             if (ts.isFunctionDeclaration(statement)) {
                 return `${exported ? 'export-' : ''}function:${
                     statement.name?.text ?? '<anonymous>'
                 }`;
+            }
+            if (ts.isTypeAliasDeclaration(statement)) {
+                return `${exported ? 'export-' : ''}type:${statement.name.text}`;
+            }
+            if (ts.isVariableStatement(statement)) {
+                return `${exported ? 'export-' : ''}variable:${statement.declarationList.declarations
+                    .map((declaration) => declaration.name.getText(file))
+                    .join(',')}`;
             }
             return `${exported ? 'export-' : ''}${ts.SyntaxKind[statement.kind]}`;
         });
@@ -405,5 +529,83 @@ describe('rallar-black-box legacy shell ownership', () => {
                 .digest('hex'),
             'shell extraction leaves the legacy stylesheet exact',
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
+    it('moves shell derivation and ticket services into exact focused owners', () => {
+        const appSource = repositorySource(appPath);
+        const app = sourceFile(appPath, appSource);
+
+        for (const owner of shellModelOwners) {
+            const present = existsSync(resolve(repositoryRoot, owner.path));
+            expect.soft(present, `${owner.path}: focused model owner exists`).toBe(true);
+            const ownerSource = present ? repositorySource(owner.path) : appSource;
+            const ownerFile = sourceFile(present ? owner.path : appPath, ownerSource);
+
+            for (const expectedDeclaration of owner.declarations) {
+                const declaration =
+                    namedFunction(ownerFile, expectedDeclaration.name) ??
+                    namedFunction(app, expectedDeclaration.name);
+                expect.soft(
+                    declaration,
+                    `${owner.path}: ${expectedDeclaration.name} exists`,
+                ).toBeDefined();
+                if (declaration) {
+                    expect.soft(
+                        moveOnlyFingerprint(declaration),
+                        `${owner.path}: exact ${expectedDeclaration.name}`,
+                    ).toBe(expectedDeclaration.fingerprint);
+                }
+                expect.soft(
+                    importedNames(app, owner.moduleImport),
+                    `App imports ${expectedDeclaration.name} from ${owner.moduleImport}`,
+                ).toContain(expectedDeclaration.name);
+                expect.soft(
+                    Boolean(namedFunction(app, expectedDeclaration.name)),
+                    `App no longer declares ${expectedDeclaration.name}`,
+                ).toBe(false);
+            }
+
+            if ('variable' in owner) {
+                const declaration =
+                    namedVariable(ownerFile, owner.variable.name) ??
+                    namedVariable(app, owner.variable.name);
+                expect.soft(
+                    declaration,
+                    `${owner.path}: ${owner.variable.name} exists`,
+                ).toBeDefined();
+                if (declaration) {
+                    expect.soft(
+                        moveOnlyFingerprint(declaration),
+                        `${owner.path}: exact private ticket cache`,
+                    ).toBe(owner.variable.fingerprint);
+                }
+                expect.soft(
+                    Boolean(namedVariable(app, owner.variable.name)),
+                    `App no longer owns ${owner.variable.name}`,
+                ).toBe(false);
+            }
+
+            if (present) {
+                expect.soft(
+                    importInventory(ownerFile),
+                    `${owner.path}: exact model imports and kinds`,
+                ).toEqual([...owner.imports].sort());
+                expect.soft(
+                    topLevelInventory(ownerFile),
+                    `${owner.path}: exact model/export inventory`,
+                ).toEqual(owner.inventory);
+                expect.soft(
+                    localImportCycles(owner.path),
+                    `${owner.path}: acyclic model dependency graph`,
+                ).toEqual([]);
+                expect.soft(
+                    ownerSource.trimEnd().split('\n').length,
+                    `${owner.path}: focused model line cap`,
+                ).toBeLessThanOrEqual(owner.lineCap);
+                expect.soft(ownerSource, `${owner.path}: no App back-edge`).not.toMatch(
+                    /(?:from\s+['"][^'"]*App(?:\.tsx)?['"]|import\s*\([^)]*App)/,
+                );
+            }
+        }
     });
 });
