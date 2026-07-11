@@ -12994,6 +12994,484 @@ describe('rallar-black-box app source ownership', () => {
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
     });
 
+    it('extracts the exact Media console into one focused legacy owner', () => {
+        const ownerPath =
+            'apps/rallar-black-box/src/legacy/diagnostics/media/MediaConsolePanel.tsx';
+        const ownerModuleImport =
+            './legacy/diagnostics/media/MediaConsolePanel.tsx';
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const ownerPresent = existsSync(resolve(repositoryRoot, ownerPath));
+
+        expect.soft(
+            ownerPresent,
+            `${ownerPath}: owner exists`,
+        ).toBe(true);
+
+        let ownerAst: ts.SourceFile | undefined;
+        if (ownerPresent) {
+            const ownerSource = repositorySource(ownerPath);
+            ownerAst = task9aSourceFile(ownerPath, ownerSource);
+            expect.soft(
+                ownerSource.trimEnd().split(/\r?\n/).length,
+                `${ownerPath}: line cap`,
+            ).toBeLessThanOrEqual(550);
+            expect.soft(
+                task9aExportSeams(ownerAst),
+                `${ownerPath}: exact direct exports`,
+            ).toEqual(['value:MediaConsolePanel']);
+            expect.soft(
+                task9aImportEdges(ownerAst),
+                `${ownerPath}: complete exact imports`,
+            ).toEqual([
+                '../../../client-defaults.ts|value:RALLAR_BLACK_BOX_CLIENT_DEFAULTS',
+                '../../../direct-rallar-operations.ts|value:createDirectRallarRuntimeEvent',
+                '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig,value:rallarBlackBoxRuntimeStore',
+                '../../rallar/load-browser-rallar-facade.ts|value:loadBrowserRallarFacade',
+                '../../shared/CollapsiblePanelSection.tsx|value:CollapsiblePanelSection',
+                '../../shared/Metric.tsx|value:Metric',
+                '../../shared/json-presentation.ts|value:json,value:parseJsonText',
+                '../../shared/redaction-presentation.ts|value:redactedJson',
+                '../../shared/time-format.ts|value:formatTime',
+                '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestSeverity,type:RallarBlackBoxTestState',
+                '@shared/api/api-config.ts|type:AuthSession',
+                'react|value:useEffect,value:useRef,value:useState',
+            ].sort());
+            expect.soft(
+                ownerAst.statements.flatMap((statement) => {
+                    if (ts.isImportDeclaration(statement)) return [];
+                    if (ts.isTypeAliasDeclaration(statement)) {
+                        return [`type:${statement.name.text}`];
+                    }
+                    if (ts.isFunctionDeclaration(statement)) {
+                        return [
+                            `function:${statement.name?.text ?? '<anonymous>'}`,
+                        ];
+                    }
+                    return [`unexpected:${ts.SyntaxKind[statement.kind]}`];
+                }),
+                `${ownerPath}: exact top-level inventory`,
+            ).toEqual([
+                'type:MediaRemoteStreamRow',
+                'function:MediaConsolePanel',
+            ]);
+            expect.soft(
+                ownerSource,
+                `${ownerPath}: no reverse/App/CSS/barrel edge`,
+            ).not.toMatch(
+                /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"]|^\s*export\s+(?:\*|{)[^;]*\s+from\s+)/m,
+            );
+
+            const hiddenImportTypeEdges: string[] = [];
+            const visitImportTypes = (node: ts.Node): void => {
+                if (ts.isImportTypeNode(node)) {
+                    hiddenImportTypeEdges.push(node.getText(ownerAst));
+                }
+                ts.forEachChild(node, visitImportTypes);
+            };
+            visitImportTypes(ownerAst);
+            expect.soft(
+                hiddenImportTypeEdges,
+                `${ownerPath}: no hidden ImportTypeNode edges`,
+            ).toEqual([]);
+
+            const ownerConsumers = sourceFilesUnder(
+                'apps/rallar-black-box/src',
+            ).filter((sourcePath) => {
+                if (sourcePath === ownerPath) return false;
+                const sourceFile = task9aSourceFile(
+                    sourcePath,
+                    repositorySource(sourcePath),
+                );
+                return task9aImportEdges(sourceFile).some((edge) => {
+                    const moduleImport = edge.slice(0, edge.indexOf('|'));
+                    if (!moduleImport.startsWith('.')) return false;
+                    return relative(
+                        repositoryRoot,
+                        resolve(
+                            resolve(repositoryRoot, sourcePath),
+                            '..',
+                            moduleImport,
+                        ),
+                    ) === ownerPath;
+                });
+            });
+            expect.soft(
+                ownerConsumers,
+                'App is the only Media console owner consumer',
+            ).toEqual([appSourcePath]);
+
+            const ownerPaths = new Set<string>([ownerPath]);
+            for (const edge of task9aImportEdges(ownerAst)) {
+                const moduleImport = edge.slice(0, edge.indexOf('|'));
+                if (!moduleImport.startsWith('.')) continue;
+                const dependency = relative(
+                    repositoryRoot,
+                    resolve(
+                        resolve(repositoryRoot, ownerPath),
+                        '..',
+                        moduleImport,
+                    ),
+                );
+                if (existsSync(resolve(repositoryRoot, dependency))) {
+                    ownerPaths.add(dependency);
+                }
+            }
+            const graph = new Map<string, readonly string[]>();
+            for (const path of ownerPaths) {
+                const sourceFile = task9aSourceFile(
+                    path,
+                    repositorySource(path),
+                );
+                graph.set(
+                    path,
+                    task9aImportEdges(sourceFile)
+                        .map((edge) => edge.slice(0, edge.indexOf('|')))
+                        .filter((moduleImport) =>
+                            moduleImport.startsWith('.')
+                        )
+                        .map((moduleImport) => relative(
+                            repositoryRoot,
+                            resolve(
+                                resolve(repositoryRoot, path),
+                                '..',
+                                moduleImport,
+                            ),
+                        ))
+                        .filter((dependency) => ownerPaths.has(dependency)),
+                );
+            }
+            const active = new Set<string>();
+            const visited = new Set<string>();
+            const cycles: string[] = [];
+            const visit = (path: string): void => {
+                if (active.has(path)) {
+                    cycles.push(path);
+                    return;
+                }
+                if (visited.has(path)) return;
+                active.add(path);
+                for (const dependency of graph.get(path) ?? []) {
+                    visit(dependency);
+                }
+                active.delete(path);
+                visited.add(path);
+            };
+            for (const path of ownerPaths) visit(path);
+            expect.soft(
+                cycles,
+                'Media owner dependency graph has no cycles',
+            ).toEqual([]);
+        }
+
+        const appMediaImports = task9aImportEdges(appAst).filter((edge) =>
+            edge.startsWith('./legacy/diagnostics/media/')
+        );
+        expect.soft(
+            appMediaImports,
+            'App imports only the Media panel owner',
+        ).toEqual([
+            `${ownerModuleImport}|value:MediaConsolePanel`,
+        ]);
+
+        const appRemoteStreamRow = appAst.statements.find(
+            (statement): statement is ts.TypeAliasDeclaration =>
+                ts.isTypeAliasDeclaration(statement) &&
+                statement.name.text === 'MediaRemoteStreamRow',
+        );
+        const appPanel = appAst.statements.find(
+            (statement): statement is ts.FunctionDeclaration =>
+                ts.isFunctionDeclaration(statement) &&
+                statement.name?.text === 'MediaConsolePanel',
+        );
+        expect.soft(
+            Boolean(appRemoteStreamRow),
+            'App has no local MediaRemoteStreamRow',
+        ).toBe(false);
+        expect.soft(
+            Boolean(appPanel),
+            'App has no local MediaConsolePanel',
+        ).toBe(false);
+
+        const declarationSource = ownerAst ?? appAst;
+        const remoteStreamRow = declarationSource.statements.find(
+            (statement): statement is ts.TypeAliasDeclaration =>
+                ts.isTypeAliasDeclaration(statement) &&
+                statement.name.text === 'MediaRemoteStreamRow',
+        );
+        expect.soft(
+            remoteStreamRow,
+            'MediaRemoteStreamRow remains in the owner/App fallback',
+        ).toBeDefined();
+        if (remoteStreamRow) {
+            expect.soft(
+                task9aAstFingerprint([
+                    remoteStreamRow.name,
+                    remoteStreamRow.type,
+                ]),
+                'exact private MediaRemoteStreamRow semantics',
+            ).toBe('e12a15636053f71a2c612dbdf981400766f34987a21dfa596308856e288d9a30');
+            expect.soft(
+                task9aAstFingerprint([remoteStreamRow]),
+                'exact private MediaRemoteStreamRow declaration',
+            ).toBe('6e5d8fe210e051a8ccb2b475a8f357538d0a9ffab28563255760cb8edfe7e6a0');
+        }
+
+        const panel = declarationSource.statements.find(
+            (statement): statement is ts.FunctionDeclaration =>
+                ts.isFunctionDeclaration(statement) &&
+                statement.name?.text === 'MediaConsolePanel',
+        );
+        expect.soft(
+            panel?.body,
+            'MediaConsolePanel remains in the owner/App fallback',
+        ).toBeDefined();
+        if (panel?.body) {
+            expect.soft(
+                task9aAstFingerprint([
+                    panel.name!,
+                    ...panel.parameters,
+                    panel.body,
+                ]),
+                'exact complete MediaConsolePanel component',
+            ).toBe('3e2787aa128ba46670b467204b3853bdc68079b8e2daad14f2e6f991a4f7d4e0');
+            const parameter = panel.parameters[0];
+            const parameterKeys = parameter &&
+                    ts.isObjectBindingPattern(parameter.name)
+                ? parameter.name.elements.map((element) =>
+                      element.name.getText(declarationSource)
+                  )
+                : [];
+            expect.soft(
+                panel.parameters,
+                'MediaConsolePanel has one exact props parameter',
+            ).toHaveLength(1);
+            expect.soft(
+                parameterKeys,
+                'exact MediaConsolePanel prop order',
+            ).toEqual([
+                'state',
+                'bootstrap',
+                'authSession',
+                'globalValues',
+            ]);
+            expect.soft(
+                parameter && parameter.type
+                    ? task9aAstFingerprint([
+                          parameter.name,
+                          parameter.type,
+                      ])
+                    : '',
+                'exact four-prop MediaConsolePanel contract',
+            ).toBe('e9015ce65973f4708f5c4b1a6b7902da460356d5df2117345871a4a16fa16bc9');
+            const unsafeProps = parameter &&
+                    ts.isObjectBindingPattern(parameter.name)
+                ? parameter.name.elements.filter((element) =>
+                      Boolean(
+                          element.propertyName ||
+                          element.initializer ||
+                          element.dotDotDotToken,
+                      )
+                  )
+                : [];
+            expect.soft(
+                unsafeProps,
+                'Media props have no aliases, defaults, or rest escape',
+            ).toEqual([]);
+
+            const statements = [...panel.body.statements];
+            const returnIndex = statements.findIndex(ts.isReturnStatement);
+            expect.soft(
+                statements,
+                'complete Media component statement inventory',
+            ).toHaveLength(24);
+            expect.soft(
+                returnIndex,
+                'Media component final return index',
+            ).toBe(23);
+            expect.soft(
+                task9aAstFingerprint(statements.slice(0, returnIndex)),
+                'exact Media pre-return controller and actions',
+            ).toBe('6d18bfa5b2f70f1cc7c15725015aa1f8c5aa9caea3e2a51490bea8294d3f7e97');
+
+            const hookCalls: string[] = [];
+            const visitHooks = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    /^use[A-Z]/.test(node.expression.text)
+                ) {
+                    hookCalls.push(node.expression.text);
+                }
+                ts.forEachChild(node, visitHooks);
+            };
+            visitHooks(panel);
+            expect.soft(
+                hookCalls,
+                'exact Media hook inventory and order',
+            ).toEqual([
+                'useState',
+                'useState',
+                'useState',
+                'useState',
+                'useState',
+                'useState',
+                'useState',
+                'useState',
+                'useRef',
+                'useEffect',
+            ]);
+
+            const effectStatement = statements[12];
+            const effectCall = effectStatement &&
+                    ts.isExpressionStatement(effectStatement) &&
+                    ts.isCallExpression(effectStatement.expression)
+                ? effectStatement.expression
+                : undefined;
+            expect.soft(
+                effectCall ? task9aAstFingerprint([effectCall]) : '',
+                'exact Media cleanup effect',
+            ).toBe('c1da1e42265fa0d591c2a8d5e22bfeea9e5ec99261ce69216e1b1c8b735bea05');
+            const cleanup = effectCall &&
+                    effectCall.arguments[0] &&
+                    ts.isArrowFunction(effectCall.arguments[0]) &&
+                    ts.isArrowFunction(effectCall.arguments[0].body)
+                ? effectCall.arguments[0].body
+                : undefined;
+            const cleanupBody = cleanup && ts.isBlock(cleanup.body)
+                ? cleanup.body
+                : undefined;
+            expect.soft(
+                cleanupBody?.statements.map((statement) =>
+                    statement.getText(declarationSource)
+                ) ?? [],
+                'Media cleanup owns the remote-stream unsubscribe',
+            ).toEqual(['unsubscribeRef.current?.();']);
+            expect.soft(
+                effectCall?.arguments[1] &&
+                        ts.isArrayLiteralExpression(effectCall.arguments[1])
+                    ? effectCall.arguments[1].elements
+                    : undefined,
+                'Media cleanup effect has an empty dependency list',
+            ).toHaveLength(0);
+
+            const actionInventory = statements.slice(13, 23).map(
+                (statement) => {
+                    if (!ts.isVariableStatement(statement)) {
+                        return `unexpected:${ts.SyntaxKind[statement.kind]}`;
+                    }
+                    const declaration =
+                        statement.declarationList.declarations[0];
+                    return declaration && ts.isIdentifier(declaration.name)
+                        ? declaration.name.text
+                        : 'unexpected-binding';
+                },
+            );
+            expect.soft(
+                actionInventory,
+                'exact Media action declaration topology',
+            ).toEqual([
+                'recordMediaEvent',
+                'withFacade',
+                'runMediaAction',
+                'attachLocal',
+                'toggleAudio',
+                'toggleVideo',
+                'stopLocal',
+                'applyPolicy',
+                'subscribeRemote',
+                'copyDiagnostics',
+            ]);
+            const mediaMethodCalls: string[] = [];
+            const visitMediaActions = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isPropertyAccessExpression(node.expression) &&
+                    ts.isPropertyAccessExpression(node.expression.expression) &&
+                    ts.isIdentifier(node.expression.expression.expression) &&
+                    node.expression.expression.expression.text === 'facade' &&
+                    node.expression.expression.name.text === 'media'
+                ) {
+                    mediaMethodCalls.push(node.expression.name.text);
+                }
+                ts.forEachChild(node, visitMediaActions);
+            };
+            visitMediaActions(panel);
+            expect.soft(
+                mediaMethodCalls,
+                'exact facade.media action topology',
+            ).toEqual([
+                'setLocalStream',
+                'setAudioEnabled',
+                'setVideoEnabled',
+                'stopLocal',
+                'setPolicy',
+                'onRemoteStream',
+            ]);
+
+            const returnExpression = task9aReturnExpression(panel);
+            expect.soft(
+                task9aAstFingerprint([returnExpression]),
+                'Media owner owns exact legacy JSX AST',
+            ).toBe('c15fce568cc477e6ecf7bc04543e8efea40129bdc6977bb7b26b410b1ba69c8e');
+            expect.soft(
+                task9aJsxRuntimeFingerprint(returnExpression),
+                'Media owner owns exact legacy compiled JSX',
+            ).toBe('a5e7a53320ab6e36bbd71120e27d6211806dd6c6e6fbc5d3843f196d6e31aebf');
+        }
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'MediaConsolePanel');
+        expect.soft(
+            mounts,
+            'one unconditional hidden-tab Media panel mount',
+        ).toHaveLength(1);
+        expect.soft(
+            task9aAstFingerprint(mounts),
+            'exact Media App mount',
+        ).toBe('369eea2a6aa46ff8e36f09ae7ef82f0c6469d79827785454a22581d13a0dc9d2');
+        let ancestor: ts.Node | undefined = mounts[0];
+        while (ancestor && !ts.isJsxElement(ancestor)) {
+            ancestor = ancestor.parent;
+        }
+        expect.soft(
+            ancestor ? task9aAstFingerprint([ancestor]) : '',
+            'exact hidden-capable Media ancestor',
+        ).toBe('012aa1ba347e7d4ad05e48f65274668bcec8031b1031832bddacf3ae1c47b1cf');
+        const conditionalMountAncestors: string[] = [];
+        let current: ts.Node | undefined = mounts[0]?.parent;
+        while (current && current !== app) {
+            if (
+                ts.isConditionalExpression(current) ||
+                (ts.isBinaryExpression(current) &&
+                    current.operatorToken.kind ===
+                        ts.SyntaxKind.AmpersandAmpersandToken)
+            ) {
+                conditionalMountAncestors.push(ts.SyntaxKind[current.kind]);
+            }
+            current = current.parent;
+        }
+        expect.soft(
+            conditionalMountAncestors,
+            'Media panel stays mounted while its tab is hidden',
+        ).toEqual([]);
+        expect.soft(
+            task9aAstFingerprint([app]),
+            'unchanged App function through Media extraction',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(
+            appSource,
+            'no Media lazy/Suspense lifetime cutover',
+        ).not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'Media extraction leaves the complete stylesheet unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
     it('keeps distributed compare formatters in the canonical time module', () => {
         const panelSource = repositorySource(
             'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunComparePanel.tsx',

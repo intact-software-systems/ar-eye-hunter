@@ -116,6 +116,10 @@ const webSocketPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterPanel.tsx',
     import.meta.url,
 );
+const mediaConsolePanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/media/MediaConsolePanel.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -250,6 +254,17 @@ function webSocketCommandCenterOwnerSource(source: string): string {
     ].join('\n');
 }
 
+function mediaConsoleOwnerSource(source: string): string {
+    const fallback = existsSync(mediaConsolePanelSourcePath)
+        ? ''
+        : sourceBetween(
+              source,
+              'function MediaConsolePanel',
+              'function AuthCommandCenterPanel',
+          );
+    return sourceOrFallback(mediaConsolePanelSourcePath, fallback);
+}
+
 describe('rallar-black-box Rallar mode boundary', () => {
     it('does not expose black-box-runner command tabs in Rallar mode', () => {
         expect(appTabsForMode('rallar').map(tab => tab.id)).not.toEqual(
@@ -299,8 +314,14 @@ describe('rallar-black-box Rallar mode boundary', () => {
             diagnostics.topologyPanel,
             webSocketCommandCenterOwnerSource(source),
             rtcRealtimeOwnerSource(source),
-            sourceBetween(source, 'function RallarDataPanel', 'function MediaConsolePanel'),
-            sourceBetween(source, 'function MediaConsolePanel', 'function AuthCommandCenterPanel'),
+            sourceBetween(
+                source,
+                'function RallarDataPanel',
+                existsSync(mediaConsolePanelSourcePath)
+                    ? 'function AuthCommandCenterPanel'
+                    : 'function MediaConsolePanel',
+            ),
+            mediaConsoleOwnerSource(source),
             sourceBetween(source, 'function AuthCommandCenterPanel', 'function RoomsClientsPanel'),
             sourceBetween(source, 'function RoomsClientsPanel', 'function RallarServerRequestFeedbackPanel'),
             sourceBetween(
