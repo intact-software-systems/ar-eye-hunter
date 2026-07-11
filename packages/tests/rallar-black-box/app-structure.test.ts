@@ -41,6 +41,20 @@ const rallarServerViewSourcePath =
     'apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerView.tsx';
 const rallarServerPanelSourcePath =
     'apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerPanel.tsx';
+const crdtContractsSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/crdt/crdt-contracts.ts';
+const crdtEditorControllerSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/crdt/use-crdt-editor-controller.ts';
+const crdtEditorBoardViewSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorBoardView.tsx';
+const crdtEditorEntitiesViewSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorEntitiesView.tsx';
+const crdtEditorViewSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorView.tsx';
+const crdtHealthControllerSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/crdt/use-crdt-health-controller.ts';
+const crdtHealthPanelSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtHealthPanel.tsx';
 const extractedModulePaths = [
     'apps/rallar-black-box/src/legacy/shell/browser-ui-storage.ts',
     'apps/rallar-black-box/src/legacy/shell/navigation.ts',
@@ -94,7 +108,21 @@ const presentationModules = [
     {
         path: 'apps/rallar-black-box/src/legacy/shared/json-presentation.ts',
         moduleImport: './legacy/shared/json-presentation.ts',
-        seams: ['json', 'parseJsonText', 'splitCsvValues'],
+        seams: ['parseJsonText', 'splitCsvValues'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/json-presentation.ts',
+        importerPath: existsSync(
+            resolve(repositoryRoot, crdtHealthControllerSourcePath),
+        )
+            ? crdtHealthControllerSourcePath
+            : appSourcePath,
+        moduleImport: existsSync(
+            resolve(repositoryRoot, crdtHealthControllerSourcePath),
+        )
+            ? '../../shared/json-presentation.ts'
+            : './legacy/shared/json-presentation.ts',
+        seams: ['json'],
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/redaction-presentation.ts',
@@ -14068,7 +14096,6 @@ describe('rallar-black-box app source ownership', () => {
                 ).toBe(expectedHash);
             }
         }
-
         expect.soft(
             movedNames.filter((name) => findDeclaration(appAst, name)),
             'App owns none of the Rooms and Clients R1 declarations',
@@ -15283,6 +15310,948 @@ describe('rallar-black-box app source ownership', () => {
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
                 .digest('hex'),
             'Rallar Server extraction leaves the stylesheet unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
+    it('extracts the stateful CRDT editor and health surfaces into focused owners', () => {
+        const ownerPaths = [
+            crdtContractsSourcePath,
+            crdtEditorControllerSourcePath,
+            crdtEditorBoardViewSourcePath,
+            crdtEditorEntitiesViewSourcePath,
+            crdtEditorViewSourcePath,
+            crdtHealthControllerSourcePath,
+            crdtHealthPanelSourcePath,
+        ] as const;
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const ownerAsts = new Map<string, ts.SourceFile>();
+
+        for (const ownerPath of ownerPaths) {
+            const present = existsSync(resolve(repositoryRoot, ownerPath));
+            expect.soft(present, `${ownerPath}: owner exists`).toBe(true);
+            if (present) {
+                ownerAsts.set(
+                    ownerPath,
+                    task9aSourceFile(ownerPath, repositorySource(ownerPath)),
+                );
+            }
+        }
+
+        const expectedImports = new Map<string, readonly string[]>([
+            [
+                crdtContractsSourcePath,
+                [
+                    '../../../crdt-editor.ts|type:CrdtEditorValue',
+                    '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
+                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                    '@shared/crdt/crdt-types.ts|type:RallarCrdtOperationBatch',
+                    '@shared-web/browser/rallar-crdt.ts|type:RallarCrdtDocument',
+                ].sort(),
+            ],
+            [
+                crdtEditorControllerSourcePath,
+                [
+                    '../../../client-defaults.ts|value:RALLAR_BLACK_BOX_CLIENT_DEFAULTS',
+                    '../../../crdt-editor.ts|type:CrdtEditorTransport,type:CrdtEditorValue,type:CrdtEditorView,value:createCrdtEditorInitialValue',
+                    '../../../direct-rallar-operations.ts|value:createDirectRallarRuntimeEvent',
+                    '../../../runtime-store.ts|value:rallarBlackBoxRuntimeStore',
+                    '../../rallar/load-browser-rallar-facade.ts|value:loadBrowserRallarFacade',
+                    '../../shared/record-value.ts|value:recordValue->optionalRecord',
+                    './crdt-contracts.ts|type:CrdtEditorDocument,type:CrdtPanelInput',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestSeverity',
+                    '@shared/crdt/crdt-types.ts|type:RallarCrdtOperationBatch,type:RallarCrdtTransportStrategy',
+                    'react|value:useEffect,value:useRef,value:useState',
+                ].sort(),
+            ],
+            [
+                crdtEditorBoardViewSourcePath,
+                [
+                    '../../../crdt-editor.ts|value:addCrdtEditorCardBatch,value:addCrdtEditorColumnBatch,value:addCrdtEditorTagBatch,value:crdtEditorOperationGroupId,value:deleteCrdtEditorCardBatch,value:moveCrdtEditorCardBatch,value:removeCrdtEditorTagBatch,value:renameCrdtEditorColumnBatch,value:updateCrdtEditorCardStatusBatch',
+                    './use-crdt-editor-controller.ts|type:CrdtEditorControllerModel',
+                ].sort(),
+            ],
+            [
+                crdtEditorEntitiesViewSourcePath,
+                [
+                    '../../../crdt-editor.ts|value:addCrdtEditorEntityBatch,value:addCrdtEditorEntityScoreBatch,value:changeCrdtEditorEntityHealthBatch,value:crdtEditorOperationGroupId,value:setCrdtEditorCooldownMinBatch,value:updateCrdtEditorEntityBatch',
+                    './use-crdt-editor-controller.ts|type:CrdtEditorControllerModel',
+                ].sort(),
+            ],
+            [
+                crdtEditorViewSourcePath,
+                [
+                    '../../../crdt-editor.ts|type:CrdtEditorTransport,value:CRDT_EDITOR_TRANSPORTS,value:crdtEditorOperationGroupId',
+                    '../../shared/Metric.tsx|value:Metric',
+                    '../../shared/redaction-presentation.ts|value:redactedJson',
+                    './CrdtEditorBoardView.tsx|value:CrdtEditorBoardView',
+                    './CrdtEditorEntitiesView.tsx|value:CrdtEditorEntitiesView',
+                    './crdt-contracts.ts|type:CrdtPanelInput',
+                    './use-crdt-editor-controller.ts|type:CrdtEditorControllerModel,value:useCrdtEditorController',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                ].sort(),
+            ],
+            [
+                crdtHealthControllerSourcePath,
+                [
+                    '../../shared/json-presentation.ts|value:json',
+                    './crdt-contracts.ts|type:CrdtAdminDocumentStatus,type:CrdtAdminListResult,type:CrdtPanelInput',
+                    'react|value:useState',
+                ].sort(),
+            ],
+            [
+                crdtHealthPanelSourcePath,
+                [
+                    '../../shared/Metric.tsx|value:Metric',
+                    '../../shared/redaction-presentation.ts|value:redactedJson',
+                    '../../shared/time-format.ts|value:formatTime',
+                    './CrdtEditorView.tsx|value:CrdtEditorPanel',
+                    './crdt-contracts.ts|type:CrdtPanelInput',
+                    './use-crdt-health-controller.ts|type:CrdtHealthControllerModel,value:useCrdtHealthController',
+                ].sort(),
+            ],
+        ]);
+        const expectedExports = new Map<string, readonly string[]>([
+            [
+                crdtContractsSourcePath,
+                [
+                    'type:CrdtAdminDocumentStatus',
+                    'type:CrdtAdminListResult',
+                    'type:CrdtEditorDocument',
+                    'type:CrdtPanelInput',
+                ].sort(),
+            ],
+            [
+                crdtEditorControllerSourcePath,
+                [
+                    'type:CrdtEditorControllerModel',
+                    'value:useCrdtEditorController',
+                ],
+            ],
+            [crdtEditorBoardViewSourcePath, ['value:CrdtEditorBoardView']],
+            [
+                crdtEditorEntitiesViewSourcePath,
+                ['value:CrdtEditorEntitiesView'],
+            ],
+            [
+                crdtEditorViewSourcePath,
+                ['value:CrdtEditorPanel', 'value:CrdtEditorView'].sort(),
+            ],
+            [
+                crdtHealthControllerSourcePath,
+                [
+                    'type:CrdtHealthControllerModel',
+                    'value:useCrdtHealthController',
+                ],
+            ],
+            [crdtHealthPanelSourcePath, ['value:CrdtHealthPanel']],
+        ]);
+        const expectedInventories = new Map<string, readonly string[]>([
+            [
+                crdtContractsSourcePath,
+                [
+                    'type:CrdtPanelInput',
+                    'type:CrdtAdminDocumentStatus',
+                    'type:CrdtAdminListResult',
+                    'type:CrdtEditorDocument',
+                ],
+            ],
+            [
+                crdtEditorControllerSourcePath,
+                [
+                    'type:BrowserRallarFacade',
+                    'function:useCrdtEditorController',
+                    'type:CrdtEditorControllerModel',
+                ],
+            ],
+            [crdtEditorBoardViewSourcePath, ['function:CrdtEditorBoardView']],
+            [
+                crdtEditorEntitiesViewSourcePath,
+                ['function:CrdtEditorEntitiesView'],
+            ],
+            [
+                crdtEditorViewSourcePath,
+                ['function:CrdtEditorView', 'function:CrdtEditorPanel'],
+            ],
+            [
+                crdtHealthControllerSourcePath,
+                [
+                    'function:useCrdtHealthController',
+                    'type:CrdtHealthControllerModel',
+                ],
+            ],
+            [crdtHealthPanelSourcePath, ['function:CrdtHealthPanel']],
+        ]);
+        const lineCaps = new Map<string, number>([
+            [crdtContractsSourcePath, 90],
+            [crdtEditorControllerSourcePath, 420],
+            [crdtEditorBoardViewSourcePath, 360],
+            [crdtEditorEntitiesViewSourcePath, 310],
+            [crdtEditorViewSourcePath, 360],
+            [crdtHealthControllerSourcePath, 420],
+            [crdtHealthPanelSourcePath, 350],
+        ]);
+        const inventory = (sourceFile: ts.SourceFile): readonly string[] =>
+            sourceFile.statements.flatMap((statement) => {
+                if (ts.isImportDeclaration(statement)) return [];
+                if (ts.isTypeAliasDeclaration(statement)) {
+                    return [`type:${statement.name.text}`];
+                }
+                if (ts.isFunctionDeclaration(statement)) {
+                    return [`function:${statement.name?.text ?? '<anonymous>'}`];
+                }
+                return [`unexpected:${ts.SyntaxKind[statement.kind]}`];
+            });
+
+        for (const ownerPath of ownerPaths) {
+            const ownerAst = ownerAsts.get(ownerPath);
+            if (!ownerAst) continue;
+            const ownerSource = repositorySource(ownerPath);
+            expect.soft(
+                ownerSource.trimEnd().split(/\r?\n/).length,
+                `${ownerPath}: focused line cap`,
+            ).toBeLessThanOrEqual(lineCaps.get(ownerPath)!);
+            expect.soft(
+                task9aImportEdges(ownerAst),
+                `${ownerPath}: exact direct imports`,
+            ).toEqual(expectedImports.get(ownerPath));
+            expect.soft(
+                task9aExportSeams(ownerAst),
+                `${ownerPath}: exact direct exports`,
+            ).toEqual(expectedExports.get(ownerPath));
+            expect.soft(
+                inventory(ownerAst),
+                `${ownerPath}: exact top-level inventory`,
+            ).toEqual(expectedInventories.get(ownerPath));
+            expect.soft(
+                ownerSource,
+                `${ownerPath}: no reverse/App/CSS/barrel edge`,
+            ).not.toMatch(
+                /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"]|^\s*export\s+(?:\*|{)[^;]*\s+from\s+)/m,
+            );
+        }
+
+        if (ownerAsts.size === ownerPaths.length) {
+            const consumers = new Map(
+                ownerPaths.map((ownerPath) => [
+                    ownerPath,
+                    sourceFilesUnder('apps/rallar-black-box/src')
+                        .filter((sourcePath) => {
+                            if (sourcePath === ownerPath) return false;
+                            const sourceFile = task9aSourceFile(
+                                sourcePath,
+                                repositorySource(sourcePath),
+                            );
+                            return task9aModuleSpecifiers(sourceFile).some(
+                                (moduleImport) =>
+                                    task9aResolveRelativeTypeScriptDependency(
+                                        sourcePath,
+                                        moduleImport,
+                                        (path) =>
+                                            existsSync(resolve(repositoryRoot, path)),
+                                    ) === ownerPath,
+                            );
+                        })
+                        .sort(),
+                ]),
+            );
+            expect.soft(consumers.get(crdtContractsSourcePath)).toEqual([
+                crdtEditorControllerSourcePath,
+                crdtEditorViewSourcePath,
+                crdtHealthControllerSourcePath,
+                crdtHealthPanelSourcePath,
+            ].sort());
+            expect.soft(consumers.get(crdtEditorControllerSourcePath)).toEqual([
+                crdtEditorBoardViewSourcePath,
+                crdtEditorEntitiesViewSourcePath,
+                crdtEditorViewSourcePath,
+            ].sort());
+            expect.soft(consumers.get(crdtEditorBoardViewSourcePath)).toEqual([
+                crdtEditorViewSourcePath,
+            ]);
+            expect.soft(consumers.get(crdtEditorEntitiesViewSourcePath)).toEqual([
+                crdtEditorViewSourcePath,
+            ]);
+            expect.soft(consumers.get(crdtEditorViewSourcePath)).toEqual([
+                crdtHealthPanelSourcePath,
+            ]);
+            expect.soft(consumers.get(crdtHealthControllerSourcePath)).toEqual([
+                crdtHealthPanelSourcePath,
+            ]);
+            expect.soft(consumers.get(crdtHealthPanelSourcePath)).toEqual([
+                appSourcePath,
+            ]);
+            const graph = task9aReachableRelativeTypeScriptGraph(
+                ownerPaths,
+                repositorySource,
+                (path) => existsSync(resolve(repositoryRoot, path)),
+            );
+            expect.soft(
+                task9aDependencyCycles(graph),
+                'CRDT owner dependency graph has no cycles',
+            ).toEqual([]);
+        }
+
+        const appCrdtImports = task9aImportEdges(appAst).filter((edge) =>
+            edge.startsWith('./legacy/diagnostics/crdt/'),
+        );
+        expect.soft(
+            appCrdtImports,
+            'App imports only the thin CrdtHealthPanel root',
+        ).toEqual([
+            './legacy/diagnostics/crdt/CrdtHealthPanel.tsx|value:CrdtHealthPanel',
+        ]);
+        const movedNames = [
+            'BrowserRallarFacade',
+            'CrdtAdminDocumentStatus',
+            'CrdtAdminListResult',
+            'CrdtEditorDocument',
+            'CrdtEditorPanel',
+            'CrdtHealthPanel',
+        ];
+        const appLocalNames = appAst.statements.flatMap((statement) => {
+            if (
+                (ts.isTypeAliasDeclaration(statement) ||
+                    ts.isFunctionDeclaration(statement)) &&
+                statement.name &&
+                movedNames.includes(statement.name.text)
+            ) {
+                return [statement.name.text];
+            }
+            return [];
+        });
+        const staleAppSeams = task9aImportEdges(appAst).filter((edge) =>
+            edge.startsWith('@shared/crdt/crdt-types.ts|') ||
+            edge.startsWith('@shared-web/browser/rallar-crdt.ts|') ||
+            edge.startsWith('./crdt-editor.ts|') ||
+            edge.includes('RallarBlackBoxTestSeverity') ||
+            edge.includes('createDirectRallarRuntimeEvent') ||
+            edge.includes('redactRallarBlackBoxValue') ||
+            (edge.startsWith('./legacy/shared/json-presentation.ts|') &&
+                /(?:^|,)value:json(?:,|$)/.test(edge.split('|')[1] ?? '')) ||
+            (edge.startsWith('./legacy/shared/time-format.ts|') &&
+                edge.includes('formatTime')),
+        );
+        expect.soft(
+            { appLocalNames, staleAppSeams },
+            'App owns no moved CRDT declarations or private seams',
+        ).toEqual({ appLocalNames: [], staleAppSeams: [] });
+
+        const findDeclaration = (
+            sourceFile: ts.SourceFile,
+            name: string,
+        ): ts.Statement | undefined =>
+            sourceFile.statements.find((statement) =>
+                (ts.isTypeAliasDeclaration(statement) &&
+                    statement.name.text === name) ||
+                (ts.isFunctionDeclaration(statement) &&
+                    statement.name?.text === name),
+            );
+        const contractsAst = ownerAsts.get(crdtContractsSourcePath) ?? appAst;
+        for (const [name, expectedHash] of [
+            [
+                'CrdtAdminDocumentStatus',
+                '6cec7ffd008f5e8251dba454f752af10617f81718c8ef9986d6a422453921325',
+            ],
+            [
+                'CrdtAdminListResult',
+                '1d86e91c24155a0cc7b501ca61a06ca148169bcc90c4084b3f9ae7e904df4359',
+            ],
+            [
+                'CrdtEditorDocument',
+                '1e2b027080145ab71aefddcca07b4e118fe227aac3530bcdb0674aabca74d221',
+            ],
+        ] as const) {
+            const declaration = findDeclaration(contractsAst, name);
+            expect.soft(declaration, `${name}: owner/App fallback`).toBeDefined();
+            if (declaration) {
+                expect.soft(
+                    task9aMoveOnlyDeclarationFingerprint(declaration),
+                    `${name}: exact move`,
+                ).toBe(expectedHash);
+            }
+        }
+        if (ownerAsts.has(crdtContractsSourcePath)) {
+            const panelInput = findDeclaration(contractsAst, 'CrdtPanelInput');
+            const panelInputMembers = panelInput &&
+                    ts.isTypeAliasDeclaration(panelInput) &&
+                    ts.isTypeReferenceNode(panelInput.type) &&
+                    panelInput.type.typeArguments?.[0] &&
+                    ts.isTypeLiteralNode(panelInput.type.typeArguments[0])
+                ? panelInput.type.typeArguments[0].members
+                : [];
+            expect.soft(
+                panelInputMembers.map((member) =>
+                    ts.isPropertySignature(member)
+                        ? `${member.name.getText(contractsAst)}${member.questionToken ? '?' : ''}:${member.type?.getText(contractsAst)}`
+                        : 'unexpected',
+                ),
+                'exact shared CRDT panel input contract',
+            ).toEqual([
+                'state:RallarBlackBoxTestState',
+                'bootstrap:RallarBlackBoxBootstrapConfig',
+                'authSession?:AuthSession',
+                'globalValues:CommandCenterGlobalValues',
+            ]);
+        }
+
+        const editorControllerAst =
+            ownerAsts.get(crdtEditorControllerSourcePath) ?? appAst;
+        const editorControllerName = ownerAsts.has(crdtEditorControllerSourcePath)
+            ? 'useCrdtEditorController'
+            : 'CrdtEditorPanel';
+        const editorController = task9aNamedFunction(
+            editorControllerAst,
+            editorControllerName,
+        );
+        const editorStatements = [...editorController.body!.statements];
+        expect.soft(
+            editorStatements,
+            'CRDT editor keeps 44 legacy statements plus one final return',
+        ).toHaveLength(45);
+        expect.soft(
+            task9aAstFingerprint(editorStatements.slice(0, 44)),
+            'exact complete CRDT editor controller before its model return',
+        ).toBe('62a4c6cf368d89ae203299e038f58ef3bceb265ecc8854c173199df5220b4486');
+        const hookCounts = {
+            useState: 0,
+            useMemo: 0,
+            useRef: 0,
+            useEffect: 0,
+            useCallback: 0,
+        };
+        const effectStatements: ts.Statement[] = [];
+        for (const statement of editorStatements.slice(0, 44)) {
+            const visit = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text in hookCounts
+                ) {
+                    hookCounts[
+                        node.expression.text as keyof typeof hookCounts
+                    ] += 1;
+                }
+                ts.forEachChild(node, visit);
+            };
+            visit(statement);
+            if (
+                ts.isExpressionStatement(statement) &&
+                ts.isCallExpression(statement.expression) &&
+                ts.isIdentifier(statement.expression.expression) &&
+                statement.expression.expression.text === 'useEffect'
+            ) {
+                effectStatements.push(statement);
+            }
+        }
+        expect.soft(hookCounts, 'exact CRDT editor hook topology').toEqual({
+            useState: 27,
+            useMemo: 0,
+            useRef: 2,
+            useEffect: 1,
+            useCallback: 0,
+        });
+        expect.soft(
+            effectStatements.map((statement) =>
+                task9aAstFingerprint([statement]),
+            ),
+            'exact CRDT editor unmount cleanup and empty dependencies',
+        ).toEqual([
+            'bc30231f5f1dc362a2315876361df234ed6b36140538fb8d3607c59063e1be1c',
+        ]);
+        const editorActionHashes = new Map([
+            ['recordCrdtEditorEvent', 'cb682ac037e3043ce7ff0ec811c59f3bf558a7c115eee69cec7334b4fb00f467'],
+            ['loadFacade', 'cdc51605f83a322d12cfaf59ff5fc91ba801e4bc7c1510c39afff546ee6a8385'],
+            ['openDocument', '34eb0f7e9443d56b2c95241b490b8ed1879ed5483df1183fbee71d82be2d3c22'],
+            ['runEditorAction', '3a4d5cfa86165fc95f8a43bd92511c54d8c82e70a773c0ebeb57ac8944a63126'],
+            ['applyBatch', '4f8fb9480dee8a8f68ef932ce917d3fa57f46ffcdcb661803275e3b5ed956aa9'],
+            ['closeDocument', 'cc9e266f277c059216e1c9bcc40a3fb6a5526aacf4eb5205c093a3da434610b5'],
+            ['destroyDocument', 'c6e00d011cb4fff2d927fe062cf39850de2e9a1c7d308f3833043e46ec21c7ab'],
+        ]);
+        const editorDeclarations = new Map<string, ts.VariableStatement>();
+        for (const statement of editorStatements.slice(0, 44)) {
+            if (!ts.isVariableStatement(statement)) continue;
+            for (const declaration of statement.declarationList.declarations) {
+                if (ts.isIdentifier(declaration.name)) {
+                    editorDeclarations.set(declaration.name.text, statement);
+                }
+            }
+        }
+        for (const [name, expectedHash] of editorActionHashes) {
+            const statement = editorDeclarations.get(name);
+            expect.soft(
+                statement ? task9aAstFingerprint([statement]) : '',
+                `${name}: exact CRDT editor controller action`,
+            ).toBe(expectedHash);
+        }
+        let editorControllerHasJsx = false;
+        const visitControllerJsx = (node: ts.Node): void => {
+            if (
+                ts.isJsxElement(node) ||
+                ts.isJsxSelfClosingElement(node) ||
+                ts.isJsxFragment(node)
+            ) editorControllerHasJsx = true;
+            ts.forEachChild(node, visitControllerJsx);
+        };
+        if (ownerAsts.has(crdtEditorControllerSourcePath)) {
+            visitControllerJsx(editorController);
+            expect.soft(editorControllerHasJsx, 'CRDT editor controller has no JSX')
+                .toBe(false);
+        }
+        const editorModelKeys = [
+            'documentName', 'setDocumentName', 'documentId', 'setDocumentId',
+            'transport', 'setTransport', 'persist', 'setPersist', 'tabSync',
+            'setTabSync', 'view', 'setView', 'newColumnTitle',
+            'setNewColumnTitle', 'newCardTitle', 'setNewCardTitle',
+            'selectedColumnId', 'setSelectedColumnId', 'selectedCardId',
+            'setSelectedCardId', 'cardStatus', 'setCardStatus', 'tagLabel',
+            'setTagLabel', 'entityId', 'setEntityId', 'entityType',
+            'setEntityType', 'entityX', 'setEntityX', 'entityY', 'setEntityY',
+            'entityStatus', 'setEntityStatus', 'entityDelta', 'setEntityDelta',
+            'cooldownMin', 'setCooldownMin', 'busyAction', 'error', 'opened',
+            'value', 'health', 'lastResult', 'lastBatch',
+            'lastOperationGroupId', 'providerReady', 'canUseLiveTransport',
+            'canRun', 'columns', 'entities', 'selectedColumn', 'selectedCard',
+            'runEditorAction', 'applyBatch', 'closeDocument', 'destroyDocument',
+        ];
+        if (ownerAsts.has(crdtEditorControllerSourcePath)) {
+            const modelStatement = editorStatements[44];
+            const model = modelStatement && ts.isReturnStatement(modelStatement)
+                ? modelStatement.expression
+                : undefined;
+            expect.soft(
+                model && ts.isObjectLiteralExpression(model)
+                    ? model.properties.map((property) =>
+                          ts.isShorthandPropertyAssignment(property)
+                              ? property.name.text
+                              : 'not-shorthand',
+                      )
+                    : [],
+                'exact explicit CRDT editor controller model',
+            ).toEqual(editorModelKeys);
+        }
+
+        const legacyEditor = ownerAsts.has(crdtEditorControllerSourcePath)
+            ? undefined
+            : editorController;
+        let legacyViewConditional: ts.ConditionalExpression | undefined;
+        if (legacyEditor) {
+            const visitConditional = (node: ts.Node): void => {
+                if (
+                    ts.isConditionalExpression(node) &&
+                    node.condition.getText(appAst) === "view === 'board'"
+                ) legacyViewConditional = node;
+                ts.forEachChild(node, visitConditional);
+            };
+            visitConditional(task9aReturnExpression(legacyEditor));
+            expect.soft(
+                task9aAstFingerprint([task9aReturnExpression(legacyEditor)]),
+                'exact complete legacy CRDT editor JSX fallback',
+            ).toBe('087503b961b591116bfd8d97043bb49df28bd58ce780824624642005fbc2a92e');
+        }
+        const unwrap = (expression: ts.Expression): ts.Expression => {
+            let current = expression;
+            while (ts.isParenthesizedExpression(current)) current = current.expression;
+            return current;
+        };
+        const boardExpression = ownerAsts.has(crdtEditorBoardViewSourcePath)
+            ? task9aReturnExpression(
+                  task9aNamedFunction(
+                      ownerAsts.get(crdtEditorBoardViewSourcePath)!,
+                      'CrdtEditorBoardView',
+                  ),
+              )
+            : legacyViewConditional
+              ? unwrap(legacyViewConditional.whenTrue)
+              : undefined;
+        const entitiesExpression = ownerAsts.has(crdtEditorEntitiesViewSourcePath)
+            ? task9aReturnExpression(
+                  task9aNamedFunction(
+                      ownerAsts.get(crdtEditorEntitiesViewSourcePath)!,
+                      'CrdtEditorEntitiesView',
+                  ),
+              )
+            : legacyViewConditional
+              ? unwrap(legacyViewConditional.whenFalse)
+              : undefined;
+        expect.soft(
+            boardExpression ? task9aJsxRuntimeFingerprint(boardExpression) : '',
+            'exact compiled CRDT board workbench subtree',
+        ).toBe('d974e593f55f6fdf6f4f7764d631dc1fc8a13e7f68db460f11559dc6a7c56272');
+        expect.soft(
+            entitiesExpression
+                ? task9aJsxRuntimeFingerprint(entitiesExpression)
+                : '',
+            'exact compiled CRDT entities workbench subtree',
+        ).toBe('296745ea3cd5a433fcc94062eb28f8159aa8bc68ff6dc2fecf0b11266112a1ad');
+
+        const modelBindingKeys = (
+            declaration: ts.FunctionDeclaration,
+            sourceFile: ts.SourceFile,
+        ): readonly string[] => {
+            const candidates = declaration.body!.statements.flatMap((statement) =>
+                ts.isVariableStatement(statement)
+                    ? [...statement.declarationList.declarations]
+                    : [],
+            ).filter((candidate) =>
+                candidate.initializer?.getText(sourceFile) === 'model',
+            );
+            expect.soft(
+                candidates,
+                `${declaration.name?.text}: one model destructure`,
+            ).toHaveLength(1);
+            const candidate = candidates[0];
+            const elements = candidate && ts.isObjectBindingPattern(candidate.name)
+                ? [...candidate.name.elements]
+                : [];
+            expect.soft(
+                elements.filter((element) =>
+                    Boolean(
+                        element.propertyName ||
+                            element.initializer ||
+                            element.dotDotDotToken,
+                    ),
+                ),
+                `${declaration.name?.text}: safe model destructure`,
+            ).toEqual([]);
+            return elements.map((element) => element.name.getText(sourceFile));
+        };
+        if (
+            ownerAsts.has(crdtEditorBoardViewSourcePath) &&
+            ownerAsts.has(crdtEditorEntitiesViewSourcePath) &&
+            ownerAsts.has(crdtEditorViewSourcePath)
+        ) {
+            const boardView = task9aNamedFunction(
+                ownerAsts.get(crdtEditorBoardViewSourcePath)!,
+                'CrdtEditorBoardView',
+            );
+            const entitiesView = task9aNamedFunction(
+                ownerAsts.get(crdtEditorEntitiesViewSourcePath)!,
+                'CrdtEditorEntitiesView',
+            );
+            const editorViewAst = ownerAsts.get(crdtEditorViewSourcePath)!;
+            const editorView = task9aNamedFunction(editorViewAst, 'CrdtEditorView');
+            for (const view of [boardView, entitiesView, editorView]) {
+                expect.soft(
+                    view.body!.statements,
+                    `${view.name?.text}: one model destructure and one JSX return`,
+                ).toHaveLength(2);
+                expect.soft(
+                    view.body!.statements.findIndex(ts.isReturnStatement),
+                    `${view.name?.text}: one final top-level JSX return`,
+                ).toBe(1);
+                const forbidden: string[] = [];
+                const forbiddenNames = new Set([
+                    'fetch',
+                    'localStorage',
+                    'sessionStorage',
+                    'navigator',
+                    'XMLHttpRequest',
+                    'WebSocket',
+                    'loadBrowserRallarFacade',
+                    'rallarBlackBoxRuntimeStore',
+                ]);
+                const visitView = (node: ts.Node): void => {
+                    if (ts.isCallExpression(node)) {
+                        const name = ts.isIdentifier(node.expression)
+                            ? node.expression.text
+                            : ts.isPropertyAccessExpression(node.expression)
+                              ? node.expression.name.text
+                              : '';
+                        if (/^use[A-Z0-9]/.test(name)) forbidden.push(name);
+                    }
+                    if (ts.isIdentifier(node) && forbiddenNames.has(node.text)) {
+                        forbidden.push(node.text);
+                    }
+                    ts.forEachChild(node, visitView);
+                };
+                visitView(view);
+                expect.soft(
+                    forbidden,
+                    `${view.name?.text}: hook/network/store/side-effect free`,
+                ).toEqual([]);
+            }
+            const consumedKeys = new Set([
+                ...modelBindingKeys(boardView, boardView.getSourceFile()),
+                ...modelBindingKeys(entitiesView, entitiesView.getSourceFile()),
+                ...modelBindingKeys(editorView, editorViewAst),
+            ]);
+            expect.soft(
+                [...consumedKeys].sort(),
+                'CRDT editor views consume the exact controller model union',
+            ).toEqual([...editorModelKeys].sort());
+            const boardCalls = task9aJsxCalls(editorView, 'CrdtEditorBoardView');
+            const entitiesCalls = task9aJsxCalls(
+                editorView,
+                'CrdtEditorEntitiesView',
+            );
+            expect.soft(boardCalls, 'one focused CRDT board view call').toHaveLength(1);
+            expect.soft(entitiesCalls, 'one focused CRDT entities view call')
+                .toHaveLength(1);
+            for (const call of [...boardCalls, ...entitiesCalls]) {
+                expect.soft(
+                    call.attributes.properties.map((property) =>
+                        ts.isJsxAttribute(property)
+                            ? `${property.name.getText(editorViewAst)}=${property.initializer?.getText(editorViewAst)}`
+                            : 'spread',
+                    ),
+                    'focused CRDT editor subview receives only the exact model',
+                ).toEqual(['model={model}']);
+            }
+            let subviewConditional: ts.ConditionalExpression | undefined;
+            const visitSubviewConditional = (node: ts.Node): void => {
+                if (
+                    ts.isConditionalExpression(node) &&
+                    node.condition.getText(editorViewAst) === "view === 'board'"
+                ) subviewConditional = node;
+                ts.forEachChild(node, visitSubviewConditional);
+            };
+            visitSubviewConditional(task9aReturnExpression(editorView));
+            expect.soft(
+                subviewConditional &&
+                    task9aJsxCalls(subviewConditional.whenTrue, 'CrdtEditorBoardView')
+                        .length === 1 &&
+                    task9aJsxCalls(
+                        subviewConditional.whenFalse,
+                        'CrdtEditorEntitiesView',
+                    ).length === 1,
+                'CRDT editor preserves the exact board/entities conditional',
+            ).toBe(true);
+            const editorRoot = task9aReturnExpression(editorView);
+            const editorChildren = ts.isJsxElement(editorRoot)
+                ? [...editorRoot.children]
+                : [];
+            const conditionalChildIndex = editorChildren.findIndex(
+                (child) =>
+                    ts.isJsxExpression(child) &&
+                    child.expression === subviewConditional,
+            );
+            expect.soft(
+                conditionalChildIndex,
+                'CRDT editor keeps one in-place board/entities branch',
+            ).toBeGreaterThanOrEqual(0);
+            if (conditionalChildIndex >= 0) {
+                expect.soft(
+                    task9aAstFingerprint(
+                        editorChildren.slice(0, conditionalChildIndex),
+                    ),
+                    'exact CRDT editor shell, controls, actions, and status before the branch',
+                ).toBe(
+                    '7bb524d49bbeb737233d544ebd63c4e864ff46263ba9950f650fa7a2f5893777',
+                );
+                expect.soft(
+                    task9aAstFingerprint(
+                        editorChildren.slice(conditionalChildIndex + 1),
+                    ),
+                    'exact CRDT editor diagnostics and redaction after the branch',
+                ).toBe(
+                    'ab53684f0b3fc62edc487db06c5f530d20da0d6319f778961c8946e384f8c56f',
+                );
+            }
+
+            const editorPanel = task9aNamedFunction(editorViewAst, 'CrdtEditorPanel');
+            expect.soft(
+                editorPanel.body!.statements,
+                'thin CRDT editor root has one controller call and one View return',
+            ).toHaveLength(2);
+            const editorRootDeclaration = editorPanel.body!.statements[0];
+            const editorRootModel = editorRootDeclaration &&
+                    ts.isVariableStatement(editorRootDeclaration)
+                ? editorRootDeclaration.declarationList.declarations[0]
+                : undefined;
+            expect.soft(
+                editorRootModel?.initializer?.getText(editorViewAst) ?? '',
+                'thin CRDT editor root calls its controller with props exactly once',
+            ).toBe('useCrdtEditorController(props)');
+            const editorViewCalls = task9aJsxCalls(editorPanel, 'CrdtEditorView');
+            expect.soft(editorViewCalls, 'thin root returns one CRDT Editor View')
+                .toHaveLength(1);
+            expect.soft(
+                editorViewCalls[0]
+                    ? task9aReturnExpression(editorPanel)
+                    : undefined,
+                'thin CRDT editor root returns its View directly',
+            ).toBe(editorViewCalls[0]);
+            expect.soft(
+                editorViewCalls[0]?.attributes.properties.map((property) =>
+                    ts.isJsxAttribute(property)
+                        ? `${property.name.getText(editorViewAst)}=${property.initializer?.getText(editorViewAst)}`
+                        : 'spread',
+                ),
+                'thin CRDT editor root forwards exact View props',
+            ).toEqual([
+                'state={props.state}',
+                'authSession={props.authSession}',
+                'model={model}',
+            ]);
+        }
+
+        const healthControllerAst =
+            ownerAsts.get(crdtHealthControllerSourcePath) ?? appAst;
+        const healthControllerName = ownerAsts.has(crdtHealthControllerSourcePath)
+            ? 'useCrdtHealthController'
+            : 'CrdtHealthPanel';
+        const healthController = task9aNamedFunction(
+            healthControllerAst,
+            healthControllerName,
+        );
+        const healthStatements = [...healthController.body!.statements];
+        expect.soft(
+            healthStatements,
+            'CRDT health keeps 13 legacy statements plus one final return',
+        ).toHaveLength(14);
+        expect.soft(
+            task9aAstFingerprint(healthStatements.slice(0, 13)),
+            'exact complete CRDT health controller before its model return',
+        ).toBe('f2c37c32d29cfd0e2e2680638868c8273f0a5ba02b02ae7a13ac660ad21518ae');
+        const healthHookCounts = {
+            useState: 0,
+            useMemo: 0,
+            useRef: 0,
+            useEffect: 0,
+            useCallback: 0,
+        };
+        for (const statement of healthStatements.slice(0, 13)) {
+            const visit = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text in healthHookCounts
+                ) {
+                    healthHookCounts[
+                        node.expression.text as keyof typeof healthHookCounts
+                    ] += 1;
+                }
+                ts.forEachChild(node, visit);
+            };
+            visit(statement);
+        }
+        expect.soft(healthHookCounts, 'exact CRDT health hook topology').toEqual({
+            useState: 5,
+            useMemo: 0,
+            useRef: 0,
+            useEffect: 0,
+            useCallback: 0,
+        });
+        const healthModelKeys = [
+            'busyAction',
+            'error',
+            'documents',
+            'setSelectedDocumentKey',
+            'lastResult',
+            'selectedDocument',
+            'providerReady',
+            'canCallAdmin',
+            'copyAdminRecipe',
+            'refresh',
+            'runDocumentAction',
+        ];
+        if (ownerAsts.has(crdtHealthControllerSourcePath)) {
+            const modelStatement = healthStatements[13];
+            const model = modelStatement && ts.isReturnStatement(modelStatement)
+                ? modelStatement.expression
+                : undefined;
+            expect.soft(
+                model && ts.isObjectLiteralExpression(model)
+                    ? model.properties.map((property) =>
+                          ts.isShorthandPropertyAssignment(property)
+                              ? property.name.text
+                              : 'not-shorthand',
+                      )
+                    : [],
+                'exact explicit CRDT health controller model',
+            ).toEqual(healthModelKeys);
+        }
+        const healthPanelAst = ownerAsts.get(crdtHealthPanelSourcePath) ?? appAst;
+        const healthPanel = task9aNamedFunction(healthPanelAst, 'CrdtHealthPanel');
+        if (ownerAsts.has(crdtHealthPanelSourcePath)) {
+            expect.soft(
+                modelBindingKeys(healthPanel, healthPanelAst),
+                'CRDT health panel consumes the exact controller model',
+            ).toEqual(healthModelKeys);
+            const healthHookCalls: ts.CallExpression[] = [];
+            const visitHealthHooks = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text === 'useCrdtHealthController'
+                ) healthHookCalls.push(node);
+                ts.forEachChild(node, visitHealthHooks);
+            };
+            visitHealthHooks(healthPanel);
+            expect.soft(healthHookCalls, 'one CRDT health controller call')
+                .toHaveLength(1);
+            expect.soft(
+                healthHookCalls[0]?.arguments.map((argument) =>
+                    argument.getText(healthPanelAst),
+                ),
+                'CRDT health root forwards one exact props input',
+            ).toEqual(['props']);
+        }
+        expect.soft(
+            task9aAstFingerprint([task9aReturnExpression(healthPanel)]),
+            'exact complete CRDT health JSX and nested editor mount',
+        ).toBe('13c15bf14e47770518292c7909392824e398fe9dcd5ee75c968cea2be1ccb72b');
+        const nestedEditorCalls = task9aJsxCalls(healthPanel, 'CrdtEditorPanel');
+        expect.soft(nestedEditorCalls, 'one nested CRDT editor root').toHaveLength(1);
+        expect.soft(
+            task9aAstFingerprint(nestedEditorCalls),
+            'exact nested CRDT editor mount',
+        ).toBe('e0265f0cac400ea613e04688d246a7bb09e743abd0d9e358fefe61ab4fbce12f');
+        const nestedConditionalAncestors: string[] = [];
+        let nestedCurrent: ts.Node | undefined = nestedEditorCalls[0]?.parent;
+        while (nestedCurrent && nestedCurrent !== healthPanel) {
+            if (
+                ts.isConditionalExpression(nestedCurrent) ||
+                (ts.isBinaryExpression(nestedCurrent) &&
+                    nestedCurrent.operatorToken.kind ===
+                        ts.SyntaxKind.AmpersandAmpersandToken)
+            ) nestedConditionalAncestors.push(ts.SyntaxKind[nestedCurrent.kind]);
+            nestedCurrent = nestedCurrent.parent;
+        }
+        expect.soft(
+            nestedConditionalAncestors,
+            'nested CRDT editor remains unconditionally mounted',
+        ).toEqual([]);
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'CrdtHealthPanel');
+        expect.soft(mounts, 'one hidden-mounted CRDT health instance').toHaveLength(1);
+        expect.soft(task9aAstFingerprint(mounts), 'exact CRDT App mount')
+            .toBe('13a87ad38fad67279f58bfc688da79c692bb1cc9a5e84940f175da3244a83581');
+        let ancestor: ts.Node | undefined = mounts[0];
+        while (ancestor && !ts.isJsxElement(ancestor)) ancestor = ancestor.parent;
+        expect.soft(
+            ancestor ? task9aAstFingerprint([ancestor]) : '',
+            'exact hidden CRDT tab-section ancestor',
+        ).toBe('3ec0c6c181bff352aecfe2800ad37fd977ed81a60aa5611fc97f3cd2dcf556b0');
+        const conditionalAncestors: string[] = [];
+        let current: ts.Node | undefined = mounts[0]?.parent;
+        while (current && current !== app) {
+            if (
+                ts.isConditionalExpression(current) ||
+                (ts.isBinaryExpression(current) &&
+                    current.operatorToken.kind ===
+                        ts.SyntaxKind.AmpersandAmpersandToken)
+            ) conditionalAncestors.push(ts.SyntaxKind[current.kind]);
+            current = current.parent;
+        }
+        expect.soft(
+            conditionalAncestors,
+            'CRDT health remains mounted while its tab is hidden',
+        ).toEqual([]);
+        expect.soft(
+            task9aAstFingerprint([app]),
+            'CRDT extraction leaves the App function unchanged',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'CRDT extraction leaves the stylesheet unchanged',
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
     });
 

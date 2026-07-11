@@ -152,6 +152,15 @@ const rallarServerOwnerSourcePaths = [
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerView.tsx',
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerPanel.tsx',
 ].map((path) => new URL(path, import.meta.url));
+const crdtOwnerSourcePaths = [
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/crdt-contracts.ts',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/use-crdt-editor-controller.ts',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorBoardView.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorEntitiesView.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorView.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/use-crdt-health-controller.ts',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtHealthPanel.tsx',
+].map((path) => new URL(path, import.meta.url));
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -366,6 +375,23 @@ function rallarServerOwnerSource(source: string): string {
     ].join('\n');
 }
 
+function crdtOwnerSource(source: string): string {
+    const extracted = crdtOwnerSourcePaths.every((path) => existsSync(path));
+    const fallback = extracted || !source.includes('type CrdtAdminDocumentStatus')
+        ? ''
+        : sourceBetween(
+              source,
+              'type CrdtAdminDocumentStatus',
+              existsSync(flowBuilderPanelSourcePath)
+                  ? 'export default function App'
+                  : 'function parseVariablesText',
+          );
+    return [
+        ...crdtOwnerSourcePaths.map((path) => sourceOrFallback(path, '')),
+        fallback,
+    ].join('\n');
+}
+
 describe('rallar-black-box Rallar mode boundary', () => {
     it('does not expose black-box-runner command tabs in Rallar mode', () => {
         expect(appTabsForMode('rallar').map(tab => tab.id)).not.toEqual(
@@ -420,6 +446,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             authCommandCenterOwnerSource(source),
             roomsClientsOwnerSource(source),
             rallarServerOwnerSource(source),
+            crdtOwnerSource(source),
         ].join('\n');
 
         expect(directPanels).not.toMatch(/executeManualCommand|executeManualCommands|executeCommandFromJson/);
