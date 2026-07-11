@@ -578,6 +578,39 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   proves this is not extraction drift; it remains explicit Iteration 12
   keyboard-accessibility debt.
 
+#### Iteration 1 Groups/Clients R2 checkpoint — `a26ffdb` (2026-07-11)
+
+- The 1,063-line stateful surface is now a focused four-owner composition:
+  `rooms-clients-request.ts` (51 lines),
+  `use-rooms-clients-controller.ts` (698), `RoomsClientsView.tsx` (534), and
+  `RoomsClientsPanel.tsx` (17). `App.tsx` is 4,711 lines and imports only the
+  thin root. The two request helpers, exact 44-statement controller, two memos,
+  sixteen states, two synchronization effects, REST/direct actions, derived
+  model, and legacy JSX moved without behavior changes. The App mount and
+  hidden tab-section ancestor remain exact, so drafts, results, sorts, filters,
+  and loaded state keep their documented hidden-mounted lifetime.
+- Untouched-production RED passed 38/39 app-structure tests with exactly seven
+  intended soft ownership failures while mode-boundary stayed green 8/8.
+  Final combined validation passed 88/88; typecheck/build passed (364 modules),
+  four independent mutations were caught, and two independent reviews
+  approved the extraction with no findings. The pre-existing large-chunk
+  warning remains (`index` 1,256.34 kB minified) for the later experience-route
+  code-splitting cutover rather than being represented as resolved here.
+- The in-app Browser inspection, preserved authenticated REST/direct-console
+  flow plus mobile guardrail (2/2), and temporary reduced-motion
+  desktop/portrait/landscape matrix (3/3) proved the exact DOM, one
+  hidden-mounted owner, draft/filter retention, operational sorting/filtering,
+  arrow-key selection, visible focus, CSS isolation, zero document overflow,
+  and no browser errors. The temporary QA spec was removed.
+- The exhaustive real Groups/Clients lifecycle was **skipped, not passed**, for
+  this exact reason: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed
+  apps/api-v1, apps/rallar-black-box-control-server, and
+  apps/rallar-black-box available.`
+- Preserved Rooms/Clients actions measure 42px at desktop, portrait, and
+  landscape. Together with the unchanged focus-handoff behavior, this remains
+  explicit Iteration 12 accessibility debt. No route, alias, public export,
+  server contract, navigation visibility, or cutover status changed in R2.
+
 #### Remaining risks and evidence ownership
 
 | Remaining risk | Owning iteration(s) | Mitigation and evidence target |
@@ -589,7 +622,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Retention preview safety | 8 | Add optional dry-run behavior without changing the destructive default, require explicit confirmation, and prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup`. |
 | Qualitative visual and performance gates lack executable thresholds | 2, 9, 12 | Iteration 2 records approved screenshot baselines and an executable drift budget in `recipe-console-shell.spec.ts`; Iteration 9 encodes bounded-render and interaction budgets in `recipe-console-scale.spec.ts`; Iteration 12 encodes viewport, keyboard, touch, reduced-motion, and non-hover gates in `recipe-console-accessibility.spec.ts`. |
 | Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
-| Preserved legacy Auth action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact Auth parity extraction unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
+| Preserved legacy Auth and Groups/Clients action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact parity extractions unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
 | Legacy tab arrow keys update selection without transferring DOM focus to the selected tab | 12 | Preserve Iteration 1 parity, then make roving focus follow keyboard selection and encode the behavior in `recipe-console-accessibility.spec.ts`. |
 | Local Node 26 differs from CI Node 24 | 1 and every code-changing iteration | Run the focused tests, typecheck, and build on CI Node 24; retain the local Node `26.5.0` result separately so version-specific differences remain visible. |
 | Live services and Postgres were unavailable or not exercised in Iteration 0 | 3-5, 8, 12 | Run the listed Deno control-server tests and configured Playwright/live distributed lifecycle, culminating in `npm run test:e2e:rallar-black-box:full-stack:real:distributed`; do not close live-service gates from mock or sandbox-only evidence. |
