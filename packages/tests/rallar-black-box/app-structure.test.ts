@@ -1968,6 +1968,13 @@ describe('rallar-black-box app source ownership', () => {
 
     it('keeps the advanced workbench leaves in exact focused owners', () => {
         const appSource = repositorySource(appSourcePath);
+        const manualRallarSectionPath =
+            'apps/rallar-black-box/src/legacy/runner/manual/ManualRallarSection.tsx';
+        const manualRallarSectionSource = existsSync(
+            resolve(repositoryRoot, manualRallarSectionPath),
+        )
+            ? repositorySource(manualRallarSectionPath)
+            : '';
         const localWorkbenchPath =
             'apps/rallar-black-box/src/legacy/runner/workbench/LocalWorkbenchSection.tsx';
         const workbenchOwners = [
@@ -2358,8 +2365,12 @@ describe('rallar-black-box app source ownership', () => {
 
         expect(
             [...appSource.matchAll(/<CommandHistoryPanel\b/g)],
-            'App.tsx: all command history consumers',
-        ).toHaveLength(3);
+            'App.tsx: non-manual command history consumer',
+        ).toHaveLength(1);
+        expect(
+            [...manualRallarSectionSource.matchAll(/<CommandHistoryPanel\b/g)],
+            'ManualRallarSection: canonical manual command history composition',
+        ).toHaveLength(1);
         expect(
             [...appSource.matchAll(/<ReportPanel\b/g)],
             'App.tsx: non-workbench report consumer',
@@ -2410,6 +2421,815 @@ describe('rallar-black-box app source ownership', () => {
             visit(targetPath);
         }
         expect(cycles, 'advanced workbench import cycles').toEqual([]);
+    });
+
+    it('keeps the manual Rallar domain in exact controlled owners', () => {
+        const appSource = repositorySource(appSourcePath);
+        const stringValuePath =
+            'apps/rallar-black-box/src/legacy/shared/string-value.ts';
+        const defaultsPath =
+            'apps/rallar-black-box/src/legacy/runner/manual/manual-workbench-defaults.ts';
+        const hookPath =
+            'apps/rallar-black-box/src/legacy/runner/manual/use-manual-rallar-workbench.ts';
+        const inputsPath =
+            'apps/rallar-black-box/src/legacy/runner/manual/ManualRallarInputsPanel.tsx';
+        const executionPath =
+            'apps/rallar-black-box/src/legacy/runner/manual/ManualRallarExecutionPanel.tsx';
+        const workbenchPath =
+            'apps/rallar-black-box/src/legacy/runner/manual/ManualRallarWorkbenchPanel.tsx';
+        const inboxPath =
+            'apps/rallar-black-box/src/legacy/runner/manual/ReceivedDataInboxPanel.tsx';
+        const sectionPath =
+            'apps/rallar-black-box/src/legacy/runner/manual/ManualRallarSection.tsx';
+        const manualOwners = [
+            {
+                path: stringValuePath,
+                declarations: ['stringValue'],
+                lineCap: 15,
+            },
+            {
+                path: defaultsPath,
+                declarations: ['manualValuesFromState', 'actionLabel'],
+                lineCap: 180,
+            },
+            {
+                path: hookPath,
+                declarations: ['useManualRallarWorkbench'],
+                lineCap: 450,
+            },
+            {
+                path: inputsPath,
+                declarations: ['ManualRallarInputsPanel'],
+                lineCap: 350,
+            },
+            {
+                path: executionPath,
+                declarations: ['ManualRallarExecutionPanel'],
+                lineCap: 300,
+            },
+            {
+                path: workbenchPath,
+                declarations: ['ManualRallarWorkbenchPanel'],
+                lineCap: 140,
+            },
+            {
+                path: inboxPath,
+                declarations: ['ReceivedDataInboxPanel'],
+                lineCap: 100,
+            },
+            {
+                path: sectionPath,
+                declarations: ['ManualRallarSection'],
+                lineCap: 100,
+            },
+        ] as const;
+        const sourceByPath = new Map<string, string>();
+
+        for (const owner of manualOwners) {
+            const ownerExists = existsSync(resolve(repositoryRoot, owner.path));
+            const ownerSource = ownerExists ? repositorySource(owner.path) : '';
+            sourceByPath.set(owner.path, ownerSource);
+
+            expect.soft(ownerExists, `${owner.path}: missing owner`).toBe(true);
+            expect
+                .soft(ownerSource, `${owner.path}: export-star barrel`)
+                .not.toMatch(/^\s*export\s*\*(?:\s+as\s+\w+)?\s+from\b/m);
+            expect
+                .soft(ownerSource, `${owner.path}: named re-export facade`)
+                .not.toMatch(/^\s*export\s+(?:type\s+)?{[^}]+}\s*from\s*['"]/m);
+            expect.soft(ownerSource, `${owner.path}: App.tsx import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/,
+            );
+            expect.soft(ownerSource, `${owner.path}: CSS import`).not.toMatch(
+                /\b(?:from\s+|import\s*)['"][^'"]+\.css['"]/,
+            );
+            expect.soft(ownerSource, `${owner.path}: routes or runner contracts`).not.toMatch(
+                /\bfrom\s*['"][^'"]*(?:app-tabs|runner-contracts)\.ts['"]/,
+            );
+            expect.soft(
+                ownerSource === ''
+                    ? 0
+                    : ownerSource.trimEnd().split(/\r?\n/).length,
+                `${owner.path}: line count`,
+            ).toBeLessThanOrEqual(owner.lineCap);
+
+            for (const declaration of owner.declarations) {
+                expect
+                    .soft(ownerSource, `${owner.path}: direct ${declaration} export`)
+                    .toMatch(
+                        new RegExp(
+                            `^\\s*export\\s+function\\s+${declaration}\\s*(?:<[^>]+>)?\\s*\\(`,
+                            'm',
+                        ),
+                    );
+            }
+        }
+
+        for (const owner of manualOwners.slice(1)) {
+            for (const declaration of owner.declarations) {
+                const declarationOwners = sourceFilesUnder(
+                    'apps/rallar-black-box/src',
+                ).filter((sourcePath) =>
+                    new RegExp(
+                        `^\\s*(?:export\\s+)?function\\s+${declaration}\\s*(?:<[^>]+>)?\\s*\\(`,
+                        'm',
+                    ).test(repositorySource(sourcePath)),
+                );
+                expect.soft(
+                    declarationOwners,
+                    `${declaration}: exact declaration owner`,
+                ).toEqual([owner.path]);
+            }
+        }
+
+        const sourceFor = (path: string): string =>
+            path === appSourcePath
+                ? appSource
+                : sourceByPath.get(path) ??
+                  (existsSync(resolve(repositoryRoot, path))
+                      ? repositorySource(path)
+                      : '');
+        const directImports = [
+            {
+                importerPath: appSourcePath,
+                moduleImport: './legacy/shared/string-value.ts',
+                seams: ['stringValue'],
+            },
+            {
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/manual/ManualRallarSection.tsx',
+                seams: ['ManualRallarSection'],
+            },
+            {
+                importerPath: defaultsPath,
+                moduleImport: '../../shared/string-value.ts',
+                seams: ['stringValue'],
+            },
+            {
+                importerPath: hookPath,
+                moduleImport: './manual-workbench-defaults.ts',
+                seams: ['manualValuesFromState', 'actionLabel'],
+            },
+            {
+                importerPath: workbenchPath,
+                moduleImport: './use-manual-rallar-workbench.ts',
+                seams: ['useManualRallarWorkbench'],
+            },
+            {
+                importerPath: workbenchPath,
+                moduleImport: './ManualRallarInputsPanel.tsx',
+                seams: ['ManualRallarInputsPanel'],
+            },
+            {
+                importerPath: workbenchPath,
+                moduleImport: './ManualRallarExecutionPanel.tsx',
+                seams: ['ManualRallarExecutionPanel'],
+            },
+            {
+                importerPath: sectionPath,
+                moduleImport: './ManualRallarWorkbenchPanel.tsx',
+                seams: ['ManualRallarWorkbenchPanel'],
+            },
+            {
+                importerPath: sectionPath,
+                moduleImport: './ReceivedDataInboxPanel.tsx',
+                seams: ['ReceivedDataInboxPanel'],
+            },
+            {
+                importerPath: sectionPath,
+                moduleImport: '../advanced/CommandHistoryPanel.tsx',
+                seams: ['CommandHistoryPanel'],
+            },
+        ] as const;
+
+        for (const directImport of directImports) {
+            const importerSource = sourceFor(directImport.importerPath);
+            const escapedModuleImport = directImport.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importMatches = [
+                ...importerSource.matchAll(
+                    new RegExp(
+                        `import\\s*(?:type\\s*)?{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                        'g',
+                    ),
+                ),
+            ];
+            expect.soft(
+                importMatches,
+                `${directImport.importerPath}: ${directImport.moduleImport}`,
+            ).toHaveLength(1);
+            for (const seam of directImport.seams) {
+                expect
+                    .soft(
+                        importMatches[0]?.[1] ?? '',
+                        `${directImport.moduleImport}: ${seam}`,
+                    )
+                    .toMatch(new RegExp(`\\b${seam}\\b`));
+            }
+        }
+
+        for (const viewPath of [inputsPath, executionPath] as const) {
+            expect.soft(
+                sourceFor(viewPath),
+                `${viewPath}: type-only workbench model import`,
+            ).toMatch(
+                /import\s+type\s*{\s*ManualRallarWorkbenchModel\s*}\s*from\s*'\.\/use-manual-rallar-workbench\.ts';/,
+            );
+        }
+
+        for (const declaration of [
+            'manualTransportFrom',
+            'stringValue',
+            'booleanValue',
+            'jsonTextValue',
+            'numberValue',
+            'manualValuesFromState',
+            'actionLabel',
+            'ManualRallarWorkbenchPanel',
+            'ReceivedDataInboxPanel',
+        ] as const) {
+            expect
+                .soft(appSource, `App.tsx local ${declaration}`)
+                .not.toMatch(
+                    new RegExp(
+                        `^\\s*(?:export\\s+)?function\\s+${declaration}\\s*(?:<[^>]+>)?\\s*\\(`,
+                        'm',
+                    ),
+                );
+        }
+        expect(
+            [...appSource.matchAll(/\bstringValue\s*\(/g)],
+            'App.tsx: all unaffected stringValue consumers use the shared import',
+        ).toHaveLength(42);
+        for (const movedMarker of [
+            'title="Manual Rallar Inputs"',
+            '<h3>RTC Delivery Matrix</h3>',
+            '<h2>Received Data</h2>',
+        ] as const) {
+            expect.soft(appSource, `App.tsx moved JSX: ${movedMarker}`).not.toContain(
+                movedMarker,
+            );
+        }
+
+        const sectionCalls = [
+            ...appSource.matchAll(/<ManualRallarSection\b([\s\S]*?)\/>/g),
+        ];
+        expect(sectionCalls, 'App.tsx: two live manual controller instances').toHaveLength(
+            2,
+        );
+        const expectedSectionProps = [
+            'state',
+            'bootstrap',
+            'authSession',
+            'globalValues',
+            'globalValuesEdited',
+            'busy',
+            'history',
+            'selectedCommandId',
+            'onSelectCommand',
+            'onGlobalValueChange',
+        ] as const;
+        for (const sectionCall of sectionCalls) {
+            const propNames = [
+                ...(sectionCall[1] ?? '').matchAll(/\b(\w+)=\{/g),
+            ].map((match) => match[1]);
+            expect.soft(propNames, 'ManualRallarSection: exact ordered props').toEqual(
+                expectedSectionProps,
+            );
+            expect.soft(sectionCall[0], 'ManualRallarSection call: no key').not.toMatch(
+                /\bkey\s*=/,
+            );
+        }
+        expect(
+            sectionCalls[0]?.[0] ?? '',
+            'RunnerAdvanced preserves selected history expression',
+        ).toContain('history={selectRallarBlackBoxCommandHistory(state)}');
+        expect(
+            sectionCalls[1]?.[0] ?? '',
+            'legacy App preserves selected history binding',
+        ).toContain('history={history}');
+        expect(
+            [...appSource.matchAll(/^ {20}<ManualRallarSection\b/gm)],
+            'App.tsx: both manual sections are unconditional direct children',
+        ).toHaveLength(2);
+        for (const legacyChild of [
+            'ManualRallarWorkbenchPanel',
+            'ReceivedDataInboxPanel',
+            'CommandHistoryPanel',
+        ] as const) {
+            expect(
+                [...appSource.matchAll(new RegExp(`<${legacyChild}\\b`, 'g'))],
+                `App.tsx: no direct old manual cluster child ${legacyChild}`,
+            ).toHaveLength(legacyChild === 'CommandHistoryPanel' ? 1 : 0);
+        }
+
+        const runnerWrapper = appSource.match(
+            /<div\s+id="panel-manual-rallar"[\s\S]*?<\/div>/,
+        )?.[0] ?? '';
+        for (const wrapperMarker of [
+            'className="workspace-grid tab-workspace manual-tab-grid"',
+            "hidden={surface !== 'manual'}",
+        ] as const) {
+            expect.soft(
+                runnerWrapper,
+                `RunnerAdvanced manual wrapper: ${wrapperMarker}`,
+            ).toContain(wrapperMarker);
+        }
+        expect(
+            [...runnerWrapper.matchAll(/<ManualRallarSection\b/g)],
+            'RunnerAdvanced manual instance',
+        ).toHaveLength(1);
+
+        const legacyWrapper = appSource.match(
+            /<section\s+id="legacy-panel-manual-rallar"[\s\S]*?<\/section>/,
+        )?.[0] ?? '';
+        for (const wrapperMarker of [
+            'className="workspace-grid tab-workspace manual-tab-grid"',
+            'role="tabpanel"',
+            'aria-labelledby="tab-manual-rallar"',
+            "hidden={activeTab !== 'manual-rallar'}",
+        ] as const) {
+            expect.soft(
+                legacyWrapper,
+                `legacy manual wrapper: ${wrapperMarker}`,
+            ).toContain(wrapperMarker);
+        }
+        expect(
+            [...legacyWrapper.matchAll(/<ManualRallarSection\b/g)],
+            'legacy manual instance',
+        ).toHaveLength(1);
+
+        const hookSource = sourceFor(hookPath);
+        const normalizedHookSource = hookSource.replace(/\s+/g, ' ');
+        expect(hookSource, 'hook inferred model alias').toMatch(
+            /^\s*export\s+type\s+ManualRallarWorkbenchModel\s*=\s*\n?\s*ReturnType<\s*typeof\s+useManualRallarWorkbench\s*>;/m,
+        );
+        expect(hookSource, 'hook has no render-only busy input').not.toMatch(/\bbusy\b/);
+        expect(hookSource, 'hook has no useCallback').not.toMatch(/\buseCallback\b/);
+        expect(
+            [...hookSource.matchAll(/\buseState(?:<[^>]+>)?\s*\(/g)],
+            'manual hook: exact state count',
+        ).toHaveLength(9);
+        const stateMarkers = [
+            'const [initialDraft] = useState(() => {',
+            'const [values, setValues] = useState<ManualWorkbenchValues>(',
+            'const [valuesEdited, setValuesEdited] = useState(initialDraft.restored);',
+            'const [payloadPresetId, setPayloadPresetId] = useState(',
+            'const [payloadText, setPayloadText] = useState(',
+            'const [sequence, setSequence] = useState(1);',
+            'const [history, setHistory] = useState<readonly ManualActionHistoryEntry[]>(',
+            'const [localError, setLocalError] = useState<string | undefined>();',
+            'const [recipeVisible, setRecipeVisible] = useState(false);',
+        ] as const;
+        const statePositions = stateMarkers.map((marker) =>
+            normalizedHookSource.indexOf(marker),
+        );
+        expect.soft(
+            statePositions.every((position) => position >= 0),
+            'manual hook: state initializers',
+        ).toBe(true);
+        expect.soft(statePositions, 'manual hook: state order').toEqual(
+            [...statePositions].sort((left, right) => left - right),
+        );
+        expect(normalizedHookSource, 'manual hook: lazy payload text').toContain(
+            'const [payloadText, setPayloadText] = useState( () => initialDraft.draft.payloadText, );',
+        );
+
+        expect(
+            [...hookSource.matchAll(/\buseMemo(?:<[^>]+>)?\s*\(/g)],
+            'manual hook: exact memo count',
+        ).toHaveLength(9);
+        const memoSpecs = [
+            {
+                marker: 'const defaultValues = useMemo(',
+                dependencies:
+                    '[authSession,bootstrap,globalValues?.apiBaseUrl,globalValues?.applicationId,globalValues?.clientId,globalValues?.roomId,globalValues?.sessionId,globalValues?.workspaceId,state.currentConfig]',
+            },
+            {
+                marker: 'const defaultDraft = useMemo<ManualWorkbenchDraft>(',
+                dependencies: '[defaultValues]',
+            },
+            {
+                marker: 'const payloadResult = useMemo(',
+                dependencies: '[payloadText]',
+            },
+            {
+                marker: 'const previewCommands = useMemo(',
+                dependencies: '[payloadResult,sequence,values]',
+            },
+            {
+                marker: 'const recipeText = useMemo(',
+                dependencies: '[history]',
+            },
+            {
+                marker: 'const negativeRecipeText = useMemo(',
+                dependencies: '[payloadResult,values]',
+            },
+            {
+                marker: 'const previewRecipeValidation = useMemo(',
+                dependencies: '[payloadResult.ok,previewCommands]',
+            },
+            {
+                marker: 'const manualRecipeValidation = useMemo(',
+                dependencies: '[recipeText]',
+            },
+            {
+                marker: 'const negativeRecipeValidation = useMemo(',
+                dependencies: '[negativeRecipeText,payloadResult.ok]',
+            },
+        ] as const;
+        const memoPositions = memoSpecs.map((spec) => hookSource.indexOf(spec.marker));
+        expect.soft(
+            memoPositions.every((position) => position >= 0),
+            'manual hook: memo declarations',
+        ).toBe(true);
+        expect.soft(memoPositions, 'manual hook: memo order').toEqual(
+            [...memoPositions].sort((left, right) => left - right),
+        );
+        for (const [index, memoSpec] of memoSpecs.entries()) {
+            const segment = hookSource.slice(
+                memoPositions[index],
+                memoPositions[index + 1] ??
+                    hookSource.indexOf('useEffect(', memoPositions[index]),
+            );
+            expect.soft(
+                segment.replace(/\s+/g, '').replace(/,]/g, ']'),
+                `manual hook memo dependencies: ${memoSpec.marker}`,
+            ).toContain(memoSpec.dependencies);
+        }
+        expect(
+            [...hookSource.matchAll(/selectRallarBlackBoxEvents\(state\)/g)],
+            'manual hook: one plain events selector',
+        ).toHaveLength(1);
+        expect(normalizedHookSource, 'manual hook: events are not memoized').toContain(
+            'const events = selectRallarBlackBoxEvents(state);',
+        );
+
+        const effectMatches = [...hookSource.matchAll(/\buseEffect\s*\(/g)];
+        expect(effectMatches, 'manual hook: exact effect count').toHaveLength(4);
+        const effectSpecs = [
+            {
+                marker: 'if(!valuesEdited){setValues(defaultValues);}',
+                dependencies: '[defaultValues,valuesEdited]',
+            },
+            {
+                marker: 'if(!authSession){return;}',
+                dependencies:
+                    '[authSession?.clientId,authSession?.sessionId,authSession?.username,globalValues?.clientId,globalValues?.sessionId]',
+            },
+            {
+                marker: 'if(!globalValues||!globalValuesEdited){return;}',
+                dependencies:
+                    '[globalValues?.apiBaseUrl,globalValues?.applicationId,globalValues?.clientId,globalValues?.roomId,globalValues?.sessionId,globalValues?.workspaceId,globalValuesEdited]',
+            },
+            {
+                marker: 'writeManualWorkbenchDraft(',
+                dependencies:
+                    '[authSession?.accessToken,payloadPresetId,payloadText,state.currentConfig?.redaction,values]',
+            },
+        ] as const;
+        for (const [index, effectSpec] of effectSpecs.entries()) {
+            const effectStart = effectMatches[index]?.index ?? -1;
+            const effectEnd =
+                effectMatches[index + 1]?.index ?? hookSource.indexOf('const updateValue');
+            const compactEffect = hookSource
+                .slice(effectStart, effectEnd)
+                .replace(/\s+/g, '')
+                .replace(/,]/g, ']');
+            expect.soft(
+                compactEffect,
+                `manual hook effect body ${index + 1}`,
+            ).toContain(effectSpec.marker);
+            expect.soft(
+                compactEffect,
+                `manual hook effect dependencies ${index + 1}`,
+            ).toContain(effectSpec.dependencies);
+        }
+        expect(
+            hookSource.replace(/\s+/g, ''),
+            'manual hook: persistence uses exact redacted secrets',
+        ).toContain(
+            'uiSecretValues(state,authSession,[values.rallarPassword]),',
+        );
+        expect(
+            hookSource.replace(/\s+/g, ''),
+            'manual hook: auth equality fast path',
+        ).toContain(
+            'returncurrent.actor===nextValues.actor&&current.sessionId===nextValues.sessionId&&current.rallarUsername===nextValues.rallarUsername&&current.rallarRestoreSession===nextValues.rallarRestoreSession?current:nextValues;',
+        );
+        expect(
+            hookSource.replace(/\s+/g, ''),
+            'manual hook: global equality fast path',
+        ).toContain(
+            'returncurrent.apiBaseUrl===nextValues.apiBaseUrl&&current.applicationId===nextValues.applicationId&&current.workspaceId===nextValues.workspaceId&&current.actor===nextValues.actor&&current.sessionId===nextValues.sessionId&&current.groupId===nextValues.groupId?current:nextValues;',
+        );
+
+        const actionSlice = (start: string, end: string): string => {
+            const startPosition = hookSource.indexOf(start);
+            const endPosition = hookSource.indexOf(end, startPosition + start.length);
+            return hookSource.slice(
+                startPosition,
+                endPosition >= 0 ? endPosition : undefined,
+            );
+        };
+        const updateValueSource = actionSlice('const updateValue', 'const selectPreset');
+        expect.soft(
+            updateValueSource.indexOf('setValuesEdited(true)'),
+            'manual hook: edited flag before merge',
+        ).toBeLessThan(updateValueSource.indexOf('setValues((current)'));
+        const selectPresetSource = actionSlice(
+            'const selectPreset',
+            'const runManualCommandSet',
+        ).replace(/\s+/g, '');
+        expect(selectPresetSource, 'manual hook: preset id first').toContain(
+            'setPayloadPresetId(presetId);constpreset=',
+        );
+        expect(selectPresetSource, 'manual hook: custom preset keeps text').toContain(
+            'if(preset){setPayloadText(JSON.stringify(preset.payload,null,2));}',
+        );
+
+        const commandSetSource = actionSlice(
+            'const runManualCommandSet',
+            'const runManualAction',
+        );
+        const commandSetPositions = [
+            'setSequence((current) => current + commands.length + 1)',
+            'setHistory((current) => [...current, entry].slice(-12))',
+            'onSelectCommand(entry.commandIds.at(-1) ?? entry.commandIds[0])',
+            'try {',
+            'await rallarBlackBoxRuntimeStore.executeManualCommands(',
+        ].map((marker) => commandSetSource.indexOf(marker));
+        expect.soft(
+            commandSetPositions.every((position) => position >= 0),
+            'manual hook: optimistic command sequencing markers',
+        ).toBe(true);
+        expect.soft(
+            commandSetPositions,
+            'manual hook: optimistic updates happen before await',
+        ).toEqual([...commandSetPositions].sort((left, right) => left - right));
+
+        const manualActionSource = actionSlice(
+            'const runManualAction',
+            'const runRtcMatrix',
+        ).replace(/\s+/g, '');
+        expect(manualActionSource, 'manual hook: send-only invalid payload block').toContain(
+            "if(action==='send'&&!payloadResult.ok){setLocalError(payloadResult.error);return;}",
+        );
+        expect(manualActionSource, 'manual hook: exact group propagation actions').toContain(
+            "['configure','join','connect','send'].includes(action)",
+        );
+        expect(manualActionSource, 'manual hook: group propagation target').toContain(
+            "onGlobalValueChange('roomId',selectedGroupId);",
+        );
+        for (const marker of [
+            'const label = `RTC ${transport} delivery matrix`;',
+            "'RTC not-yet-in-sync probe'",
+            'realtime.length + 2',
+            "recipeId: 'manual-rtc-delivery-matrix'",
+            'void navigator.clipboard.writeText(recipeText)',
+            'void navigator.clipboard.writeText(negativeRecipeText)',
+        ] as const) {
+            expect.soft(hookSource, `manual hook action marker: ${marker}`).toContain(
+                marker,
+            );
+        }
+
+        const inputsSource = sourceFor(inputsPath);
+        expect(inputsSource, 'inputs view: fragment return').toMatch(
+            /return\s*\(\s*<>[\s\S]*<\/\>\s*\);/,
+        );
+        expect(
+            [...inputsSource.matchAll(/<CollapsiblePanelSection\b/g)],
+            'inputs view: exact two input blocks',
+        ).toHaveLength(2);
+        const inputBlockPositions = [
+            'title="Manual Rallar Inputs"',
+            'title="Manual Payload"',
+        ].map((marker) => inputsSource.indexOf(marker));
+        expect.soft(
+            inputBlockPositions,
+            'inputs view: input then payload block order',
+        ).toEqual([...inputBlockPositions].sort((left, right) => left - right));
+        const inlinePayloadPositions = [
+            "setPayloadPresetId('custom')",
+            'setPayloadText(event.target.value)',
+        ].map((marker) => inputsSource.indexOf(marker));
+        expect.soft(
+            inlinePayloadPositions.every((position) => position >= 0),
+            'inputs view: inline payload markers',
+        ).toBe(true);
+        expect.soft(
+            inlinePayloadPositions,
+            'inputs view: custom preset before payload text',
+        ).toEqual([...inlinePayloadPositions].sort((left, right) => left - right));
+
+        const executionSource = sourceFor(executionPath);
+        const executionOrder = [
+            'className="manual-preview"',
+            'className="manual-action-grid"',
+            'className="manual-matrix-card"',
+            'className="manual-history"',
+            'className="report-output manual-recipe-output"',
+        ].map((marker) => executionSource.indexOf(marker));
+        expect.soft(
+            executionOrder.every((position) => position >= 0),
+            'execution view: all command sections',
+        ).toBe(true);
+        expect.soft(executionOrder, 'execution view: preserved DOM order').toEqual(
+            [...executionOrder].sort((left, right) => left - right),
+        );
+        for (const action of [
+            'configure',
+            'join',
+            'connect',
+            'send',
+            'health',
+            'close',
+            'reset',
+        ] as const) {
+            expect.soft(executionSource, `execution view action: ${action}`).toMatch(
+                new RegExp(`['"]${action}['"]`),
+            );
+        }
+
+        const workbenchSource = sourceFor(workbenchPath);
+        const workbenchOrder = [
+            '<section className="panel manual-rallar-panel">',
+            'className="panel-heading"',
+            '<ManualRallarInputsPanel',
+            '<ManualRallarExecutionPanel',
+            '{model.localError &&',
+        ].map((marker) => workbenchSource.indexOf(marker));
+        expect.soft(
+            workbenchOrder.every((position) => position >= 0),
+            'workbench panel: outer composition markers',
+        ).toBe(true);
+        expect.soft(workbenchOrder, 'workbench panel: preserved DOM order').toEqual(
+            [...workbenchOrder].sort((left, right) => left - right),
+        );
+        expect(
+            [...workbenchSource.matchAll(/\buseManualRallarWorkbench\s*\(/g)],
+            'workbench panel: one controller call',
+        ).toHaveLength(1);
+
+        const inboxSource = sourceFor(inboxPath);
+        expect(
+            [...inboxSource.matchAll(/\buseMemo(?:<[^>]+>)?\s*\(/g)],
+            'inbox: exact memo count',
+        ).toHaveLength(1);
+        expect(inboxSource.replace(/\s+/g, ''), 'inbox: memo dependency').toContain(
+            '[state],',
+        );
+        expect(inboxSource, 'inbox: latest 24 reversed').toMatch(
+            /\.slice\(-24\)\s*\.reverse\(\)/,
+        );
+        expect(inboxSource, 'inbox: redacted payload').toContain(
+            'redactedJson(message.payload, state)',
+        );
+
+        const sectionSource = sourceFor(sectionPath);
+        expect(sectionSource, 'manual section: fragment return').toMatch(
+            /return\s*\(\s*<>[\s\S]*<\/\>\s*\);/,
+        );
+        expect(sectionSource, 'manual section: no wrapper').not.toMatch(
+            /<(?:section|div)\b/,
+        );
+        expect(sectionSource, 'manual section: no key').not.toMatch(/\bkey\s*=/);
+        const sectionChildMarkers = [
+            '<ManualRallarWorkbenchPanel',
+            '<ReceivedDataInboxPanel',
+            '<CommandHistoryPanel',
+        ] as const;
+        const sectionChildPositions = sectionChildMarkers.map((marker) =>
+            sectionSource.indexOf(marker),
+        );
+        expect.soft(
+            sectionChildPositions.every((position) => position >= 0),
+            'manual section: exact three children',
+        ).toBe(true);
+        expect.soft(sectionChildPositions, 'manual section: child order').toEqual(
+            [...sectionChildPositions].sort((left, right) => left - right),
+        );
+        for (const marker of sectionChildMarkers) {
+            expect(
+                [...sectionSource.matchAll(new RegExp(marker, 'g'))],
+                `manual section: ${marker} once`,
+            ).toHaveLength(1);
+        }
+        expect(sectionSource, 'manual section: forwards history directly').toContain(
+            'history={history}',
+        );
+
+        for (const viewPath of [
+            inputsPath,
+            executionPath,
+            workbenchPath,
+            inboxPath,
+            sectionPath,
+        ] as const) {
+            const viewSource = sourceFor(viewPath);
+            expect.soft(viewSource, `${viewPath}: no local state`).not.toMatch(
+                /\buseState\b/,
+            );
+            expect.soft(viewSource, `${viewPath}: no effects`).not.toMatch(
+                /\buseEffect\b/,
+            );
+            expect.soft(viewSource, `${viewPath}: no useCallback`).not.toMatch(
+                /\buseCallback\b/,
+            );
+            expect.soft(viewSource, `${viewPath}: no runtime execution import`).not.toMatch(
+                /import(?!\s+type\b)\s*{[^}]*}\s*from\s*['"][^'"]*runtime-store\.ts['"]/s,
+            );
+            expect.soft(viewSource, `${viewPath}: no persistence import`).not.toMatch(
+                /\bfrom\s*['"][^'"]*ui-persistence\.ts['"]/,
+            );
+            expect.soft(viewSource, `${viewPath}: no storage import`).not.toMatch(
+                /\bfrom\s*['"][^'"]*browser-ui-storage\.ts['"]/,
+            );
+            if (viewPath !== inboxPath) {
+                expect.soft(viewSource, `${viewPath}: no selector import`).not.toMatch(
+                    /\bfrom\s*['"][^'"]*selectors\.ts['"]/,
+                );
+            }
+        }
+        for (const viewPath of [
+            inputsPath,
+            executionPath,
+            workbenchPath,
+            sectionPath,
+        ] as const) {
+            expect(
+                [...sourceFor(viewPath).matchAll(/\buseMemo(?:<[^>]+>)?\s*\(/g)],
+                `${viewPath}: no memo ownership`,
+            ).toHaveLength(0);
+        }
+        expect(inboxSource, 'inbox: events selector only').toMatch(
+            /import\s*{\s*selectRallarBlackBoxEvents\s*}\s*from\s*'@shared-test\/rallar-bb-test\/selectors\.ts';/,
+        );
+
+        for (const runtimeMarker of [
+            'rallarBlackBoxRuntimeStore',
+            'readManualWorkbenchDraft',
+            'writeManualWorkbenchDraft',
+            'browserUiStorage',
+        ] as const) {
+            const markerOwners = manualOwners
+                .filter((owner) => sourceFor(owner.path).includes(runtimeMarker))
+                .map((owner) => owner.path);
+            expect.soft(
+                markerOwners,
+                `${runtimeMarker}: controller-only ownership`,
+            ).toEqual([hookPath]);
+        }
+
+        const targetPaths = new Set(manualOwners.map((owner) => owner.path));
+        const dependencies = new Map<string, readonly string[]>();
+        for (const owner of manualOwners) {
+            dependencies.set(
+                owner.path,
+                [...sourceFor(owner.path).matchAll(
+                    /\bfrom\s+['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]/g,
+                )]
+                    .map((match) => match[1] ?? match[2])
+                    .filter((moduleImport) => moduleImport.startsWith('.'))
+                    .map((moduleImport) =>
+                        relative(
+                            repositoryRoot,
+                            resolve(
+                                resolve(repositoryRoot, owner.path),
+                                '..',
+                                moduleImport,
+                            ),
+                        ),
+                    )
+                    .filter((dependency) => targetPaths.has(dependency)),
+            );
+        }
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) {
+                return;
+            }
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) {
+                visit(dependency);
+            }
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const targetPath of targetPaths) {
+            visit(targetPath);
+        }
+        expect(cycles, 'manual Rallar import cycles').toEqual([]);
     });
 
     it('keeps the legacy run manager and its dependencies in focused modules', () => {
