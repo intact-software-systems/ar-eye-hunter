@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const appSourcePath = 'apps/rallar-black-box/src/App.tsx';
 const recipeConsoleSourcePath = 'apps/rallar-black-box/src/recipe-console';
+const runnerAdvancedSourcePath =
+    'apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx';
 const extractedModulePaths = [
     'apps/rallar-black-box/src/legacy/shell/browser-ui-storage.ts',
     'apps/rallar-black-box/src/legacy/shell/navigation.ts',
@@ -118,6 +120,19 @@ const runAnalysisModules = [
 
 function repositorySource(path: string): string {
     return readFileSync(resolve(repositoryRoot, path), 'utf8');
+}
+
+function runnerAdvancedSource(appSource: string): string {
+    return existsSync(resolve(repositoryRoot, runnerAdvancedSourcePath))
+        ? repositorySource(runnerAdvancedSourcePath)
+        : appSource;
+}
+
+function appAndRunnerAdvancedSource(appSource: string): string {
+    const advancedSource = runnerAdvancedSource(appSource);
+    return advancedSource === appSource
+        ? appSource
+        : `${appSource}\n${advancedSource}`;
 }
 
 function sourceFilesUnder(path: string): readonly string[] {
@@ -964,6 +979,8 @@ describe('rallar-black-box app source ownership', () => {
 
     it('keeps distributed recipe core in exact one-way controller owners', () => {
         const appSource = repositorySource(appSourcePath);
+        const advancedSource = runnerAdvancedSource(appSource);
+        const aggregateSource = appAndRunnerAdvancedSource(appSource);
         const panelPath =
             'apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
         const remotePath =
@@ -1057,9 +1074,11 @@ describe('rallar-black-box app source ownership', () => {
             /import\s*{\s*DistributedRecipesPanel\s*}\s*from\s*'\.\/legacy\/runner\/distributed-recipes\/DistributedRecipesPanel\.tsx';/,
         );
         const panelCalls = [
-            ...appSource.matchAll(/<DistributedRecipesPanel\b([\s\S]*?)\/>/g),
+            ...aggregateSource.matchAll(
+                /<DistributedRecipesPanel\b([\s\S]*?)\/>/g,
+            ),
         ];
-        expect(panelCalls, 'App.tsx panel calls').toHaveLength(2);
+        expect(panelCalls, 'advanced and legacy panel calls').toHaveLength(2);
         for (const panelCall of panelCalls) {
             const props = [
                 ...panelCall[1].matchAll(/\b(\w+)=\{([^}]+)}/g),
@@ -1071,7 +1090,7 @@ describe('rallar-black-box app source ownership', () => {
                 ['globalValues', 'globalValues'],
             ]);
         }
-        expect(appSource, 'Advanced distributed mount guard').toContain(
+        expect(advancedSource, 'Advanced distributed mount guard').toContain(
             `{surface === 'distributed' && (\n                    <div\n                        id="panel-distributed-recipes"\n                        className="workspace-grid tab-workspace distributed-recipes-tab-grid"\n                    >\n                        <DistributedRecipesPanel\n                            state={state}\n                            bootstrap={bootstrap}\n                            control={control}\n                            globalValues={globalValues}\n                        />\n                    </div>\n                )}`,
         );
         expect(appSource, 'legacy runner distributed mount guard').toContain(
@@ -1968,6 +1987,8 @@ describe('rallar-black-box app source ownership', () => {
 
     it('keeps the advanced workbench leaves in exact focused owners', () => {
         const appSource = repositorySource(appSourcePath);
+        const advancedSource = runnerAdvancedSource(appSource);
+        const aggregateSource = appAndRunnerAdvancedSource(appSource);
         const manualRallarSectionPath =
             'apps/rallar-black-box/src/legacy/runner/manual/ManualRallarSection.tsx';
         const manualRallarSectionSource = existsSync(
@@ -2207,9 +2228,13 @@ describe('rallar-black-box app source ownership', () => {
         );
 
         const sectionCalls = [
-            ...appSource.matchAll(/<LocalWorkbenchSection\b[\s\S]*?\/>/g),
+            ...aggregateSource.matchAll(
+                /<LocalWorkbenchSection\b[\s\S]*?\/>/g,
+            ),
         ].map((match) => match[0]);
-        expect(sectionCalls, 'App.tsx: two live workbench instances').toHaveLength(2);
+        expect(sectionCalls, 'advanced and legacy workbench instances').toHaveLength(
+            2,
+        );
         for (const sectionCall of sectionCalls) {
             for (const prop of [
                 'state',
@@ -2233,11 +2258,11 @@ describe('rallar-black-box app source ownership', () => {
             );
         }
         expect(
-            [...appSource.matchAll(/^ {20}<LocalWorkbenchSection\b/gm)],
-            'App.tsx: both workbenches mount as unconditional direct children',
+            [...aggregateSource.matchAll(/^ {20}<LocalWorkbenchSection\b/gm)],
+            'both workbenches mount as unconditional direct children',
         ).toHaveLength(2);
 
-        const runnerWrapper = appSource.match(
+        const runnerWrapper = advancedSource.match(
             /<div\s+id="panel-local-workbench"[\s\S]*?<\/div>/,
         )?.[0] ?? '';
         expect(runnerWrapper, 'RunnerAdvanced local workbench wrapper').toContain(
@@ -2425,6 +2450,8 @@ describe('rallar-black-box app source ownership', () => {
 
     it('keeps the manual Rallar domain in exact controlled owners', () => {
         const appSource = repositorySource(appSourcePath);
+        const advancedSource = runnerAdvancedSource(appSource);
+        const aggregateSource = appAndRunnerAdvancedSource(appSource);
         const stringValuePath =
             'apps/rallar-black-box/src/legacy/shared/string-value.ts';
         const defaultsPath =
@@ -2675,11 +2702,14 @@ describe('rallar-black-box app source ownership', () => {
         }
 
         const sectionCalls = [
-            ...appSource.matchAll(/<ManualRallarSection\b([\s\S]*?)\/>/g),
+            ...aggregateSource.matchAll(
+                /<ManualRallarSection\b([\s\S]*?)\/>/g,
+            ),
         ];
-        expect(sectionCalls, 'App.tsx: two live manual controller instances').toHaveLength(
-            2,
-        );
+        expect(
+            sectionCalls,
+            'advanced and legacy manual controller instances',
+        ).toHaveLength(2);
         const expectedSectionProps = [
             'state',
             'bootstrap',
@@ -2704,16 +2734,22 @@ describe('rallar-black-box app source ownership', () => {
             );
         }
         expect(
-            sectionCalls[0]?.[0] ?? '',
+            sectionCalls.some((sectionCall) =>
+                sectionCall[0].includes(
+                    'history={selectRallarBlackBoxCommandHistory(state)}',
+                ),
+            ),
             'RunnerAdvanced preserves selected history expression',
-        ).toContain('history={selectRallarBlackBoxCommandHistory(state)}');
+        ).toBe(true);
         expect(
-            sectionCalls[1]?.[0] ?? '',
+            sectionCalls.some((sectionCall) =>
+                sectionCall[0].includes('history={history}'),
+            ),
             'legacy App preserves selected history binding',
-        ).toContain('history={history}');
+        ).toBe(true);
         expect(
-            [...appSource.matchAll(/^ {20}<ManualRallarSection\b/gm)],
-            'App.tsx: both manual sections are unconditional direct children',
+            [...aggregateSource.matchAll(/^ {20}<ManualRallarSection\b/gm)],
+            'both manual sections are unconditional direct children',
         ).toHaveLength(2);
         for (const legacyChild of [
             'ManualRallarWorkbenchPanel',
@@ -2726,7 +2762,7 @@ describe('rallar-black-box app source ownership', () => {
             ).toHaveLength(legacyChild === 'CommandHistoryPanel' ? 1 : 0);
         }
 
-        const runnerWrapper = appSource.match(
+        const runnerWrapper = advancedSource.match(
             /<div\s+id="panel-manual-rallar"[\s\S]*?<\/div>/,
         )?.[0] ?? '';
         for (const wrapperMarker of [
@@ -3234,6 +3270,8 @@ describe('rallar-black-box app source ownership', () => {
 
     it('keeps the Shared Test domain in exact focused owners', () => {
         const appSource = repositorySource(appSourcePath);
+        const advancedSource = runnerAdvancedSource(appSource);
+        const aggregateSource = appAndRunnerAdvancedSource(appSource);
         const catalogPath =
             'apps/rallar-black-box/src/legacy/runner/shared-test/shared-test-catalog.ts';
         const catalogPanelPath =
@@ -3533,12 +3571,17 @@ describe('rallar-black-box app source ownership', () => {
             'SharedTestPanel: one coverage handoff render',
         ).toHaveLength(1);
 
-        const panelCalls = [...appSource.matchAll(/<SharedTestPanel\b([^>]*)\/>/g)];
-        expect(panelCalls, 'App.tsx: two independent Shared Test instances').toHaveLength(2);
+        const panelCalls = [
+            ...aggregateSource.matchAll(/<SharedTestPanel\b([^>]*)\/>/g),
+        ];
+        expect(
+            panelCalls,
+            'advanced and legacy independent Shared Test instances',
+        ).toHaveLength(2);
         for (const panelCall of panelCalls) {
             expect.soft(panelCall[1] ?? '', 'SharedTestPanel call: no props or key').toBe(' ');
         }
-        const runnerWrapper = appSource.match(
+        const runnerWrapper = advancedSource.match(
             /{surface === 'shared-test' && \(\s*<div\s+id="panel-shared-test"[\s\S]*?<\/div>\s*\)}/,
         )?.[0] ?? '';
         expect(runnerWrapper, 'RunnerAdvanced Shared Test wrapper').toContain(
@@ -3611,6 +3654,526 @@ describe('rallar-black-box app source ownership', () => {
             visit(targetPath);
         }
         expect(cycles, 'Shared Test import cycles').toEqual([]);
+    });
+
+    it('keeps the advanced runner controller in its exact focused owner', () => {
+        const appSource = repositorySource(appSourcePath);
+        const ownerExists = existsSync(
+            resolve(repositoryRoot, runnerAdvancedSourcePath),
+        );
+        const ownerSource = ownerExists
+            ? repositorySource(runnerAdvancedSourcePath)
+            : '';
+
+        expect.soft(ownerExists, 'RunnerAdvancedPanel owner').toBe(true);
+        expect(ownerSource, 'direct RunnerAdvancedPanel export').toMatch(
+            /^\s*export\s+function\s+RunnerAdvancedPanel\s*\(/m,
+        );
+        expect(ownerSource, 'no export-star barrel').not.toMatch(
+            /^\s*export\s*\*(?:\s+as\s+\w+)?\s+from\b/m,
+        );
+        expect(ownerSource, 'no named re-export facade').not.toMatch(
+            /^\s*export\s+(?:type\s+)?{[^}]+}\s*from\s*['"]/m,
+        );
+        expect(ownerSource, 'no App import').not.toMatch(
+            /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/
+        );
+        expect(ownerSource, 'no CSS import').not.toMatch(
+            /\b(?:from\s+|import\s*)['"][^'"]+\.css['"]/
+        );
+        expect(
+            ownerSource === ''
+                ? 0
+                : ownerSource.trimEnd().split(/\r?\n/).length,
+            'RunnerAdvancedPanel line count',
+        ).toBeLessThanOrEqual(220);
+
+        const declarationOwners = sourceFilesUnder(
+            'apps/rallar-black-box/src',
+        ).filter((sourcePath) =>
+            /^\s*(?:export\s+)?function\s+RunnerAdvancedPanel\s*\(/m.test(
+                repositorySource(sourcePath),
+            ),
+        );
+        expect(declarationOwners, 'one RunnerAdvancedPanel declaration').toEqual([
+            runnerAdvancedSourcePath,
+        ]);
+        expect(appSource, 'App has no local RunnerAdvancedPanel').not.toMatch(
+            /^\s*function\s+RunnerAdvancedPanel\s*\(/m,
+        );
+        expect(appSource, 'App direct RunnerAdvancedPanel import').toMatch(
+            /import\s*{\s*RunnerAdvancedPanel\s*}\s*from\s*'\.\/legacy\/runner\/advanced\/RunnerAdvancedPanel\.tsx';/,
+        );
+
+        const directImports = [
+            {
+                moduleImport: '../workbench/LocalWorkbenchSection.tsx',
+                seams: ['LocalWorkbenchSection'],
+            },
+            {
+                moduleImport:
+                    '../distributed-recipes/DistributedRecipesPanel.tsx',
+                seams: ['DistributedRecipesPanel'],
+            },
+            {
+                moduleImport: '../run-manager/RunManagerPanel.tsx',
+                seams: ['RunManagerPanel'],
+            },
+            {
+                moduleImport: '../manual/ManualRallarSection.tsx',
+                seams: ['ManualRallarSection'],
+            },
+            {
+                moduleImport: '../shared-test/SharedTestPanel.tsx',
+                seams: ['SharedTestPanel'],
+            },
+            {
+                moduleImport: '../runner-contracts.ts',
+                seams: ['CommandQueueRow'],
+            },
+            {
+                moduleImport: '../../shell/global-context-model.ts',
+                seams: ['CommandCenterGlobalValues'],
+            },
+            {
+                moduleImport: '../../../app-tabs.ts',
+                seams: ['RunnerAdvancedSurfaceId'],
+            },
+            {
+                moduleImport: '../../../runtime-store.ts',
+                seams: ['RallarBlackBoxBootstrapConfig'],
+            },
+            {
+                moduleImport: '../../../control-client.ts',
+                seams: ['RallarBlackBoxControlSnapshot'],
+            },
+        ] as const;
+
+        for (const directImport of directImports) {
+            const escapedModuleImport = directImport.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importedSeams = ownerSource.match(
+                new RegExp(
+                    `import\\s*(?:type\\s*)?{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                ),
+            )?.[1];
+            expect.soft(importedSeams, directImport.moduleImport).toBeDefined();
+            for (const seam of directImport.seams) {
+                expect
+                    .soft(importedSeams ?? '', `${directImport.moduleImport}: ${seam}`)
+                    .toMatch(new RegExp(`\\b${seam}\\b`));
+            }
+        }
+        expect(ownerSource, 'selector import').toMatch(
+            /import\s*{\s*selectRallarBlackBoxCommandHistory\s*}\s*from\s*'@shared-test\/rallar-bb-test\/selectors\.ts';/,
+        );
+        expect(ownerSource, 'React state/effect import').toMatch(
+            /import\s*{[^}]*\buseEffect\b[^}]*\buseState\b[^}]*}\s*from\s*'react';/s,
+        );
+
+        const normalizedOwner = ownerSource.replace(/\s+/g, ' ');
+        const propMarkers = [
+            'state: RallarBlackBoxTestState;',
+            'bootstrap: RallarBlackBoxBootstrapConfig;',
+            'control: RallarBlackBoxControlSnapshot;',
+            'authSession?: AuthSession;',
+            'globalValues: CommandCenterGlobalValues;',
+            'globalValuesEdited: boolean;',
+            'busy: boolean;',
+            'runState: string;',
+            'loadedFixtureId?: string;',
+            'lastError?: string;',
+            'selectedCommandId?: string;',
+            'queueRows: readonly CommandQueueRow[];',
+            'initialSurface?: RunnerAdvancedSurfaceId;',
+            'onSelectCommand(commandId: string | undefined): void;',
+            'onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(',
+            'onSurfaceChange(surface: RunnerAdvancedSurfaceId): void;',
+        ] as const;
+        const propPositions = propMarkers.map((marker) =>
+            normalizedOwner.indexOf(marker),
+        );
+        expect.soft(
+            propPositions.every((position) => position >= 0),
+            'complete public prop type',
+        ).toBe(true);
+        expect.soft(propPositions, 'public prop order').toEqual(
+            [...propPositions].sort((left, right) => left - right),
+        );
+        const propTypeStart = ownerSource.indexOf('}: {');
+        const propTypeEnd = ownerSource.indexOf('\n}) {', propTypeStart);
+        const declaredPropNames = [
+            ...ownerSource
+                .slice(propTypeStart, propTypeEnd)
+                .matchAll(/^ {4}(\w+)(?:\?|<[^\n]+>)?(?=[:(])/gm),
+        ].map((match) => match[1]);
+        const expectedPropNames = [
+            'state',
+            'bootstrap',
+            'control',
+            'authSession',
+            'globalValues',
+            'globalValuesEdited',
+            'busy',
+            'runState',
+            'loadedFixtureId',
+            'lastError',
+            'selectedCommandId',
+            'queueRows',
+            'initialSurface',
+            'onSelectCommand',
+            'onGlobalValueChange',
+            'onSurfaceChange',
+        ] as const;
+        expect(declaredPropNames, 'exact public prop cardinality').toEqual(
+            expectedPropNames,
+        );
+        expect(normalizedOwner, 'initial surface default').toContain(
+            "initialSurface = 'workbench',",
+        );
+
+        const appCalls = [
+            ...appSource.matchAll(/<RunnerAdvancedPanel\b([\s\S]*?)\/>/g),
+        ];
+        expect(appCalls, 'one App RunnerAdvancedPanel call').toHaveLength(1);
+        const appCall = appCalls[0]?.[0] ?? '';
+        const callMarkers = [
+            'state={state}',
+            'bootstrap={bootstrap}',
+            'control={control}',
+            'authSession={authSession}',
+            'globalValues={globalValues}',
+            'globalValuesEdited={globalValuesEdited}',
+            'busy={busy}',
+            'runState={runState}',
+            'loadedFixtureId={loadedFixtureId}',
+            'lastError={lastError}',
+            'selectedCommandId={selectedCommandId}',
+            'queueRows={queueRows}',
+            'initialSurface={activeAdvancedSurface}',
+            'onSelectCommand={setSelectedCommandId}',
+            'onGlobalValueChange={updateGlobalValue}',
+            'onSurfaceChange={(surface) =>',
+            "mode: 'black-box-runner',",
+            "tab: 'advanced',",
+            'advancedSurface: surface,',
+        ] as const;
+        const callPositions = callMarkers.map((marker) => appCall.indexOf(marker));
+        expect.soft(
+            callPositions.every((position) => position >= 0),
+            'complete App call expressions',
+        ).toBe(true);
+        expect.soft(callPositions, 'App call prop order').toEqual(
+            [...callPositions].sort((left, right) => left - right),
+        );
+        const appCallPropNames = [
+            ...appCall.matchAll(/^\s+(\w+)=\{/gm),
+        ].map((match) => match[1]);
+        expect(appCallPropNames, 'exact App call prop cardinality').toEqual(
+            expectedPropNames,
+        );
+        const appSimpleProps = [
+            ...appCall.matchAll(/^\s+(\w+)=\{([^}\n]+)}$/gm),
+        ].map((match) => [match[1], match[2]]);
+        expect(appSimpleProps, 'exact App call simple expressions').toEqual([
+            ['state', 'state'],
+            ['bootstrap', 'bootstrap'],
+            ['control', 'control'],
+            ['authSession', 'authSession'],
+            ['globalValues', 'globalValues'],
+            ['globalValuesEdited', 'globalValuesEdited'],
+            ['busy', 'busy'],
+            ['runState', 'runState'],
+            ['loadedFixtureId', 'loadedFixtureId'],
+            ['lastError', 'lastError'],
+            ['selectedCommandId', 'selectedCommandId'],
+            ['queueRows', 'queueRows'],
+            ['initialSurface', 'activeAdvancedSurface'],
+            ['onSelectCommand', 'setSelectedCommandId'],
+            ['onGlobalValueChange', 'updateGlobalValue'],
+        ]);
+        expect(appCall, 'exact App surface callback expression').toMatch(
+            /onSurfaceChange=\{\(surface\) =>\s*selectNavigation\(\{\s*mode: 'black-box-runner',\s*tab: 'advanced',\s*advancedSurface: surface,\s*\}\)\}\s*\/>/,
+        );
+        expect(appCall, 'App call has no key').not.toMatch(/\bkey\s*=/);
+
+        expect(
+            [...ownerSource.matchAll(/\buseState(?:<[^>]+>)?\s*\(/g)],
+            'advanced controller exact state count',
+        ).toHaveLength(1);
+        expect(ownerSource, 'advanced controller state initializer').toContain(
+            'useState<RunnerAdvancedSurfaceId>(initialSurface)',
+        );
+        expect(
+            [...ownerSource.matchAll(/\buseEffect\s*\(/g)],
+            'advanced controller exact effect count',
+        ).toHaveLength(1);
+        const compactOwner = ownerSource.replace(/\s+/g, '');
+        expect(compactOwner, 'surface synchronization effect').toContain(
+            'useEffect(()=>{setSurface(initialSurface);},[initialSurface]);',
+        );
+        expect(ownerSource, 'advanced controller no memos').not.toMatch(/\buseMemo\b/);
+        expect(ownerSource, 'advanced controller no callbacks').not.toMatch(
+            /\buseCallback\b/,
+        );
+        const selectSurfaceSource = ownerSource.slice(
+            ownerSource.indexOf('const selectSurface'),
+            ownerSource.indexOf('return (', ownerSource.indexOf('const selectSurface')),
+        );
+        const setSurfacePosition = selectSurfaceSource.indexOf(
+            'setSurface(nextSurface)',
+        );
+        const onSurfaceChangePosition = selectSurfaceSource.indexOf(
+            'onSurfaceChange(nextSurface)',
+        );
+        expect.soft(
+            setSurfacePosition,
+            'selectSurface state update exists',
+        ).toBeGreaterThanOrEqual(0);
+        expect.soft(
+            onSurfaceChangePosition,
+            'selectSurface callback exists',
+        ).toBeGreaterThanOrEqual(0);
+        expect.soft(
+            setSurfacePosition,
+            'selectSurface state update first',
+        ).toBeLessThan(onSurfaceChangePosition);
+
+        const switchMarkers = [
+            "['workbench', 'Local Workbench']",
+            "['distributed', 'Distributed Recipes']",
+            "['run-manager', 'Run Manager']",
+            "['manual', 'Manual Rallar']",
+            "['shared-test', 'Shared Test']",
+        ] as const;
+        const switchPositions = switchMarkers.map((marker) =>
+            ownerSource.indexOf(marker),
+        );
+        expect.soft(
+            switchPositions.every((position) => position >= 0),
+            'all advanced switches',
+        ).toBe(true);
+        expect.soft(switchPositions, 'advanced switch order').toEqual(
+            [...switchPositions].sort((left, right) => left - right),
+        );
+        const switchEntries = [
+            ...ownerSource.matchAll(/\['([^']+)', '([^']+)'\]/g),
+        ].map((match) => [match[1], match[2]]);
+        expect(switchEntries, 'exact five-switch cardinality').toEqual([
+            ['workbench', 'Local Workbench'],
+            ['distributed', 'Distributed Recipes'],
+            ['run-manager', 'Run Manager'],
+            ['manual', 'Manual Rallar'],
+            ['shared-test', 'Shared Test'],
+        ]);
+        expect(ownerSource, 'selected switch class').toContain(
+            "className={surface === id ? 'selected' : ''}",
+        );
+        expect(ownerSource, 'switch id cast').toContain(
+            'selectSurface(id as RunnerAdvancedSurfaceId)',
+        );
+
+        const wrapperSpecs = [
+            {
+                id: 'panel-local-workbench',
+                className: 'workspace-grid tab-workspace workbench-tab-grid',
+                child: 'LocalWorkbenchSection',
+                guard: "hidden={surface !== 'workbench'}",
+                props: [
+                    ['state', 'state'],
+                    ['bootstrap', 'bootstrap'],
+                    ['control', 'control'],
+                    ['authSession', 'authSession'],
+                    ['busy', 'busy'],
+                    ['runState', 'runState'],
+                    ['loadedFixtureId', 'loadedFixtureId'],
+                    ['lastError', 'lastError'],
+                    ['queueRows', 'queueRows'],
+                    ['selectedCommandId', 'selectedCommandId'],
+                    ['onSelectCommand', 'onSelectCommand'],
+                ],
+            },
+            {
+                id: 'panel-distributed-recipes',
+                className:
+                    'workspace-grid tab-workspace distributed-recipes-tab-grid',
+                child: 'DistributedRecipesPanel',
+                guard: "surface === 'distributed'",
+                props: [
+                    ['state', 'state'],
+                    ['bootstrap', 'bootstrap'],
+                    ['control', 'control'],
+                    ['globalValues', 'globalValues'],
+                ],
+            },
+            {
+                id: 'panel-run-manager',
+                className: 'workspace-grid tab-workspace run-manager-tab-grid',
+                child: 'RunManagerPanel',
+                guard: "surface === 'run-manager'",
+                props: [
+                    ['state', 'state'],
+                    ['bootstrap', 'bootstrap'],
+                    ['control', 'control'],
+                ],
+            },
+            {
+                id: 'panel-manual-rallar',
+                className: 'workspace-grid tab-workspace manual-tab-grid',
+                child: 'ManualRallarSection',
+                guard: "hidden={surface !== 'manual'}",
+                props: [
+                    ['state', 'state'],
+                    ['bootstrap', 'bootstrap'],
+                    ['authSession', 'authSession'],
+                    ['globalValues', 'globalValues'],
+                    ['globalValuesEdited', 'globalValuesEdited'],
+                    ['busy', 'busy'],
+                    [
+                        'history',
+                        'selectRallarBlackBoxCommandHistory(state)',
+                    ],
+                    ['selectedCommandId', 'selectedCommandId'],
+                    ['onSelectCommand', 'onSelectCommand'],
+                    ['onGlobalValueChange', 'onGlobalValueChange'],
+                ],
+            },
+            {
+                id: 'panel-shared-test',
+                className: 'workspace-grid tab-workspace shared-test-tab-grid',
+                child: 'SharedTestPanel',
+                guard: "surface === 'shared-test'",
+                props: [],
+            },
+        ] as const;
+        const wrapperPositions = wrapperSpecs.map((spec) =>
+            ownerSource.indexOf(`id="${spec.id}"`),
+        );
+        expect.soft(
+            wrapperPositions.every((position) => position >= 0),
+            'all advanced wrappers',
+        ).toBe(true);
+        expect.soft(wrapperPositions, 'advanced wrapper order').toEqual(
+            [...wrapperPositions].sort((left, right) => left - right),
+        );
+        for (const spec of wrapperSpecs) {
+            const wrapper = ownerSource.match(
+                new RegExp(
+                    `<div\\s+id="${spec.id}"[\\s\\S]*?<\\/div>`,
+                ),
+            )?.[0] ?? '';
+            expect.soft(wrapper, `${spec.id}: class`).toContain(
+                `className="${spec.className}"`,
+            );
+            if (spec.guard.startsWith('surface ===')) {
+                expect.soft(
+                    ownerSource,
+                    `${spec.id}: conditional mount guard`,
+                ).toMatch(
+                    new RegExp(
+                        `\\{${spec.guard.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} && \\(\\s*<div\\s+id="${spec.id}"`,
+                    ),
+                );
+            } else {
+                expect.soft(wrapper, `${spec.id}: persistent hidden guard`).toContain(
+                    spec.guard,
+                );
+            }
+            expect(
+                [...wrapper.matchAll(new RegExp(`<${spec.child}\\b`, 'g'))],
+                `${spec.id}: one direct child`,
+            ).toHaveLength(1);
+            const childCall = wrapper.match(
+                new RegExp(`<${spec.child}\\b[\\s\\S]*?\\/>`),
+            )?.[0] ?? '';
+            const childProps = [
+                ...childCall.matchAll(/\b(\w+)=\{([^}]+)}/g),
+            ].map((match) => [match[1], match[2]]);
+            expect.soft(
+                childProps,
+                `${spec.child}: exact ordered prop expressions`,
+            ).toEqual(spec.props);
+            expect.soft(childCall, `${spec.child}: no key`).not.toMatch(/\bkey\s*=/);
+        }
+        const conditionalMounts = [
+            ...ownerSource.matchAll(
+                /{surface === '([^']+)' && \(\s*<div\s+id="([^"]+)"/g,
+            ),
+        ].map((match) => [match[1], match[2]]);
+        expect(conditionalMounts, 'exact three conditional mount branches').toEqual([
+            ['distributed', 'panel-distributed-recipes'],
+            ['run-manager', 'panel-run-manager'],
+            ['shared-test', 'panel-shared-test'],
+        ]);
+        for (const persistentId of [
+            'panel-local-workbench',
+            'panel-manual-rallar',
+        ] as const) {
+            expect.soft(
+                ownerSource,
+                `${persistentId}: no conditional wrapper`,
+            ).not.toMatch(
+                new RegExp(
+                    `\\{[^{}\\n]+(?:&&|\\?)\\s*\\(\\s*<div\\s+id="${persistentId}"`,
+                ),
+            );
+        }
+        expect(ownerSource, 'manual history selector stays direct').toContain(
+            'history={selectRallarBlackBoxCommandHistory(state)}',
+        );
+
+        const dependencies = new Map<string, readonly string[]>();
+        const discoverDependencies = (sourcePath: string): void => {
+            if (dependencies.has(sourcePath)) return;
+            const source = existsSync(resolve(repositoryRoot, sourcePath))
+                ? repositorySource(sourcePath)
+                : '';
+            const directDependencies = [
+                ...source.matchAll(
+                    /\bfrom\s+['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]/g,
+                ),
+            ]
+                .map((match) => match[1] ?? match[2])
+                .filter((moduleImport) => moduleImport.startsWith('.'))
+                .map((moduleImport) =>
+                    relative(
+                        repositoryRoot,
+                        resolve(
+                            resolve(repositoryRoot, sourcePath),
+                            '..',
+                            moduleImport,
+                        ),
+                    ),
+                )
+                .filter(
+                    (dependency) =>
+                        ['.ts', '.tsx'].includes(extname(dependency)) &&
+                        existsSync(resolve(repositoryRoot, dependency)),
+                );
+            dependencies.set(sourcePath, directDependencies);
+            for (const dependency of directDependencies) {
+                discoverDependencies(dependency);
+            }
+        };
+        discoverDependencies(runnerAdvancedSourcePath);
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) return;
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) visit(dependency);
+            active.delete(path);
+            visited.add(path);
+        };
+        visit(runnerAdvancedSourcePath);
+        expect(cycles, 'recursive RunnerAdvancedPanel import cycles').toEqual([]);
     });
 
     it('keeps the legacy run manager and its dependencies in focused modules', () => {
