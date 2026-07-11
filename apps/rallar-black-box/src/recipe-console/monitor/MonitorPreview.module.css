@@ -1,0 +1,230 @@
+.monitor {
+    display: grid;
+    min-width: 0;
+    gap: 0;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.monitor > section {
+    min-width: 0;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.verdict,
+.actions,
+.staleLine,
+.failureRow {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 12px;
+}
+
+.verdict {
+    border-left: 4px solid var(--rc-status-failed-border);
+    background: var(--rc-status-failed-bg);
+}
+
+.verdict h2 {
+    font-size: 22px;
+}
+
+.eyebrow {
+    color: var(--rc-muted);
+    font-size: 12px;
+}
+
+.actions {
+    min-height: 52px;
+    justify-content: space-between;
+}
+
+.actions button,
+.inspectButton {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    background: var(--rc-surface);
+}
+
+.staleLine {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.failures {
+    display: grid;
+    gap: 10px;
+}
+
+.failureLedger {
+    display: grid;
+    gap: 5px;
+}
+
+.failureRow {
+    border: 1px solid var(--rc-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.failureRow[aria-selected="true"] {
+    border-color: var(--rc-selected-border);
+    box-shadow: inset 3px 0 var(--rc-selected-border);
+    background: var(--rc-selected-bg);
+}
+
+.failureSelection {
+    display: grid;
+    min-width: 0;
+    min-height: 52px;
+    flex: 1;
+    gap: 2px;
+    padding: 7px 12px;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+}
+
+.failureCode {
+    color: var(--rc-status-failed-text);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-weight: 700;
+}
+
+.matrixScroller {
+    max-width: 100%;
+    margin-top: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+}
+
+.matrix {
+    width: 100%;
+    min-width: 650px;
+    border-collapse: collapse;
+}
+
+.matrix th,
+.matrix td {
+    min-width: 72px;
+    height: 44px;
+    padding: 6px 8px;
+    border: 1px solid var(--rc-border);
+    text-align: center;
+}
+
+.matrix th:first-child {
+    position: sticky;
+    left: 0;
+    min-width: 116px;
+    background: var(--rc-surface);
+    text-align: left;
+}
+
+.matrix td[data-tone="failed"] {
+    color: var(--rc-status-failed-text);
+    background: var(--rc-status-failed-bg);
+    font-weight: 700;
+}
+
+.matrix td[data-tone="passed"] {
+    color: var(--rc-status-passed-text);
+    background: var(--rc-status-passed-bg);
+    font-weight: 700;
+}
+
+.timeline summary {
+    min-height: 44px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.timeline ol {
+    display: grid;
+    gap: 7px;
+    padding-left: 20px;
+}
+
+.timeline li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 10px;
+}
+
+.timeline time,
+.timeline code,
+.fixArea dd {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.timeline li span {
+    grid-column: 2;
+}
+
+.inspector {
+    display: grid;
+    gap: 18px;
+}
+
+.inspector section {
+    display: grid;
+    gap: 6px;
+}
+
+.fixArea {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 5px 12px;
+}
+
+.fixArea dt {
+    color: var(--rc-muted);
+}
+
+.fixArea dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.evidenceList {
+    display: grid;
+    gap: 8px;
+    padding-left: 20px;
+}
+
+.evidenceList li {
+    display: grid;
+    gap: 2px;
+}
+
+.inspector > a {
+    color: var(--rc-primary);
+    font-weight: 700;
+}
+
+@media (max-width: 767px) {
+    .monitor > section {
+        padding-inline: 0;
+    }
+
+    .actions,
+    .staleLine {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .failureRow {
+        align-items: stretch;
+    }
+
+    .inspectButton {
+        align-self: stretch;
+    }
+}

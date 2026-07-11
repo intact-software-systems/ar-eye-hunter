@@ -19,6 +19,9 @@ export type RecipeConsoleShellProps = Readonly<{
     inspectorContent?: ReactNode;
     inspectorOpen: boolean;
     onInspectorClose(): void;
+    inspectorRestoreFocus?: HTMLElement | null;
+    selectionDockContent?: ReactNode;
+    onSelectionDockInspect?(trigger: HTMLButtonElement): void;
     restoreFocusRef: RefObject<HTMLButtonElement | null>;
 }>;
 
@@ -32,6 +35,9 @@ export function RecipeConsoleShell({
     inspectorContent,
     inspectorOpen,
     onInspectorClose,
+    inspectorRestoreFocus,
+    selectionDockContent = 'Preview inspector selected',
+    onSelectionDockInspect,
     restoreFocusRef,
 }: RecipeConsoleShellProps) {
     const presentation = useRecipeConsolePresentation();
@@ -63,13 +69,18 @@ export function RecipeConsoleShell({
                     mode={presentation.inspector}
                     onClose={onInspectorClose}
                     open
+                    restoreFocusTo={inspectorRestoreFocus}
                 >
                     {inspectorContent}
                 </InspectorHost>
             ) : null}
             <div className={styles.selectionDock} data-selection-dock>
-                <span>Preview inspector selected</span>
-                <button onClick={() => undefined} ref={restoreFocusRef} type="button">Inspect</button>
+                <span>{selectionDockContent}</span>
+                <button
+                    onClick={event => onSelectionDockInspect?.(event.currentTarget)}
+                    ref={restoreFocusRef}
+                    type="button"
+                >Inspect</button>
             </div>
         </div>
     );

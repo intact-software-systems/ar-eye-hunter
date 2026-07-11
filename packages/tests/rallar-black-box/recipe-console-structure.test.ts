@@ -126,8 +126,8 @@ describe('Recipe Console experience boundary', () => {
 
         const app = source(recipeConsolePath);
         expect(app).toMatch(/switch\s*\(view\)/);
-        expect(app).toContain(
-            'activeWork(urlState.state.view, seedState, setInspectorContent)',
+        expect(app).toMatch(
+            /activeWork\(\s*urlState\.state\.view,\s*seedState,\s*setInspectorContent,\s*monitorWork,/,
         );
         expect(app).not.toMatch(/display\s*:\s*['"]none|(?:^|\s)hidden(?:=|\s|>)/m);
         expect(app).not.toMatch(/(?:registry|Registry|index\.ts)/);
@@ -166,6 +166,29 @@ describe('Recipe Console experience boundary', () => {
         expect(view).toContain('model.group.applicationId');
         expect(view).not.toContain("'rallar-server/default/seed-room'");
         expect(view).not.toMatch(/\bfetch\s*\(/);
+    });
+
+    test('keeps failure-first Monitor and modal focus behavior bounded', () => {
+        const monitorPath = `${recipeConsoleRoot}/monitor/MonitorPreview.tsx`;
+        const inspectorPath = `${recipeConsoleRoot}/monitor/FailureInspector.tsx`;
+        const monitorCssPath = `${recipeConsoleRoot}/monitor/MonitorPreview.module.css`;
+        for (const path of [monitorPath, inspectorPath, monitorCssPath]) {
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+        }
+        expect(source(monitorPath).trimEnd().split(/\r?\n/).length).toBeLessThan(300);
+        expect(source(inspectorPath).trimEnd().split(/\r?\n/).length).toBeLessThan(300);
+        expect(source(monitorCssPath).trimEnd().split(/\r?\n/).length).toBeLessThan(400);
+        expect(source(monitorPath)).not.toMatch(/\bfetch\s*\(|legacy\//);
+        expect(source(inspectorPath)).toContain(
+            '/?provider=simulated&experience=legacy&tab=rtc-diagnostics',
+        );
+        expect(source(inspectorPath)).not.toMatch(/from ['"][^'"]*legacy\//);
+
+        const overlay = source(`${recipeConsoleRoot}/ui/OverlaySheet.tsx`);
+        expect(overlay).toContain("event.key === 'Escape'");
+        expect(overlay).toContain("event.key !== 'Tab'");
+        expect(overlay).toContain('restoreFocusTo.focus()');
+        expect(overlay).toContain('querySelectorAll<HTMLElement>(FOCUSABLE)');
     });
 
     test('loads only auth CSS statically while preserving legacy CSS bytes', () => {
