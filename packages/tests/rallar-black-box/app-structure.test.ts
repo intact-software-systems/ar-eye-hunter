@@ -3232,6 +3232,387 @@ describe('rallar-black-box app source ownership', () => {
         expect(cycles, 'manual Rallar import cycles').toEqual([]);
     });
 
+    it('keeps the Shared Test domain in exact focused owners', () => {
+        const appSource = repositorySource(appSourcePath);
+        const catalogPath =
+            'apps/rallar-black-box/src/legacy/runner/shared-test/shared-test-catalog.ts';
+        const catalogPanelPath =
+            'apps/rallar-black-box/src/legacy/runner/shared-test/SharedTestCatalogPanel.tsx';
+        const artifactPanelPath =
+            'apps/rallar-black-box/src/legacy/runner/shared-test/SharedTestArtifactImportPanel.tsx';
+        const panelPath =
+            'apps/rallar-black-box/src/legacy/runner/shared-test/SharedTestPanel.tsx';
+        const owners = [
+            {
+                path: catalogPath,
+                exports: [
+                    'AppLocalRecipeEntry',
+                    'APP_LOCAL_RECIPE_CATALOG',
+                    'catalogEntryMatches',
+                    'catalogRequirements',
+                ],
+                lineCap: 150,
+            },
+            {
+                path: catalogPanelPath,
+                exports: ['SharedTestCatalogPanel'],
+                lineCap: 310,
+            },
+            {
+                path: artifactPanelPath,
+                exports: ['SharedTestArtifactImportPanel'],
+                lineCap: 310,
+            },
+            {
+                path: panelPath,
+                exports: ['SharedTestPanel'],
+                lineCap: 90,
+            },
+        ] as const;
+        const sourceByPath = new Map<string, string>();
+
+        for (const owner of owners) {
+            const ownerExists = existsSync(resolve(repositoryRoot, owner.path));
+            const ownerSource = ownerExists ? repositorySource(owner.path) : '';
+            sourceByPath.set(owner.path, ownerSource);
+
+            expect.soft(ownerExists, `${owner.path}: missing owner`).toBe(true);
+            expect
+                .soft(ownerSource, `${owner.path}: export-star barrel`)
+                .not.toMatch(/^\s*export\s*\*(?:\s+as\s+\w+)?\s+from\b/m);
+            expect
+                .soft(ownerSource, `${owner.path}: named re-export facade`)
+                .not.toMatch(/^\s*export\s+(?:type\s+)?{[^}]+}\s*from\s*['"]/m);
+            expect.soft(ownerSource, `${owner.path}: App.tsx import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/,
+            );
+            expect.soft(ownerSource, `${owner.path}: CSS import`).not.toMatch(
+                /\b(?:from\s+|import\s*)['"][^'"]+\.css['"]/,
+            );
+            expect.soft(
+                ownerSource === ''
+                    ? 0
+                    : ownerSource.trimEnd().split(/\r?\n/).length,
+                `${owner.path}: line count`,
+            ).toBeLessThanOrEqual(owner.lineCap);
+
+            for (const exportedName of owner.exports) {
+                expect
+                    .soft(ownerSource, `${owner.path}: direct ${exportedName} export`)
+                    .toMatch(
+                        new RegExp(
+                            `^\\s*export\\s+(?:type\\s+${exportedName}\\s*=|const\\s+${exportedName}\\b|function\\s+${exportedName}\\s*\\()`,
+                            'm',
+                        ),
+                    );
+            }
+        }
+
+        const sourceFor = (path: string): string =>
+            path === appSourcePath
+                ? appSource
+                : sourceByPath.get(path) ??
+                  (existsSync(resolve(repositoryRoot, path))
+                      ? repositorySource(path)
+                      : '');
+        const directImports = [
+            {
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/shared-test/shared-test-catalog.ts',
+                seams: ['catalogRequirements'],
+            },
+            {
+                importerPath: appSourcePath,
+                moduleImport:
+                    './legacy/runner/shared-test/SharedTestPanel.tsx',
+                seams: ['SharedTestPanel'],
+            },
+            {
+                importerPath: catalogPath,
+                moduleImport: '../../../shared-test-handoff-fixtures.ts',
+                seams: ['RallarBlackBoxSharedTestRecipeCatalogEntry'],
+            },
+            {
+                importerPath: catalogPanelPath,
+                moduleImport: './shared-test-catalog.ts',
+                seams: [
+                    'APP_LOCAL_RECIPE_CATALOG',
+                    'catalogEntryMatches',
+                    'catalogRequirements',
+                ],
+            },
+            {
+                importerPath: artifactPanelPath,
+                moduleImport: '../../../shared-test-handoff-fixtures.ts',
+                seams: [
+                    'RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT',
+                    'parseRallarBlackBoxSharedTestArtifactBundle',
+                    'RallarBlackBoxSharedTestArtifactBundleFiles',
+                ],
+            },
+            {
+                importerPath: artifactPanelPath,
+                moduleImport: '../shared/artifact-issue-presentation.ts',
+                seams: ['artifactIssueText'],
+            },
+            {
+                importerPath: panelPath,
+                moduleImport: './SharedTestCatalogPanel.tsx',
+                seams: ['SharedTestCatalogPanel'],
+            },
+            {
+                importerPath: panelPath,
+                moduleImport: './SharedTestArtifactImportPanel.tsx',
+                seams: ['SharedTestArtifactImportPanel'],
+            },
+        ] as const;
+
+        for (const directImport of directImports) {
+            const importerSource = sourceFor(directImport.importerPath);
+            const escapedModuleImport = directImport.moduleImport.replace(
+                /[.*+?^${}()|[\]\\]/g,
+                '\\$&',
+            );
+            const importMatches = [
+                ...importerSource.matchAll(
+                    new RegExp(
+                        `import\\s*(?:type\\s*)?{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
+                        'g',
+                    ),
+                ),
+            ];
+            expect.soft(
+                importMatches,
+                `${directImport.importerPath}: ${directImport.moduleImport}`,
+            ).toHaveLength(1);
+            for (const seam of directImport.seams) {
+                expect
+                    .soft(
+                        importMatches[0]?.[1] ?? '',
+                        `${directImport.moduleImport}: ${seam}`,
+                    )
+                    .toMatch(new RegExp(`\\b${seam}\\b`));
+            }
+        }
+
+        for (const declaration of [
+            /^\s*type\s+AppLocalRecipeEntry\s*=/m,
+            /^\s*const\s+APP_LOCAL_RECIPE_CATALOG\b/m,
+            /\bfunction\s+catalogEntryMatches\s*\(/,
+            /\bfunction\s+catalogRequirements\s*\(/,
+            /^\s*const\s+SHARED_TEST_ARTIFACT_FILE_NAMES\b/m,
+            /\bfunction\s+SharedTestCatalogPanel\s*\(/,
+            /\bfunction\s+SharedTestArtifactImportPanel\s*\(/,
+            /\bfunction\s+SharedTestPanel\s*\(/,
+        ] as const) {
+            expect.soft(appSource, `App.tsx local ${declaration.source}`).not.toMatch(
+                declaration,
+            );
+        }
+        expect(appSource, 'runner catalog keeps the direct shared fixture import').toMatch(
+            /import\s*{[^}]*RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG[^}]*}\s*from\s*'\.\/shared-test-handoff-fixtures\.ts';/s,
+        );
+        const runnerCatalogSource = appSource.slice(
+            appSource.indexOf('function runnerRecipeCatalog'),
+            appSource.indexOf('function runnerRecipeDefaultScore'),
+        );
+        expect(runnerCatalogSource, 'runner catalog keeps helper mapping').toContain(
+            'requirements: catalogRequirements(entry),',
+        );
+
+        const catalogSource = sourceFor(catalogPanelPath);
+        expect(
+            [...catalogSource.matchAll(/\buseState(?:<[^>]+>)?\s*\(/g)],
+            'catalog panel: exact state count',
+        ).toHaveLength(3);
+        const catalogStatePositions = [
+            "const [query, setQuery] = useState('');",
+            "const [profile, setProfile] = useState('');",
+            'const [selectedEntryId, setSelectedEntryId] = useState(',
+        ].map((marker) => catalogSource.indexOf(marker));
+        expect.soft(
+            catalogStatePositions.every((position) => position >= 0),
+            'catalog panel: state declarations',
+        ).toBe(true);
+        expect.soft(catalogStatePositions, 'catalog panel: state order').toEqual(
+            [...catalogStatePositions].sort((left, right) => left - right),
+        );
+        expect(
+            [...catalogSource.matchAll(/\buseMemo(?:<[^>]+>)?\s*\(/g)],
+            'catalog panel: exact memo count',
+        ).toHaveLength(2);
+        const catalogMemoPositions = [
+            'const profileOptions = useMemo(',
+            'const filteredEntries = useMemo(',
+        ].map((marker) => catalogSource.indexOf(marker));
+        expect.soft(
+            catalogMemoPositions.every((position) => position >= 0),
+            'catalog panel: memo declarations',
+        ).toBe(true);
+        expect.soft(catalogMemoPositions, 'catalog panel: memo order').toEqual(
+            [...catalogMemoPositions].sort((left, right) => left - right),
+        );
+        expect(catalogSource.replace(/\s+/g, ''), 'catalog filtered memo deps').toContain(
+            '[catalog.entries,profile,query],',
+        );
+        expect(catalogSource, 'catalog panel: no effects').not.toMatch(/\buseEffect\b/);
+        expect(catalogSource, 'catalog query trim at match call').toContain(
+            'catalogEntryMatches(entry, query.trim(), profile)',
+        );
+        expect(catalogSource, 'catalog selection fallback').toMatch(
+            /catalog\.entries\.find\(\(entry\) => entry\.id === selectedEntryId\)\s*\?\?\s*filteredEntries\[0\]\s*\?\?\s*catalog\.entries\[0\]/,
+        );
+
+        const artifactSource = sourceFor(artifactPanelPath);
+        expect(
+            [...artifactSource.matchAll(/\buseState(?:<|\s*\()/g)],
+            'artifact panel: exact state count',
+        ).toHaveLength(3);
+        const artifactStatePositions = [
+            'const [files, setFiles]',
+            'const [parseResult, setParseResult]',
+            'const [readError, setReadError]',
+        ].map((marker) => artifactSource.indexOf(marker));
+        expect.soft(
+            artifactStatePositions.every((position) => position >= 0),
+            'artifact panel: state declarations',
+        ).toBe(true);
+        expect.soft(artifactStatePositions, 'artifact panel: state order').toEqual(
+            [...artifactStatePositions].sort((left, right) => left - right),
+        );
+        expect(artifactSource, 'artifact panel: no memos').not.toMatch(/\buseMemo\b/);
+        expect(artifactSource, 'artifact panel: no effects').not.toMatch(/\buseEffect\b/);
+        for (const action of ['parseFiles', 'handleFiles', 'copyReplayRecipe'] as const) {
+            expect.soft(artifactSource, `artifact panel action: ${action}`).toMatch(
+                new RegExp(`const\\s+${action}\\s*=`),
+            );
+        }
+        expect(artifactSource, 'artifact panel replaces with an empty bundle').toContain(
+            'const nextFiles: RallarBlackBoxSharedTestArtifactBundleFiles = {};',
+        );
+        expect(artifactSource, 'artifact panel reads files sequentially').toMatch(
+            /for \(const file of selectedFiles\)[\s\S]*?= await file\.text\(\);/,
+        );
+        expect(artifactSource, 'artifact panel renders parsed values').toContain(
+            'const parsed = parseResult?.value;',
+        );
+        expect(artifactSource, 'artifact event cap').toContain('.slice(0, 24)');
+        expect(
+            [...artifactSource.matchAll(/\.slice\(0, 12\)/g)],
+            'artifact diagnostic and failure caps',
+        ).toHaveLength(2);
+
+        const panelSource = sourceFor(panelPath);
+        expect(panelSource, 'SharedTestPanel is stateless').not.toMatch(
+            /\buse(?:State|Memo|Effect|Callback|Reducer|Ref)\b/,
+        );
+        const childMarkers = [
+            '<SharedTestCatalogPanel />',
+            '<SharedTestArtifactImportPanel />',
+            '<section className="panel shared-test-coverage-panel">',
+        ] as const;
+        const childPositions = childMarkers.map((marker) =>
+            panelSource.indexOf(marker),
+        );
+        expect.soft(
+            childPositions.every((position) => position >= 0),
+            'SharedTestPanel: all children',
+        ).toBe(true);
+        expect.soft(childPositions, 'SharedTestPanel: child order').toEqual(
+            [...childPositions].sort((left, right) => left - right),
+        );
+        for (const marker of childMarkers) {
+            expect(
+                [...panelSource.matchAll(new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'))],
+                `SharedTestPanel: ${marker} once`,
+            ).toHaveLength(1);
+        }
+        expect(
+            [...panelSource.matchAll(/RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF\.map\(/g)],
+            'SharedTestPanel: one coverage handoff render',
+        ).toHaveLength(1);
+
+        const panelCalls = [...appSource.matchAll(/<SharedTestPanel\b([^>]*)\/>/g)];
+        expect(panelCalls, 'App.tsx: two independent Shared Test instances').toHaveLength(2);
+        for (const panelCall of panelCalls) {
+            expect.soft(panelCall[1] ?? '', 'SharedTestPanel call: no props or key').toBe(' ');
+        }
+        const runnerWrapper = appSource.match(
+            /{surface === 'shared-test' && \(\s*<div\s+id="panel-shared-test"[\s\S]*?<\/div>\s*\)}/,
+        )?.[0] ?? '';
+        expect(runnerWrapper, 'RunnerAdvanced Shared Test wrapper').toContain(
+            'className="workspace-grid tab-workspace shared-test-tab-grid"',
+        );
+        expect(
+            [...runnerWrapper.matchAll(/<SharedTestPanel\b/g)],
+            'RunnerAdvanced conditional Shared Test instance',
+        ).toHaveLength(1);
+        const legacyWrapper = appSource.match(
+            /<section\s+id="legacy-panel-shared-test"[\s\S]*?<\/section>/,
+        )?.[0] ?? '';
+        for (const wrapperMarker of [
+            'className="workspace-grid tab-workspace shared-test-tab-grid"',
+            'role="tabpanel"',
+            'aria-labelledby="tab-shared-test"',
+            "hidden={activeTab !== 'shared-test'}",
+        ] as const) {
+            expect.soft(legacyWrapper, `legacy Shared Test wrapper: ${wrapperMarker}`).toContain(
+                wrapperMarker,
+            );
+        }
+        expect(
+            [...legacyWrapper.matchAll(/<SharedTestPanel\b/g)],
+            'persistent legacy Shared Test instance',
+        ).toHaveLength(1);
+
+        const targetPaths = new Set(owners.map((owner) => owner.path));
+        const dependencies = new Map<string, readonly string[]>();
+        for (const owner of owners) {
+            dependencies.set(
+                owner.path,
+                [...sourceFor(owner.path).matchAll(
+                    /\bfrom\s+['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]/g,
+                )]
+                    .map((match) => match[1] ?? match[2])
+                    .filter((moduleImport) => moduleImport.startsWith('.'))
+                    .map((moduleImport) =>
+                        relative(
+                            repositoryRoot,
+                            resolve(
+                                resolve(repositoryRoot, owner.path),
+                                '..',
+                                moduleImport,
+                            ),
+                        ),
+                    )
+                    .filter((dependency) => targetPaths.has(dependency)),
+            );
+        }
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) {
+                return;
+            }
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) {
+                visit(dependency);
+            }
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const targetPath of targetPaths) {
+            visit(targetPath);
+        }
+        expect(cycles, 'Shared Test import cycles').toEqual([]);
+    });
+
     it('keeps the legacy run manager and its dependencies in focused modules', () => {
         const appSource = repositorySource(appSourcePath);
         const runManagerPath =
@@ -3401,11 +3782,6 @@ describe('rallar-black-box app source ownership', () => {
                 moduleImport:
                     './legacy/runner/shared/control-snapshot-bounds.ts',
                 seam: 'RUN_MANAGER_SNAPSHOT_BOUNDS',
-            },
-            {
-                moduleImport:
-                    './legacy/runner/shared/artifact-issue-presentation.ts',
-                seam: 'artifactIssueText',
             },
         ] as const;
 

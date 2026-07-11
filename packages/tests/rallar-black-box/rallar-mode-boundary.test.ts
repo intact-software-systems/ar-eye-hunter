@@ -72,7 +72,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             sourceBetween(source, 'function RallarDataPanel', 'function MediaConsolePanel'),
             sourceBetween(source, 'function MediaConsolePanel', 'function AuthCommandCenterPanel'),
             sourceBetween(source, 'function AuthCommandCenterPanel', 'function RoomsClientsPanel'),
-            sourceBetween(source, 'function RoomsClientsPanel', 'function SharedTestCatalogPanel'),
+            sourceBetween(source, 'function RoomsClientsPanel', 'function CommandCenterActionFeedbackPanel'),
             sourceBetween(source, 'function RallarServerPanel', 'function parseVariablesText'),
         ].join('\n');
 
@@ -122,7 +122,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
 
     it('surfaces action feedback and live subscription state in direct command panels', () => {
         const source = appSource();
-        const roomsClientsPanel = sourceBetween(source, 'function RoomsClientsPanel', 'function SharedTestCatalogPanel');
+        const roomsClientsPanel = sourceBetween(source, 'function RoomsClientsPanel', 'function CommandCenterActionFeedbackPanel');
         const websocketPanel = sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel');
         const rtcRealtimePanel = sourceBetween(source, 'function RtcRealtimePanel', 'function RallarDataPanel');
         const rtcDiagnosticsPanel = sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel');
