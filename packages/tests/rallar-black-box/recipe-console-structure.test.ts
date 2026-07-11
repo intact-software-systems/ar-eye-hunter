@@ -10,6 +10,7 @@ const legacyExperiencePath =
     'apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx';
 const recipeConsolePath =
     'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleApp.tsx';
+const recipeConsoleRoot = 'apps/rallar-black-box/src/recipe-console';
 
 function source(path: string): string {
     return readFileSync(resolve(repositoryRoot, path), 'utf8');
@@ -69,9 +70,85 @@ describe('Recipe Console experience boundary', () => {
         expect(existsSync(resolve(repositoryRoot, recipeConsolePath))).toBe(true);
         const recipeConsole = source(recipeConsolePath);
         expect(recipeConsole).toContain('className="recipe-console"');
-        expect(recipeConsole).toContain('data-view="execute"');
+        expect(recipeConsole).toContain('data-view={urlState.state.view}');
         expect(recipeConsole).not.toMatch(/(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/);
         expect(recipeConsole.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(180);
+    });
+
+    test('builds the scoped Signal Ledger shell from bounded modules', () => {
+        const requiredFiles = [
+            'design/tokens.css',
+            'design/reset.css',
+            'app/recipe-console-navigation.ts',
+            'shell/RecipeConsoleShell.tsx',
+            'shell/RecipeConsoleShell.module.css',
+            'shell/TopCommandBar.tsx',
+            'shell/PrimaryNavigation.tsx',
+            'shell/InspectorHost.tsx',
+            'shell/responsive-presentation.ts',
+            'shell/use-responsive-presentation.ts',
+            'ui/Icon.tsx',
+            'ui/IconButton.tsx',
+            'ui/CommandBarItem.tsx',
+            'ui/StatusMark.tsx',
+            'ui/MetricStrip.tsx',
+            'ui/SelectableRow.tsx',
+            'ui/MatrixCell.tsx',
+            'ui/SegmentedControl.tsx',
+            'ui/OverlaySheet.tsx',
+            'ui/StatePanel.tsx',
+            'ui/primitives.module.css',
+        ];
+        for (const file of requiredFiles) {
+            expect(
+                existsSync(resolve(repositoryRoot, recipeConsoleRoot, file)),
+                file,
+            ).toBe(true);
+        }
+
+        const navigation = source(`${recipeConsoleRoot}/app/recipe-console-navigation.ts`);
+        expect(navigation).toMatch(
+            /Execute[\s\S]*Monitor[\s\S]*Analyze[\s\S]*Tune[\s\S]*Fleet[\s\S]*Advanced/,
+        );
+        expect(navigation).not.toMatch(/[\p{Extended_Pictographic}\p{Emoji_Presentation}]/u);
+
+        const tokens = source(`${recipeConsoleRoot}/design/tokens.css`);
+        expect(tokens.trimStart()).toMatch(/^\.recipe-console\s*\{/);
+        expect(tokens).toContain('--rc-canvas: #F5F7FA;');
+        expect(tokens).toContain('--rc-primary: #2446C2;');
+        expect(tokens).toContain('--rc-status-failed-bg: #FCEBED;');
+        expect(tokens).not.toMatch(/^\.(?:panel|metric|workspace-grid|tabs?)\b/m);
+
+        const shell = source(`${recipeConsoleRoot}/shell/RecipeConsoleShell.tsx`);
+        expect(shell).toContain('<InspectorHost');
+        expect(shell.match(/\{inspectorContent\}/g)).toHaveLength(1);
+        expect(shell.trimEnd().split(/\r?\n/).length).toBeLessThan(300);
+
+        const app = source(recipeConsolePath);
+        expect(app).toMatch(/switch\s*\(.*\.view\)/s);
+        expect(app).not.toMatch(/display\s*:\s*['"]none|(?:^|\s)hidden(?:=|\s|>)/m);
+        expect(app).not.toMatch(/(?:registry|Registry|index\.ts)/);
+        expect(app).toContain('createRecipeConsoleSeedState');
+
+        for (const path of requiredFiles.filter(path => path.endsWith('.tsx'))) {
+            const file = source(`${recipeConsoleRoot}/${path}`);
+            expect(file.trimEnd().split(/\r?\n/).length, path).toBeLessThan(300);
+            expect(file, path).not.toMatch(/^\s{4,}function\s+[A-Z]\w*/m);
+        }
+        for (const path of requiredFiles.filter(path => path.endsWith('.module.css'))) {
+            expect(source(`${recipeConsoleRoot}/${path}`).trimEnd().split(/\r?\n/).length)
+                .toBeLessThan(400);
+        }
+    });
+
+    test('keeps icon-only controls named and the inspector subtree singular', () => {
+        const iconButton = source(`${recipeConsoleRoot}/ui/IconButton.tsx`);
+        expect(iconButton).toContain("'aria-label': ariaLabel");
+        expect(iconButton).toContain('title={title ?? ariaLabel}');
+
+        const inspector = source(`${recipeConsoleRoot}/shell/InspectorHost.tsx`);
+        expect(inspector.match(/\{children\}/g)).toHaveLength(1);
+        expect(inspector).not.toMatch(/hidden|display\s*:\s*none/);
     });
 
     test('loads only auth CSS statically while preserving legacy CSS bytes', () => {
