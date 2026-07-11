@@ -56,6 +56,10 @@ const runnerFleetTimingSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/FleetTimingGroupList.tsx',
     import.meta.url,
 );
+const actionFeedbackPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -146,7 +150,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             sourceBetween(source, 'function RallarDataPanel', 'function MediaConsolePanel'),
             sourceBetween(source, 'function MediaConsolePanel', 'function AuthCommandCenterPanel'),
             sourceBetween(source, 'function AuthCommandCenterPanel', 'function RoomsClientsPanel'),
-            sourceBetween(source, 'function RoomsClientsPanel', 'function CommandCenterActionFeedbackPanel'),
+            sourceBetween(source, 'function RoomsClientsPanel', 'function RallarServerRequestFeedbackPanel'),
             sourceBetween(
                 source,
                 'function RallarServerPanel',
@@ -202,11 +206,26 @@ describe('rallar-black-box Rallar mode boundary', () => {
 
     it('surfaces action feedback and live subscription state in direct command panels', () => {
         const source = appSource();
-        const roomsClientsPanel = sourceBetween(source, 'function RoomsClientsPanel', 'function CommandCenterActionFeedbackPanel');
+        const actionFeedbackPanelFallback = existsSync(
+            actionFeedbackPanelSourcePath,
+        )
+            ? ''
+            : sourceBetween(
+                  source,
+                  'function CommandCenterActionFeedbackPanel',
+                  'function RallarServerRequestFeedbackPanel',
+              );
+        const actionFeedbackPanel = sourceOrFallback(
+            actionFeedbackPanelSourcePath,
+            actionFeedbackPanelFallback,
+        );
+        const roomsClientsPanel = sourceBetween(source, 'function RoomsClientsPanel', 'function RallarServerRequestFeedbackPanel');
         const websocketPanel = sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel');
         const rtcRealtimePanel = sourceBetween(source, 'function RtcRealtimePanel', 'function RallarDataPanel');
         const rtcDiagnosticsPanel = sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel');
 
+        expect(actionFeedbackPanel).toContain('feedback.state');
+        expect(actionFeedbackPanel).toContain('aria-live="polite"');
         expect(roomsClientsPanel).toContain('CommandCenterActionFeedbackPanel');
         expect(websocketPanel).toContain('CommandCenterActionFeedbackPanel');
         expect(websocketPanel).toContain('WS subscribed');

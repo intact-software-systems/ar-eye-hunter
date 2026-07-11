@@ -41,7 +41,9 @@ const presentationModules = [
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/FilterSelect.tsx',
-        moduleImport: './legacy/shared/FilterSelect.tsx',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/diagnostics/events/EventStreamPanel.tsx',
+        moduleImport: '../../shared/FilterSelect.tsx',
         seams: ['FilterSelect'],
     },
     {
@@ -1993,8 +1995,9 @@ describe('rallar-black-box app source ownership', () => {
         const distributedMonitorModules = [
             {
                 path: 'apps/rallar-black-box/src/legacy/shared/unique-values.ts',
-                importerPath: appSourcePath,
-                moduleImport: './legacy/shared/unique-values.ts',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/diagnostics/events/EventStreamPanel.tsx',
+                moduleImport: '../../shared/unique-values.ts',
                 seams: ['uniqueValues'],
             },
             {
@@ -2985,8 +2988,19 @@ describe('rallar-black-box app source ownership', () => {
                 );
         }
         expect(
-            [...appSource.matchAll(/\bstringValue\s*\(/g)],
-            'App.tsx: all unaffected stringValue consumers use the shared import',
+            [
+                appSource,
+                repositorySource(
+                    'apps/rallar-black-box/src/legacy/diagnostics/events/event-presentation.ts',
+                ),
+                repositorySource(
+                    'apps/rallar-black-box/src/legacy/diagnostics/events/event-filters.ts',
+                ),
+                repositorySource(
+                    'apps/rallar-black-box/src/legacy/shell/rallar-browser-status.ts',
+                ),
+            ].flatMap((source) => [...source.matchAll(/\bstringValue\s*\(/g)]),
+            'all unaffected stringValue consumers use the shared import',
         ).toHaveLength(42);
         for (const movedMarker of [
             'title="Manual Rallar Inputs"',
@@ -8538,6 +8552,567 @@ describe('rallar-black-box app source ownership', () => {
         };
         for (const owner of owners) visit(owner.path);
         expect(cycles, 'Fleet recursive owner import cycles').toEqual([]);
+    });
+
+    it('extracts diagnostic evidence owners without changing mounted lifetimes', () => {
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const diagnosticsRoot = 'apps/rallar-black-box/src/legacy/diagnostics';
+        const owners = [
+            [`${diagnosticsRoot}/shared/action-feedback.ts`, 90, [
+                'type:CommandCenterActionFeedback', 'value:completedActionFeedback',
+                'value:idleActionFeedback', 'value:runningActionFeedback',
+            ]],
+            [`${diagnosticsRoot}/shared/CommandCenterActionFeedbackPanel.tsx`, 120,
+                ['value:CommandCenterActionFeedbackPanel']],
+            ['apps/rallar-black-box/src/legacy/shared/finite-number.ts', 30,
+                ['value:optionalNumber']],
+            ['apps/rallar-black-box/src/legacy/shared/use-now.ts', 35,
+                ['value:useNow']],
+            [`${diagnosticsRoot}/events/event-presentation.ts`, 160, [
+                'value:eventFailureText', 'value:eventPayloadDetails',
+                'value:eventPayloadText', 'value:isRallarBrowserEvent',
+                'value:isRallarTraceEvent', 'value:rallarTraceSource',
+                'value:traceMetaText', 'value:traceTimingText',
+            ]],
+            [`${diagnosticsRoot}/events/event-filters.ts`, 160, [
+                'type:EventFilter', 'type:EventFilters',
+                'value:DEFAULT_EVENT_FILTERS', 'value:EVENT_KIND_FILTERS',
+                'value:eventFilterFromValue', 'value:eventGroupValue',
+                'value:eventMatchesFilters', 'value:eventPeerValue',
+                'value:eventSelectorValue',
+            ]],
+            [`${diagnosticsRoot}/events/ExecutionFocusPanel.tsx`, 130,
+                ['value:ExecutionFocusPanel']],
+            [`${diagnosticsRoot}/events/EventStreamPanel.tsx`, 230,
+                ['value:EventStreamPanel']],
+            [`${diagnosticsRoot}/events/RallarTracePanel.tsx`, 230,
+                ['value:RallarTracePanel']],
+            [`${diagnosticsRoot}/events/StatsPanel.tsx`, 100,
+                ['value:StatsPanel']],
+            ['apps/rallar-black-box/src/legacy/shell/rallar-browser-status.ts', 260, [
+                'type:RallarBrowserStatusSummary', 'value:deriveRallarBrowserStatus',
+            ]],
+            ['apps/rallar-black-box/src/legacy/shell/RallarBrowserTraceBar.tsx', 190,
+                ['value:RallarBrowserTraceBar']],
+        ] as const;
+        const sources = new Map<string, string>();
+
+        for (const [path, cap, expectedExports] of owners) {
+            const present = existsSync(resolve(repositoryRoot, path));
+            expect.soft(present, `${path}: owner exists`).toBe(true);
+            if (!present) continue;
+            const source = repositorySource(path);
+            sources.set(path, source);
+            expect.soft(source.split('\n').length, `${path}: line cap`)
+                .toBeLessThanOrEqual(cap);
+            const sourceFile = task9aSourceFile(path, source);
+            expect.soft(task9aExportSeams(sourceFile), `${path}: exact exports`)
+                .toEqual(expectedExports);
+            expect.soft(source, `${path}: no reverse/App/CSS/barrel edge`)
+                .not.toMatch(/(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"])/);
+        }
+
+        const expectedOwnerImports = new Map<string, readonly string[]>([
+            [`${diagnosticsRoot}/shared/action-feedback.ts`, []],
+            [`${diagnosticsRoot}/shared/CommandCenterActionFeedbackPanel.tsx`, [
+                '../../shared/redaction-presentation.ts|value:uiRedactionOptions',
+                '../../shared/time-format.ts|value:formatDuration,value:formatTime',
+                './action-feedback.ts|type:CommandCenterActionFeedback',
+                '@shared-test/rallar-bb-test/redaction.ts|value:redactRallarBlackBoxValue',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                '@shared/api/api-config.ts|type:AuthSession',
+            ]],
+            ['apps/rallar-black-box/src/legacy/shared/finite-number.ts', []],
+            ['apps/rallar-black-box/src/legacy/shared/use-now.ts', [
+                'react|value:useEffect,value:useState',
+            ]],
+            [`${diagnosticsRoot}/events/event-presentation.ts`, [
+                '../../shared/record-value.ts|value:recordValue->optionalRecord',
+                '../../shared/string-value.ts|value:stringValue',
+                '../../shared/time-format.ts|value:formatDuration,value:formatRelativeDuration,value:formatTime',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestEvent',
+            ]],
+            [`${diagnosticsRoot}/events/event-filters.ts`, [
+                '../../shared/record-value.ts|value:recordValue->optionalRecord',
+                '../../shared/string-value.ts|value:stringValue',
+                './event-presentation.ts|value:eventPayloadDetails',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestEvent,type:RallarBlackBoxTestEventKind',
+            ]],
+            [`${diagnosticsRoot}/events/ExecutionFocusPanel.tsx`, [
+                '../../shared/command-presentation.ts|value:statusTone',
+                '../../shared/json-presentation.ts|value:json',
+                '../../shared/time-format.ts|value:formatDuration,value:formatTime',
+                '@shared-test/rallar-bb-test/redaction.ts|value:redactRallarBlackBoxValue',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestCommand,type:RallarBlackBoxTestRedactionOptions,type:RallarBlackBoxTestResult',
+            ]],
+            [`${diagnosticsRoot}/events/EventStreamPanel.tsx`, [
+                '../../../ui-persistence.ts|value:readEventFilters,value:writeEventFilters',
+                '../../shared/FilterSelect.tsx|value:FilterSelect',
+                '../../shared/time-format.ts|value:formatTime',
+                '../../shared/unique-values.ts|value:uniqueValues',
+                '../../shell/browser-ui-storage.ts|value:browserUiStorage',
+                './event-filters.ts|type:EventFilters,value:DEFAULT_EVENT_FILTERS,value:EVENT_KIND_FILTERS,value:eventFilterFromValue,value:eventGroupValue,value:eventMatchesFilters,value:eventPeerValue,value:eventSelectorValue',
+                '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxEvents',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestSeverity,type:RallarBlackBoxTestState,type:RallarBlackBoxTestTransport',
+                'react|value:useEffect,value:useMemo,value:useState',
+            ]],
+            [`${diagnosticsRoot}/events/RallarTracePanel.tsx`, [
+                '../../shared/Metric.tsx|value:Metric',
+                '../../shared/redaction-presentation.ts|value:redactedJson',
+                '../../shared/time-format.ts|value:formatTime',
+                '../../shared/use-now.ts|value:useNow',
+                './event-presentation.ts|value:eventFailureText,value:eventPayloadText,value:isRallarTraceEvent,value:rallarTraceSource,value:traceTimingText',
+                '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxEvents',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestSeverity,type:RallarBlackBoxTestState',
+                '@shared/api/api-config.ts|type:AuthSession',
+                'react|value:useMemo,value:useState',
+            ]],
+            [`${diagnosticsRoot}/events/StatsPanel.tsx`, [
+                '../../shared/Metric.tsx|value:Metric',
+                '../../shared/time-format.ts|value:formatDuration,value:formatTime',
+                '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxFailures,value:selectRallarBlackBoxLatestStats',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+            ]],
+            ['apps/rallar-black-box/src/legacy/shell/rallar-browser-status.ts', [
+                '../diagnostics/events/event-presentation.ts|value:eventPayloadDetails,value:isRallarBrowserEvent',
+                '../shared/finite-number.ts|value:optionalNumber',
+                '../shared/record-value.ts|value:recordValue->optionalRecord',
+                '../shared/string-value.ts|value:stringValue',
+                './global-context-model.ts|type:CommandCenterGlobalValues',
+                '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxEvents',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+            ]],
+            ['apps/rallar-black-box/src/legacy/shell/RallarBrowserTraceBar.tsx', [
+                '../../app-tabs.ts|type:AppModeId',
+                '../diagnostics/events/event-presentation.ts|value:eventPayloadText,value:isRallarBrowserEvent,value:traceMetaText,value:traceTimingText',
+                '../shared/time-format.ts|value:formatTime',
+                '../shared/use-now.ts|value:useNow',
+                './rallar-browser-status.ts|type:RallarBrowserStatusSummary',
+                '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxEvents',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                'react|value:useEffect,value:useMemo,value:useRef,value:useState',
+            ]],
+        ]);
+        for (const [path] of owners) {
+            expect.soft(
+                task9aImportEdges(
+                    task9aSourceFile(path, sources.get(path) ?? ''),
+                ),
+                `${path}: exact import kinds and edges`,
+            ).toEqual(expectedOwnerImports.get(path));
+        }
+
+        const appLocalDeclarations = new Set(
+            appAst.statements.flatMap((statement): readonly string[] => {
+                if (
+                    (ts.isTypeAliasDeclaration(statement) ||
+                        ts.isInterfaceDeclaration(statement) ||
+                        ts.isFunctionDeclaration(statement)) &&
+                    statement.name
+                ) {
+                    return [statement.name.text];
+                }
+                if (ts.isVariableStatement(statement)) {
+                    return statement.declarationList.declarations.flatMap(
+                        (declaration) =>
+                            ts.isIdentifier(declaration.name)
+                                ? [declaration.name.text]
+                                : [],
+                    );
+                }
+                return [];
+            }),
+        );
+        for (const declaration of [
+            'EventFilter', 'EventFilters', 'RallarBrowserStatusSummary',
+            'CommandCenterActionFeedback', 'DEFAULT_EVENT_FILTERS',
+            'EVENT_KIND_FILTERS', 'eventFilterFromValue', 'idleActionFeedback',
+            'runningActionFeedback', 'completedActionFeedback',
+            'activeDeadlineEpochMs', 'eventMatchesFilters', 'firstStringValue',
+            'eventGroupValue', 'eventPeerValue', 'eventSelectorValue',
+            'optionalRecord', 'optionalNumber', 'isRallarBrowserEvent',
+            'isRallarTraceEvent', 'rallarTraceSource', 'eventPayloadDetails',
+            'eventPayloadText', 'eventFailureText', 'traceTimingText',
+            'traceMetaText', 'looksLikeWsStatus', 'looksLikeRtcStatus',
+            'wsStatusFromDetails', 'rtcStatusFromDetails', 'arrayCount',
+            'deriveWsStatusLabel', 'deriveRtcStatusLabel',
+            'deriveRallarBrowserStatus', 'useNow', 'RallarBrowserTraceBar',
+            'ExecutionFocusPanel', 'EventStreamPanel', 'RallarTracePanel',
+            'StatsPanel', 'CommandCenterActionFeedbackPanel',
+        ] as const) {
+            expect.soft(
+                appLocalDeclarations.has(declaration),
+                `App local ${declaration}`,
+            ).toBe(false);
+        }
+        expect.soft(appSource, 'later Groups/Server helper remains local')
+            .toMatch(/^function\s+findStringDeep\b/m);
+        expect.soft(task9aImportEdges(appAst)).toContain(
+            './legacy/shared/record-value.ts|value:recordValue->optionalRecord',
+        );
+
+        const ownerAst = (path: string): ts.SourceFile =>
+            task9aSourceFile(path, sources.get(path) ?? appSource);
+        const parameterAndBodyNodes = (
+            sourceFile: ts.SourceFile,
+            names: readonly string[],
+        ): readonly ts.Node[] => names.flatMap((name) => {
+            const declaration = task9aNamedFunction(sourceFile, name);
+            return [...declaration.parameters, declaration.body!];
+        });
+        const typeNodes = (
+            sourceFile: ts.SourceFile,
+            name: string,
+        ): readonly ts.Node[] => {
+            const declaration = sourceFile.statements.find(
+                (statement): statement is ts.TypeAliasDeclaration =>
+                    ts.isTypeAliasDeclaration(statement) &&
+                    statement.name.text === name,
+            );
+            return declaration ? [declaration.name, declaration.type] : [];
+        };
+        const variableNodes = (
+            sourceFile: ts.SourceFile,
+            name: string,
+        ): readonly ts.Node[] => {
+            const declaration = sourceFile.statements
+                .filter(ts.isVariableStatement)
+                .flatMap((statement) => [
+                    ...statement.declarationList.declarations,
+                ])
+                .find((candidate) =>
+                    ts.isIdentifier(candidate.name) &&
+                    candidate.name.text === name,
+                );
+            return declaration?.initializer
+                ? [declaration.name, declaration.initializer]
+                : [];
+        };
+        const actionAst = ownerAst(
+            `${diagnosticsRoot}/shared/action-feedback.ts`,
+        );
+        expect.soft(
+            task9aAstFingerprint([
+                ...typeNodes(actionAst, 'CommandCenterActionFeedback'),
+                ...parameterAndBodyNodes(actionAst, [
+                    'idleActionFeedback',
+                    'runningActionFeedback',
+                    'completedActionFeedback',
+                ]),
+            ]),
+            'exact action-feedback model and builders',
+        ).toBe('7915a57801a10de11d4737360b2e1c482f7ad3645488bf22f31ea465be4b233a');
+        const eventPresentationAst = ownerAst(
+            `${diagnosticsRoot}/events/event-presentation.ts`,
+        );
+        expect.soft(
+            task9aAstFingerprint(parameterAndBodyNodes(
+                eventPresentationAst,
+                [
+                    'isRallarBrowserEvent', 'isRallarTraceEvent',
+                    'rallarTraceSource', 'eventPayloadDetails',
+                    'eventPayloadText', 'eventFailureText',
+                    'traceTimingText', 'traceMetaText',
+                ],
+            )),
+            'exact event presentation helpers',
+        ).toBe('c5b4ddc5b1d3951107df3bbb358d1030caabacbaa204054083669e0ed05c328b');
+        const eventFiltersAst = ownerAst(
+            `${diagnosticsRoot}/events/event-filters.ts`,
+        );
+        expect.soft(
+            task9aAstFingerprint([
+                ...typeNodes(eventFiltersAst, 'EventFilter'),
+                ...typeNodes(eventFiltersAst, 'EventFilters'),
+                ...variableNodes(eventFiltersAst, 'DEFAULT_EVENT_FILTERS'),
+                ...variableNodes(eventFiltersAst, 'EVENT_KIND_FILTERS'),
+                ...parameterAndBodyNodes(eventFiltersAst, [
+                    'eventFilterFromValue', 'eventMatchesFilters',
+                    'firstStringValue', 'eventGroupValue',
+                    'eventPeerValue', 'eventSelectorValue',
+                ]),
+            ]),
+            'exact event filter types, defaults, and helpers',
+        ).toBe('72f6730a5d9172ad0d6045e10f6d435a0335f1086050ae4e377771d27c89eff8');
+        const browserStatusAst = ownerAst(
+            'apps/rallar-black-box/src/legacy/shell/rallar-browser-status.ts',
+        );
+        expect.soft(
+            task9aAstFingerprint([
+                ...typeNodes(browserStatusAst, 'RallarBrowserStatusSummary'),
+                ...parameterAndBodyNodes(browserStatusAst, [
+                    'looksLikeWsStatus', 'looksLikeRtcStatus',
+                    'wsStatusFromDetails', 'rtcStatusFromDetails',
+                    'arrayCount', 'deriveWsStatusLabel',
+                    'deriveRtcStatusLabel', 'deriveRallarBrowserStatus',
+                ]),
+            ]),
+            'exact browser status model and derivation',
+        ).toBe('49e90c3cdc6eb37eea374252058b827ce3064c0641f866d1ee23f9e6f8b0211f');
+        expect.soft(
+            task9aAstFingerprint(parameterAndBodyNodes(
+                ownerAst('apps/rallar-black-box/src/legacy/shared/use-now.ts'),
+                ['useNow'],
+            )),
+            'exact useNow hook',
+        ).toBe('41c6c642a785d41befe55808554b4fba6a1f1381228fe5a1b38cf2f09d7df724');
+        expect.soft(
+            task9aAstFingerprint(parameterAndBodyNodes(
+                ownerAst(`${diagnosticsRoot}/events/ExecutionFocusPanel.tsx`),
+                ['activeDeadlineEpochMs'],
+            )),
+            'exact private active deadline helper',
+        ).toBe('53e84fb640a4b03c4e99d1268c79b8c61a732880440ff9d30b0545fbc4859bbd');
+        expect.soft(
+            task9aAstFingerprint(parameterAndBodyNodes(
+                ownerAst('apps/rallar-black-box/src/legacy/shared/finite-number.ts'),
+                ['optionalNumber'],
+            )),
+            'exact finite-number helper',
+        ).toBe('92630c88329c78d9a80f4eef42584dce4cad56d73b77db524e7ddd7fdca083de');
+
+        const task10AppOwnerModules = new Set([
+            './legacy/diagnostics/events/event-filters.ts',
+            './legacy/diagnostics/events/event-presentation.ts',
+            './legacy/diagnostics/events/EventStreamPanel.tsx',
+            './legacy/diagnostics/events/ExecutionFocusPanel.tsx',
+            './legacy/diagnostics/events/RallarTracePanel.tsx',
+            './legacy/diagnostics/events/StatsPanel.tsx',
+            './legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx',
+            './legacy/diagnostics/shared/action-feedback.ts',
+            './legacy/shared/finite-number.ts',
+            './legacy/shared/record-value.ts',
+            './legacy/shared/use-now.ts',
+            './legacy/shell/RallarBrowserTraceBar.tsx',
+            './legacy/shell/rallar-browser-status.ts',
+        ]);
+        expect.soft(
+            task9aImportEdges(appAst).filter((edge) =>
+                task10AppOwnerModules.has(edge.slice(0, edge.indexOf('|'))),
+            ),
+            'App exact diagnostic owner imports and import kinds',
+        ).toEqual([
+            './legacy/diagnostics/events/EventStreamPanel.tsx|value:EventStreamPanel',
+            './legacy/diagnostics/events/ExecutionFocusPanel.tsx|value:ExecutionFocusPanel',
+            './legacy/diagnostics/events/RallarTracePanel.tsx|value:RallarTracePanel',
+            './legacy/diagnostics/events/StatsPanel.tsx|value:StatsPanel',
+            './legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx|value:CommandCenterActionFeedbackPanel',
+            './legacy/diagnostics/shared/action-feedback.ts|type:CommandCenterActionFeedback,value:completedActionFeedback,value:idleActionFeedback,value:runningActionFeedback',
+            './legacy/shared/finite-number.ts|value:optionalNumber',
+            './legacy/shared/record-value.ts|value:recordValue->optionalRecord',
+            './legacy/shared/use-now.ts|value:useNow',
+            './legacy/shell/RallarBrowserTraceBar.tsx|value:RallarBrowserTraceBar',
+            './legacy/shell/rallar-browser-status.ts|type:RallarBrowserStatusSummary,value:deriveRallarBrowserStatus',
+        ]);
+        const components = [
+            ['apps/rallar-black-box/src/legacy/shell/RallarBrowserTraceBar.tsx',
+                'RallarBrowserTraceBar',
+                'a6c36112bb3d0e9076280e2669c48b42961d8d783b253e1db468d95e86ea79df',
+                'ff3742c918018f2b01980115551d8f883a619e3aa118334c8c6dcc4ef1d9bb68'],
+            [`${diagnosticsRoot}/events/ExecutionFocusPanel.tsx`,
+                'ExecutionFocusPanel',
+                '27f816231e66a43c753e3d7f4e19c118d98cc099feba63174facf4607139a03f',
+                '7b7570e4ca70c8eed8561444cd7390ea59c749cd0af3c04503b82a7454e2957b'],
+            [`${diagnosticsRoot}/events/EventStreamPanel.tsx`,
+                'EventStreamPanel',
+                '68a89c8dd8ea1be9aebd4548b142d077a6a7a1c0a0991e43144d7aaf653a7bc2',
+                'b05d5dbb9ae791565c294b8848bc859c40188d381e2703184c419bcff600233e'],
+            [`${diagnosticsRoot}/events/RallarTracePanel.tsx`,
+                'RallarTracePanel',
+                '5777d2e767b8067a81885c0a959f997937e76dd78830320bafc72c484fa81b23',
+                'e0349ca4c5c9e0671293efc99aa2022a51098e3d09271f4ca9eabca347687657'],
+            [`${diagnosticsRoot}/events/StatsPanel.tsx`, 'StatsPanel',
+                '82f080e4cc14d78f3bef5468a57cb3793c9b7ce8eab66b8333550a22674f73e7',
+                'ba32c921ab7cefc2acfb75980ecf6f5f27aed3cfbc0ac4360636ff4d80746fce'],
+            [`${diagnosticsRoot}/shared/CommandCenterActionFeedbackPanel.tsx`,
+                'CommandCenterActionFeedbackPanel',
+                '797175d3a110885df16f1f85fcccdccaff5914a6ff217bdacd7cbfc32e43eecc',
+                '89affb9cc1cb6f3b8ff9e05c649cf292de3b504a9fe75b92963ad263083dad61'],
+        ] as const;
+        const expectedHookTopologies = new Map<string, Readonly<{
+            useState: number;
+            useMemo: number;
+            useRef: number;
+            useEffect: number;
+            useCallback: number;
+        }>>([
+            ['RallarBrowserTraceBar', {
+                useState: 1, useMemo: 2, useRef: 1,
+                useEffect: 1, useCallback: 0,
+            }],
+            ['ExecutionFocusPanel', {
+                useState: 0, useMemo: 0, useRef: 0,
+                useEffect: 0, useCallback: 0,
+            }],
+            ['EventStreamPanel', {
+                useState: 2, useMemo: 2, useRef: 0,
+                useEffect: 1, useCallback: 0,
+            }],
+            ['RallarTracePanel', {
+                useState: 3, useMemo: 4, useRef: 0,
+                useEffect: 0, useCallback: 0,
+            }],
+            ['StatsPanel', {
+                useState: 0, useMemo: 0, useRef: 0,
+                useEffect: 0, useCallback: 0,
+            }],
+            ['CommandCenterActionFeedbackPanel', {
+                useState: 0, useMemo: 0, useRef: 0,
+                useEffect: 0, useCallback: 0,
+            }],
+        ]);
+        const expectedEffectFingerprints = new Map<string, readonly string[]>([
+            ['RallarBrowserTraceBar', [
+                '9b3ddc1829d07085243a3094fbc6ce5724de6e490d973151f8b0b831c0b0b47d',
+            ]],
+            ['ExecutionFocusPanel', []],
+            ['EventStreamPanel', [
+                'f28f9a497b84379cbe3615166e298855f77d25fb0a6186b78ff7a262ed7270c0',
+            ]],
+            ['RallarTracePanel', []],
+            ['StatsPanel', []],
+            ['CommandCenterActionFeedbackPanel', []],
+        ]);
+        for (const [path, name, fullHash, returnHash] of components) {
+            const declaration = task9aNamedFunction(ownerAst(path), name);
+            expect.soft(
+                task9aAstFingerprint([...declaration.parameters, declaration.body!]),
+                `${name}: exact parameters/body`,
+            ).toBe(fullHash);
+            expect.soft(
+                task9aJsxRuntimeFingerprint(task9aReturnExpression(declaration)),
+                `${name}: exact compiled return`,
+            ).toBe(returnHash);
+            const hooks = {
+                useState: 0,
+                useMemo: 0,
+                useRef: 0,
+                useEffect: 0,
+                useCallback: 0,
+            };
+            const effects: ts.CallExpression[] = [];
+            const visitHooks = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text in hooks
+                ) {
+                    hooks[node.expression.text as keyof typeof hooks] += 1;
+                    if (node.expression.text === 'useEffect') {
+                        effects.push(node);
+                    }
+                }
+                ts.forEachChild(node, visitHooks);
+            };
+            visitHooks(declaration);
+            expect.soft(hooks, `${name}: exact hook topology`)
+                .toEqual(expectedHookTopologies.get(name));
+            expect.soft(
+                effects.map((effect) => task9aAstFingerprint([effect])),
+                `${name}: exact effect bodies and dependencies`,
+            ).toEqual(expectedEffectFingerprints.get(name));
+        }
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const appMountProofs = [
+            ['RallarBrowserTraceBar', 1,
+                '1436cb58918ea14e04510e017fbcca9af81b32a0a95417844f17a573b4d750d2',
+                ['7b5407e8458b86adc0b684507c384b7d07ece13197cfd26002dbace01ae3c6d1']],
+            ['ExecutionFocusPanel', 1,
+                'b838bd6df53c8da849332246e5d9bc968ada161c7acb55e2e59fd8135ee4369f',
+                ['765004f3fd3e22dd6137755fe0efaa067294b5e6e8e5244c3399ad6543d88d42']],
+            ['EventStreamPanel', 1,
+                'b2b10e7ca1da9c4795e341d7450c3d532894a2b7e7de88697f441886c1da8382',
+                ['765004f3fd3e22dd6137755fe0efaa067294b5e6e8e5244c3399ad6543d88d42']],
+            ['RallarTracePanel', 1,
+                'fafb7d35fddc4721a34ada2fa36984d96676bb861aeff9b52aa8a03402b9cf4a',
+                ['8ee2d071458b020c076dfcca453e6bf8d7df3642c317a7db30be9a5b6f029754']],
+            ['StatsPanel', 2,
+                '5bed2e1f0e640a5307f9d5466b7b20eed11b018a24cec995470b18dcd67c263f',
+                [
+                    'd5959ee02765a7ad12f8637986401f1583d692e8e15df90a8c18342e14c9eab5',
+                    '765004f3fd3e22dd6137755fe0efaa067294b5e6e8e5244c3399ad6543d88d42',
+                ]],
+        ] as const;
+        const mountAncestorFingerprints = (
+            calls: readonly ts.JsxSelfClosingElement[],
+        ): readonly string[] => calls.map((call) => {
+            let ancestor: ts.Node | undefined = call.parent;
+            while (ancestor && !ts.isJsxElement(ancestor)) {
+                ancestor = ancestor.parent;
+            }
+            return ancestor ? task9aAstFingerprint([ancestor]) : '';
+        });
+        for (const [name, count, callFingerprint, ancestorFingerprints] of
+            appMountProofs) {
+            const calls = task9aJsxCalls(app, name);
+            expect.soft(calls, `${name}: exact call count`).toHaveLength(count);
+            expect.soft(
+                task9aAstFingerprint(calls),
+                `${name}: exact props and call AST`,
+            ).toBe(callFingerprint);
+            expect.soft(
+                mountAncestorFingerprints(calls),
+                `${name}: exact mount ancestors, hidden guards, and siblings`,
+            ).toEqual(ancestorFingerprints);
+        }
+        const actionFeedbackCalls = task9aJsxCalls(
+            appAst,
+            'CommandCenterActionFeedbackPanel',
+        );
+        expect.soft(
+            actionFeedbackCalls,
+            'three direct-panel action feedback consumers',
+        ).toHaveLength(3);
+        expect.soft(
+            task9aAstFingerprint(actionFeedbackCalls),
+            'exact action-feedback props and consumer call ASTs',
+        ).toBe('4c7a5fc3f8d23e91e2a04b77538b84b4080f7ba587f2fcf47d221457cec294d1');
+        expect.soft(
+            mountAncestorFingerprints(actionFeedbackCalls),
+            'exact WebSocket, RTC/Realtimes, and Groups mount ancestors',
+        ).toEqual([
+            '0b5143759bc1bf4efa30c220efc519e3462ba72ddd093ffd6ba62ee7768bfaef',
+            '9d6b554990b3f94fd3e5e5fa38d6cb1c5499830004b8ce38cbbba39f6d3776d9',
+            '6849ea38c42aca8f34a1b6b463688dfd9fde9302c9b63c83f1d0d232f9cf8a79',
+        ]);
+        expect.soft(
+            task9aAstFingerprint([app]),
+            'exact unchanged App bootstrap/controller/routing body',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(appSource, 'no lazy/Suspense lifetime cutover')
+            .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+
+        const ownerPaths = new Set(owners.map(([path]) => path));
+        const graph = new Map<string, readonly string[]>();
+        for (const path of ownerPaths) {
+            if (!sources.has(path)) continue;
+            const dependencies = task9aImportEdges(ownerAst(path))
+                .map((edge) => edge.slice(0, edge.indexOf('|')))
+                .filter((moduleImport) => moduleImport.startsWith('.'))
+                .map((moduleImport) =>
+                    relative(
+                        repositoryRoot,
+                        resolve(resolve(repositoryRoot, path), '..', moduleImport),
+                    )
+                )
+                .filter((dependency) => ownerPaths.has(dependency));
+            graph.set(path, dependencies);
+        }
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) { cycles.push(path); return; }
+            if (visited.has(path)) return;
+            active.add(path);
+            for (const dependency of graph.get(path) ?? []) visit(dependency);
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const path of ownerPaths) visit(path);
+        expect(cycles, 'diagnostic evidence owner import cycles').toEqual([]);
     });
 
     it('keeps distributed compare formatters in the canonical time module', () => {
