@@ -6,8 +6,25 @@ const repoRoot = path.resolve(__dirname, '../../..');
 
 describe('distributed artifact SPA reuse', () => {
     it('exposes imported CI artifact analysis in the Runs panel', () => {
-        const appSource = readFileSync(
-            path.join(repoRoot, 'apps/rallar-black-box/src/App.tsx'),
+        const runsControllerSource = readFileSync(
+            path.join(
+                repoRoot,
+                'apps/rallar-black-box/src/legacy/runner/runs/use-runner-runs-controller.ts',
+            ),
+            'utf8',
+        );
+        const distributedAnalysisSource = readFileSync(
+            path.join(
+                repoRoot,
+                'apps/rallar-black-box/src/legacy/runner/runs/RunnerDistributedAnalysisSection.tsx',
+            ),
+            'utf8',
+        );
+        const distributedRecipeCatalogSource = readFileSync(
+            path.join(
+                repoRoot,
+                'apps/rallar-black-box/src/legacy/runner/distributed-recipes/distributed-recipe-catalog.ts',
+            ),
             'utf8',
         );
         const importedAnalysisPath = path.join(
@@ -39,15 +56,17 @@ describe('distributed artifact SPA reuse', () => {
             'utf8',
         );
 
-        expect(appSource).toContain('analyzeDistributedRunArtifactFiles');
-        expect(appSource).toContain('distributedArtifactBundleFromFiles');
+        expect(runsControllerSource).toContain('analyzeDistributedRunArtifactFiles');
+        expect(runsControllerSource).toContain('distributedArtifactBundleFromFiles');
         expect(importedAnalysisSource).toContain('Imported CI artifact analysis');
-        expect(appSource).toContain('handleDistributedArtifactFiles');
-        expect(appSource).toContain('RTC Realtime Stability');
-        expect(appSource).toContain('rtc-realtime-stability');
-        expect(appSource).toContain('type="file"');
-        expect(appSource).toContain('accept=".json,.jsonl,application/json"');
-        expect(appSource).toContain('webkitdirectory');
+        expect(runsControllerSource).toContain('handleDistributedArtifactFiles');
+        expect(distributedRecipeCatalogSource).toContain('RTC Realtime Stability');
+        expect(distributedRecipeCatalogSource).toContain('rtc-realtime-stability');
+        expect(distributedAnalysisSource).toContain('type="file"');
+        expect(distributedAnalysisSource).toContain(
+            'accept=".json,.jsonl,application/json"',
+        );
+        expect(distributedAnalysisSource).toContain('webkitdirectory');
         expect(importedAnalysisSource).toContain('Required files');
         expect(importedAnalysisSource).toContain('Selected files');
         expect(importedAnalysisSource).toContain('Evidence Quality');

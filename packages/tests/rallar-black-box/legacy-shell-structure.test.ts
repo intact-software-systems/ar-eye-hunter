@@ -11,6 +11,8 @@ const shellOwners = [
     {
         path: 'apps/rallar-black-box/src/legacy/shell/LoginScreen.tsx',
         moduleImport: './legacy/shell/LoginScreen.tsx',
+        consumerPath: appPath,
+        consumerModuleImport: './legacy/shell/LoginScreen.tsx',
         declaration: 'LoginScreen',
         fingerprint:
             '00541599fa2ef974423764969ca9efc874c48b8a9fbaf7e65d0e4d6faec84818',
@@ -31,6 +33,9 @@ const shellOwners = [
     {
         path: 'apps/rallar-black-box/src/legacy/shell/LegacyRunHeader.tsx',
         moduleImport: './legacy/shell/LegacyRunHeader.tsx',
+        consumerPath:
+            'apps/rallar-black-box/src/legacy/shell/LegacyAppShell.tsx',
+        consumerModuleImport: './LegacyRunHeader.tsx',
         declaration: 'Header',
         fingerprint:
             '09cf171725109c1aa6dd0ac2897e4db0c89066360c1c24d3b53b6cf52df8039d',
@@ -58,6 +63,9 @@ const shellOwners = [
     {
         path: 'apps/rallar-black-box/src/legacy/shell/AppTabs.tsx',
         moduleImport: './legacy/shell/AppTabs.tsx',
+        consumerPath:
+            'apps/rallar-black-box/src/legacy/shell/LegacyAppShell.tsx',
+        consumerModuleImport: './AppTabs.tsx',
         declaration: 'AppTabs',
         fingerprint:
             '262e375113bf1e7a6407eb8c23b78e0f2276199cb5640fd805ea6de67585fe25',
@@ -75,6 +83,9 @@ const shellOwners = [
     {
         path: 'apps/rallar-black-box/src/legacy/shell/GlobalContextBar.tsx',
         moduleImport: './legacy/shell/GlobalContextBar.tsx',
+        consumerPath:
+            'apps/rallar-black-box/src/legacy/shell/LegacyAppShell.tsx',
+        consumerModuleImport: './GlobalContextBar.tsx',
         declaration: 'GlobalContextBar',
         fingerprint:
             '10f27f7991906445cbc85c6815b41378a54563ca3b3ae1e6302f85585fcb93be',
@@ -89,6 +100,9 @@ const shellOwners = [
     {
         path: 'apps/rallar-black-box/src/legacy/shell/AppModeSwitch.tsx',
         moduleImport: './legacy/shell/AppModeSwitch.tsx',
+        consumerPath:
+            'apps/rallar-black-box/src/legacy/shell/LegacyAppShell.tsx',
+        consumerModuleImport: './AppModeSwitch.tsx',
         declaration: 'AppModeSwitch',
         fingerprint:
             '53b5572be9f7bb77d08e85dbc568cc142c1b9895228b06e4cf573d0f4bb8e3ea',
@@ -102,6 +116,9 @@ const shellOwners = [
     {
         path: 'apps/rallar-black-box/src/legacy/shell/DirectRallarBoundaryPanel.tsx',
         moduleImport: './legacy/shell/DirectRallarBoundaryPanel.tsx',
+        consumerPath:
+            'apps/rallar-black-box/src/legacy/shell/LegacyDiagnosticDrawer.tsx',
+        consumerModuleImport: './DirectRallarBoundaryPanel.tsx',
         declaration: 'DirectRallarBoundaryPanel',
         fingerprint:
             'ec3334cb986182cd339aed46eacbe2c22e14859cad400f9f64e14f9eee83308a',
@@ -127,6 +144,9 @@ const shellOwners = [
     {
         path: 'apps/rallar-black-box/src/legacy/shell/RunnerModeBoundaryPanel.tsx',
         moduleImport: './legacy/shell/RunnerModeBoundaryPanel.tsx',
+        consumerPath:
+            'apps/rallar-black-box/src/legacy/shell/LegacyDiagnosticDrawer.tsx',
+        consumerModuleImport: './RunnerModeBoundaryPanel.tsx',
         declaration: 'RunnerModeBoundaryPanel',
         fingerprint:
             'f20f244a20a5cbb7bd406ba8c431bd1a4a8c4ef26146a36f756f29e56e5651b4',
@@ -566,6 +586,10 @@ describe('rallar-black-box legacy shell ownership', () => {
         const app = sourceFile(appPath, appSource);
 
         for (const owner of shellOwners) {
+            const consumer = sourceFile(
+                owner.consumerPath,
+                repositorySource(owner.consumerPath),
+            );
             const present = existsSync(resolve(repositoryRoot, owner.path));
             expect.soft(present, `${owner.path}: focused owner exists`).toBe(true);
 
@@ -617,9 +641,15 @@ describe('rallar-black-box legacy shell ownership', () => {
             }
 
             expect.soft(
-                importedNames(app, owner.moduleImport),
-                `App imports ${owner.declaration} from its focused owner`,
+                importedNames(consumer, owner.consumerModuleImport),
+                `${owner.consumerPath} imports ${owner.declaration} from its focused owner`,
             ).toContain(owner.declaration);
+            expect.soft(
+                importedNames(app, owner.moduleImport).includes(
+                    owner.declaration,
+                ),
+                `${owner.declaration}: exact App versus composed-shell ownership`,
+            ).toBe(owner.consumerPath === appPath);
             expect.soft(
                 Boolean(namedFunction(app, owner.declaration)),
                 `App no longer declares ${owner.declaration}`,
@@ -631,7 +661,7 @@ describe('rallar-black-box legacy shell ownership', () => {
         expect.soft(
             appDeclaration ? fingerprint([appDeclaration]) : '',
             'shell extraction leaves App bootstrap/routing behavior exact',
-        ).toBe('d003e2d8c32b090c60d87de0cedb35e43a39e6539a5a39c8aaf87b41a937b3ec');
+        ).toBe('ef9928876624d1493b24735e540137bbb00a97fa8a679fa0d6abcbb63326b3a7');
         expect.soft(
             createHash('sha256')
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
