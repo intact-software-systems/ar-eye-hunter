@@ -1,5 +1,135 @@
 import { expect, test } from '@playwright/test';
 
+test('renders command-duration Tune without invented stream evidence', async ({ page }) => {
+    await page.setViewportSize({ width: 932, height: 430 });
+    await page.goto('/?provider=simulated&experience=recipe-console&view=tune');
+
+    await expect(page.locator('[data-command-bar]')).toHaveCSS('height', '48px');
+    expect((await page.locator('[data-primary-navigation]').boundingBox())?.width).toBe(60);
+    const commandBar = page.locator('[data-command-bar]');
+    await expect(commandBar).toContainText('Tune · RTC timing');
+    await expect(commandBar).toContainText('seed-high-latency-rtc');
+    await expect(commandBar).toContainText('Passed');
+    await expect(commandBar).not.toContainText('Baseline');
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
+
+    const matrixPane = page.locator('[data-landscape-matrix]');
+    const timingPane = page.locator('[data-landscape-timing]');
+    const matrixBox = await matrixPane.boundingBox();
+    const timingBox = await timingPane.boundingBox();
+    expect((matrixBox?.width ?? 0) / ((matrixBox?.width ?? 0) + (timingBox?.width ?? 0)))
+        .toBeCloseTo(0.52, 1);
+    await expect(matrixPane.locator('[data-tune-agent]')).toHaveCount(3);
+    await expect(matrixPane.getByText('seed-agent-a', { exact: true })).toBeVisible();
+    await expect(matrixPane.getByText('seed-agent-b', { exact: true })).toBeVisible();
+    await expect(matrixPane.getByText('seed-agent-c', { exact: true })).toBeVisible();
+
+    for (const [label, value] of [
+        ['P50', '1,010 ms'],
+        ['P95', '1,190 ms'],
+        ['P99', '1,190 ms'],
+        ['Max', '1,190 ms'],
+    ] as const) {
+        const metric = timingPane.locator('dl > div').filter({ hasText: label });
+        await expect(metric).toContainText(value);
+    }
+    const distribution = timingPane.getByRole('img', { name: 'Command duration distribution' });
+    await expect(distribution).toBeVisible();
+    await expect(distribution.locator('[data-histogram-bar]')).toHaveCount(4);
+    await expect(distribution.locator('[data-duration-point]')).toHaveCount(3);
+    await expect(distribution).toContainText('Duration (ms)');
+
+    const agentA = matrixPane.getByRole('gridcell', { name: /seed-agent-a/ });
+    const agentB = matrixPane.getByRole('gridcell', { name: /seed-agent-b/ });
+    const agentC = matrixPane.getByRole('gridcell', { name: /seed-agent-c/ });
+    await agentA.focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(agentB).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(agentC).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-c');
+    await page.keyboard.press('Escape');
+    await expect(agentC).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(agentB).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-b');
+    await page.keyboard.press('Escape');
+    await expect(agentB).toBeFocused();
+
+    for (const [metric, value] of [
+        ['Send duration', 'stream-send-duration'],
+        ['Drift', 'stream-drift'],
+        ['Cadence', 'stream-cadence'],
+    ] as const) {
+        await timingPane.getByRole('button', { name: metric, exact: true }).click();
+        await expect(page).toHaveURL(new RegExp(`timingMetric=${value}`));
+        const unavailable = timingPane.locator('[data-timing-unavailable]');
+        await expect(unavailable).toContainText('Unavailable in this command-duration seed');
+        await expect(unavailable).toContainText('RTC timeline evidence is not available.');
+        expect(await unavailable.textContent()).not.toMatch(/\b0(?:\.0+)?\s*(?:ms|frames|%)\b/);
+    }
+    expect(await page.evaluate(() => ({
+        x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        y: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    }))).toEqual({ x: 0, y: 0 });
+});
+
+test('routes bounded Analyze Fleet and Advanced previews', async ({ page }) => {
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await page.goto('/?provider=simulated&experience=recipe-console&view=analyze');
+    const initialHistoryLength = await page.evaluate(() => history.length);
+
+    const analyze = page.locator('[data-preview-view="analyze"]');
+    await expect(analyze.getByRole('heading', { name: 'Seeded artifact readiness' })).toBeVisible();
+    await expect(analyze.getByText('Core bundle', { exact: true })).toBeVisible();
+    await expect(analyze.getByText('Evidence bundle', { exact: true })).toBeVisible();
+    await expect(analyze.getByText('Partial bundle', { exact: true })).toBeVisible();
+    await expect(analyze.locator('input[type="file"]')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Fleet', exact: true }).click();
+    await expect(page).toHaveURL(/view=fleet/);
+    await expect(page.locator('[data-preview-view="fleet"]')
+        .getByText('Fleet live data unavailable in offline preview', { exact: true }))
+        .toBeVisible();
+    await expect(page.getByText('No control connection is available in offline preview.', { exact: true }))
+        .toBeVisible();
+    await expect(page.locator('[data-preview-view="fleet"] [data-fleet-region]')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Advanced', exact: true }).click();
+    await expect(page).toHaveURL(/view=advanced/);
+    const advanced = page.locator('[data-preview-view="advanced"]');
+    await expect(advanced.getByRole('heading', { name: 'Legacy compatibility bridge' }))
+        .toBeVisible();
+    for (const [label, tab] of [
+        ['Auth', 'auth'],
+        ['Groups', 'rooms-clients'],
+        ['WebSocket', 'websocket'],
+        ['RTC', 'rtc-diagnostics'],
+        ['Data', 'rallar-data'],
+        ['CRDT', 'crdt-health'],
+        ['Media', 'media'],
+        ['Server', 'rallar-server'],
+        ['Tracing', 'rallar-trace'],
+    ] as const) {
+        await expect(advanced.getByRole('link', { name: label, exact: true }))
+            .toHaveAttribute(
+                'href',
+                `/?provider=simulated&experience=legacy&tab=${tab}`,
+            );
+    }
+    await expect(page.locator('.app-shell')).toHaveCount(0);
+    expect(await page.evaluate(() => history.length)).toBeGreaterThanOrEqual(initialHistoryLength + 2);
+
+    await page.goBack();
+    await expect(page).toHaveURL(/view=fleet/);
+    await expect(page.locator('[data-preview-view="fleet"]')).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(/view=analyze/);
+    await expect(page.locator('[data-preview-view="analyze"]')).toBeVisible();
+});
+
 test('renders failure-first Monitor from canonical evidence', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/?provider=simulated&experience=recipe-console&view=monitor');

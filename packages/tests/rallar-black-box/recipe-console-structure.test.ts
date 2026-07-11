@@ -191,6 +191,36 @@ describe('Recipe Console experience boundary', () => {
         expect(overlay).toContain('querySelectorAll<HTMLElement>(FOCUSABLE)');
     });
 
+    test('routes focused Tune Analyze Fleet and Advanced modules through one switch', () => {
+        const focusedModules = [
+            ['tune/TunePreview.tsx', "import { TunePreview } from '../tune/TunePreview.tsx';", '<TunePreview'],
+            ['analyze/AnalyzePreview.tsx', "import { AnalyzePreview } from '../analyze/AnalyzePreview.tsx';", '<AnalyzePreview'],
+            ['fleet/FleetPreview.tsx', "import { FleetPreview } from '../fleet/FleetPreview.tsx';", '<FleetPreview'],
+            ['advanced/AdvancedPreview.tsx', "import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';", '<AdvancedPreview'],
+        ] as const;
+        const app = source(recipeConsolePath);
+
+        for (const [path, directImport, render] of focusedModules) {
+            const absolutePath = resolve(repositoryRoot, recipeConsoleRoot, path);
+            expect(existsSync(absolutePath), path).toBe(true);
+            expect(app).toContain(directImport);
+            expect(app).toContain(render);
+            expect(source(`${recipeConsoleRoot}/${path}`)).not.toMatch(
+                /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/,
+            );
+        }
+        for (const path of [
+            'tune/TimingDistribution.tsx',
+            'tune/TunePreview.module.css',
+            'views/PreviewState.module.css',
+        ]) {
+            expect(existsSync(resolve(repositoryRoot, recipeConsoleRoot, path)), path).toBe(true);
+        }
+        expect(app.match(/switch\s*\(view\)/g)).toHaveLength(1);
+        expect(app).not.toMatch(/(?:viewRegistry|VIEW_REGISTRY|Record<RecipeConsoleView)/);
+        expect(app).not.toMatch(/from ['"][^'"]*(?:index|views)\.ts['"]/);
+    });
+
     test('loads only auth CSS statically while preserving legacy CSS bytes', () => {
         const authCss = source('apps/rallar-black-box/src/auth.css');
         expect(source('apps/rallar-black-box/src/main.tsx')).toContain("import './auth.css';");

@@ -11,6 +11,13 @@ test('renders scoped shell geometry at every contract viewport', async ({ page }
     ] as const) {
         await page.setViewportSize(contract.viewport);
         await page.goto(`${route}${contract.viewport.height <= 520 ? 'tune' : 'execute'}`);
+        if (contract.viewport.height <= 520) {
+            await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
+            const firstAgent = page.getByRole('gridcell', { name: /seed-agent-a/ });
+            await firstAgent.focus();
+            await page.keyboard.press('Enter');
+            await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-a');
+        }
         const shell = page.locator('[data-recipe-console-shell]');
         await expect(shell).toHaveAttribute('data-navigation', contract.nav);
         await expect(shell).toHaveAttribute('data-inspector-mode', contract.inspector);
