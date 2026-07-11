@@ -9644,6 +9644,518 @@ describe('rallar-black-box app source ownership', () => {
         expect(cycles, 'RTC/Topology owner import cycles').toEqual([]);
     });
 
+    it('extracts Quick Test contracts and presentation while preserving its App-local controller', () => {
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const quickRoot = 'apps/rallar-black-box/src/legacy/diagnostics/quick-test';
+        const owners = [
+            [`${quickRoot}/quick-rallar-contracts.ts`, 170, [
+                'type:QuickRallarPayloadResult',
+                'type:QuickRallarReceivedMessageRow',
+                'type:QuickRallarSubscriptionState',
+                'type:QuickRallarTestViewModel',
+                'type:QuickRallarTransport',
+                'type:QuickRallarValues',
+                'type:QuickRallarWorkflowStep',
+            ]],
+            [`${quickRoot}/quick-rallar-defaults.ts`, 45,
+                ['value:QUICK_RALLAR_DEFAULT_VALUES']],
+            [`${quickRoot}/QuickRallarTestView.tsx`, 460,
+                ['value:QuickRallarTestView']],
+        ] as const;
+        const sources = new Map<string, string>();
+        for (const [path, cap, expectedExports] of owners) {
+            const present = existsSync(resolve(repositoryRoot, path));
+            expect.soft(present, `${path}: owner exists`).toBe(true);
+            if (!present) continue;
+            const source = repositorySource(path);
+            sources.set(path, source);
+            expect.soft(source.split('\n').length, `${path}: line cap`)
+                .toBeLessThanOrEqual(cap);
+            expect.soft(
+                task9aExportSeams(task9aSourceFile(path, source)),
+                `${path}: exact exports`,
+            ).toEqual(expectedExports);
+            expect.soft(source, `${path}: no reverse/App/CSS/barrel edge`)
+                .not.toMatch(/(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"])/);
+        }
+
+        const contractsPath = `${quickRoot}/quick-rallar-contracts.ts`;
+        const defaultsPath = `${quickRoot}/quick-rallar-defaults.ts`;
+        const viewPath = `${quickRoot}/QuickRallarTestView.tsx`;
+        const expectedOwnerImports = new Map<string, readonly string[]>([
+            [contractsPath, []],
+            [defaultsPath, [
+                '../../../client-defaults.ts|value:RALLAR_BLACK_BOX_CLIENT_DEFAULTS',
+                '../../shared/json-presentation.ts|value:json',
+                './quick-rallar-contracts.ts|type:QuickRallarValues',
+            ]],
+            [viewPath, [
+                '../../shared/CollapsiblePanelSection.tsx|value:CollapsiblePanelSection',
+                '../../shared/Metric.tsx|value:Metric',
+                '../../shared/redaction-presentation.ts|value:redactedJson',
+                '../../shared/time-format.ts|value:formatTime',
+                '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                '../../shell/rallar-browser-status.ts|type:RallarBrowserStatusSummary',
+                './quick-rallar-contracts.ts|type:QuickRallarTestViewModel,type:QuickRallarTransport',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                '@shared/api/api-config.ts|type:AuthSession',
+            ]],
+        ]);
+        for (const [path] of owners) {
+            if (!sources.has(path)) continue;
+            expect.soft(
+                task9aImportEdges(
+                    task9aSourceFile(path, sources.get(path)!),
+                ),
+                `${path}: exact import kinds and edges`,
+            ).toEqual(expectedOwnerImports.get(path));
+        }
+        const quickAppModules = new Set([
+            './legacy/diagnostics/quick-test/quick-rallar-contracts.ts',
+            './legacy/diagnostics/quick-test/quick-rallar-defaults.ts',
+            './legacy/diagnostics/quick-test/QuickRallarTestView.tsx',
+        ]);
+        expect.soft(
+            task9aImportEdges(appAst).filter((edge) =>
+                quickAppModules.has(edge.slice(0, edge.indexOf('|'))),
+            ),
+            'App exact Quick owner imports and import kinds',
+        ).toEqual([
+            './legacy/diagnostics/quick-test/QuickRallarTestView.tsx|value:QuickRallarTestView',
+            './legacy/diagnostics/quick-test/quick-rallar-contracts.ts|type:QuickRallarReceivedMessageRow,type:QuickRallarSubscriptionState,type:QuickRallarValues',
+            './legacy/diagnostics/quick-test/quick-rallar-defaults.ts|value:QUICK_RALLAR_DEFAULT_VALUES',
+        ]);
+
+        const namedTypeNodes = (
+            sourceFile: ts.SourceFile,
+            name: string,
+        ): readonly ts.Node[] => {
+            const declaration = sourceFile.statements.find(
+                (statement): statement is ts.TypeAliasDeclaration =>
+                    ts.isTypeAliasDeclaration(statement) &&
+                    statement.name.text === name,
+            );
+            return declaration ? [declaration.name, declaration.type] : [];
+        };
+        const namedVariableNodes = (
+            sourceFile: ts.SourceFile,
+            name: string,
+        ): readonly ts.Node[] => {
+            const declaration = sourceFile.statements
+                .filter(ts.isVariableStatement)
+                .flatMap((statement) => [
+                    ...statement.declarationList.declarations,
+                ])
+                .find((candidate) =>
+                    ts.isIdentifier(candidate.name) &&
+                    candidate.name.text === name,
+                );
+            return declaration?.initializer
+                ? [declaration.name, declaration.initializer]
+                : [];
+        };
+        if (sources.has(contractsPath)) {
+            const contractsAst = task9aSourceFile(
+                contractsPath,
+                sources.get(contractsPath)!,
+            );
+            expect.soft(
+                task9aAstFingerprint([
+                    ...namedTypeNodes(contractsAst, 'QuickRallarTransport'),
+                    ...namedTypeNodes(contractsAst, 'QuickRallarValues'),
+                    ...namedTypeNodes(
+                        contractsAst,
+                        'QuickRallarSubscriptionState',
+                    ),
+                    ...namedTypeNodes(
+                        contractsAst,
+                        'QuickRallarReceivedMessageRow',
+                    ),
+                ]),
+                'exact four moved Quick contracts',
+            ).toBe('9313a8e66ac0346f296f9dd713ec0c87f07a0634637c12f9827b2ea838bd67f3');
+
+            const expectedPresentationContracts = task9aSourceFile(
+                'expected-quick-presentation-contracts.ts',
+                `type QuickRallarPayloadResult =
+                    | Readonly<{ ok: true }>
+                    | Readonly<{ ok: false; error: string }>;
+                type QuickRallarWorkflowStep = Readonly<{
+                    id: string;
+                    label: string;
+                    detail: string;
+                    state: 'done' | 'current' | 'blocked' | 'pending';
+                }>;
+                type QuickRallarTestViewModel = Readonly<{
+                    values: QuickRallarValues;
+                    busyAction?: string;
+                    localError?: string;
+                    lastResult?: Readonly<{
+                        status: 'completed' | 'failed';
+                    }>;
+                    subscription?: Readonly<{
+                        label: string;
+                        groupId: string;
+                        subscribedAtEpochMs: number;
+                    }>;
+                    receivedMessages: readonly Readonly<{
+                        rowId: string;
+                        atEpochMs: number;
+                        senderId: string;
+                        roomId: string;
+                        typeId: string;
+                        topicId: string;
+                        contextId: string;
+                        payload?: unknown;
+                    }>[];
+                    waitStatus: string;
+                    providerMode: 'simulated' | 'browser-rallar';
+                    realBackendReady: boolean;
+                    canUseDirectRallar: boolean;
+                    activeGroupId: string;
+                    activeTypeId: string;
+                    activeContextId: string;
+                    selectorLabel: string;
+                    payloadResult: QuickRallarPayloadResult;
+                    updateValue<K extends keyof QuickRallarValues>(
+                        key: K,
+                        value: QuickRallarValues[K],
+                    ): void;
+                    updateGroupId(groupId: string): void;
+                    createGroup(): Promise<void>;
+                    joinGroup(): Promise<void>;
+                    subscribeWs(): Promise<void>;
+                    unsubscribeWs(): void;
+                    sendWs(): Promise<void>;
+                    waitForReceive(): Promise<void>;
+                    copyDiagnostics(): void;
+                    copyRunnerRecipe(): void;
+                    setupComplete: boolean;
+                    subscribed: boolean;
+                    workflowSteps: readonly QuickRallarWorkflowStep[];
+                }>;`,
+            );
+            for (const name of [
+                'QuickRallarPayloadResult',
+                'QuickRallarWorkflowStep',
+                'QuickRallarTestViewModel',
+            ] as const) {
+                expect.soft(
+                    task9aAstFingerprint(namedTypeNodes(contractsAst, name)),
+                    `${name}: exact narrow presentation contract`,
+                ).toBe(task9aAstFingerprint(
+                    namedTypeNodes(expectedPresentationContracts, name),
+                ));
+            }
+        }
+        if (sources.has(defaultsPath)) {
+            const defaultsAst = task9aSourceFile(
+                defaultsPath,
+                sources.get(defaultsPath)!,
+            );
+            expect.soft(
+                task9aAstFingerprint(namedVariableNodes(
+                    defaultsAst,
+                    'QUICK_RALLAR_DEFAULT_VALUES',
+                )),
+                'exact moved Quick default initializer',
+            ).toBe('cd00faf099d73bf87e9a65f4db86ab2b28abcb16ff538d9437b339c2cbfc316a');
+        }
+
+        const appLocalNames = new Set<string>();
+        for (const statement of appAst.statements) {
+            if (
+                ts.isTypeAliasDeclaration(statement) ||
+                ts.isInterfaceDeclaration(statement) ||
+                ts.isFunctionDeclaration(statement)
+            ) {
+                if (statement.name) appLocalNames.add(statement.name.text);
+            }
+            if (ts.isVariableStatement(statement)) {
+                for (const declaration of statement.declarationList.declarations) {
+                    if (ts.isIdentifier(declaration.name)) {
+                        appLocalNames.add(declaration.name.text);
+                    }
+                }
+            }
+        }
+        for (const moved of [
+            'QuickRallarTransport', 'QuickRallarValues',
+            'QuickRallarSubscriptionState', 'QuickRallarReceivedMessageRow',
+            'QUICK_RALLAR_DEFAULT_VALUES',
+        ]) {
+            expect.soft(appLocalNames, `App no local ${moved}`).not.toContain(moved);
+        }
+
+        const controller = task9aNamedFunction(appAst, 'QuickRallarTestPanel');
+        const controllerStatements = controller.body!.statements;
+        const controllerReturnIndex = controllerStatements.findIndex(ts.isReturnStatement);
+        const preReturn = controllerReturnIndex >= 0
+            ? controllerStatements.slice(0, controllerReturnIndex)
+            : [];
+        expect.soft(preReturn, 'exact 42 App-local Quick controller statements')
+            .toHaveLength(42);
+        expect.soft(
+            task9aAstFingerprint(preReturn),
+            'token-complete App-local Quick controller',
+        ).toBe('12ba49464b8518a89815d19cc1b8cb933c1f7bde43793d7b41a5c1b7c71c5e27');
+        const hooks = {
+            useState: 0, useMemo: 0, useRef: 0, useEffect: 0, useCallback: 0,
+        };
+        const effects: ts.CallExpression[] = [];
+        const visitHooks = (node: ts.Node): void => {
+            if (
+                ts.isCallExpression(node) && ts.isIdentifier(node.expression) &&
+                node.expression.text in hooks
+            ) {
+                hooks[node.expression.text as keyof typeof hooks] += 1;
+                if (node.expression.text === 'useEffect') effects.push(node);
+            }
+            ts.forEachChild(node, visitHooks);
+        };
+        visitHooks(controller);
+        expect.soft(hooks, 'Quick controller exact hook topology').toEqual({
+            useState: 7, useMemo: 1, useRef: 3, useEffect: 4, useCallback: 0,
+        });
+        expect.soft(effects, 'Quick controller exact effect count').toHaveLength(4);
+        expect.soft(
+            effects.map((effect) => task9aAstFingerprint([effect])),
+            'exact Quick effects and dependencies',
+        ).toEqual([
+            '0c47a1dae1cc6553c5cf777a99f91fe90cc2a94b2ef2c403bdf00f39e8062add',
+            '4401d06d15db5c19575d6a7daeb2ed5892dc35f7d413cac693406aed341b6748',
+            '98c94a7f4fea59d40fe7315a4b0115acdce86ac7d108b4619307f4b72783413d',
+            '1cfb59163858f189f1dd4265428f2faa9c2787b44b127bdfb6126f3dcd87a4f1',
+        ]);
+        const controllerDeclarations = new Map<string, ts.VariableStatement>();
+        for (const statement of preReturn) {
+            if (!ts.isVariableStatement(statement)) continue;
+            for (const declaration of statement.declarationList.declarations) {
+                if (ts.isIdentifier(declaration.name)) {
+                    controllerDeclarations.set(declaration.name.text, statement);
+                }
+            }
+        }
+        for (const [name, expectedHash] of [
+            ['operationContext', '9640c7143ee55d0183b9c615b33e5552da95a1709dd7f3a79829f4066870b352'],
+            ['updateValue', '7ddeb4b4217bc28eec53a0acae7536169b16fc0a3428785f8193701a67804e37'],
+            ['updateGroupId', 'a676052490f7310096209c2305c3b2e893cb5d37c0734f7f46ef8a8ac4514a0e'],
+            ['recordDirectResult', '97f7edd9dff55d82f8ed4045c90ed48563af9a15c6ede5b056ecb6ef4d648a9f'],
+            ['runOperation', 'ecc165f493fe6a8d2f6c418c26ab15533bf763f38ea8a0ad7ca7a735b8471903'],
+            ['createGroup', '6a9e3d9b3876bf6cb6c3989107fc4b27ede85c83fd60d832304824fa6f991dca'],
+            ['joinGroup', 'f391aba7f58ce0ce2ec2f71fa551a1d7a70cd33cee12c4ed694e86081657a741'],
+            ['messageRowFromRallarMessage', '5a1017666ce6ec9ab889d9550e6f52fdc01ca94989cc9583b65e410edbbd829c'],
+            ['subscribeWs', 'e112e0a3efb7c426cf6ef199ad1a72e77c06a0f0698b33bd67723c69f0e36826'],
+            ['unsubscribeWs', 'e817df27bbfe22b6dc29a54ede2b45586c2d68b6dbbd1d694af6d9c0b189c431'],
+            ['sendWs', 'ac005af4237ed73efac297a3c35268c55c551138b48cba3cee5387c788706ee5'],
+            ['waitForReceive', '45f43202c00e7070378a587c06e14c44092a872595839f09ab6cf48df6766f6f'],
+            ['copyDiagnostics', 'e79a98252e9c0ba175587b54c86a0827c6d6a3ff9fd5fc5b0fb3fbdeb721d3d2'],
+            ['copyRunnerRecipe', '34aa677bca4a06755fc489d667bfbbb98889c6e15ac79b853e6992a4287f8f86'],
+        ] as const) {
+            const statement = controllerDeclarations.get(name);
+            expect.soft(
+                statement ? task9aAstFingerprint([statement]) : '',
+                `${name}: exact Quick controller action`,
+            ).toBe(expectedHash);
+        }
+
+        const viewCalls = task9aJsxCalls(controller, 'QuickRallarTestView');
+        expect.soft(viewCalls, 'one direct Quick controlled View call').toHaveLength(1);
+        const viewCall = viewCalls[0];
+        if (viewCall) {
+            const propNames = viewCall.attributes.properties.map((property) =>
+                ts.isJsxAttribute(property) ? property.name.getText() : 'spread'
+            );
+            expect.soft(propNames, 'exact Quick View prop order').toEqual([
+                'state', 'authSession', 'globalValues', 'browserStatus', 'model',
+                'onOpenAuth', 'onOpenRunnerMode',
+            ]);
+            const modelAttribute = viewCall.attributes.properties.find(
+                (property): property is ts.JsxAttribute =>
+                    ts.isJsxAttribute(property) && property.name.getText() === 'model',
+            );
+            const modelExpression = modelAttribute?.initializer &&
+                ts.isJsxExpression(modelAttribute.initializer)
+                ? modelAttribute.initializer.expression
+                : undefined;
+            expect.soft(
+                modelExpression && ts.isObjectLiteralExpression(modelExpression),
+                'Quick View receives one explicit model object',
+            ).toBe(true);
+            if (modelExpression && ts.isObjectLiteralExpression(modelExpression)) {
+                expect.soft(
+                    modelExpression.properties.map((property) => property.name?.getText()),
+                    'exact Quick View model key order',
+                ).toEqual([
+                    'values', 'busyAction', 'localError', 'lastResult',
+                    'subscription', 'receivedMessages', 'waitStatus',
+                    'providerMode', 'realBackendReady', 'canUseDirectRallar',
+                    'activeGroupId', 'activeTypeId', 'activeContextId',
+                    'selectorLabel', 'payloadResult', 'updateValue',
+                    'updateGroupId', 'createGroup', 'joinGroup', 'subscribeWs',
+                    'unsubscribeWs', 'sendWs', 'waitForReceive',
+                    'copyDiagnostics', 'copyRunnerRecipe', 'setupComplete',
+                    'subscribed', 'workflowSteps',
+                ]);
+                expect.soft(
+                    task9aAstFingerprint([modelExpression]),
+                    'exact Quick View model object',
+                ).toBe('ab6344a8375f2016fd56ebabea9a72b551dcfa2a8283f29c9669c596953c09b8');
+            }
+            expect.soft(
+                task9aAstFingerprint(viewCalls),
+                'exact Quick View call and prop initializers',
+            ).toBe('a830afd10308bab7afe03731d507acb5ad439a17f92d67c53f64318790a285a0');
+        }
+
+        if (sources.has(viewPath)) {
+            const viewAst = task9aSourceFile(viewPath, sources.get(viewPath)!);
+            const view = task9aNamedFunction(viewAst, 'QuickRallarTestView');
+            const viewParameter = view.parameters[0];
+            const viewParameterKeys = viewParameter &&
+                    ts.isObjectBindingPattern(viewParameter.name)
+                ? viewParameter.name.elements.map((element) =>
+                      element.name.getText(viewAst)
+                  )
+                : [];
+            expect.soft(viewParameterKeys, 'exact Quick View prop order')
+                .toEqual([
+                    'state', 'authSession', 'globalValues', 'browserStatus',
+                    'model', 'onOpenAuth', 'onOpenRunnerMode',
+                ]);
+            const viewStatements = view.body!.statements;
+            const viewReturnIndex = viewStatements.findIndex(ts.isReturnStatement);
+            const viewPreReturn = viewReturnIndex >= 0
+                ? viewStatements.slice(0, viewReturnIndex)
+                : [];
+            expect.soft(
+                viewPreReturn,
+                'Quick View has exactly one model destructure before its return',
+            ).toHaveLength(1);
+            const modelDeclaration = viewPreReturn
+                .filter(ts.isVariableStatement)
+                .flatMap((statement) => [
+                    ...statement.declarationList.declarations,
+                ])[0];
+            expect.soft(
+                modelDeclaration?.initializer?.getText(viewAst) ?? '',
+                'Quick View destructures only its model',
+            ).toBe('model');
+            const viewModelBindingKeys = modelDeclaration &&
+                    ts.isObjectBindingPattern(modelDeclaration.name)
+                ? modelDeclaration.name.elements.map((element) =>
+                      element.name.getText(viewAst)
+                  )
+                : [];
+            expect.soft(
+                viewModelBindingKeys,
+                'exact Quick View model destructure order',
+            ).toEqual([
+                'values', 'busyAction', 'localError', 'lastResult',
+                'subscription', 'receivedMessages', 'waitStatus',
+                'providerMode', 'realBackendReady', 'canUseDirectRallar',
+                'activeGroupId', 'activeTypeId', 'activeContextId',
+                'selectorLabel', 'payloadResult', 'updateValue',
+                'updateGroupId', 'createGroup', 'joinGroup', 'subscribeWs',
+                'unsubscribeWs', 'sendWs', 'waitForReceive',
+                'copyDiagnostics', 'copyRunnerRecipe', 'setupComplete',
+                'subscribed', 'workflowSteps',
+            ]);
+            expect.soft(
+                viewStatements.filter(ts.isReturnStatement),
+                'Quick View has one final return',
+            ).toHaveLength(1);
+            const viewHookCalls: string[] = [];
+            const forbiddenViewGlobals: string[] = [];
+            const forbiddenGlobalNames = new Set([
+                'fetch', 'localStorage', 'sessionStorage', 'navigator',
+                'XMLHttpRequest', 'WebSocket', 'loadBrowserRallarFacade',
+                'rallarBlackBoxRuntimeStore',
+            ]);
+            const visitView = (node: ts.Node): void => {
+                if (ts.isCallExpression(node)) {
+                    const calleeName = ts.isIdentifier(node.expression)
+                        ? node.expression.text
+                        : ts.isPropertyAccessExpression(node.expression)
+                          ? node.expression.name.text
+                          : '';
+                    if (/^use[A-Z0-9]/.test(calleeName)) {
+                        viewHookCalls.push(calleeName);
+                    }
+                }
+                if (
+                    ts.isIdentifier(node) &&
+                    forbiddenGlobalNames.has(node.text)
+                ) forbiddenViewGlobals.push(node.text);
+                ts.forEachChild(node, visitView);
+            };
+            visitView(view);
+            expect.soft(viewHookCalls, 'Quick View is hook-free').toEqual([]);
+            expect.soft(
+                forbiddenViewGlobals,
+                'Quick View has no facade/store/storage/network globals',
+            ).toEqual([]);
+            expect.soft(
+                task9aJsxRuntimeFingerprint(task9aReturnExpression(view)),
+                'Quick View owns the exact legacy compiled JSX',
+            ).toBe('dcce8b70c9ce3f73bb861200a411333dc85f30fbd64924162084aef837a6f23d');
+        } else {
+            expect.soft(
+                task9aJsxRuntimeFingerprint(task9aReturnExpression(controller)),
+                'base legacy Quick compiled JSX before ownership cutover',
+            ).toBe('dcce8b70c9ce3f73bb861200a411333dc85f30fbd64924162084aef837a6f23d');
+        }
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'QuickRallarTestPanel');
+        expect.soft(mounts, 'one always-mounted Quick controller').toHaveLength(1);
+        expect.soft(task9aAstFingerprint(mounts), 'exact Quick App mount props')
+            .toBe('66b7da5bb3bc0125e6ea74a28df8c29bbb8485b9907b3cca21b3a2d1cf936e68');
+        let mountAncestor: ts.Node | undefined = mounts[0];
+        while (mountAncestor && !ts.isJsxElement(mountAncestor)) {
+            mountAncestor = mountAncestor.parent;
+        }
+        expect.soft(
+            mountAncestor ? task9aAstFingerprint([mountAncestor]) : '',
+            'exact hidden-capable always-mounted Quick ancestor',
+        ).toBe('15085c9859abf9d7e36f8887661fb4cecfd1628a51070e91ed830fa1510dadd9');
+        expect.soft(task9aAstFingerprint([app]), 'unchanged App function')
+            .toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(appSource, 'no Quick lazy/Suspense cutover')
+            .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+
+        const ownerPaths = new Set(owners.map(([path]) => path));
+        const graph = new Map<string, readonly string[]>();
+        for (const path of ownerPaths) {
+            if (!sources.has(path)) continue;
+            const dependencies = task9aImportEdges(
+                task9aSourceFile(path, sources.get(path)!),
+            )
+                .map((edge) => edge.slice(0, edge.indexOf('|')))
+                .filter((moduleImport) => moduleImport.startsWith('.'))
+                .map((moduleImport) => relative(
+                    repositoryRoot,
+                    resolve(resolve(repositoryRoot, path), '..', moduleImport),
+                ))
+                .filter((dependency) => ownerPaths.has(dependency));
+            graph.set(path, dependencies);
+        }
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) { cycles.push(path); return; }
+            if (visited.has(path)) return;
+            active.add(path);
+            for (const dependency of graph.get(path) ?? []) visit(dependency);
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const path of ownerPaths) visit(path);
+        expect(cycles, 'Quick presentation owner import cycles').toEqual([]);
+    });
+
     it('keeps distributed compare formatters in the canonical time module', () => {
         const panelSource = repositorySource(
             'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunComparePanel.tsx',
