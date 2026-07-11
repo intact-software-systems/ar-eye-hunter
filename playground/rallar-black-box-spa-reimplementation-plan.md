@@ -394,7 +394,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Iteration | Status | Exit tracking |
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
-| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 926 lines through legacy shell-model M1; the broad exit criteria still bind, and focused controllers, share-link ownership, tab composition, `LegacyAppShell`, and the below-800 App boundary remain before this iteration is complete. |
+| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 926 lines through legacy shell-model M1; fleet share-link ownership is also complete at M2. The broad exit criteria still bind, and focused controllers, tab composition, `LegacyAppShell`, and the below-800 App boundary remain before this iteration is complete. |
 | 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
@@ -762,6 +762,21 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   effects, navigation/global-context/selection orchestration, the complete tab
   tree, and the inline fleet share-link builder; `LegacyAppShell` does not yet
   exist and the below-800 boundary remains unsatisfied.
+
+#### Iteration 1 fleet share-link M2 checkpoint — `ff79d28` (2026-07-11)
+
+- Fleet share-link construction is now the pure
+  `buildFleetShareUrl(...)` helper in
+  `src/legacy/runner/fleet/fleet-helpers.ts`. The controller retains only the
+  browser clipboard effect. Mode/tab targeting, filter and map-layer encoding,
+  unrelated query parameters, query ordering, and fragment preservation remain
+  exact; no URL codec, route, public export, or control-server contract changed.
+- The focused behavior/structure gate passed 48/48, typecheck/build passed, and
+  a controlled `fleet`-to-`runs` target mutation failed both the behavior and
+  AST gates. The existing chunk warning remains (`index` 1,261.09 kB
+  minified). This completes the Iteration 1 share-link-builder item but does
+  not change App size, mounts, navigation, cutover, or the remaining shell
+  controller/composition exit work.
 
 #### Remaining risks and evidence ownership
 

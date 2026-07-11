@@ -19,7 +19,7 @@ row's cutover, hide, mount, or rollback status.
 | Quick Test | `QuickRallarTestPanel.tsx`, `QuickRallarTestView.tsx`, and `use-quick-rallar-controller.ts` | Controller/effect/JSX/mount parity; operational desktop/mobile QA | Its documented hidden-mounted subscription/state exception remains |
 | RTC Realtime | `RtcRealtimePanel.tsx`, `RtcRealtimeView.tsx`, and `use-rtc-realtime-controller.ts` | Controller/effect/JSX/mount parity; operational desktop/mobile QA | Its documented hidden-mounted RTC ownership exception remains |
 | WebSocket | Focused contracts/presets/routing/recipes/diagnostics, controller, view, and thin panel under `src/legacy/diagnostics/websocket/**` | Exact helper/controller/effect/JSX/runtime/App/CSS and operational parity through W3 | Socket/subscription lifetime exception remains; no hide/cutover occurred |
-| Legacy shell and models | Focused login, header, tabs, global context, mode switch, two boundary owners, global-context derivation, one-time ticket service, and runner queue/selection model under `src/legacy/{shell,runner/shell}/**` | Exact component/model/import/export/hook/DAG/App/CSS locks, focused behavior tests, mutation probes, desktop/mobile/reduced-motion QA, browser ticket proof, and independent reviews through `0939161` | Focused controllers, fleet share-link ownership, tab composition, `LegacyAppShell`, and final below-800 App boundary remain |
+| Legacy shell and models | Focused login, header, tabs, global context, mode switch, two boundary owners, global-context derivation, one-time ticket service, runner queue/selection model, and pure fleet share-link builder under `src/legacy/**` | Exact component/model/import/export/hook/DAG/App/CSS locks, focused behavior tests, mutation probes, desktop/mobile/reduced-motion QA, browser ticket proof, and independent reviews through `0939161`; share-link proof at `ff79d28` | Focused controllers, tab composition, `LegacyAppShell`, and final below-800 App boundary remain |
 
 At this checkpoint `App.tsx` is 9,242 lines, down from the 28,265-line
 baseline. No surface has been newly hidden, no legacy deep link has changed,
@@ -189,6 +189,18 @@ apps/rallar-black-box-control-server, and apps/rallar-black-box available.` No
 surface is cut over or newly hidden. Focused controllers, the fleet share-link
 builder, tab composition, `LegacyAppShell`, and the below-800 App boundary
 remain before Iteration 1 can exit.
+
+Fleet share-link M2 ownership checkpoint (2026-07-11): deterministic share URL
+construction now lives in `buildFleetShareUrl(...)` under
+`src/legacy/runner/fleet/fleet-helpers.ts`; the controller owns only the
+clipboard side effect. Exact mode/tab targeting, filter and map-layer
+serialization, unrelated query values, ordering, and fragment preservation
+are covered by the focused behavior and AST gates. Validation passed 48/48,
+typecheck/build passed, and a route-target mutation was caught at `ff79d28`.
+This completes share-link ownership without changing App size, routes, mounts,
+navigation, cutover, public exports, or server contracts. Focused shell
+controllers, tab composition, `LegacyAppShell`, and the below-800 App boundary
+remain.
 
 ## Compatibility inputs that must remain deterministic
 
