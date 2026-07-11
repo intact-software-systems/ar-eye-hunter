@@ -36,6 +36,10 @@ const runnerFleetControlsSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetControls.tsx',
     import.meta.url,
 );
+const runnerFleetControllerSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/fleet/use-runner-fleet-controller.ts',
+    import.meta.url,
+);
 const runnerFleetOverviewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetOverview.tsx',
     import.meta.url,
@@ -134,7 +138,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             sourceBetween(
                 source,
                 'function QuickRallarTestPanel',
-                'function RunnerFleetPanel',
+                'function RtcDiagnosticsPanel',
             ),
             sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel'),
             sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel'),
@@ -255,12 +259,18 @@ describe('rallar-black-box Rallar mode boundary', () => {
             runnerDistributedAnalysisSourcePath,
             runsPanel,
         );
-        const fleetController = sourceBetween(
-            source,
-            'function RunnerFleetPanel',
-            'function RtcDiagnosticsPanel',
+        const fleetControllerFallback = existsSync(runnerFleetControllerSourcePath)
+            ? ''
+            : sourceBetween(
+                  source,
+                  'function RunnerFleetPanel',
+                  'function RtcDiagnosticsPanel',
+              );
+        const fleetController = sourceOrFallback(
+            runnerFleetControllerSourcePath,
+            fleetControllerFallback,
         );
-        const fleetViewsFallback = fleetController;
+        const fleetViewsFallback = fleetControllerFallback;
         const fleetViews = [
             sourceOrFallback(runnerFleetControlsSourcePath, fleetViewsFallback),
             sourceOrFallback(runnerFleetOverviewSourcePath, fleetViewsFallback),

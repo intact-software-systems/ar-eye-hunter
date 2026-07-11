@@ -7180,32 +7180,44 @@ describe('rallar-black-box app source ownership', () => {
             }
         }
 
-        const appSharedImports = [
+        const fleetControllerPath =
+            'apps/rallar-black-box/src/legacy/runner/fleet/use-runner-fleet-controller.ts';
+        const controllerSharedImports = [
             {
-                moduleImport:
-                    './legacy/runner/shared/control-snapshot-bounds.ts',
+                importerPath: existsSync(resolve(repositoryRoot, fleetControllerPath))
+                    ? fleetControllerPath
+                    : appSourcePath,
+                moduleImport: existsSync(resolve(repositoryRoot, fleetControllerPath))
+                    ? '../shared/control-snapshot-bounds.ts'
+                    : './legacy/runner/shared/control-snapshot-bounds.ts',
                 seam: 'RUN_MANAGER_SNAPSHOT_BOUNDS',
             },
         ] as const;
 
-        for (const appSharedImport of appSharedImports) {
-            const escapedModuleImport = appSharedImport.moduleImport.replace(
+        for (const controllerSharedImport of controllerSharedImports) {
+            const escapedModuleImport = controllerSharedImport.moduleImport.replace(
                 /[.*+?^${}()|[\]\\]/g,
                 '\\$&',
             );
-            const importedSeams = appSource.match(
+            const importerSource = repositorySource(
+                controllerSharedImport.importerPath,
+            );
+            const importedSeams = importerSource.match(
                 new RegExp(
                     `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
                 ),
             )?.[1];
 
-            expect.soft(importedSeams, appSharedImport.moduleImport).toBeDefined();
+            expect.soft(
+                importedSeams,
+                controllerSharedImport.moduleImport,
+            ).toBeDefined();
             expect
                 .soft(
                     importedSeams ?? '',
-                    `${appSharedImport.moduleImport}: ${appSharedImport.seam}`,
+                    `${controllerSharedImport.moduleImport}: ${controllerSharedImport.seam}`,
                 )
-                .toMatch(new RegExp(`\\b${appSharedImport.seam}\\b`));
+                .toMatch(new RegExp(`\\b${controllerSharedImport.seam}\\b`));
         }
 
         const runManagerSource = existsSync(resolve(repositoryRoot, runManagerPath))
@@ -7890,10 +7902,20 @@ describe('rallar-black-box app source ownership', () => {
         expect(cycles, 'Builder recursive owner import cycles').toEqual([]);
     });
 
-    it('extracts exact Fleet helpers and controlled views while preserving the App controller', () => {
+    it('extracts the exact Fleet controller and panel over the preserved support and views', () => {
         const appSource = repositorySource(appSourcePath);
         const fleetRoot = 'apps/rallar-black-box/src/legacy/runner/fleet';
+        const controllerPath = `${fleetRoot}/use-runner-fleet-controller.ts`;
+        const panelPath = `${fleetRoot}/RunnerFleetPanel.tsx`;
+        const controllerSource = existsSync(resolve(repositoryRoot, controllerPath))
+            ? repositorySource(controllerPath)
+            : appSource;
+        const panelSource = existsSync(resolve(repositoryRoot, panelPath))
+            ? repositorySource(panelPath)
+            : appSource;
         const owners = [
+            { path: controllerPath, cap: 460, exports: ['type:RunnerFleetControllerModel', 'type:UseRunnerFleetControllerInput', 'value:useRunnerFleetController'] },
+            { path: panelPath, cap: 210, exports: ['value:RunnerFleetPanel'] },
             { path: `${fleetRoot}/fleet-types.ts`, cap: 80, exports: ['type:FleetAgentHeatmapRow', 'type:FleetFilterState', 'type:FleetLabelOverride', 'type:FleetTimingGroup'] },
             { path: `${fleetRoot}/fleet-helpers.ts`, cap: 280, exports: ['value:applyFleetLabelOverrides', 'value:fleetReportFilterFromUi', 'value:parseFleetLabelOverrides', 'value:readFleetFiltersFromUrl', 'value:readFleetWorldMapLayersFromUrl', 'value:writeFleetFiltersToSearchParams', 'value:writeFleetFiltersToUrl', 'value:writeFleetWorldMapLayersToSearchParams', 'value:writeFleetWorldMapLayersToUrl'] },
             { path: `${fleetRoot}/fleet-derivations.ts`, cap: 210, exports: ['value:fleetAgentDetail', 'value:fleetHeatmapRows', 'value:fleetMissingLabelAgents', 'value:fleetRegionRows'] },
@@ -7932,6 +7954,30 @@ describe('rallar-black-box app source ownership', () => {
         }
 
         const exactImports = new Map<string, readonly string[]>([
+            [controllerPath, [
+                '../../../control-agent-board.ts|value:deriveControlAgentBoardRows,value:summarizeControlAgentBoardRows',
+                '../../../control-client.ts|type:RallarBlackBoxControlSnapshot',
+                '../../../control-run-manager.ts|type:ControlFleetReportBundle,type:ControlFleetReportsResponse,type:ControlServerSnapshot,value:controlHttpBaseUrlFromWsUrl,value:fetchControlServerSnapshot,value:fetchFleetReportBundle,value:fetchFleetReports,value:rebuildFleetReports',
+                '../../../runner-readiness.ts|value:runnerFriendlyErrorMessage',
+                '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
+                '../../../world-map-model.ts|type:FleetWorldMapLayerId,type:FleetWorldMapLayerState,type:FleetWorldMapRegion,value:deriveFleetWorldMapModel,value:routeEvidenceFromControlRun',
+                '../../shared/json-presentation.ts|value:json',
+                '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                '../shared/control-snapshot-bounds.ts|value:RUN_MANAGER_SNAPSHOT_BOUNDS',
+                './fleet-derivations.ts|value:fleetAgentDetail,value:fleetHeatmapRows,value:fleetMissingLabelAgents,value:fleetRegionRows',
+                './fleet-helpers.ts|value:applyFleetLabelOverrides,value:fleetReportFilterFromUi,value:parseFleetLabelOverrides,value:readFleetFiltersFromUrl,value:readFleetWorldMapLayersFromUrl,value:writeFleetFiltersToSearchParams,value:writeFleetFiltersToUrl,value:writeFleetWorldMapLayersToSearchParams,value:writeFleetWorldMapLayersToUrl',
+                './fleet-rollups.ts|value:fleetDisplaySummary,value:fleetFailureRows',
+                './fleet-timing.ts|value:fleetTimingGroupsByRecipe,value:fleetTimingGroupsByRegion',
+                './fleet-types.ts|type:FleetFilterState',
+                'react|value:useEffect,value:useMemo,value:useRef,value:useState',
+            ]],
+            [panelPath, [
+                './use-runner-fleet-controller.ts|type:UseRunnerFleetControllerInput,value:useRunnerFleetController',
+                './views/RunnerFleetControls.tsx|value:RunnerFleetControls',
+                './views/RunnerFleetOverview.tsx|value:RunnerFleetOverview',
+                './views/RunnerFleetReportAnalysis.tsx|value:RunnerFleetReportAnalysis',
+                './views/RunnerFleetSelectedDetails.tsx|value:RunnerFleetSelectedDetails',
+            ]],
             [`${fleetRoot}/fleet-types.ts`, [
                 '../../../control-run-manager.ts|type:ControlFleetAgentRunOutcome,type:ControlFleetTimingDistribution',
             ]],
@@ -8128,19 +8174,26 @@ describe('rallar-black-box app source ownership', () => {
             'exact Fleet defaults initializer',
         ).toBe('2e5f3d85bc30369ca762432ec090c1cb48c322e8fe009139bf929512180f56be');
 
-        const panel = appAst.statements.find(
-            (statement): statement is ts.FunctionDeclaration =>
-                ts.isFunctionDeclaration(statement) &&
-                statement.name?.text === 'RunnerFleetPanel',
+        const hasControllerOwner = existsSync(resolve(repositoryRoot, controllerPath));
+        const controllerAst = task9aSourceFile(controllerPath, controllerSource);
+        const controller = task9aNamedFunction(
+            controllerAst,
+            hasControllerOwner ? 'useRunnerFleetController' : 'RunnerFleetPanel',
         );
-        expect.soft(panel, 'App-local RunnerFleetPanel controller').toBeDefined();
-        const panelStatements = panel?.body?.statements ?? [];
-        const returnIndex = panelStatements.findIndex(ts.isReturnStatement);
-        const preReturn = returnIndex >= 0 ? panelStatements.slice(0, returnIndex) : [];
+        const panelAst = task9aSourceFile(panelPath, panelSource);
+        const panel = task9aNamedFunction(panelAst, 'RunnerFleetPanel');
+        expect.soft(appSource, 'RunnerFleetPanel leaves App').not.toMatch(
+            /^function RunnerFleetPanel\(/m,
+        );
+        const controllerStatements = controller.body?.statements ?? [];
+        const returnIndex = controllerStatements.findIndex(ts.isReturnStatement);
+        const preReturn = returnIndex >= 0
+            ? controllerStatements.slice(0, returnIndex)
+            : [];
         expect.soft(preReturn, '46 exact pre-return controller statements').toHaveLength(46);
         expect.soft(
             task9aAstFingerprint(preReturn),
-            'token-complete App-local Fleet controller',
+            'token-complete Fleet controller hook',
         ).toBe('68e62590dd3ece0d091f1ee7c5dc62e005e348a0f4fe30e31957173c3aa894c4');
         expect.soft(
             task9aAstFingerprint(preReturn.filter((statement) =>
@@ -8149,26 +8202,22 @@ describe('rallar-black-box app source ownership', () => {
             'exact Fleet hook-bearing statements',
         ).toBe('dc15e915d5585804686e36a0844e70986bfdbe12aed6e83ec8a8aa911ab17b7b');
         const hookCalls = { useState: 0, useMemo: 0, useRef: 0, useEffect: 0, useCallback: 0 };
-        if (panel) {
-            const visit = (node: ts.Node): void => {
-                if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text in hookCalls) {
-                    hookCalls[node.expression.text as keyof typeof hookCalls] += 1;
-                }
-                ts.forEachChild(node, visit);
-            };
-            visit(panel);
-        }
+        const visitControllerHooks = (node: ts.Node): void => {
+            if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text in hookCalls) {
+                hookCalls[node.expression.text as keyof typeof hookCalls] += 1;
+            }
+            ts.forEachChild(node, visitControllerHooks);
+        };
+        visitControllerHooks(controller);
         expect.soft(hookCalls, 'Fleet controller hook topology').toEqual({
             useState: 15, useMemo: 17, useRef: 1, useEffect: 4, useCallback: 0,
         });
         const effects: ts.CallExpression[] = [];
-        if (panel) {
-            const visit = (node: ts.Node): void => {
-                if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'useEffect') effects.push(node);
-                ts.forEachChild(node, visit);
-            };
-            visit(panel);
-        }
+        const visitControllerEffects = (node: ts.Node): void => {
+            if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'useEffect') effects.push(node);
+            ts.forEachChild(node, visitControllerEffects);
+        };
+        visitControllerEffects(controller);
         expect.soft(effects.map((effect) => task9aAstFingerprint([effect])), 'exact Fleet effects').toEqual([
             '12a49a857f746ca8e6fcdc92ad09893d333631bf88dad1bdeffe380b74b91ba4',
             '9016a31a96ecc30de10cc5047a74e80b9ebb6eebec46e2a06ce1fe39f11acb50',
@@ -8214,6 +8263,155 @@ describe('rallar-black-box app source ownership', () => {
                 `${name}: exact controller action`,
             ).toBe(fingerprint);
         }
+
+        const inputAlias = controllerAst.statements.find(
+            (statement): statement is ts.TypeAliasDeclaration =>
+                ts.isTypeAliasDeclaration(statement) &&
+                statement.name.text === 'UseRunnerFleetControllerInput',
+        );
+        const expectedInputAst = task9aSourceFile(
+            'expected-fleet-controller-input.ts',
+            `type Expected = Readonly<{
+                bootstrap: RallarBlackBoxBootstrapConfig;
+                control: RallarBlackBoxControlSnapshot;
+                globalValues: CommandCenterGlobalValues;
+            }>;`,
+        ).statements[0] as ts.TypeAliasDeclaration;
+        expect.soft(
+            inputAlias ? task9aAstFingerprint([inputAlias.type]) : '',
+            'exact Fleet controller input type',
+        ).toBe(task9aAstFingerprint([expectedInputAst.type]));
+        const modelAlias = controllerAst.statements.find(
+            (statement): statement is ts.TypeAliasDeclaration =>
+                ts.isTypeAliasDeclaration(statement) &&
+                statement.name.text === 'RunnerFleetControllerModel',
+        );
+        const expectedModelAst = task9aSourceFile(
+            'expected-fleet-controller-model.ts',
+            'type Expected = ReturnType<typeof useRunnerFleetController>;',
+        ).statements[0] as ts.TypeAliasDeclaration;
+        expect.soft(
+            modelAlias ? task9aAstFingerprint([modelAlias.type]) : '',
+            'exact inferred Fleet controller model alias',
+        ).toBe(task9aAstFingerprint([expectedModelAst.type]));
+        const controllerParameter = controller.parameters[0];
+        const controllerParameterKeys = controllerParameter &&
+                ts.isObjectBindingPattern(controllerParameter.name)
+            ? controllerParameter.name.elements.map((element) =>
+                  element.name.getText(controllerAst)
+              )
+            : [];
+        expect.soft(controllerParameterKeys, 'exact Fleet controller input order')
+            .toEqual(['bootstrap', 'control', 'globalValues']);
+        expect.soft(
+            controllerParameter?.type?.getText(controllerAst) ?? '',
+            'Fleet hook uses its named input contract',
+        ).toBe('UseRunnerFleetControllerInput');
+        const modelKeys = [
+            'controlBaseUrl', 'setControlBaseUrl', 'controlToken',
+            'setControlToken', 'filters', 'mapLayers', 'liveSnapshot',
+            'liveRunId', 'setLiveRunId', 'busy', 'error', 'lastRefresh',
+            'selectedAgentId', 'setSelectedAgentId', 'setSelectedFailureId',
+            'setSelectedReportId', 'overrideText', 'setOverrideText',
+            'lastExport', 'overrides', 'reports', 'displaySummary',
+            'heatmapRuns', 'heatmapRows', 'regionRows', 'failureRows',
+            'selectedFailure', 'selectedAgent', 'regionTiming', 'recipeTiming',
+            'missingLabelAgents', 'selectedReport', 'liveGroupRef',
+            'liveRunOptions', 'liveRun', 'liveAgentRows', 'liveAgentSummary',
+            'worldMapModel', 'refreshFleet', 'updateFilter', 'updateMapLayer',
+            'selectMapRegion', 'copyShareLink', 'exportSelectedReport',
+        ] as const;
+        expect.soft(modelKeys, 'brief model key count').toHaveLength(44);
+        const controllerReturn = task9aReturnExpression(controller);
+        const returnedKeys = ts.isObjectLiteralExpression(controllerReturn)
+            ? controllerReturn.properties.map((property) =>
+                  ts.isShorthandPropertyAssignment(property)
+                      ? property.name.text
+                      : property.getText(controllerAst)
+              )
+            : [];
+        expect.soft(returnedKeys, 'exact Fleet controller return key order')
+            .toEqual(modelKeys);
+        expect.soft(
+            ts.isObjectLiteralExpression(controllerReturn) &&
+                controllerReturn.properties.every(ts.isShorthandPropertyAssignment),
+            'Fleet controller returns only direct shorthand model fields',
+        ).toBe(true);
+        expect.soft(
+            controllerStatements.filter(ts.isReturnStatement),
+            'one final Fleet controller return',
+        ).toHaveLength(1);
+
+        const panelHookCalls: ts.CallExpression[] = [];
+        const visitPanelHook = (node: ts.Node): void => {
+            if (
+                ts.isCallExpression(node) &&
+                ts.isIdentifier(node.expression) &&
+                node.expression.text === 'useRunnerFleetController'
+            ) panelHookCalls.push(node);
+            ts.forEachChild(node, visitPanelHook);
+        };
+        visitPanelHook(panel);
+        expect.soft(panelHookCalls, 'Panel calls Fleet controller exactly once')
+            .toHaveLength(1);
+        const expectedHookCallAst = task9aSourceFile(
+            'expected-fleet-hook-call.ts',
+            'useRunnerFleetController({ bootstrap, control, globalValues });',
+        );
+        const expectedHookCall = (
+            expectedHookCallAst.statements[0] as ts.ExpressionStatement
+        ).expression as ts.CallExpression;
+        expect.soft(
+            task9aAstFingerprint(panelHookCalls),
+            'Panel exact Fleet controller input call',
+        ).toBe(task9aAstFingerprint([expectedHookCall]));
+        const panelStatements = panel.body?.statements ?? [];
+        const panelReturnIndex = panelStatements.findIndex(ts.isReturnStatement);
+        const panelPreReturn = panelReturnIndex >= 0
+            ? panelStatements.slice(0, panelReturnIndex)
+            : [];
+        expect.soft(panelPreReturn, 'Panel has one controller destructure')
+            .toHaveLength(1);
+        const panelBinding = panelPreReturn
+            .filter(ts.isVariableStatement)
+            .flatMap((statement) => [...statement.declarationList.declarations])
+            .find((declaration) => ts.isObjectBindingPattern(declaration.name));
+        const panelBindingKeys = panelBinding && ts.isObjectBindingPattern(panelBinding.name)
+            ? panelBinding.name.elements.map((element) => element.name.getText(panelAst))
+            : [];
+        expect.soft(panelBindingKeys, 'Panel exact model destructure order')
+            .toEqual(modelKeys);
+        expect.soft(
+            panelSource,
+            'Panel has no controller internals or side effects',
+        ).not.toMatch(
+            /\b(?:useState|useMemo|useEffect|useRef|useCallback|fetchFleetReports|fetchControlServerSnapshot|fetchFleetReportBundle|navigator\.|localStorage|sessionStorage|fleetDisplaySummary|fleetHeatmapRows|fleetRegionRows|fleetFailureRows)\b/,
+        );
+        const panelParameter = panel.parameters[0];
+        const panelParameterKeys = panelParameter &&
+                ts.isObjectBindingPattern(panelParameter.name)
+            ? panelParameter.name.elements.map((element) =>
+                  element.name.getText(panelAst)
+              )
+            : [];
+        expect.soft(panelParameterKeys, 'Panel exact three-prop order')
+            .toEqual(['bootstrap', 'control', 'globalValues']);
+        expect.soft(
+            panelParameter?.type?.getText(panelAst) ?? '',
+            'Panel consumes the named controller input contract',
+        ).toBe('UseRunnerFleetControllerInput');
+        let controllerHasJsx = false;
+        const visitControllerJsx = (node: ts.Node): void => {
+            if (
+                ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) ||
+                ts.isJsxFragment(node)
+            ) controllerHasJsx = true;
+            ts.forEachChild(node, visitControllerJsx);
+        };
+        visitControllerJsx(controllerAst);
+        expect.soft(controllerHasJsx, 'controller hook has no JSX').toBe(false);
+        expect.soft(controllerSource, 'controller has no App or view dependency')
+            .not.toMatch(/App\.tsx|RunnerFleetControls|RunnerFleetOverview|RunnerFleetReportAnalysis|RunnerFleetSelectedDetails/);
 
         const viewNames = [
             'RunnerFleetControls', 'RunnerFleetOverview',
@@ -8293,18 +8491,14 @@ describe('rallar-black-box app source ownership', () => {
             task9aImportEdges(appAst).filter((edge) =>
                 edge.startsWith('./legacy/runner/fleet/'),
             ),
-            'App exact direct Fleet controller dependencies',
+            'App imports only the direct Fleet Panel owner',
         ).toEqual([
-            './legacy/runner/fleet/fleet-derivations.ts|value:fleetAgentDetail,value:fleetHeatmapRows,value:fleetMissingLabelAgents,value:fleetRegionRows',
-            './legacy/runner/fleet/fleet-helpers.ts|value:applyFleetLabelOverrides,value:fleetReportFilterFromUi,value:parseFleetLabelOverrides,value:readFleetFiltersFromUrl,value:readFleetWorldMapLayersFromUrl,value:writeFleetFiltersToSearchParams,value:writeFleetFiltersToUrl,value:writeFleetWorldMapLayersToSearchParams,value:writeFleetWorldMapLayersToUrl',
-            './legacy/runner/fleet/fleet-rollups.ts|value:fleetDisplaySummary,value:fleetFailureRows',
-            './legacy/runner/fleet/fleet-timing.ts|value:fleetTimingGroupsByRecipe,value:fleetTimingGroupsByRegion',
-            './legacy/runner/fleet/fleet-types.ts|type:FleetFilterState',
-            './legacy/runner/fleet/views/RunnerFleetControls.tsx|value:RunnerFleetControls',
-            './legacy/runner/fleet/views/RunnerFleetOverview.tsx|value:RunnerFleetOverview',
-            './legacy/runner/fleet/views/RunnerFleetReportAnalysis.tsx|value:RunnerFleetReportAnalysis',
-            './legacy/runner/fleet/views/RunnerFleetSelectedDetails.tsx|value:RunnerFleetSelectedDetails',
+            './legacy/runner/fleet/RunnerFleetPanel.tsx|value:RunnerFleetPanel',
         ]);
+        expect.soft(appSource, 'App has no Fleet hook/controller internals')
+            .not.toMatch(
+                /\b(?:useRunnerFleetController|readFleetFiltersFromUrl|readFleetWorldMapLayersFromUrl|refreshFleet|updateMapLayer|selectMapRegion|copyShareLink|exportSelectedReport)\b/,
+            );
         const appEdges = task9aImportEdges(appAst);
         for (const movedViewDependency of [
             './fleet-world-map.tsx|',
