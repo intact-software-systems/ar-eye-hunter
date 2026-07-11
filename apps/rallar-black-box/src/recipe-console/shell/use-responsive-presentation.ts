@@ -1,36 +1,58 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import { resolveRecipeConsolePresentation } from './responsive-presentation.ts';
 
-const subscribers = new Set<() => void>();
-let orientationQuery: MediaQueryList | undefined;
+type ViewportListener = () => void;
 
-function notifySubscribers(): void {
-    for (const subscriber of subscribers) subscriber();
+export type ViewportSubscriptionPort = Readonly<{
+    width(): number;
+    height(): number;
+    addResizeListener(listener: ViewportListener): void;
+    removeResizeListener(listener: ViewportListener): void;
+    addOrientationListener(listener: ViewportListener): void;
+    removeOrientationListener(listener: ViewportListener): void;
+}>;
+
+export function createViewportSubscriptionStore(port: ViewportSubscriptionPort) {
+    const subscribers = new Set<ViewportListener>();
+    const notify = () => subscribers.forEach(subscriber => subscriber());
+    return {
+        snapshot: () => `${port.width()}:${port.height()}`,
+        subscribe(subscriber: ViewportListener): () => void {
+            subscribers.add(subscriber);
+            if (subscribers.size === 1) {
+                port.addResizeListener(notify);
+                port.addOrientationListener(notify);
+            }
+            return () => {
+                subscribers.delete(subscriber);
+                if (subscribers.size === 0) {
+                    port.removeResizeListener(notify);
+                    port.removeOrientationListener(notify);
+                }
+            };
+        },
+    } as const;
 }
 
-function subscribe(subscriber: () => void): () => void {
-    subscribers.add(subscriber);
-    if (subscribers.size === 1) {
-        orientationQuery = window.matchMedia('(orientation: landscape)');
-        window.addEventListener('resize', notifySubscribers);
-        orientationQuery.addEventListener('change', notifySubscribers);
-    }
-    return () => {
-        subscribers.delete(subscriber);
-        if (subscribers.size === 0) {
-            window.removeEventListener('resize', notifySubscribers);
-            orientationQuery?.removeEventListener('change', notifySubscribers);
-            orientationQuery = undefined;
-        }
-    };
-}
+let browserStore: ReturnType<typeof createViewportSubscriptionStore> | undefined;
 
-function viewportSnapshot(): string {
-    return `${window.innerWidth}:${window.innerHeight}`;
+function getBrowserStore() {
+    if (browserStore) return browserStore;
+    const orientation = window.matchMedia('(orientation: landscape)');
+    browserStore = createViewportSubscriptionStore({
+        width: () => window.innerWidth,
+        height: () => window.innerHeight,
+        addResizeListener: listener => window.addEventListener('resize', listener),
+        removeResizeListener: listener => window.removeEventListener('resize', listener),
+        addOrientationListener: listener => orientation.addEventListener('change', listener),
+        removeOrientationListener: listener => orientation.removeEventListener('change', listener),
+    });
+    return browserStore;
 }
 
 export function useRecipeConsolePresentation() {
-    const snapshot = useSyncExternalStore(subscribe, viewportSnapshot, () => '1440:900');
+    const store = getBrowserStore();
+    const snapshot = useSyncExternalStore(store.subscribe, store.snapshot, () => '1440:900');
     return useMemo(() => {
         const [width, height] = snapshot.split(':').map(Number);
         return resolveRecipeConsolePresentation(width, height);

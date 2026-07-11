@@ -6,7 +6,7 @@ test('renders scoped shell geometry at every contract viewport', async ({ page }
     for (const contract of [
         { viewport: { width: 1440, height: 900 }, nav: 'rail', inspector: 'rail', command: 52, navSize: 184, inspectorSize: 352 },
         { viewport: { width: 900, height: 900 }, nav: 'compact-rail', inspector: 'overlay', command: 52, navSize: 64, inspectorSize: 360 },
-        { viewport: { width: 430, height: 932 }, nav: 'bottom', inspector: 'sheet', command: 52, navSize: 64, inspectorSize: 0 },
+        { viewport: { width: 430, height: 932 }, nav: 'bottom', inspector: 'sheet', command: 52, navSize: 64, inspectorSize: 430 },
         { viewport: { width: 932, height: 430 }, nav: 'compact-rail', inspector: 'overlay', command: 48, navSize: 60, inspectorSize: 320 },
     ] as const) {
         await page.setViewportSize(contract.viewport);
@@ -22,15 +22,26 @@ test('renders scoped shell geometry at every contract viewport', async ({ page }
             expect((await page.locator('[data-selection-dock]').boundingBox())?.height).toBe(48);
         }
         const inspector = page.locator('[data-inspector-host]');
-        if (contract.inspectorSize) {
-            expect((await inspector.boundingBox())?.width).toBe(contract.inspectorSize);
-        }
+        const inspectorBox = await inspector.boundingBox();
+        expect(inspectorBox?.width).toBe(contract.inspectorSize);
         if (contract.inspector === 'rail') {
-            await expect(inspector).not.toHaveAttribute('role', 'dialog');
+            await expect(inspector).toHaveAttribute('role', 'complementary');
             await expect(inspector).not.toHaveAttribute('aria-modal', 'true');
         } else {
             await expect(inspector).toHaveAttribute('role', 'dialog');
             await expect(inspector).toHaveAttribute('aria-modal', 'true');
+            expect((inspectorBox?.x ?? 0) + (inspectorBox?.width ?? 0)).toBe(contract.viewport.width);
+            if (contract.inspector === 'sheet') {
+                expect(inspectorBox?.x).toBe(0);
+                expect((inspectorBox?.y ?? 0) + (inspectorBox?.height ?? 0))
+                    .toBe(contract.viewport.height - 64);
+            } else {
+                expect(inspectorBox?.y).toBe(contract.command);
+                expect((inspectorBox?.y ?? 0) + (inspectorBox?.height ?? 0))
+                    .toBe(contract.viewport.height);
+                expect((await page.locator('[data-work-surface]').boundingBox())?.width)
+                    .toBe(contract.viewport.width - contract.navSize);
+            }
         }
         const overflow = await page.evaluate(() => ({
             x: document.documentElement.scrollWidth - document.documentElement.clientWidth,

@@ -1,4 +1,5 @@
 import { MetricStrip } from '../../src/recipe-console/ui/MetricStrip.tsx';
+import { OverlaySheet } from '../../src/recipe-console/ui/OverlaySheet.tsx';
 import { StatusMark, type OperationalStatus } from '../../src/recipe-console/ui/StatusMark.tsx';
 import styles from '../../src/recipe-console/ui/primitives.module.css';
 
@@ -19,17 +20,22 @@ export function RecipeConsoleIsolationSamples() {
                     { label: 'Targets', value: '2/2' },
                     { label: 'Commands', value: 5 },
                 ]} />
-                <div aria-label="Operational statuses">
+                <div aria-label="Operational statuses" data-isolation-recipe-status>
                     {STATUSES.map(status => <StatusMark key={status} status={status} />)}
                 </div>
-                <label>
+                <label data-isolation-recipe-form>
                     Recipe search
                     <input defaultValue="RTC Realtime Stability" />
                 </label>
-                <table>
+                <table data-isolation-recipe-table>
                     <thead><tr><th>Agent</th><th>State</th></tr></thead>
                     <tbody><tr><td>seed-agent-a</td><td>Matched</td></tr></tbody>
                 </table>
+                <div data-isolation-recipe-dialog>
+                    <OverlaySheet label="Sample inspector" mode="sheet" onClose={() => undefined} open>
+                        <p>Scoped sheet geometry</p>
+                    </OverlaySheet>
+                </div>
             </section>
         </main>
     );

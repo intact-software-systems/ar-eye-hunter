@@ -116,43 +116,19 @@
 }
 
 .statusShape {
-    width: 12px;
-    height: 12px;
-    border: 2px solid currentColor;
+    display: block;
+    width: 14px;
+    height: 14px;
+    overflow: visible;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
 }
 
-.statusShape[data-shape="notched-ring"] {
-    border-radius: 50%;
-    border-right-color: transparent;
-}
-
-.statusShape[data-shape="check-circle"] {
-    border-radius: 50%;
-    background: linear-gradient(135deg, transparent 46%, currentColor 47% 58%, transparent 59%);
-}
-
-.statusShape[data-shape="x-octagon"] {
-    clip-path: polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%);
-    background: currentColor;
-}
-
-.statusShape[data-shape="warning-triangle"] {
-    clip-path: polygon(50% 0,100% 100%,0 100%);
-    background: currentColor;
-}
-
-.statusShape[data-shape="clock"] {
-    border-radius: 50%;
-    border-left-width: 3px;
-}
-
-.statusShape[data-shape="half-circle"] {
-    border-radius: 50%;
-    background: linear-gradient(90deg, currentColor 50%, transparent 50%);
-}
-
-.statusShape[data-shape="barred-square"] {
-    background: linear-gradient(135deg, transparent 42%, currentColor 43% 57%, transparent 58%);
+.statusMark[data-status="failed"] {
+    border-left-width: 4px;
 }
 
 .metricStrip {
