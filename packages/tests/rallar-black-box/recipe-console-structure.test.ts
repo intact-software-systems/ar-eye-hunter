@@ -125,7 +125,10 @@ describe('Recipe Console experience boundary', () => {
         expect(shell.trimEnd().split(/\r?\n/).length).toBeLessThan(300);
 
         const app = source(recipeConsolePath);
-        expect(app).toMatch(/switch\s*\(.*\.view\)/s);
+        expect(app).toMatch(/switch\s*\(view\)/);
+        expect(app).toContain(
+            'activeWork(urlState.state.view, seedState, setInspectorContent)',
+        );
         expect(app).not.toMatch(/display\s*:\s*['"]none|(?:^|\s)hidden(?:=|\s|>)/m);
         expect(app).not.toMatch(/(?:registry|Registry|index\.ts)/);
         expect(app).toContain('createRecipeConsoleSeedState');

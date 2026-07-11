@@ -1,5 +1,71 @@
 import { expect, test } from '@playwright/test';
 
+test('renders repository-backed Execute preview without services', async ({ page }) => {
+    const controlServerRequests: string[] = [];
+    page.on('request', (request) => {
+        const url = new URL(request.url());
+        if (
+            url.pathname === '/control' ||
+            url.pathname.startsWith('/control/') ||
+            url.pathname.startsWith('/api/black-box/control')
+        ) {
+            controlServerRequests.push(request.url());
+        }
+    });
+
+    await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+
+    const search = page.getByRole('searchbox', { name: 'Search recipes' });
+    const recipeLedger = page.getByRole('region', { name: 'Recipes' });
+    await expect(search).toBeVisible();
+    await search.fill('pRoViDeR pArItY');
+    await expect(recipeLedger.getByText('Provider Parity', { exact: true })).toBeVisible();
+    await expect(recipeLedger.getByText('RTC Realtime Stability', { exact: true })).toHaveCount(0);
+    await search.clear();
+    const selectedRecipe = page.getByRole('button', { name: /RTC Realtime Stability/ });
+    await expect(selectedRecipe).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByText('Provider Parity', { exact: true })).toBeVisible();
+    await expect(page.getByText('Composite Evidence', { exact: true })).toBeVisible();
+    await expect(page.getByText('Expected Failure', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: /Provider Parity/ }).click();
+    await expect(page.getByRole('complementary', { name: 'Inspector' })
+        .getByRole('heading', { name: 'Provider Parity' })).toBeVisible();
+    await selectedRecipe.click();
+    await expect(selectedRecipe).toHaveAttribute('aria-selected', 'true');
+
+    const targets = page.getByRole('region', { name: 'Sample targets and preflight' });
+    await expect(targets.getByText('2/2 selected', { exact: true })).toBeVisible();
+    await expect(targets.getByText('seed-agent-a', { exact: true })).toBeVisible();
+    await expect(targets.getByText('seed-agent-b', { exact: true })).toBeVisible();
+    const firstTarget = targets.getByRole('checkbox', { name: 'Select seed-agent-a' });
+    await firstTarget.uncheck();
+    await expect(targets.getByText('1/2 selected', { exact: true })).toBeVisible();
+    await firstTarget.check();
+    await expect(targets.getByText('2/2 selected', { exact: true })).toBeVisible();
+    await expect(targets.getByText('Required · not checked in preview', { exact: true }))
+        .toBeVisible();
+
+    await expect(page.getByText('5 manifest commands - 25 stream frames', { exact: true }))
+        .toBeVisible();
+    await expect(page.getByText('Preview only', { exact: true })).toBeVisible();
+    const cancel = page.getByRole('button', { name: 'Cancel Preview' });
+    await expect(cancel).toBeDisabled();
+    await expect(page.getByText('Nothing to cancel until live execution is available.', { exact: true }))
+        .toBeVisible();
+    const start = page.getByRole('button', { name: 'Start Preview', exact: true });
+    await expect(start).toHaveCount(1);
+    await expect(start).toHaveAttribute('data-primary-action', 'true');
+    await expect(page.getByText('Live execution begins in Iteration 4.', { exact: true }))
+        .toBeVisible();
+
+    await expect(page.locator('[data-preview-status]')).toHaveText('Idle preview');
+    await page.getByRole('button', { name: 'Stage Preview', exact: true }).click();
+    await expect(page.locator('[data-preview-status]')).toHaveText('Staged preview');
+    await start.click();
+    await expect(page.locator('[data-preview-status]')).toHaveText('Started preview');
+    expect(controlServerRequests).toEqual([]);
+});
+
 test('keeps one lazy experience mounted', async ({ page }) => {
     await page.goto('/?provider=simulated');
     await expect(page.locator('.app-shell')).toBeVisible();

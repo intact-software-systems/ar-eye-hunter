@@ -1,12 +1,14 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { ReactNode } from 'react';
 import { useRef, useState } from 'react';
 import { createRecipeConsoleSeedState } from '../data/seeded-console-state.ts';
+import type { RecipeConsoleSeedState } from '../data/recipe-console-models.ts';
+import { ExecutePreview } from '../execute/ExecutePreview.tsx';
 import type { RecipeConsoleView } from '../routing/url-state-contract.ts';
 import { useRecipeConsoleUrlState } from '../routing/use-recipe-console-url-state.ts';
 import '../design/tokens.css';
 import '../design/reset.css';
 import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
-import { MetricStrip } from '../ui/MetricStrip.tsx';
 import { StatePanel } from '../ui/StatePanel.tsx';
 
 export type RecipeConsoleAppProps = Readonly<{
@@ -16,10 +18,14 @@ export type RecipeConsoleAppProps = Readonly<{
     onLogout(): Promise<void>;
 }>;
 
-function provisionalWork(view: RecipeConsoleView) {
+function activeWork(
+    view: RecipeConsoleView,
+    seedState: RecipeConsoleSeedState,
+    onInspectorChange: (content: ReactNode | undefined) => void,
+) {
     switch (view) {
         case 'execute':
-            return <StatePanel kind="empty" title="Execute"><p>Repository-backed recipe preview is ready for the Execute workspace.</p></StatePanel>;
+            return <ExecutePreview model={seedState.execute} onInspectorChange={onInspectorChange} />;
         case 'monitor':
             return <StatePanel kind="error" title="Monitor"><p>Failure-first seeded evidence will appear in this continuous ledger.</p></StatePanel>;
         case 'analyze':
@@ -43,15 +49,27 @@ function provisionalWork(view: RecipeConsoleView) {
     }
 }
 
+function provisionalInspector(view: RecipeConsoleView): ReactNode | undefined {
+    if (view === 'execute') return undefined;
+    return (
+        <section>
+            <h2>{view[0].toUpperCase()}{view.slice(1)} preview</h2>
+            <p>Contextual evidence remains seeded until this view's documented cutover.</p>
+        </section>
+    );
+}
+
 export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleAppProps) {
     const urlState = useRecipeConsoleUrlState();
     const [seedState] = useState(createRecipeConsoleSeedState);
     const [inspectorOpen, setInspectorOpen] = useState(true);
+    const [inspectorContent, setInspectorContent] = useState<ReactNode>();
     const restoreFocusRef = useRef<HTMLButtonElement>(null);
-    const work = provisionalWork(urlState.state.view);
+    const work = activeWork(urlState.state.view, seedState, setInspectorContent);
 
     function navigate(view: RecipeConsoleView): void {
         urlState.navigate({ view });
+        setInspectorContent(undefined);
         setInspectorOpen(true);
     }
 
@@ -64,17 +82,7 @@ export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleA
             <RecipeConsoleShell
                 commandBarContext={`${authBusy ? 'Connecting' : 'Seeded'} · ${seedState.execute.defaultTargetIds.length} targets`}
                 currentView={urlState.state.view}
-                inspectorContent={(
-                    <section>
-                        <h2>{urlState.state.view} preview</h2>
-                        <MetricStrip items={[
-                            { label: 'Targets', value: seedState.execute.defaultTargetIds.length },
-                            { label: 'Failures', value: seedState.monitor.failureLedger.length },
-                            { label: 'P95', value: `${seedState.tune.percentiles.p95Ms} ms` },
-                        ]} />
-                        <p>{authError ?? 'Deterministic repository evidence; no service required.'}</p>
-                    </section>
-                )}
+                inspectorContent={inspectorContent ?? provisionalInspector(urlState.state.view)}
                 inspectorOpen={inspectorOpen}
                 onCopyLink={copyLink}
                 onInspectorClose={() => setInspectorOpen(false)}
