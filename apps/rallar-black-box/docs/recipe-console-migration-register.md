@@ -56,6 +56,20 @@ Desktop and landscape action controls remain 30px and are registered Iteration
 deep-link status; `direct.rallar-data` retains its temporary open-store and
 change-listener exception.
 
+Auth M1 ownership checkpoint (2026-07-11): the exact diagnostic panel is now
+owned by `src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx` (518 lines),
+with focused recipe, REST action-log, and safe session-read seams, reducing
+`App.tsx` to 6,361 lines. Login/bootstrap, facade subscription, one-time ticket
+consume/scrub, context synchronization, gates, and logout orchestration remain
+App-owned. Tests-first fallback proof, 93/93 combined validation,
+typecheck/build, credential/redaction/JSX/mount mutations, in-app Browser,
+simulated command-center actions, reduced-motion multi-viewport Playwright, and
+two independent reviews passed. The exhaustive live Auth/Groups flow was
+skipped because the Postgres-backed full stack was not enabled. Action controls
+remain 42px and are registered Iteration 12 debt. This changes no cutover,
+hide, mount, rollback, or deep-link status; `direct.auth` retains its temporary
+hidden-mounted draft/history exception.
+
 ## Compatibility inputs that must remain deterministic
 
 | Compatibility input | Required destination during migration | Exact compatibility URL |

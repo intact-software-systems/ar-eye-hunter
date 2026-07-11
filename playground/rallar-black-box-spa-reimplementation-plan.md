@@ -394,7 +394,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Iteration | Status | Exit tracking |
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
-| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 6,927 lines through Rallar Data M1; the broad exit criteria still bind, and shell/bootstrap plus remaining direct-diagnostic owners must still move before this iteration is complete. |
+| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 6,361 lines through Auth M1; the broad exit criteria still bind, and shell/bootstrap plus remaining direct-diagnostic owners must still move before this iteration is complete. |
 | 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
@@ -518,6 +518,34 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   at 430x932 portrait, under the unchanged legacy stylesheet. The 30px cases
   remain explicit Iteration 12 touch-target debt.
 
+#### Iteration 1 Auth M1 checkpoint — `ab2536f` (2026-07-11)
+
+- The exact Auth diagnostic panel moved to
+  `src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx` (518 lines), with
+  narrow recipe (53), shared REST action-log (30), and safe session-read (10)
+  seams. `App.tsx` is 6,361 lines. LoginScreen, auth/bootstrap state, facade
+  auth subscription, one-time ticket consume/dedupe/scrub, global-context
+  synchronization, connecting/login gates, and logout orchestration remain in
+  App. The hidden mount, drafts/history, actions, redaction, JSX, styles,
+  aliases, public exports, and server contracts are unchanged.
+- Untouched-production RED passed 44/45 with exactly six intended ownership
+  failures while all fallback semantics remained green. Final combined focused
+  and listed Iteration 1 validation passed 93/93; typecheck/build passed; four
+  mutations were caught; and two independent final reviews completed with no
+  findings.
+- The in-app Browser check, simulated login/ticket/negative/redaction flow
+  (1/1), and temporary reduced-motion desktop/portrait/landscape matrix (3/3)
+  proved one owner, draft retention across tab/workspace round trips, keyboard
+  focus, CSS isolation, zero overflow, and no browser errors. The temporary QA
+  spec was removed.
+- The exhaustive real-provider Auth/Groups flow was **skipped, not passed**,
+  for this exact reason: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with
+  Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
+  apps/rallar-black-box available.`
+- Auth action controls measure 42px at all three QA viewports under the
+  unchanged stylesheet. This remains explicit Iteration 12 debt against the
+  44px touch-target gate.
+
 #### Remaining risks and evidence ownership
 
 | Remaining risk | Owning iteration(s) | Mitigation and evidence target |
@@ -529,6 +557,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Retention preview safety | 8 | Add optional dry-run behavior without changing the destructive default, require explicit confirmation, and prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup`. |
 | Qualitative visual and performance gates lack executable thresholds | 2, 9, 12 | Iteration 2 records approved screenshot baselines and an executable drift budget in `recipe-console-shell.spec.ts`; Iteration 9 encodes bounded-render and interaction budgets in `recipe-console-scale.spec.ts`; Iteration 12 encodes viewport, keyboard, touch, reduced-motion, and non-hover gates in `recipe-console-accessibility.spec.ts`. |
 | Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
+| Preserved legacy Auth action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact Auth parity extraction unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
 | Local Node 26 differs from CI Node 24 | 1 and every code-changing iteration | Run the focused tests, typecheck, and build on CI Node 24; retain the local Node `26.5.0` result separately so version-specific differences remain visible. |
 | Live services and Postgres were unavailable or not exercised in Iteration 0 | 3-5, 8, 12 | Run the listed Deno control-server tests and configured Playwright/live distributed lifecycle, culminating in `npm run test:e2e:rallar-black-box:full-stack:real:distributed`; do not close live-service gates from mock or sandbox-only evidence. |
 
