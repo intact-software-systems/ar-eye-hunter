@@ -11317,6 +11317,12 @@ describe('rallar-black-box app source ownership', () => {
         const routingPath = `${root}/websocket-routing.ts`;
         const recipesPath = `${root}/websocket-recipes.ts`;
         const diagnosticsPath = `${root}/websocket-diagnostics.ts`;
+        const controllerPath =
+            `${root}/use-websocket-command-center-controller.ts`;
+        const panelPath = `${root}/WebSocketCommandCenterPanel.tsx`;
+        const controllerCutoverPresent =
+            existsSync(resolve(repositoryRoot, controllerPath)) &&
+            existsSync(resolve(repositoryRoot, panelPath));
         const owners = [
             {
                 path: sharedTicketPath,
@@ -11553,8 +11559,12 @@ describe('rallar-black-box app source ownership', () => {
                 appImportEdges.filter((edge) => edge.startsWith(
                     `${owner.appImport}|`,
                 )),
-                `${owner.appImport}: one exact direct App import`,
-            ).toEqual([expectedAppImport]);
+                `${owner.appImport}: exact direct App ownership`,
+            ).toEqual(
+                controllerCutoverPresent && owner.path !== sharedTicketPath
+                    ? []
+                    : [expectedAppImport],
+            );
         }
 
         const movedDeclarations = [
@@ -11731,15 +11741,27 @@ describe('rallar-black-box app source ownership', () => {
             ).toBe(expectedHash);
         }
 
-        const panel = task9aNamedFunction(
-            appAst,
-            'WebSocketCommandCenterPanel',
+        const controllerOwner = controllerCutoverPresent
+            ? task9aNamedFunction(
+                  task9aSourceFile(
+                      controllerPath,
+                      repositorySource(controllerPath),
+                  ),
+                  'useWebSocketCommandCenterController',
+              )
+            : task9aNamedFunction(
+                  appAst,
+                  'WebSocketCommandCenterPanel',
+              );
+        const controllerStatements = [...controllerOwner.body!.statements];
+        const controllerReturnIndex = controllerStatements.findIndex(
+            ts.isReturnStatement,
         );
-        const panelStatements = [...panel.body!.statements];
-        const panelReturnIndex = panelStatements.findIndex(ts.isReturnStatement);
         expect.soft(
-            task9aAstFingerprint(panelStatements.slice(0, panelReturnIndex)),
-            'complete WebSocket controller remains exact in App',
+            task9aAstFingerprint(
+                controllerStatements.slice(0, controllerReturnIndex),
+            ),
+            'complete WebSocket controller remains exact in its owner',
         ).toBe('bcf75bd0511186c44d82c5707643eda26f0ea538061fb18fe575ecc86630dd50');
         const viewPath = `${root}/WebSocketCommandCenterView.tsx`;
         const presentationOwner = existsSync(resolve(repositoryRoot, viewPath))
@@ -11747,7 +11769,7 @@ describe('rallar-black-box app source ownership', () => {
                   task9aSourceFile(viewPath, repositorySource(viewPath)),
                   'WebSocketCommandCenterView',
               )
-            : panel;
+            : controllerOwner;
         expect.soft(
             task9aJsxRuntimeFingerprint(
                 task9aReturnExpression(presentationOwner),
@@ -11790,8 +11812,14 @@ describe('rallar-black-box app source ownership', () => {
             'apps/rallar-black-box/src/legacy/diagnostics/websocket';
         const contractPath = `${root}/websocket-view-contracts.ts`;
         const viewPath = `${root}/WebSocketCommandCenterView.tsx`;
+        const controllerPath =
+            `${root}/use-websocket-command-center-controller.ts`;
+        const panelPath = `${root}/WebSocketCommandCenterPanel.tsx`;
         const contractPresent = existsSync(resolve(repositoryRoot, contractPath));
         const viewPresent = existsSync(resolve(repositoryRoot, viewPath));
+        const controllerCutoverPresent =
+            existsSync(resolve(repositoryRoot, controllerPath)) &&
+            existsSync(resolve(repositoryRoot, panelPath));
 
         expect.soft(contractPresent, `${contractPath}: owner exists`).toBe(true);
         expect.soft(viewPresent, `${viewPath}: owner exists`).toBe(true);
@@ -11922,15 +11950,32 @@ describe('rallar-black-box app source ownership', () => {
             expectedContract.type,
         ]));
 
-        const controller = task9aNamedFunction(
-            appAst,
-            'WebSocketCommandCenterPanel',
-        );
-        const controllerParameter = controller.parameters[0];
+        const controller = controllerCutoverPresent
+            ? task9aNamedFunction(
+                  task9aSourceFile(
+                      controllerPath,
+                      repositorySource(controllerPath),
+                  ),
+                  'useWebSocketCommandCenterController',
+              )
+            : task9aNamedFunction(
+                  appAst,
+                  'WebSocketCommandCenterPanel',
+              );
+        const panelOwner = controllerCutoverPresent
+            ? task9aNamedFunction(
+                  task9aSourceFile(
+                      panelPath,
+                      repositorySource(panelPath),
+                  ),
+                  'WebSocketCommandCenterPanel',
+              )
+            : controller;
+        const controllerParameter = panelOwner.parameters[0];
         const controllerInputKeys = controllerParameter &&
                 ts.isObjectBindingPattern(controllerParameter.name)
             ? controllerParameter.name.elements.map((element) =>
-                  element.name.getText(appAst)
+                  element.name.getText()
               )
             : [];
         expect.soft(
@@ -11945,15 +11990,17 @@ describe('rallar-black-box app source ownership', () => {
             'busy',
             'onSelectCommand',
         ]);
-        expect.soft(
-            controllerParameter
-                ? task9aAstFingerprint([
-                      controllerParameter.name,
-                      controllerParameter.type!,
-                  ])
-                : '',
-            'exact WebSocket controller input contract',
-        ).toBe('febb5d54f5c25cf9bf8107aaeb4a1a972131218033ea88cd590513c23bcd2623');
+        if (!controllerCutoverPresent) {
+            expect.soft(
+                controllerParameter
+                    ? task9aAstFingerprint([
+                          controllerParameter.name,
+                          controllerParameter.type!,
+                      ])
+                    : '',
+                'exact legacy WebSocket controller input contract',
+            ).toBe('febb5d54f5c25cf9bf8107aaeb4a1a972131218033ea88cd590513c23bcd2623');
+        }
         const controllerStatements = [...controller.body!.statements];
         const controllerReturnIndex = controllerStatements.findIndex(
             ts.isReturnStatement,
@@ -12058,7 +12105,7 @@ describe('rallar-black-box app source ownership', () => {
             'waitForMessage', 'waitForRallarWsOpen', 'copyDiagnostics',
             'copyRecipe', 'openMissingTicket',
         ] as const;
-        const legacyReturn = task9aReturnExpression(controller);
+        const legacyReturn = task9aReturnExpression(panelOwner);
         const fallbackViewSource = `
             function WebSocketCommandCenterView({
                 state, authSession, browserStatus, busy, model,
@@ -12070,7 +12117,7 @@ describe('rallar-black-box app source ownership', () => {
                 model: WebSocketCommandCenterViewModel;
             }) {
                 const { ${modelKeys.join(', ')} } = model;
-                return (${legacyReturn.getText(appAst)});
+                return (${legacyReturn.getText()});
             }
         `;
         const viewSource = viewPresent
@@ -12237,12 +12284,14 @@ describe('rallar-black-box app source ownership', () => {
         );
         expect.soft(
             appImports,
-            'one exact direct App WebSocket View import',
-        ).toEqual([
-            './legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx|value:WebSocketCommandCenterView',
-        ]);
+            'exact direct App WebSocket View ownership',
+        ).toEqual(controllerCutoverPresent
+            ? []
+            : [
+                  './legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx|value:WebSocketCommandCenterView',
+              ]);
         const viewCalls = task9aJsxCalls(
-            controller,
+            panelOwner,
             'WebSocketCommandCenterView',
         );
         expect.soft(
@@ -12252,13 +12301,13 @@ describe('rallar-black-box app source ownership', () => {
         const viewCall = viewCalls[0];
         if (viewCall) {
             expect.soft(
-                task9aReturnExpression(controller),
+                task9aReturnExpression(panelOwner),
                 'WebSocket controller returns the View directly',
             ).toBe(viewCall);
             expect.soft(
                 viewCall.attributes.properties.map((property) =>
                     ts.isJsxAttribute(property)
-                        ? property.name.getText(appAst)
+                        ? property.name.getText()
                         : 'spread'
                 ),
                 'exact WebSocket View call prop order',
@@ -12269,7 +12318,7 @@ describe('rallar-black-box app source ownership', () => {
                 const attribute = viewCall.attributes.properties.find(
                     (property): property is ts.JsxAttribute =>
                         ts.isJsxAttribute(property) &&
-                        property.name.getText(appAst) === name,
+                        property.name.getText() === name,
                 );
                 const expression = attribute?.initializer &&
                         ts.isJsxExpression(attribute.initializer)
@@ -12285,7 +12334,7 @@ describe('rallar-black-box app source ownership', () => {
             const modelAttribute = viewCall.attributes.properties.find(
                 (property): property is ts.JsxAttribute =>
                     ts.isJsxAttribute(property) &&
-                    property.name.getText(appAst) === 'model',
+                    property.name.getText() === 'model',
             );
             const model = modelAttribute?.initializer &&
                     ts.isJsxExpression(modelAttribute.initializer)
@@ -12298,7 +12347,7 @@ describe('rallar-black-box app source ownership', () => {
             if (model && ts.isObjectLiteralExpression(model)) {
                 expect.soft(
                     model.properties.map((property) =>
-                        property.name?.getText(appAst)
+                        property.name?.getText()
                     ),
                     'exact WebSocket View model key order',
                 ).toEqual(modelKeys);
@@ -12340,6 +12389,608 @@ describe('rallar-black-box app source ownership', () => {
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
                 .digest('hex'),
             'WebSocket presentation extraction leaves stylesheet unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
+    it('moves the exact WebSocket controller behind one thin panel root', () => {
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const root =
+            'apps/rallar-black-box/src/legacy/diagnostics/websocket';
+        const controllerPath =
+            `${root}/use-websocket-command-center-controller.ts`;
+        const panelPath = `${root}/WebSocketCommandCenterPanel.tsx`;
+        const viewPath = `${root}/WebSocketCommandCenterView.tsx`;
+        const viewContractPath = `${root}/websocket-view-contracts.ts`;
+        const controllerPresent = existsSync(
+            resolve(repositoryRoot, controllerPath),
+        );
+        const panelPresent = existsSync(resolve(repositoryRoot, panelPath));
+
+        expect.soft(
+            controllerPresent,
+            `${controllerPath}: W3 controller owner exists`,
+        ).toBe(true);
+        expect.soft(
+            panelPresent,
+            `${panelPath}: W3 panel owner exists`,
+        ).toBe(true);
+
+        const appWebSocketImports = task9aImportEdges(appAst).filter((edge) =>
+            edge.startsWith('./legacy/diagnostics/websocket/')
+        );
+        expect.soft(
+            appWebSocketImports,
+            'App imports only the W3 WebSocket panel owner',
+        ).toEqual([
+            './legacy/diagnostics/websocket/WebSocketCommandCenterPanel.tsx|value:WebSocketCommandCenterPanel',
+        ]);
+        expect.soft(
+            appAst.statements.some(
+                (statement) =>
+                    ts.isFunctionDeclaration(statement) &&
+                    statement.name?.text === 'WebSocketCommandCenterPanel',
+            ),
+            'App has no local WebSocket controller after W3 cutover',
+        ).toBe(false);
+
+        const inputKeys = [
+            'state',
+            'bootstrap',
+            'authSession',
+            'globalValues',
+            'browserStatus',
+        ] as const;
+        const panelInputKeys = [
+            ...inputKeys,
+            'busy',
+            'onSelectCommand',
+        ] as const;
+        const modelKeys = [
+            'providerMode', 'values', 'payloadPresetId', 'localError',
+            'busyAction', 'actionFeedback', 'waitStatus', 'ticket',
+            'subscription', 'diagnostics', 'activePreset',
+            'canSendViaRallarSignaling', 'routePreview',
+            'subscriptionStatusLabel', 'subscriptionStatusTone',
+            'receiveStatusText', 'payloadResult', 'updateValue',
+            'updateGroupId', 'updateWsScope', 'selectPayloadPreset',
+            'configure', 'open', 'send', 'close', 'reconnect', 'cleanup',
+            'subscribeWs', 'unsubscribeWs', 'createTicket',
+            'waitForMessage', 'waitForRallarWsOpen', 'copyDiagnostics',
+            'copyRecipe', 'openMissingTicket',
+        ] as const;
+
+        const safeBindingKeys = (
+            declaration: ts.VariableDeclaration | undefined,
+            sourceFile: ts.SourceFile,
+        ): readonly string[] => {
+            if (!declaration || !ts.isObjectBindingPattern(declaration.name)) {
+                return [];
+            }
+            expect.soft(
+                declaration.name.elements.filter((element) =>
+                    Boolean(
+                        element.propertyName ||
+                        element.initializer ||
+                        element.dotDotDotToken,
+                    )
+                ),
+                `${sourceFile.fileName}: no aliases, defaults, or rest escape`,
+            ).toEqual([]);
+            return declaration.name.elements.map((element) =>
+                element.name.getText(sourceFile)
+            );
+        };
+
+        let controllerAst: ts.SourceFile | undefined;
+        if (controllerPresent) {
+            const controllerSource = repositorySource(controllerPath);
+            controllerAst = task9aSourceFile(
+                controllerPath,
+                controllerSource,
+            );
+            expect.soft(
+                controllerSource.trimEnd().split(/\r?\n/).length,
+                `${controllerPath}: line cap`,
+            ).toBeLessThanOrEqual(1280);
+            expect.soft(
+                task9aExportSeams(controllerAst),
+                `${controllerPath}: exact exports`,
+            ).toEqual([
+                'type:UseWebSocketCommandCenterControllerInput',
+                'type:WebSocketCommandCenterControllerModel',
+                'value:useWebSocketCommandCenterController',
+            ]);
+            expect.soft(
+                task9aImportEdges(controllerAst),
+                `${controllerPath}: complete exact imports`,
+            ).toEqual([
+                '../../../direct-rallar-operations.ts|type:DirectRallarOperationResult,value:createDirectRallarRuntimeEvent,value:runDirectRallarStatusCheck,value:runDirectRallarWsSend,value:runDirectRallarWsSubscribe',
+                '../../../rallar-server-workbench.ts|value:executeRallarServerRestRequest',
+                '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig,value:rallarBlackBoxProviderModeFromConfig,value:rallarBlackBoxRuntimeStore',
+                '../../rallar/load-browser-rallar-facade.ts|value:loadBrowserRallarFacade',
+                '../../shared/record-value.ts|value:recordValue->optionalRecord',
+                '../../shared/redaction-presentation.ts|value:redactedJson',
+                '../../shared/time-format.ts|value:formatDuration,value:formatTime',
+                '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                '../../shell/rallar-browser-status.ts|type:RallarBrowserStatusSummary',
+                '../shared/action-feedback.ts|type:CommandCenterActionFeedback,value:completedActionFeedback,value:idleActionFeedback,value:runningActionFeedback',
+                '../shared/auth-command-center-ticket.ts|type:AuthCommandCenterTicket',
+                './websocket-contracts.ts|type:WebSocketCommandCenterValues,type:WebSocketSubscriptionState',
+                './websocket-diagnostics.ts|value:deriveWebSocketDiagnostics',
+                './websocket-presets.ts|value:DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID,value:WEBSOCKET_PAYLOAD_PRESETS,value:webSocketPayloadPresetById,value:webSocketPayloadPresetText',
+                './websocket-recipes.ts|value:webSocketCommandCenterRecipe',
+                './websocket-routing.ts|value:defaultWebSocketApiUrl,value:defaultWebSocketScope,value:defaultWebSocketTopicId,value:defaultWebSocketTypeId,value:defaultWebSocketValuesFromContext,value:resolveWebSocketUrlTemplate,value:webSocketRoutePreview',
+                './websocket-view-contracts.ts|type:WebSocketCommandCenterViewModel',
+                '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxCurrentConfig',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestRuntimeEventInput,type:RallarBlackBoxTestState',
+                '@shared/api/api-config.ts|type:AuthSession,type:WebSocketTicketResponse',
+                'react|value:useEffect,value:useMemo,value:useRef,value:useState',
+            ].sort());
+            const hiddenImportTypeEdges: string[] = [];
+            const visitImportTypes = (node: ts.Node): void => {
+                if (ts.isImportTypeNode(node)) {
+                    hiddenImportTypeEdges.push(node.getText(controllerAst));
+                }
+                ts.forEachChild(node, visitImportTypes);
+            };
+            visitImportTypes(controllerAst);
+            expect.soft(
+                hiddenImportTypeEdges,
+                `${controllerPath}: no hidden ImportTypeNode edges`,
+            ).toEqual([]);
+            expect.soft(
+                controllerAst.statements.flatMap((statement) => {
+                    if (ts.isImportDeclaration(statement)) return [];
+                    if (ts.isTypeAliasDeclaration(statement)) {
+                        return [`type:${statement.name.text}`];
+                    }
+                    if (ts.isFunctionDeclaration(statement)) {
+                        return [
+                            `function:${statement.name?.text ?? '<anonymous>'}`,
+                        ];
+                    }
+                    return [`unexpected:${ts.SyntaxKind[statement.kind]}`];
+                }),
+                `${controllerPath}: exact top-level inventory`,
+            ).toEqual([
+                'type:UseWebSocketCommandCenterControllerInput',
+                'function:useWebSocketCommandCenterController',
+                'type:WebSocketCommandCenterControllerModel',
+            ]);
+            expect.soft(
+                controllerSource,
+                `${controllerPath}: controller is JSX/reverse/barrel free`,
+            ).not.toMatch(
+                /(?:<WebSocketCommandCenterView\b|WebSocketCommandCenterPanel|App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"])/,
+            );
+
+            const inputContract = controllerAst.statements.find(
+                (statement): statement is ts.TypeAliasDeclaration =>
+                    ts.isTypeAliasDeclaration(statement) &&
+                    statement.name.text ===
+                        'UseWebSocketCommandCenterControllerInput',
+            );
+            expect.soft(
+                inputContract
+                    ? task9aAstFingerprint([
+                          inputContract.name,
+                          inputContract.type,
+                      ])
+                    : '',
+                'exact five-field WebSocket controller input contract',
+            ).toBe('bf1b3608a91e16e6ddea82a30d2a8657424bb8d519c126ba1eb42ecb48e9d530');
+
+            const controller = task9aNamedFunction(
+                controllerAst,
+                'useWebSocketCommandCenterController',
+            );
+            const parameter = controller.parameters[0];
+            const parameterKeys = parameter &&
+                    ts.isObjectBindingPattern(parameter.name)
+                ? parameter.name.elements.map((element) =>
+                      element.name.getText(controllerAst)
+                  )
+                : [];
+            expect.soft(
+                parameterKeys,
+                'exact WebSocket hook input order',
+            ).toEqual(inputKeys);
+            expect.soft(
+                parameter
+                    ? task9aAstFingerprint([
+                          parameter.name,
+                          parameter.type!,
+                      ])
+                    : '',
+                'exact WebSocket hook parameter',
+            ).toBe('0479deb517c646cf17a9985979c8e1e577e59cea2e39f2e9046995f5ed9a5677');
+            expect.soft(
+                parameter && ts.isObjectBindingPattern(parameter.name)
+                    ? parameter.name.elements.filter((element) =>
+                          Boolean(
+                              element.propertyName ||
+                              element.initializer ||
+                              element.dotDotDotToken,
+                          )
+                      )
+                    : ['missing'],
+                'WebSocket hook inputs have no aliases/defaults/rest',
+            ).toEqual([]);
+
+            const statements = [...controller.body!.statements];
+            const returnIndex = statements.findIndex(ts.isReturnStatement);
+            expect.soft(
+                returnIndex,
+                'WebSocket hook has one final model return',
+            ).toBe(50);
+            expect.soft(statements, 'WebSocket hook statement count')
+                .toHaveLength(51);
+            expect.soft(
+                task9aAstFingerprint(statements.slice(0, returnIndex)),
+                'token-complete 50-statement WebSocket controller move',
+            ).toBe('bcf75bd0511186c44d82c5707643eda26f0ea538061fb18fe575ecc86630dd50');
+            const returnExpression = (statements[returnIndex] as
+                ts.ReturnStatement | undefined)?.expression;
+            expect.soft(
+                returnExpression && ts.isObjectLiteralExpression(returnExpression),
+                'WebSocket hook returns one explicit model object',
+            ).toBe(true);
+            if (
+                returnExpression &&
+                ts.isObjectLiteralExpression(returnExpression)
+            ) {
+                expect.soft(
+                    returnExpression.properties.map((property) =>
+                        property.name?.getText(controllerAst)
+                    ),
+                    'exact WebSocket hook model order',
+                ).toEqual(modelKeys);
+                expect.soft(
+                    returnExpression.properties.map((property) =>
+                        ts.isShorthandPropertyAssignment(property)
+                            ? property.name.text
+                            : 'not-shorthand'
+                    ),
+                    'every WebSocket hook model field is shorthand',
+                ).toEqual(modelKeys);
+                expect.soft(
+                    task9aAstFingerprint([returnExpression]),
+                    'exact WebSocket hook model object',
+                ).toBe('84bf7069dbca67d30b63f5a50a2e34315845779688ba3bc43fcd69586c1b7cc5');
+            }
+            let controllerHasJsx = false;
+            const visitController = (node: ts.Node): void => {
+                if (
+                    ts.isJsxElement(node) ||
+                    ts.isJsxSelfClosingElement(node) ||
+                    ts.isJsxFragment(node)
+                ) controllerHasJsx = true;
+                ts.forEachChild(node, visitController);
+            };
+            visitController(controller);
+            expect.soft(
+                controllerHasJsx,
+                'WebSocket controller hook has no JSX',
+            ).toBe(false);
+
+            const controllerModel = controllerAst.statements.find(
+                (statement): statement is ts.TypeAliasDeclaration =>
+                    ts.isTypeAliasDeclaration(statement) &&
+                    statement.name.text ===
+                        'WebSocketCommandCenterControllerModel',
+            );
+            expect.soft(
+                controllerModel
+                    ? task9aAstFingerprint([
+                          controllerModel.name,
+                          controllerModel.type,
+                      ])
+                    : '',
+                'exact WebSocket controller model alias',
+            ).toBe('80f6273bc08e5b4d34d468de6b1a59e7cc895fa3813dcdd77355a343028b9d66');
+        }
+
+        let panelAst: ts.SourceFile | undefined;
+        if (panelPresent) {
+            const panelSource = repositorySource(panelPath);
+            panelAst = task9aSourceFile(panelPath, panelSource);
+            expect.soft(
+                panelSource.trimEnd().split(/\r?\n/).length,
+                `${panelPath}: line cap`,
+            ).toBeLessThanOrEqual(90);
+            expect.soft(
+                task9aExportSeams(panelAst),
+                `${panelPath}: exact exports`,
+            ).toEqual(['value:WebSocketCommandCenterPanel']);
+            expect.soft(
+                task9aImportEdges(panelAst),
+                `${panelPath}: complete exact imports`,
+            ).toEqual([
+                './WebSocketCommandCenterView.tsx|value:WebSocketCommandCenterView',
+                './use-websocket-command-center-controller.ts|type:UseWebSocketCommandCenterControllerInput,value:useWebSocketCommandCenterController',
+            ]);
+            expect.soft(
+                panelAst.statements.flatMap((statement) => {
+                    if (ts.isImportDeclaration(statement)) return [];
+                    if (ts.isTypeAliasDeclaration(statement)) {
+                        return [`type:${statement.name.text}`];
+                    }
+                    if (ts.isFunctionDeclaration(statement)) {
+                        return [
+                            `function:${statement.name?.text ?? '<anonymous>'}`,
+                        ];
+                    }
+                    return [`unexpected:${ts.SyntaxKind[statement.kind]}`];
+                }),
+                `${panelPath}: exact top-level inventory`,
+            ).toEqual([
+                'type:WebSocketCommandCenterPanelProps',
+                'function:WebSocketCommandCenterPanel',
+            ]);
+            expect.soft(
+                panelSource,
+                `${panelPath}: thin root has no reverse/CSS/barrel edge`,
+            ).not.toMatch(
+                /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"])/,
+            );
+
+            const propsContract = panelAst.statements.find(
+                (statement): statement is ts.TypeAliasDeclaration =>
+                    ts.isTypeAliasDeclaration(statement) &&
+                    statement.name.text ===
+                        'WebSocketCommandCenterPanelProps',
+            );
+            expect.soft(
+                propsContract
+                    ? task9aAstFingerprint([
+                          propsContract.name,
+                          propsContract.type,
+                      ])
+                    : '',
+                'exact seven-field WebSocket panel props contract',
+            ).toBe('fae5a1d21d450fe620ec66b443c387e564f994bc9933ff53ff58bfb775107158');
+
+            const panel = task9aNamedFunction(
+                panelAst,
+                'WebSocketCommandCenterPanel',
+            );
+            const parameter = panel.parameters[0];
+            const parameterKeys = parameter &&
+                    ts.isObjectBindingPattern(parameter.name)
+                ? parameter.name.elements.map((element) =>
+                      element.name.getText(panelAst)
+                  )
+                : [];
+            expect.soft(
+                parameterKeys,
+                'exact seven WebSocket panel inputs',
+            ).toEqual(panelInputKeys);
+            expect.soft(
+                parameter
+                    ? task9aAstFingerprint([
+                          parameter.name,
+                          parameter.type!,
+                      ])
+                    : '',
+                'exact WebSocket panel parameter',
+            ).toBe('155ee7445873aae29a0fba53617707ca311c9c071630c716274090cc19986732');
+
+            const statements = [...panel.body!.statements];
+            expect.soft(
+                statements,
+                'thin WebSocket panel has one hook statement and one return',
+            ).toHaveLength(2);
+            expect.soft(
+                statements.findIndex(ts.isReturnStatement),
+                'thin WebSocket panel final return index',
+            ).toBe(1);
+            const modelStatement = statements[0];
+            const modelDeclarations = modelStatement &&
+                    ts.isVariableStatement(modelStatement)
+                ? [...modelStatement.declarationList.declarations]
+                : [];
+            expect.soft(
+                modelDeclarations,
+                'thin panel has one safe controller-model declaration',
+            ).toHaveLength(1);
+            const modelDeclaration = modelDeclarations[0];
+            expect.soft(
+                safeBindingKeys(modelDeclaration, panelAst),
+                'thin panel exact controller-model destructure',
+            ).toEqual(modelKeys);
+            const hookCall = modelDeclaration?.initializer;
+            expect.soft(
+                hookCall &&
+                    ts.isCallExpression(hookCall) &&
+                    ts.isIdentifier(hookCall.expression) &&
+                    hookCall.expression.text ===
+                        'useWebSocketCommandCenterController',
+                'thin panel destructures the controller hook directly',
+            ).toBe(true);
+            if (hookCall && ts.isCallExpression(hookCall)) {
+                expect.soft(
+                    hookCall.arguments,
+                    'WebSocket hook receives one explicit input object',
+                ).toHaveLength(1);
+                const hookInput = hookCall.arguments[0];
+                expect.soft(
+                    hookInput && ts.isObjectLiteralExpression(hookInput),
+                    'WebSocket hook input is an object literal',
+                ).toBe(true);
+                if (hookInput && ts.isObjectLiteralExpression(hookInput)) {
+                    expect.soft(
+                        hookInput.properties.map((property) =>
+                            property.name?.getText(panelAst)
+                        ),
+                        'exact WebSocket hook input order',
+                    ).toEqual(inputKeys);
+                    expect.soft(
+                        hookInput.properties.map((property) =>
+                            ts.isShorthandPropertyAssignment(property)
+                                ? property.name.text
+                                : 'not-shorthand'
+                        ),
+                        'all WebSocket hook inputs are shorthand',
+                    ).toEqual(inputKeys);
+                    expect.soft(
+                        task9aAstFingerprint([hookInput]),
+                        'exact WebSocket hook input object',
+                    ).toBe('a8cf8c1202b35df2c8d12d59b741d6e849165808c94d2b2972f1ea3cdb98048c');
+                }
+            }
+            expect.soft(
+                modelDeclaration
+                    ? task9aAstFingerprint([
+                          modelDeclaration.name,
+                          modelDeclaration.initializer!,
+                      ])
+                    : '',
+                'exact thin-panel controller destructure and hook call',
+            ).toBe('911a71220461738abfde4c270b69f4d1b7ef77ac35c79c8f83d7804324391948');
+
+            const viewCalls = task9aJsxCalls(
+                panel,
+                'WebSocketCommandCenterView',
+            );
+            expect.soft(
+                viewCalls,
+                'thin panel has one direct WebSocket View call',
+            ).toHaveLength(1);
+            const viewCall = viewCalls[0];
+            if (viewCall) {
+                expect.soft(
+                    task9aReturnExpression(panel),
+                    'thin panel returns the View directly',
+                ).toBe(viewCall);
+                expect.soft(
+                    task9aAstFingerprint([viewCall]),
+                    'exact preserved WebSocket View call',
+                ).toBe('75b14df2cc079757e8e7bb4959461d179f0957a90b813ef45443726b2af1d322');
+            }
+            expect.soft(
+                task9aAstFingerprint([panel]),
+                'token-complete thin WebSocket panel',
+            ).toBe('2d71d41835be508c0ed2da74a04d9c7eef4871e38650802c874b477fb0c5482d');
+
+            const forbiddenPanelOperations: string[] = [];
+            const forbiddenPanelNames = new Set([
+                'fetch', 'XMLHttpRequest', 'WebSocket', 'navigator',
+                'localStorage', 'sessionStorage',
+                'rallarBlackBoxRuntimeStore', 'loadBrowserRallarFacade',
+            ]);
+            const visitPanel = (node: ts.Node): void => {
+                if (
+                    ts.isIdentifier(node) &&
+                    forbiddenPanelNames.has(node.text)
+                ) forbiddenPanelOperations.push(node.text);
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    /^use[A-Z]/.test(node.expression.text) &&
+                    node.expression.text !==
+                        'useWebSocketCommandCenterController'
+                ) forbiddenPanelOperations.push(node.expression.text);
+                ts.forEachChild(node, visitPanel);
+            };
+            visitPanel(panel);
+            expect.soft(
+                forbiddenPanelOperations,
+                'thin WebSocket panel has no state/effect/network/store work',
+            ).toEqual([]);
+        }
+
+        if (controllerAst && panelAst) {
+            const ownerPaths = new Set([
+                controllerPath,
+                panelPath,
+                viewPath,
+                viewContractPath,
+                `${root}/websocket-contracts.ts`,
+                `${root}/websocket-presets.ts`,
+                `${root}/websocket-routing.ts`,
+                `${root}/websocket-recipes.ts`,
+                `${root}/websocket-diagnostics.ts`,
+                'apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts',
+            ]);
+            const graph = new Map<string, readonly string[]>();
+            for (const path of ownerPaths) {
+                const sourceFile = task9aSourceFile(
+                    path,
+                    repositorySource(path),
+                );
+                graph.set(
+                    path,
+                    task9aImportEdges(sourceFile)
+                        .map((edge) => edge.slice(0, edge.indexOf('|')))
+                        .filter((moduleImport) =>
+                            moduleImport.startsWith('.')
+                        )
+                        .map((moduleImport) => relative(
+                            repositoryRoot,
+                            resolve(
+                                resolve(repositoryRoot, path),
+                                '..',
+                                moduleImport,
+                            ),
+                        ))
+                        .filter((dependency) => ownerPaths.has(dependency)),
+                );
+            }
+            const active = new Set<string>();
+            const visited = new Set<string>();
+            const cycles: string[] = [];
+            const visit = (path: string): void => {
+                if (active.has(path)) {
+                    cycles.push(path);
+                    return;
+                }
+                if (visited.has(path)) return;
+                active.add(path);
+                for (const dependency of graph.get(path) ?? []) {
+                    visit(dependency);
+                }
+                active.delete(path);
+                visited.add(path);
+            };
+            for (const path of ownerPaths) visit(path);
+            expect.soft(
+                cycles,
+                'WebSocket controller/panel/View import DAG has no cycles',
+            ).toEqual([]);
+        }
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'WebSocketCommandCenterPanel');
+        expect.soft(
+            mounts,
+            'one unconditional hidden-tab WebSocket panel mount',
+        ).toHaveLength(1);
+        expect.soft(
+            task9aAstFingerprint(mounts),
+            'exact WebSocket App mount through W3',
+        ).toBe('023a6a866bf37b3d17c915c257a712cfd5ae97703920339eae6159a5bc7b6b17');
+        let ancestor: ts.Node | undefined = mounts[0];
+        while (ancestor && !ts.isJsxElement(ancestor)) {
+            ancestor = ancestor.parent;
+        }
+        expect.soft(
+            ancestor ? task9aAstFingerprint([ancestor]) : '',
+            'exact hidden-capable WebSocket ancestor through W3',
+        ).toBe('9f5270848d5ad12d3102e23af1c1029f69dfc37c4178d60cb8c33e388f8f1894');
+        expect.soft(
+            task9aAstFingerprint([app]),
+            'unchanged App function through W3',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(
+            appSource,
+            'no WebSocket lazy/Suspense lifetime cutover',
+        ).not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'W3 leaves the WebSocket stylesheet lifetime surface unchanged',
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
     });
 

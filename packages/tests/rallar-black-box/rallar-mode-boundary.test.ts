@@ -108,6 +108,14 @@ const webSocketViewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx',
     import.meta.url,
 );
+const webSocketControllerSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-websocket-command-center-controller.ts',
+    import.meta.url,
+);
+const webSocketPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterPanel.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -217,15 +225,24 @@ function rtcRealtimeOwnerSource(source: string): string {
 }
 
 function webSocketCommandCenterOwnerSource(source: string): string {
+    const controllerFallback =
+        existsSync(webSocketControllerSourcePath) &&
+        existsSync(webSocketPanelSourcePath)
+            ? ''
+            : sourceBetween(
+                  source,
+                  'function WebSocketCommandCenterPanel',
+                  existsSync(rtcRealtimeControllerSourcePath) &&
+                          existsSync(rtcRealtimePanelSourcePath)
+                      ? 'function RallarDataPanel'
+                      : 'function RtcRealtimePanel',
+              );
     return [
-        sourceBetween(
-            source,
-            'function WebSocketCommandCenterPanel',
-            existsSync(rtcRealtimeControllerSourcePath) &&
-                    existsSync(rtcRealtimePanelSourcePath)
-                ? 'function RallarDataPanel'
-                : 'function RtcRealtimePanel',
+        sourceOrFallback(
+            webSocketControllerSourcePath,
+            controllerFallback,
         ),
+        sourceOrFallback(webSocketPanelSourcePath, ''),
         ...webSocketSupportSourcePaths.map((path) =>
             sourceOrFallback(path, ''),
         ),
