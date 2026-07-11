@@ -144,6 +144,14 @@ const roomsClientsPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx',
     import.meta.url,
 );
+const rallarServerOwnerSourcePaths = [
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-contracts.ts',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-parsing.ts',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerRequestFeedbackPanel.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-controller.ts',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerView.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerPanel.tsx',
+].map((path) => new URL(path, import.meta.url));
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -337,6 +345,27 @@ function roomsClientsOwnerSource(source: string): string {
     ].join('\n');
 }
 
+function rallarServerOwnerSource(source: string): string {
+    const extracted = rallarServerOwnerSourcePaths.every((path) =>
+        existsSync(path),
+    );
+    const fallback = extracted
+        ? ''
+        : sourceBetween(
+              source,
+              'function RallarServerRequestFeedbackPanel',
+              existsSync(flowBuilderPanelSourcePath)
+                  ? 'export default function App'
+                  : 'function parseVariablesText',
+          );
+    return [
+        ...rallarServerOwnerSourcePaths.map((path) =>
+            sourceOrFallback(path, '')
+        ),
+        fallback,
+    ].join('\n');
+}
+
 describe('rallar-black-box Rallar mode boundary', () => {
     it('does not expose black-box-runner command tabs in Rallar mode', () => {
         expect(appTabsForMode('rallar').map(tab => tab.id)).not.toEqual(
@@ -390,13 +419,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             mediaConsoleOwnerSource(source),
             authCommandCenterOwnerSource(source),
             roomsClientsOwnerSource(source),
-            sourceBetween(
-                source,
-                'function RallarServerPanel',
-                existsSync(flowBuilderPanelSourcePath)
-                    ? 'export default function App'
-                    : 'function parseVariablesText',
-            ),
+            rallarServerOwnerSource(source),
         ].join('\n');
 
         expect(directPanels).not.toMatch(/executeManualCommand|executeManualCommands|executeCommandFromJson/);

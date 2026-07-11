@@ -29,6 +29,18 @@ const roomsClientsControllerSourcePath =
     'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/use-rooms-clients-controller.ts';
 const roomsClientsViewSourcePath =
     'apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsView.tsx';
+const rallarServerContractsSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-contracts.ts';
+const rallarServerParsingSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-parsing.ts';
+const rallarServerFeedbackSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerRequestFeedbackPanel.tsx';
+const rallarServerControllerSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-controller.ts';
+const rallarServerViewSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerView.tsx';
+const rallarServerPanelSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerPanel.tsx';
 const extractedModulePaths = [
     'apps/rallar-black-box/src/legacy/shell/browser-ui-storage.ts',
     'apps/rallar-black-box/src/legacy/shell/navigation.ts',
@@ -87,7 +99,21 @@ const presentationModules = [
     {
         path: 'apps/rallar-black-box/src/legacy/shared/redaction-presentation.ts',
         moduleImport: './legacy/shared/redaction-presentation.ts',
-        seams: ['uiSecretValues', 'uiRedactionOptions', 'redactedJson'],
+        seams: ['uiRedactionOptions', 'redactedJson'],
+    },
+    {
+        path: 'apps/rallar-black-box/src/legacy/shared/redaction-presentation.ts',
+        importerPath: existsSync(
+            resolve(repositoryRoot, rallarServerControllerSourcePath),
+        )
+            ? rallarServerControllerSourcePath
+            : appSourcePath,
+        moduleImport: existsSync(
+            resolve(repositoryRoot, rallarServerControllerSourcePath),
+        )
+            ? '../../shared/redaction-presentation.ts'
+            : './legacy/shared/redaction-presentation.ts',
+        seams: ['uiSecretValues'],
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/command-presentation.ts',
@@ -13740,6 +13766,9 @@ describe('rallar-black-box app source ownership', () => {
         const roomsClientsPanelPresent = existsSync(
             resolve(repositoryRoot, roomsClientsPanelSourcePath),
         );
+        const rallarServerPanelPresent = existsSync(
+            resolve(repositoryRoot, rallarServerPanelSourcePath),
+        );
 
         for (const ownerPath of ownerPaths) {
             const ownerPresent = existsSync(resolve(repositoryRoot, ownerPath));
@@ -13931,9 +13960,11 @@ describe('rallar-black-box app source ownership', () => {
             ]);
             expect.soft(
                 ownerConsumers.get(deepStringPath),
-                'deep-string owner has App plus the extracted panel consumer',
+                'deep-string owner has only extracted controller consumers',
             ).toEqual([
-                appSourcePath,
+                ...(rallarServerPanelPresent
+                    ? [rallarServerControllerSourcePath]
+                    : [appSourcePath]),
                 ...(roomsClientsPanelPresent
                     ? [roomsClientsControllerSourcePath]
                     : []),
@@ -13964,7 +13995,11 @@ describe('rallar-black-box app source ownership', () => {
             roomsClientsPanelPresent
                 ? [
                       './legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx|value:RoomsClientsPanel',
-                      './legacy/diagnostics/shared/deep-string-value.ts|value:findStringDeep',
+                      ...(rallarServerPanelPresent
+                          ? []
+                          : [
+                                './legacy/diagnostics/shared/deep-string-value.ts|value:findStringDeep',
+                            ]),
                   ]
                 : [
                       './legacy/diagnostics/rooms-clients/rooms-clients-contracts.ts|type:ClientSortId,type:GroupSortId,type:RoomsClientsAction,type:RoomsClientsActionId,value:CLIENT_SORT_OPTIONS,value:GROUP_SORT_OPTIONS,value:ROOMS_CLIENTS_ACTIONS,value:ROOMS_CLIENTS_ACTION_GROUPS',
@@ -14558,6 +14593,696 @@ describe('rallar-black-box app source ownership', () => {
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
                 .digest('hex'),
             'Rooms R2 leaves the complete stylesheet unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
+    it('extracts the stateful Rallar Server workbench into focused controller and view owners', () => {
+        const ownerPaths = [
+            rallarServerContractsSourcePath,
+            rallarServerParsingSourcePath,
+            rallarServerFeedbackSourcePath,
+            rallarServerControllerSourcePath,
+            rallarServerViewSourcePath,
+            rallarServerPanelSourcePath,
+        ] as const;
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const ownerAsts = new Map<string, ts.SourceFile>();
+
+        for (const ownerPath of ownerPaths) {
+            const present = existsSync(resolve(repositoryRoot, ownerPath));
+            expect.soft(present, `${ownerPath}: owner exists`).toBe(true);
+            if (present) {
+                ownerAsts.set(
+                    ownerPath,
+                    task9aSourceFile(ownerPath, repositorySource(ownerPath)),
+                );
+            }
+        }
+
+        const expectedImports = new Map<string, readonly string[]>([
+            [
+                rallarServerContractsSourcePath,
+                [
+                    '../../../rallar-server-workbench.ts|type:RallarServerRestMethod',
+                ],
+            ],
+            [
+                rallarServerParsingSourcePath,
+                [
+                    '../../../rallar-server-workbench.ts|type:RallarServerRestCollection,type:RallarServerRestCollectionVariables',
+                ],
+            ],
+            [
+                rallarServerFeedbackSourcePath,
+                [
+                    '../../../rallar-server-workbench.ts|value:redactRallarServerText,value:redactRallarServerUrl',
+                    '../../shared/time-format.ts|value:formatDuration,value:formatTime',
+                    './rallar-server-contracts.ts|type:RallarServerRequestFeedback',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                ].sort(),
+            ],
+            [
+                rallarServerControllerSourcePath,
+                [
+                    '../../../control-client.ts|type:RallarBlackBoxControlSnapshot',
+                    '../../../rallar-server-workbench.ts|type:RallarServerEndpointPreset,type:RallarServerResponseBodyMode,type:RallarServerRestCollectionStepResult,type:RallarServerRestCollectionVariables,type:RallarServerRestMethod,type:RallarServerRestRequestInput,type:RallarServerRestResponse,value:RALLAR_SERVER_ENDPOINT_PRESETS,value:applyRallarServerEndpointPreset,value:assertRallarServerRestResponse,value:buildRallarServerCollectionStepRequestInput,value:buildRallarServerRestRequest,value:createRallarServerRestCollectionTemplates,value:defaultRallarServerWorkbenchVariables,value:executeRallarServerRestRequest,value:extractRallarServerRestVariables,value:fetchRallarServerOpenApiEndpoints,value:redactRallarServerText,value:redactRallarServerUrl,value:redactRallarServerValue,value:toRallarServerBlackBoxCommand,value:toRallarServerCurl,value:toRallarServerRestCollectionRecipe',
+                    '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig,value:rallarBlackBoxProviderModeFromConfig,value:rallarBlackBoxRuntimeStore',
+                    '../../../ui-persistence.ts|type:RallarServerRestCollectionDraft,type:RallarServerWorkbenchDraft,value:readRallarServerRestCollectionDraft,value:readRallarServerWorkbenchDraft,value:writeRallarServerRestCollectionDraft,value:writeRallarServerWorkbenchDraft',
+                    '../../shared/json-presentation.ts|value:json',
+                    '../../shared/redaction-presentation.ts|value:redactedJson,value:uiSecretValues',
+                    '../../shell/browser-ui-storage.ts|value:browserUiStorage',
+                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                    '../shared/deep-string-value.ts|value:findStringDeep',
+                    './rallar-server-contracts.ts|type:RallarServerRequestFeedback',
+                    './rallar-server-parsing.ts|value:parseRallarServerCollectionText,value:parseRallarServerCollectionVariablesText',
+                    '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxCurrentConfig',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                    'react|value:useEffect,value:useMemo,value:useState',
+                ].sort(),
+            ],
+            [
+                rallarServerViewSourcePath,
+                [
+                    '../../../control-client.ts|type:RallarBlackBoxControlSnapshot',
+                    '../../../rallar-server-workbench.ts|type:RallarServerResponseBodyMode,type:RallarServerRestMethod,value:redactRallarServerUrl,value:redactRallarServerValue',
+                    '../../shared/CollapsiblePanelSection.tsx|value:CollapsiblePanelSection',
+                    '../../shared/redaction-presentation.ts|value:redactedJson,value:uiRedactionOptions',
+                    '../../shared/time-format.ts|value:formatDuration',
+                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                    './RallarServerRequestFeedbackPanel.tsx|value:RallarServerRequestFeedbackPanel',
+                    './use-rallar-server-controller.ts|type:RallarServerControllerModel',
+                    '@shared-test/rallar-bb-test/redaction.ts|value:redactRallarBlackBoxValue',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                ].sort(),
+            ],
+            [
+                rallarServerPanelSourcePath,
+                [
+                    './RallarServerView.tsx|value:RallarServerView',
+                    './use-rallar-server-controller.ts|type:UseRallarServerControllerInput,value:useRallarServerController',
+                ].sort(),
+            ],
+        ]);
+        const expectedExports = new Map<string, readonly string[]>([
+            [rallarServerContractsSourcePath, ['type:RallarServerRequestFeedback']],
+            [
+                rallarServerParsingSourcePath,
+                [
+                    'value:parseRallarServerCollectionText',
+                    'value:parseRallarServerCollectionVariablesText',
+                ],
+            ],
+            [
+                rallarServerFeedbackSourcePath,
+                ['value:RallarServerRequestFeedbackPanel'],
+            ],
+            [
+                rallarServerControllerSourcePath,
+                [
+                    'type:RallarServerControllerModel',
+                    'type:UseRallarServerControllerInput',
+                    'value:useRallarServerController',
+                ],
+            ],
+            [rallarServerViewSourcePath, ['value:RallarServerView']],
+            [rallarServerPanelSourcePath, ['value:RallarServerPanel']],
+        ]);
+        const expectedInventories = new Map<string, readonly string[]>([
+            [rallarServerContractsSourcePath, ['type:RallarServerRequestFeedback']],
+            [
+                rallarServerParsingSourcePath,
+                [
+                    'function:parseRallarServerCollectionText',
+                    'function:parseRallarServerCollectionVariablesText',
+                ],
+            ],
+            [
+                rallarServerFeedbackSourcePath,
+                ['function:RallarServerRequestFeedbackPanel'],
+            ],
+            [
+                rallarServerControllerSourcePath,
+                [
+                    'type:UseRallarServerControllerInput',
+                    'function:useRallarServerController',
+                    'type:RallarServerControllerModel',
+                ],
+            ],
+            [rallarServerViewSourcePath, ['function:RallarServerView']],
+            [rallarServerPanelSourcePath, ['function:RallarServerPanel']],
+        ]);
+        const lineCaps = new Map<string, number>([
+            [rallarServerContractsSourcePath, 40],
+            [rallarServerParsingSourcePath, 70],
+            [rallarServerFeedbackSourcePath, 120],
+            [rallarServerControllerSourcePath, 850],
+            [rallarServerViewSourcePath, 620],
+            [rallarServerPanelSourcePath, 30],
+        ]);
+        const inventory = (sourceFile: ts.SourceFile): readonly string[] =>
+            sourceFile.statements.flatMap((statement) => {
+                if (ts.isImportDeclaration(statement)) return [];
+                if (ts.isTypeAliasDeclaration(statement)) {
+                    return [`type:${statement.name.text}`];
+                }
+                if (ts.isFunctionDeclaration(statement)) {
+                    return [`function:${statement.name?.text ?? '<anonymous>'}`];
+                }
+                return [`unexpected:${ts.SyntaxKind[statement.kind]}`];
+            });
+
+        for (const ownerPath of ownerPaths) {
+            const ownerAst = ownerAsts.get(ownerPath);
+            if (!ownerAst) continue;
+            const ownerSource = repositorySource(ownerPath);
+            expect.soft(
+                ownerSource.trimEnd().split(/\r?\n/).length,
+                `${ownerPath}: focused line cap`,
+            ).toBeLessThanOrEqual(lineCaps.get(ownerPath)!);
+            expect.soft(
+                task9aImportEdges(ownerAst),
+                `${ownerPath}: exact direct imports`,
+            ).toEqual(expectedImports.get(ownerPath));
+            expect.soft(
+                task9aExportSeams(ownerAst),
+                `${ownerPath}: exact direct exports`,
+            ).toEqual(expectedExports.get(ownerPath));
+            expect.soft(
+                inventory(ownerAst),
+                `${ownerPath}: exact top-level inventory`,
+            ).toEqual(expectedInventories.get(ownerPath));
+            expect.soft(
+                ownerSource,
+                `${ownerPath}: no reverse/App/CSS/barrel edge`,
+            ).not.toMatch(
+                /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"]|^\s*export\s+(?:\*|{)[^;]*\s+from\s+)/m,
+            );
+        }
+
+        if (ownerAsts.size === ownerPaths.length) {
+            const consumers = new Map(
+                ownerPaths.map((ownerPath) => [
+                    ownerPath,
+                    sourceFilesUnder('apps/rallar-black-box/src')
+                        .filter((sourcePath) => {
+                            if (sourcePath === ownerPath) return false;
+                            const sourceFile = task9aSourceFile(
+                                sourcePath,
+                                repositorySource(sourcePath),
+                            );
+                            return task9aModuleSpecifiers(sourceFile).some(
+                                (moduleImport) =>
+                                    task9aResolveRelativeTypeScriptDependency(
+                                        sourcePath,
+                                        moduleImport,
+                                        (path) =>
+                                            existsSync(resolve(repositoryRoot, path)),
+                                    ) === ownerPath,
+                            );
+                        })
+                        .sort(),
+                ]),
+            );
+            expect.soft(consumers.get(rallarServerContractsSourcePath)).toEqual([
+                rallarServerControllerSourcePath,
+                rallarServerFeedbackSourcePath,
+            ].sort());
+            expect.soft(consumers.get(rallarServerParsingSourcePath)).toEqual([
+                rallarServerControllerSourcePath,
+            ]);
+            expect.soft(consumers.get(rallarServerFeedbackSourcePath)).toEqual([
+                rallarServerViewSourcePath,
+            ]);
+            expect.soft(consumers.get(rallarServerControllerSourcePath)).toEqual([
+                rallarServerPanelSourcePath,
+                rallarServerViewSourcePath,
+            ].sort());
+            expect.soft(consumers.get(rallarServerViewSourcePath)).toEqual([
+                rallarServerPanelSourcePath,
+            ]);
+            expect.soft(consumers.get(rallarServerPanelSourcePath)).toEqual([
+                appSourcePath,
+            ]);
+            const graph = task9aReachableRelativeTypeScriptGraph(
+                ownerPaths,
+                repositorySource,
+                (path) => existsSync(resolve(repositoryRoot, path)),
+            );
+            expect.soft(
+                task9aDependencyCycles(graph),
+                'Rallar Server owner dependency graph has no cycles',
+            ).toEqual([]);
+        }
+
+        const appServerImports = task9aImportEdges(appAst).filter((edge) =>
+            edge.startsWith('./legacy/diagnostics/rallar-server/'),
+        );
+        expect.soft(
+            appServerImports,
+            'App imports only the thin RallarServerPanel root',
+        ).toEqual([
+            './legacy/diagnostics/rallar-server/RallarServerPanel.tsx|value:RallarServerPanel',
+        ]);
+
+        const movedNames = [
+            'RallarServerRequestFeedback',
+            'parseRallarServerCollectionText',
+            'parseRallarServerCollectionVariablesText',
+            'RallarServerRequestFeedbackPanel',
+            'RallarServerPanel',
+        ];
+        const appLocalNames = appAst.statements.flatMap((statement) => {
+            if (
+                (ts.isTypeAliasDeclaration(statement) ||
+                    ts.isFunctionDeclaration(statement)) &&
+                statement.name &&
+                movedNames.includes(statement.name.text)
+            ) {
+                return [statement.name.text];
+            }
+            return [];
+        });
+        const appEdges = task9aImportEdges(appAst);
+        const staleAppSeams = appEdges.filter((edge) =>
+            edge.startsWith('./rallar-server-workbench.ts|') ||
+            edge.startsWith(
+                './legacy/diagnostics/shared/deep-string-value.ts|',
+            ) ||
+            (edge.startsWith('./ui-persistence.ts|') &&
+                edge.includes('RallarServer')) ||
+            (edge.startsWith(
+                './legacy/shared/redaction-presentation.ts|',
+            ) && edge.includes('uiSecretValues')),
+        );
+        expect.soft(
+            { appLocalNames, staleAppSeams },
+            'App owns no moved Rallar Server declarations or private seams',
+        ).toEqual({ appLocalNames: [], staleAppSeams: [] });
+
+        const findDeclaration = (
+            sourceFile: ts.SourceFile,
+            name: string,
+        ): ts.Statement | undefined =>
+            sourceFile.statements.find((statement) =>
+                (ts.isTypeAliasDeclaration(statement) &&
+                    statement.name.text === name) ||
+                (ts.isFunctionDeclaration(statement) &&
+                    statement.name?.text === name)
+            );
+        const contractsAst =
+            ownerAsts.get(rallarServerContractsSourcePath) ?? appAst;
+        const feedbackType = findDeclaration(
+            contractsAst,
+            'RallarServerRequestFeedback',
+        );
+        expect.soft(feedbackType, 'feedback type owner/App fallback').toBeDefined();
+        if (feedbackType) {
+            expect.soft(
+                task9aMoveOnlyDeclarationFingerprint(feedbackType),
+                'exact Rallar Server feedback contract move',
+            ).toBe('0d3ce0064c85c9c6911b2075dccba1c79452e6214489444b22d1b27cd0cab063');
+        }
+
+        const parsingAst =
+            ownerAsts.get(rallarServerParsingSourcePath) ?? appAst;
+        for (const [name, expectedHash] of [
+            [
+                'parseRallarServerCollectionText',
+                '8d9c06b8ce1d11a1f209e25a80ce1af010ec2e95ab2ceaea84d470af3af65fa4',
+            ],
+            [
+                'parseRallarServerCollectionVariablesText',
+                '926099e1b1b8f18afc3ed52d72b861a6f1f2d98d48bed1242561708aa17f18b8',
+            ],
+        ] as const) {
+            const declaration = findDeclaration(parsingAst, name);
+            expect.soft(declaration, `${name}: owner/App fallback`).toBeDefined();
+            if (declaration) {
+                expect.soft(
+                    task9aMoveOnlyDeclarationFingerprint(declaration),
+                    `${name}: exact parser move`,
+                ).toBe(expectedHash);
+            }
+        }
+
+        const feedbackAst =
+            ownerAsts.get(rallarServerFeedbackSourcePath) ?? appAst;
+        const feedbackPanel = task9aNamedFunction(
+            feedbackAst,
+            'RallarServerRequestFeedbackPanel',
+        );
+        expect.soft(
+            task9aMoveOnlyDeclarationFingerprint(feedbackPanel),
+            'exact complete request-feedback panel move',
+        ).toBe('b879207cdf5f4d9742da198d812fd144a224f0b19324ed92c042667658622029');
+        const feedbackReturn = feedbackPanel.body!.statements.find(
+            ts.isReturnStatement,
+        );
+        expect.soft(
+            feedbackReturn?.expression
+                ? task9aAstFingerprint([feedbackReturn.expression])
+                : '',
+            'exact request-feedback JSX',
+        ).toBe('c17c11dd84c38f45d014b25f55c2a2cb46dfe4a7365ddf5a28fb6b7ae9df594b');
+
+        const controllerAst =
+            ownerAsts.get(rallarServerControllerSourcePath) ?? appAst;
+        const controllerName = ownerAsts.has(rallarServerControllerSourcePath)
+            ? 'useRallarServerController'
+            : 'RallarServerPanel';
+        const controller = task9aNamedFunction(controllerAst, controllerName);
+        const controllerStatements = [...controller.body!.statements];
+        expect.soft(
+            controllerStatements,
+            'controller keeps 55 legacy statements plus one final return',
+        ).toHaveLength(56);
+        expect.soft(
+            task9aAstFingerprint(controllerStatements.slice(0, 55)),
+            'exact complete Rallar Server controller before its model return',
+        ).toBe('b110169a13bb96616410e9beed4d380897801b90cfe7781a499e26099c04c0e4');
+        const hookCounts = {
+            useState: 0,
+            useMemo: 0,
+            useRef: 0,
+            useEffect: 0,
+            useCallback: 0,
+        };
+        const effectStatements: ts.Statement[] = [];
+        for (const statement of controllerStatements.slice(0, 55)) {
+            const visit = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text in hookCounts
+                ) {
+                    hookCounts[
+                        node.expression.text as keyof typeof hookCounts
+                    ] += 1;
+                }
+                ts.forEachChild(node, visit);
+            };
+            visit(statement);
+            if (
+                ts.isExpressionStatement(statement) &&
+                ts.isCallExpression(statement.expression) &&
+                ts.isIdentifier(statement.expression.expression) &&
+                statement.expression.expression.text === 'useEffect'
+            ) {
+                effectStatements.push(statement);
+            }
+        }
+        expect.soft(hookCounts, 'exact Rallar Server hook topology').toEqual({
+            useState: 25,
+            useMemo: 7,
+            useRef: 0,
+            useEffect: 3,
+            useCallback: 0,
+        });
+        expect.soft(
+            effectStatements.map((statement) =>
+                task9aAstFingerprint([statement]),
+            ),
+            'exact Rallar Server effects and dependencies',
+        ).toEqual([
+            '7b2350487c9eeef7d03149ad4e164b8d65444f04b1cb3c7b6dd8043e22bcfb54',
+            '61869092214fe7d6d01e1c706f1c7437040ac08e0a9a511ff7de11d7fca6074d',
+            '7ea8a4e873399fea780a602807fab4e3d60eac44c933788e26c6e82c40e88671',
+        ]);
+        const declarations = new Map<string, ts.VariableStatement>();
+        for (const statement of controllerStatements.slice(0, 55)) {
+            if (!ts.isVariableStatement(statement)) continue;
+            for (const declaration of statement.declarationList.declarations) {
+                if (ts.isIdentifier(declaration.name)) {
+                    declarations.set(declaration.name.text, statement);
+                }
+            }
+        }
+        for (const [name, expectedHash] of [
+            ['variables', '24a69d0a4661f43b4126c23393661615c115f15829bde1f63e69cc304046d4da'],
+            ['defaultServerDraft', 'fa62bcf2a9754f2d89b7d00662f533050be725e55e1fd482105c4700b81631b8'],
+            ['requestInput', '07f4e80dda25ff8a3b55669af8a0e0ce67462ae600b980e2fe3621af17e78004'],
+            ['commandPreview', '27ecba8f1a22b3787a04f5f4cbedbd16d233c2f6f2d83d2a103f4e7ef0955a87'],
+            ['applyPreset', '370a1515f4a537e9ffb3ee9ba3776c65b4b4b058354acf3ae03611fb80579e44'],
+            ['sendRequest', '1e3e3efb78c683a6e69a6d56d600aca3b1e8459ad536fd0c4cd6b6ffdfa37864'],
+            ['refreshOpenApi', '8e70ce8a99629372c200b2b040d3b6150bed07eb8d23086fb5c98b8f31e41a2d'],
+            ['applyCollectionTemplate', 'ce83a237bc5d8d0fcc766e1a706397e0f39c841926161a8dbfba64236e6d5b7a'],
+            ['addCurrentRequestToCollection', '8c33d83fe925c8117551a4dd890561f4b0068d0f9b00b86225c080f4ac3113de'],
+            ['runCollection', '190633aaa73b44e8716e8489f2b44a87ded10c3672d76a2f8ed943caaa2884b7'],
+            ['copyCollection', '7f7c4c306f27588893120a2c056c7563170e62f8b36926e63aae811c807497f6'],
+            ['copyCollectionRecipe', '4b80670073da37966728c73f245403c98fc3cd3b46a9078cd27f6bfc37d592c7'],
+        ] as const) {
+            const statement = declarations.get(name);
+            expect.soft(
+                statement ? task9aAstFingerprint([statement]) : '',
+                `${name}: exact Rallar Server controller statement`,
+            ).toBe(expectedHash);
+        }
+
+        if (ownerAsts.has(rallarServerControllerSourcePath)) {
+            let controllerHasJsx = false;
+            const visitJsx = (node: ts.Node): void => {
+                if (
+                    ts.isJsxElement(node) ||
+                    ts.isJsxSelfClosingElement(node) ||
+                    ts.isJsxFragment(node)
+                ) {
+                    controllerHasJsx = true;
+                }
+                ts.forEachChild(node, visitJsx);
+            };
+            visitJsx(controller);
+            expect.soft(controllerHasJsx, 'Rallar Server controller has no JSX')
+                .toBe(false);
+            const controllerReturn = controllerStatements[55];
+            const model =
+                controllerReturn && ts.isReturnStatement(controllerReturn)
+                    ? controllerReturn.expression
+                    : undefined;
+            expect.soft(
+                Boolean(model && ts.isObjectLiteralExpression(model)),
+                'Rallar Server controller returns one explicit model',
+            ).toBe(true);
+            expect.soft(
+                model && ts.isObjectLiteralExpression(model)
+                    ? model.properties.every(ts.isShorthandPropertyAssignment)
+                    : false,
+                'Rallar Server controller model uses matching shorthand fields',
+            ).toBe(true);
+        }
+
+        const presentationAst =
+            ownerAsts.get(rallarServerViewSourcePath) ?? appAst;
+        const presentationName = ownerAsts.has(rallarServerViewSourcePath)
+            ? 'RallarServerView'
+            : 'RallarServerPanel';
+        const presentation = task9aNamedFunction(
+            presentationAst,
+            presentationName,
+        );
+        if (ownerAsts.has(rallarServerViewSourcePath)) {
+            const presentationStatements = [...presentation.body!.statements];
+            expect.soft(
+                presentationStatements,
+                'Rallar Server view has one model destructure and one JSX return',
+            ).toHaveLength(2);
+            expect.soft(
+                presentationStatements.findIndex(ts.isReturnStatement),
+                'Rallar Server view has one final top-level JSX return',
+            ).toBe(1);
+            const modelStatement = presentationStatements[0];
+            const modelDeclarations =
+                modelStatement && ts.isVariableStatement(modelStatement)
+                    ? [...modelStatement.declarationList.declarations]
+                    : [];
+            expect.soft(
+                modelDeclarations,
+                'Rallar Server view model statement has one safe declaration',
+            ).toHaveLength(1);
+            const modelDeclaration = modelDeclarations[0];
+            expect.soft(
+                modelDeclaration?.initializer?.getText(presentationAst) ?? '',
+                'Rallar Server view destructures only its model prop',
+            ).toBe('model');
+            const controllerReturn = controllerStatements[55];
+            const model =
+                controllerReturn && ts.isReturnStatement(controllerReturn) &&
+                    controllerReturn.expression &&
+                    ts.isObjectLiteralExpression(controllerReturn.expression)
+                    ? controllerReturn.expression
+                    : undefined;
+            expect.soft(
+                modelDeclaration && ts.isObjectBindingPattern(modelDeclaration.name)
+                    ? modelDeclaration.name.elements.map((element) =>
+                          element.name.getText(presentationAst),
+                      )
+                    : [],
+                'view destructures the exact controller model key order',
+            ).toEqual(
+                model?.properties.map((property) =>
+                    property.name?.getText(controllerAst),
+                ) ?? [],
+            );
+            const unsafeModelBindings =
+                modelDeclaration && ts.isObjectBindingPattern(modelDeclaration.name)
+                    ? modelDeclaration.name.elements.filter((element) =>
+                          Boolean(
+                              element.propertyName ||
+                                  element.initializer ||
+                                  element.dotDotDotToken,
+                          ),
+                      )
+                    : [];
+            expect.soft(
+                unsafeModelBindings,
+                'Rallar Server view model has no aliases, defaults, or rest escape',
+            ).toEqual([]);
+        }
+        const presentationReturn = presentation.body!.statements.find(
+            ts.isReturnStatement,
+        );
+        expect.soft(
+            presentationReturn?.expression
+                ? task9aAstFingerprint([presentationReturn.expression])
+                : '',
+            'Rallar Server view owns exact legacy JSX AST',
+        ).toBe('ed08504fea56e1bc73929396270ac34c5f96207bdc99964fb2cee06e6255ab9b');
+        expect.soft(
+            presentationReturn?.expression
+                ? task9aJsxRuntimeFingerprint(presentationReturn.expression)
+                : '',
+            'Rallar Server view owns exact compiled legacy JSX',
+        ).toBe('48acfa2b349a1d8073bfcb7c59fb2df22e4c53c636e4fa8d91ffded0d74b50a2');
+
+        if (ownerAsts.has(rallarServerPanelSourcePath)) {
+            const panel = task9aNamedFunction(
+                ownerAsts.get(rallarServerPanelSourcePath)!,
+                'RallarServerPanel',
+            );
+            const panelAst = panel.getSourceFile();
+            const panelStatements = [...panel.body!.statements];
+            expect.soft(
+                panelStatements,
+                'thin Rallar Server root has one controller call and one View return',
+            ).toHaveLength(2);
+            expect.soft(
+                panel.parameters,
+                'thin Rallar Server root has exactly one props parameter',
+            ).toHaveLength(1);
+            expect.soft(
+                panel.parameters[0]?.name.getText(panelAst),
+                'thin Rallar Server root keeps the props identifier',
+            ).toBe('props');
+            expect.soft(
+                panel.parameters[0]?.type?.getText(panelAst),
+                'thin Rallar Server root consumes the controller input contract',
+            ).toBe('UseRallarServerControllerInput');
+            const controllerStatement = panelStatements[0];
+            const controllerDeclarations =
+                controllerStatement && ts.isVariableStatement(controllerStatement)
+                    ? [...controllerStatement.declarationList.declarations]
+                    : [];
+            expect.soft(
+                controllerDeclarations,
+                'thin Rallar Server root owns one controller model declaration',
+            ).toHaveLength(1);
+            expect.soft(
+                controllerDeclarations[0]?.name.getText(panelAst),
+                'thin Rallar Server root names the controller model',
+            ).toBe('model');
+            expect.soft(
+                controllerDeclarations[0]?.initializer?.getText(panelAst) ?? '',
+                'thin Rallar Server root calls its controller with props exactly once',
+            ).toBe('useRallarServerController(props)');
+            const viewCalls = task9aJsxCalls(panel, 'RallarServerView');
+            expect.soft(viewCalls, 'thin Rallar Server root has one direct View call')
+                .toHaveLength(1);
+            const viewCall = viewCalls[0];
+            expect.soft(
+                viewCall ? task9aReturnExpression(panel) : undefined,
+                'thin Rallar Server root returns the controlled View directly',
+            ).toBe(viewCall);
+            if (viewCall) {
+                const expectedViewProps = new Map([
+                    ['state', 'props.state'],
+                    ['authSession', 'props.authSession'],
+                    ['control', 'props.control'],
+                    ['onGlobalValueChange', 'props.onGlobalValueChange'],
+                    ['model', 'model'],
+                ]);
+                expect.soft(
+                    viewCall.attributes.properties.map((property) =>
+                        ts.isJsxAttribute(property)
+                            ? property.name.getText(panelAst)
+                            : 'spread',
+                    ),
+                    'thin Rallar Server root forwards the exact View prop order',
+                ).toEqual([...expectedViewProps.keys()]);
+                expect.soft(
+                    viewCall.attributes.properties.map((property) => {
+                        if (
+                            !ts.isJsxAttribute(property) ||
+                            !property.initializer ||
+                            !ts.isJsxExpression(property.initializer)
+                        ) {
+                            return 'invalid';
+                        }
+                        return property.initializer.expression?.getText(panelAst) ?? '';
+                    }),
+                    'thin Rallar Server root forwards every View prop exactly',
+                ).toEqual([...expectedViewProps.values()]);
+            }
+        } else {
+            expect.soft(
+                task9aMoveOnlyDeclarationFingerprint(
+                    task9aNamedFunction(appAst, 'RallarServerPanel'),
+                ),
+                'exact complete Rallar Server panel fallback before extraction',
+            ).toBe('e7b5f2898c4cb4ce2bb393d73a49c0cc6cf0aba27dbb20ff73d620271e6751b9');
+        }
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'RallarServerPanel');
+        expect.soft(mounts, 'one hidden-mounted Rallar Server instance')
+            .toHaveLength(1);
+        expect.soft(
+            task9aAstFingerprint(mounts),
+            'exact Rallar Server App mount',
+        ).toBe('5abb2232ea291ba43fcbd73e8372ae4519de06d12126356628bb3963c9856e20');
+        let ancestor: ts.Node | undefined = mounts[0];
+        while (ancestor && !ts.isJsxElement(ancestor)) ancestor = ancestor.parent;
+        expect.soft(
+            ancestor ? task9aAstFingerprint([ancestor]) : '',
+            'exact hidden Rallar Server tab-section ancestor',
+        ).toBe('7f1c52eff5969d8b51ef0f606ad1147ba1d5480db04fe606b98404830d46aa5d');
+        const conditionalAncestors: string[] = [];
+        let current: ts.Node | undefined = mounts[0]?.parent;
+        while (current && current !== app) {
+            if (
+                ts.isConditionalExpression(current) ||
+                (ts.isBinaryExpression(current) &&
+                    current.operatorToken.kind ===
+                        ts.SyntaxKind.AmpersandAmpersandToken)
+            ) {
+                conditionalAncestors.push(ts.SyntaxKind[current.kind]);
+            }
+            current = current.parent;
+        }
+        expect.soft(
+            conditionalAncestors,
+            'Rallar Server stays mounted while its tab is hidden',
+        ).toEqual([]);
+        expect.soft(
+            task9aAstFingerprint([app]),
+            'Rallar Server extraction leaves the App function unchanged',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'Rallar Server extraction leaves the stylesheet unchanged',
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
     });
 
