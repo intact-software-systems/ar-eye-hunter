@@ -1,7 +1,7 @@
 # Rallar Black Box SPA Reimplementation Plan
 
 Date: 2026-07-06
-Last reviewed: 2026-07-10
+Last reviewed: 2026-07-11
 
 ## Goal
 
@@ -394,7 +394,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Iteration | Status | Exit tracking |
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
-| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 1,065 lines through legacy shell L1; the broad exit criteria still bind, and pure helpers, focused controllers, tab composition, and the below-800 App boundary remain before this iteration is complete. |
+| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 926 lines through legacy shell-model M1; the broad exit criteria still bind, and focused controllers, share-link ownership, tab composition, `LegacyAppShell`, and the below-800 App boundary remain before this iteration is complete. |
 | 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
@@ -723,6 +723,45 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   complete tab tree,
   `LegacyAppShell` does not yet exist, and the required below-800
   bootstrap/provider/routing boundary remains unsatisfied.
+
+#### Iteration 1 legacy shell models M1 checkpoint — `0939161` (2026-07-11)
+
+- Exact runner queue/selection derivation now lives in the 46-line
+  `src/legacy/runner/shell/runner-shell-model.ts`; global-context derivation,
+  equality, and bootstrap patching live in the 69-line
+  `src/legacy/shell/global-context-model.ts`; and one-time agent-ticket URL
+  scrubbing, in-flight deduplication, and cache release live in the 47-line
+  `src/legacy/shell/auth/agent-session-ticket.ts`. `App.tsx` is 926 lines and
+  retains the exact 833-line App function. No state slot, effect, render guard,
+  mount, route, alias, default, stylesheet, public export, or control-server
+  contract changed.
+- The tests-first ownership gate began with the existing shell-leaf test green
+  and exactly 19 intended model-owner/import/stale-declaration failures. It now
+  locks exact moved AST, import symbols/aliases/type kinds, top-level inventory,
+  local acyclicity, App removal/imports, App AST, and line caps. A separate
+  seven-test behavior oracle covers all queue statuses, result fallback,
+  global-context precedence and equality fields, bootstrap patching, fragment
+  preservation, in-flight ticket deduplication, and cache release after both
+  fulfillment and rejection.
+- Final focused verification passed 100/100; typecheck/build passed (385
+  modules), with the existing large-chunk warning still present (`index`
+  1,261.06 kB minified). Five controlled mutations were caught for failed
+  queue status, auth/config precedence, ticket scrubbing, ticket deduplication,
+  and unexpected top-level state. Two independent reviews approved the slice.
+- The focused Chromium ticket workflow passed 1/1, proving two popup agents
+  consume distinct one-time tickets, receive fresh per-tab sessions, and scrub
+  the fragment even when session storage is inherited. The exact App function
+  and stylesheet locks keep the prior L1 desktop/portrait/landscape,
+  keyboard, reduced-motion, operational-state, and CSS-isolation evidence
+  applicable; no new visual or mount behavior was introduced.
+- Exhaustive authenticated shell coverage remains unavailable and is **not
+  represented as passed** for this exact harness reason: `Set
+  RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+  This is not the Iteration 1 exit: App still owns eight state slots, eight
+  effects, navigation/global-context/selection orchestration, the complete tab
+  tree, and the inline fleet share-link builder; `LegacyAppShell` does not yet
+  exist and the below-800 boundary remains unsatisfied.
 
 #### Remaining risks and evidence ownership
 
