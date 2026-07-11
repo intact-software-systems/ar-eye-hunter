@@ -394,7 +394,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Iteration | Status | Exit tracking |
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
-| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 3,433 lines through Rallar Server M1; the broad exit criteria still bind, and shell/bootstrap plus remaining direct-diagnostic owners must still move before this iteration is complete. |
+| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 1,849 lines through CRDT M1; the broad exit criteria still bind, and shell/bootstrap plus remaining direct-diagnostic owners must still move before this iteration is complete. |
 | 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
@@ -650,6 +650,45 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   alias, public export, server contract, navigation visibility, hide, mount,
   rollback, or cutover status changed in M1.
 
+#### Iteration 1 CRDT M1 checkpoint — `0927c46` (2026-07-11)
+
+- The complete CRDT editor and admin-health surface is now a seven-owner
+  composition under `src/legacy/diagnostics/crdt/**`: contracts (37 lines),
+  editor controller (343), board view (283), entities view (240), editor
+  composition (302), health controller (297), and health panel (290).
+  `App.tsx` is 1,849 lines and imports only `CrdtHealthPanel`. The exact
+  44-statement editor controller, 27 states, two refs, cleanup effect, exact
+  13-statement/five-state health controller, actions, redaction, JSX, nested
+  editor mount, App mount, hidden ancestor, and stylesheet remain unchanged.
+- Untouched-production RED passed 40/41 app-structure tests with exactly nine
+  intended soft ownership failures while mode-boundary stayed green 8/8.
+  Final listed Iteration 1 validation passed 100/100; typecheck/build passed
+  (375 modules); five semantic mutation probes caught cleanup, transport-guard,
+  board-action, admin-route, and nested-mount drift; and two independent
+  reviews approved the extraction. The existing large-chunk warning remains
+  (`index` 1,260.69 kB minified) for the later experience-route code-splitting
+  cutover rather than being represented as resolved here.
+- The in-app Browser operational check and temporary reduced-motion desktop,
+  430x932 portrait, and 932x430 landscape matrix (3/3) proved local document
+  open/close, board/entity mutations, diagnostics, state retention across
+  hidden-tab round trips, keyboard tab selection, one mounted owner, CSS
+  isolation, and no browser or page errors. The temporary QA spec was removed.
+  The matrix also quantified unchanged legacy layout debt: the portrait
+  document is 807px wide because the entity form, diagnostics, and admin table
+  lack narrow-screen containment; desktop and landscape CRDT actions are 30px
+  high while portrait actions are 44px. Both corrections belong to Iteration
+  12 and are not represented as extraction regressions or passing ready-state
+  accessibility evidence.
+- The exhaustive CRDT scenario was **skipped, not passed**, for this exact
+  reason: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+- The hidden-mounted exception remains explicit for all transient editor
+  inputs/results, the active document and subscription, and the health panel's
+  five state slots: busy action, error, document list, selected document key,
+  and last result. Arrow-key selection still does not transfer DOM focus. No
+  route, alias, public export, server contract, navigation visibility, hide,
+  mount, rollback, or cutover status changed in M1.
+
 #### Remaining risks and evidence ownership
 
 | Remaining risk | Owning iteration(s) | Mitigation and evidence target |
@@ -661,6 +700,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Retention preview safety | 8 | Add optional dry-run behavior without changing the destructive default, require explicit confirmation, and prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup`. |
 | Qualitative visual and performance gates lack executable thresholds | 2, 9, 12 | Iteration 2 records approved screenshot baselines and an executable drift budget in `recipe-console-shell.spec.ts`; Iteration 9 encodes bounded-render and interaction budgets in `recipe-console-scale.spec.ts`; Iteration 12 encodes viewport, keyboard, touch, reduced-motion, and non-hover gates in `recipe-console-accessibility.spec.ts`. |
 | Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
+| Preserved legacy CRDT controls are 30px high at desktop and 932x430 landscape, and its fixed editor/diagnostic/table tracks create an 807px document at 430px portrait | 12 | Keep the exact parity extraction unchanged; add narrow-screen CRDT grid collapse and locally contained table scrolling, require 44px touch targets in touch viewports, and prove zero page overflow in `recipe-console-accessibility.spec.ts`. |
 | Preserved legacy Auth, Groups/Clients, and Rallar Server action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact parity extractions unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
 | Legacy tab arrow keys update selection without transferring DOM focus to the selected tab | 12 | Preserve Iteration 1 parity, then make roving focus follow keyboard selection and encode the behavior in `recipe-console-accessibility.spec.ts`. |
 | Local Node 26 differs from CI Node 24 | 1 and every code-changing iteration | Run the focused tests, typecheck, and build on CI Node 24; retain the local Node `26.5.0` result separately so version-specific differences remain visible. |
