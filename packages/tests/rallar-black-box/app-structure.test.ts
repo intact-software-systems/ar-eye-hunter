@@ -13350,19 +13350,30 @@ describe('rallar-black-box app source ownership', () => {
                 (modifier) =>
                     modifier.kind === ts.SyntaxKind.ExportKeyword,
             );
-            expect.soft(
-                exportModifiers,
-                'MediaConsolePanel has one intentional export modifier',
-            ).toHaveLength(1);
-            expect.soft(
-                exportModifiers[0]
-                    ? task9aAstFingerprintOmittingNode(
-                          [panel],
-                          exportModifiers[0],
-                      )
-                    : task9aAstFingerprint([panel]),
-                'exact complete MediaConsolePanel component',
-            ).toBe('272d90bf79bdc119a662cc2dedaf0590036e31736d5c0ce4a1c8d2853d6313cf');
+            if (ownerAst) {
+                expect.soft(
+                    exportModifiers,
+                    'MediaConsolePanel owner has one intentional export modifier',
+                ).toHaveLength(1);
+                expect.soft(
+                    exportModifiers[0]
+                        ? task9aAstFingerprintOmittingNode(
+                              [panel],
+                              exportModifiers[0],
+                          )
+                        : task9aAstFingerprint([panel]),
+                    'exact complete exported MediaConsolePanel owner',
+                ).toBe('272d90bf79bdc119a662cc2dedaf0590036e31736d5c0ce4a1c8d2853d6313cf');
+            } else {
+                expect.soft(
+                    exportModifiers,
+                    'legacy App fallback MediaConsolePanel has no export modifier',
+                ).toHaveLength(0);
+                expect.soft(
+                    task9aAstFingerprint([panel]),
+                    'exact complete legacy App fallback MediaConsolePanel',
+                ).toBe('6c5c4fb121f11c88326c92d5926b24604396b0a430d376b1f0a3a420218e5ed8');
+            }
             const parameter = panel.parameters[0];
             const parameterKeys = parameter &&
                     ts.isObjectBindingPattern(parameter.name)
