@@ -32,6 +32,21 @@ function staticClosure(manifest: Manifest, root: string): readonly string[] {
     return [...visited];
 }
 
+function cssClosure(
+    manifest: Manifest,
+    root: string,
+    excludedKeys: ReadonlySet<string> = new Set(),
+): readonly string[] {
+    const css = new Set<string>();
+    for (const key of staticClosure(manifest, root)) {
+        if (excludedKeys.has(key)) continue;
+        for (const file of manifest[key]?.css ?? []) {
+            css.add(file);
+        }
+    }
+    return [...css].sort();
+}
+
 async function closureText(
     manifest: Manifest,
     outputRoot: string,
@@ -80,6 +95,28 @@ assert(
         new Set(experienceEdges).size === 2,
     'Main must have exactly the two filtered experience dynamic edges.',
 );
+
+const mainCss = cssClosure(manifest, main[0]);
+const recipeCss = cssClosure(manifest, recipe[0]);
+const legacyCss = cssClosure(
+    manifest,
+    legacy[0],
+    new Set(mainStaticKeys),
+);
+assert(
+    legacyCss.length > 0,
+    'Legacy experience must emit a nonempty CSS closure.',
+);
+for (const file of legacyCss) {
+    assert(
+        !mainCss.includes(file),
+        `Main static closure includes legacy CSS: ${file}`,
+    );
+    assert(
+        !recipeCss.includes(file),
+        `Recipe Console static closure includes legacy CSS: ${file}`,
+    );
+}
 
 const [mainText, recipeText, legacyText] = await Promise.all([
     closureText(manifest, outputRoot, main[0]),

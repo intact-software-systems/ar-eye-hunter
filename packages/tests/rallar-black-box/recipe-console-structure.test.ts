@@ -81,7 +81,22 @@ describe('Recipe Console experience boundary', () => {
         expect(authCss).toMatch(
             /\.auth-panel \.pill\.active\s*\{\s*color:\s*#0c6f7b;\s*\}/,
         );
+        expect(authCss).toContain(`.auth-summary dt {
+    color: #67766f;
+    font-size: 0.72rem;
+}`);
+        expect(authCss).toContain(`.auth-summary dd {
+    min-width: 0;
+    margin: 2px 0 0;
+    overflow: hidden;
+    color: #1d2823;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}`);
         expect(authCss).not.toMatch(/^\.active\s*\{/m);
+        expect(authCss).not.toMatch(/^dt\s*\{/m);
+        expect(authCss).not.toMatch(/^dd\s*\{/m);
         expect(createHash('sha256')
             .update(source('apps/rallar-black-box/src/styles.css'))
             .digest('hex'))
@@ -104,5 +119,15 @@ describe('Recipe Console experience boundary', () => {
         );
         expect(assertion).toContain('css?: readonly string[];');
         expect(assertion).toContain('...(chunk.css ?? [])');
+        expect(assertion).toContain('function cssClosure(');
+        expect(assertion).toContain(
+            'Legacy experience must emit a nonempty CSS closure.',
+        );
+        expect(assertion).toContain(
+            'Main static closure includes legacy CSS:',
+        );
+        expect(assertion).toContain(
+            'Recipe Console static closure includes legacy CSS:',
+        );
     });
 });

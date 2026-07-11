@@ -132,6 +132,21 @@ button:disabled {
     background: #ffffff;
 }
 
+.auth-summary dt {
+    color: #67766f;
+    font-size: 0.72rem;
+}
+
+.auth-summary dd {
+    min-width: 0;
+    margin: 2px 0 0;
+    overflow: hidden;
+    color: #1d2823;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .eyebrow {
     margin: 0 0 6px;
     color: #607069;

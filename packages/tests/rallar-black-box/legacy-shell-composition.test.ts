@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const appPath = 'apps/rallar-black-box/src/App.tsx';
 const shellRoot = 'apps/rallar-black-box/src/legacy/shell';
+const legacyExperiencePath = `${shellRoot}/LegacyExperience.tsx`;
 const compositionOwners = [
     { path: `${shellRoot}/legacy-shell-contracts.ts`, cap: 70 },
     { path: `${shellRoot}/LegacyAppShell.tsx`, cap: 180 },
@@ -483,6 +484,41 @@ function hookCount(root: ts.Node): number {
 }
 
 describe('legacy shell composition boundary', () => {
+    it('locks the exact lazy legacy experience controller and shell wiring', () => {
+        const legacyExperienceSource = repositorySource(legacyExperiencePath);
+        const legacyExperience = sourceFile(
+            legacyExperiencePath,
+            legacyExperienceSource,
+        );
+
+        expect(importInventory(legacyExperience)).toEqual([
+            '../../auth-flow.ts|value:bootstrapMatchesAuthSession',
+            '../../runtime-store.ts|value:rallarBlackBoxRuntimeStore',
+            '../../styles.css|side-effect',
+            '../runner/shell/use-runner-shell-state.ts|value:useRunnerShellSelectionSync',
+            '../runner/shell/use-runner-shell-state.ts|value:useRunnerShellState',
+            './LegacyAppShell.tsx|value:LegacyAppShell',
+            './legacy-shell-contracts.ts|type:LegacyShellAuth',
+            './legacy-shell-contracts.ts|type:LegacyShellRuntime',
+            './use-command-center-global-context.ts|value:useCommandCenterGlobalContext',
+            './use-legacy-navigation.ts|value:useLegacyNavigation',
+            'react|value:useEffect',
+        ]);
+        expect(topLevelInventory(legacyExperience)).toEqual([
+            'export-type:LegacyExperienceProps',
+            'export-default-function:LegacyExperience',
+        ]);
+        expect(dynamicImportCount(legacyExperience)).toBe(0);
+
+        const controller = namedFunction(legacyExperience, 'LegacyExperience');
+        expect(astFingerprint(controller)).toBe(
+            '82f6cb83634c7049fb0955425dc8f774e5a966a51af6055fa70262e9c0aa745a',
+        );
+        expect(legacyExperienceSource).not.toMatch(
+            /(?:from\s+['"][^'"]*App(?:\.tsx)?['"]|import\s*\([^)]*App)/,
+        );
+    });
+
     it('routes legacy composition through a lazy experience wrapper', () => {
         const appSource = repositorySource(appPath);
         const wrapperPath = `${shellRoot}/LegacyExperience.tsx`;
