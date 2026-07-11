@@ -20,6 +20,14 @@ const runnerDistributedAnalysisSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerDistributedAnalysisSection.tsx',
     import.meta.url,
 );
+const runnerRunsControllerSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/runs/use-runner-runs-controller.ts',
+    import.meta.url,
+);
+const runnerRunsPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerRunsPanel.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -102,9 +110,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             sourceBetween(
                 source,
                 'function QuickRallarTestPanel',
-                existsSync(runnerRecipesPanelSourcePath)
-                    ? 'function RunnerRunsPanel'
-                    : 'function RunnerRecipesPanel',
+                'function RunnerFleetPanel',
             ),
             sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel'),
             sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel'),
@@ -200,7 +206,21 @@ describe('rallar-black-box Rallar mode boundary', () => {
                 sourceOrFallback(path, recipesControllerFallback),
             ),
         ].join('\n');
-        const runsPanel = sourceBetween(source, 'function RunnerRunsPanel', 'function RunnerFleetPanel');
+        const runsControllerFallback = existsSync(runnerRunsControllerSourcePath)
+            ? ''
+            : sourceBetween(
+                  source,
+                  'function RunnerRunsPanel',
+                  'function RunnerFleetPanel',
+              );
+        const runsController = sourceOrFallback(
+            runnerRunsControllerSourcePath,
+            runsControllerFallback,
+        );
+        const runsPanel = sourceOrFallback(
+            runnerRunsPanelSourcePath,
+            runsControllerFallback,
+        );
         const runsDistributedView = sourceOrFallback(
             runnerDistributedAnalysisSourcePath,
             runsPanel,
@@ -212,8 +232,10 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(runsPanel).toContain('CausalTrailPanel');
         expect(runsPanel).toContain('RtcPerformancePanel');
         expect(runsDistributedView).toContain('title="Run Participants"');
-        expect(runsPanel).toContain('monitorAgentProgress: selectedMonitor?.agentProgress');
-        expect(runsPanel).toContain('distributedRunSeed');
+        expect(runsController).toContain(
+            'monitorAgentProgress: selectedMonitor?.agentProgress',
+        );
+        expect(runsController).toContain('distributedRunSeed');
         expect(runsDistributedView).toContain('DISTRIBUTED_RUN_SEEDS');
         expect(runsDistributedView).toContain('Synthetic seed');
         expect(runsDistributedView).toContain('Synthetic evidence');
@@ -249,8 +271,10 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(runsDistributedView.indexOf('Synthetic seed')).toBeLessThan(
             runsDistributedView.indexOf('title="Run Participants"'),
         );
-        expect(runsPanel).toContain('selectedMonitor');
-        expect(runsPanel).toContain('distributedMonitor: selectedMonitor');
+        expect(runsController).toContain('selectedMonitor');
+        expect(runsController).toContain(
+            'distributedMonitor: selectedMonitor',
+        );
         expect(recipesPanel.indexOf('runner-quick-launch-strip')).toBeLessThan(
             recipesPanel.indexOf('<RunnerReadinessPanel'),
         );
