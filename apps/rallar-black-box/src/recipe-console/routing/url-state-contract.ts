@@ -76,6 +76,7 @@ export const RECIPE_CONSOLE_OWNED_URL_KEYS = [
 ] as const;
 
 export const LEGACY_APP_URL_ALIAS_KEYS = [
+    'mode',
     'workspace',
     'appMode',
     'tab',

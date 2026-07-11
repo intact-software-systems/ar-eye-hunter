@@ -193,11 +193,14 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
 }
 
 export function scrubRecipeConsoleHash(hash: string): string {
-    if (!hash || (!hash.includes('=') && !hash.includes('&'))) {
+    if (!hash) {
         return hash;
     }
     const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
     deleteSensitiveUrlKeys(params);
+    if (!hash.includes('=') && !hash.includes('&')) {
+        return params.toString() ? hash : '';
+    }
     const value = params.toString();
     return value ? `#${value}` : '';
 }

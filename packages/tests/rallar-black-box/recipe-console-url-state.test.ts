@@ -188,7 +188,7 @@ describe('Recipe Console URL state codec', () => {
     it('preserves unknown parameters and removes old aliases only from Recipe Console output', () => {
         const baseSearch =
             '?provider=simulated&roomId=room-a&future=value&workspace=black-box-runner' +
-            '&appMode=runner&tab=fleet&advancedSurface=workbench&advanced=manual';
+            '&appMode=runner&tab=fleet&advancedSurface=workbench&advanced=manual&mode=control';
         const serialized = serializeRecipeConsoleUrl({
             ...BASE_STATE,
             view: 'fleet',
@@ -201,7 +201,14 @@ describe('Recipe Console URL state codec', () => {
         expect(params.get('v')).toBe('1');
         expect(params.get('experience')).toBe('recipe-console');
         expect(params.get('view')).toBe('fleet');
-        for (const key of ['workspace', 'appMode', 'tab', 'advancedSurface', 'advanced']) {
+        for (const key of [
+            'workspace',
+            'appMode',
+            'tab',
+            'advancedSurface',
+            'advanced',
+            'mode',
+        ]) {
             expect(params.has(key), key).toBe(false);
         }
         expect(baseSearch).toContain('workspace=black-box-runner');
@@ -262,5 +269,16 @@ describe('Recipe Console URL state codec', () => {
         }, BASE_STATE);
 
         expect(new URL(href).hash).toBe('#trace');
+    });
+
+    it('removes a bare sensitive fragment from a copied link', () => {
+        const href = createRecipeConsoleShareHref({
+            origin: 'https://console.test',
+            pathname: '/operator',
+            search: '',
+            hash: '#TOKEN',
+        }, BASE_STATE);
+
+        expect(new URL(href).hash).toBe('');
     });
 });
