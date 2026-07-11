@@ -104,6 +104,10 @@ const webSocketSupportSourcePaths = [
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-recipes.ts',
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts',
 ].map((path) => new URL(path, import.meta.url));
+const webSocketViewSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -225,6 +229,7 @@ function webSocketCommandCenterOwnerSource(source: string): string {
         ...webSocketSupportSourcePaths.map((path) =>
             sourceOrFallback(path, ''),
         ),
+        sourceOrFallback(webSocketViewSourcePath, ''),
     ].join('\n');
 }
 

@@ -9100,7 +9100,26 @@ describe('rallar-black-box app source ownership', () => {
                   'CommandCenterActionFeedbackPanel',
               )
             : [];
-        const actionFeedbackCalls = rtcRealtimeActionFeedbackCalls.length > 0
+        const webSocketViewPath =
+            'apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx';
+        const webSocketActionFeedbackCalls = existsSync(
+            resolve(repositoryRoot, webSocketViewPath),
+        )
+            ? task9aJsxCalls(
+                  task9aSourceFile(
+                      webSocketViewPath,
+                      repositorySource(webSocketViewPath),
+                  ),
+                  'CommandCenterActionFeedbackPanel',
+              )
+            : [];
+        const actionFeedbackCalls = webSocketActionFeedbackCalls.length > 0
+            ? [
+                  ...webSocketActionFeedbackCalls,
+                  ...rtcRealtimeActionFeedbackCalls,
+                  ...appActionFeedbackCalls,
+              ]
+            : rtcRealtimeActionFeedbackCalls.length > 0
             ? [
                   appActionFeedbackCalls[0],
                   ...rtcRealtimeActionFeedbackCalls,
@@ -11716,12 +11735,23 @@ describe('rallar-black-box app source ownership', () => {
             appAst,
             'WebSocketCommandCenterPanel',
         );
+        const panelStatements = [...panel.body!.statements];
+        const panelReturnIndex = panelStatements.findIndex(ts.isReturnStatement);
         expect.soft(
-            task9aAstFingerprint([...panel.parameters, panel.body!]),
-            'complete WebSocket panel remains exact in App',
-        ).toBe('f352a7e02092e4bbe3154e9e3f6c3b05ee67969b8ee94c95960f76bc824d6b7f');
+            task9aAstFingerprint(panelStatements.slice(0, panelReturnIndex)),
+            'complete WebSocket controller remains exact in App',
+        ).toBe('bcf75bd0511186c44d82c5707643eda26f0ea538061fb18fe575ecc86630dd50');
+        const viewPath = `${root}/WebSocketCommandCenterView.tsx`;
+        const presentationOwner = existsSync(resolve(repositoryRoot, viewPath))
+            ? task9aNamedFunction(
+                  task9aSourceFile(viewPath, repositorySource(viewPath)),
+                  'WebSocketCommandCenterView',
+              )
+            : panel;
         expect.soft(
-            task9aJsxRuntimeFingerprint(task9aReturnExpression(panel)),
+            task9aJsxRuntimeFingerprint(
+                task9aReturnExpression(presentationOwner),
+            ),
             'complete WebSocket panel JSX remains exact',
         ).toBe('3a61aca27c3848e23c37f55083d850101d8c8effa709f3864e4950690ab80881');
 
@@ -11750,6 +11780,566 @@ describe('rallar-black-box app source ownership', () => {
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
                 .digest('hex'),
             'WebSocket support extraction leaves complete stylesheet unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
+    it('extracts the exact WebSocket command-center presentation behind its App-local controller', () => {
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const root =
+            'apps/rallar-black-box/src/legacy/diagnostics/websocket';
+        const contractPath = `${root}/websocket-view-contracts.ts`;
+        const viewPath = `${root}/WebSocketCommandCenterView.tsx`;
+        const contractPresent = existsSync(resolve(repositoryRoot, contractPath));
+        const viewPresent = existsSync(resolve(repositoryRoot, viewPath));
+
+        expect.soft(contractPresent, `${contractPath}: owner exists`).toBe(true);
+        expect.soft(viewPresent, `${viewPath}: owner exists`).toBe(true);
+
+        const expectedContractSource = `
+            import type { CommandCenterActionFeedback } from '../shared/action-feedback.ts';
+            import type {
+                WebSocketCommandCenterValues,
+                WebSocketDiagnostic,
+                WebSocketRoutePreview,
+            } from './websocket-contracts.ts';
+
+            export type WebSocketCommandCenterViewModel = Readonly<{
+                providerMode: 'simulated' | 'browser-rallar';
+                values: WebSocketCommandCenterValues;
+                payloadPresetId: string;
+                localError?: string;
+                busyAction?: string;
+                actionFeedback: CommandCenterActionFeedback;
+                waitStatus: string;
+                ticket?: Readonly<{ expiresAtEpochMs: number }>;
+                subscription?: Readonly<{
+                    label: string;
+                    groupId: string;
+                    subscribedAtEpochMs: number;
+                }>;
+                diagnostics: WebSocketDiagnostic;
+                activePreset: Readonly<{ label: string; description: string }>;
+                canSendViaRallarSignaling: boolean;
+                routePreview: WebSocketRoutePreview;
+                subscriptionStatusLabel: string;
+                subscriptionStatusTone: 'good' | 'muted';
+                receiveStatusText: string;
+                payloadResult: Readonly<
+                    { ok: true } | { ok: false; error: string }
+                >;
+                updateValue<K extends keyof WebSocketCommandCenterValues>(
+                    key: K,
+                    value: WebSocketCommandCenterValues[K],
+                ): void;
+                updateGroupId(groupId: string): void;
+                updateWsScope(
+                    wsScope: WebSocketCommandCenterValues['wsScope'],
+                ): void;
+                selectPayloadPreset(presetId: string): void;
+                configure(): Promise<void>;
+                open(url?: string): Promise<void>;
+                send(): Promise<void>;
+                close(reason?: string): Promise<void>;
+                reconnect(): Promise<void>;
+                cleanup(): Promise<void>;
+                subscribeWs(): Promise<void>;
+                unsubscribeWs(): void;
+                createTicket(): Promise<void>;
+                waitForMessage(): Promise<void>;
+                waitForRallarWsOpen(): Promise<void>;
+                copyDiagnostics(): void;
+                copyRecipe(includeRtcParity: boolean): void;
+                openMissingTicket(): Promise<void>;
+            }>;
+        `;
+        const expectedContractAst = task9aSourceFile(
+            'expected-websocket-view-contracts.ts',
+            expectedContractSource,
+        );
+        const contractSource = contractPresent
+            ? repositorySource(contractPath)
+            : expectedContractSource;
+        const contractAst = task9aSourceFile(contractPath, contractSource);
+        if (contractPresent) {
+            expect.soft(
+                contractSource.trimEnd().split(/\r?\n/).length,
+                `${contractPath}: line cap`,
+            ).toBeLessThanOrEqual(120);
+            expect.soft(
+                task9aExportSeams(contractAst),
+                `${contractPath}: exact export`,
+            ).toEqual(['type:WebSocketCommandCenterViewModel']);
+            expect.soft(
+                task9aImportEdges(contractAst),
+                `${contractPath}: complete exact imports`,
+            ).toEqual([
+                '../shared/action-feedback.ts|type:CommandCenterActionFeedback',
+                './websocket-contracts.ts|type:WebSocketCommandCenterValues,type:WebSocketDiagnostic,type:WebSocketRoutePreview',
+            ]);
+            expect.soft(
+                contractAst.statements.flatMap((statement) =>
+                    ts.isImportDeclaration(statement)
+                        ? []
+                        : ts.isTypeAliasDeclaration(statement)
+                          ? [`type:${statement.name.text}`]
+                          : [`unexpected:${ts.SyntaxKind[statement.kind]}`],
+                ),
+                `${contractPath}: exact top-level inventory`,
+            ).toEqual(['type:WebSocketCommandCenterViewModel']);
+            expect.soft(
+                contractSource,
+                `${contractPath}: no reverse/App/CSS/barrel edge`,
+            ).not.toMatch(
+                /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"])/,
+            );
+        }
+        const namedType = (
+            sourceFile: ts.SourceFile,
+            name: string,
+        ): ts.TypeAliasDeclaration => {
+            const declaration = sourceFile.statements.find(
+                (statement): statement is ts.TypeAliasDeclaration =>
+                    ts.isTypeAliasDeclaration(statement) &&
+                    statement.name.text === name,
+            );
+            if (!declaration) throw new Error(`Missing type ${name}`);
+            return declaration;
+        };
+        const contract = namedType(
+            contractAst,
+            'WebSocketCommandCenterViewModel',
+        );
+        const expectedContract = namedType(
+            expectedContractAst,
+            'WebSocketCommandCenterViewModel',
+        );
+        expect.soft(
+            task9aAstFingerprint([contract.name, contract.type]),
+            'exact narrow WebSocket View model contract',
+        ).toBe(task9aAstFingerprint([
+            expectedContract.name,
+            expectedContract.type,
+        ]));
+
+        const controller = task9aNamedFunction(
+            appAst,
+            'WebSocketCommandCenterPanel',
+        );
+        const controllerParameter = controller.parameters[0];
+        const controllerInputKeys = controllerParameter &&
+                ts.isObjectBindingPattern(controllerParameter.name)
+            ? controllerParameter.name.elements.map((element) =>
+                  element.name.getText(appAst)
+              )
+            : [];
+        expect.soft(
+            controllerInputKeys,
+            'exact seven WebSocket controller inputs including unused contract',
+        ).toEqual([
+            'state',
+            'bootstrap',
+            'authSession',
+            'globalValues',
+            'browserStatus',
+            'busy',
+            'onSelectCommand',
+        ]);
+        expect.soft(
+            controllerParameter
+                ? task9aAstFingerprint([
+                      controllerParameter.name,
+                      controllerParameter.type!,
+                  ])
+                : '',
+            'exact WebSocket controller input contract',
+        ).toBe('febb5d54f5c25cf9bf8107aaeb4a1a972131218033ea88cd590513c23bcd2623');
+        const controllerStatements = [...controller.body!.statements];
+        const controllerReturnIndex = controllerStatements.findIndex(
+            ts.isReturnStatement,
+        );
+        expect.soft(
+            controllerReturnIndex,
+            'WebSocket controller has one final return',
+        ).toBe(controllerStatements.length - 1);
+        const controllerPreReturn = controllerStatements.slice(
+            0,
+            controllerReturnIndex,
+        );
+        expect.soft(
+            controllerPreReturn,
+            'exact WebSocket controller statement count',
+        ).toHaveLength(50);
+        expect.soft(
+            task9aAstFingerprint(controllerPreReturn),
+            'token-complete WebSocket controller before presentation return',
+        ).toBe('bcf75bd0511186c44d82c5707643eda26f0ea538061fb18fe575ecc86630dd50');
+
+        const hookCounts = new Map<string, number>();
+        const effects: ts.CallExpression[] = [];
+        const visitControllerHooks = (node: ts.Node): void => {
+            if (
+                ts.isCallExpression(node) &&
+                ts.isIdentifier(node.expression) &&
+                /^use[A-Z]/.test(node.expression.text)
+            ) {
+                hookCounts.set(
+                    node.expression.text,
+                    (hookCounts.get(node.expression.text) ?? 0) + 1,
+                );
+                if (node.expression.text === 'useEffect') effects.push(node);
+            }
+            ts.forEachChild(node, visitControllerHooks);
+        };
+        controllerPreReturn.forEach(visitControllerHooks);
+        expect.soft(
+            Object.fromEntries(hookCounts),
+            'exact WebSocket controller hook topology',
+        ).toEqual({ useState: 9, useRef: 3, useMemo: 4, useEffect: 4 });
+        expect.soft(
+            effects.map((effect) => task9aAstFingerprint([effect])),
+            'exact WebSocket effects, cleanup ordering, and dependencies',
+        ).toEqual([
+            'a3a2fe6ded7bb0a58007211b2e19dfa4be34b223d50f1359e949666b75c1b661',
+            '8608019c4e735347a2a63442191239d646805b44a9559348e3d4efaa187758c2',
+            '84d1bca6b362086eaf6d738ea07e8b67f367b6d90ac28e15f19b64bca45b3603',
+            '79d98af6bfe68f22f0ada94dbd0e32f7774400767268ae6bd12346d401e2d324',
+        ]);
+        const controllerDeclarations = new Map<string, ts.VariableStatement>();
+        for (const statement of controllerPreReturn) {
+            if (!ts.isVariableStatement(statement)) continue;
+            for (const declaration of statement.declarationList.declarations) {
+                if (ts.isIdentifier(declaration.name)) {
+                    controllerDeclarations.set(declaration.name.text, statement);
+                }
+            }
+        }
+        for (const [name, expectedHash] of [
+            ['updateValue', 'cb494790432c0e4354a0ed67bb5c1f5fe2d6c65034f89683d7198c95c1969ad0'],
+            ['updateGroupId', '58094382d2e6c100a21083eca292b3cbf0bfd460b3e5a20f7b40615e19890226'],
+            ['updateWsScope', '27d92233c0b5dd8584e0e38441acdfd30d35e6aacc1a8a5a746b325588caece7'],
+            ['selectPayloadPreset', '976ec0ed360db91bea704f7884cd4b925e194836ddf4cafb706b9a233158ffe7'],
+            ['directContext', 'df633a6b2fcf222af79661907ad463c6e9e803300287783aebbef6dc1e9339a7'],
+            ['recordWebSocketEvent', '0e37b4d12451278c52b8859556fb5fb6ca87fffe29c22155df1e8d724c56253c'],
+            ['recordDirectResult', '5f627ee584eb57c866f3364bf7f4cd3d0b3d76ea8391f3798b0ac10852d23f41'],
+            ['configure', 'd26016766f12461bdb6a385049eb8ddd528264d7afbca03cd25098baf74a5185'],
+            ['requestWsTicket', '13f445003dd40717d98a5db2effc5c092441faaf83f5c08e6207f8ef43fe01ea'],
+            ['open', '486c0b30d818c579ba64f55401c38c5268a693fb438a1db6fef68a1097671c24'],
+            ['send', '5f31b2c7d43498066c73c029f7bfc0f1f19bfe6ef42c2282b80e8789e80eaef6'],
+            ['close', '6727e5e511754954eb6ea498069fcaf8562d2746c0b1de90982449b2ca6d6abf'],
+            ['reconnect', 'f50536b95cf43603e23a51e89140a112f937650382e815bf4f6f51d7ea1671a3'],
+            ['cleanup', 'dc06bfed42ba44aa4b0e3afa279ccf62b7935455c41c7825d92c06f0a581af48'],
+            ['subscribeWs', '5784a2c8e52a05a6754a8cbae1918ceb417391485e07f0756c95071e6a648ee3'],
+            ['unsubscribeWs', 'dbe4239e24abcccebe65012a4d553b1b6507779b8b41d52aa0e616f48e66f6d0'],
+            ['createTicket', 'f1a6ef6b63b883288ae2b3161be64346d8714360330fb2324446a3665f640be4'],
+            ['waitForMessage', 'e5c0b329de39a920aa487179e74d5168c34669796d08248b18e0628a1d08b797'],
+            ['waitForRallarWsOpen', '0ec36f8753f70c59f534b2beaa1c2807bd04781cd61c1c9b1fcf0d2b3aca8b30'],
+            ['copyDiagnostics', '8b021157379cd048b04f97fa8cb3c91fe2d891e51dd5b3851a40170693fd3cb4'],
+            ['copyRecipe', 'e139fe44c706f9d04c01b39d33bbe38bc72055c48e7db5ea73002a5b0366bd0b'],
+            ['openMissingTicket', 'f0c2dc55153af53ca0c915537e824ca084a4f82ba171f245a4c906a46e86baa3'],
+        ] as const) {
+            const statement = controllerDeclarations.get(name);
+            expect.soft(
+                statement ? task9aAstFingerprint([statement]) : '',
+                `${name}: exact WebSocket controller action`,
+            ).toBe(expectedHash);
+        }
+
+        const modelKeys = [
+            'providerMode', 'values', 'payloadPresetId', 'localError',
+            'busyAction', 'actionFeedback', 'waitStatus', 'ticket',
+            'subscription', 'diagnostics', 'activePreset',
+            'canSendViaRallarSignaling', 'routePreview',
+            'subscriptionStatusLabel', 'subscriptionStatusTone',
+            'receiveStatusText', 'payloadResult', 'updateValue',
+            'updateGroupId', 'updateWsScope', 'selectPayloadPreset',
+            'configure', 'open', 'send', 'close', 'reconnect', 'cleanup',
+            'subscribeWs', 'unsubscribeWs', 'createTicket',
+            'waitForMessage', 'waitForRallarWsOpen', 'copyDiagnostics',
+            'copyRecipe', 'openMissingTicket',
+        ] as const;
+        const legacyReturn = task9aReturnExpression(controller);
+        const fallbackViewSource = `
+            function WebSocketCommandCenterView({
+                state, authSession, browserStatus, busy, model,
+            }: {
+                state: RallarBlackBoxTestState;
+                authSession?: AuthSession;
+                browserStatus: RallarBrowserStatusSummary;
+                busy: boolean;
+                model: WebSocketCommandCenterViewModel;
+            }) {
+                const { ${modelKeys.join(', ')} } = model;
+                return (${legacyReturn.getText(appAst)});
+            }
+        `;
+        const viewSource = viewPresent
+            ? repositorySource(viewPath)
+            : fallbackViewSource;
+        const viewAst = task9aSourceFile(viewPath, viewSource);
+        const view = task9aNamedFunction(
+            viewAst,
+            'WebSocketCommandCenterView',
+        );
+        if (viewPresent) {
+            expect.soft(
+                viewSource.trimEnd().split(/\r?\n/).length,
+                `${viewPath}: line cap`,
+            ).toBeLessThanOrEqual(700);
+            expect.soft(
+                task9aExportSeams(viewAst),
+                `${viewPath}: exact export`,
+            ).toEqual(['value:WebSocketCommandCenterView']);
+            expect.soft(
+                task9aImportEdges(viewAst),
+                `${viewPath}: complete exact imports`,
+            ).toEqual([
+                '@shared/api/api-config.ts|type:AuthSession',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                '../../shared/CollapsiblePanelSection.tsx|value:CollapsiblePanelSection',
+                '../../shared/Metric.tsx|value:Metric',
+                '../../shared/redaction-presentation.ts|value:redactedJson',
+                '../../shared/time-format.ts|value:formatTime',
+                '../../shell/rallar-browser-status.ts|type:RallarBrowserStatusSummary',
+                '../shared/CommandCenterActionFeedbackPanel.tsx|value:CommandCenterActionFeedbackPanel',
+                './websocket-contracts.ts|type:WebSocketCommandCenterValues',
+                './websocket-presets.ts|value:WEBSOCKET_PAYLOAD_PRESETS',
+                './websocket-routing.ts|value:defaultWebSocketApiUrl',
+                './websocket-view-contracts.ts|type:WebSocketCommandCenterViewModel',
+            ].sort());
+            expect.soft(
+                viewAst.statements.flatMap((statement) =>
+                    ts.isImportDeclaration(statement)
+                        ? []
+                        : ts.isFunctionDeclaration(statement)
+                          ? [`function:${statement.name?.text ?? '<anonymous>'}`]
+                          : [`unexpected:${ts.SyntaxKind[statement.kind]}`],
+                ),
+                `${viewPath}: exact top-level inventory`,
+            ).toEqual(['function:WebSocketCommandCenterView']);
+            expect.soft(
+                viewSource,
+                `${viewPath}: no reverse/App/CSS/barrel edge`,
+            ).not.toMatch(
+                /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"])/,
+            );
+        }
+
+        const expectedView = task9aNamedFunction(
+            task9aSourceFile('expected-websocket-view.tsx', fallbackViewSource),
+            'WebSocketCommandCenterView',
+        );
+        const viewParameter = view.parameters[0];
+        expect.soft(
+            viewParameter && expectedView.parameters[0]
+                ? task9aAstFingerprint([
+                      viewParameter.name,
+                      viewParameter.type!,
+                  ])
+                : '',
+            'exact five-prop WebSocket View contract',
+        ).toBe(task9aAstFingerprint([
+            expectedView.parameters[0]!.name,
+            expectedView.parameters[0]!.type!,
+        ]));
+        const viewParameterKeys = viewParameter &&
+                ts.isObjectBindingPattern(viewParameter.name)
+            ? viewParameter.name.elements.map((element) =>
+                  element.name.getText(viewAst)
+              )
+            : [];
+        expect.soft(viewParameterKeys, 'exact WebSocket View prop order')
+            .toEqual(['state', 'authSession', 'browserStatus', 'busy', 'model']);
+        const viewStatements = [...view.body!.statements];
+        expect.soft(
+            viewStatements,
+            'WebSocket View has one model destructure and one final return',
+        ).toHaveLength(2);
+        expect.soft(
+            viewStatements.findIndex(ts.isReturnStatement),
+            'WebSocket View final return index',
+        ).toBe(1);
+        const modelStatement = viewStatements[0];
+        const modelDeclarations = modelStatement &&
+                ts.isVariableStatement(modelStatement)
+            ? [...modelStatement.declarationList.declarations]
+            : [];
+        expect.soft(
+            modelDeclarations,
+            'WebSocket View has one safe model declaration',
+        ).toHaveLength(1);
+        const modelDeclaration = modelDeclarations[0];
+        expect.soft(
+            modelDeclaration?.initializer?.getText(viewAst) ?? '',
+            'WebSocket View destructures only its model',
+        ).toBe('model');
+        const viewModelKeys = modelDeclaration &&
+                ts.isObjectBindingPattern(modelDeclaration.name)
+            ? modelDeclaration.name.elements.map((element) =>
+                  element.name.getText(viewAst)
+              )
+            : [];
+        expect.soft(viewModelKeys, 'exact WebSocket View model order')
+            .toEqual(modelKeys);
+        const unsafeViewBindings = modelDeclaration &&
+                ts.isObjectBindingPattern(modelDeclaration.name)
+            ? modelDeclaration.name.elements.filter((element) =>
+                  Boolean(
+                      element.propertyName ||
+                      element.initializer ||
+                      element.dotDotDotToken,
+                  )
+              )
+            : [];
+        expect.soft(
+            unsafeViewBindings,
+            'WebSocket View model has no aliases, defaults, or rest escape',
+        ).toEqual([]);
+        const forbiddenViewOperations: string[] = [];
+        const forbiddenViewNames = new Set([
+            'fetch', 'XMLHttpRequest', 'WebSocket', 'navigator',
+            'localStorage', 'sessionStorage', 'rallarBlackBoxRuntimeStore',
+            'loadBrowserRallarFacade',
+        ]);
+        const visitViewSafety = (node: ts.Node): void => {
+            if (ts.isIdentifier(node)) {
+                if (forbiddenViewNames.has(node.text)) {
+                    forbiddenViewOperations.push(node.text);
+                }
+                if (
+                    ts.isCallExpression(node.parent) &&
+                    node.parent.expression === node &&
+                    /^use[A-Z]/.test(node.text)
+                ) {
+                    forbiddenViewOperations.push(node.text);
+                }
+            }
+            ts.forEachChild(node, visitViewSafety);
+        };
+        visitViewSafety(view);
+        expect.soft(
+            forbiddenViewOperations,
+            'WebSocket View is hook/network/store/storage/facade free',
+        ).toEqual([]);
+        expect.soft(
+            task9aAstFingerprint([task9aReturnExpression(view)]),
+            'WebSocket View owns exact legacy JSX AST',
+        ).toBe('0b5143759bc1bf4efa30c220efc519e3462ba72ddd093ffd6ba62ee7768bfaef');
+        expect.soft(
+            task9aJsxRuntimeFingerprint(task9aReturnExpression(view)),
+            'WebSocket View owns exact legacy compiled JSX',
+        ).toBe('3a61aca27c3848e23c37f55083d850101d8c8effa709f3864e4950690ab80881');
+
+        const appImports = task9aImportEdges(appAst).filter((edge) =>
+            edge.startsWith(
+                './legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx|',
+            ),
+        );
+        expect.soft(
+            appImports,
+            'one exact direct App WebSocket View import',
+        ).toEqual([
+            './legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx|value:WebSocketCommandCenterView',
+        ]);
+        const viewCalls = task9aJsxCalls(
+            controller,
+            'WebSocketCommandCenterView',
+        );
+        expect.soft(
+            viewCalls,
+            'App-local WebSocket controller replaces inline JSX with one direct View',
+        ).toHaveLength(1);
+        const viewCall = viewCalls[0];
+        if (viewCall) {
+            expect.soft(
+                task9aReturnExpression(controller),
+                'WebSocket controller returns the View directly',
+            ).toBe(viewCall);
+            expect.soft(
+                viewCall.attributes.properties.map((property) =>
+                    ts.isJsxAttribute(property)
+                        ? property.name.getText(appAst)
+                        : 'spread'
+                ),
+                'exact WebSocket View call prop order',
+            ).toEqual(['state', 'authSession', 'browserStatus', 'busy', 'model']);
+            for (const name of [
+                'state', 'authSession', 'browserStatus', 'busy',
+            ] as const) {
+                const attribute = viewCall.attributes.properties.find(
+                    (property): property is ts.JsxAttribute =>
+                        ts.isJsxAttribute(property) &&
+                        property.name.getText(appAst) === name,
+                );
+                const expression = attribute?.initializer &&
+                        ts.isJsxExpression(attribute.initializer)
+                    ? attribute.initializer.expression
+                    : undefined;
+                expect.soft(
+                    expression && ts.isIdentifier(expression)
+                        ? expression.text
+                        : '',
+                    `exact WebSocket View ${name} forwarding`,
+                ).toBe(name);
+            }
+            const modelAttribute = viewCall.attributes.properties.find(
+                (property): property is ts.JsxAttribute =>
+                    ts.isJsxAttribute(property) &&
+                    property.name.getText(appAst) === 'model',
+            );
+            const model = modelAttribute?.initializer &&
+                    ts.isJsxExpression(modelAttribute.initializer)
+                ? modelAttribute.initializer.expression
+                : undefined;
+            expect.soft(
+                model && ts.isObjectLiteralExpression(model),
+                'WebSocket View receives one explicit model object',
+            ).toBe(true);
+            if (model && ts.isObjectLiteralExpression(model)) {
+                expect.soft(
+                    model.properties.map((property) =>
+                        property.name?.getText(appAst)
+                    ),
+                    'exact WebSocket View model key order',
+                ).toEqual(modelKeys);
+                expect.soft(
+                    model.properties.map((property) =>
+                        ts.isShorthandPropertyAssignment(property)
+                            ? property.name.text
+                            : 'not-shorthand'
+                    ),
+                    'every WebSocket View model field is matching shorthand',
+                ).toEqual(modelKeys);
+            }
+        }
+
+        expect.soft(
+            appSource,
+            'App does not declare the WebSocket View or ViewModel',
+        ).not.toMatch(
+            /^\s*(?:type\s+WebSocketCommandCenterViewModel\b|function\s+WebSocketCommandCenterView\b)/m,
+        );
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'WebSocketCommandCenterPanel');
+        expect.soft(mounts, 'one unconditional hidden-tab WebSocket controller')
+            .toHaveLength(1);
+        expect.soft(task9aAstFingerprint(mounts), 'exact WebSocket App mount')
+            .toBe('023a6a866bf37b3d17c915c257a712cfd5ae97703920339eae6159a5bc7b6b17');
+        let ancestor: ts.Node | undefined = mounts[0];
+        while (ancestor && !ts.isJsxElement(ancestor)) ancestor = ancestor.parent;
+        expect.soft(
+            ancestor ? task9aAstFingerprint([ancestor]) : '',
+            'exact hidden-capable WebSocket ancestor',
+        ).toBe('9f5270848d5ad12d3102e23af1c1029f69dfc37c4178d60cb8c33e388f8f1894');
+        expect.soft(task9aAstFingerprint([app]), 'unchanged App function')
+            .toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(appSource, 'no WebSocket lazy/Suspense cutover')
+            .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'WebSocket presentation extraction leaves stylesheet unchanged',
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
     });
 
