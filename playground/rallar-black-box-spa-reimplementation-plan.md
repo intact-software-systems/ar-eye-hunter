@@ -394,7 +394,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Iteration | Status | Exit tracking |
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
-| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 759 lines through shell-controller M3; pure/share-link ownership and the below-800 checkpoint are satisfied. The broad exit criteria still bind, and focused tab composition plus `LegacyAppShell` remain before this iteration is complete. |
+| 1 — Extract Pure App Helpers | **Complete** | Behavior-preserving helper, presentation, controller, and shell-composition slices reduce `App.tsx` from 28,265 to 234 lines. `App` now owns runtime/bootstrap, auth gates, shared shell controllers, and experience composition only; `LegacyAppShell` delegates the exact tab tree to six bounded hook-free groups. The exit evidence below passed without a hide, cutover, route, public-export, control-contract, or stylesheet change. |
 | 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
@@ -814,6 +814,58 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   This is not the Iteration 1 exit: App still imports every feature panel and
   owns the complete 473-line legacy shell/tab JSX; focused tab groups and a
   thin `LegacyAppShell` remain mandatory.
+
+#### Iteration 1 legacy shell composition M4 and exit — `9c173d8` (2026-07-11)
+
+- `App.tsx` is now 234 lines and imports no feature panel. It retains the
+  runtime/bootstrap subscription, the three auth gates/effects, shared
+  navigation/global-context/runner-shell controllers, and one
+  `LegacyAppShell` experience mount. The explicit module-boundary note still
+  prevents Recipe Console feature work from returning to App.
+- The exact legacy chrome and tab tree now live in the 119-line
+  `LegacyAppShell`, the 49-line diagnostics drawer, a 28-line type-only shell
+  contract, and six hook-free tab groups of 52–179 lines. The 24 section IDs,
+  render order, ARIA links, six active-only guards, Topology activity signal,
+  panel props, and 18 hidden-mounted lifetimes remain exact. No replacement
+  registry, aggregate controller, global stylesheet, or shell monolith was
+  introduced.
+- Tests-first composition work began with the intended missing-owner/App
+  failures. The documented Iteration 1 command passed 82/82; the complete
+  `packages/tests/rallar-black-box` run passed 392/392 across 50 files;
+  typecheck and the 396-module production build passed. The existing default
+  chunk warning remains (`index` 1,264.61 kB minified) and is owned by the
+  Iteration 2 separate-experience chunk proof.
+- The strict AST gate locks exact imports and type/value kinds, top-level
+  inventories, the acyclic App-to-shell DAG, direct group and section order,
+  all hidden expressions, exact guarded subtrees, unconditional lifetimes,
+  direct fragment children, App/auth topology, and the byte-identical legacy
+  stylesheet. Six controlled mutation scenarios caught a group reorder, a
+  composition cycle, a conditional stateful unmount, a DOM wrapper, corrupted
+  Recipes/Topology guards, and an incorrect hidden expression; every mutation
+  was restored before final verification. Two independent final reviews found
+  no production or test-quality issue.
+- Focused Chromium passed 28/28 URL/default/deep-link, operational,
+  persistence, fresh-session, and one-time-ticket scenarios; the mobile
+  portrait suite passed 1/1. Browser QA at 932x430 found zero document
+  overflow, all 24 sections connected, and exactly one visible panel.
+  Explicit reduced-motion emulation found no animated/transitioning legacy
+  element, and keyboard selection still routes to the next tab. Its existing
+  failure to transfer focus remains registered Iteration 12 debt.
+- Exhaustive authenticated/live-service shell coverage was skipped and is
+  **not represented as passed** for this exact harness reason: `Set
+  RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+  No legacy surface was hidden, unmounted, cut over, or removed from its old
+  deep link in this exit slice.
+
+| Iteration 1 exit criterion | Code-backed evidence |
+| --- | --- |
+| `App.tsx` is visibly thinner without UI changes | 28,265 → 234 lines; exact App/shell/panel AST and stylesheet locks; 28/28 focused Chromium plus portrait/landscape/reduced-motion QA. |
+| App contains bootstrap/provider/experience routing only and declares no feature panel | Exact import/top-level inventory permits runtime, auth, controllers, login, and `LegacyAppShell` only; the App line cap is 280 and current size is 234. |
+| No new Recipe Console panel may be added directly to App | The module-boundary comment remains in `App.tsx`, and the structure/composition gates reject feature imports or declarations. |
+| Extracted helpers have direct or existing coverage | Pure models/share-link helpers, controller seams, presentation helpers, and shell owners are covered by the focused structure/behavior tests and the 392/392 complete app run. |
+| Existing runner and distributed recipe tests pass | `distributed-recipes.test.ts` passed 36/36 and `control-run-manager.test.ts` passed 5/5 inside the exact 82/82 Iteration 1 command. |
+| Structure gates reject legacy imports from Recipe Console and new App feature ownership | `app-structure.test.ts` passed 41/41 and retains its Recipe Console-to-legacy ban, App feature declaration/import ban, lazy-boundary checks, and exact owner DAG. |
 
 #### Remaining risks and evidence ownership
 
