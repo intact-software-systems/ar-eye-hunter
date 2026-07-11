@@ -16,6 +16,10 @@ const runnerAgentActionsSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/recipes/runner-agent-launch-actions.ts',
     import.meta.url,
 );
+const runnerDistributedAnalysisSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerDistributedAnalysisSection.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -197,19 +201,23 @@ describe('rallar-black-box Rallar mode boundary', () => {
             ),
         ].join('\n');
         const runsPanel = sourceBetween(source, 'function RunnerRunsPanel', 'function RunnerFleetPanel');
+        const runsDistributedView = sourceOrFallback(
+            runnerDistributedAnalysisSourcePath,
+            runsPanel,
+        );
         const fleetPanel = sourceBetween(source, 'function RunnerFleetPanel', 'function FleetTimingGroupList');
         const rtcDiagnosticsPanel = sourceBetween(source, 'function RtcDiagnosticsPanel', 'function TopologyGraphPanel');
 
         expect(runsPanel).toContain('RunVerdictPanel');
         expect(runsPanel).toContain('CausalTrailPanel');
         expect(runsPanel).toContain('RtcPerformancePanel');
-        expect(runsPanel).toContain('title="Run Participants"');
+        expect(runsDistributedView).toContain('title="Run Participants"');
         expect(runsPanel).toContain('monitorAgentProgress: selectedMonitor?.agentProgress');
         expect(runsPanel).toContain('distributedRunSeed');
-        expect(runsPanel).toContain('DISTRIBUTED_RUN_SEEDS');
-        expect(runsPanel).toContain('Synthetic seed');
-        expect(runsPanel).toContain('Synthetic evidence');
-        expect(runsPanel).toContain('Clear seed');
+        expect(runsDistributedView).toContain('DISTRIBUTED_RUN_SEEDS');
+        expect(runsDistributedView).toContain('Synthetic seed');
+        expect(runsDistributedView).toContain('Synthetic evidence');
+        expect(runsDistributedView).toContain('Clear seed');
         expect(fleetPanel).toContain('Live Fleet');
         expect(fleetPanel).toContain('title="Live Fleet Agents"');
         expect(fleetPanel).toContain('fetchControlServerSnapshot');
@@ -231,7 +239,16 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(launchUrlPosition).toBeGreaterThanOrEqual(0);
         expect(distributedControlTokenPosition).toBeGreaterThanOrEqual(0);
         expect(launchUrlPosition).toBeLessThan(distributedControlTokenPosition);
-        expect(runsPanel.indexOf('RunVerdictPanel')).toBeLessThan(runsPanel.indexOf('runner-distributed-analysis'));
+        expect(runsPanel.indexOf('RunVerdictPanel')).toBeLessThan(
+            runsPanel.indexOf(
+                existsSync(runnerDistributedAnalysisSourcePath)
+                    ? '<RunnerDistributedAnalysisSection'
+                    : 'runner-distributed-analysis',
+            ),
+        );
+        expect(runsDistributedView.indexOf('Synthetic seed')).toBeLessThan(
+            runsDistributedView.indexOf('title="Run Participants"'),
+        );
         expect(runsPanel).toContain('selectedMonitor');
         expect(runsPanel).toContain('distributedMonitor: selectedMonitor');
         expect(recipesPanel.indexOf('runner-quick-launch-strip')).toBeLessThan(

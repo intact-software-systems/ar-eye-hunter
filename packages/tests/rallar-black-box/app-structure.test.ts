@@ -103,14 +103,16 @@ const runAnalysisModules = [
     },
     {
         path: 'apps/rallar-black-box/src/legacy/runner/runs/DistributedRunAnalysisReportPanel.tsx',
-        moduleImport:
-            './legacy/runner/runs/DistributedRunAnalysisReportPanel.tsx',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/runner/runs/RunnerDistributedAnalysisSection.tsx',
+        moduleImport: './DistributedRunAnalysisReportPanel.tsx',
         seams: ['DistributedRunAnalysisReportPanel'],
     },
     {
         path: 'apps/rallar-black-box/src/legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx',
-        moduleImport:
-            './legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx',
+        importerPath:
+            'apps/rallar-black-box/src/legacy/runner/runs/RunnerDistributedAnalysisSection.tsx',
+        moduleImport: './ImportedDistributedArtifactAnalysisPanel.tsx',
         seams: ['ImportedDistributedArtifactAnalysisPanel'],
     },
     {
@@ -627,11 +629,18 @@ describe('rallar-black-box app source ownership', () => {
                 runAnalysisModule.path,
             ).toBe(true);
 
+            const importerPath =
+                'importerPath' in runAnalysisModule
+                    ? runAnalysisModule.importerPath
+                    : appSourcePath;
+            const importerSource = existsSync(resolve(repositoryRoot, importerPath))
+                ? repositorySource(importerPath)
+                : '';
             const escapedModuleImport = runAnalysisModule.moduleImport.replace(
                 /[.*+?^${}()|[\]\\]/g,
                 '\\$&',
             );
-            const importedSeams = source.match(
+            const importedSeams = importerSource.match(
                 new RegExp(
                     `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
                 ),
@@ -1934,23 +1943,23 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: monitorPath,
-                importerPath: appSourcePath,
-                moduleImport:
-                    './legacy/runner/distributed/DistributedRunMonitorPanel.tsx',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/runner/runs/RunnerDistributedAnalysisSection.tsx',
+                moduleImport: '../distributed/DistributedRunMonitorPanel.tsx',
                 seams: ['DistributedRunMonitorPanel'],
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunComparePanel.tsx',
-                importerPath: appSourcePath,
-                moduleImport:
-                    './legacy/runner/distributed/DistributedRunComparePanel.tsx',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/runner/runs/RunnerDistributedAnalysisSection.tsx',
+                moduleImport: '../distributed/DistributedRunComparePanel.tsx',
                 seams: ['DistributedRunComparePanel'],
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed/DistributedRunSummary.tsx',
-                importerPath: appSourcePath,
-                moduleImport:
-                    './legacy/runner/distributed/DistributedRunSummary.tsx',
+                importerPath:
+                    'apps/rallar-black-box/src/legacy/runner/runs/RunnerDistributedAnalysisSection.tsx',
+                moduleImport: '../distributed/DistributedRunSummary.tsx',
                 seams: ['DistributedRunSummary'],
             },
         ] as const;
@@ -5798,6 +5807,548 @@ describe('rallar-black-box app source ownership', () => {
         };
         for (const owner of owners) visit(owner.path);
         expect(cycles, 'Task 9B recursive owner import cycles').toEqual([]);
+    });
+
+    it('extracts exact controlled Runs views while preserving the App controller', () => {
+        const appSource = repositorySource(appSourcePath);
+        const runsRoot = 'apps/rallar-black-box/src/legacy/runner/runs';
+        const constantsPath = `${runsRoot}/runner-runs-constants.ts`;
+        const distributedViewPath =
+            `${runsRoot}/RunnerDistributedAnalysisSection.tsx`;
+        const localViewPath = `${runsRoot}/RunnerLocalRunsSection.tsx`;
+        const owners = [
+            {
+                path: constantsPath,
+                lineCap: 20,
+                declarations: [
+                    /^export const DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS\s*=/m,
+                    /^export const RUNNER_DISTRIBUTED_POLL_MS\s*=\s*1_000;/m,
+                ],
+            },
+            {
+                path: distributedViewPath,
+                lineCap: 300,
+                declarations: [
+                    /^export function RunnerDistributedAnalysisSection\(/m,
+                ],
+            },
+            {
+                path: localViewPath,
+                lineCap: 140,
+                declarations: [
+                    /^export function RunnerLocalRunsSection\(/m,
+                ],
+            },
+        ] as const;
+        const sources = new Map<string, string>();
+        for (const owner of owners) {
+            const exists = existsSync(resolve(repositoryRoot, owner.path));
+            const source = exists ? repositorySource(owner.path) : '';
+            sources.set(owner.path, source);
+            expect.soft(exists, `${owner.path}: exists`).toBe(true);
+            expect.soft(
+                source === '' ? 0 : source.trimEnd().split(/\r?\n/).length,
+                `${owner.path}: line cap`,
+            ).toBeLessThanOrEqual(owner.lineCap);
+            for (const declaration of owner.declarations) {
+                expect.soft(source, `${owner.path}: ${declaration.source}`).toMatch(
+                    declaration,
+                );
+            }
+            expect.soft(source, `${owner.path}: no App import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/,
+            );
+            expect.soft(source, `${owner.path}: no CSS import`).not.toMatch(
+                /\b(?:from\s+|import\s*)['"][^'"]+\.css['"]/,
+            );
+        }
+
+        const constantsSource = sources.get(constantsPath) ?? '';
+        const distributedView = sources.get(distributedViewPath) ?? '';
+        const localView = sources.get(localViewPath) ?? '';
+        expect.soft(appSource, 'Runs constants leave App').not.toMatch(
+            /^const (?:DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS|RUNNER_DISTRIBUTED_POLL_MS)\s*=/m,
+        );
+        expect.soft(appSource, 'distributed Runs subtree leaves App').not.toContain(
+            '<section className="runner-distributed-analysis">',
+        );
+        expect.soft(appSource, 'local Runs summary leaves App').not.toContain(
+            '<div className="runner-runs-summary-grid">',
+        );
+        expect.soft(appSource, 'local Runs layout leaves App').not.toContain(
+            '<div className="runner-runs-layout">',
+        );
+        expect.soft(appSource, 'RunnerRunsPanel stays App-local').toMatch(
+            /^function RunnerRunsPanel\(/m,
+        );
+
+        const constantsAst = task9aSourceFile(constantsPath, constantsSource);
+        const constantInitializers = new Map<string, ts.Expression>();
+        for (const statement of constantsAst.statements) {
+            if (!ts.isVariableStatement(statement)) continue;
+            for (const declaration of statement.declarationList.declarations) {
+                if (ts.isIdentifier(declaration.name) && declaration.initializer) {
+                    constantInitializers.set(
+                        declaration.name.text,
+                        declaration.initializer,
+                    );
+                }
+            }
+        }
+        for (const [name, expectedFingerprint] of [
+            [
+                'DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS',
+                'e29f8421696115ccb1d6c1b04f23bd459a7bb3618f02add9cb40ef944c73900e',
+            ],
+            [
+                'RUNNER_DISTRIBUTED_POLL_MS',
+                'd1a53fb2a9a3a2254e9e3d56c6c6388bb848c936bb48444b7acb7c4b4bb6e9ab',
+            ],
+        ] as const) {
+            const initializer = constantInitializers.get(name);
+            expect.soft(
+                initializer ? task9aAstFingerprint([initializer]) : '',
+                `${name}: exact initializer AST`,
+            ).toBe(expectedFingerprint);
+        }
+
+        const expectedImports = new Map<string, readonly string[]>([
+            [constantsPath, []],
+            [
+                distributedViewPath,
+                [
+                    '../../../control-agent-board.ts|type:ControlAgentBoardRow,type:ControlAgentBoardSummary',
+                    '../../../control-run-manager.ts|type:ControlDistributedRunArtifactBundle,type:ControlDistributedRunSnapshot',
+                    '../../../distributed-recipes.ts|type:DistributedRunAnalysisReport,type:DistributedRunCompareSummary,type:DistributedRunMonitor,value:distributedRecipeStateTone',
+                    '../../../distributed-run-seeds.ts|type:DistributedRunSeedId,type:SyntheticDistributedRunSeed,value:DISTRIBUTED_RUN_SEEDS',
+                    '../../shared/time-format.ts|value:formatTime',
+                    '../agents/ControlAgentBoardPanel.tsx|value:ControlAgentBoardPanel',
+                    '../distributed/DistributedRunComparePanel.tsx|value:DistributedRunComparePanel',
+                    '../distributed/DistributedRunMonitorPanel.tsx|value:DistributedRunMonitorPanel',
+                    '../distributed/DistributedRunSummary.tsx|value:DistributedRunSummary',
+                    './DistributedRunAnalysisReportPanel.tsx|value:DistributedRunAnalysisReportPanel',
+                    './ImportedDistributedArtifactAnalysisPanel.tsx|value:ImportedDistributedArtifactAnalysisPanel',
+                    './distributed-artifact-import.ts|type:DistributedArtifactImportStatus',
+                    '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts|type:DistributedRunAnalysis',
+                    'react|type:ChangeEvent',
+                ],
+            ],
+            [
+                localViewPath,
+                [
+                    '../../../control-client.ts|type:RallarBlackBoxControlSnapshot',
+                    '../../shared/Metric.tsx|value:Metric',
+                    '../../shared/command-presentation.ts|value:statusTone',
+                    '../../shared/time-format.ts|value:formatTime',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestResult,type:RallarBlackBoxTestRuntimeStatus,type:RallarBlackBoxTestStatsSnapshot',
+                    'react|type:ReactNode',
+                ],
+            ],
+        ]);
+        for (const [path, imports] of expectedImports) {
+            expect.soft(
+                task9aImportEdges(
+                    task9aSourceFile(path, sources.get(path) ?? ''),
+                ),
+                `${path}: exact imports/kinds/edges`,
+            ).toEqual([...imports].sort());
+        }
+        const expectedExports = new Map<string, readonly string[]>([
+            [
+                constantsPath,
+                [
+                    'value:DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS',
+                    'value:RUNNER_DISTRIBUTED_POLL_MS',
+                ],
+            ],
+            [
+                distributedViewPath,
+                ['value:RunnerDistributedAnalysisSection'],
+            ],
+            [localViewPath, ['value:RunnerLocalRunsSection']],
+        ]);
+        for (const [path, exports] of expectedExports) {
+            expect.soft(
+                task9aExportSeams(
+                    task9aSourceFile(path, sources.get(path) ?? ''),
+                ),
+                `${path}: exact exports`,
+            ).toEqual(exports);
+        }
+
+        const bannedViewRuntime =
+            /\b(?:useState|useMemo|useEffect|useRef|useCallback|fetch|setInterval|clearInterval|analyzeDistributedRunArtifactFiles|distributedArtifactSnapshotsFromFiles|distributedArtifactBundleFromFiles|readDistributedRunSeedFromUrl|writeDistributedRunSeedToUrl|rallarBlackBoxRuntimeStore|localStorage|sessionStorage)\b/;
+        for (const [label, source] of [
+            ['distributed view', distributedView],
+            ['local view', localView],
+        ] as const) {
+            expect.soft(source, `${label}: controlled-only runtime`).not.toMatch(
+                bannedViewRuntime,
+            );
+        }
+
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const controller = task9aNamedFunction(appAst, 'RunnerRunsPanel');
+        const controllerSource = controller.getText(appAst);
+        const stateNames = [
+            ...controllerSource.matchAll(
+                /const \[(\w+),\s*\w+\]\s*=\s*useState/g,
+            ),
+        ].map((match) => match[1]);
+        expect.soft(stateNames, 'Runs exact 17-state order').toEqual([
+            'controlBaseUrl',
+            'controlToken',
+            'controlRunId',
+            'distributedRuns',
+            'selectedDistributedRunId',
+            'selectedDistributedRun',
+            'distributedControlRun',
+            'artifactBundle',
+            'importedArtifactAnalysis',
+            'importedArtifactStatus',
+            'selectedSyntheticSeedId',
+            'activeSyntheticSeed',
+            'distributedBusy',
+            'distributedError',
+            'lastDistributedRefresh',
+            'compareLeftId',
+            'compareRightId',
+        ]);
+        expect.soft(
+            [...controllerSource.matchAll(/const (\w+) = useMemo(?:<|\s*\()/g)]
+                .map((match) => match[1]),
+            'Runs exact 11-memo order',
+        ).toEqual([
+            'initialSyntheticSeed',
+            'selectedMonitor',
+            'runParticipantRows',
+            'runParticipantSummary',
+            'analysisReport',
+            'runVerdict',
+            'rtcDiagnostics',
+            'rtcPerformance',
+            'compareLeftRun',
+            'compareRightRun',
+            'compareSummary',
+        ]);
+        expect.soft(
+            [...controllerSource.matchAll(/const (\w+) = useRef(?:<|\s*\()/g)]
+                .map((match) => match[1]),
+            'Runs exact two-ref order',
+        ).toEqual([
+            'didInitialDistributedRefresh',
+            'activeSyntheticSeedRef',
+        ]);
+        expect.soft(
+            [...controllerSource.matchAll(/\buseEffect\s*\(/g)],
+            'Runs exact effect count',
+        ).toHaveLength(4);
+        expect.soft(
+            [...controllerSource.matchAll(/\buseCallback\s*\(/g)],
+            'Runs no callbacks',
+        ).toHaveLength(0);
+        const returnIndex = controller.body!.statements.findIndex(
+            ts.isReturnStatement,
+        );
+        expect.soft(
+            returnIndex,
+            'Runs controller has one final top-level return',
+        ).toBe(controller.body!.statements.length - 1);
+        expect.soft(
+            task9aAstFingerprint(
+                controller.body!.statements.slice(0, returnIndex),
+            ),
+            'Runs exact token-complete pre-return controller AST',
+        ).toBe(
+            'f0fa38d6a05764e97e09ae1738d5c8e67d8426cf879881ad364db000d16197c7',
+        );
+        const effectCalls = controller.body!.statements.flatMap((statement) =>
+            ts.isExpressionStatement(statement) &&
+            ts.isCallExpression(statement.expression) &&
+            ts.isIdentifier(statement.expression.expression) &&
+            statement.expression.expression.text === 'useEffect'
+                ? [statement.expression]
+                : [],
+        );
+        expect.soft(
+            effectCalls.map((call) => task9aAstFingerprint([call])),
+            'Runs exact effect registration/body/dependency order',
+        ).toEqual([
+            'e499a588e7200c463fd6a29cacaefd64ea1edcc79530576996e7ff4565a98e59',
+            'a04e6d0f649507f3116b16e4d910e77bdf4c7db4d41d7ed081f63ef19d5ad2b7',
+            'f14b8abfc30204050a31d70d5f7b9426d550864b14b41778ee769637fe234b95',
+            '70a26a1d15c03b8f1e725637858bdb7b672cb18e3a2190d627b5eb0080b95c08',
+        ]);
+        for (const action of [
+            'refreshDistributedAnalysis',
+            'applySyntheticDistributedRunSeed',
+            'clearSyntheticDistributedRunSeed',
+            'selectSyntheticDistributedRunSeed',
+            'loadDistributedArtifact',
+            'handleDistributedArtifactFiles',
+            'selectDistributedRun',
+            'copyDistributedArtifact',
+        ]) {
+            expect.soft(
+                controllerSource,
+                `Runs App-owned action ${action}`,
+            ).toContain(`const ${action}`);
+        }
+
+        const functionDeclaration = (
+            path: string,
+            name: string,
+        ): ts.FunctionDeclaration | undefined =>
+            task9aSourceFile(path, sources.get(path) ?? '').statements.find(
+                (statement): statement is ts.FunctionDeclaration =>
+                    ts.isFunctionDeclaration(statement) &&
+                    statement.name?.text === name,
+            );
+        const distributedDeclaration = functionDeclaration(
+            distributedViewPath,
+            'RunnerDistributedAnalysisSection',
+        );
+        const localDeclaration = functionDeclaration(
+            localViewPath,
+            'RunnerLocalRunsSection',
+        );
+        const distributedReturn = distributedDeclaration
+            ? task9aReturnExpression(distributedDeclaration)
+            : undefined;
+        const localReturn = localDeclaration
+            ? task9aReturnExpression(localDeclaration)
+            : undefined;
+        expect.soft(
+            distributedReturn
+                ? task9aAstFingerprint([distributedReturn])
+                : '',
+            'distributed view exact token-complete return AST',
+        ).toBe(
+            '5f6a697e6e0abce3b994f57a01f6f0dbe961d909df5950a0157b6a4041567e69',
+        );
+        expect.soft(
+            distributedReturn
+                ? task9aJsxRuntimeFingerprint(distributedReturn)
+                : '',
+            'distributed view exact compiled return parity',
+        ).toBe(
+            'cf6ff4ef4f0d222b92fe180ebce7796a34d482c32ba8ee8222d89132da076784',
+        );
+        expect.soft(
+            localReturn ? task9aAstFingerprint([localReturn]) : '',
+            'local view exact token-complete return AST',
+        ).toBe(
+            '660a933ba3ecf7e73724fa3d5a33dc8cc54cd4653e8841b45d4698bf991bb58d',
+        );
+        expect.soft(
+            localReturn ? task9aJsxRuntimeFingerprint(localReturn) : '',
+            'local view exact compiled return parity',
+        ).toBe(
+            '179997f1ea2f8cc0d5c4b05f52035946a5bb4deb9ffd6fe85390bd01f41ad08d',
+        );
+
+        const distributedCalls = task9aJsxCalls(
+            controller,
+            'RunnerDistributedAnalysisSection',
+        );
+        const localCalls = task9aJsxCalls(controller, 'RunnerLocalRunsSection');
+        expect.soft(distributedCalls, 'one distributed controlled view call')
+            .toHaveLength(1);
+        expect.soft(localCalls, 'one local controlled view call').toHaveLength(1);
+        expect.soft(
+            task9aAstFingerprint(distributedCalls),
+            'App exact distributed view call AST',
+        ).toBe(
+            '29e6833e6ea6010e85eaff4a685c14b30a18621cf67d8a8da9a1c84ae9f1e7c4',
+        );
+        expect.soft(
+            task9aAstFingerprint(localCalls),
+            'App exact local view call AST',
+        ).toBe(
+            'e2d30bf906d2a73a365ef084c4d74fdb43f9b8add715393122f282e64ab12b67',
+        );
+        expect.soft(
+            distributedCalls[0]?.attributes.properties.map((attribute) =>
+                ts.isJsxAttribute(attribute) ? attribute.name.getText() : 'spread',
+            ) ?? [],
+            'distributed view exact prop order/cardinality',
+        ).toEqual([
+            'selectedDistributedRun',
+            'distributedBusy',
+            'activeSyntheticSeed',
+            'selectedSyntheticSeedId',
+            'selectSyntheticDistributedRunSeed',
+            'controlBaseUrl',
+            'setControlBaseUrl',
+            'controlToken',
+            'setControlToken',
+            'selectedDistributedRunId',
+            'selectDistributedRun',
+            'distributedRuns',
+            'refreshDistributedAnalysis',
+            'artifactBundle',
+            'loadDistributedArtifact',
+            'copyDistributedArtifact',
+            'handleDistributedArtifactFiles',
+            'clearSyntheticDistributedRunSeed',
+            'lastDistributedRefresh',
+            'controlRunId',
+            'distributedError',
+            'runParticipantRows',
+            'runParticipantSummary',
+            'analysisReport',
+            'importedArtifactAnalysis',
+            'importedArtifactStatus',
+            'selectedMonitor',
+            'compareLeftId',
+            'compareRightId',
+            'compareSummary',
+            'setCompareLeftId',
+            'setCompareRightId',
+        ]);
+        expect.soft(
+            localCalls[0]?.attributes.properties.map((attribute) =>
+                ts.isJsxAttribute(attribute) ? attribute.name.getText() : 'spread',
+            ) ?? [],
+            'local view exact prop order/cardinality',
+        ).toEqual([
+            'runtimeStatus',
+            'commandCount',
+            'failureCount',
+            'eventCount',
+            'latestStats',
+            'controlState',
+            'recentHistory',
+            'failurePanel',
+            'reportPanel',
+        ]);
+
+        const controllerReturn = task9aReturnExpression(controller);
+        if (!ts.isJsxElement(controllerReturn)) {
+            throw new Error('RunnerRunsPanel must return its outer section');
+        }
+        const directChildNames = controllerReturn.children.flatMap((child) => {
+            if (ts.isJsxSelfClosingElement(child)) {
+                return [child.tagName.getText()];
+            }
+            if (ts.isJsxElement(child)) {
+                return [child.openingElement.tagName.getText()];
+            }
+            return [];
+        });
+        expect.soft(
+            directChildNames,
+            'Runs exact outer evidence/view order with no extra wrapper',
+        ).toEqual([
+            'div',
+            'RunVerdictPanel',
+            'CausalTrailPanel',
+            'RtcPerformancePanel',
+            'RunnerDistributedAnalysisSection',
+            'RunnerLocalRunsSection',
+        ]);
+        expect.soft(
+            controllerReturn.openingElement.getText(),
+            'Runs outer panel stays App-owned',
+        ).toContain('className="panel runner-runs-panel"');
+
+        const appEdges = task9aImportEdges(appAst);
+        const task9cImports = new Set([
+            './legacy/runner/runs/runner-runs-constants.ts',
+            './legacy/runner/runs/RunnerDistributedAnalysisSection.tsx',
+            './legacy/runner/runs/RunnerLocalRunsSection.tsx',
+        ]);
+        expect.soft(
+            appEdges.filter((edge) =>
+                task9cImports.has(edge.slice(0, edge.indexOf('|'))),
+            ),
+            'App exact direct Task 9C imports',
+        ).toEqual([
+            './legacy/runner/runs/RunnerDistributedAnalysisSection.tsx|value:RunnerDistributedAnalysisSection',
+            './legacy/runner/runs/RunnerLocalRunsSection.tsx|value:RunnerLocalRunsSection',
+            './legacy/runner/runs/runner-runs-constants.ts|value:DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,value:RUNNER_DISTRIBUTED_POLL_MS',
+        ]);
+        const appDeclaration = task9aNamedFunction(appAst, 'App');
+        const mountCalls = task9aJsxCalls(appDeclaration, 'RunnerRunsPanel');
+        expect.soft(
+            task9aAstFingerprint(mountCalls),
+            'App exact five-prop RunnerRunsPanel call AST',
+        ).toBe(
+            '789dc97080fff282b5daef0dec3cd47064d15b620b857e8bf3a7dbf148cce9e1',
+        );
+        let mountGuard: ts.Node | undefined = mountCalls[0];
+        while (mountGuard && !ts.isJsxExpression(mountGuard)) {
+            mountGuard = mountGuard.parent;
+        }
+        expect.soft(
+            mountGuard ? task9aAstFingerprint([mountGuard]) : '',
+            'App exact active-tab Runs guard AST',
+        ).toBe(
+            '908c16b6a053ad9e8a66a6da96977bd60afc47b88f9b2ebaa15f3d2a162388c6',
+        );
+        expect.soft(
+            mountCalls[0]?.attributes.properties.map((attribute) =>
+                ts.isJsxAttribute(attribute) ? attribute.name.getText() : 'spread',
+            ) ?? [],
+            'App exact five Runs props and no key',
+        ).toEqual([
+            'state',
+            'bootstrap',
+            'control',
+            'authSession',
+            'preferredDistributedRun',
+        ]);
+
+        const dependencies = new Map<string, readonly string[]>();
+        const discoverDependencies = (sourcePath: string): void => {
+            if (dependencies.has(sourcePath)) return;
+            const source = existsSync(resolve(repositoryRoot, sourcePath))
+                ? repositorySource(sourcePath)
+                : '';
+            const directDependencies = task9aImportEdges(
+                task9aSourceFile(sourcePath, source),
+            )
+                .map((edge) => edge.slice(0, edge.indexOf('|')))
+                .filter((moduleImport) => moduleImport.startsWith('.'))
+                .map((moduleImport) =>
+                    relative(
+                        repositoryRoot,
+                        resolve(
+                            resolve(repositoryRoot, sourcePath),
+                            '..',
+                            moduleImport,
+                        ),
+                    ),
+                )
+                .filter(
+                    (dependency) =>
+                        ['.ts', '.tsx'].includes(extname(dependency)) &&
+                        existsSync(resolve(repositoryRoot, dependency)),
+                );
+            dependencies.set(sourcePath, directDependencies);
+            for (const dependency of directDependencies) {
+                discoverDependencies(dependency);
+            }
+        };
+        for (const owner of owners) discoverDependencies(owner.path);
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) return;
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) {
+                visit(dependency);
+            }
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const owner of owners) visit(owner.path);
+        expect(cycles, 'Task 9C recursive owner import cycles').toEqual([]);
     });
 
     it('keeps the legacy run manager and its dependencies in focused modules', () => {

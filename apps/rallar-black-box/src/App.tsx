@@ -136,7 +136,6 @@ import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     deriveRunVerdictView,
-    distributedRecipeStateTone,
 } from './distributed-recipes.ts';
 import {
     analyzeDistributedRunArtifactFiles,
@@ -146,7 +145,6 @@ import {
     type DistributedRunArtifactFiles,
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
-    DISTRIBUTED_RUN_SEEDS,
     createSyntheticDistributedRunSeed,
     distributedRunSeedIdFromValue,
     type DistributedRunSeedId,
@@ -278,15 +276,16 @@ import { ControlAgentBoardPanel } from './legacy/runner/agents/ControlAgentBoard
 import { CommandHistoryPanel } from './legacy/runner/advanced/CommandHistoryPanel.tsx';
 import { ReportPanel } from './legacy/runner/advanced/ReportPanel.tsx';
 import { RunnerAdvancedPanel } from './legacy/runner/advanced/RunnerAdvancedPanel.tsx';
-import { DistributedRunComparePanel } from './legacy/runner/distributed/DistributedRunComparePanel.tsx';
-import { DistributedRunMonitorPanel } from './legacy/runner/distributed/DistributedRunMonitorPanel.tsx';
-import { DistributedRunSummary } from './legacy/runner/distributed/DistributedRunSummary.tsx';
 import { CausalTrailPanel } from './legacy/runner/evidence/CausalTrailPanel.tsx';
 import { RunVerdictPanel } from './legacy/runner/evidence/RunVerdictPanel.tsx';
 import { RtcDiagnosticsTimeseriesPanel } from './legacy/runner/evidence/rtc/RtcDiagnosticsTimeseriesPanel.tsx';
 import { RtcPerformancePanel } from './legacy/runner/evidence/rtc/RtcPerformancePanel.tsx';
-import { DistributedRunAnalysisReportPanel } from './legacy/runner/runs/DistributedRunAnalysisReportPanel.tsx';
-import { ImportedDistributedArtifactAnalysisPanel } from './legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx';
+import { RunnerDistributedAnalysisSection } from './legacy/runner/runs/RunnerDistributedAnalysisSection.tsx';
+import { RunnerLocalRunsSection } from './legacy/runner/runs/RunnerLocalRunsSection.tsx';
+import {
+    DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
+    RUNNER_DISTRIBUTED_POLL_MS,
+} from './legacy/runner/runs/runner-runs-constants.ts';
 import { RunManagerPanel } from './legacy/runner/run-manager/RunManagerPanel.tsx';
 import { LocalWorkbenchSection } from './legacy/runner/workbench/LocalWorkbenchSection.tsx';
 import { ManualRallarSection } from './legacy/runner/manual/ManualRallarSection.tsx';
@@ -4964,252 +4963,56 @@ function RunnerRunsPanel({
             <RunVerdictPanel view={runVerdict} />
             <CausalTrailPanel items={runVerdict.causalTrail} />
             <RtcPerformancePanel view={rtcPerformance} compact />
-            <section className="runner-distributed-analysis">
-                <div className="section-heading">
-                    <h3>Distributed Analysis</h3>
-                    <span
-                        className={`pill ${selectedDistributedRun ? distributedRecipeStateTone(selectedDistributedRun.state) : 'muted'}`}
-                    >
-                        {distributedBusy ??
-                            selectedDistributedRun?.state ??
-                            'no run'}
-                    </span>
-                </div>
-                {activeSyntheticSeed && (
-                    <div className="synthetic-seed-notice" role="status">
-                        <span className="pill warn">Synthetic evidence</span>
-                        <strong>{activeSyntheticSeed.label}</strong>
-                        <span>{activeSyntheticSeed.description}</span>
-                    </div>
-                )}
-                <div className="runner-distributed-toolbar">
-                    <label className="field synthetic-seed-control">
-                        <span>Synthetic seed</span>
-                        <select
-                            value={selectedSyntheticSeedId}
-                            onChange={(event) =>
-                                selectSyntheticDistributedRunSeed(
-                                    event.target.value,
-                                )}
-                        >
-                            <option value="">Real control data</option>
-                            {DISTRIBUTED_RUN_SEEDS.map((seed) => (
-                                <option key={seed.id} value={seed.id}>
-                                    {seed.label}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <label className="field">
-                        <span>Control HTTP</span>
-                        <input
-                            disabled={Boolean(activeSyntheticSeed)}
-                            value={controlBaseUrl}
-                            onChange={(event) =>
-                                setControlBaseUrl(event.target.value)
-                            }
-                        />
-                    </label>
-                    <label className="field">
-                        <span>Token</span>
-                        <input
-                            type="password"
-                            autoComplete="off"
-                            disabled={Boolean(activeSyntheticSeed)}
-                            value={controlToken}
-                            onChange={(event) =>
-                                setControlToken(event.target.value)
-                            }
-                        />
-                    </label>
-                    <label className="field">
-                        <span>Distributed Run</span>
-                        <select
-                            disabled={Boolean(activeSyntheticSeed)}
-                            value={selectedDistributedRunId}
-                            onChange={(event) =>
-                                selectDistributedRun(event.target.value)
-                            }
-                        >
-                            <option value="">Latest run</option>
-                            {distributedRuns.map((run) => (
-                                <option
-                                    key={run.distributedRunId}
-                                    value={run.distributedRunId}
-                                >
-                                    {run.distributedRunId}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                    <button
-                        type="button"
-                        disabled={Boolean(distributedBusy) || Boolean(activeSyntheticSeed)}
-                        onClick={() => void refreshDistributedAnalysis()}
-                    >
-                        Refresh
-                    </button>
-                    <button
-                        type="button"
-                        disabled={
-                            Boolean(distributedBusy) ||
-                            (Boolean(activeSyntheticSeed) && !artifactBundle) ||
-                            !selectedDistributedRun
-                        }
-                        onClick={() => void loadDistributedArtifact()}
-                    >
-                        Export artifact
-                    </button>
-                    <button
-                        type="button"
-                        disabled={!artifactBundle}
-                        onClick={() => void copyDistributedArtifact()}
-                    >
-                        Copy artifact
-                    </button>
-                    <label className="field distributed-artifact-import-field">
-                        <span>Import CI artifact</span>
-                        <input
-                            type="file"
-                            multiple
-                            accept=".json,.jsonl,application/json"
-                            {...({ webkitdirectory: 'true' } as Record<string, string>)}
-                            disabled={Boolean(distributedBusy)}
-                            onChange={(event) =>
-                                void handleDistributedArtifactFiles(event)}
-                        />
-                        <small>
-                            Select the artifact directory, or select all JSON and JSONL files from it.
-                        </small>
-                    </label>
-                    {activeSyntheticSeed && (
-                        <button
-                            type="button"
-                            onClick={clearSyntheticDistributedRunSeed}
-                        >
-                            Clear seed
-                        </button>
-                    )}
-                </div>
-                <div className="runner-distributed-freshness">
-                    <span>
-                        {lastDistributedRefresh
-                            ? `Fresh ${formatTime(lastDistributedRefresh)}`
-                            : 'Not refreshed yet'}
-                    </span>
-                    <span>{controlRunId || 'no control run'}</span>
-                </div>
-                {distributedError && (
-                    <div className="workbench-error" role="status">
-                        {distributedError}
-                    </div>
-                )}
-                {!selectedDistributedRun && !distributedError && (
-                    <div className="empty-state">
-                        No distributed run selected. Start a recipe on connected
-                        agents or refresh the control server.
-                    </div>
-                )}
-                {selectedDistributedRun && (
-                    <DistributedRunSummary run={selectedDistributedRun} />
-                )}
-                {selectedDistributedRun && (
-                    <ControlAgentBoardPanel
-                        title="Run Participants"
-                        subtitle={`${selectedDistributedRun.distributedRunId} participants and live control-agent status`}
-                        rows={runParticipantRows}
-                        summary={runParticipantSummary}
-                        emptyMessage="No target agents recorded for the selected distributed run."
-                        compact
-                    />
-                )}
-                {analysisReport && (
-                    <DistributedRunAnalysisReportPanel
-                        report={analysisReport}
-                    />
-                )}
-                {importedArtifactAnalysis && (
-                    <ImportedDistributedArtifactAnalysisPanel
-                        analysis={importedArtifactAnalysis}
-                        status={importedArtifactStatus}
-                    />
-                )}
-                {selectedMonitor && (
-                    <DistributedRunMonitorPanel monitor={selectedMonitor} />
-                )}
-                {distributedRuns.length > 1 && (
-                    <DistributedRunComparePanel
-                        runs={distributedRuns}
-                        leftId={compareLeftId}
-                        rightId={compareRightId}
-                        summary={compareSummary}
-                        onLeftChange={setCompareLeftId}
-                        onRightChange={setCompareRightId}
-                    />
-                )}
-            </section>
-            <div className="runner-runs-summary-grid">
-                <Metric
-                    label="Runtime"
-                    value={state.status}
-                    tone={statusTone(state.status)}
-                />
-                <Metric label="Commands" value={String(history.length)} />
-                <Metric
-                    label="Failures"
-                    value={String(failures.length)}
-                    tone={failures.length > 0 ? 'bad' : 'good'}
-                />
-                <Metric
-                    label="Events"
-                    value={String(state.events.length)}
-                    tone="active"
-                />
-                <Metric
-                    label="Stats"
-                    value={latestStats ? formatTime(latestStats.atEpochMs) : '-'}
-                />
-                <Metric
-                    label="Control"
-                    value={control.state}
-                    tone={statusTone(control.state)}
-                />
-            </div>
-            <div className="runner-runs-layout">
-                <section className="runner-runs-subpanel">
-                    <div className="section-heading">
-                        <h3>Recent commands</h3>
-                        <span>{recentHistory.length}</span>
-                    </div>
-                    <div className="run-manager-command-list">
-                        {recentHistory.map((result, index) => (
-                            <article
-                                className="run-manager-command-row"
-                                key={`${result.commandId}-${index}`}
-                            >
-                                <span>
-                                    <strong>{result.commandId}</strong>
-                                    <small>{result.kind}</small>
-                                </span>
-                                <span
-                                    className={`pill ${result.ok ? 'good' : 'bad'}`}
-                                >
-                                    {result.ok ? 'ok' : 'failed'}
-                                </span>
-                            </article>
-                        ))}
-                        {recentHistory.length === 0 && (
-                            <div className="empty-state">No local run yet</div>
-                        )}
-                    </div>
-                </section>
-                <section className="runner-runs-subpanel">
+            <RunnerDistributedAnalysisSection
+                selectedDistributedRun={selectedDistributedRun}
+                distributedBusy={distributedBusy}
+                activeSyntheticSeed={activeSyntheticSeed}
+                selectedSyntheticSeedId={selectedSyntheticSeedId}
+                selectSyntheticDistributedRunSeed={selectSyntheticDistributedRunSeed}
+                controlBaseUrl={controlBaseUrl}
+                setControlBaseUrl={setControlBaseUrl}
+                controlToken={controlToken}
+                setControlToken={setControlToken}
+                selectedDistributedRunId={selectedDistributedRunId}
+                selectDistributedRun={selectDistributedRun}
+                distributedRuns={distributedRuns}
+                refreshDistributedAnalysis={() => void refreshDistributedAnalysis()}
+                artifactBundle={artifactBundle}
+                loadDistributedArtifact={() => void loadDistributedArtifact()}
+                copyDistributedArtifact={() => void copyDistributedArtifact()}
+                handleDistributedArtifactFiles={(event) =>
+                    void handleDistributedArtifactFiles(event)}
+                clearSyntheticDistributedRunSeed={clearSyntheticDistributedRunSeed}
+                lastDistributedRefresh={lastDistributedRefresh}
+                controlRunId={controlRunId}
+                distributedError={distributedError}
+                runParticipantRows={runParticipantRows}
+                runParticipantSummary={runParticipantSummary}
+                analysisReport={analysisReport}
+                importedArtifactAnalysis={importedArtifactAnalysis}
+                importedArtifactStatus={importedArtifactStatus}
+                selectedMonitor={selectedMonitor}
+                compareLeftId={compareLeftId}
+                compareRightId={compareRightId}
+                compareSummary={compareSummary}
+                setCompareLeftId={setCompareLeftId}
+                setCompareRightId={setCompareRightId}
+            />
+            <RunnerLocalRunsSection
+                runtimeStatus={state.status}
+                commandCount={history.length}
+                failureCount={failures.length}
+                eventCount={state.events.length}
+                latestStats={latestStats}
+                controlState={control.state}
+                recentHistory={recentHistory}
+                failurePanel={
                     <FailurePanel state={state} authSession={authSession} />
-                </section>
-                <section className="runner-runs-subpanel">
+                }
+                reportPanel={
                     <ReportPanel state={state} authSession={authSession} />
-                </section>
-            </div>
+                }
+            />
         </section>
     );
 }
@@ -7457,17 +7260,6 @@ function TopologyGraphPanel({
         </section>
     );
 }
-
-const DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS = {
-    commands: 500,
-    results: 500,
-    events: 1_000,
-    stats: 200,
-    reports: 120,
-    heartbeats: 240,
-} as const;
-
-const RUNNER_DISTRIBUTED_POLL_MS = 1_000;
 
 function ExecutionFocusPanel({
     result,
