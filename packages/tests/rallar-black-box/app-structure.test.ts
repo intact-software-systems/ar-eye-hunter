@@ -434,7 +434,6 @@ describe('rallar-black-box app source ownership', () => {
                 appSeams: [
                     'DISTRIBUTED_RECIPE_CATALOG',
                     'configuredDistributedRecipeCatalogItem',
-                    'distributedRecipeMatches',
                 ],
                 declarations: [
                     {
@@ -685,6 +684,15 @@ describe('rallar-black-box app source ownership', () => {
             importedSeams(authoringSupportSource, '../../../shared/record-value.ts'),
             'authoring support: recordValue',
         ).toMatch(/\brecordValue\b/);
+        expect(
+            importedSeams(
+                repositorySource(
+                    'apps/rallar-black-box/src/legacy/runner/distributed-recipes/use-distributed-recipe-builder.ts',
+                ),
+                './distributed-recipe-catalog.ts',
+            ),
+            'recipe builder: distributedRecipeMatches',
+        ).toMatch(/\bdistributedRecipeMatches\b/);
 
         const targetPaths = new Set(
             distributedLeafModules.map((owner) => owner.path),
@@ -768,14 +776,15 @@ describe('rallar-black-box app source ownership', () => {
 
     it('keeps distributed recipe controlled views in their exact direct owners', () => {
         const appSource = repositorySource(appSourcePath);
-        const panelStart = appSource.indexOf('function DistributedRecipesPanel(');
-        const panelEnd = appSource.indexOf('\nfunction BootstrapPanel(', panelStart);
-        const panelSource = appSource.slice(panelStart, panelEnd);
+        const panelPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
+        const panelSource = existsSync(resolve(repositoryRoot, panelPath))
+            ? repositorySource(panelPath)
+            : '';
         const distributedRecipeViews = [
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedRecipesHeader.tsx',
-                moduleImport:
-                    './legacy/runner/distributed-recipes/views/DistributedRecipesHeader.tsx',
+                moduleImport: './views/DistributedRecipesHeader.tsx',
                 declaration: 'DistributedRecipesHeader',
                 lineCap: 150,
                 markers: [
@@ -785,8 +794,7 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedRecipeCatalogPanel.tsx',
-                moduleImport:
-                    './legacy/runner/distributed-recipes/views/DistributedRecipeCatalogPanel.tsx',
+                moduleImport: './views/DistributedRecipeCatalogPanel.tsx',
                 declaration: 'DistributedRecipeCatalogPanel',
                 lineCap: 240,
                 markers: [
@@ -796,16 +804,14 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedTargetResolutionPanel.tsx',
-                moduleImport:
-                    './legacy/runner/distributed-recipes/views/DistributedTargetResolutionPanel.tsx',
+                moduleImport: './views/DistributedTargetResolutionPanel.tsx',
                 declaration: 'DistributedTargetResolutionPanel',
                 lineCap: 240,
                 markers: ['<h3>Target Resolution</h3>'],
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedRunControlPanel.tsx',
-                moduleImport:
-                    './legacy/runner/distributed-recipes/views/DistributedRunControlPanel.tsx',
+                moduleImport: './views/DistributedRunControlPanel.tsx',
                 declaration: 'DistributedRunControlPanel',
                 lineCap: 220,
                 markers: [
@@ -815,8 +821,7 @@ describe('rallar-black-box app source ownership', () => {
             },
             {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/views/DistributedManifestPreviewPanel.tsx',
-                moduleImport:
-                    './legacy/runner/distributed-recipes/views/DistributedManifestPreviewPanel.tsx',
+                moduleImport: './views/DistributedManifestPreviewPanel.tsx',
                 declaration: 'DistributedManifestPreviewPanel',
                 lineCap: 120,
                 markers: [
@@ -877,7 +882,7 @@ describe('rallar-black-box app source ownership', () => {
                 /[.*+?^${}()|[\]\\]/g,
                 '\\$&',
             );
-            const importedSeams = appSource.match(
+            const importedSeams = panelSource.match(
                 new RegExp(
                     `import\\s*{([^}]*)}\\s*from\\s*'${escapedModuleImport}';`,
                 ),
@@ -888,8 +893,8 @@ describe('rallar-black-box app source ownership', () => {
                 .toMatch(new RegExp(`\\b${view.declaration}\\b`));
         }
 
-        expect(appSource, 'parent owner').toMatch(
-            /^\s*function\s+DistributedRecipesPanel\s*\(/m,
+        expect(panelSource, 'parent owner').toMatch(
+            /^\s*export\s+function\s+DistributedRecipesPanel\s*\(/m,
         );
         const orderedCalls = [
             '<DistributedRecipesHeader',
@@ -955,11 +960,421 @@ describe('rallar-black-box app source ownership', () => {
         expect(cycles, 'distributed recipe view import cycles').toEqual([]);
     });
 
+    it('keeps distributed recipe core in exact one-way controller owners', () => {
+        const appSource = repositorySource(appSourcePath);
+        const panelPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
+        const remotePath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/use-distributed-recipes-remote-state.ts';
+        const builderPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/use-distributed-recipe-builder.ts';
+        const actionsPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/use-distributed-recipes-actions.ts';
+        const coreOwners = [
+            {
+                path: panelPath,
+                declaration: 'DistributedRecipesPanel',
+                lineCap: 200,
+            },
+            {
+                path: remotePath,
+                declaration: 'useDistributedRecipesRemoteState',
+                typeAlias: 'DistributedRecipesRemoteStateModel',
+                lineCap: 240,
+            },
+            {
+                path: builderPath,
+                declaration: 'useDistributedRecipeBuilder',
+                typeAlias: 'DistributedRecipeBuilderModel',
+                lineCap: 430,
+            },
+            {
+                path: actionsPath,
+                declaration: 'useDistributedRecipesActions',
+                lineCap: 450,
+            },
+        ] as const;
+        const sourceByPath = new Map<string, string>();
+
+        for (const owner of coreOwners) {
+            const ownerExists = existsSync(resolve(repositoryRoot, owner.path));
+            const ownerSource = ownerExists ? repositorySource(owner.path) : '';
+            sourceByPath.set(owner.path, ownerSource);
+
+            expect.soft(ownerExists, owner.path).toBe(true);
+            expect
+                .soft(ownerSource, `${owner.path}: direct export`)
+                .toMatch(
+                    new RegExp(
+                        `^\\s*export\\s+function\\s+${owner.declaration}\\s*\\(`,
+                        'm',
+                    ),
+                );
+            if ('typeAlias' in owner) {
+                expect
+                    .soft(ownerSource, `${owner.path}: inferred model alias`)
+                    .toMatch(
+                        new RegExp(
+                            `^\\s*export\\s+type\\s+${owner.typeAlias}\\s*=\\s*\\n?\\s*ReturnType<\\s*typeof\\s+${owner.declaration}\\s*>;`,
+                            'm',
+                        ),
+                    );
+            }
+            expect
+                .soft(ownerSource, `${owner.path}: export-star facade`)
+                .not.toMatch(/^\s*export\s*\*(?:\s+as\s+\w+)?\s+from\b/m);
+            expect
+                .soft(ownerSource, `${owner.path}: named re-export facade`)
+                .not.toMatch(/^\s*export\s+(?:type\s+)?{[^}]+}\s*from\s*['"]/m);
+            expect.soft(ownerSource, `${owner.path}: CSS import`).not.toMatch(
+                /\b(?:from\s+|import\s*)['"][^'"]+\.css['"]/,
+            );
+            expect.soft(ownerSource, `${owner.path}: App.tsx import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/,
+            );
+            expect.soft(ownerSource, `${owner.path}: useCallback`).not.toMatch(
+                /\buseCallback\b/,
+            );
+            expect.soft(
+                ownerSource === ''
+                    ? 0
+                    : ownerSource.trimEnd().split(/\r?\n/).length,
+                `${owner.path}: line count`,
+            ).toBeLessThanOrEqual(owner.lineCap);
+        }
+
+        const panelSource = sourceByPath.get(panelPath) ?? '';
+        const remoteSource = sourceByPath.get(remotePath) ?? '';
+        const builderSource = sourceByPath.get(builderPath) ?? '';
+        const actionsSource = sourceByPath.get(actionsPath) ?? '';
+
+        expect.soft(appSource, 'App.tsx local panel owner').not.toMatch(
+            /^\s*function\s+DistributedRecipesPanel\s*\(/m,
+        );
+        expect.soft(appSource, 'direct panel import').toMatch(
+            /import\s*{\s*DistributedRecipesPanel\s*}\s*from\s*'\.\/legacy\/runner\/distributed-recipes\/DistributedRecipesPanel\.tsx';/,
+        );
+        const panelCalls = [
+            ...appSource.matchAll(/<DistributedRecipesPanel\b([\s\S]*?)\/>/g),
+        ];
+        expect(panelCalls, 'App.tsx panel calls').toHaveLength(2);
+        for (const panelCall of panelCalls) {
+            const props = [
+                ...panelCall[1].matchAll(/\b(\w+)=\{([^}]+)}/g),
+            ].map((match) => [match[1], match[2]]);
+            expect.soft(props, 'unchanged four panel props').toEqual([
+                ['state', 'state'],
+                ['bootstrap', 'bootstrap'],
+                ['control', 'control'],
+                ['globalValues', 'globalValues'],
+            ]);
+        }
+        expect(appSource, 'Advanced distributed mount guard').toContain(
+            `{surface === 'distributed' && (\n                    <div\n                        id="panel-distributed-recipes"\n                        className="workspace-grid tab-workspace distributed-recipes-tab-grid"\n                    >\n                        <DistributedRecipesPanel\n                            state={state}\n                            bootstrap={bootstrap}\n                            control={control}\n                            globalValues={globalValues}\n                        />\n                    </div>\n                )}`,
+        );
+        expect(appSource, 'legacy runner distributed mount guard').toContain(
+            `{activeMode === 'black-box-runner' &&\n                        activeTab === 'distributed-recipes' && (\n                            <DistributedRecipesPanel\n                                state={state}\n                                bootstrap={bootstrap}\n                                control={control}\n                                globalValues={globalValues}\n                            />\n                        )}`,
+        );
+
+        const hookCalls = [
+            'useDistributedRecipesRemoteState',
+            'useDistributedRecipeBuilder',
+            'useDistributedRecipesActions',
+        ] as const;
+        const hookCallPositions = hookCalls.map((hook) => {
+            const calls = [...panelSource.matchAll(new RegExp(`\\b${hook}\\s*\\(`, 'g'))];
+            expect.soft(calls, `${hook}: exact call count`).toHaveLength(1);
+            return calls[0]?.index ?? -1;
+        });
+        expect.soft(hookCallPositions, 'remote -> builder -> actions call order').toEqual(
+            [...hookCallPositions].sort((left, right) => left - right),
+        );
+        expect(panelSource, 'direct monitor progress input').toContain(
+            'monitorAgentProgress: remote.selectedMonitor?.agentProgress,',
+        );
+        expect(panelSource, 'built-in React hook').not.toMatch(
+            /\buse(?:State|Memo|Effect|Ref|Callback|Reducer|Context|LayoutEffect)\b/,
+        );
+        expect(panelSource, 'network manager runtime import').not.toMatch(
+            /\bfrom\s*['"][^'"]*control-run-manager\.ts['"];/,
+        );
+        for (const action of [
+            'refresh',
+            'loadRun',
+            'resolveTargets',
+            'ensureCreatedDistributedRun',
+            'createRun',
+            'stageRun',
+            'startRun',
+            'cancelRun',
+            'loadArtifact',
+            'copyArtifact',
+            'loadDistributedRun',
+            'toggleRecipe',
+            'toggleAgent',
+            'selectRolePattern',
+            'generateNewRunId',
+            'changeDistributedRunId',
+        ] as const) {
+            expect.soft(panelSource, `composition-local action: ${action}`).not.toMatch(
+                new RegExp(`\\b(?:const|function)\\s+${action}\\b`),
+            );
+        }
+
+        const remoteStates = [
+            ['baseUrl', 'setBaseUrl'],
+            ['token', 'setToken'],
+            ['selectedRunId', 'setSelectedRunId'],
+            ['snapshot', 'setSnapshot'],
+            ['run', 'setRun'],
+            ['distributedRuns', 'setDistributedRuns'],
+            ['selectedDistributedRun', 'setSelectedDistributedRun'],
+            ['targetResolutionPreview', 'setTargetResolutionPreview'],
+            ['artifactBundle', 'setArtifactBundle'],
+            ['busyAction', 'setBusyAction'],
+            ['error', 'setError'],
+            ['lastAction', 'setLastAction'],
+        ] as const;
+        const builderStates = [
+            ['distributedRunId', 'setDistributedRunId'],
+            ['query', 'setQuery'],
+            ['profile', 'setProfile'],
+            ['selectedRecipeIds', 'setSelectedRecipeIds'],
+            ['rtcRealtimeDurationSeconds', 'setRtcRealtimeDurationSeconds'],
+            ['targetPolicyMode', 'setTargetPolicyMode'],
+            ['rolePattern', 'setRolePattern'],
+            ['expectedParticipantCount', 'setExpectedParticipantCount'],
+            ['ackTimeoutMs', 'setAckTimeoutMs'],
+            ['barrierEnabled', 'setBarrierEnabled'],
+            ['barrierTimeoutMs', 'setBarrierTimeoutMs'],
+            ['startMode', 'setStartMode'],
+            ['startDelayMs', 'setStartDelayMs'],
+            ['selectedAgentIds', 'setSelectedAgentIds'],
+        ] as const;
+        for (const [stateName, setterName] of remoteStates) {
+            expect.soft(remoteSource, `remote state: ${stateName}`).toMatch(
+                new RegExp(
+                    `const\\s*\\[\\s*${stateName}\\s*,\\s*${setterName}\\s*]\\s*=\\s*useState\\b`,
+                ),
+            );
+        }
+        expect(
+            [...remoteSource.matchAll(/]\s*=\s*useState\b/g)],
+            'remote exact state count',
+        ).toHaveLength(remoteStates.length);
+        for (const memo of ['runOptions', 'currentDistributedRuns', 'selectedMonitor']) {
+            expect.soft(remoteSource, `remote memo: ${memo}`).toMatch(
+                new RegExp(`const\\s+${memo}\\s*=\\s*useMemo\\s*\\(`),
+            );
+        }
+        expect(remoteSource, 'remote redacted error').toMatch(
+            /const\s+redactedError\s*=\s*error\b/,
+        );
+        expect(remoteSource, 'remote effect/ref').not.toMatch(/\buse(?:Effect|Ref)\b/);
+        expect(remoteSource, 'remote builder import').not.toMatch(
+            /\bfrom\s*['"][^'"]*use-distributed-recipe-builder\.ts['"];/,
+        );
+        for (const request of [
+            'fetchControlServerSnapshot',
+            'fetchControlRunSnapshot',
+            'fetchDistributedRuns',
+            'fetchDistributedRun',
+            'fetchDistributedRunArtifactBundle',
+            'resolveDistributedTargets',
+            'createDistributedRun',
+            'stageDistributedRun',
+            'startDistributedRun',
+            'cancelDistributedRun',
+        ] as const) {
+            expect.soft(remoteSource, `remote request: ${request}`).not.toMatch(
+                new RegExp(`\\b${request}\\b`),
+            );
+        }
+
+        for (const [stateName, setterName] of builderStates) {
+            expect.soft(builderSource, `builder state: ${stateName}`).toMatch(
+                new RegExp(
+                    `const\\s*\\[\\s*${stateName}\\s*,\\s*${setterName}\\s*]\\s*=\\s*useState\\b`,
+                ),
+            );
+        }
+        expect(
+            [...builderSource.matchAll(/]\s*=\s*useState\b/g)],
+            'builder exact state count',
+        ).toHaveLength(builderStates.length);
+        for (const derivation of [
+            'groupRef',
+            'recipeCatalog',
+            'profileOptions',
+            'filteredRecipes',
+            'selectedRecipes',
+            'selectedRecipePreflights',
+            'selectedPreflightEffectiveOperations',
+            'selectedPreflightWarnings',
+            'selectedPreflightErrors',
+            'selectedPreflightCommandKinds',
+            'targetRows',
+            'selectedAgentSet',
+            'targetableRows',
+            'usesWorldFleetTargets',
+            'manifest',
+            'manifestValidation',
+            'worldFleetTargetGate',
+            'activeTargetResolution',
+            'worldFleetPreviewSelected',
+            'worldFleetStageStartBlocked',
+            'worldFleetBlockReason',
+            'manifestAuthoringValidation',
+            'distributedTargetAgentRows',
+            'distributedTargetAgentSummary',
+            'liveSelectedRecipeCount',
+            'rtcRealtimeSelected',
+            'rtcRealtimeFrameCount',
+        ] as const) {
+            expect.soft(builderSource, `builder derivation: ${derivation}`).toMatch(
+                new RegExp(`\\bconst\\s+${derivation}\\b`),
+            );
+        }
+        expect(builderSource, 'monitor progress fallback').toContain(
+            'monitorAgentProgress: monitorAgentProgress ?? [],',
+        );
+        expect(builderSource, 'monitor progress dependency').toMatch(
+            /\[\s*distributedRuns,\s*groupRef,\s*run,\s*selectedDistributedRun,\s*monitorAgentProgress,\s*selectedPreflightCommandKinds,\s*]/,
+        );
+        expect(builderSource, 'builder effect/ref').not.toMatch(/\buse(?:Effect|Ref)\b/);
+        expect(builderSource, 'builder API action import').not.toMatch(
+            /import(?!\s+type\b)\s*{[^}]*}\s*from\s*['"][^'"]*control-run-manager\.ts['"];/s,
+        );
+
+        expect(actionsSource, 'actions remote model type-only import').toMatch(
+            /import\s+type\s*{\s*DistributedRecipesRemoteStateModel\s*}\s*from\s*'\.\/use-distributed-recipes-remote-state\.ts';/,
+        );
+        expect(actionsSource, 'actions builder model type-only import').toMatch(
+            /import\s+type\s*{\s*DistributedRecipeBuilderModel\s*}\s*from\s*'\.\/use-distributed-recipe-builder\.ts';/,
+        );
+        expect(actionsSource, 'actions runtime model import').not.toMatch(
+            /import(?!\s+type\b)[^;]*?from\s*['"]\.\/use-distributed-recipe(?:s-remote-state|-builder)\.ts['"];/,
+        );
+        expect(actionsSource, 'initial refresh ref owner').toMatch(
+            /const\s+didInitialRefresh\s*=\s*useRef\(false\);/,
+        );
+        expect(
+            [...actionsSource.matchAll(/\buseEffect\s*\(/g)],
+            'actions exact effect count',
+        ).toHaveLength(3);
+        const effectMarkers = [
+            'if (didInitialRefresh.current)',
+            'setTargetResolutionPreview(undefined);',
+            'const defaults = defaultDistributedRecipeTargetIds(targetRows);',
+        ].map((marker) => actionsSource.indexOf(marker));
+        expect.soft(effectMarkers.every((position) => position >= 0), 'effect markers').toBe(
+            true,
+        );
+        expect.soft(effectMarkers, 'effect registration order').toEqual(
+            [...effectMarkers].sort((left, right) => left - right),
+        );
+        expect(actionsSource, 'initial effect comment and suppression').toContain(
+            `// The initial refresh intentionally uses the first rendered form values.\n        // eslint-disable-next-line react-hooks/exhaustive-deps\n    }, []);`,
+        );
+        expect(actionsSource, 'preview invalidation dependencies').toMatch(
+            /}, \[\s*distributedRunId,\s*expectedParticipantCount,\s*groupRef\.applicationId,\s*groupRef\.groupId,\s*groupRef\.workspaceId,\s*rolePattern,\s*selectedRunId,\s*targetPolicyMode,\s*]\);/,
+        );
+        expect(actionsSource, 'target reconciliation dependencies').toContain(
+            '}, [targetRows]);',
+        );
+        expect(actionsSource, 'canonical sameStringArray').toMatch(
+            /import\s*{\s*sameStringArray\s*}\s*from\s*'\.\.\/\.\.\/shared\/same-string-array\.ts';/,
+        );
+        for (const action of [
+            'refresh',
+            'loadRun',
+            'resolveTargets',
+            'ensureCreatedDistributedRun',
+            'createRun',
+            'stageRun',
+            'startRun',
+            'cancelRun',
+            'loadArtifact',
+            'copyArtifact',
+            'loadDistributedRun',
+            'toggleRecipe',
+            'toggleAgent',
+            'selectRolePattern',
+            'generateNewRunId',
+            'changeDistributedRunId',
+        ] as const) {
+            expect.soft(actionsSource, `actions owner: ${action}`).toMatch(
+                new RegExp(`\\bconst\\s+${action}\\b`),
+            );
+        }
+        expect(actionsSource, 'change ID clear/set order').toMatch(
+            /const changeDistributedRunId[\s\S]*?setDistributedRunId\(value\);[\s\S]*?setSelectedDistributedRun\(undefined\);[\s\S]*?setArtifactBundle\(undefined\);/,
+        );
+        expect(actionsSource, 'whole remote model effect dependency').not.toMatch(
+            /},\s*\[[^\]]*(?:^|[,\s])remote(?:[,\s]|$)[^\]]*]\);/m,
+        );
+        expect(actionsSource, 'whole builder model effect dependency').not.toMatch(
+            /},\s*\[[^\]]*(?:^|[,\s])builder(?:[,\s]|$)[^\]]*]\);/m,
+        );
+
+        expect([...builderSource.matchAll(/\bDate\.now\(\)/g)]).toHaveLength(4);
+        expect([...actionsSource.matchAll(/\bDate\.now\(\)/g)]).toHaveLength(1);
+        expect(remoteSource).not.toMatch(/\bDate\.now\(\)/);
+
+        const targetPaths = new Set(coreOwners.map((owner) => owner.path));
+        const dependencies = new Map<string, readonly string[]>();
+        for (const owner of coreOwners) {
+            dependencies.set(
+                owner.path,
+                [...(sourceByPath.get(owner.path) ?? '').matchAll(
+                    /import(?!\s+type\b)[^;]*?\bfrom\s+['"]([^'"]+)['"]|\bimport\s+['"]([^'"]+)['"]/g,
+                )]
+                    .map((match) => match[1] ?? match[2])
+                    .filter((moduleImport) => moduleImport.startsWith('.'))
+                    .map((moduleImport) =>
+                        relative(
+                            repositoryRoot,
+                            resolve(
+                                resolve(repositoryRoot, owner.path),
+                                '..',
+                                moduleImport,
+                            ),
+                        ),
+                    )
+                    .filter((dependency) => targetPaths.has(dependency)),
+            );
+        }
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) {
+                return;
+            }
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) {
+                visit(dependency);
+            }
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const targetPath of targetPaths) {
+            visit(targetPath);
+        }
+        expect(cycles, 'distributed recipe core runtime import cycles').toEqual([]);
+    });
+
     it('keeps distributed recipe secondary state in exact focused section owners', () => {
         const appSource = repositorySource(appSourcePath);
-        const panelStart = appSource.indexOf('function DistributedRecipesPanel(');
-        const panelEnd = appSource.indexOf('\nfunction BootstrapPanel(', panelStart);
-        const panelSource = appSource.slice(panelStart, panelEnd);
+        const panelPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
+        const panelSource = existsSync(resolve(repositoryRoot, panelPath))
+            ? repositorySource(panelPath)
+            : '';
         const authoringSectionPath =
             'apps/rallar-black-box/src/legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringSection.tsx';
         const historySectionPath =
@@ -969,17 +1384,17 @@ describe('rallar-black-box app source ownership', () => {
         const sectionOwners = [
             {
                 path: authoringSectionPath,
-                importerPath: appSourcePath,
+                importerPath: panelPath,
                 moduleImport:
-                    './legacy/runner/distributed-recipes/authoring/DistributedRecipeAuthoringSection.tsx',
+                    './authoring/DistributedRecipeAuthoringSection.tsx',
                 declarations: ['DistributedRecipeAuthoringSection'],
                 lineCap: 300,
             },
             {
                 path: historySectionPath,
-                importerPath: appSourcePath,
+                importerPath: panelPath,
                 moduleImport:
-                    './legacy/runner/distributed-recipes/history/DistributedRunHistorySection.tsx',
+                    './history/DistributedRunHistorySection.tsx',
                 declarations: ['DistributedRunHistorySection'],
                 lineCap: 380,
             },
@@ -1718,10 +2133,6 @@ describe('rallar-black-box app source ownership', () => {
                 moduleImport:
                     './legacy/runner/shared/control-snapshot-bounds.ts',
                 seam: 'RUN_MANAGER_SNAPSHOT_BOUNDS',
-            },
-            {
-                moduleImport: './legacy/shared/same-string-array.ts',
-                seam: 'sameStringArray',
             },
             {
                 moduleImport:
