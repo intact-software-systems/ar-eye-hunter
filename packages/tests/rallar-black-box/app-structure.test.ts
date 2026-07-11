@@ -19,6 +19,8 @@ const fleetDetailsSourcePath =
     'apps/rallar-black-box/src/legacy/runner/fleet/views/RunnerFleetSelectedDetails.tsx';
 const fleetTimingSourcePath =
     'apps/rallar-black-box/src/legacy/runner/fleet/views/FleetTimingGroupList.tsx';
+const authCommandCenterPanelSourcePath =
+    'apps/rallar-black-box/src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx';
 const extractedModulePaths = [
     'apps/rallar-black-box/src/legacy/shell/browser-ui-storage.ts',
     'apps/rallar-black-box/src/legacy/shell/navigation.ts',
@@ -53,7 +55,16 @@ const presentationModules = [
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/time-format.ts',
-        moduleImport: './legacy/shared/time-format.ts',
+        importerPath: existsSync(
+            resolve(repositoryRoot, authCommandCenterPanelSourcePath),
+        )
+            ? authCommandCenterPanelSourcePath
+            : appSourcePath,
+        moduleImport: existsSync(
+            resolve(repositoryRoot, authCommandCenterPanelSourcePath),
+        )
+            ? '../../shared/time-format.ts'
+            : './legacy/shared/time-format.ts',
         seams: [
             'formatTime',
             'formatDuration',
@@ -11459,6 +11470,9 @@ describe('rallar-black-box app source ownership', () => {
         const controllerCutoverPresent =
             existsSync(resolve(repositoryRoot, controllerPath)) &&
             existsSync(resolve(repositoryRoot, panelPath));
+        const authPanelCutoverPresent = existsSync(
+            resolve(repositoryRoot, authCommandCenterPanelSourcePath),
+        );
         const owners = [
             {
                 path: sharedTicketPath,
@@ -11697,7 +11711,9 @@ describe('rallar-black-box app source ownership', () => {
                 )),
                 `${owner.appImport}: exact direct App ownership`,
             ).toEqual(
-                controllerCutoverPresent && owner.path !== sharedTicketPath
+                controllerCutoverPresent &&
+                        (owner.path !== sharedTicketPath ||
+                            authPanelCutoverPresent)
                     ? []
                     : [expectedAppImport],
             );
@@ -13127,6 +13143,479 @@ describe('rallar-black-box app source ownership', () => {
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))
                 .digest('hex'),
             'W3 leaves the WebSocket stylesheet lifetime surface unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
+    });
+
+    it('extracts the exact Auth command center behind focused legacy seams', () => {
+        const restOwnerPath =
+            'apps/rallar-black-box/src/legacy/diagnostics/shared/rest-action-log.ts';
+        const recipeOwnerPath =
+            'apps/rallar-black-box/src/legacy/diagnostics/auth/auth-recipe.ts';
+        const sessionOwnerPath =
+            'apps/rallar-black-box/src/legacy/shell/read-current-auth-session.ts';
+        const panelOwnerPath =
+            'apps/rallar-black-box/src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx';
+        const ownerPaths = [
+            restOwnerPath,
+            recipeOwnerPath,
+            sessionOwnerPath,
+            panelOwnerPath,
+        ] as const;
+        const appSource = repositorySource(appSourcePath);
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const ownerAsts = new Map<string, ts.SourceFile>();
+
+        for (const ownerPath of ownerPaths) {
+            const ownerPresent = existsSync(resolve(repositoryRoot, ownerPath));
+            expect.soft(ownerPresent, `${ownerPath}: owner exists`).toBe(true);
+            if (ownerPresent) {
+                ownerAsts.set(
+                    ownerPath,
+                    task9aSourceFile(ownerPath, repositorySource(ownerPath)),
+                );
+            }
+        }
+
+        const expectedAppAuthImports = [
+            './legacy/diagnostics/auth/AuthCommandCenterPanel.tsx|value:AuthCommandCenterPanel',
+            './legacy/diagnostics/shared/rest-action-log.ts|type:CommandCenterRestActionLog,value:restLogEntry',
+            './legacy/shell/read-current-auth-session.ts|value:readCurrentAuthSession',
+        ].sort();
+        const appAuthImports = task9aImportEdges(appAst).filter((edge) =>
+            expectedAppAuthImports.some(
+                (expected) => expected.split('|')[0] === edge.split('|')[0],
+            ),
+        );
+        expect.soft(
+            appAuthImports,
+            'App imports the exact Auth panel and shared seams',
+        ).toEqual(expectedAppAuthImports);
+
+        const movedTypeNames = ['CommandCenterRestActionLog'] as const;
+        const movedFunctionNames = [
+            'restLogEntry',
+            'authRecipeSnippet',
+            'readCurrentAuthSession',
+            'AuthCommandCenterPanel',
+        ] as const;
+        const appLocalMovedDeclarations = appAst.statements.flatMap(
+            (statement) => {
+                if (
+                    ts.isTypeAliasDeclaration(statement) &&
+                    movedTypeNames.includes(
+                        statement.name.text as (typeof movedTypeNames)[number],
+                    )
+                ) {
+                    return [`type:${statement.name.text}`];
+                }
+                if (
+                    ts.isFunctionDeclaration(statement) &&
+                    statement.name &&
+                    movedFunctionNames.includes(
+                        statement.name.text as (typeof movedFunctionNames)[number],
+                    )
+                ) {
+                    return [`function:${statement.name.text}`];
+                }
+                return [];
+            },
+        );
+        expect.soft(
+            appLocalMovedDeclarations,
+            'App has no Auth panel or moved Auth/shared declarations',
+        ).toEqual([]);
+
+        const restAst = ownerAsts.get(restOwnerPath);
+        if (restAst) {
+            const source = repositorySource(restOwnerPath);
+            expect.soft(
+                source.trimEnd().split(/\r?\n/).length,
+                `${restOwnerPath}: line cap`,
+            ).toBeLessThanOrEqual(60);
+            expect.soft(task9aExportSeams(restAst)).toEqual([
+                'type:CommandCenterRestActionLog',
+                'value:restLogEntry',
+            ]);
+            expect.soft(task9aImportEdges(restAst)).toEqual([
+                '../../../rallar-server-workbench.ts|type:RallarServerRestResponse',
+            ]);
+        }
+        const recipeAst = ownerAsts.get(recipeOwnerPath);
+        if (recipeAst) {
+            const source = repositorySource(recipeOwnerPath);
+            expect.soft(
+                source.trimEnd().split(/\r?\n/).length,
+                `${recipeOwnerPath}: line cap`,
+            ).toBeLessThanOrEqual(80);
+            expect.soft(task9aExportSeams(recipeAst)).toEqual([
+                'value:authRecipeSnippet',
+            ]);
+            expect.soft(task9aImportEdges(recipeAst)).toEqual([
+                '../../shared/json-presentation.ts|value:json',
+            ]);
+        }
+        const sessionAst = ownerAsts.get(sessionOwnerPath);
+        if (sessionAst) {
+            const source = repositorySource(sessionOwnerPath);
+            expect.soft(
+                source.trimEnd().split(/\r?\n/).length,
+                `${sessionOwnerPath}: line cap`,
+            ).toBeLessThanOrEqual(30);
+            expect.soft(task9aExportSeams(sessionAst)).toEqual([
+                'value:readCurrentAuthSession',
+            ]);
+            expect.soft(task9aImportEdges(sessionAst)).toEqual([
+                '@shared/api/api-config.ts|type:AuthSession',
+                '@shared/api/auth.ts|value:readSession',
+            ]);
+        }
+        const panelAst = ownerAsts.get(panelOwnerPath);
+        if (panelAst) {
+            const source = repositorySource(panelOwnerPath);
+            expect.soft(
+                source.trimEnd().split(/\r?\n/).length,
+                `${panelOwnerPath}: line cap`,
+            ).toBeLessThanOrEqual(600);
+            expect.soft(task9aExportSeams(panelAst)).toEqual([
+                'value:AuthCommandCenterPanel',
+            ]);
+            expect.soft(task9aImportEdges(panelAst)).toEqual([
+                '../../../auth-flow.ts|value:authErrorMessage,value:authenticateRallarBlackBox,value:bootstrapPatchFromAuthSession',
+                '../../../rallar-server-workbench.ts|value:executeRallarServerRestRequest',
+                '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig,value:rallarBlackBoxProviderModeFromConfig,value:rallarBlackBoxRuntimeStore',
+                '../../rallar/load-browser-rallar-facade.ts|value:loadBrowserRallarFacade',
+                '../../shared/CollapsiblePanelSection.tsx|value:CollapsiblePanelSection',
+                '../../shared/record-value.ts|value:recordValue->optionalRecord',
+                '../../shared/redaction-presentation.ts|value:redactedJson,value:uiRedactionOptions',
+                '../../shared/time-format.ts|value:formatDuration,value:formatRelativeDuration,value:formatTime',
+                '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                '../../shell/read-current-auth-session.ts|value:readCurrentAuthSession',
+                '../shared/auth-command-center-ticket.ts|type:AuthCommandCenterTicket',
+                '../shared/rest-action-log.ts|type:CommandCenterRestActionLog,value:restLogEntry',
+                './auth-recipe.ts|value:authRecipeSnippet',
+                '@shared-test/rallar-bb-test/redaction.ts|value:redactRallarBlackBoxValue',
+                '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxCurrentConfig',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                '@shared/api/api-config.ts|type:AuthSession,type:WebSocketTicketResponse',
+                '@shared/api/auth.ts|value:clearSession',
+                'react|value:useEffect,value:useMemo,value:useState',
+            ].sort());
+        }
+
+        for (const ownerPath of ownerPaths) {
+            const source = ownerAsts.has(ownerPath)
+                ? repositorySource(ownerPath)
+                : '';
+            if (source) {
+                expect.soft(
+                    source,
+                    `${ownerPath}: no reverse/App/CSS/barrel edge`,
+                ).not.toMatch(
+                    /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"]|^\s*export\s+(?:\*|{)[^;]*\s+from\s+)/m,
+                );
+            }
+        }
+        if (ownerAsts.size === ownerPaths.length) {
+            const graph = task9aReachableRelativeTypeScriptGraph(
+                ownerPaths,
+                repositorySource,
+                (path) => existsSync(resolve(repositoryRoot, path)),
+            );
+            expect.soft(
+                task9aDependencyCycles(graph),
+                'Auth owner dependency graph has no cycles',
+            ).toEqual([]);
+
+            const consumers = new Map(
+                ownerPaths.map((ownerPath) => [
+                    ownerPath,
+                    sourceFilesUnder('apps/rallar-black-box/src')
+                        .filter((sourcePath) => {
+                            if (sourcePath === ownerPath) return false;
+                            const sourceFile = task9aSourceFile(
+                                sourcePath,
+                                repositorySource(sourcePath),
+                            );
+                            return task9aModuleSpecifiers(sourceFile).some(
+                                (moduleImport) =>
+                                    task9aResolveRelativeTypeScriptDependency(
+                                        sourcePath,
+                                        moduleImport,
+                                        (path) =>
+                                            existsSync(
+                                                resolve(repositoryRoot, path),
+                                            ),
+                                    ) === ownerPath,
+                            );
+                        })
+                        .sort(),
+                ]),
+            );
+            expect.soft(consumers.get(restOwnerPath)).toEqual(
+                [appSourcePath, panelOwnerPath].sort(),
+            );
+            expect.soft(consumers.get(recipeOwnerPath)).toEqual([
+                panelOwnerPath,
+            ]);
+            expect.soft(consumers.get(sessionOwnerPath)).toEqual(
+                [appSourcePath, panelOwnerPath].sort(),
+            );
+            expect.soft(consumers.get(panelOwnerPath)).toEqual([
+                appSourcePath,
+            ]);
+        }
+
+        const functionSemantics = (
+            declaration: ts.FunctionDeclaration,
+        ): readonly ts.Node[] =>
+            [
+                declaration.name,
+                declaration.asteriskToken,
+                ...(declaration.typeParameters ?? []),
+                ...declaration.parameters,
+                declaration.type,
+                declaration.body,
+            ].filter((node): node is ts.Node => Boolean(node));
+        const expectExactExport = (
+            declaration: ts.DeclarationStatement,
+            owner: boolean,
+            label: string,
+        ): void => {
+            const modifiers = ts.getModifiers(declaration) ?? [];
+            expect.soft(
+                modifiers.map((modifier) => ts.SyntaxKind[modifier.kind]),
+                `${label}: exact modifier surface`,
+            ).toEqual(owner ? ['ExportKeyword'] : []);
+        };
+
+        const restSource = restAst ?? appAst;
+        const actionLog = restSource.statements.find(
+            (statement): statement is ts.TypeAliasDeclaration =>
+                ts.isTypeAliasDeclaration(statement) &&
+                statement.name.text === 'CommandCenterRestActionLog',
+        );
+        expect.soft(actionLog).toBeDefined();
+        if (actionLog) {
+            expectExactExport(actionLog, Boolean(restAst), 'REST action log');
+            expect.soft(
+                task9aAstFingerprint([actionLog.name, actionLog.type]),
+                'exact CommandCenterRestActionLog semantics',
+            ).toBe('1a48e6a7a9ddac20a82f7a607cdbd2d86464975d826add4f981ac8fdf131db20');
+            if (!restAst) {
+                expect.soft(task9aAstFingerprint([actionLog])).toBe(
+                    'f31da2f9dcca6589cd8ad2d52630cde6e5d8614d47caec691012406ae769555d',
+                );
+            }
+        }
+
+        const helperCases = [
+            [restAst ?? appAst, 'restLogEntry', '54f6e70dec3a35801324cb70f368fa786713938e6aa2b208240b43ebe39f1375', Boolean(restAst)],
+            [recipeAst ?? appAst, 'authRecipeSnippet', '590e10a796a2dd9c08bba32d2395aca3056a55f42378039d294422c5db3cd286', Boolean(recipeAst)],
+            [sessionAst ?? appAst, 'readCurrentAuthSession', '7ead974366f8f15deb84a5275ceef76e8a65b37be49573413806df27bc31a657', Boolean(sessionAst)],
+        ] as const;
+        for (const [sourceFile, name, semanticHash, owner] of helperCases) {
+            const declaration = sourceFile.statements.find(
+                (statement): statement is ts.FunctionDeclaration =>
+                    ts.isFunctionDeclaration(statement) &&
+                    statement.name?.text === name,
+            );
+            expect.soft(declaration?.body, `${name} remains owned`).toBeDefined();
+            if (declaration?.body) {
+                expectExactExport(declaration, owner, name);
+                expect.soft(
+                    task9aAstFingerprint(functionSemantics(declaration)),
+                    `exact ${name} semantics`,
+                ).toBe(semanticHash);
+            }
+        }
+
+        const panelSource = panelAst ?? appAst;
+        const panel = panelSource.statements.find(
+            (statement): statement is ts.FunctionDeclaration =>
+                ts.isFunctionDeclaration(statement) &&
+                statement.name?.text === 'AuthCommandCenterPanel',
+        );
+        expect.soft(
+            panel?.body,
+            'AuthCommandCenterPanel remains in owner/App fallback',
+        ).toBeDefined();
+        if (panel?.body) {
+            expectExactExport(
+                panel,
+                Boolean(panelAst),
+                'AuthCommandCenterPanel',
+            );
+            expect.soft(
+                task9aAstFingerprint(functionSemantics(panel)),
+                'exact complete AuthCommandCenterPanel semantics',
+            ).toBe('e83b7a9882401ecf210a2e3bd01f4e129964cc1a1b4eff9ffd4726f11128b738');
+            const parameter = panel.parameters[0];
+            const parameterKeys =
+                parameter && ts.isObjectBindingPattern(parameter.name)
+                    ? parameter.name.elements.map((element) =>
+                          element.name.getText(panelSource),
+                      )
+                    : [];
+            expect.soft(parameterKeys, 'exact Auth panel prop order').toEqual([
+                'state',
+                'bootstrap',
+                'authSession',
+                'globalValues',
+                'onAuthenticated',
+                'onLogout',
+            ]);
+            expect.soft(
+                parameter?.type
+                    ? task9aAstFingerprint([parameter.name, parameter.type])
+                    : '',
+                'exact six-prop Auth panel contract',
+            ).toBe('b04b9ebc0d1150334ff87a5f0019a3c68edee3b7f8ab3ace555e2244c7ca79df');
+
+            const statements = [...panel.body.statements];
+            const returnIndex = statements.findIndex(ts.isReturnStatement);
+            expect.soft(statements).toHaveLength(26);
+            expect.soft(returnIndex).toBe(25);
+            expect.soft(
+                task9aAstFingerprint(statements.slice(0, returnIndex)),
+                'exact Auth controller, redaction, and action topology',
+            ).toBe('166bceb67b7f4fa52fda33fc9bbd0b684c7aad9fcb4ad3ae09d88c77b8418687');
+
+            const hookCalls: string[] = [];
+            const visitHooks = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    /^use[A-Z]/.test(node.expression.text)
+                ) {
+                    hookCalls.push(node.expression.text);
+                }
+                ts.forEachChild(node, visitHooks);
+            };
+            visitHooks(panel);
+            expect.soft(hookCalls, 'exact Auth hook inventory').toEqual([
+                ...Array.from({ length: 7 }, () => 'useState'),
+                'useMemo',
+                'useMemo',
+                'useEffect',
+            ]);
+            expect.soft(
+                task9aAstFingerprint([statements[14]]),
+                'exact Auth API-base synchronization effect',
+            ).toBe('85cc69afaf396cc7304378bf6049be45fb819569201be8d9799e2b22dd2d4dee');
+
+            const actionInventory = statements
+                .slice(13, 25)
+                .flatMap((statement) => {
+                    if (!ts.isVariableStatement(statement)) return [];
+                    const declaration = statement.declarationList.declarations[0];
+                    return declaration && ts.isIdentifier(declaration.name)
+                        ? [declaration.name.text]
+                        : [];
+                });
+            expect.soft(actionInventory, 'exact Auth action inventory').toEqual([
+                'appendAction',
+                'runWithBusy',
+                'login',
+                'restore',
+                'clearLocal',
+                'createWsTicket',
+                'negativeWsTicket',
+                'expiredWsTicket',
+                'negativeLogin',
+                'copyDiagnostics',
+                'copyRecipe',
+            ]);
+            expect.soft(
+                task9aAstFingerprint([statements[18]]),
+                'Auth clear-local action does not become logout',
+            ).toBe('540b79703b143f59068720c4163bdd50372225896e897a99d0b63a82c4371c00');
+            const attachAuthValues: string[] = [];
+            const visitAttachAuth = (node: ts.Node): void => {
+                if (
+                    ts.isPropertyAssignment(node) &&
+                    node.name.getText(panelSource) === 'attachAuth'
+                ) {
+                    attachAuthValues.push(node.initializer.getText(panelSource));
+                }
+                ts.forEachChild(node, visitAttachAuth);
+            };
+            visitAttachAuth(panel);
+            expect.soft(
+                attachAuthValues,
+                'exact positive/negative Auth request credential topology',
+            ).toEqual(['true', 'false', 'true', 'false']);
+            expect.soft(
+                panel.getText(panelSource),
+                'Auth diagnostics retain explicit WS-ticket redaction',
+            ).toContain("ticket: '<redacted:ws-ticket>'");
+
+            const returnExpression = task9aReturnExpression(panel);
+            expect.soft(
+                task9aAstFingerprint([returnExpression]),
+                'Auth owner owns exact legacy JSX AST',
+            ).toBe('353ea8ffdc7030754e6667f65626a99092389dd60dad2fbe67801f63f94cf284');
+            expect.soft(
+                task9aJsxRuntimeFingerprint(returnExpression),
+                'Auth owner owns exact legacy compiled JSX',
+            ).toBe('69898b3aabbfe1433a34209c6e49b3508843875b028f6a11e981d94f02e3a02f');
+        }
+
+        const app = task9aNamedFunction(appAst, 'App');
+        const mounts = task9aJsxCalls(app, 'AuthCommandCenterPanel');
+        expect.soft(
+            mounts,
+            'one unconditional hidden-tab Auth panel mount',
+        ).toHaveLength(1);
+        expect.soft(
+            task9aAstFingerprint(mounts),
+            'exact Auth App mount',
+        ).toBe('6fba3d5989974571c150cec0baa21516bb045149efc0a09fb4c365e14be09845');
+        let ancestor: ts.Node | undefined = mounts[0];
+        while (ancestor && !ts.isJsxElement(ancestor)) {
+            ancestor = ancestor.parent;
+        }
+        expect.soft(
+            ancestor ? task9aAstFingerprint([ancestor]) : '',
+            'exact hidden-capable Auth ancestor',
+        ).toBe('6413fd1e3b3e94c69617c31a06d783801e7811c5a56821033bc480b10958ff27');
+        const conditionalMountAncestors: string[] = [];
+        let current: ts.Node | undefined = mounts[0]?.parent;
+        while (current && current !== app) {
+            if (
+                ts.isConditionalExpression(current) ||
+                (ts.isBinaryExpression(current) &&
+                    current.operatorToken.kind ===
+                        ts.SyntaxKind.AmpersandAmpersandToken)
+            ) {
+                conditionalMountAncestors.push(ts.SyntaxKind[current.kind]);
+            }
+            current = current.parent;
+        }
+        expect.soft(
+            conditionalMountAncestors,
+            'Auth panel stays mounted while hidden',
+        ).toEqual([]);
+        expect.soft(
+            task9aAstFingerprint([app]),
+            'unchanged App function through Auth extraction',
+        ).toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
+        expect.soft(appSource, 'no Auth lazy/Suspense lifetime cutover').not.toMatch(
+            /(?:lazy\s*\(|<Suspense\b)/,
+        );
+        expect.soft(appSource).toContain('function LoginScreen');
+        expect.soft(appSource).toContain('consumeBootstrapAgentSessionTicket');
+        expect.soft(appSource).toContain('scrubAgentSessionTicketFromUrl');
+        if (panelAst) {
+            const panelOwnerSource = repositorySource(panelOwnerPath);
+            expect.soft(panelOwnerSource).not.toMatch(
+                /(?:function\s+LoginScreen|consumeBootstrapAgentSessionTicket|scrubAgentSessionTicketFromUrl|pendingAgentSessionTicketConsume)/,
+            );
+        }
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'Auth extraction leaves the complete stylesheet unchanged',
         ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
     });
 

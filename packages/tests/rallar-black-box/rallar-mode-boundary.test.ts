@@ -124,6 +124,10 @@ const rallarDataPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-data/RallarDataPanel.tsx',
     import.meta.url,
 );
+const authPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -282,6 +286,17 @@ function rallarDataOwnerSource(source: string): string {
     return sourceOrFallback(rallarDataPanelSourcePath, fallback);
 }
 
+function authCommandCenterOwnerSource(source: string): string {
+    const fallback = existsSync(authPanelSourcePath)
+        ? ''
+        : sourceBetween(
+              source,
+              'function AuthCommandCenterPanel',
+              'function RoomsClientsPanel',
+          );
+    return sourceOrFallback(authPanelSourcePath, fallback);
+}
+
 describe('rallar-black-box Rallar mode boundary', () => {
     it('does not expose black-box-runner command tabs in Rallar mode', () => {
         expect(appTabsForMode('rallar').map(tab => tab.id)).not.toEqual(
@@ -333,7 +348,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             rtcRealtimeOwnerSource(source),
             rallarDataOwnerSource(source),
             mediaConsoleOwnerSource(source),
-            sourceBetween(source, 'function AuthCommandCenterPanel', 'function RoomsClientsPanel'),
+            authCommandCenterOwnerSource(source),
             sourceBetween(source, 'function RoomsClientsPanel', 'function RallarServerRequestFeedbackPanel'),
             sourceBetween(
                 source,
