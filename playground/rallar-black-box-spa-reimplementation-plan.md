@@ -394,7 +394,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Iteration | Status | Exit tracking |
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
-| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 7,575 lines through Media M1; the broad exit criteria still bind, and shell/bootstrap plus remaining direct-diagnostic owners must still move before this iteration is complete. |
+| 1 — Extract Pure App Helpers | **In progress** | Behavior-preserving helper/presentation/controller slices have reduced `App.tsx` from 28,265 to 6,927 lines through Rallar Data M1; the broad exit criteria still bind, and shell/bootstrap plus remaining direct-diagnostic owners must still move before this iteration is complete. |
 | 2 — New Recipe Console Shell | Pending | No shell, codec, visual baseline, CSS-isolation proof, or chunk proof is represented as complete. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
@@ -490,6 +490,34 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   stylesheet. That is not an extraction regression, but it remains explicit
   Iteration 12 debt against the eventual 44px touch-target gate.
 
+#### Iteration 1 Rallar Data M1 checkpoint — `a328c25` (2026-07-11)
+
+- The exact private Data types and complete panel moved to
+  `src/legacy/diagnostics/rallar-data/RallarDataPanel.tsx` (670 lines), leaving
+  `App.tsx` at 6,927 lines. `BrowserRallarFacade` remains App-local for CRDT.
+  The Data store/change-listener owner, unsubscribe/store-close cleanup,
+  30-operation dispatch, runtime topics, JSX, direct mount, hidden-mounted
+  lifetime, stylesheet, aliases, public exports, and control contracts are
+  unchanged. This is ownership movement only: no route is cut over or hidden.
+- Untouched-production RED passed 43/44 with exactly the four intended
+  ownership failures; all fallback semantics remained green. Final focused
+  verification passed 58/58, the listed Iteration 1 validation slice passed
+  77/77, typecheck/build passed, four independent mutation probes were caught,
+  and two independent final reviews completed with no findings.
+- The in-app Browser desktop check plus Playwright's simulated guardrail (1/1)
+  and temporary reduced-motion desktop/portrait/landscape matrix (3/3) proved
+  one owner, state retention across tab and workspace-mode round trips,
+  keyboard navigation/focus, disabled real-backend guardrails, CSS isolation,
+  zero document/panel overflow, and no browser errors. The temporary QA spec
+  was removed.
+- The exhaustive Data lifecycle scenario was **skipped, not passed**, for this
+  exact reason: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed
+  apps/api-v1, apps/rallar-black-box-control-server, and
+  apps/rallar-black-box available.`
+- Data action controls measure 30px at desktop and 932x430 landscape, and 44px
+  at 430x932 portrait, under the unchanged legacy stylesheet. The 30px cases
+  remain explicit Iteration 12 touch-target debt.
+
 #### Remaining risks and evidence ownership
 
 | Remaining risk | Owning iteration(s) | Mitigation and evidence target |
@@ -500,7 +528,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Artifact versions and partial bundles | 6 | Keep parsing profile/version aware and prove `tests/playwright/rallar-black-box/recipe-console-analyze.spec.ts` — `imports a partial bundle offline and focuses the first actionable failure`, including missing, incompatible, and malformed file distinctions. |
 | Retention preview safety | 8 | Add optional dry-run behavior without changing the destructive default, require explicit confirmation, and prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup`. |
 | Qualitative visual and performance gates lack executable thresholds | 2, 9, 12 | Iteration 2 records approved screenshot baselines and an executable drift budget in `recipe-console-shell.spec.ts`; Iteration 9 encodes bounded-render and interaction budgets in `recipe-console-scale.spec.ts`; Iteration 12 encodes viewport, keyboard, touch, reduced-motion, and non-hover gates in `recipe-console-accessibility.spec.ts`. |
-| Preserved legacy Media controls are only 30px high in the 932x430 landscape QA viewport | 12 | Keep the parity extraction unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
+| Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
 | Local Node 26 differs from CI Node 24 | 1 and every code-changing iteration | Run the focused tests, typecheck, and build on CI Node 24; retain the local Node `26.5.0` result separately so version-specific differences remain visible. |
 | Live services and Postgres were unavailable or not exercised in Iteration 0 | 3-5, 8, 12 | Run the listed Deno control-server tests and configured Playwright/live distributed lifecycle, culminating in `npm run test:e2e:rallar-black-box:full-stack:real:distributed`; do not close live-service gates from mock or sandbox-only evidence. |
 

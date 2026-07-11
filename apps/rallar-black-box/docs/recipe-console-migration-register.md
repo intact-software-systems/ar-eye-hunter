@@ -43,6 +43,19 @@ action controls remain 30px high and are registered Iteration 12 touch-target
 debt. This checkpoint changes no row's cutover, hide, mount, rollback, or
 deep-link status; `direct.media` retains its temporary stateful exception.
 
+Rallar Data M1 ownership checkpoint (2026-07-11): the exact private Data types
+and complete console are now owned by
+`src/legacy/diagnostics/rallar-data/RallarDataPanel.tsx` (670 lines), reducing
+`App.tsx` to 6,927 lines. Tests-first fallback proof, 58/58 focused tests, the
+77/77 listed Iteration 1 slice, typecheck/build, cleanup/dispatch/JSX/mount
+mutation probes, in-app Browser and reduced-motion multi-viewport Playwright,
+and two independent reviews passed. The exhaustive live Data lifecycle was
+skipped because the Postgres-backed API/control/app full stack was not enabled.
+Desktop and landscape action controls remain 30px and are registered Iteration
+12 touch-target debt. This changes no cutover, hide, mount, rollback, or
+deep-link status; `direct.rallar-data` retains its temporary open-store and
+change-listener exception.
+
 ## Compatibility inputs that must remain deterministic
 
 | Compatibility input | Required destination during migration | Exact compatibility URL |
