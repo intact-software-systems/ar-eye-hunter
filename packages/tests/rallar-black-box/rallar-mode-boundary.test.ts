@@ -84,6 +84,10 @@ const quickViewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestView.tsx',
     import.meta.url,
 );
+const rtcRealtimeViewSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/RtcRealtimeView.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -175,6 +179,17 @@ function diagnosticOwnerSources(source: string): Readonly<{
     };
 }
 
+function rtcRealtimeOwnerSource(source: string): string {
+    return [
+        sourceBetween(
+            source,
+            'function RtcRealtimePanel',
+            'function RallarDataPanel',
+        ),
+        sourceOrFallback(rtcRealtimeViewSourcePath, ''),
+    ].join('\n');
+}
+
 describe('rallar-black-box Rallar mode boundary', () => {
     it('does not expose black-box-runner command tabs in Rallar mode', () => {
         expect(appTabsForMode('rallar').map(tab => tab.id)).not.toEqual(
@@ -223,7 +238,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
             diagnostics.rtcPanel,
             diagnostics.topologyPanel,
             sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel'),
-            sourceBetween(source, 'function RtcRealtimePanel', 'function RallarDataPanel'),
+            rtcRealtimeOwnerSource(source),
             sourceBetween(source, 'function RallarDataPanel', 'function MediaConsolePanel'),
             sourceBetween(source, 'function MediaConsolePanel', 'function AuthCommandCenterPanel'),
             sourceBetween(source, 'function AuthCommandCenterPanel', 'function RoomsClientsPanel'),
@@ -295,7 +310,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
         );
         const roomsClientsPanel = sourceBetween(source, 'function RoomsClientsPanel', 'function RallarServerRequestFeedbackPanel');
         const websocketPanel = sourceBetween(source, 'function WebSocketCommandCenterPanel', 'function RtcRealtimePanel');
-        const rtcRealtimePanel = sourceBetween(source, 'function RtcRealtimePanel', 'function RallarDataPanel');
+        const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
 
         expect(actionFeedbackPanel).toContain('feedback.state');
         expect(actionFeedbackPanel).toContain('aria-live="polite"');
