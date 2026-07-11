@@ -796,8 +796,12 @@ describe('rallar-black-box app source ownership', () => {
             {
                 path: 'apps/rallar-black-box/src/legacy/shared/record-value.ts',
                 appImport: './legacy/shared/record-value.ts',
-                appSeams: ['recordValue'],
+                appSeams: ['recordArray', 'recordValue'],
                 declarations: [
+                    {
+                        seam: 'recordArray',
+                        pattern: /^\s*export\s+function\s+recordArray\s*\(/m,
+                    },
                     {
                         seam: 'recordValue',
                         pattern: /^\s*export\s+function\s+recordValue\s*\(/m,
@@ -3004,6 +3008,14 @@ describe('rallar-black-box app source ownership', () => {
                 repositorySource(
                     'apps/rallar-black-box/src/legacy/diagnostics/quick-test/use-quick-rallar-test-controller.ts',
                 ),
+                existsSync(resolve(
+                    repositoryRoot,
+                    'apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts',
+                ))
+                    ? repositorySource(
+                          'apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts',
+                      )
+                    : '',
             ].flatMap((source) => [...source.matchAll(/\bstringValue\s*\(/g)]),
             'all unaffected stringValue consumers use the shared import',
         ).toHaveLength(42);
@@ -8736,7 +8748,8 @@ describe('rallar-black-box app source ownership', () => {
             'runningActionFeedback', 'completedActionFeedback',
             'activeDeadlineEpochMs', 'eventMatchesFilters', 'firstStringValue',
             'eventGroupValue', 'eventPeerValue', 'eventSelectorValue',
-            'optionalRecord', 'optionalNumber', 'isRallarBrowserEvent',
+            'optionalRecord', 'recordArray', 'optionalNumber',
+            'isRallarBrowserEvent',
             'isRallarTraceEvent', 'rallarTraceSource', 'eventPayloadDetails',
             'eventPayloadText', 'eventFailureText', 'traceTimingText',
             'traceMetaText', 'looksLikeWsStatus', 'looksLikeRtcStatus',
@@ -8754,7 +8767,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(appSource, 'later Groups/Server helper remains local')
             .toMatch(/^function\s+findStringDeep\b/m);
         expect.soft(task9aImportEdges(appAst)).toContain(
-            './legacy/shared/record-value.ts|value:recordValue->optionalRecord',
+            './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
         );
 
         const ownerAst = (path: string): ts.SourceFile =>
@@ -8905,7 +8918,7 @@ describe('rallar-black-box app source ownership', () => {
             './legacy/diagnostics/shared/CommandCenterActionFeedbackPanel.tsx|value:CommandCenterActionFeedbackPanel',
             './legacy/diagnostics/shared/action-feedback.ts|type:CommandCenterActionFeedback,value:completedActionFeedback,value:idleActionFeedback,value:runningActionFeedback',
             './legacy/shared/finite-number.ts|value:optionalNumber',
-            './legacy/shared/record-value.ts|value:recordValue->optionalRecord',
+            './legacy/shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
             './legacy/shared/use-now.ts|value:useNow',
             './legacy/shell/RallarBrowserTraceBar.tsx|value:RallarBrowserTraceBar',
             './legacy/shell/rallar-browser-status.ts|type:RallarBrowserStatusSummary,value:deriveRallarBrowserStatus',
@@ -10449,12 +10462,35 @@ describe('rallar-black-box app source ownership', () => {
         expect(cycles, 'Quick presentation owner import cycles').toEqual([]);
     });
 
-    it('extracts RTC/Realtimes contracts and presentation while preserving its App-local controller', () => {
+    it('extracts the RTC/Realtimes controller behind one thin legacy root', () => {
         const appSource = repositorySource(appSourcePath);
         const appAst = task9aSourceFile(appSourcePath, appSource);
         const root = 'apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime';
         const contractsPath = `${root}/rtc-realtime-contracts.ts`;
         const viewPath = `${root}/RtcRealtimeView.tsx`;
+        const controllerPath = `${root}/use-rtc-realtime-controller.ts`;
+        const panelPath = `${root}/RtcRealtimePanel.tsx`;
+        const recordValuePath =
+            'apps/rallar-black-box/src/legacy/shared/record-value.ts';
+        const recordValueAst = task9aSourceFile(
+            recordValuePath,
+            repositorySource(recordValuePath),
+        );
+        const recordArrayDeclaration = recordValueAst.statements.find(
+            (statement): statement is ts.FunctionDeclaration =>
+                ts.isFunctionDeclaration(statement) &&
+                statement.name?.text === 'recordArray',
+        );
+        expect.soft(
+            Boolean(recordArrayDeclaration),
+            'shared record-value owner exports recordArray',
+        ).toBe(true);
+        if (recordArrayDeclaration) {
+            expect.soft(
+                task9aAstFingerprint([recordArrayDeclaration]),
+                'exact moved recordArray declaration',
+            ).toBe('d1bf28c48a9d6609314991ec3e96e44ad79df547e3ab3538eab7534b099a3e4a');
+        }
         const owners = [
             [contractsPath, 190, [
                 'type:RtcRealtimeReceivedRow',
@@ -10463,6 +10499,12 @@ describe('rallar-black-box app source ownership', () => {
                 'type:RtcRealtimeViewModel',
             ]],
             [viewPath, 500, ['value:RtcRealtimeView']],
+            [controllerPath, 720, [
+                'type:RtcRealtimeControllerModel',
+                'type:UseRtcRealtimeControllerInput',
+                'value:useRtcRealtimeController',
+            ]],
+            [panelPath, 80, ['value:RtcRealtimePanel']],
         ] as const;
         const sources = new Map<string, string>();
         for (const [path, cap, exports] of owners) {
@@ -10493,6 +10535,26 @@ describe('rallar-black-box app source ownership', () => {
                 '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
                 '@shared/api/api-config.ts|type:AuthSession',
             ]],
+            [controllerPath, [
+                '../../../client-defaults.ts|value:RALLAR_BLACK_BOX_CLIENT_DEFAULTS',
+                '../../../direct-rallar-operations.ts|value:configureDirectRallarFacade,value:createDirectRallarRuntimeEvent',
+                '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig,value:rallarBlackBoxRuntimeStore',
+                '../../rallar/load-browser-rallar-facade.ts|value:loadBrowserRallarFacade',
+                '../../shared/json-presentation.ts|value:json,value:parseJsonText,value:splitCsvValues',
+                '../../shared/record-value.ts|value:recordArray,value:recordValue->optionalRecord',
+                '../../shared/redaction-presentation.ts|value:redactedJson',
+                '../../shared/string-value.ts|value:stringValue',
+                '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                '../shared/action-feedback.ts|type:CommandCenterActionFeedback,value:completedActionFeedback,value:idleActionFeedback,value:runningActionFeedback',
+                './rtc-realtime-contracts.ts|type:RtcRealtimeReceivedRow,type:RtcRealtimeSubscriptionRow,type:RtcRealtimeTransport',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestSeverity,type:RallarBlackBoxTestState',
+                '@shared/api/api-config.ts|type:AuthSession',
+                'react|value:useEffect,value:useRef,value:useState',
+            ]],
+            [panelPath, [
+                './RtcRealtimeView.tsx|value:RtcRealtimeView',
+                './use-rtc-realtime-controller.ts|type:UseRtcRealtimeControllerInput,value:useRtcRealtimeController',
+            ]],
         ]);
         for (const [path] of owners) {
             if (!sources.has(path)) continue;
@@ -10507,8 +10569,7 @@ describe('rallar-black-box app source ownership', () => {
             ),
             'App exact RTC/Realtimes owner imports',
         ).toEqual([
-            './legacy/diagnostics/rtc-realtime/RtcRealtimeView.tsx|value:RtcRealtimeView',
-            './legacy/diagnostics/rtc-realtime/rtc-realtime-contracts.ts|type:RtcRealtimeReceivedRow,type:RtcRealtimeSubscriptionRow,type:RtcRealtimeTransport',
+            './legacy/diagnostics/rtc-realtime/RtcRealtimePanel.tsx|value:RtcRealtimePanel',
         ]);
 
         const namedTypeNodes = (
@@ -10601,6 +10662,39 @@ describe('rallar-black-box app source ownership', () => {
                 )));
             }
         }
+        if (sources.has(controllerPath)) {
+            const controllerContractAst = task9aSourceFile(
+                controllerPath,
+                sources.get(controllerPath)!,
+            );
+            const expectedControllerContracts = task9aSourceFile(
+                'expected-rtc-realtime-controller-contracts.ts',
+                `type UseRtcRealtimeControllerInput = Readonly<{
+                    state: RallarBlackBoxTestState;
+                    bootstrap: RallarBlackBoxBootstrapConfig;
+                    authSession?: AuthSession;
+                    globalValues: CommandCenterGlobalValues;
+                }>;
+                type RtcRealtimeControllerModel = ReturnType<
+                    typeof useRtcRealtimeController
+                >;`,
+            );
+            for (const name of [
+                'UseRtcRealtimeControllerInput',
+                'RtcRealtimeControllerModel',
+            ] as const) {
+                expect.soft(
+                    task9aAstFingerprint(namedTypeNodes(
+                        controllerContractAst,
+                        name,
+                    )),
+                    `${name}: exact RTC controller contract`,
+                ).toBe(task9aAstFingerprint(namedTypeNodes(
+                    expectedControllerContracts,
+                    name,
+                )));
+            }
+        }
 
         const appLocalNames = new Set<string>();
         for (const statement of appAst.statements) {
@@ -10622,45 +10716,63 @@ describe('rallar-black-box app source ownership', () => {
         for (const moved of [
             'RtcRealtimeTransport', 'RtcRealtimeReceivedRow',
             'RtcRealtimeSubscriptionRow', 'RtcRealtimeViewModel',
-            'RtcRealtimeView',
+            'RtcRealtimeView', 'UseRtcRealtimeControllerInput',
+            'RtcRealtimeControllerModel', 'useRtcRealtimeController',
+            'RtcRealtimePanel',
         ]) {
             expect.soft(appLocalNames, `App no local ${moved}`).not.toContain(moved);
         }
 
-        const controller = task9aNamedFunction(appAst, 'RtcRealtimePanel');
-        const controllerParameter = controller.parameters[0];
-        const expectedControllerSignature = task9aNamedFunction(
-            task9aSourceFile(
-                'expected-rtc-realtime-controller.tsx',
-                `function RtcRealtimePanel({
-                    state, bootstrap, authSession, globalValues,
-                }: {
-                    state: RallarBlackBoxTestState;
-                    bootstrap: RallarBlackBoxBootstrapConfig;
-                    authSession?: AuthSession;
-                    globalValues: CommandCenterGlobalValues;
-                }) { return <div />; }`,
-            ),
-            'RtcRealtimePanel',
+        const controllerAst = sources.has(controllerPath)
+            ? task9aSourceFile(controllerPath, sources.get(controllerPath)!)
+            : appAst;
+        const controller = task9aNamedFunction(
+            controllerAst,
+            sources.has(controllerPath)
+                ? 'useRtcRealtimeController'
+                : 'RtcRealtimePanel',
         );
+        const controllerParameter = controller.parameters[0];
         expect.soft(
-            controllerParameter
-                ? task9aAstFingerprint([
-                      controllerParameter.name,
-                      controllerParameter.type!,
-                  ])
-                : '',
-            'exact four-prop RTC controller contract',
-        ).toBe(task9aAstFingerprint([
-            expectedControllerSignature.parameters[0]!.name,
-            expectedControllerSignature.parameters[0]!.type!,
-        ]));
+            controller.parameters,
+            'RTC controller has exactly one formal input parameter',
+        ).toHaveLength(1);
+        const controllerInputKeys = controllerParameter &&
+                ts.isObjectBindingPattern(controllerParameter.name)
+            ? controllerParameter.name.elements.map((element) =>
+                  element.name.getText(controllerAst)
+              )
+            : [];
+        expect.soft(
+            controllerInputKeys,
+            'exact four-prop RTC controller input order',
+        ).toEqual(['state', 'bootstrap', 'authSession', 'globalValues']);
+        const unsafeControllerInputs = controllerParameter &&
+                ts.isObjectBindingPattern(controllerParameter.name)
+            ? controllerParameter.name.elements.filter((element) =>
+                  Boolean(
+                      element.propertyName ||
+                      element.initializer ||
+                      element.dotDotDotToken,
+                  )
+              )
+            : [];
+        expect.soft(
+            unsafeControllerInputs,
+            'RTC controller input has no aliases, defaults, or rest escape',
+        ).toEqual([]);
+        if (sources.has(controllerPath)) {
+            expect.soft(
+                controllerParameter?.type?.getText(controllerAst) ?? '',
+                'RTC hook consumes its named four-prop input contract',
+            ).toBe('UseRtcRealtimeControllerInput');
+        }
         const statements = controller.body!.statements;
         const returnIndex = statements.findIndex(ts.isReturnStatement);
-        expect.soft(returnIndex, 'RTC controller has one final return')
+        expect.soft(returnIndex, 'RTC controller hook has one final return')
             .toBe(statements.length - 1);
         const preReturn = statements.slice(0, returnIndex);
-        expect.soft(preReturn, 'exact 46 App-local RTC controller statements')
+        expect.soft(preReturn, 'exact 46 extracted RTC controller statements')
             .toHaveLength(46);
         expect.soft(
             task9aAstFingerprint(preReturn),
@@ -10691,6 +10803,42 @@ describe('rallar-black-box app source ownership', () => {
             'c253b188565a336571a941a9518484f48705c2b1ea5e11b86cc321d1d67b5794',
             'e4b46deaa8c0a687dc40d2d5a71eaf6e614315f27d6f054fdde8adac33b46014',
         ]);
+        const controllerDeclarations = new Map<string, ts.VariableStatement>();
+        for (const statement of preReturn) {
+            if (!ts.isVariableStatement(statement)) continue;
+            for (const declaration of statement.declarationList.declarations) {
+                if (ts.isIdentifier(declaration.name)) {
+                    controllerDeclarations.set(declaration.name.text, statement);
+                }
+            }
+        }
+        for (const [name, expectedHash] of [
+            ['context', 'd77af449e01d28590602b571b168bdac8b84ff0104b3996cad32731744198c68'],
+            ['recordDirectEvent', 'e69900faf20cddff32029f7e038507526b2f976421d89d5b0e2f6b382c2b1dc7'],
+            ['nowMs', 'ce0208a4e36cefa89754b097d573050994fc061da0b3d4c1b86925517650e7a0'],
+            ['recordPhase', 'f52817ea4ea12573d44e6c651d01ee027f88a065cd22463644074bb16466db69'],
+            ['runTimedPhase', '42d929e63a86ff511cf986f395e655b56bee48b069b5b3650e6ad2d058ab3401'],
+            ['isFacadeJoinedToActiveGroup', '1f7467c32c194d594b5e9ceef6e07913463cbf26df43f80a638e993fa318038d'],
+            ['ensureActiveGroupJoined', '81fbbbfc5ff21bd45fbca93021e6e354baa82fd10095dbc5fcf23016d4a6afbd'],
+            ['withFacade', 'f712388db61594f25f6cf5467bfdfd0ba9846897dffc00f300c6176dacba6c0b'],
+            ['runAction', 'b4dac615d21f402c35fee1d557eea7f1885f69d23a8cf2281f26b2722337a6a8'],
+            ['addSubscription', '2df5eedb38b8056f927f10659dd7b72e1eba80954baa85448c550bfe29ba5b00'],
+            ['addReceived', '01ff6839d9e43df5dbab308fd8fd005418161c8f68285875b8c99d1be33c97e6'],
+            ['subscribeRealtime', 'e7dac9eed6227004904c39c8e4f24df38d072e8a3bbde4a6d9346d703adb361c'],
+            ['subscribeRtcMessages', '5d267812fcde18c5c88c797a7cfcd993ebd28405e108874452c19eaae3c76b7c'],
+            ['clearSubscriptions', 'ec5f9e217753929ef6b85410f3e54d191326db853aeadab48cb5513ea85664a0'],
+            ['sendRealtime', '29763618157949ea892149a8dd35ceda3234c6883439fb20712e4e8d6fbb0c19'],
+            ['sendRtcMessage', '9c20ae4c7f8dda6f945c74a8d9908f4b3c4dac5e3c5b0aa32a10e2059605125f'],
+            ['waitForRoomLane', '34df714a67936a94daaeb89510dae89dfdec8df218daa6d4111d508ea89808dc'],
+            ['refreshHealth', 'e0e4b7d7085fd737334e01f339380abb9056c9ba330e513fe14393f18a8b77fb'],
+            ['copyRecipe', 'e73380d4b94754ab53dfb3d653aff98c67dfbbb868387b366c1d5b98c2d848cf'],
+        ] as const) {
+            const statement = controllerDeclarations.get(name);
+            expect.soft(
+                statement ? task9aAstFingerprint([statement]) : '',
+                `${name}: exact RTC controller action`,
+            ).toBe(expectedHash);
+        }
 
         const modelKeys = [
             'transport', 'setTransport', 'laneId', 'setLaneId',
@@ -10706,76 +10854,288 @@ describe('rallar-black-box app source ownership', () => {
             'sendRealtime', 'sendRtcMessage', 'waitForRoomLane',
             'refreshHealth', 'copyRecipe',
         ];
-        const viewCalls = task9aJsxCalls(controller, 'RtcRealtimeView');
-        expect.soft(viewCalls, 'one direct RTC controlled View call').toHaveLength(1);
-        const viewCall = viewCalls[0];
-        if (viewCall) {
+        if (sources.has(controllerPath)) {
             expect.soft(
-                task9aReturnExpression(controller),
-                'RTC controller returns the controlled View directly',
-            ).toBe(viewCall);
+                [...appSource.matchAll(/\brecordArray\s*\(/g)],
+                'all nine remaining App recordArray call sites survive the move',
+            ).toHaveLength(9);
             expect.soft(
-                viewCall.attributes.properties.map((property) =>
-                    ts.isJsxAttribute(property) ? property.name.getText() : 'spread'
-                ),
-                'exact RTC View prop order',
-            ).toEqual(['state', 'authSession', 'model']);
-            for (const name of ['state', 'authSession'] as const) {
-                const attribute = viewCall.attributes.properties.find(
-                    (property): property is ts.JsxAttribute =>
-                        ts.isJsxAttribute(property) &&
-                        property.name.getText() === name,
-                );
-                const expression = attribute?.initializer &&
-                    ts.isJsxExpression(attribute.initializer)
-                    ? attribute.initializer.expression
-                    : undefined;
+                [
+                    ...sources
+                        .get(controllerPath)!
+                        .matchAll(/\brecordArray\s*\(/g),
+                ],
+                'RTC hook owns its one moved recordArray call site',
+            ).toHaveLength(1);
+            for (const [name, expectedHash] of [
+                [
+                    'rowsFromGroupSnapshots',
+                    'a6f8cc7bf5e303da377fd893eb36dda35220b6d3df5370900e73c1b72ff0f862',
+                ],
+                [
+                    'rowsFromClientSnapshots',
+                    '244d50c521f6593f58d3d9aeb21145663db34b908d55c574be3a0c1a8bd7ddb0',
+                ],
+                [
+                    'rowsFromStateEvents',
+                    '470c7ee6823911dc723b4d322ca1bc5d5fc641cf9fb2c2acd32dda65b97c0a99',
+                ],
+                [
+                    'RoomsClientsPanel',
+                    'c7fe946335be41d27b620a07f591490fd635d5586f8e0675ae944ff5c5af6da5',
+                ],
+            ] as const) {
                 expect.soft(
-                    expression && ts.isIdentifier(expression)
-                        ? expression.text
-                        : '',
-                    `RTC View exact ${name} forwarding`,
-                ).toBe(name);
+                    task9aAstFingerprint([
+                        task9aNamedFunction(appAst, name),
+                    ]),
+                    `${name}: unchanged shared recordArray consumer`,
+                ).toBe(expectedHash);
             }
-            const modelAttribute = viewCall.attributes.properties.find(
-                (property): property is ts.JsxAttribute =>
-                    ts.isJsxAttribute(property) &&
-                    property.name.getText() === 'model',
-            );
-            const model = modelAttribute?.initializer &&
-                ts.isJsxExpression(modelAttribute.initializer)
-                ? modelAttribute.initializer.expression
+            const controllerReturn = statements[returnIndex];
+            const controllerModel = controllerReturn &&
+                    ts.isReturnStatement(controllerReturn)
+                ? controllerReturn.expression
                 : undefined;
             expect.soft(
-                model && ts.isObjectLiteralExpression(model),
-                'RTC View receives one explicit model object',
+                controllerModel && ts.isObjectLiteralExpression(controllerModel),
+                'RTC hook returns one explicit model object',
             ).toBe(true);
-            if (model && ts.isObjectLiteralExpression(model)) {
+            if (controllerModel && ts.isObjectLiteralExpression(controllerModel)) {
                 expect.soft(
-                    model.properties.map((property) => property.name?.getText()),
-                    'exact RTC model key order',
+                    controllerModel.properties.map((property) =>
+                        property.name?.getText()
+                    ),
+                    'exact RTC hook model key order',
                 ).toEqual(modelKeys);
                 expect.soft(
-                    model.properties.map((property) =>
+                    controllerModel.properties.map((property) =>
                         ts.isShorthandPropertyAssignment(property)
                             ? property.name.text
                             : 'not-shorthand'
                     ),
-                    'exact RTC model shorthand forwarding',
+                    'RTC hook returns every model field as matching shorthand',
                 ).toEqual(modelKeys);
                 expect.soft(
-                    task9aAstFingerprint([model]),
-                    'exact RTC model object AST',
+                    task9aAstFingerprint([controllerModel]),
+                    'exact RTC hook model object AST',
                 ).toBe('3bc116b3a2393ade2ddafc49816da8ee1ec04b2c76f55129496f04c2e8ec8838');
             }
+            let controllerHasJsx = false;
+            const visitControllerJsx = (node: ts.Node): void => {
+                if (
+                    ts.isJsxElement(node) ||
+                    ts.isJsxSelfClosingElement(node) ||
+                    ts.isJsxFragment(node)
+                ) controllerHasJsx = true;
+                ts.forEachChild(node, visitControllerJsx);
+            };
+            visitControllerJsx(controller);
+            expect.soft(controllerHasJsx, 'RTC controller hook has no JSX')
+                .toBe(false);
+        }
+
+        if (sources.has(panelPath)) {
+            const panelAst = task9aSourceFile(panelPath, sources.get(panelPath)!);
+            const panel = task9aNamedFunction(panelAst, 'RtcRealtimePanel');
+            const panelParameter = panel.parameters[0];
             expect.soft(
-                task9aAstFingerprint(viewCalls),
-                'exact RTC View call and prop initializers',
-            ).toBe('42a86bc757c2929d1f3de773c27933e64be9bb1c33cd28535548ad9025189d8d');
+                panel.parameters,
+                'RTC root has exactly one formal input parameter',
+            ).toHaveLength(1);
+            const panelPropKeys = panelParameter &&
+                    ts.isObjectBindingPattern(panelParameter.name)
+                ? panelParameter.name.elements.map((element) =>
+                      element.name.getText(panelAst)
+                  )
+                : [];
+            expect.soft(panelPropKeys, 'exact four-prop RTC root order')
+                .toEqual(['state', 'bootstrap', 'authSession', 'globalValues']);
+            const unsafePanelInputs = panelParameter &&
+                    ts.isObjectBindingPattern(panelParameter.name)
+                ? panelParameter.name.elements.filter((element) =>
+                      Boolean(
+                          element.propertyName ||
+                          element.initializer ||
+                          element.dotDotDotToken,
+                      )
+                  )
+                : [];
             expect.soft(
-                task9aJsxRuntimeFingerprint(task9aReturnExpression(controller)),
-                'exact compiled RTC controlled View call',
-            ).toBe('ff2df9b2969ddb82a9e150000ac71d86c7811f436ea7d8141ff20b28f2c58b14');
+                unsafePanelInputs,
+                'RTC root input has no aliases, defaults, or rest escape',
+            ).toEqual([]);
+            expect.soft(
+                panelParameter?.type?.getText(panelAst) ?? '',
+                'RTC root consumes the exact controller input contract',
+            ).toBe('UseRtcRealtimeControllerInput');
+
+            const panelStatements = [...panel.body!.statements];
+            expect.soft(
+                panelStatements,
+                'RTC root has only one hook-model destructure and one View return',
+            ).toHaveLength(2);
+            expect.soft(
+                panelStatements.findIndex(ts.isReturnStatement),
+                'RTC root has one final top-level View return',
+            ).toBe(1);
+            const modelStatement = panelStatements[0];
+            expect.soft(
+                Boolean(modelStatement && ts.isVariableStatement(modelStatement)),
+                'RTC root first statement owns only the hook model',
+            ).toBe(true);
+            const modelDeclarations = modelStatement &&
+                    ts.isVariableStatement(modelStatement)
+                ? [...modelStatement.declarationList.declarations]
+                : [];
+            expect.soft(
+                modelDeclarations,
+                'RTC root hook statement has one safe declaration',
+            ).toHaveLength(1);
+            const modelDeclaration = modelDeclarations[0];
+            const rootModelKeys = modelDeclaration &&
+                    ts.isObjectBindingPattern(modelDeclaration.name)
+                ? modelDeclaration.name.elements.map((element) =>
+                      element.name.getText(panelAst)
+                  )
+                : [];
+            expect.soft(rootModelKeys, 'exact RTC root model destructure order')
+                .toEqual(modelKeys);
+            const unsafeModelBindings = modelDeclaration &&
+                    ts.isObjectBindingPattern(modelDeclaration.name)
+                ? modelDeclaration.name.elements.filter((element) =>
+                      Boolean(
+                          element.propertyName ||
+                          element.initializer ||
+                          element.dotDotDotToken,
+                      )
+                  )
+                : [];
+            expect.soft(
+                unsafeModelBindings,
+                'RTC root model destructure has no aliases, defaults, or rest escape',
+            ).toEqual([]);
+
+            const hookCalls: ts.CallExpression[] = [];
+            const visitHookCalls = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text === 'useRtcRealtimeController'
+                ) hookCalls.push(node);
+                ts.forEachChild(node, visitHookCalls);
+            };
+            visitHookCalls(panel);
+            expect.soft(hookCalls, 'one RTC controller hook call').toHaveLength(1);
+            expect.soft(
+                modelDeclaration?.initializer,
+                'RTC root destructures the one controller hook call directly',
+            ).toBe(hookCalls[0]);
+            expect.soft(
+                hookCalls[0]?.arguments,
+                'RTC root passes one hook input argument',
+            ).toHaveLength(1);
+            const hookInput = hookCalls[0]?.arguments[0];
+            expect.soft(
+                hookInput && ts.isObjectLiteralExpression(hookInput),
+                'RTC root passes one explicit hook input object',
+            ).toBe(true);
+            if (hookInput && ts.isObjectLiteralExpression(hookInput)) {
+                const hookInputKeys = [
+                    'state', 'bootstrap', 'authSession', 'globalValues',
+                ];
+                expect.soft(
+                    hookInput.properties.map((property) =>
+                        property.name?.getText()
+                    ),
+                    'exact RTC root hook input order',
+                ).toEqual(hookInputKeys);
+                expect.soft(
+                    hookInput.properties.map((property) =>
+                        ts.isShorthandPropertyAssignment(property)
+                            ? property.name.text
+                            : 'not-shorthand'
+                    ),
+                    'RTC root forwards every hook input as matching shorthand',
+                ).toEqual(hookInputKeys);
+            }
+
+            const viewCalls = task9aJsxCalls(panel, 'RtcRealtimeView');
+            expect.soft(viewCalls, 'one direct RTC controlled View call')
+                .toHaveLength(1);
+            const viewCall = viewCalls[0];
+            if (viewCall) {
+                expect.soft(
+                    task9aReturnExpression(panel),
+                    'RTC root returns the controlled View directly',
+                ).toBe(viewCall);
+                expect.soft(
+                    viewCall.attributes.properties.map((property) =>
+                        ts.isJsxAttribute(property)
+                            ? property.name.getText()
+                            : 'spread'
+                    ),
+                    'exact RTC View prop order',
+                ).toEqual(['state', 'authSession', 'model']);
+                for (const name of ['state', 'authSession'] as const) {
+                    const attribute = viewCall.attributes.properties.find(
+                        (property): property is ts.JsxAttribute =>
+                            ts.isJsxAttribute(property) &&
+                            property.name.getText() === name,
+                    );
+                    const expression = attribute?.initializer &&
+                        ts.isJsxExpression(attribute.initializer)
+                        ? attribute.initializer.expression
+                        : undefined;
+                    expect.soft(
+                        expression && ts.isIdentifier(expression)
+                            ? expression.text
+                            : '',
+                        `RTC View exact ${name} forwarding`,
+                    ).toBe(name);
+                }
+                const modelAttribute = viewCall.attributes.properties.find(
+                    (property): property is ts.JsxAttribute =>
+                        ts.isJsxAttribute(property) &&
+                        property.name.getText() === 'model',
+                );
+                const model = modelAttribute?.initializer &&
+                    ts.isJsxExpression(modelAttribute.initializer)
+                    ? modelAttribute.initializer.expression
+                    : undefined;
+                expect.soft(
+                    model && ts.isObjectLiteralExpression(model),
+                    'RTC View receives one explicit model object',
+                ).toBe(true);
+                if (model && ts.isObjectLiteralExpression(model)) {
+                    expect.soft(
+                        model.properties.map((property) =>
+                            property.name?.getText()
+                        ),
+                        'exact RTC View model key order',
+                    ).toEqual(modelKeys);
+                    expect.soft(
+                        model.properties.map((property) =>
+                            ts.isShorthandPropertyAssignment(property)
+                                ? property.name.text
+                                : 'not-shorthand'
+                        ),
+                        'exact RTC View model shorthand forwarding',
+                    ).toEqual(modelKeys);
+                    expect.soft(
+                        task9aAstFingerprint([model]),
+                        'exact RTC View model object AST',
+                    ).toBe('3bc116b3a2393ade2ddafc49816da8ee1ec04b2c76f55129496f04c2e8ec8838');
+                }
+                expect.soft(
+                    task9aAstFingerprint(viewCalls),
+                    'exact RTC View call and prop initializers',
+                ).toBe('42a86bc757c2929d1f3de773c27933e64be9bb1c33cd28535548ad9025189d8d');
+                expect.soft(
+                    task9aJsxRuntimeFingerprint(task9aReturnExpression(panel)),
+                    'exact compiled RTC controlled View call',
+                ).toBe('ff2df9b2969ddb82a9e150000ac71d86c7811f436ea7d8141ff20b28f2c58b14');
+            }
         }
 
         if (sources.has(viewPath)) {

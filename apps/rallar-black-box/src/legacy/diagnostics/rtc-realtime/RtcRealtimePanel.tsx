@@ -1,0 +1,47 @@
+import { RtcRealtimeView } from './RtcRealtimeView.tsx';
+import {
+    type UseRtcRealtimeControllerInput,
+    useRtcRealtimeController,
+} from './use-rtc-realtime-controller.ts';
+
+export function RtcRealtimePanel({
+    state, bootstrap, authSession, globalValues,
+}: UseRtcRealtimeControllerInput) {
+    const {
+        transport, setTransport, laneId, setLaneId,
+        peerIdsText, setPeerIdsText, typeId, setTypeId,
+        topicId, setTopicId, contextId, setContextId,
+        payloadText, setPayloadText, minSnapshotVersion,
+        setMinSnapshotVersion, reliability, setReliability,
+        ack, setAck, ownership, setOwnership,
+        timeoutMs, setTimeoutMs, busyAction, localError,
+        actionFeedback, result, received, health, subscriptions,
+        providerMode, realBackendReady, activeGroupId, peerIds, canRun,
+        subscribeRealtime, subscribeRtcMessages, clearSubscriptions,
+        sendRealtime, sendRtcMessage, waitForRoomLane, refreshHealth,
+        copyRecipe,
+    } = useRtcRealtimeController({
+        state, bootstrap, authSession, globalValues,
+    });
+
+    return (
+        <RtcRealtimeView
+            state={state}
+            authSession={authSession}
+            model={{
+                transport, setTransport, laneId, setLaneId,
+                peerIdsText, setPeerIdsText, typeId, setTypeId,
+                topicId, setTopicId, contextId, setContextId,
+                payloadText, setPayloadText, minSnapshotVersion,
+                setMinSnapshotVersion, reliability, setReliability,
+                ack, setAck, ownership, setOwnership,
+                timeoutMs, setTimeoutMs, busyAction, localError,
+                actionFeedback, result, received, health, subscriptions,
+                providerMode, realBackendReady, activeGroupId, peerIds, canRun,
+                subscribeRealtime, subscribeRtcMessages, clearSubscriptions,
+                sendRealtime, sendRtcMessage, waitForRoomLane, refreshHealth,
+                copyRecipe,
+            }}
+        />
+    );
+}
