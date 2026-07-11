@@ -28,6 +28,10 @@ const runnerRunsPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerRunsPanel.tsx',
     import.meta.url,
 );
+const flowBuilderPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPanel.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -119,7 +123,13 @@ describe('rallar-black-box Rallar mode boundary', () => {
             sourceBetween(source, 'function MediaConsolePanel', 'function AuthCommandCenterPanel'),
             sourceBetween(source, 'function AuthCommandCenterPanel', 'function RoomsClientsPanel'),
             sourceBetween(source, 'function RoomsClientsPanel', 'function CommandCenterActionFeedbackPanel'),
-            sourceBetween(source, 'function RallarServerPanel', 'function parseVariablesText'),
+            sourceBetween(
+                source,
+                'function RallarServerPanel',
+                existsSync(flowBuilderPanelSourcePath)
+                    ? 'export default function App'
+                    : 'function parseVariablesText',
+            ),
         ].join('\n');
 
         expect(directPanels).not.toMatch(/executeManualCommand|executeManualCommands|executeCommandFromJson/);

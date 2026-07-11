@@ -9,6 +9,8 @@ const appSourcePath = 'apps/rallar-black-box/src/App.tsx';
 const recipeConsoleSourcePath = 'apps/rallar-black-box/src/recipe-console';
 const runnerAdvancedSourcePath =
     'apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx';
+const flowBuilderPreviewsSourcePath =
+    'apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPreviews.tsx';
 const extractedModulePaths = [
     'apps/rallar-black-box/src/legacy/shell/browser-ui-storage.ts',
     'apps/rallar-black-box/src/legacy/shell/navigation.ts',
@@ -65,7 +67,16 @@ const presentationModules = [
     },
     {
         path: 'apps/rallar-black-box/src/legacy/shared/schema/SchemaAuthoringPanel.tsx',
-        moduleImport: './legacy/shared/schema/SchemaAuthoringPanel.tsx',
+        importerPath: existsSync(
+            resolve(repositoryRoot, flowBuilderPreviewsSourcePath),
+        )
+            ? flowBuilderPreviewsSourcePath
+            : appSourcePath,
+        moduleImport: existsSync(
+            resolve(repositoryRoot, flowBuilderPreviewsSourcePath),
+        )
+            ? '../../shared/schema/SchemaAuthoringPanel.tsx'
+            : './legacy/shared/schema/SchemaAuthoringPanel.tsx',
         seams: ['SchemaAuthoringPanel'],
     },
     {
@@ -7199,6 +7210,641 @@ describe('rallar-black-box app source ownership', () => {
                     ),
                 );
         }
+    });
+
+    it('extracts the Builder domain without changing its two-instance lifetime contract', () => {
+        const appSource = repositorySource(appSourcePath);
+        const builderRoot = 'apps/rallar-black-box/src/legacy/runner/builder';
+        const supportPath = `${builderRoot}/flow-builder-support.ts`;
+        const controllerPath = `${builderRoot}/use-flow-builder-controller.ts`;
+        const editorPath = `${builderRoot}/FlowBuilderEditor.tsx`;
+        const previewsPath = `${builderRoot}/FlowBuilderPreviews.tsx`;
+        const panelPath = `${builderRoot}/FlowBuilderPanel.tsx`;
+        const owners = [
+            {
+                path: supportPath,
+                lineCap: 100,
+                declarations: [
+                    /^export function flowBuilderVariablesFromGlobalValues\(/m,
+                    /^export function parseVariablesText\(/m,
+                    /^export const FLOW_STEP_BUTTONS\b/m,
+                    /^export function flowStepCommandIds\(/m,
+                ],
+            },
+            {
+                path: controllerPath,
+                lineCap: 300,
+                declarations: [
+                    /^export type UseFlowBuilderControllerInput\s*=/m,
+                    /^export function useFlowBuilderController\(/m,
+                    /^export type FlowBuilderControllerModel\s*=/m,
+                ],
+            },
+            {
+                path: editorPath,
+                lineCap: 170,
+                declarations: [/^export function FlowBuilderEditor\(/m],
+            },
+            {
+                path: previewsPath,
+                lineCap: 190,
+                declarations: [/^export function FlowBuilderPreviews\(/m],
+            },
+            {
+                path: panelPath,
+                lineCap: 150,
+                declarations: [/^export function FlowBuilderPanel\(/m],
+            },
+        ] as const;
+        const sources = new Map<string, string>();
+        for (const owner of owners) {
+            const exists = existsSync(resolve(repositoryRoot, owner.path));
+            const source = exists ? repositorySource(owner.path) : '';
+            sources.set(owner.path, source);
+            expect.soft(exists, `${owner.path}: exists`).toBe(true);
+            expect.soft(
+                source === '' ? 0 : source.trimEnd().split(/\r?\n/).length,
+                `${owner.path}: line cap`,
+            ).toBeLessThanOrEqual(owner.lineCap);
+            for (const declaration of owner.declarations) {
+                expect.soft(source, `${owner.path}: ${declaration.source}`).toMatch(
+                    declaration,
+                );
+            }
+            expect.soft(source, `${owner.path}: no App import`).not.toMatch(
+                /\b(?:from\s+|import\s*\(\s*)['"][^'"]*App\.tsx['"]/,
+            );
+            expect.soft(source, `${owner.path}: no CSS import`).not.toMatch(
+                /\b(?:from\s+|import\s*)['"][^'"]+\.css['"]/,
+            );
+            expect.soft(source, `${owner.path}: no barrel facade`).not.toMatch(
+                /^\s*export\s+(?:\*|(?:type\s+)?{[^}]+}\s+from)\b/m,
+            );
+        }
+        const supportSource = sources.get(supportPath) ?? '';
+        const controllerSource = sources.get(controllerPath) ?? '';
+        const editorSource = sources.get(editorPath) ?? '';
+        const previewsSource = sources.get(previewsPath) ?? '';
+        const panelSource = sources.get(panelPath) ?? '';
+
+        for (const declaration of [
+            'flowBuilderVariablesFromGlobalValues',
+            'parseVariablesText',
+            'FLOW_STEP_BUTTONS',
+            'flowStepCommandIds',
+            'FlowBuilderPanel',
+        ] as const) {
+            expect.soft(appSource, `App local ${declaration}`).not.toMatch(
+                new RegExp(
+                    `^\\s*(?:export\\s+)?(?:const|let|var|function)\\s+${declaration}\\b`,
+                    'm',
+                ),
+            );
+        }
+        expect.soft(appSource, 'App direct Builder owner import').toMatch(
+            /import\s*{\s*FlowBuilderPanel\s*}\s*from\s*'\.\/legacy\/runner\/builder\/FlowBuilderPanel\.tsx';/,
+        );
+        expect.soft(appSource, 'App no root flow-builder import').not.toMatch(
+            /from\s*'\.\/flow-builder\.ts'/,
+        );
+        expect.soft(appSource, 'App no root schema-authoring import').not.toMatch(
+            /from\s*'\.\/schema-authoring\.ts'/,
+        );
+        expect.soft(appSource, 'App no direct SchemaAuthoringPanel import')
+            .not.toMatch(/from\s*'\.\/legacy\/shared\/schema\/SchemaAuthoringPanel\.tsx'/);
+
+        const expectedImports = new Map<string, readonly string[]>([
+            [
+                supportPath,
+                [
+                    '../../../flow-builder.ts|type:FlowBuilderStepKind',
+                    '../../shared/record-value.ts|value:recordValue',
+                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestCommand',
+                ],
+            ],
+            [
+                controllerPath,
+                [
+                    '../../../flow-builder.ts|type:FlowBuilderStepKind,value:FLOW_BUILDER_TEMPLATES,value:addFlowBuilderStep,value:buildFlowBuilderRecipe,value:buildFlowBuilderRunnerScenario,value:flowBuilderText,value:parseFlowBuilderDefinition,value:templateFlowBuilderText',
+                    '../../../runtime-store.ts|value:rallarBlackBoxRuntimeStore',
+                    '../../../schema-authoring.ts|value:validateSchemaAuthoringValue',
+                    '../../shared/redaction-presentation.ts|value:redactedJson',
+                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                    './flow-builder-support.ts|value:flowBuilderVariablesFromGlobalValues,value:parseVariablesText',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                    'react|value:useEffect,value:useMemo,value:useState',
+                ],
+            ],
+            [
+                editorPath,
+                [
+                    '../../../flow-builder.ts|type:FlowBuilderStepKind,value:FLOW_BUILDER_TEMPLATES',
+                    './flow-builder-support.ts|value:FLOW_STEP_BUTTONS',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestRecipe',
+                ],
+            ],
+            [
+                previewsPath,
+                [
+                    '../../../flow-builder.ts|type:FlowBuilderDefinition',
+                    '../../../schema-authoring.ts|type:SchemaAuthoringValidation',
+                    '../../shared/command-presentation.ts|value:statusTone',
+                    '../../shared/redaction-presentation.ts|value:redactedJson',
+                    '../../shared/schema/SchemaAuthoringPanel.tsx|value:SchemaAuthoringPanel',
+                    './flow-builder-support.ts|value:flowStepCommandIds',
+                    '@shared/api/api-config.ts|type:AuthSession',
+                    '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestRecipe,type:RallarBlackBoxTestResult,type:RallarBlackBoxTestState',
+                ],
+            ],
+            [
+                panelPath,
+                [
+                    '../../shared/redaction-presentation.ts|value:uiRedactionOptions',
+                    './FlowBuilderEditor.tsx|value:FlowBuilderEditor',
+                    './FlowBuilderPreviews.tsx|value:FlowBuilderPreviews',
+                    './use-flow-builder-controller.ts|type:UseFlowBuilderControllerInput,value:useFlowBuilderController',
+                    '@shared-test/rallar-bb-test/redaction.ts|value:redactRallarBlackBoxValue',
+                ],
+            ],
+        ]);
+        for (const [path, imports] of expectedImports) {
+            expect.soft(
+                task9aImportEdges(task9aSourceFile(path, sources.get(path) ?? '')),
+                `${path}: exact imports/kinds`,
+            ).toEqual([...imports].sort());
+        }
+        const expectedExports = new Map<string, readonly string[]>([
+            [
+                supportPath,
+                [
+                    'value:FLOW_STEP_BUTTONS',
+                    'value:flowBuilderVariablesFromGlobalValues',
+                    'value:flowStepCommandIds',
+                    'value:parseVariablesText',
+                ],
+            ],
+            [
+                controllerPath,
+                [
+                    'type:FlowBuilderControllerModel',
+                    'type:UseFlowBuilderControllerInput',
+                    'value:useFlowBuilderController',
+                ],
+            ],
+            [editorPath, ['value:FlowBuilderEditor']],
+            [previewsPath, ['value:FlowBuilderPreviews']],
+            [panelPath, ['value:FlowBuilderPanel']],
+        ]);
+        for (const [path, exports] of expectedExports) {
+            expect.soft(
+                task9aExportSeams(task9aSourceFile(path, sources.get(path) ?? '')),
+                `${path}: exact exports`,
+            ).toEqual(exports);
+        }
+
+        const optionalFunction = (
+            path: string,
+            source: string,
+            name: string,
+        ): ts.FunctionDeclaration | undefined =>
+            task9aSourceFile(path, source).statements.find(
+                (statement): statement is ts.FunctionDeclaration =>
+                    ts.isFunctionDeclaration(statement) &&
+                    statement.name?.text === name,
+            );
+        const optionalVariable = (
+            path: string,
+            source: string,
+            name: string,
+        ): ts.VariableDeclaration | undefined => {
+            const file = task9aSourceFile(path, source);
+            for (const statement of file.statements) {
+                if (!ts.isVariableStatement(statement)) continue;
+                for (const declaration of statement.declarationList.declarations) {
+                    if (ts.isIdentifier(declaration.name) && declaration.name.text === name) {
+                        return declaration;
+                    }
+                }
+            }
+            return undefined;
+        };
+        for (const [name, parameterHash, bodyHash] of [
+            [
+                'flowBuilderVariablesFromGlobalValues',
+                'af1ab4647a09754b591c9e9f43356afd19eb461612166531b68185a05899ed67',
+                '33d47d0bcaf8a33c672f744c5da8f71b03b7a9bc537d4a5d108b56f58df55b8f',
+            ],
+            [
+                'parseVariablesText',
+                '471fc6c9019884d3151b01c30e0f9f610e6ae5deb2eaa9ff22c61d96d9f33271',
+                'd9fec842ce5c9790c543f41ee6b4ca80f5ee62ab04b484a7bc0a3d905ca2bd00',
+            ],
+            [
+                'flowStepCommandIds',
+                '1ca5049fc7a612481aeccd05c92f81ad9701b6519e1d4e17dd530f24fe24d465',
+                '42ec57142f1f74ba6854664353d3afaf8e636c4fd03904bc0af2be56d86edbb9',
+            ],
+        ] as const) {
+            const declaration = optionalFunction(supportPath, supportSource, name);
+            expect.soft(
+                declaration ? task9aAstFingerprint(declaration.parameters) : '',
+                `${name}: exact parameters`,
+            ).toBe(parameterHash);
+            expect.soft(
+                declaration?.body ? task9aAstFingerprint([declaration.body]) : '',
+                `${name}: exact body`,
+            ).toBe(bodyHash);
+        }
+        const buttonDeclaration = optionalVariable(
+            supportPath,
+            supportSource,
+            'FLOW_STEP_BUTTONS',
+        );
+        expect.soft(
+            buttonDeclaration?.initializer
+                ? task9aAstFingerprint([buttonDeclaration.initializer])
+                : '',
+            'FLOW_STEP_BUTTONS exact initializer',
+        ).toBe('b1c4bdff5c746c62c712cb40e235a4f895306b324d5cc15a0468914e4f74d85b');
+        const containsJsx = (path: string, source: string): boolean => {
+            let found = false;
+            const visit = (node: ts.Node): void => {
+                if (
+                    ts.isJsxElement(node) ||
+                    ts.isJsxSelfClosingElement(node) ||
+                    ts.isJsxFragment(node)
+                ) {
+                    found = true;
+                    return;
+                }
+                ts.forEachChild(node, visit);
+            };
+            visit(task9aSourceFile(path, source));
+            return found;
+        };
+        expect.soft(supportSource, 'support has no React/runtime').not.toMatch(
+            /\b(?:react|rallarBlackBoxRuntimeStore|useState|useMemo|useEffect)\b/,
+        );
+        expect.soft(containsJsx(supportPath, supportSource), 'support has no JSX')
+            .toBe(false);
+
+        const inputBlock = controllerSource.match(
+            /export type UseFlowBuilderControllerInput\s*=\s*Readonly<{([\s\S]*?)}>;/,
+        )?.[1] ?? '';
+        expect.soft(
+            [...inputBlock.matchAll(/^\s+(\w+)(?:\?|)[:(]/gm)].map(
+                (match) => match[1],
+            ),
+            'controller exact input fields without busy',
+        ).toEqual(['state', 'authSession', 'globalValues', 'onSelectCommand']);
+        const controllerDeclaration = optionalFunction(
+            controllerPath,
+            controllerSource,
+            'useFlowBuilderController',
+        );
+        const controllerText = controllerDeclaration?.getText() ?? '';
+        expect.soft(
+            [...controllerText.matchAll(/const \[(\w+),\s*\w+\]\s*=\s*useState/g)].map(
+                (match) => match[1],
+            ),
+            'controller exact six-state order',
+        ).toEqual([
+            'templateId',
+            'flowText',
+            'variablesText',
+            'variablesEdited',
+            'sequence',
+            'localError',
+        ]);
+        expect.soft(
+            [...controllerText.matchAll(/const (\w+) = useMemo(?:<|\s*\()/g)].map(
+                (match) => match[1],
+            ),
+            'controller exact six-memo order',
+        ).toEqual([
+            'flowResult',
+            'variablesResult',
+            'recipe',
+            'runnerScenario',
+            'recipeValidation',
+            'runnerValidation',
+        ]);
+        expect.soft([...controllerText.matchAll(/\buseEffect\s*\(/g)]).toHaveLength(1);
+        expect.soft([...controllerText.matchAll(/\buseRef\s*\(/g)]).toHaveLength(0);
+        expect.soft([...controllerText.matchAll(/\buseCallback\s*\(/g)]).toHaveLength(0);
+        expect.soft(
+            containsJsx(controllerPath, controllerSource),
+            'controller has no JSX',
+        ).toBe(false);
+        const controllerReturnIndex = controllerDeclaration?.body?.statements
+            .findIndex(ts.isReturnStatement) ?? -1;
+        const preReturnStatements =
+            controllerDeclaration && controllerReturnIndex >= 0
+                ? controllerDeclaration.body!.statements.slice(0, controllerReturnIndex)
+                : [];
+        expect.soft(preReturnStatements, 'all 22 controller statements').toHaveLength(22);
+        expect.soft(
+            task9aAstFingerprint(preReturnStatements),
+            'controller exact token-complete statements',
+        ).toBe('67ac181f2bfc66e511d37089248f42e57043daafbece0bb164664c287c41504d');
+        const statementsByName = new Map<string, ts.VariableStatement>();
+        for (const statement of preReturnStatements) {
+            if (
+                ts.isVariableStatement(statement) &&
+                ts.isIdentifier(statement.declarationList.declarations[0]?.name)
+            ) {
+                statementsByName.set(
+                    statement.declarationList.declarations[0].name.text,
+                    statement,
+                );
+            }
+        }
+        for (const [name, expectedHash] of [
+            ['selectTemplate', '8a13c2ba1ad5dd089b93c58738f84a61e226d22c457e43f2823438f97aac061c'],
+            ['addStep', 'c2a85bb5ffadb1f5a986ce8cf8ad2d865e9554e92ff94ad917317c3f18ab6813'],
+            ['normalizeFlowJson', 'e551baf436b5f4f662bcaa8bdc54b0d8b57d51322715364abf371481923667bc'],
+            ['runFlow', 'cfde177dd23012ef44d7df52d0996430215cdfcfb0e5a4d67d3fe114effdd107'],
+            ['copyText', '5764a0a5be327a354e0acc3b0247357ae9fb88cc2a8b93060ea816c47b525945'],
+        ] as const) {
+            const statement = statementsByName.get(name);
+            expect.soft(
+                statement ? task9aAstFingerprint([statement]) : '',
+                `${name}: exact action`,
+            ).toBe(expectedHash);
+        }
+        const effect = preReturnStatements.find(
+            (statement) =>
+                ts.isExpressionStatement(statement) &&
+                ts.isCallExpression(statement.expression) &&
+                ts.isIdentifier(statement.expression.expression) &&
+                statement.expression.expression.text === 'useEffect',
+        );
+        expect.soft(
+            effect ? task9aAstFingerprint([effect]) : '',
+            'controller exact effect body/dependencies',
+        ).toBe('e0716f20908f0c95b8a8a22b73560ab1362e27942feb5f0ce21a9d9ece095cf2');
+        const returnedFields =
+            controllerDeclaration && controllerReturnIndex >= 0
+                ? (() => {
+                      const statement =
+                          controllerDeclaration.body!.statements[controllerReturnIndex];
+                      if (
+                          !ts.isReturnStatement(statement) ||
+                          !statement.expression ||
+                          !ts.isObjectLiteralExpression(statement.expression)
+                      ) return [];
+                      return statement.expression.properties.map((property) =>
+                          property.name?.getText() ?? 'unsupported',
+                      );
+                  })()
+                : [];
+        expect.soft(returnedFields, 'controller exact model fields').toEqual([
+            'templateId',
+            'flowText',
+            'setFlowText',
+            'variablesText',
+            'setVariablesText',
+            'setVariablesEdited',
+            'flow',
+            'recipe',
+            'runnerScenario',
+            'parseError',
+            'recipeText',
+            'runnerText',
+            'recipeValidation',
+            'runnerValidation',
+            'localError',
+            'selectTemplate',
+            'addStep',
+            'normalizeFlowJson',
+            'runFlow',
+            'copyText',
+        ]);
+        for (const privateField of [
+            'flowResult',
+            'variablesResult',
+            'variablesEdited',
+            'sequence',
+        ]) {
+            expect.soft(returnedFields, `private controller field ${privateField}`)
+                .not.toContain(privateField);
+        }
+
+        const editorDeclaration = optionalFunction(
+            editorPath,
+            editorSource,
+            'FlowBuilderEditor',
+        );
+        const previewsDeclaration = optionalFunction(
+            previewsPath,
+            previewsSource,
+            'FlowBuilderPreviews',
+        );
+        const panelDeclaration = optionalFunction(
+            panelPath,
+            panelSource,
+            'FlowBuilderPanel',
+        );
+        for (const [name, source] of [
+            ['Editor', editorSource],
+            ['Previews', previewsSource],
+        ] as const) {
+            expect.soft(source, `${name}: no hooks/runtime/controller effects`)
+                .not.toMatch(
+                    /\b(?:useState|useMemo|useEffect|useRef|useCallback|rallarBlackBoxRuntimeStore|executeManualCommands|fetch|navigator\.|localStorage|sessionStorage)\b/,
+                );
+        }
+        const editorReturn = editorDeclaration
+            ? task9aReturnExpression(editorDeclaration)
+            : undefined;
+        const previewsReturn = previewsDeclaration
+            ? task9aReturnExpression(previewsDeclaration)
+            : undefined;
+        expect.soft(
+            editorReturn ? task9aAstFingerprint([editorReturn]) : '',
+            'Editor exact fragment return',
+        ).toBe('b9e50a4bde372981986dd2a92b6dbdbdd6329bd3efbb36ea869844ef7dd262e0');
+        expect.soft(
+            editorReturn ? task9aJsxRuntimeFingerprint(editorReturn) : '',
+            'Editor exact compiled return',
+        ).toBe('dc3caf670fa63d578aff40eae1df8898e910526da7f24cc0fe4c7e1d21adfad1');
+        expect.soft(
+            previewsReturn ? task9aAstFingerprint([previewsReturn]) : '',
+            'Previews exact layout return',
+        ).toBe('025a36bca31a1b733484479086b01f186c331ab7695150fe29c0ed6b49a41344');
+        expect.soft(
+            previewsReturn ? task9aJsxRuntimeFingerprint(previewsReturn) : '',
+            'Previews exact compiled return',
+        ).toBe('e3ee80533f69092e0838968f532634b759ed0e858da01ab982009d38115bd65e');
+        expect.soft(previewsReturn?.getText() ?? '', 'Previews direct layout root')
+            .toMatch(/^<div className="flow-builder-layout">/);
+
+        expect.soft(panelSource, 'Panel no hooks/runtime/network/storage').not.toMatch(
+            /\b(?:useState|useMemo|useEffect|useRef|useCallback|rallarBlackBoxRuntimeStore|executeManualCommands|fetch|navigator\.|localStorage|sessionStorage)\b/,
+        );
+        const controllerCalls: ts.CallExpression[] = [];
+        if (panelDeclaration) {
+            const visit = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text === 'useFlowBuilderController'
+                ) controllerCalls.push(node);
+                ts.forEachChild(node, visit);
+            };
+            visit(panelDeclaration);
+        }
+        expect.soft(controllerCalls, 'Panel calls controller once').toHaveLength(1);
+        expect.soft(
+            task9aAstFingerprint(controllerCalls),
+            'Panel exact controller input call',
+        ).toBe('8b4a7b5848dd467f88231591b516d81ca2668d2f1180a9f08d2a54f2e7423c08');
+        const panelReturn = panelDeclaration
+            ? task9aReturnExpression(panelDeclaration)
+            : undefined;
+        expect.soft(
+            panelReturn ? task9aAstFingerprint([panelReturn]) : '',
+            'Panel exact composition return',
+        ).toBe('6c687262ef786b0bfaf5bc73bb5b0bf81c4e0cd068d8f4d58f6a6a463790444a');
+        expect.soft(
+            panelReturn ? task9aJsxRuntimeFingerprint(panelReturn) : '',
+            'Panel exact compiled composition',
+        ).toBe('d83dca0805114f2e8507be43386d66b1e848e261366b4928a9424b8a95565405');
+        expect.soft(
+            panelDeclaration
+                ? task9aAstFingerprint(task9aJsxCalls(panelDeclaration, 'FlowBuilderEditor'))
+                : '',
+            'Panel exact Editor call',
+        ).toBe('1e98570872451ed061adbbfe517337a76f9bf0ec0d4f99a282df617dbe25d260');
+        expect.soft(
+            panelDeclaration
+                ? task9aAstFingerprint(task9aJsxCalls(panelDeclaration, 'FlowBuilderPreviews'))
+                : '',
+            'Panel exact Previews call',
+        ).toBe('5b5cb63bc542dba31e0b77775f27e396d8547e733088c8124c495cf78527fa89');
+        expect.soft(panelSource, 'Panel no spreads/prop registries').not.toMatch(
+            /<\w+[^>]*{\.\.\.|\b(?:viewProps|controllerProps|editorProps|previewProps)\b/,
+        );
+
+        const appAst = task9aSourceFile(appSourcePath, appSource);
+        const appDeclaration = task9aNamedFunction(appAst, 'App');
+        const appCalls = task9aJsxCalls(appDeclaration, 'FlowBuilderPanel');
+        expect.soft(appCalls, 'App keeps exactly two Builder calls').toHaveLength(2);
+        expect.soft(
+            task9aAstFingerprint(appCalls),
+            'App exact two five-prop Builder calls',
+        ).toBe('618fffae88a71387d4f9993e3a1c612dadeb213ff399d6b9e6df8669c2dd969f');
+        for (const call of appCalls) {
+            expect.soft(task9aAstFingerprint([call]), 'each exact five-prop call')
+                .toBe('cc200559c8f66b8fa65295c42a15211c5dd78ddce6a44c50fb962086c6263ce9');
+            expect.soft(call.getText(), 'Builder call has no key').not.toMatch(/\bkey\s*=/);
+        }
+        let primaryGuard: ts.Node | undefined = appCalls[0];
+        while (primaryGuard && !ts.isJsxExpression(primaryGuard)) {
+            primaryGuard = primaryGuard.parent;
+        }
+        expect.soft(
+            primaryGuard ? task9aAstFingerprint([primaryGuard]) : '',
+            'primary conditional lifetime guard',
+        ).toBe('e51261fa9a7168150fd104f5edc996b8e367b237c252d61779ddc84fb03444fc');
+        const appReturn = task9aReturnExpression(appDeclaration);
+        const elementById = (id: string): ts.JsxElement | undefined => {
+            let found: ts.JsxElement | undefined;
+            const visit = (node: ts.Node): void => {
+                if (found) return;
+                if (ts.isJsxElement(node)) {
+                    const attribute = node.openingElement.attributes.properties.find(
+                        (property): property is ts.JsxAttribute =>
+                            ts.isJsxAttribute(property) &&
+                            property.name.getText() === 'id',
+                    );
+                    if (
+                        attribute?.initializer &&
+                        ts.isStringLiteral(attribute.initializer) &&
+                        attribute.initializer.text === id
+                    ) {
+                        found = node;
+                        return;
+                    }
+                }
+                ts.forEachChild(node, visit);
+            };
+            visit(appReturn);
+            return found;
+        };
+        for (const [id, expectedHash] of [
+            ['panel-builder', '7a4912305a4d8114e5bb868496c67a085b7fba485856573e2ff3f685617f6006'],
+            ['panel-flow-builder', '1b33e2d5cb755ee147be635a7600e5200a4dc742b9ba8e241affe958cbd5a7d1'],
+            ['legacy-panel-flow-builder', 'c9da790ef7af24a82da82786ef91ed73d35068f371bcd9255d6034079d8da232'],
+        ] as const) {
+            const element = elementById(id);
+            expect.soft(
+                element ? task9aAstFingerprint([element]) : '',
+                `${id}: exact wrapper`,
+            ).toBe(expectedHash);
+        }
+        const legacyWrapper = elementById('legacy-panel-flow-builder');
+        expect.soft(legacyWrapper?.getText() ?? '', 'legacy remains hidden persistent')
+            .toContain("hidden={activeTab !== 'flow-builder'}");
+        expect.soft(
+            task9aImportEdges(appAst).filter((edge) =>
+                edge.startsWith('./legacy/runner/builder/'),
+            ),
+            'App imports only direct Builder Panel owner',
+        ).toEqual([
+            './legacy/runner/builder/FlowBuilderPanel.tsx|value:FlowBuilderPanel',
+        ]);
+
+        const dependencies = new Map<string, readonly string[]>();
+        const discoverDependencies = (sourcePath: string): void => {
+            if (dependencies.has(sourcePath)) return;
+            const source = existsSync(resolve(repositoryRoot, sourcePath))
+                ? repositorySource(sourcePath)
+                : '';
+            const directDependencies = task9aImportEdges(
+                task9aSourceFile(sourcePath, source),
+            )
+                .map((edge) => edge.slice(0, edge.indexOf('|')))
+                .filter((moduleImport) => moduleImport.startsWith('.'))
+                .map((moduleImport) =>
+                    relative(
+                        repositoryRoot,
+                        resolve(
+                            resolve(repositoryRoot, sourcePath),
+                            '..',
+                            moduleImport,
+                        ),
+                    ),
+                )
+                .filter(
+                    (dependency) =>
+                        ['.ts', '.tsx'].includes(extname(dependency)) &&
+                        existsSync(resolve(repositoryRoot, dependency)),
+                );
+            dependencies.set(sourcePath, directDependencies);
+            for (const dependency of directDependencies) {
+                discoverDependencies(dependency);
+            }
+        };
+        for (const owner of owners) discoverDependencies(owner.path);
+        const active = new Set<string>();
+        const visited = new Set<string>();
+        const cycles: string[] = [];
+        const visit = (path: string): void => {
+            if (active.has(path)) {
+                cycles.push(path);
+                return;
+            }
+            if (visited.has(path)) return;
+            active.add(path);
+            for (const dependency of dependencies.get(path) ?? []) visit(dependency);
+            active.delete(path);
+            visited.add(path);
+        };
+        for (const owner of owners) visit(owner.path);
+        expect(cycles, 'Builder recursive owner import cycles').toEqual([]);
     });
 
     it('keeps distributed compare formatters in the canonical time module', () => {
