@@ -31,7 +31,7 @@ function RecipeDetails({ model, fixture, selectedTargetCount }: Readonly<{
             <p>{fixture.description}</p>
             <dl className={styles.details}>
                 <dt>Provider</dt><dd>Simulated preview</dd>
-                <dt>Group</dt><dd><code>{configuredSample ? 'rallar-server/default/seed-room' : 'Fixture default'}</code></dd>
+                <dt>Sample group</dt><dd><code>{model.group.applicationId}/{model.group.workspaceId}/{model.group.groupId}</code></dd>
                 <dt>Targets</dt><dd>{selectedTargetCount}</dd>
                 <dt>Schema</dt><dd>Version {recipe.schemaVersion ?? 1}</dd>
                 <dt>Summary</dt><dd>{configuredSample ? model.commandPreview.label : `${recipe.commands.length} manifest commands`}</dd>
@@ -128,7 +128,11 @@ export function ExecutePreview({ model, onInspectorChange }: ExecutePreviewProps
                         </label>
                     ))}
                 </div>
-                <details className={styles.preflight} open>
+                <details
+                    className={styles.preflight}
+                    onToggle={event => preview.setPreflightExpanded(event.currentTarget.open)}
+                    open={preview.preflightExpanded}
+                >
                     <summary>Expanded preflight · {model.commandPreview.label}</summary>
                     <div className={styles.preflightGrid}>
                         <div><span>Schema</span><strong>{model.preflight.errors.length ? 'Blocked' : 'Ready'}</strong></div>

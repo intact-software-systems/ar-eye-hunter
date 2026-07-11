@@ -12,6 +12,7 @@ export function useExecutePreview(model: ExecutePreviewModel) {
         model.defaultTargetIds,
     );
     const [previewStatus, setPreviewStatus] = useState<ExecutePreviewStatus>('idle');
+    const [preflightExpanded, setPreflightExpanded] = useState(true);
 
     function selectRecipe(recipeId: string): void {
         setSelectedRecipeId(recipeId);
@@ -30,9 +31,11 @@ export function useExecutePreview(model: ExecutePreviewModel) {
         selectedRecipeId,
         selectedTargetIds,
         previewStatus,
+        preflightExpanded,
         setQuery,
         selectRecipe,
         toggleTarget,
+        setPreflightExpanded,
         stagePreview: () => setPreviewStatus('staged-preview'),
         startPreview: () => setPreviewStatus('started-preview'),
     } as const;

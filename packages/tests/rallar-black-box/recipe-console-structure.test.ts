@@ -154,6 +154,20 @@ describe('Recipe Console experience boundary', () => {
         expect(inspector).not.toMatch(/hidden|display\s*:\s*none/);
     });
 
+    test('keeps Execute preview UI state and repository projections explicit', () => {
+        const hook = source(
+            `${recipeConsoleRoot}/execute/use-execute-preview.ts`,
+        );
+        const view = source(
+            `${recipeConsoleRoot}/execute/ExecutePreview.tsx`,
+        );
+        expect(hook).toContain('preflightExpanded');
+        expect(view).toContain('open={preview.preflightExpanded}');
+        expect(view).toContain('model.group.applicationId');
+        expect(view).not.toContain("'rallar-server/default/seed-room'");
+        expect(view).not.toMatch(/\bfetch\s*\(/);
+    });
+
     test('loads only auth CSS statically while preserving legacy CSS bytes', () => {
         const authCss = source('apps/rallar-black-box/src/auth.css');
         expect(source('apps/rallar-black-box/src/main.tsx')).toContain("import './auth.css';");

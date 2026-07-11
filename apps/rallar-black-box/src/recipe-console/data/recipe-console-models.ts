@@ -10,6 +10,7 @@ import type {
     RunVerdictView,
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type { RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RtcPerformanceAgentLaneCell,
     RtcPerformanceHistogramBucket,
@@ -17,6 +18,7 @@ import type {
 import type { SyntheticDistributedRunSeed } from '../../distributed-run-seeds.ts';
 
 export type ExecutePreviewModel = Readonly<{
+    group: RallarBlackBoxDistributedGroupRef;
     selectedFixture: RallarBlackBoxRecipeFixture;
     catalogRows: readonly RallarBlackBoxRecipeFixture[];
     commandPreview: DistributedRecipeCommandPreview;

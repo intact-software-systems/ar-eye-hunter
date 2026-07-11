@@ -4,11 +4,11 @@ test('renders repository-backed Execute preview without services', async ({ page
     const controlServerRequests: string[] = [];
     page.on('request', (request) => {
         const url = new URL(request.url());
-        if (
+        const controlPath = /^\/(?:runs|distributed-runs)(?:\/|$)/.test(url.pathname) ||
             url.pathname === '/control' ||
             url.pathname.startsWith('/control/') ||
-            url.pathname.startsWith('/api/black-box/control')
-        ) {
+            url.pathname.startsWith('/api/black-box/control');
+        if (controlPath && ['fetch', 'xhr'].includes(request.resourceType())) {
             controlServerRequests.push(request.url());
         }
     });
@@ -47,6 +47,12 @@ test('renders repository-backed Execute preview without services', async ({ page
 
     await expect(page.getByText('5 manifest commands - 25 stream frames', { exact: true }))
         .toBeVisible();
+    const preflight = targets.locator('details');
+    await expect(preflight).toHaveAttribute('open', '');
+    await preflight.locator('summary').click();
+    await expect(preflight).not.toHaveAttribute('open', '');
+    await preflight.locator('summary').click();
+    await expect(preflight).toHaveAttribute('open', '');
     await expect(page.getByText('Preview only', { exact: true })).toBeVisible();
     const cancel = page.getByRole('button', { name: 'Cancel Preview' });
     await expect(cancel).toBeDisabled();
@@ -63,7 +69,23 @@ test('renders repository-backed Execute preview without services', async ({ page
     await expect(page.locator('[data-preview-status]')).toHaveText('Staged preview');
     await start.click();
     await expect(page.locator('[data-preview-status]')).toHaveText('Started preview');
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(1);
+    await page.getByRole('button', { name: 'Monitor', exact: true }).click();
+    await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'monitor');
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(1);
+    await expect(page.locator('[data-inspector-host]')
+        .getByRole('heading', { name: 'Monitor preview' })).toBeVisible();
+    await expect(page.locator('[data-inspector-host]')
+        .getByText('RTC Realtime Stability', { exact: true })).toHaveCount(0);
     expect(controlServerRequests).toEqual([]);
+
+    await page.setViewportSize({ width: 430, height: 932 });
+    await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+    expect((await page.getByRole('searchbox', { name: 'Search recipes' }).boundingBox())?.height)
+        .toBeGreaterThanOrEqual(44);
+    expect((await page.getByRole('button', { name: 'Start Preview' }).boundingBox())?.height)
+        .toBeGreaterThanOrEqual(44);
+    await expect(page.getByRole('region', { name: 'Recipes' })).toHaveCSS('overflow-y', 'visible');
 });
 
 test('keeps one lazy experience mounted', async ({ page }) => {

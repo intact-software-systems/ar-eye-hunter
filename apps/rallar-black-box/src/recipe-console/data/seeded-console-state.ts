@@ -55,6 +55,7 @@ function createExecutePreviewModel(): ExecutePreviewModel {
     });
 
     return {
+        group: targetSeed.distributedRun.manifest.group,
         selectedFixture,
         catalogRows,
         commandPreview: distributedRecipeCommandPreview(selectedRecipe),

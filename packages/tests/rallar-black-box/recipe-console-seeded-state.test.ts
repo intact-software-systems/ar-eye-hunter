@@ -14,6 +14,11 @@ describe('Recipe Console seeded state', () => {
         ]);
         expect(execute.defaultTargetIds).toEqual(['seed-agent-a', 'seed-agent-b']);
         expect(execute.controlConnectivity).toBe('required-not-checked');
+        expect(execute.group).toEqual({
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'seed-room',
+        });
 
         const expectedGroup = {
             applicationId: 'rallar-server',

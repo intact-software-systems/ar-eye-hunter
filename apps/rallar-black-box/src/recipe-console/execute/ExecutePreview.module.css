@@ -205,6 +205,17 @@
         grid-template-columns: minmax(0, 1fr);
     }
 
+    .search,
+    .actionBand button,
+    .preflight summary {
+        min-height: 44px;
+    }
+
+    .recipeLedger {
+        max-height: none;
+        overflow: visible;
+    }
+
     .actionBand {
         position: static;
         padding-inline: 0;
