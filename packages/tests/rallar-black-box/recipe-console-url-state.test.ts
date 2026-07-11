@@ -1,0 +1,266 @@
+import { describe, expect, it } from 'vitest';
+import {
+    RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
+    type RecipeConsoleUrlState,
+} from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import {
+    createRecipeConsoleShareHref,
+    parseRecipeConsoleUrl,
+    serializeRecipeConsoleUrl,
+} from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-codec.ts';
+
+const BASE_STATE: RecipeConsoleUrlState = {
+    v: 1,
+    experience: 'recipe-console',
+    view: 'execute',
+};
+
+function lowerCaseKeys(search: string): string[] {
+    return [...new URLSearchParams(search).keys()].map(key => key.toLowerCase());
+}
+
+describe('Recipe Console URL state codec', () => {
+    it('parses and serializes the complete approved field set', () => {
+        const params = new URLSearchParams({
+            v: '1',
+            experience: 'recipe-console',
+            view: 'advanced',
+            controlRunId: ' control-a ',
+            distributedRunId: ' distributed-a ',
+            agentId: ' agent-a ',
+            recipeId: ' recipe-a ',
+            commandId: ' command-a ',
+            diagnosticSeverity: 'warning',
+            transport: 'messages.rtc',
+            historyQuery: ' failed ack ',
+            status: 'waiting-for-barrier',
+            from: '100',
+            to: '900',
+            compareLeft: ' baseline-a ',
+            compareRight: ' candidate-a ',
+            timingMetric: 'stream-cadence',
+            fleetRegion: ' eu-north ',
+            fleetMapLayers: 'observed-routes,failures,live-agents',
+            legacySurface: ' rtc-diagnostics ',
+        });
+
+        const parsed = parseRecipeConsoleUrl(`?${params.toString()}`);
+
+        expect(parsed.state).toEqual({
+            v: 1,
+            experience: 'recipe-console',
+            view: 'advanced',
+            controlRunId: 'control-a',
+            distributedRunId: 'distributed-a',
+            agentId: 'agent-a',
+            recipeId: 'recipe-a',
+            commandId: 'command-a',
+            diagnosticSeverity: 'warning',
+            transport: 'messages.rtc',
+            historyQuery: 'failed ack',
+            status: 'waiting-for-barrier',
+            from: 100,
+            to: 900,
+            compareLeft: 'baseline-a',
+            compareRight: 'candidate-a',
+            timingMetric: 'stream-cadence',
+            fleetRegion: 'eu-north',
+            fleetMapLayers: ['live-agents', 'failures', 'observed-routes'],
+            legacySurface: 'rtc-diagnostics',
+        });
+        expect(parseRecipeConsoleUrl(parsed.canonicalSearch).state).toEqual(parsed.state);
+        expect(parsed.issues.map(issue => issue.code)).toContain('normalized');
+        expect(parsed.needsReplace).toBe(true);
+    });
+
+    it('defaults a missing view visibly while retaining valid and unknown fields', () => {
+        const parsed = parseRecipeConsoleUrl(
+            '?provider=simulated&roomId=room-a&futureField=future' +
+            '&experience=recipe-console&controlRunId=run-a',
+        );
+
+        expect(parsed.state).toMatchObject({
+            v: 1,
+            experience: 'recipe-console',
+            view: 'execute',
+            controlRunId: 'run-a',
+        });
+        expect(parsed.issues).toEqual(expect.arrayContaining([
+            expect.objectContaining({ field: 'v', code: 'missing' }),
+            expect.objectContaining({ field: 'view', code: 'missing' }),
+        ]));
+        expect(parsed.canonicalSearch).toContain('provider=simulated');
+        expect(parsed.canonicalSearch).toContain('roomId=room-a');
+        expect(parsed.canonicalSearch).toContain('futureField=future');
+        expect(parsed.needsReplace).toBe(true);
+    });
+
+    it('uses the first duplicate value and reports duplicate and range normalization', () => {
+        const parsed = parseRecipeConsoleUrl(
+            '?provider=simulated&v=1&experience=recipe-console&view=monitor&view=tune' +
+            '&from=900&to=100&fleetMapLayers=failures,live-agents',
+        );
+
+        expect(parsed.state).toMatchObject({
+            view: 'monitor',
+            from: 100,
+            to: 900,
+            fleetMapLayers: ['live-agents', 'failures'],
+        });
+        expect(parsed.issues.map(issue => issue.code)).toEqual(
+            expect.arrayContaining(['duplicate', 'normalized']),
+        );
+        expect(parsed.issues).toContainEqual(expect.objectContaining({
+            field: 'view',
+            code: 'duplicate',
+            value: 'tune',
+        }));
+        expect(parsed.canonicalSearch).toContain('provider=simulated');
+    });
+
+    it('treats all enums as case-sensitive and keeps their failures visible', () => {
+        const parsed = parseRecipeConsoleUrl(
+            '?v=1&experience=recipe-console&view=Monitor' +
+            '&diagnosticSeverity=ERROR&transport=HTTP&status=Running' +
+            '&timingMetric=Command-Duration&fleetMapLayers=Failures',
+        );
+
+        expect(parsed.state).toEqual({
+            v: 1,
+            experience: 'recipe-console',
+            view: 'execute',
+            fleetMapLayers: [],
+        });
+        expect(parsed.issues).toEqual(expect.arrayContaining([
+            expect.objectContaining({ field: 'view', code: 'invalid' }),
+            expect.objectContaining({ field: 'diagnosticSeverity', code: 'invalid' }),
+            expect.objectContaining({ field: 'transport', code: 'invalid' }),
+            expect.objectContaining({ field: 'status', code: 'invalid' }),
+            expect.objectContaining({ field: 'timingMetric', code: 'invalid' }),
+            expect.objectContaining({ field: 'fleetMapLayers', code: 'invalid' }),
+        ]));
+    });
+
+    it('accepts only safe nonnegative integer epoch milliseconds', () => {
+        const valid = parseRecipeConsoleUrl(
+            '?v=1&experience=recipe-console&view=analyze&from=0&to=9007199254740991',
+        );
+        expect(valid.state).toMatchObject({ from: 0, to: Number.MAX_SAFE_INTEGER });
+
+        const invalid = parseRecipeConsoleUrl(
+            '?v=1&experience=recipe-console&view=analyze&from=-1&to=9007199254740992',
+        );
+        expect(invalid.state.from).toBeUndefined();
+        expect(invalid.state.to).toBeUndefined();
+        expect(invalid.issues).toEqual(expect.arrayContaining([
+            expect.objectContaining({ field: 'from', code: 'invalid' }),
+            expect.objectContaining({ field: 'to', code: 'invalid' }),
+        ]));
+    });
+
+    it('represents an explicit empty fleet-layer selection as none', () => {
+        const parsed = parseRecipeConsoleUrl(
+            '?v=1&experience=recipe-console&view=fleet&fleetMapLayers=none',
+        );
+
+        expect(parsed.state.fleetMapLayers).toEqual([]);
+        expect(new URLSearchParams(parsed.canonicalSearch).get('fleetMapLayers')).toBe('none');
+        expect(parsed.issues.some(issue => issue.field === 'fleetMapLayers')).toBe(false);
+    });
+
+    it('keeps legacySurface only while Advanced is selected', () => {
+        const inapplicable = parseRecipeConsoleUrl(
+            '?v=1&experience=recipe-console&view=monitor&legacySurface=rtc-diagnostics',
+        );
+        expect(inapplicable.state.legacySurface).toBeUndefined();
+        expect(inapplicable.issues).toContainEqual(expect.objectContaining({
+            field: 'legacySurface',
+            code: 'inapplicable',
+        }));
+        expect(new URLSearchParams(inapplicable.canonicalSearch).has('legacySurface')).toBe(false);
+
+        const advanced = parseRecipeConsoleUrl(
+            '?v=1&experience=recipe-console&view=advanced&legacySurface=%20rtc-diagnostics%20',
+        );
+        expect(advanced.state.legacySurface).toBe('rtc-diagnostics');
+    });
+
+    it('preserves unknown parameters and removes old aliases only from Recipe Console output', () => {
+        const baseSearch =
+            '?provider=simulated&roomId=room-a&future=value&workspace=black-box-runner' +
+            '&appMode=runner&tab=fleet&advancedSurface=workbench&advanced=manual';
+        const serialized = serializeRecipeConsoleUrl({
+            ...BASE_STATE,
+            view: 'fleet',
+        }, baseSearch);
+        const params = new URLSearchParams(serialized);
+
+        expect(params.get('provider')).toBe('simulated');
+        expect(params.get('roomId')).toBe('room-a');
+        expect(params.get('future')).toBe('value');
+        expect(params.get('v')).toBe('1');
+        expect(params.get('experience')).toBe('recipe-console');
+        expect(params.get('view')).toBe('fleet');
+        for (const key of ['workspace', 'appMode', 'tab', 'advancedSurface', 'advanced']) {
+            expect(params.has(key), key).toBe(false);
+        }
+        expect(baseSearch).toContain('workspace=black-box-runner');
+    });
+
+    it('removes every sensitive key case-insensitively during parse and serialization', () => {
+        const base = new URLSearchParams({
+            provider: 'simulated',
+            v: '1',
+            experience: 'recipe-console',
+            view: 'monitor',
+        });
+        for (const key of RECIPE_CONSOLE_SENSITIVE_URL_KEYS) {
+            base.append(key, `secret-${key}`);
+            base.append(key.toUpperCase(), `upper-secret-${key}`);
+        }
+
+        const parsed = parseRecipeConsoleUrl(`?${base.toString()}`);
+        const serialized = serializeRecipeConsoleUrl(BASE_STATE, `?${base.toString()}`);
+        const sensitive = new Set(RECIPE_CONSOLE_SENSITIVE_URL_KEYS.map(key => key.toLowerCase()));
+
+        expect(lowerCaseKeys(parsed.canonicalSearch).filter(key => sensitive.has(key))).toEqual([]);
+        expect(lowerCaseKeys(serialized).filter(key => sensitive.has(key))).toEqual([]);
+        expect(parsed.canonicalSearch).toContain('provider=simulated');
+        expect(JSON.stringify(parsed.issues)).not.toContain('secret-');
+    });
+
+    it('scrubs query and fragment secrets from copied links without losing safe fields', () => {
+        const href = createRecipeConsoleShareHref({
+            origin: 'https://console.test',
+            pathname: '/operator',
+            search: '?provider=simulated&TOKEN=query-secret&roomId=room-a',
+            hash: '#agentSessionTicket=fragment-secret&trace=keep&PaSsWoRd=also-secret&pane=evidence',
+        }, {
+            ...BASE_STATE,
+            view: 'monitor',
+            controlRunId: 'run-a',
+        });
+        const url = new URL(href);
+
+        expect(url.origin).toBe('https://console.test');
+        expect(url.pathname).toBe('/operator');
+        expect(url.searchParams.get('provider')).toBe('simulated');
+        expect(url.searchParams.get('roomId')).toBe('room-a');
+        expect(lowerCaseKeys(url.search).some(key => key === 'token')).toBe(false);
+        expect(url.hash).toBe('#trace=keep&pane=evidence');
+        expect(href).not.toContain('query-secret');
+        expect(href).not.toContain('fragment-secret');
+        expect(href).not.toContain('also-secret');
+    });
+
+    it('preserves a non-field fragment exactly in a copied link', () => {
+        const href = createRecipeConsoleShareHref({
+            origin: 'https://console.test',
+            pathname: '/operator',
+            search: '',
+            hash: '#trace',
+        }, BASE_STATE);
+
+        expect(new URL(href).hash).toBe('#trace');
+    });
+});

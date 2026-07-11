@@ -1,0 +1,55 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+    createRecipeConsoleUrlHistory,
+    type RecipeConsoleHistoryPort,
+} from './url-history.ts';
+import {
+    createRecipeConsoleShareHref,
+    scrubRecipeConsoleHash,
+} from './url-state-codec.ts';
+import type { RecipeConsoleUrlState } from './url-state-contract.ts';
+
+function writeBrowserSearch(method: 'pushState' | 'replaceState', search: string): void {
+    const url = new URL(window.location.href);
+    url.search = search;
+    url.hash = scrubRecipeConsoleHash(url.hash);
+    window.history[method](null, '', url);
+}
+
+function createBrowserPort(): RecipeConsoleHistoryPort {
+    return {
+        readSearch: () => window.location.search,
+        push: search => writeBrowserSearch('pushState', search),
+        replace: search => writeBrowserSearch('replaceState', search),
+        subscribe: listener => {
+            window.addEventListener('popstate', listener);
+            return () => window.removeEventListener('popstate', listener);
+        },
+    };
+}
+
+export function useRecipeConsoleUrlState() {
+    const history = useMemo(
+        () => createRecipeConsoleUrlHistory(createBrowserPort()),
+        [],
+    );
+    const [value, setValue] = useState(history.read);
+
+    useEffect(() => history.subscribe(setValue), [history]);
+
+    const navigate = useCallback((patch: Partial<RecipeConsoleUrlState>): void => {
+        setValue(history.push(patch));
+    }, [history]);
+    const replace = useCallback((patch: Partial<RecipeConsoleUrlState>): void => {
+        setValue(history.replace(patch));
+    }, [history]);
+    const copyHref = createRecipeConsoleShareHref(window.location, value.state);
+
+    return {
+        state: value.state,
+        issues: value.issues,
+        navigate,
+        replace,
+        copyHref,
+    } as const;
+}
