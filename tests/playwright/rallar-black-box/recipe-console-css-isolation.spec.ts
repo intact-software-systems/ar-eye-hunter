@@ -17,11 +17,16 @@ const recipeSelectors = [
     '[data-isolation-recipe-dialog] [data-inspector-host]',
 ] as const;
 
-async function capture(page: import('@playwright/test').Page, mode: string, selectors: readonly string[]) {
+async function capture(
+    page: import('@playwright/test').Page,
+    mode: string,
+    selectors: readonly string[],
+    fixture = '/test/fixtures/recipe-console-css-isolation.html',
+) {
     const requests: string[] = [];
     const listener = (request: import('@playwright/test').Request) => requests.push(request.url());
     page.on('request', listener);
-    await page.goto(`/test/fixtures/recipe-console-css-isolation.html?mode=${mode}`);
+    await page.goto(`${fixture}?mode=${mode}`);
     const styles = await Promise.all(selectors.map(async selector => {
         const element = page.locator(selector);
         await expect(element, selector).toHaveCount(1);
@@ -42,6 +47,68 @@ async function capture(page: import('@playwright/test').Page, mode: string, sele
     page.off('request', listener);
     return { requests, styles };
 }
+
+test('is independent of stylesheet load order', async ({ page }) => {
+    const legacyFirstLegacy = await capture(page, 'both', legacySelectors);
+    const legacyFirstRecipe = await capture(page, 'both', recipeSelectors);
+    const recipeFirstLegacy = await capture(
+        page,
+        'both',
+        legacySelectors,
+        '/test/fixtures/recipe-console-css-isolation-recipe-first.html',
+    );
+    const recipeFirstRecipe = await capture(
+        page,
+        'both',
+        recipeSelectors,
+        '/test/fixtures/recipe-console-css-isolation-recipe-first.html',
+    );
+
+    expect(recipeFirstLegacy.styles).toEqual(legacyFirstLegacy.styles);
+    expect(recipeFirstRecipe.styles).toEqual(legacyFirstRecipe.styles);
+});
+
+test('survives Recipe Console to legacy to Recipe Console navigation', async ({ page }) => {
+    const recipeUrl = '/?provider=simulated&v=1&experience=recipe-console&view=execute';
+    await page.goto(recipeUrl);
+    const commandBar = page.locator('[data-command-bar]');
+    await expect(commandBar).toBeVisible();
+    const before = await commandBar.evaluate(node => {
+        const style = getComputedStyle(node);
+        return {
+            backgroundColor: style.backgroundColor,
+            borderBottomColor: style.borderBottomColor,
+            color: style.color,
+            display: style.display,
+            height: style.height,
+        };
+    });
+
+    await page.evaluate(() => {
+        history.pushState({}, '', '/?provider=simulated&experience=legacy&tab=auth');
+        dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.locator('.app-shell')).toBeVisible();
+    await expect(page.locator('.recipe-console')).toHaveCount(0);
+
+    await page.evaluate((url) => {
+        history.pushState({}, '', url);
+        dispatchEvent(new PopStateEvent('popstate'));
+    }, recipeUrl);
+    await expect(commandBar).toBeVisible();
+    await expect(page.locator('.app-shell')).toHaveCount(0);
+    const after = await commandBar.evaluate(node => {
+        const style = getComputedStyle(node);
+        return {
+            backgroundColor: style.backgroundColor,
+            borderBottomColor: style.borderBottomColor,
+            color: style.color,
+            display: style.display,
+            height: style.height,
+        };
+    });
+    expect(after).toEqual(before);
+});
 
 test('keeps representative legacy and recipe console styles isolated', async ({ page }) => {
     const legacyOnly = await capture(page, 'legacy', legacySelectors);

@@ -8,10 +8,19 @@ export default defineConfig({
         baseURL: 'http://127.0.0.1:5176',
         trace: 'retain-on-failure',
     },
-    webServer: {
-        command: 'npm run dev -- --host 127.0.0.1 --port 5176',
-        cwd: '.',
-        url: 'http://127.0.0.1:5176',
-        reuseExistingServer: true,
-    },
+    webServer: [
+        {
+            command: 'npm run dev -- --host 127.0.0.1 --port 5176',
+            cwd: '.',
+            url: 'http://127.0.0.1:5176',
+            reuseExistingServer: true,
+        },
+        {
+            command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4176 --strictPort',
+            cwd: '.',
+            url: 'http://127.0.0.1:4176',
+            reuseExistingServer: false,
+            timeout: 120_000,
+        },
+    ],
 });
