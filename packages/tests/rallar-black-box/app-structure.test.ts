@@ -3001,6 +3001,9 @@ describe('rallar-black-box app source ownership', () => {
                 repositorySource(
                     'apps/rallar-black-box/src/legacy/shell/rallar-browser-status.ts',
                 ),
+                repositorySource(
+                    'apps/rallar-black-box/src/legacy/diagnostics/quick-test/use-quick-rallar-test-controller.ts',
+                ),
             ].flatMap((source) => [...source.matchAll(/\bstringValue\s*\(/g)]),
             'all unaffected stringValue consumers use the shared import',
         ).toHaveLength(42);
@@ -9644,12 +9647,17 @@ describe('rallar-black-box app source ownership', () => {
         expect(cycles, 'RTC/Topology owner import cycles').toEqual([]);
     });
 
-    it('extracts Quick Test contracts and presentation while preserving its App-local controller', () => {
+    it('extracts the Quick Test controller behind one thin legacy root', () => {
         const appSource = repositorySource(appSourcePath);
         const appAst = task9aSourceFile(appSourcePath, appSource);
         const quickRoot = 'apps/rallar-black-box/src/legacy/diagnostics/quick-test';
+        const contractsPath = `${quickRoot}/quick-rallar-contracts.ts`;
+        const defaultsPath = `${quickRoot}/quick-rallar-defaults.ts`;
+        const viewPath = `${quickRoot}/QuickRallarTestView.tsx`;
+        const controllerPath = `${quickRoot}/use-quick-rallar-test-controller.ts`;
+        const panelPath = `${quickRoot}/QuickRallarTestPanel.tsx`;
         const owners = [
-            [`${quickRoot}/quick-rallar-contracts.ts`, 170, [
+            [contractsPath, 170, [
                 'type:QuickRallarPayloadResult',
                 'type:QuickRallarReceivedMessageRow',
                 'type:QuickRallarSubscriptionState',
@@ -9658,10 +9666,16 @@ describe('rallar-black-box app source ownership', () => {
                 'type:QuickRallarValues',
                 'type:QuickRallarWorkflowStep',
             ]],
-            [`${quickRoot}/quick-rallar-defaults.ts`, 45,
+            [defaultsPath, 45,
                 ['value:QUICK_RALLAR_DEFAULT_VALUES']],
-            [`${quickRoot}/QuickRallarTestView.tsx`, 460,
+            [viewPath, 460,
                 ['value:QuickRallarTestView']],
+            [controllerPath, 700, [
+                'type:QuickRallarTestControllerModel',
+                'type:UseQuickRallarTestControllerInput',
+                'value:useQuickRallarTestController',
+            ]],
+            [panelPath, 100, ['value:QuickRallarTestPanel']],
         ] as const;
         const sources = new Map<string, string>();
         for (const [path, cap, expectedExports] of owners) {
@@ -9680,9 +9694,6 @@ describe('rallar-black-box app source ownership', () => {
                 .not.toMatch(/(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"])/);
         }
 
-        const contractsPath = `${quickRoot}/quick-rallar-contracts.ts`;
-        const defaultsPath = `${quickRoot}/quick-rallar-defaults.ts`;
-        const viewPath = `${quickRoot}/QuickRallarTestView.tsx`;
         const expectedOwnerImports = new Map<string, readonly string[]>([
             [contractsPath, []],
             [defaultsPath, [
@@ -9701,6 +9712,26 @@ describe('rallar-black-box app source ownership', () => {
                 '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
                 '@shared/api/api-config.ts|type:AuthSession',
             ]],
+            [controllerPath, [
+                '../../../direct-rallar-operations.ts|type:DirectRallarOperationResult,value:createDirectRallarRuntimeEvent,value:runDirectRallarGroupCreate,value:runDirectRallarGroupJoin,value:runDirectRallarStatusCheck,value:runDirectRallarWsSend,value:runDirectRallarWsSubscribe',
+                '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig,value:rallarBlackBoxRuntimeStore',
+                '../../rallar/load-browser-rallar-facade.ts|value:loadBrowserRallarFacade',
+                '../../shared/finite-number.ts|value:optionalNumber',
+                '../../shared/record-value.ts|value:recordValue->optionalRecord',
+                '../../shared/redaction-presentation.ts|value:redactedJson',
+                '../../shared/string-value.ts|value:stringValue',
+                '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
+                '../../shell/rallar-browser-status.ts|type:RallarBrowserStatusSummary',
+                './quick-rallar-contracts.ts|type:QuickRallarReceivedMessageRow,type:QuickRallarSubscriptionState,type:QuickRallarValues',
+                './quick-rallar-defaults.ts|value:QUICK_RALLAR_DEFAULT_VALUES',
+                '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
+                '@shared/api/api-config.ts|type:AuthSession',
+                'react|value:useEffect,value:useMemo,value:useRef,value:useState',
+            ]],
+            [panelPath, [
+                './QuickRallarTestView.tsx|value:QuickRallarTestView',
+                './use-quick-rallar-test-controller.ts|type:UseQuickRallarTestControllerInput,value:useQuickRallarTestController',
+            ]],
         ]);
         for (const [path] of owners) {
             if (!sources.has(path)) continue;
@@ -9711,20 +9742,13 @@ describe('rallar-black-box app source ownership', () => {
                 `${path}: exact import kinds and edges`,
             ).toEqual(expectedOwnerImports.get(path));
         }
-        const quickAppModules = new Set([
-            './legacy/diagnostics/quick-test/quick-rallar-contracts.ts',
-            './legacy/diagnostics/quick-test/quick-rallar-defaults.ts',
-            './legacy/diagnostics/quick-test/QuickRallarTestView.tsx',
-        ]);
         expect.soft(
             task9aImportEdges(appAst).filter((edge) =>
-                quickAppModules.has(edge.slice(0, edge.indexOf('|'))),
+                edge.startsWith('./legacy/diagnostics/quick-test/'),
             ),
             'App exact Quick owner imports and import kinds',
         ).toEqual([
-            './legacy/diagnostics/quick-test/QuickRallarTestView.tsx|value:QuickRallarTestView',
-            './legacy/diagnostics/quick-test/quick-rallar-contracts.ts|type:QuickRallarReceivedMessageRow,type:QuickRallarSubscriptionState,type:QuickRallarValues',
-            './legacy/diagnostics/quick-test/quick-rallar-defaults.ts|value:QUICK_RALLAR_DEFAULT_VALUES',
+            './legacy/diagnostics/quick-test/QuickRallarTestPanel.tsx|value:QuickRallarTestPanel',
         ]);
 
         const namedTypeNodes = (
@@ -9862,6 +9886,44 @@ describe('rallar-black-box app source ownership', () => {
                 'exact moved Quick default initializer',
             ).toBe('cd00faf099d73bf87e9a65f4db86ab2b28abcb16ff538d9437b339c2cbfc316a');
         }
+        if (sources.has(controllerPath)) {
+            const controllerContractAst = task9aSourceFile(
+                controllerPath,
+                sources.get(controllerPath)!,
+            );
+            const expectedControllerContracts = task9aSourceFile(
+                'expected-quick-controller-contracts.ts',
+                `type UseQuickRallarTestControllerInput = Readonly<{
+                    state: RallarBlackBoxTestState;
+                    bootstrap: RallarBlackBoxBootstrapConfig;
+                    authSession?: AuthSession;
+                    globalValues: CommandCenterGlobalValues;
+                    browserStatus: RallarBrowserStatusSummary;
+                    onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
+                        key: K,
+                        value: CommandCenterGlobalValues[K],
+                    ): void;
+                }>;
+                type QuickRallarTestControllerModel = ReturnType<
+                    typeof useQuickRallarTestController
+                >;`,
+            );
+            for (const name of [
+                'UseQuickRallarTestControllerInput',
+                'QuickRallarTestControllerModel',
+            ] as const) {
+                expect.soft(
+                    task9aAstFingerprint(namedTypeNodes(
+                        controllerContractAst,
+                        name,
+                    )),
+                    `${name}: exact Quick controller contract`,
+                ).toBe(task9aAstFingerprint(namedTypeNodes(
+                    expectedControllerContracts,
+                    name,
+                )));
+            }
+        }
 
         const appLocalNames = new Set<string>();
         for (const statement of appAst.statements) {
@@ -9883,22 +9945,38 @@ describe('rallar-black-box app source ownership', () => {
         for (const moved of [
             'QuickRallarTransport', 'QuickRallarValues',
             'QuickRallarSubscriptionState', 'QuickRallarReceivedMessageRow',
-            'QUICK_RALLAR_DEFAULT_VALUES',
+            'QuickRallarPayloadResult', 'QuickRallarWorkflowStep',
+            'QuickRallarTestViewModel', 'QUICK_RALLAR_DEFAULT_VALUES',
+            'QuickRallarTestView', 'UseQuickRallarTestControllerInput',
+            'QuickRallarTestControllerModel',
+            'useQuickRallarTestController', 'QuickRallarTestPanel',
         ]) {
             expect.soft(appLocalNames, `App no local ${moved}`).not.toContain(moved);
         }
 
-        const controller = task9aNamedFunction(appAst, 'QuickRallarTestPanel');
+        const controllerAst = sources.has(controllerPath)
+            ? task9aSourceFile(controllerPath, sources.get(controllerPath)!)
+            : appAst;
+        const controller = task9aNamedFunction(
+            controllerAst,
+            sources.has(controllerPath)
+                ? 'useQuickRallarTestController'
+                : 'QuickRallarTestPanel',
+        );
         const controllerStatements = controller.body!.statements;
         const controllerReturnIndex = controllerStatements.findIndex(ts.isReturnStatement);
         const preReturn = controllerReturnIndex >= 0
             ? controllerStatements.slice(0, controllerReturnIndex)
             : [];
-        expect.soft(preReturn, 'exact 42 App-local Quick controller statements')
+        expect.soft(
+            controllerReturnIndex,
+            'Quick hook has one final top-level model return',
+        ).toBe(controllerStatements.length - 1);
+        expect.soft(preReturn, 'exact 42 extracted Quick controller statements')
             .toHaveLength(42);
         expect.soft(
             task9aAstFingerprint(preReturn),
-            'token-complete App-local Quick controller',
+            'token-complete extracted Quick controller',
         ).toBe('12ba49464b8518a89815d19cc1b8cb933c1f7bde43793d7b41a5c1b7c71c5e27');
         const hooks = {
             useState: 0, useMemo: 0, useRef: 0, useEffect: 0, useCallback: 0,
@@ -9960,7 +10038,190 @@ describe('rallar-black-box app source ownership', () => {
             ).toBe(expectedHash);
         }
 
-        const viewCalls = task9aJsxCalls(controller, 'QuickRallarTestView');
+        const controllerParameter = controller.parameters[0];
+        const controllerInputKeys = controllerParameter &&
+                ts.isObjectBindingPattern(controllerParameter.name)
+            ? controllerParameter.name.elements.map((element) =>
+                  element.name.getText(controllerAst)
+              )
+            : [];
+        expect.soft(
+            controllerInputKeys,
+            'exact Quick controller input order',
+        ).toEqual([
+            'state', 'bootstrap', 'authSession', 'globalValues',
+            'browserStatus', 'onGlobalValueChange',
+        ]);
+        if (sources.has(controllerPath)) {
+            expect.soft(
+                controllerParameter?.type?.getText(controllerAst) ?? '',
+                'Quick hook consumes its named input contract',
+            ).toBe('UseQuickRallarTestControllerInput');
+        }
+        const controllerReturn = controllerStatements.find(ts.isReturnStatement);
+        const controllerModel = controllerReturn?.expression;
+        expect.soft(
+            controllerModel && ts.isObjectLiteralExpression(controllerModel),
+            'Quick hook returns one explicit model object',
+        ).toBe(true);
+        if (controllerModel && ts.isObjectLiteralExpression(controllerModel)) {
+            expect.soft(
+                controllerModel.properties.map((property) => property.name?.getText()),
+                'exact Quick hook model key order',
+            ).toEqual([
+                'values', 'busyAction', 'localError', 'lastResult',
+                'subscription', 'receivedMessages', 'waitStatus',
+                'providerMode', 'realBackendReady', 'canUseDirectRallar',
+                'activeGroupId', 'activeTypeId', 'activeContextId',
+                'selectorLabel', 'payloadResult', 'updateValue',
+                'updateGroupId', 'createGroup', 'joinGroup', 'subscribeWs',
+                'unsubscribeWs', 'sendWs', 'waitForReceive',
+                'copyDiagnostics', 'copyRunnerRecipe', 'setupComplete',
+                'subscribed', 'workflowSteps',
+            ]);
+            expect.soft(
+                task9aAstFingerprint([controllerModel]),
+                'exact Quick hook model object',
+            ).toBe('ab6344a8375f2016fd56ebabea9a72b551dcfa2a8283f29c9669c596953c09b8');
+        }
+        let controllerHasJsx = false;
+        const visitControllerJsx = (node: ts.Node): void => {
+            if (
+                ts.isJsxElement(node) ||
+                ts.isJsxSelfClosingElement(node) ||
+                ts.isJsxFragment(node)
+            ) controllerHasJsx = true;
+            ts.forEachChild(node, visitControllerJsx);
+        };
+        visitControllerJsx(controller);
+        expect.soft(controllerHasJsx, 'Quick controller hook has no JSX')
+            .toBe(false);
+
+        const panelAst = sources.has(panelPath)
+            ? task9aSourceFile(panelPath, sources.get(panelPath)!)
+            : appAst;
+        const panel = task9aNamedFunction(panelAst, 'QuickRallarTestPanel');
+        const panelParameter = panel.parameters[0];
+        const panelPropKeys = panelParameter &&
+                ts.isObjectBindingPattern(panelParameter.name)
+            ? panelParameter.name.elements.map((element) =>
+                  element.name.getText(panelAst)
+              )
+            : [];
+        expect.soft(panelPropKeys, 'exact Quick root prop order').toEqual([
+            'state', 'bootstrap', 'authSession', 'globalValues',
+            'browserStatus', 'onGlobalValueChange', 'onOpenAuth',
+            'onOpenRunnerMode',
+        ]);
+        if (sources.has(panelPath)) {
+            expect.soft(
+                panelParameter?.type?.getText(panelAst) ?? '',
+                'Quick root consumes its exact named prop contract',
+            ).toBe('QuickRallarTestPanelProps');
+            const expectedPanelContract = task9aSourceFile(
+                'expected-quick-panel-contract.ts',
+                `type QuickRallarTestPanelProps =
+                    UseQuickRallarTestControllerInput & Readonly<{
+                        onOpenAuth(): void;
+                        onOpenRunnerMode(): void;
+                    }>;`,
+            );
+            expect.soft(
+                task9aAstFingerprint(namedTypeNodes(
+                    panelAst,
+                    'QuickRallarTestPanelProps',
+                )),
+                'exact Quick root prop contract',
+            ).toBe(task9aAstFingerprint(namedTypeNodes(
+                expectedPanelContract,
+                'QuickRallarTestPanelProps',
+            )));
+        }
+        const panelHookCalls: ts.CallExpression[] = [];
+        const visitPanelHook = (node: ts.Node): void => {
+            if (
+                ts.isCallExpression(node) &&
+                ts.isIdentifier(node.expression) &&
+                node.expression.text === 'useQuickRallarTestController'
+            ) panelHookCalls.push(node);
+            ts.forEachChild(node, visitPanelHook);
+        };
+        visitPanelHook(panel);
+        expect.soft(panelHookCalls, 'one Quick controller hook call').toHaveLength(1);
+        const panelHookInput = panelHookCalls[0]?.arguments[0];
+        expect.soft(
+            panelHookInput && ts.isObjectLiteralExpression(panelHookInput),
+            'Quick root passes one explicit hook input object',
+        ).toBe(true);
+        if (panelHookInput && ts.isObjectLiteralExpression(panelHookInput)) {
+            expect.soft(
+                panelHookCalls[0]?.arguments,
+                'Quick root passes exactly one controller input argument',
+            ).toHaveLength(1);
+            expect.soft(
+                panelHookInput.properties.map((property) => property.name?.getText()),
+                'exact Quick hook call input order',
+            ).toEqual([
+                'state', 'bootstrap', 'authSession', 'globalValues',
+                'browserStatus', 'onGlobalValueChange',
+            ]);
+            expect.soft(
+                panelHookInput.properties.map((property) =>
+                    ts.isShorthandPropertyAssignment(property)
+                        ? property.name.text
+                        : 'not-shorthand'
+                ),
+                'Quick root forwards each controller input as its matching shorthand identifier',
+            ).toEqual([
+                'state', 'bootstrap', 'authSession', 'globalValues',
+                'browserStatus', 'onGlobalValueChange',
+            ]);
+        }
+        const panelPreReturn = panel.body!.statements.filter(
+            (statement) => !ts.isReturnStatement(statement),
+        );
+        const panelReturnIndex = panel.body!.statements.findIndex(
+            ts.isReturnStatement,
+        );
+        expect.soft(
+            panelReturnIndex,
+            'Quick root has one final top-level View return',
+        ).toBe(panel.body!.statements.length - 1);
+        expect.soft(
+            panelPreReturn,
+            'Quick root has one controller-model destructure before return',
+        ).toHaveLength(1);
+        const panelModelDeclaration = panelPreReturn
+            .filter(ts.isVariableStatement)
+            .flatMap((statement) => [...statement.declarationList.declarations])[0];
+        expect.soft(
+            panelModelDeclaration?.initializer &&
+                ts.isCallExpression(panelModelDeclaration.initializer) &&
+                ts.isIdentifier(panelModelDeclaration.initializer.expression)
+                ? panelModelDeclaration.initializer.expression.text
+                : '',
+            'Quick root destructures only the controller hook result',
+        ).toBe('useQuickRallarTestController');
+        const panelModelKeys = panelModelDeclaration &&
+                ts.isObjectBindingPattern(panelModelDeclaration.name)
+            ? panelModelDeclaration.name.elements.map((element) =>
+                  element.name.getText(panelAst)
+              )
+            : [];
+        expect.soft(panelModelKeys, 'exact Quick root model destructure order')
+            .toEqual([
+                'values', 'busyAction', 'localError', 'lastResult',
+                'subscription', 'receivedMessages', 'waitStatus',
+                'providerMode', 'realBackendReady', 'canUseDirectRallar',
+                'activeGroupId', 'activeTypeId', 'activeContextId',
+                'selectorLabel', 'payloadResult', 'updateValue',
+                'updateGroupId', 'createGroup', 'joinGroup', 'subscribeWs',
+                'unsubscribeWs', 'sendWs', 'waitForReceive',
+                'copyDiagnostics', 'copyRunnerRecipe', 'setupComplete',
+                'subscribed', 'workflowSteps',
+            ]);
+
+        const viewCalls = task9aJsxCalls(panel, 'QuickRallarTestView');
         expect.soft(viewCalls, 'one direct Quick controlled View call').toHaveLength(1);
         const viewCall = viewCalls[0];
         if (viewCall) {
@@ -10008,6 +10269,10 @@ describe('rallar-black-box app source ownership', () => {
                 'exact Quick View call and prop initializers',
             ).toBe('a830afd10308bab7afe03731d507acb5ad439a17f92d67c53f64318790a285a0');
         }
+        expect.soft(
+            task9aJsxRuntimeFingerprint(task9aReturnExpression(panel)),
+            'Quick root preserves the exact compiled controlled View return',
+        ).toBe('4c3e93ff4b8d614b059fa4e8e426983beb873511d1c0a6546ffe247df1b9c751');
 
         if (sources.has(viewPath)) {
             const viewAst = task9aSourceFile(viewPath, sources.get(viewPath)!);
@@ -10124,6 +10389,12 @@ describe('rallar-black-box app source ownership', () => {
             .toBe('9359ca185437ff49b62e1f643f86119ef5a8419a9fe887e4f183e3d82ef96f33');
         expect.soft(appSource, 'no Quick lazy/Suspense cutover')
             .not.toMatch(/(?:lazy\s*\(|<Suspense\b)/);
+        expect.soft(
+            createHash('sha256')
+                .update(repositorySource('apps/rallar-black-box/src/styles.css'))
+                .digest('hex'),
+            'Quick extraction leaves the complete legacy stylesheet unchanged',
+        ).toBe('9778cfa43e7a858b30a9304b36b2939bfbf89df2722ac05a65b97579a37640b4');
 
         const ownerPaths = new Set(owners.map(([path]) => path));
         const graph = new Map<string, readonly string[]>();

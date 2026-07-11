@@ -72,6 +72,18 @@ const topologyGraphPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/topology/TopologyGraphPanel.tsx',
     import.meta.url,
 );
+const quickControllerSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/use-quick-rallar-test-controller.ts',
+    import.meta.url,
+);
+const quickPanelSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestPanel.tsx',
+    import.meta.url,
+);
+const quickViewSourcePath = new URL(
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestView.tsx',
+    import.meta.url,
+);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -135,6 +147,16 @@ function diagnosticOwnerSources(source: string): Readonly<{
         existsSync(rtcDiagnosticsControllerSourcePath) &&
         existsSync(rtcDiagnosticsPanelSourcePath) &&
         existsSync(topologyGraphPanelSourcePath);
+    const quickFallback =
+        existsSync(quickControllerSourcePath) && existsSync(quickPanelSourcePath)
+            ? ''
+            : sourceBetween(
+                  source,
+                  'function QuickRallarTestPanel',
+                  extracted
+                      ? 'function WebSocketCommandCenterPanel'
+                      : 'function RtcDiagnosticsPanel',
+              );
     return {
         rtcController: sourceOrFallback(
             rtcDiagnosticsControllerSourcePath,
@@ -145,13 +167,11 @@ function diagnosticOwnerSources(source: string): Readonly<{
             topologyGraphPanelSourcePath,
             topologyFallback,
         ),
-        quickPanel: sourceBetween(
-            source,
-            'function QuickRallarTestPanel',
-            extracted
-                ? 'function WebSocketCommandCenterPanel'
-                : 'function RtcDiagnosticsPanel',
-        ),
+        quickPanel: [
+            sourceOrFallback(quickControllerSourcePath, quickFallback),
+            sourceOrFallback(quickPanelSourcePath, ''),
+            sourceOrFallback(quickViewSourcePath, ''),
+        ].join('\n'),
     };
 }
 
