@@ -71,7 +71,7 @@
     overflow: hidden;
 }
 
-.failureRow[aria-selected="true"] {
+.failureRow[data-selected="true"] {
     border-color: var(--rc-selected-border);
     box-shadow: inset 3px 0 var(--rc-selected-border);
     background: var(--rc-selected-bg);

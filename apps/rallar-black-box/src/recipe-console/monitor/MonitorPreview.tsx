@@ -43,17 +43,19 @@ export function MonitorPreview({
 
             <section className={styles.failures} data-monitor-section="failures">
                 <h2>Failures ({model.failureLedger.length})</h2>
-                <div className={styles.failureLedger}>
+                <div aria-label="Failure ledger" className={styles.failureLedger} role="listbox">
                     {model.failureLedger.map(failure => (
                         <div
-                            aria-selected={failure.key === selectedFailureKey}
                             className={styles.failureRow}
                             data-failure-key={failure.key}
+                            data-selected={failure.key === selectedFailureKey}
                             key={failure.key}
                         >
                             <button
+                                aria-selected={failure.key === selectedFailureKey}
                                 className={styles.failureSelection}
                                 onClick={event => onSelectFailure(failure.key, event.currentTarget)}
+                                role="option"
                                 type="button"
                             >
                                 <span className={styles.failureCode}>{failure.code}</span>

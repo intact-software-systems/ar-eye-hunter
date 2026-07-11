@@ -23,7 +23,7 @@ test('renders failure-first Monitor from canonical evidence', async ({ page }) =
     await expect(recipeFailure).toContainText('Receiver did not observe the RTC payload.');
     await expect(commandFailure).toContainText('SYNTHETIC_ASSERTION_FAILED');
     await expect(commandFailure).toContainText('Receiver did not observe the RTC payload.');
-    await expect(commandFailure).toHaveAttribute('aria-selected', 'true');
+    await expect(commandFailure.getByRole('option')).toHaveAttribute('aria-selected', 'true');
 
     const matrix = page.getByRole('region', { name: 'Agent by phase matrix' });
     await expect(matrix.getByText('seed-agent-a', { exact: true })).toBeVisible();
@@ -38,10 +38,19 @@ test('renders failure-first Monitor from canonical evidence', async ({ page }) =
     await expect(inspector.getByText('Receiver did not observe the RTC payload.', { exact: true }))
         .toBeVisible();
     await expect(inspector.getByRole('heading', { name: 'Next action' })).toBeVisible();
+    await expect(inspector.getByText(
+        'Open command seed-start-receiver on agent seed-agent-b, inspect the command payload/result, and compare sibling agents running the same recipe.',
+        { exact: true },
+    )).toBeVisible();
     await expect(inspector.getByRole('heading', { name: 'Minimal fix area' })).toBeVisible();
-    await expect(inspector.getByText('seed-agent-b', { exact: true })).toBeVisible();
-    await expect(inspector.getByText('seed-start-receiver', { exact: true })).toBeVisible();
+    const minimalFix = inspector.locator('[data-minimal-fix]');
+    await expect(minimalFix.getByText('seed-agent-b', { exact: true })).toBeVisible();
+    await expect(minimalFix.getByText('seed-start-receiver', { exact: true })).toBeVisible();
+    await expect(minimalFix.getByText('seed-rtc-recipe', { exact: true })).toBeVisible();
     await expect(inspector.getByRole('heading', { name: 'Correlated evidence' })).toBeVisible();
+    await expect(inspector.locator('[data-causal-kind]')).toHaveCount(5);
+    await expect(inspector.locator('[data-causal-kind="diagnostic"]'))
+        .toContainText('seed-start-receiver-error-diagnostic');
     await expect(inspector.getByRole('link', { name: 'Open legacy RTC diagnostic' }))
         .toHaveAttribute('href', '/?provider=simulated&experience=legacy&tab=rtc-diagnostics');
 
@@ -108,6 +117,44 @@ test('traps and restores focus in tablet and landscape overlays', async ({ page 
         await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
         await expect(inspect).toBeFocused();
     }
+
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.goto('/?provider=simulated&experience=recipe-console&view=monitor');
+    const routeTrigger = page.getByRole('button', { name: 'Inspect failure' });
+    await routeTrigger.click();
+    await routeTrigger.evaluate(element => {
+        const state = window as Window & { __unrelatedRestoreCount?: number };
+        state.__unrelatedRestoreCount = 0;
+        element.addEventListener('focus', () => {
+            state.__unrelatedRestoreCount = (state.__unrelatedRestoreCount ?? 0) + 1;
+        });
+    });
+    await page.evaluate(() => {
+        history.pushState({}, '', '/?provider=simulated&experience=recipe-console&view=analyze');
+        dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'analyze');
+    expect(await page.evaluate(() =>
+        (window as Window & { __unrelatedRestoreCount?: number }).__unrelatedRestoreCount
+    )).toBe(0);
+
+    await page.goto('/?provider=simulated&experience=recipe-console&view=monitor');
+    const resizeTrigger = page.getByRole('button', { name: 'Inspect failure' });
+    await resizeTrigger.click();
+    await resizeTrigger.evaluate(element => {
+        const state = window as Window & { __unrelatedResizeRestoreCount?: number };
+        state.__unrelatedResizeRestoreCount = 0;
+        element.addEventListener('focus', () => {
+            state.__unrelatedResizeRestoreCount =
+                (state.__unrelatedResizeRestoreCount ?? 0) + 1;
+        });
+    });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible();
+    expect(await page.evaluate(() =>
+        (window as Window & { __unrelatedResizeRestoreCount?: number })
+            .__unrelatedResizeRestoreCount
+    )).toBe(0);
 });
 
 test('renders repository-backed Execute preview without services', async ({ page }) => {

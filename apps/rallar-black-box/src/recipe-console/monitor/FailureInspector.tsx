@@ -24,7 +24,7 @@ export function FailureInspector({ model, failureKey }: FailureInspectorProps) {
             </section>
             <section>
                 <h3>Minimal fix area</h3>
-                <dl className={styles.fixArea}>
+                <dl className={styles.fixArea} data-minimal-fix>
                     <dt>Agent</dt><dd>{failure.agentId ?? 'Run scope'}</dd>
                     <dt>Command</dt><dd>{failure.commandId ?? 'Recipe rollup'}</dd>
                     <dt>Recipe</dt><dd>{failure.recipeId ?? model.seed.distributedRun.manifest.recipes[0]?.recipeId}</dd>
@@ -34,9 +34,13 @@ export function FailureInspector({ model, failureKey }: FailureInspectorProps) {
                 <h3>Correlated evidence</h3>
                 <ol className={styles.evidenceList}>
                     {model.verdict.causalTrail.map(item => (
-                        <li key={`${item.kind}:${item.targetId ?? item.label}`}>
+                        <li
+                            data-causal-kind={item.kind}
+                            key={`${item.kind}:${item.targetId ?? item.label}`}
+                        >
                             <strong>{item.label}</strong>
                             <span>Evidence · {item.detail}</span>
+                            <code>{item.evidence.join(' · ')}</code>
                         </li>
                     ))}
                 </ol>
