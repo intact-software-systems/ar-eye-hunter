@@ -407,7 +407,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
-| 8 — History, Compare, Saved Filters, Retention | **In progress** | Retention foundations, shareable filters/presets, root provenance, bounded rows, safe Tune selection, cleanup reconciliation, focused History UI, and canonical browser qualification are code-backed through `fd9055e`. The exact copied-link/retention cases and 55-case History/Tune/chunk/responsive/CSS matrix pass with three clean re-reviews. No legacy surface is hidden or cut over. The fresh iteration-wide exit, complete suites, available-live qualification, and final documentation remain open in Task 9. |
+| 8 — History, Compare, Saved Filters, Retention | **Complete** | Preview-first retention, shareable filters/presets, bounded History, comparison reuse, cleanup reconciliation, and exact copied-link/retention acceptance are qualified through `fd9055e` and `f762749`. Fresh focused/complete/server/browser/legacy gates and independent re-reviews are green; the configured live/Postgres lifecycle is explicitly skipped, not passed. Ready-State #8 and #9 are code-backed. No legacy surface is hidden or cut over. |
 | 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
@@ -649,6 +649,41 @@ TypeScript, a 616-module build, reciprocal chunk proof, and three independent
 clean re-reviews. Task 8 still owns every real-browser acceptance claim. No
 legacy visibility, mount, route, rollback, default, cutover, public export, or
 existing control-server contract changed.
+
+#### Iteration 8 qualified exit — 2026-07-13
+
+Task 8 canonical browser acceptance is code-backed in `fd9055e`; the approved
+short-landscape Tune baseline, refreshed only for History's required internal
+scroller reservation, is recorded in `f762749`. The exact copied-URL test now
+restores the selected view, operational run, all eight History filters,
+comparison pair, and timing metric. The exact retention test proves
+authorization-first preview, token-free consequences, explicit confirmation,
+refresh-before-selective URL reconciliation, actual deletion, post-confirm
+token absence, copied link, reset, and back/forward behavior. Cancel, drift,
+authorization, long-list keyboard scrolling, four contract viewports, coarse
+targets, reduced motion, CSS load order, and lazy/unmounted boundaries are
+executable acceptance rather than documentation claims.
+
+Fresh exit proof passed 330/330 focused tests; shared-test TypeScript and all
+seven Deno entries; 1,066/1,066 app tests across 106 files after the identical
+restricted-sandbox command's two `listen EPERM` cases were rerun with required
+permission; app TypeScript; a 616-module build; the static experience/retention
+chunk assertion; control-server check and 79/79 Deno tests; 147 passed Recipe
+Console browser cases with one configured-live skip; and 28/28 preserved legacy
+tabbed-navigation/agent-ticket cases. Three Task 8 re-review tracks and the
+final native-size visual re-review report no remaining Critical or Important
+issue. The in-app Browser additionally confirmed offline desktop Execute and
+portrait/landscape Tune containment with no warning/error logs.
+
+The configured live/Postgres lifecycle is **skipped, not passed**, for exactly:
+`Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+Ready-State #8 and #9 are code-backed; Ready-State #3 remains open. The existing
+large legacy-chunk advisory, Node 26 versus CI Node 24 variance, and
+`module.register()` deprecation warning remain explicit non-failing risks. No
+legacy surface was hidden, no mount policy or rollback route changed, the
+default remains legacy, existing public exports/control contracts remain
+compatible, and nothing was pushed or opened as a PR.
 
 #### Iteration 2 visual approval checkpoint — 2026-07-11
 
@@ -1414,9 +1449,9 @@ existing control-server contract changed.
 | --- | --- | --- |
 | Hidden mounted effects, polling, subscriptions, and runtime ownership | 1, 11 | Extract ownership before unmounting and satisfy `packages/tests/rallar-black-box/app-structure.test.ts` — `legacy routes resolve through dynamic imports only` plus `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions`. |
 | Source, DOM, and CSS selector compatibility can regress during extraction | 1, 2, 11 | Preserve source/public boundaries and add the structure assertion plus `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `CSS isolation fixture preserves representative legacy and Recipe Console controls`. |
-| URL/default flip and runner-agent launch compatibility | 2, 8, 12 | Prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL` and `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `runner-agent launch URL opens advanced workbench consumes and scrubs the session-ticket fragment`; stale stored legacy navigation must not win on a blank URL after cutover. |
+| URL/default flip and runner-agent launch compatibility | 2, 8, 12 | Iteration 8 now passes `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL` and the preserved legacy runner-agent ticket pair. Iteration 12 still owns the blank-URL default flip and stale stored-legacy precedence proof. |
 | Future artifact versions and new profile drift | 12 and future contract changes | Iteration 6 now proves profile/version-aware partial, malformed, future-schema, envelope, and generic-profile distinctions through the canonical Analyze acceptance and shared workspace tests. Preserve the additive compatibility inventory and rerun those gates whenever a producer changes. |
-| Retention preview safety | 8 | Add optional dry-run behavior without changing the destructive default, require explicit confirmation, and prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup`. |
+| Retention preview safety | 8 | Satisfied through `fd9055e`: optional dry-run behavior preserves the destructive default, guarded confirmation is explicit, and `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup` passes. Preserve this gate for later changes. |
 | Qualitative visual and performance gates lack executable thresholds | 9, 12 | Iteration 2 now has four approved screenshot baselines and a 1% executable drift budget in `recipe-console-concept-fidelity.spec.ts`; Iteration 9 still owns bounded-render/interaction budgets and Iteration 12 owns final viewport, keyboard, touch, reduced-motion, and non-hover gates. |
 | Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
 | Preserved legacy CRDT controls are 30px high at desktop and 932x430 landscape, and its fixed editor/diagnostic/table tracks create an 807px document at 430px portrait | 12 | Keep the exact parity extraction unchanged; add narrow-screen CRDT grid collapse and locally contained table scrolling, require 44px touch targets in touch viewports, and prove zero page overflow in `recipe-console-accessibility.spec.ts`. |

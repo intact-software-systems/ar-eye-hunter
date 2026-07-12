@@ -1,21 +1,23 @@
 # Recipe Console Iteration 2 Fidelity Ledger
 
 Status: Iteration 2 visual direction preserved; Execute, live Monitor, offline
-Analyze, and real-evidence Tune are qualified through Iteration 7
+Analyze, real-evidence Tune, and bounded History/retention are qualified through
+Iteration 8
 
-Evidence date: 2026-07-12
+Evidence date: 2026-07-13
 Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
 (Iteration 4 Execute), `42eedae` (Iteration 5 live Monitor fidelity proof),
 `f96b5b4`, `abe257e`, `9b07330`, `47c332d` (Iteration 6 Analyze),
-`cc17169`, `382df72` (Iteration 7 Tune)
+`cc17169`, `382df72` (Iteration 7 Tune), `fd9055e`, `f762749`
+(Iteration 8 History/retention)
 Approved direction: Signal Ledger (Direction A)
 
 This ledger preserves the approved Iteration 2 visual contract and its
 historical seeded Monitor/Tune evidence, then records the Iteration 4 Execute,
-Iteration 5 live Monitor, Iteration 6 Analyze, and Iteration 7 Tune baseline
-advances. It does not claim the unavailable configured live/Postgres
-acceptance, Ready-State #9, a legacy navigation hide, or the Iteration 12
-default flip.
+Iteration 5 live Monitor, Iteration 6 Analyze, Iteration 7 Tune, and Iteration 8
+History/retention baseline advances. It does not claim the unavailable
+configured live/Postgres acceptance, a legacy navigation hide, or the
+Iteration 12 default flip.
 
 ## Iteration 4 Execute fidelity addendum
 
@@ -349,11 +351,11 @@ open.
 - The preserved lazy LegacyExperience chunk remains larger than 500 kB. The
   new Recipe Console closure does not absorb it; legacy decomposition remains
   later strangler work.
-- Iterations 6–7 implement distributed artifact analysis and bounded real-
-  evidence tuning/comparison, but the configured Postgres lifecycle remains
-  skipped. Ready-State #3 therefore remains open. History, saved filters,
-  retention, Ready-State #9, Fleet, diagnostics cutovers, and the remaining
-  acceptance evidence belong to Iterations 8–12.
+- Iterations 6–8 implement distributed artifact analysis, bounded real-
+  evidence tuning/comparison, History, saved filters, and guarded retention,
+  but the configured Postgres lifecycle remains skipped. Ready-State #3
+  therefore remains open. Large-run scale, Fleet, diagnostics cutovers,
+  default flip, and final accessibility evidence belong to Iterations 9–12.
 - Every migration-register row remains uncut and every old deep link remains a
   rollback path. No primary legacy surface is hidden, and the default experience
   is unchanged.
@@ -448,3 +450,28 @@ not qualify Ready-State #9, the skipped configured-live lifecycle, server
 history, saved filters, retention, a legacy row cutover, or the default flip.
 Legacy Runs, Compare, Distributed Recipes, and Run Manager remain visible,
 deep-linkable, and governed by their unchanged mount policies.
+
+## Iteration 8 History and retention review verdict
+
+Independent server/client/state, UI/accessibility, and traceability reviews
+closed Important findings around exact identity rendering, long-list keyboard
+scrolling inside the modal trap, genuine keyboard-only filters, disabled-
+control CSS authority, post-confirm token checks, all-eight-filter
+copy/back-forward discrimination, and actual-deletion result scoping. Every
+behavioral item received RED/GREEN evidence; final re-reviews report no
+remaining Critical or Important issue.
+
+The full Recipe Console configuration then exposed one stale 932×430 Tune
+snapshot: History's required internal scroller reserved about four pixels.
+Native-size comparison found unchanged hierarchy, content, alignment,
+readability, wrapping, and containment. Only that approved Direction A
+baseline was refreshed in `f762749`; the exact screenshot and fresh complete
+browser configuration pass, and independent visual re-review is clean.
+
+The qualified fidelity exit is 147 passed Recipe Console cases with one exact
+configured-live skip, 55/55 focused History/Tune/chunk/responsive/CSS cases,
+28/28 legacy navigation/ticket cases, and in-app Browser inspection at desktop,
+portrait, and landscape with no warning/error logs. This qualifies Ready-State
+#8 and #9 plus the bounded History/retention plane. It does not qualify
+configured-live #3, a legacy row cutover, large-run scale, the default flip, or
+Iterations 9–12. Every legacy fallback remains visible and deep-linkable.

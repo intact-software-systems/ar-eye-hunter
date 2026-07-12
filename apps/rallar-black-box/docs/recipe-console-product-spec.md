@@ -1,7 +1,7 @@
 # Recipe Console Product Spec
 
-Status: canonical product contract; Ready-State #4–#7 and the bounded comparison evidence for #8 are code-backed through Iteration 7
-Evidence date: 2026-07-12
+Status: canonical product contract; Ready-State #4–#9 are code-backed through Iteration 8 while configured-live #3 remains open
+Evidence date: 2026-07-13
 
 This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
@@ -274,3 +274,37 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
   remain Task 8 work and are not claimed here. No legacy row is hidden or cut
   over; the default, deep links, rollback routes, mount policies, public
   exports, and existing control-server contracts remain unchanged.
+
+### Iteration 8 qualified exit — `fd9055e`, `f762749`
+
+- Ready-State #8 remains satisfied by the exact Tune comparison test and now
+  includes discoverable History Baseline/Candidate actions, saved presets, and
+  post-cleanup selective comparison reconciliation without a second compare
+  implementation.
+- Ready-State #9 is satisfied by
+  `restores versioned view selection filters comparison and timing metric from
+  a copied URL`. It restores the operational run, all eight History filters,
+  explicit comparison, and timing metric; copied links and back/forward retain
+  the same typed state.
+- `previews retention impact before confirmed destructive cleanup` proves the
+  unchanged destructive default, optional authorization-first preview,
+  token-free consequences, explicit guarded confirmation, refresh-before-URL
+  reconciliation, post-confirm token absence, actual deleted IDs, and exact
+  retained filters through copy/reset/back/forward. Cancel and `409` drift do
+  not issue or repeat destructive cleanup.
+- Fresh qualification passed 330/330 focused tests, 1,066/1,066 app tests,
+  shared/app TypeScript, seven shared Deno entries, the 616-module build and
+  chunk assertion, 79/79 control-server tests, 147 Recipe Console browser
+  cases with one configured-live skip, and 28/28 legacy navigation/ticket
+  cases. Independent state, UI/accessibility, traceability, and final visual
+  reviews report no remaining Critical or Important issue.
+- The in-app Browser confirmed desktop Execute and portrait/landscape Tune
+  offline states, contained widths, intentional internal landscape scrolling,
+  and no warning/error logs. System Chromium owns the executable keyboard,
+  touch, reduced-motion, operational, retention, and CSS-isolation matrix.
+- Ready-State #3 remains open. Its live/Postgres owner is skipped, not passed,
+  for exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed
+  apps/api-v1, apps/rallar-black-box-control-server, and
+  apps/rallar-black-box available.`
+- No default, primary-navigation, legacy visibility/mount, deep link, rollback,
+  public export, existing control-server contract, or workflow cutover changed.

@@ -1,7 +1,7 @@
 # Rallar Recipe Console History, Compare, Saved Filters, And Retention Implementation Plan
 
-Status: in progress; Iteration 7 is green through `cc17169` and `382df72`;
-Tasks 0–8 are complete; Task 9 is in progress
+Status: complete; Iteration 8 is qualified through `fd9055e` and `f762749`;
+Tasks 0–9 are complete
 
 **Goal:** Complete parent Iteration 8 by making past distributed work
 findable, shareable, comparable, and safely cleanable without changing the
@@ -616,23 +616,52 @@ over; Task 9 still owns the fresh iteration-wide exit and final documentation.
 
 ## Task 9: Reviews, Fresh Exit, Documentation, And Milestone Commits
 
-- [ ] Dispatch independent reviews for retention/server contract, authorized
+- [x] Dispatch independent reviews for retention/server contract, authorized
   client/state, shared filtering/storage safety, UI/accessibility/browser, and
   strangler/cutover boundaries. Add RED/GREEN proof for every Critical or
   Important finding.
-- [ ] Run the exact focused contract below, complete app unit suite, complete
+- [x] Run the exact focused contract below, complete app unit suite, complete
   Recipe Console browser config, exact legacy navigation/ticket pair, and
   control-server tests after the last fix.
-- [ ] Try the in-app Browser first; record its exact unavailability reason if
+- [x] Try the in-app Browser first; record its exact unavailability reason if
   fallback Playwright/System Chromium is used.
-- [ ] Update this plan, parent ledger/decisions/risks, product spec, migration
+- [x] Update this plan, parent ledger/decisions/risks, product spec, migration
   register, and fidelity ledger with counts, commits, evidence, skips, and
   unchanged rollback/cutover status.
-- [ ] Keep Ready-State #8 comparison evidence satisfied; close #9 only after
+- [x] Keep Ready-State #8 comparison evidence satisfied; close #9 only after
   the exact copied-URL filter/comparison test passes. Do not claim #3 from
   mocked/no-environment evidence.
-- [ ] Make cohesive local commits after all Iteration 8 gates are green. Do not
+- [x] Make cohesive local commits after all Iteration 8 gates are green. Do not
   push or open a PR.
+
+Task 9 qualified Iteration 8 on 2026-07-13. Fresh proof passed 330/330 exact
+focused tests, 1,066/1,066 complete app tests across 106 files, shared-test
+TypeScript and seven Deno entries, app TypeScript, a 616-module production
+build, static chunk proof, control-server check plus 79/79 tests, 147/148
+configured Recipe Console browser cases, and 28/28 preserved legacy
+navigation/ticket cases. The single configured Recipe Console skip is the
+unavailable live/Postgres lifecycle, not a pass, for exactly: `Set
+RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+
+The complete browser run exposed one stale approved Tune short-landscape
+snapshot after History made the existing internal scroller reserve about four
+pixels. Native-size inspection found no hierarchy, wrapping, clipping,
+overlap, or content regression; the single baseline was refreshed in
+`f762749`, its exact test passed, the complete browser config then passed, and
+independent visual re-review was clean. The in-app Browser was available and
+confirmed desktop Execute plus portrait/landscape Tune offline states,
+contained widths, the intentional internal landscape scroller, and no browser
+warning/error logs. System Chromium remains the executable keyboard,
+reduced-motion, touch, retention, CSS-isolation, and operational-state proof.
+
+The restricted-sandbox app-suite attempt first reported two environment-only
+`listen EPERM` failures (tsx IPC and loopback); the identical complete command
+then passed 1,066/1,066 with the required permission. The existing >500 kB
+legacy-chunk advisory and Node `module.register()` deprecation warning remain
+non-failing risks. No default, legacy visibility, legacy mount policy, deep
+link, rollback route, public export, or existing control-server contract
+changed; no PR was opened and nothing was pushed.
 
 ## Focused Validation Contract
 
