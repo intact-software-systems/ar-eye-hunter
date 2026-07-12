@@ -1,11 +1,39 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Iteration 4 guided Execute complete, all legacy workflow rows visible and uncut
+Status: canonical migration register; Iteration 5 live Monitor in progress, all legacy workflow rows visible and uncut
 Evidence/status date: 2026-07-12
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 5 live Monitor implementation start — 2026-07-12
+
+Independent contract, UI/browser, and control/live audits confirmed that the
+approved Monitor composition is still backed entirely by a synthetic failed
+seed and ignores the live distributed-run identity already preserved by Execute
+and the v1 URL. The tests-first
+[implementation plan](../../../docs/superpowers/plans/2026-07-12-rallar-recipe-console-monitor-workflow-implementation-plan.md)
+therefore replaces only that seeded Recipe Console ownership with the existing
+root control query and shared deterministic monitor/report/verdict derivations.
+The focused baseline passes 83/83 tests plus app typecheck.
+
+The audits also found three correctness prerequisites: a partial distributed
+refresh can discard otherwise coherent last-known evidence; the current
+inspector applies first-failure cause/action copy to later selected failures;
+and role-scoped recipe progress counts agents that the authoritative control
+service does not dispatch that recipe to. Each receives shared or pure-state
+RED/GREEN proof before React implementation. Monitor will use the current
+credential-aware Cancel/artifact adapter, never raw fetch or a second poller,
+and will preserve exact context across all asynchronous responses.
+
+This is implementation start, not cutover evidence. `runner.runs` still owns
+history, offline import/analysis, comparison, and local-run flows;
+`legacy.distributed-recipes` still owns history, compare, diagnostics, and
+authoring. `runner.distributed-monitor` is not code-backed until the named
+failure-first, correlated-evidence, last-known, responsive, CSS-isolation, and
+available configured-live proofs pass. All legacy rows, mounts, primary
+visibility, deep links, and rollback URLs remain unchanged.
 
 ## Iteration 4 guided Execute implementation start — 2026-07-12
 
