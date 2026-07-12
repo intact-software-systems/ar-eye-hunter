@@ -6,6 +6,7 @@ import {
     deriveControlAgentBoardRows,
     summarizeControlAgentBoardRows,
     type ControlAgentBoardRow,
+    type ControlAgentBoardSummary,
 } from '../../control-agent-board.ts';
 import type {
     ControlAgentSnapshot,
@@ -46,6 +47,7 @@ export type RecipeConsoleControlSelection = Readonly<{
     activeRunContext: RecipeConsoleActiveRunContext;
     groupContext: RecipeConsoleControlGroupContext;
     boardRows: readonly ControlAgentBoardRow[];
+    boardSummary: ControlAgentBoardSummary;
     safeTargetableCount: number;
     lastKnownTargetableCount: number;
 }>;
@@ -203,6 +205,7 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
         activeRunContext,
         groupContext,
         boardRows,
+        boardSummary,
         safeTargetableCount: safe ? boardSummary.targetable : 0,
         lastKnownTargetableCount: boardSummary.targetable,
     };

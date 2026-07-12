@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';
 import { AnalyzePreview } from '../analyze/AnalyzePreview.tsx';
 import { createRecipeConsoleSeedState } from '../data/seeded-console-state.ts';
 import type { RecipeConsoleSeedState } from '../data/recipe-console-models.ts';
-import { ExecutePreview } from '../execute/ExecutePreview.tsx';
+import { ExecuteWorkspace } from '../execute/ExecuteWorkspace.tsx';
 import { FleetPreview } from '../fleet/FleetPreview.tsx';
 import { FailureInspector } from '../monitor/FailureInspector.tsx';
 import { MonitorPreview } from '../monitor/MonitorPreview.tsx';
@@ -13,23 +13,20 @@ import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
 import { useRecipeConsolePresentation } from '../shell/use-responsive-presentation.ts';
 import { TunePreview } from '../tune/TunePreview.tsx';
 import { ControlCommandContext } from '../control/ControlCommandContext.tsx';
-import { controlCommandStatus } from '../control/ControlCommandContext.tsx';
-import { useControlConnection } from '../control/ControlConnectionProvider.tsx';
-import { deriveRecipeConsoleControlSelection } from '../control/control-selection.ts';
+import { useRecipeConsoleControlWorkspace } from '../control/use-control-workspace.ts';
 
 function activeWork(
     view: RecipeConsoleView,
     seedState: RecipeConsoleSeedState,
-    onInspectorChange: (content: ReactNode | undefined) => void,
     monitorWork: ReactNode,
     timingMetric: RecipeConsoleTimingMetric,
     onTimingMetricChange: (metric: RecipeConsoleTimingMetric) => void,
     onInspectAgent: (agentId: string) => void,
-    onExecuteTargetAvailabilityChange: (available: boolean) => void,
+    executeWork: ReactNode,
 ) {
     switch (view) {
         case 'execute':
-            return <ExecutePreview model={seedState.execute} onInspectorChange={onInspectorChange} onTargetAvailabilityChange={onExecuteTargetAvailabilityChange} />;
+            return executeWork;
         case 'monitor':
             return monitorWork;
         case 'analyze':
@@ -50,16 +47,11 @@ export function RecipeConsoleWorkspace({
 }>) {
     const urlState = useRecipeConsoleUrlState();
     const presentation = useRecipeConsolePresentation();
-    const control = useControlConnection();
-    const controlSelection = useMemo(() => deriveRecipeConsoleControlSelection({
+    const control = useRecipeConsoleControlWorkspace({
         urlState: urlState.state,
-        snapshot: control.query.snapshot,
-        bootstrapRunId: control.bootstrap.bootstrapRunId,
-        bootstrapGroup: control.bootstrap.bootstrapGroup,
-        queryStatus: control.query.status,
-        nowEpochMs: Date.now(),
-    }), [control.bootstrap, control.query, urlState.state]);
-    const controlStatus = controlCommandStatus(control.query);
+        navigate: urlState.navigate,
+        replace: urlState.replace,
+    });
     const [seedState] = useState(createRecipeConsoleSeedState);
     const [inspectorOpen, setInspectorOpen] = useState(
         () => urlState.state.view === 'execute' ||
@@ -102,33 +94,30 @@ export function RecipeConsoleWorkspace({
             stale={stale}
         />
     );
+    const executeWork = (
+        <ExecuteWorkspace
+            connection={control.connection}
+            model={seedState.execute}
+            onInspectorChange={setInspectorContent}
+            onSelectAgent={control.selectAgent}
+            onSelectControlRun={control.selectControlRun}
+            onTargetAvailabilityChange={setExecuteTargetPreviewAvailable}
+            selection={control.selection}
+        />
+    );
     const work = activeWork(
         urlState.state.view,
         seedState,
-        setInspectorContent,
         monitorWork,
         urlState.state.timingMetric ?? 'command-duration',
         metric => urlState.navigate({ timingMetric: metric }),
-        inspectTuneAgent, setExecuteTargetPreviewAvailable,
+        inspectTuneAgent, executeWork,
     );
 
     useEffect(() => setInspectorOpen(
         urlState.state.view === 'execute' ||
         (urlState.state.view === 'monitor' && presentation.inspector === 'rail'),
     ), [presentation.inspector, urlState.state.view]);
-
-    useEffect(() => {
-        if (
-            controlSelection.urlReplacePatch &&
-            (control.query.status === 'live' || control.query.status === 'partial')
-        ) {
-            urlState.replace(controlSelection.urlReplacePatch);
-        }
-    }, [
-        control.query.status,
-        controlSelection.urlReplacePatch,
-        urlState.replace,
-    ]);
 
     function navigate(view: RecipeConsoleView): void {
         urlState.navigate({ view });
@@ -152,9 +141,9 @@ export function RecipeConsoleWorkspace({
         : inspectorContent;
     const commandBarContext = (
         <ControlCommandContext
-            baseUrl={control.baseUrl}
-            query={control.query}
-            selection={controlSelection}
+            baseUrl={control.connection.baseUrl}
+            query={control.connection.query}
+            selection={control.selection}
         />
     );
     const selectionDockContent = monitorActive
@@ -177,8 +166,8 @@ export function RecipeConsoleWorkspace({
         <div className="recipe-console" data-view={urlState.state.view}>
             <RecipeConsoleShell
                 commandBarContext={commandBarContext}
-                commandBarStatus={controlStatus.status}
-                commandBarStatusLabel={controlStatus.label}
+                commandBarStatus={control.status.status}
+                commandBarStatusLabel={control.status.label}
                 currentView={urlState.state.view}
                 inspectorContent={resolvedInspectorContent}
                 inspectorOpen={inspectorOpen}
@@ -187,7 +176,7 @@ export function RecipeConsoleWorkspace({
                 onInspectorClose={() => setInspectorOpen(false)}
                 onNavigate={navigate}
                 onRefresh={() => {
-                    void control.refresh();
+                    void control.connection.refresh();
                     onRefresh();
                 }}
                 onSelectionDockInspect={inspectSelection}

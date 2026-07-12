@@ -17,6 +17,12 @@ const controlConnectionProviderPath =
     `${recipeConsoleRoot}/control/ControlConnectionProvider.tsx`;
 const controlCommandContextPath =
     `${recipeConsoleRoot}/control/ControlCommandContext.tsx`;
+const controlOverviewPath =
+    `${recipeConsoleRoot}/control/ControlOverview.tsx`;
+const controlAgentBoardPath =
+    `${recipeConsoleRoot}/control/ControlAgentBoard.tsx`;
+const controlSelectionPath =
+    `${recipeConsoleRoot}/control/control-selection.ts`;
 
 function source(path: string): string {
     return readFileSync(resolve(repositoryRoot, path), 'utf8');
@@ -240,6 +246,56 @@ describe('Recipe Console experience boundary', () => {
         }
     });
 
+    test('composes a focused repository-derived control overview and agent board', () => {
+        for (const path of [controlOverviewPath, controlAgentBoardPath]) {
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+        }
+        if (
+            !existsSync(resolve(repositoryRoot, controlOverviewPath)) ||
+            !existsSync(resolve(repositoryRoot, controlAgentBoardPath))
+        ) {
+            return;
+        }
+
+        const overview = source(controlOverviewPath);
+        const board = source(controlAgentBoardPath);
+        const selection = source(controlSelectionPath);
+        const compositionOwners = filesBelow(recipeConsoleRoot)
+            .filter(path => path.endsWith('.tsx'))
+            .filter(path => path !== controlOverviewPath)
+            .filter(path => source(path).includes('<ControlOverview'));
+
+        expect(compositionOwners).toHaveLength(1);
+        expect(compositionOwners[0]).toMatch(
+            /apps\/rallar-black-box\/src\/recipe-console\/(?:app|execute)\//,
+        );
+        expect(overview).toContain(
+            "import { ControlAgentBoard } from './ControlAgentBoard.tsx';",
+        );
+        expect(overview).toContain('<ControlAgentBoard');
+        expect(selection).toMatch(
+            /import\s*\{[^}]*deriveControlAgentBoardRows[^}]*summarizeControlAgentBoardRows[^}]*\}\s*from ['"]\.\.\/\.\.\/control-agent-board\.ts['"]/s,
+        );
+        expect(`${overview}\n${board}`).not.toMatch(
+            /createRecipeConsoleSeedState|seeded-console-state|seed-agent-/,
+        );
+        expect(`${overview}\n${board}`).not.toMatch(
+            /distributedRecipeTargetRows|\.filter\([^)]*targetable[^)]*\)\.length/,
+        );
+
+        for (const [path, file] of [
+            [controlOverviewPath, overview],
+            [controlAgentBoardPath, board],
+        ] as const) {
+            expect(file.trimEnd().split(/\r?\n/).length, path)
+                .toBeLessThanOrEqual(300);
+            expect(file, path).not.toMatch(
+                /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]|(?:registry|Registry|index\.ts)/,
+            );
+            expect(file, path).not.toMatch(/^\s{4,}function\s+[A-Z]\w*/m);
+        }
+    });
+
     test('builds the scoped Signal Ledger shell from bounded modules', () => {
         const requiredFiles = [
             'design/tokens.css',
@@ -293,7 +349,7 @@ describe('Recipe Console experience boundary', () => {
         const workspace = source(recipeConsoleWorkspacePath);
         expect(workspace).toMatch(/switch\s*\(view\)/);
         expect(workspace).toMatch(
-            /activeWork\(\s*urlState\.state\.view,\s*seedState,\s*setInspectorContent,\s*monitorWork,/,
+            /activeWork\(\s*urlState\.state\.view,\s*seedState,\s*monitorWork,/,
         );
         expect(workspace).not.toMatch(/display\s*:\s*['"]none|(?:^|\s)hidden(?:=|\s|>)/m);
         expect(workspace).not.toMatch(/(?:registry|Registry|index\.ts)/);

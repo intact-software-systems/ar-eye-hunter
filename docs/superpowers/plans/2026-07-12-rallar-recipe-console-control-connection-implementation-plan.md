@@ -50,9 +50,10 @@ control-run manager and shared-test snapshot/target contracts.
   storage.
 - A syntactically valid but unavailable URL ID remains visible and unresolved;
   it is never silently replaced by collection index zero or seeded data.
-- Without an explicit URL run, prefer a known bootstrap run. If and only if the
-  server exposes exactly one run, select it and replace URL history. Multiple
-  unselected runs require an operator choice.
+- Without an explicit URL run, prefer a known bootstrap run and replace URL
+  history. Otherwise, if and only if the server exposes exactly one run, select
+  it and replace URL history. Multiple unselected runs require an operator
+  choice.
 - A committed run selection pushes history and clears dependent agent and
   incompatible distributed-run selection. Agent selection pushes history.
 - A selected distributed-run manifest group wins; otherwise a sole active run
@@ -79,7 +80,7 @@ control-run manager and shared-test snapshot/target contracts.
 - [x] Run the focused structure test and observe the missing-owner failure.
 - [x] Move existing workspace composition without behavioral change.
 - [x] Run structure, seeded-state, URL/history tests and app typecheck.
-- [ ] Commit `refactor: split recipe console workspace composition`.
+- [x] Commit `refactor: split recipe console workspace composition` (`4be082e`).
 
 Task 1 evidence: the untouched-production RED was 8/11 with exactly the three
 new workspace-owner failures. GREEN passed 31/31 across structure, seeded
@@ -98,20 +99,26 @@ is 23 lines and the focused workspace owner is 171 lines.
 - Test `packages/tests/rallar-black-box/control-run-manager.test.ts`
 - Test `packages/tests/rallar-black-box/recipe-console-url-state.test.ts`
 
-- [ ] RED-test canonical delegation, exact snapshot bounds, Bearer headers,
+- [x] RED-test canonical delegation, exact snapshot bounds, Bearer headers,
   `AbortSignal`, structured HTTP status, malformed top-level snapshots,
   distributed-run fallback, anonymous success, 401 broker retry, cache reuse,
   manual-token precedence, and auth-session invalidation.
-- [ ] RED-test that explicit Recipe Console canonical/share URLs remove
+- [x] RED-test that explicit Recipe Console canonical/share URLs remove
   `controlUrl=...?...token=...` while legacy URLs remain untouched.
-- [ ] Add a backward-compatible structured HTTP error without changing existing
+- [x] Add a backward-compatible structured HTTP error without changing existing
   message text. Inject cancellation through the existing `fetchFn` seam.
-- [ ] Implement the adapter by calling `controlHttpBaseUrlFromWsUrl(...)`,
+- [x] Implement the adapter by calling `controlHttpBaseUrlFromWsUrl(...)`,
   `fetchControlServerSnapshot(...)`, and compatibility-only
   `fetchDistributedRuns(...)`; validate the configured URL before delegation so
   invalid input never silently targets localhost.
-- [ ] Run the three focused tests and typecheck.
-- [ ] Commit `feat: add recipe console control API adapter`.
+- [x] Run the three focused tests and typecheck.
+- [x] Commit `feat: add recipe console control API adapter` (`8bdf511`).
+
+Task 2 evidence: RED failed only for the missing adapter, structured HTTP
+status, and Recipe Console `controlUrl` scrubbing. Independent review then
+found and mutation-probed fallback/broker cancellation, malformed fallback,
+null snapshot, URL-userinfo, and broker-status edge cases; each received its
+own RED test and fix. Final focused validation passed 40/40 and app typecheck.
 
 ## Task 3: Pure Query State And Serialized Polling Service
 
@@ -120,16 +127,22 @@ is 23 lines and the focused workspace owner is 171 lines.
 - Create `apps/rallar-black-box/src/recipe-console/control/control-query.ts`
 - Test `packages/tests/rallar-black-box/recipe-console-control-query.test.ts`
 
-- [ ] RED-test connecting→live, complete→partial, live→stale with snapshot
+- [x] RED-test connecting→live, complete→partial, live→stale with snapshot
   retention, initial failure→offline, 401 reachability, recovery, freshness at
   15,000/15,001ms, monotonic timestamps, and last error clearing.
-- [ ] RED-test immediate start, schedule-after-settle, no overlap, concurrent
+- [x] RED-test immediate start, schedule-after-settle, no overlap, concurrent
   refresh deduplication, request timeout/abort, stop cleanup, restart, and late
   result suppression with injected clock/scheduler.
-- [ ] Implement the pure reducer and external-store-compatible query service.
-- [ ] Run the focused query test and mutation-probe overlap, stale retention,
+- [x] Implement the pure reducer and external-store-compatible query service.
+- [x] Run the focused query test and mutation-probe overlap, stale retention,
   and cleanup guards.
-- [ ] Commit `feat: add recipe console control query service`.
+- [x] Commit `feat: add recipe console control query service` (`7cbf1f3`).
+
+Task 3 evidence: the initial RED was the missing query module. Independent
+review then reproduced abort-aware timeout misclassification, reused timer
+handle cross-generation cleanup, and a post-stop `isRefreshing` lie. Dedicated
+RED cases now guard each edge. Final query validation passed 20/20 and app
+typecheck; independent re-review approved the cohesive non-React query module.
 
 ## Task 4: URL-Coherent Control Selection
 
@@ -139,16 +152,23 @@ is 23 lines and the focused workspace owner is 171 lines.
 - Test `packages/tests/rallar-black-box/recipe-console-control-selection.test.ts`
 - Extend `packages/tests/rallar-black-box/control-agent-board.test.ts`
 
-- [ ] RED-test explicit URL precedence, unresolved ID preservation, bootstrap
+- [x] RED-test explicit URL precedence, unresolved ID preservation, bootstrap
   preference, sole-run replacement suggestion, multiple-run ambiguity,
   deterministic ties, control/distributed membership, active-run cardinality,
   group precedence, run-change dependent-field clearing, and selected-agent
   restoration.
-- [ ] Extend board boundary proof for 30,000/30,001ms, offline, wrong group,
+- [x] Extend board boundary proof for 30,000/30,001ms, offline, wrong group,
   missing identity/timestamps, CRDT capability, not-scoped, and synthetic rows.
-- [ ] Implement pure selection/projection only; no React fallback logic.
-- [ ] Run selection, board, URL, and history tests.
-- [ ] Commit `feat: derive recipe console control selection`.
+- [x] Implement pure selection/projection only; no React fallback logic.
+- [x] Run selection, board, URL, and history tests.
+- [x] Commit `feat: derive recipe console control selection` (`18b34f7`).
+
+Task 4 evidence: review-driven RED cases prevent false child-ID absence before
+authoritative parent collections exist and cover authoritative missing IDs,
+bootstrap/sole fallback, deterministic active ordering, exact heartbeat
+freshness, missing timestamps, and not-scoped rows. Final selection/board proof
+passed 28/28; the wider selection/board/URL/history slice passed 45/45 and app
+typecheck. Independent re-review approved with no remaining finding.
 
 ## Task 5: Root Query Provider And Explicit Command Context
 
@@ -163,15 +183,23 @@ is 23 lines and the focused workspace owner is 171 lines.
 - Modify `apps/rallar-black-box/src/App.tsx`
 - Test `packages/tests/rallar-black-box/recipe-console-structure.test.ts`
 
-- [ ] RED-test the narrow App bootstrap value, root query owner, explicit status
+- [x] RED-test the narrow App bootstrap value, root query owner, explicit status
   slot, and absence of legacy/control feature ownership in `App.tsx`.
-- [ ] Pass sanitized base URL, bootstrap run/group, API URL, manual token, and
+- [x] Pass sanitized base URL, bootstrap run/group, API URL, manual token, and
   auth session. Keep refresh/remount semantics for preview state while the query
   provider and last-good evidence remain mounted.
-- [ ] Replace the seeded context string with labeled control server, run, group,
+- [x] Replace the seeded context string with labeled control server, run, group,
   connected, safe-target, active-run, and last-updated items.
-- [ ] Run structure, auth-flow, URL/history, typecheck, and build-boundary tests.
-- [ ] Commit `feat: connect recipe console command context`.
+- [x] Run structure, auth-flow, URL/history, typecheck, and build-boundary tests.
+- [x] Commit `feat: connect recipe console command context` (`46dfbc0`).
+
+Task 5 evidence: structural RED introduced five provider/bootstrap/status owner
+failures while 11 prior checks stayed green. Review-driven RED cases then made
+reachability visibly orthogonal to authorization/staleness and prevented a
+selected terminal run from masking the actual active run. The focused control
+and structure slice passed 73/73, command-context/structure passed 18/18,
+typecheck/build and reciprocal chunk proof passed, and independent review
+approved. Existing visual/browser strings intentionally move to Task 7.
 
 ## Task 6: Repository-Derived Agent Board
 
@@ -184,17 +212,31 @@ is 23 lines and the focused workspace owner is 171 lines.
   create a focused Execute route composition file
 - Test `packages/tests/rallar-black-box/recipe-console-structure.test.ts`
 
-- [ ] Add render/browser RED assertions before UI implementation.
-- [ ] Render only rows from `deriveControlAgentBoardRows(...)` and summary from
+- [x] Add render/browser RED assertions before UI implementation.
+- [x] Render only rows from `deriveControlAgentBoardRows(...)` and summary from
   `summarizeControlAgentBoardRows(...)`; preserve every blocker reason as text.
-- [ ] Show live-empty, partial, stale-last-known, offline, authorization, and
+- [x] Show live-empty, partial, stale-last-known, offline, authorization, and
   unresolved-selection panels without seed substitution.
-- [ ] Make run and agent controls keyboard operable with persistent selected
+- [x] Make run and agent controls keyboard operable with persistent selected
   state, 44px targets, visible focus, and URL push semantics.
-- [ ] Keep the deterministic Execute target preview visibly separate and
+- [x] Keep the deterministic Execute target preview visibly separate and
   preview-only until Iteration 4.
-- [ ] Run focused tests, app typecheck, and build.
-- [ ] Commit `feat: add recipe console control agent board`.
+- [x] Run focused tests, app typecheck, and build.
+- [x] Commit `feat: add recipe console control agent board`.
+
+Task 6 evidence: render and structure tests failed first because no Control
+overview owner existed, and the seven-scenario browser spec failed only at the
+missing live/offline surfaces. The implementation renders canonical board rows
+and summaries, retains stale evidence with zero current-safe targets, and keeps
+the deterministic Execute preview in a separate module. React StrictMode
+initially exposed a start/stop/start double-read that could discard the first
+last-good snapshot; the provider now defers start through a cancellable
+microtask and the stale-after-success browser proof guards it. Fresh validation
+passed 45/45 focused structure/selection/board tests, 8/8 control browser tests,
+app typecheck, and production build. Independent review then found inaccessible
+agent safety names, clipped 932×430 Execute content, and a contradictory stale
+blocked metric. Three dedicated browser checks failed first, pass after focused
+ARIA/scroll/truth fixes, and the independent re-review approved the result.
 
 ## Task 7: Browser And Server Exit Proof
 

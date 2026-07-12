@@ -1,0 +1,128 @@
+.overview {
+    display: grid;
+    min-width: 0;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.overviewHeader,
+.boardHeader,
+.agentRowHeader,
+.endpoint {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.eyebrow,
+.runPicker span,
+.endpoint span,
+.agentMeta {
+    color: var(--rc-muted);
+    font-size: 11px;
+}
+
+.runPicker {
+    display: grid;
+    min-width: min(280px, 48%);
+    gap: 2px;
+}
+
+.runPicker select {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 34px 0 10px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+}
+
+.endpoint {
+    justify-content: flex-start;
+}
+
+.endpoint code {
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.issueList {
+    display: grid;
+    gap: 4px;
+    padding: 8px 12px 8px 28px;
+    border-left: 3px solid var(--rc-status-warning-border);
+    color: var(--rc-status-warning-text);
+    background: var(--rc-status-warning-bg);
+}
+
+.board {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+    border-top: 1px solid var(--rc-border);
+    padding-top: 10px;
+}
+
+.agentGrid {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+    gap: 6px;
+}
+
+.agentRowHeader {
+    align-items: flex-start;
+}
+
+.agentRowHeader code {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-weight: 700;
+}
+
+.agentReason,
+.agentMeta {
+    display: block;
+    margin-top: 4px;
+}
+
+.agentReason {
+    color: var(--rc-text);
+    font-size: 12px;
+}
+
+.emptyBoard {
+    min-height: 48px;
+    padding: 12px;
+    border: 1px dashed var(--rc-border);
+    color: var(--rc-muted);
+}
+
+@media (max-width: 767px) {
+    .overview {
+        padding: 12px 0;
+        border-inline: 0;
+    }
+
+    .overviewHeader {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .runPicker {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .agentGrid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

@@ -104,8 +104,16 @@ export function ControlConnectionProvider({
     );
 
     useEffect(() => {
-        service.start();
-        return () => service.stop();
+        let cancelled = false;
+        queueMicrotask(() => {
+            if (!cancelled) {
+                service.start();
+            }
+        });
+        return () => {
+            cancelled = true;
+            service.stop();
+        };
     }, [service]);
 
     const value = useMemo<RecipeConsoleControlConnection>(() => ({
