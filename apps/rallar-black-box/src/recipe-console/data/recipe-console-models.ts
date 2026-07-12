@@ -1,26 +1,9 @@
-import type {
-    DistributedRunAgentProgressRow,
-    DistributedRunAnalysisReport,
-    DistributedRunFailureRow,
-    DistributedRunMonitor,
-    RunVerdictView,
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type { RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/types.ts';
 import type {
     RtcPerformanceAgentLaneCell,
     RtcPerformanceHistogramBucket,
 } from '../../rtc-diagnostics.ts';
 import type { SyntheticDistributedRunSeed } from '../../distributed-run-seeds.ts';
-
-export type MonitorPreviewModel = Readonly<{
-    seed: SyntheticDistributedRunSeed;
-    monitor: DistributedRunMonitor;
-    report: DistributedRunAnalysisReport;
-    verdict: RunVerdictView;
-    failureLedger: readonly DistributedRunFailureRow[];
-    agentProgress: readonly DistributedRunAgentProgressRow[];
-    selectedCommandFailure: DistributedRunFailureRow;
-}>;
 
 export type TunePoint = Readonly<{
     sequence: number;
@@ -57,6 +40,5 @@ export type TunePreviewModel = Readonly<{
 }>;
 
 export type RecipeConsoleSeedState = Readonly<{
-    monitor: MonitorPreviewModel;
     tune: TunePreviewModel;
 }>;

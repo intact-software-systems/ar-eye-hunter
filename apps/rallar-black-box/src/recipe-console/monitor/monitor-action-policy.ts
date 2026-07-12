@@ -96,7 +96,7 @@ export function deriveMonitorActionPolicy(
     if (input.busyAction) {
         return allBlocked(
             'busy',
-            `${actionLabel(input.busyAction)} is already in progress.`,
+            `${monitorActionLabel(input.busyAction)} is already in progress.`,
         );
     }
 
@@ -190,7 +190,7 @@ function blocked(
     return { enabled: false, code, reason };
 }
 
-function actionLabel(action: MonitorAction): string {
+function monitorActionLabel(action: MonitorAction): string {
     return action.split('-').map(part =>
         part.charAt(0).toUpperCase() + part.slice(1)
     ).join(' ');

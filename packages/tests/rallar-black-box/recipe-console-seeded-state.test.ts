@@ -1,60 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRecipeConsoleSeedState } from '../../../apps/rallar-black-box/src/recipe-console/data/seeded-console-state.ts';
-import { runCausalTrailForFailure } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 
 describe('Recipe Console seeded state', () => {
-    it('builds Monitor from the canonical failed-command evidence in failure-first order', () => {
-        const { monitor } = createRecipeConsoleSeedState();
+    it('keeps synthetic state isolated to Tune after the live Monitor replacement', () => {
+        const state = createRecipeConsoleSeedState();
 
-        expect(monitor.seed.id).toBe('failed-command');
-        expect(monitor.seed.distributedRun.distributedRunId).toBe('seed-failed-command');
-        expect(monitor.seed.controlRun.runId).toBe('seed-control-failed-command');
-        expect(monitor.seed.distributedRun.rollup.summary).toMatchObject({
-            participants: 2,
-            failedParticipants: 1,
-        });
-        expect(monitor.monitor.commandCounts).toMatchObject({ total: 4, failed: 1 });
-        expect(monitor.failureLedger.map(row => [row.code, row.message])).toEqual([
-            ['SYNTHETIC_RECIPE_FAILED', 'Receiver did not observe the RTC payload.'],
-            ['SYNTHETIC_ASSERTION_FAILED', 'Receiver did not observe the RTC payload.'],
-        ]);
-        expect(monitor.selectedCommandFailure).toMatchObject({
-            kind: 'command',
-            key: 'seed-start-receiver',
-            commandId: 'seed-start-receiver',
-            agentId: 'seed-agent-b',
-        });
-        expect(monitor.monitor.runtimeDiagnostics).toHaveLength(1);
-        expect(monitor.monitor.runtimeDiagnostics[0]?.correlatedFailureKeys).toEqual([
-            'seed-start-receiver',
-        ]);
-        expect(monitor.verdict).toMatchObject({
-            title: 'Outcome failed',
-            likelyCause: 'Receiver did not observe the RTC payload.',
-            nextAction:
-                'Open command seed-start-receiver on agent seed-agent-b, inspect the command payload/result, and compare sibling agents running the same recipe.',
-        });
-        expect(monitor.monitor.latency.maxMs).toBe(520);
-        expect(monitor.agentProgress).toHaveLength(2);
-
-        const recipeFailure = monitor.failureLedger.find(row => row.kind === 'recipe');
-        if (!recipeFailure) throw new Error('Recipe rollup failure is unavailable.');
-        expect(runCausalTrailForFailure({
-            causalTrail: monitor.verdict.causalTrail,
-            failure: recipeFailure,
-            runtimeDiagnostics: monitor.monitor.runtimeDiagnostics,
-        }).map(item => item.kind)).toEqual(['artifact']);
-        expect(runCausalTrailForFailure({
-            causalTrail: monitor.verdict.causalTrail,
-            failure: monitor.selectedCommandFailure,
-            runtimeDiagnostics: monitor.monitor.runtimeDiagnostics,
-        }).map(item => item.kind)).toEqual([
-            'failure-category',
-            'command-result',
-            'diagnostic',
-            'artifact',
-            'events',
-        ]);
+        expect(state).not.toHaveProperty('monitor');
+        expect(state).toHaveProperty('tune');
     });
 
     it('projects only stable command-duration Tune evidence', () => {

@@ -21,7 +21,15 @@ import {
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-state.ts';
 import { deriveMonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
 import {
+    createMonitorRecipeEvidenceSelectionId,
+    deriveMonitorRecipeEvidenceStatus,
     deriveMonitorDistributedRunSelection,
+    deriveMonitorUrlEvidenceSelection,
+    MONITOR_ARTIFACT_EVIDENCE_ID,
+    monitorEvidenceSelectionIdentifier,
+    monitorUrlEvidenceKey,
+    parseMonitorRecipeEvidenceSelectionId,
+    recipeConsoleMonitorControlRunSelectionPatch,
     recipeConsoleMonitorDistributedRunSelectionPatch,
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-selection.ts';
 
@@ -248,6 +256,104 @@ describe('Recipe Console Monitor selection', () => {
             controlRunId: 'run-a',
             distributedRunId: 'distributed-a',
         });
+    });
+
+    it('clears every Monitor evidence dependency when the control run changes', () => {
+        expect(recipeConsoleMonitorControlRunSelectionPatch({
+            state: {
+                v: 1,
+                experience: 'recipe-console',
+                view: 'monitor',
+                controlRunId: 'run-a',
+                distributedRunId: 'distributed-a',
+                agentId: 'agent-a',
+                recipeId: 'recipe-a',
+                commandId: 'command-a',
+            },
+            controlRunId: 'run-b',
+            distributedRuns: [distributedRun('distributed-b', 'run-b')],
+        })).toEqual({
+            controlRunId: 'run-b',
+            distributedRunId: undefined,
+            agentId: undefined,
+            recipeId: undefined,
+            commandId: undefined,
+        });
+    });
+
+    it('restores the most specific shareable evidence selection from URL state', () => {
+        const state = {
+            v: 1 as const,
+            experience: 'recipe-console' as const,
+            view: 'monitor' as const,
+            agentId: 'agent-a',
+            recipeId: 'recipe-a',
+            commandId: 'command-a',
+        };
+
+        expect(deriveMonitorUrlEvidenceSelection(state)).toEqual({
+            kind: 'command',
+            id: 'command-a',
+        });
+        expect(deriveMonitorUrlEvidenceSelection({
+            ...state,
+            commandId: undefined,
+        })).toEqual({ kind: 'recipe', id: 'recipe-a' });
+        expect(deriveMonitorUrlEvidenceSelection({
+            ...state,
+            commandId: undefined,
+            recipeId: undefined,
+        })).toEqual({ kind: 'agent', id: 'agent-a' });
+        expect(deriveMonitorUrlEvidenceSelection({
+            ...state,
+            commandId: undefined,
+            recipeId: undefined,
+            agentId: undefined,
+        })).toBeUndefined();
+        expect(monitorUrlEvidenceKey(state)).toBe(
+            JSON.stringify(['agent-a', 'recipe-a', 'command-a']),
+        );
+    });
+
+    it('keeps role-scoped recipe evidence collision-safe while URL IDs stay shareable', () => {
+        const sender = createMonitorRecipeEvidenceSelectionId({
+            recipeId: 'recipe-a',
+            role: 'sender',
+            profile: 'rtc',
+        });
+        const receiver = createMonitorRecipeEvidenceSelectionId({
+            recipeId: 'recipe-a',
+            role: 'receiver',
+            profile: 'rtc',
+        });
+
+        expect(sender).not.toBe(receiver);
+        expect(parseMonitorRecipeEvidenceSelectionId(sender)).toEqual({
+            recipeId: 'recipe-a',
+            role: 'sender',
+            profile: 'rtc',
+        });
+        expect(parseMonitorRecipeEvidenceSelectionId('recipe-a')).toBeUndefined();
+        expect(monitorEvidenceSelectionIdentifier({
+            kind: 'recipe',
+            id: sender,
+        })).toBe('recipe-a · sender · rtc');
+        const roleRows = [{
+            recipeId: 'recipe-a', profile: 'rtc', role: 'sender', required: true,
+            targetCount: 1, queuedCount: 0, runningCount: 0,
+            passedCount: 1, failedCount: 0, missingCount: 0,
+            averageLatencyMs: 10,
+        }, {
+            recipeId: 'recipe-a', profile: 'rtc', role: 'receiver', required: true,
+            targetCount: 1, queuedCount: 0, runningCount: 0,
+            passedCount: 0, failedCount: 1, missingCount: 0,
+            averageLatencyMs: 20,
+        }];
+        expect(deriveMonitorRecipeEvidenceStatus(roleRows, 'recipe-a'))
+            .toBe('failed');
+        expect(deriveMonitorRecipeEvidenceStatus(roleRows, sender))
+            .toBe('passed');
+        expect(MONITOR_ARTIFACT_EVIDENCE_ID).toBe('artifact');
     });
 });
 

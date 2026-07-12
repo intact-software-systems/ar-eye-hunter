@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
     RecipeConsoleControlConnection,
 } from '../control/ControlConnectionProvider.tsx';
@@ -15,6 +15,8 @@ import {
 } from './monitor-action-policy.ts';
 import {
     deriveMonitorDistributedRunSelection,
+    deriveMonitorUrlEvidenceSelection,
+    monitorUrlEvidenceKey,
     recipeConsoleMonitorDistributedRunSelectionPatch,
     type MonitorEvidenceSelection,
 } from './monitor-selection.ts';
@@ -36,6 +38,8 @@ export function useMonitorWorkspace(input: Readonly<{
     replace(patch: Partial<RecipeConsoleUrlState>): void;
 }>) {
     const [state, setState] = useState(createInitialMonitorWorkspaceState);
+    const authoredEvidenceKeyRef = useRef<string | undefined>(undefined);
+    const urlEvidenceKey = monitorUrlEvidenceKey(input.urlState);
     const distributedRuns = input.connection.query.snapshot?.distributedRuns ?? [];
     const distributedRunsAuthoritative = (
         input.connection.query.status === 'live' ||
@@ -81,6 +85,18 @@ export function useMonitorWorkspace(input: Readonly<{
             query: input.connection.query,
         }));
     }, [context?.key, input.connection.query]);
+    useEffect(() => {
+        if (!context) return;
+        if (authoredEvidenceKeyRef.current === urlEvidenceKey) {
+            authoredEvidenceKeyRef.current = undefined;
+            return;
+        }
+        setState(previous => setMonitorEvidenceSelection(
+            previous,
+            context.key,
+            deriveMonitorUrlEvidenceSelection(input.urlState),
+        ));
+    }, [context?.key, urlEvidenceKey]);
 
     const currentState = state.contextKey === context?.key
         ? state
@@ -143,8 +159,16 @@ export function useMonitorWorkspace(input: Readonly<{
             context.key,
             selection,
         ));
-        if (Object.keys(patch).length > 0) input.navigate(patch);
-    }, [context, input.navigate]);
+        if (Object.keys(patch).length > 0) {
+            const nextEvidenceKey = monitorUrlEvidenceKey({
+                ...input.urlState,
+                ...patch,
+            });
+            if (nextEvidenceKey === urlEvidenceKey) return;
+            authoredEvidenceKeyRef.current = nextEvidenceKey;
+            input.navigate(patch);
+        }
+    }, [context, input.navigate, input.urlState, urlEvidenceKey]);
     const toggleCancelArm = useCallback(() => {
         if (!context || !armContext) return;
         setState(previous => setMonitorCancelArm(

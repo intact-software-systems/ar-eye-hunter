@@ -1,12 +1,19 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+    Fragment,
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+    type ReactNode,
+} from 'react';
 import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';
 import { AnalyzePreview } from '../analyze/AnalyzePreview.tsx';
 import { createRecipeConsoleSeedState } from '../data/seeded-console-state.ts';
 import type { RecipeConsoleSeedState } from '../data/recipe-console-models.ts';
 import { ExecuteWorkspace } from '../execute/ExecuteWorkspace.tsx';
 import { FleetPreview } from '../fleet/FleetPreview.tsx';
-import { FailureInspector } from '../monitor/FailureInspector.tsx';
-import { MonitorPreview } from '../monitor/MonitorPreview.tsx';
+import { MonitorWorkspace } from '../monitor/MonitorWorkspace.tsx';
+import { recipeConsoleMonitorControlRunSelectionPatch } from '../monitor/monitor-selection.ts';
 import type { RecipeConsoleTimingMetric, RecipeConsoleView } from '../routing/url-state-contract.ts';
 import { useRecipeConsoleUrlState } from '../routing/use-recipe-console-url-state.ts';
 import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
@@ -55,23 +62,23 @@ export function RecipeConsoleWorkspace() {
             (urlState.state.view === 'monitor' && presentation.inspector === 'rail'),
     );
     const [inspectorContent, setInspectorContent] = useState<ReactNode>();
-    const [selectedFailureKey, setSelectedFailureKey] = useState(
-        seedState.monitor.selectedCommandFailure.key,
-    );
-    const [stale, setStale] = useState(false);
+    const [monitorSelectionLabel, setMonitorSelectionLabel] = useState<string>();
     const [tuneAgentId, setTuneAgentId] = useState<string>();
     const [executeSafeTargetLabel, setExecuteSafeTargetLabel] = useState<string>();
     const [inspectorTrigger, setInspectorTrigger] = useState<HTMLButtonElement | null>(null);
     const restoreFocusRef = useRef<HTMLButtonElement>(null);
-    const selectedFailure = seedState.monitor.failureLedger.find(
-        failure => failure.key === selectedFailureKey,
-    ) ?? seedState.monitor.selectedCommandFailure;
 
-    function selectFailure(key: string, trigger: HTMLButtonElement): void {
-        setSelectedFailureKey(key);
+    const inspectMonitorEvidence = useCallback((trigger: HTMLButtonElement) => {
         setInspectorTrigger(trigger);
         setInspectorOpen(true);
-    }
+    }, []);
+    const selectMonitorControlRun = useCallback((controlRunId: string) => {
+        urlState.navigate(recipeConsoleMonitorControlRunSelectionPatch({
+            state: urlState.state,
+            controlRunId,
+            distributedRuns: control.connection.query.snapshot?.distributedRuns ?? [],
+        }));
+    }, [control.connection.query.snapshot?.distributedRuns, urlState.navigate, urlState.state]);
 
     function inspectTuneAgent(agentId: string): void {
         setTuneAgentId(agentId);
@@ -82,13 +89,16 @@ export function RecipeConsoleWorkspace() {
     }
 
     const monitorWork = (
-        <MonitorPreview
-            model={seedState.monitor}
-            onCloseInspector={() => setInspectorOpen(false)}
-            onSelectFailure={selectFailure}
-            onToggleStale={() => setStale(value => !value)}
-            selectedFailureKey={selectedFailureKey}
-            stale={stale}
+        <MonitorWorkspace
+            connection={control.connection}
+            navigate={urlState.navigate}
+            onInspect={inspectMonitorEvidence}
+            onInspectorChange={setInspectorContent}
+            onSelectControlRun={selectMonitorControlRun}
+            onSelectionLabelChange={setMonitorSelectionLabel}
+            replace={urlState.replace}
+            selection={control.selection}
+            urlState={urlState.state}
         />
     );
     const executeWork = (
@@ -120,6 +130,7 @@ export function RecipeConsoleWorkspace() {
     function navigate(view: RecipeConsoleView): void {
         urlState.navigate({ view });
         setInspectorContent(undefined);
+        setMonitorSelectionLabel(undefined);
         setInspectorTrigger(null);
         setTuneAgentId(undefined);
         setInspectorOpen(view === 'execute' ||
@@ -132,9 +143,8 @@ export function RecipeConsoleWorkspace() {
 
     const monitorActive = urlState.state.view === 'monitor';
     const executeActive = urlState.state.view === 'execute';
-    const resolvedInspectorContent = monitorActive
-        ? <FailureInspector failureKey={selectedFailureKey} model={seedState.monitor} />
-        : urlState.state.view === 'tune' && tuneAgentId
+    const monitorInspectorAvailable = monitorActive && inspectorContent !== undefined;
+    const resolvedInspectorContent = urlState.state.view === 'tune' && tuneAgentId
         ? <section><h2>Agent timing</h2><p data-selected-agent>{tuneAgentId}</p><p>Repository-derived command-duration evidence.</p></section>
         : inspectorContent;
     const commandBarContext = (
@@ -146,14 +156,14 @@ export function RecipeConsoleWorkspace() {
         />
     );
     const selectionDockContent = monitorActive
-        ? `Failure · ${selectedFailure.agentId ?? selectedFailure.recipeId ?? selectedFailure.key}`
+        ? monitorInspectorAvailable ? monitorSelectionLabel : undefined
         : executeActive
         ? 'Recipe details selected'
         : tuneAgentId
         ? `Agent · ${tuneAgentId}`
         : undefined;
-    const inspectSelection = monitorActive
-        ? (trigger: HTMLButtonElement) => selectFailure(selectedFailureKey, trigger)
+    const inspectSelection = monitorInspectorAvailable && monitorSelectionLabel
+        ? inspectMonitorEvidence
         : executeActive || tuneAgentId
         ? (trigger: HTMLButtonElement) => {
             setInspectorTrigger(trigger);
@@ -164,19 +174,16 @@ export function RecipeConsoleWorkspace() {
     function refresh(): void {
         void control.connection.refresh();
         if (executeActive) return;
+        if (monitorActive) return;
         const next = createRecipeConsoleSeedState();
         setSeedState(next);
-        setSelectedFailureKey(next.monitor.selectedCommandFailure.key);
-        setStale(false);
         setTuneAgentId(undefined);
         setInspectorContent(undefined);
         setInspectorTrigger(null);
-        setInspectorOpen(
-            urlState.state.view === 'monitor' && presentation.inspector === 'rail',
-        );
+        setInspectorOpen(false);
         setSeededRevision(value => value + 1);
     }
-    const presentedWork = executeActive
+    const presentedWork = executeActive || monitorActive
         ? work
         : <Fragment key={`${urlState.state.view}-${seededRevision}`}>{work}</Fragment>;
 

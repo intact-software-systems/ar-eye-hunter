@@ -1,54 +1,17 @@
 import {
-    deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
-    deriveRunVerdictView,
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import { createSyntheticDistributedRunSeed } from '../../distributed-run-seeds.ts';
 import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../rtc-diagnostics.ts';
 import type {
-    MonitorPreviewModel,
     RecipeConsoleSeedState,
     TunePreviewModel,
 } from './recipe-console-models.ts';
 
 export function createRecipeConsoleSeedState(): RecipeConsoleSeedState {
     return {
-        monitor: createMonitorPreviewModel(),
         tune: createTunePreviewModel(),
-    };
-}
-
-function createMonitorPreviewModel(): MonitorPreviewModel {
-    const seed = createSyntheticDistributedRunSeed('failed-command');
-    const input = {
-        distributedRun: seed.distributedRun,
-        controlRun: seed.controlRun,
-        artifactBundle: seed.artifactBundle,
-    };
-    const monitor = deriveDistributedRunMonitor(input);
-    const report = deriveDistributedRunAnalysisReport(input);
-    const verdict = deriveRunVerdictView({
-        ...input,
-        monitor,
-        report,
-        refreshedAtEpochMs: seed.generatedAtEpochMs,
-    });
-    const selectedCommandFailure = monitor.failures.find(
-        failure => failure.kind === 'command' && failure.commandId !== undefined,
-    );
-    if (!selectedCommandFailure) {
-        throw new Error('Canonical failed-command seed has no command failure.');
-    }
-
-    return {
-        seed,
-        monitor,
-        report,
-        verdict,
-        failureLedger: monitor.failures,
-        agentProgress: monitor.agentProgress,
-        selectedCommandFailure,
     };
 }
 

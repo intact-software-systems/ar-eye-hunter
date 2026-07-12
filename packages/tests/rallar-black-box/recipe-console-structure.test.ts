@@ -538,9 +538,7 @@ describe('Recipe Console experience boundary', () => {
 
         const workspace = source(recipeConsoleWorkspacePath);
         expect(workspace).toMatch(/switch\s*\(view\)/);
-        expect(workspace).toMatch(
-            /activeWork\(\s*urlState\.state\.view,\s*seedState,\s*monitorWork,/,
-        );
+        expect(workspace).toContain('<MonitorWorkspace');
         expect(workspace).not.toMatch(/display\s*:\s*['"]none|(?:^|\s)hidden(?:=|\s|>)/m);
         expect(workspace).not.toMatch(/(?:registry|Registry|index\.ts)/);
         expect(workspace).toContain('createRecipeConsoleSeedState');
@@ -583,21 +581,101 @@ describe('Recipe Console experience boundary', () => {
         expect(workspace).toContain('onSafeTargetLabelChange');
     });
 
-    test('keeps failure-first Monitor and modal focus behavior bounded', () => {
-        const monitorPath = `${recipeConsoleRoot}/monitor/MonitorPreview.tsx`;
-        const inspectorPath = `${recipeConsoleRoot}/monitor/FailureInspector.tsx`;
-        const monitorCssPath = `${recipeConsoleRoot}/monitor/MonitorPreview.module.css`;
-        for (const path of [monitorPath, inspectorPath, monitorCssPath]) {
+    test('replaces seeded Monitor with bounded failure-first live composition', () => {
+        const owners = [
+            'MonitorWorkspace.tsx',
+            'MonitorRunSelector.tsx',
+            'MonitorVerdict.tsx',
+            'MonitorFailureLedger.tsx',
+            'MonitorAgentPhaseMatrix.tsx',
+            'MonitorProgressEvidence.tsx',
+            'MonitorDiagnostics.tsx',
+            'MonitorEvidenceDisclosure.tsx',
+            'MonitorActionBand.tsx',
+            'MonitorInspector.tsx',
+            'MonitorRecipeEvidence.tsx',
+        ].map(file => `${recipeConsoleRoot}/monitor/${file}`);
+        const styles = [
+            'MonitorWorkspace.module.css',
+            'MonitorVerdict.module.css',
+            'MonitorLedger.module.css',
+            'MonitorProgress.module.css',
+            'MonitorEvidence.module.css',
+            'MonitorActions.module.css',
+            'MonitorInspector.module.css',
+        ].map(file => `${recipeConsoleRoot}/monitor/${file}`);
+        const support = `${recipeConsoleRoot}/monitor/legacy-monitor-link.ts`;
+        for (const path of [...owners, ...styles, support]) {
             expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
         }
-        expect(source(monitorPath).trimEnd().split(/\r?\n/).length).toBeLessThan(300);
-        expect(source(inspectorPath).trimEnd().split(/\r?\n/).length).toBeLessThan(300);
-        expect(source(monitorCssPath).trimEnd().split(/\r?\n/).length).toBeLessThan(400);
-        expect(source(monitorPath)).not.toMatch(/\bfetch\s*\(|legacy\//);
-        expect(source(inspectorPath)).toContain(
-            '/?provider=simulated&experience=legacy&tab=rtc-diagnostics',
+        if (!owners.every(path => existsSync(resolve(repositoryRoot, path)))) {
+            return;
+        }
+
+        const sources = owners.map(path => source(path));
+        for (const [index, file] of sources.entries()) {
+            expect(file.trimEnd().split(/\r?\n/).length, owners[index])
+                .toBeLessThan(300);
+        }
+        for (const path of styles) {
+            expect(source(path).trimEnd().split(/\r?\n/).length, path)
+                .toBeLessThan(300);
+        }
+        expect(sources.join('\n')).not.toMatch(
+            /(?:from\s+|import\()['"][^'"]*(?:legacy\/|seeded-console-state|control-run-manager|registry|index\.ts)['"]|\bfetch\s*\(|\bsetInterval\s*\(/,
         );
-        expect(source(inspectorPath)).not.toMatch(/from ['"][^'"]*legacy\//);
+        const composition = sources[0];
+        expect(composition.match(/\buseMonitorWorkspace\b/g)).toHaveLength(2);
+        expect(composition).toContain('if (!model) return undefined;');
+        expect(composition).toMatch(
+            /<MonitorVerdict[\s\S]*<MonitorActionBand[\s\S]*<MonitorFailureLedger/,
+        );
+        for (const owner of [
+            'MonitorRunSelector',
+            'MonitorVerdict',
+            'MonitorFailureLedger',
+            'MonitorAgentPhaseMatrix',
+            'MonitorProgressEvidence',
+            'MonitorDiagnostics',
+            'MonitorEvidenceDisclosure',
+            'MonitorActionBand',
+        ]) {
+            expect(composition, owner).toContain(`<${owner}`);
+        }
+        expect(composition).toContain('<ControlRunCancelDialog');
+        expect(source(`${recipeConsoleRoot}/monitor/MonitorInspector.tsx`))
+            .toContain('deriveDistributedRunFailureEvidenceDestinations');
+        expect(composition).toContain('MONITOR_ARTIFACT_EVIDENCE_ID');
+        const ledger = source(`${recipeConsoleRoot}/monitor/MonitorFailureLedger.tsx`);
+        expect(ledger).toContain('<ul');
+        expect(ledger).toContain('aria-pressed={active}');
+        expect(ledger).not.toMatch(/role="(?:listbox|option)"|aria-selected/);
+        const monitorHook = source(`${recipeConsoleRoot}/monitor/use-monitor-workspace.ts`);
+        expect(monitorHook).toContain('if (nextEvidenceKey === urlEvidenceKey) return;');
+        expect(monitorHook).not.toMatch(
+            /\[context\?\.key,\s*input\.urlState,\s*urlEvidenceKey\]/,
+        );
+        expect(source(support)).toContain('tab=runs');
+
+        for (const removed of [
+            `${recipeConsoleRoot}/monitor/MonitorPreview.tsx`,
+            `${recipeConsoleRoot}/monitor/FailureInspector.tsx`,
+            `${recipeConsoleRoot}/monitor/MonitorPreview.module.css`,
+        ]) {
+            expect(existsSync(resolve(repositoryRoot, removed)), removed).toBe(false);
+        }
+        const workspace = source(recipeConsoleWorkspacePath);
+        const seedState = source(`${recipeConsoleRoot}/data/seeded-console-state.ts`);
+        const models = source(`${recipeConsoleRoot}/data/recipe-console-models.ts`);
+        expect(workspace).toContain(
+            "import { MonitorWorkspace } from '../monitor/MonitorWorkspace.tsx';",
+        );
+        expect(workspace).not.toMatch(/MonitorPreview|FailureInspector|seedState\.monitor/);
+        expect(workspace).toContain(
+            'const monitorInspectorAvailable = monitorActive && inspectorContent !== undefined;',
+        );
+        expect(seedState).not.toMatch(/createMonitorPreviewModel|\bmonitor\s*:/);
+        expect(models).not.toMatch(/MonitorPreviewModel|\bmonitor\s*:/);
 
         const overlay = source(`${recipeConsoleRoot}/ui/OverlaySheet.tsx`);
         expect(overlay).toContain("event.key === 'Escape'");
