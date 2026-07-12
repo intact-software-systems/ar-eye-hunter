@@ -1,6 +1,6 @@
 # Recipe Console Product Spec
 
-Status: canonical product contract; Iteration 5 Ready-State #4 and #5 code-backed
+Status: canonical product contract; Iteration 6 Ready-State #4, #5, and #6 code-backed
 Evidence date: 2026-07-12
 
 This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
@@ -45,6 +45,14 @@ The default product path starts with recipe execution and promotes failures and 
 ### Offline artifact analysis
 
 **Given** no control-server connection and a partial or complete supported artifact bundle, **when** the operator imports the files locally, **then** Analyze retains all usable evidence, warns visibly about missing or incompatible files, and focuses the first actionable failure with likely cause, next action, and evidence source.
+
+The same workspace accepts the existing control-server export envelope, keeps
+artifact bytes only in bounded memory, searches normalized failure/result/event/
+diagnostic evidence through v1 URL filters, exports without a second request,
+and visibly rejects generic black-box-runner artifacts to the preserved Shared
+Test importer. Unknown schema versions and malformed optional evidence remain
+inspectable and can never be presented as a supported bundle; the artifact's
+claimed run outcome remains visible beside the incompatibility warning.
 
 ### Run comparison and candidate tuning
 
@@ -103,6 +111,13 @@ Artifact validation is profile- and schema-version-aware. These product profiles
 | Core distributed bundle | `distributed-run.json`, `manifest.json`, and `control-run.json` form the core distributed bundle and support run identity, orchestration state, and manifest analysis. |
 | Evidence-enriched bundle | `report.json`, `results.jsonl`, `events.jsonl`, `failures.json`, and `metadata.json` add report, result, event, failure, and provenance evidence. Any of these may be optional according to bundle kind and schema version. |
 | Partial/offline bundle | Any parseable supported subset remains analysable. The UI preserves usable evidence and emits visible, file-specific missing/incompatible warnings; absence of an optional evidence file does not invalidate all other evidence. |
+| Control-server schema v2 | Core files plus `report.json`, `failures.json`, and `metadata.json` identify v2. Linked/absent `results.jsonl` and `events.jsonl` are explicit optional evidence rather than a v1 downgrade. |
+| Export envelope and future schema | The existing `{ artifactSchemaVersion, distributedRunId, generatedAtEpochMs, files }` envelope round-trips without contract changes. A future claimed version retains usable evidence with an explicit unsupported/unknown-version warning. |
+| Generic black-box-runner artifact | Remains a separate public profile and is handed to the legacy Shared Test importer; it is never reinterpreted as a distributed-run bundle. |
+
+Browser intake is limited to 24 files, 16 MiB per file, and 48 MiB total.
+Duplicate basenames, unsafe paths, unsafe/unbounded URL identities, and malformed
+Unicode are rejected or quarantined without replacing the last usable analysis.
 
 The product must not present all eight files as universally required. Unknown versions and malformed present files are distinguished from legitimately absent optional files.
 
@@ -150,3 +165,27 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
   controlled Playwright/System Chromium is the recorded fallback. No default,
   primary-navigation, legacy-row visibility, mount-policy, or workflow cutover
   changed, and both legacy workflow rows remain available.
+
+### Iteration 6 evidence checkpoint — `f96b5b4`, `abe257e`, `9b07330`, `47c332d`
+
+- Ready-State #6 is satisfied by the passing canonical acceptance
+  `tests/playwright/rallar-black-box/recipe-console-analyze.spec.ts` —
+  `imports a partial bundle offline and focuses the first actionable failure`.
+  Local import reads no artifact endpoint; the independent root control
+  snapshot query may remain active.
+- The qualified exit passed 226/226 focused tests, 786/786 app tests across 81
+  files, shared-test/app typechecks, a 551-module production build and chunk
+  assertion, 119 Recipe Console browser tests plus one configured-live skip,
+  28/28 legacy navigation/ticket tests, and 57/57 control-server tests. The
+  Analyze matrix covers loose files and the export envelope, input safety,
+  retained evidence, URL-backed search, responsive/accessibility states, and
+  both CSS load orders.
+- Ready-State #3 remains open and unpassed. Its canonical full-stack owner is
+  present and discovered, but Postgres-backed services were unavailable; the
+  no-environment wrapper produced exactly one skip for:
+  `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+- The in-app Browser was unavailable exactly as `No browser is available`;
+  controlled Playwright/System Chromium is the recorded fallback. No default,
+  primary-navigation, legacy-row visibility, mount-policy, workflow cutover,
+  public export, control-server contract, or rollback route changed.

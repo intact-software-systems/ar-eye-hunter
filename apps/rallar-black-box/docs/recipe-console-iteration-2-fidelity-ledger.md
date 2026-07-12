@@ -1,16 +1,17 @@
 # Recipe Console Iteration 2 Fidelity Ledger
 
-Status: Iteration 2 visual direction preserved; Execute is qualified through
-Iteration 4 and live Monitor through Iteration 5, while Tune remains seeded
+Status: Iteration 2 visual direction preserved; Execute, live Monitor, and
+offline Analyze are qualified through Iteration 6, while Tune remains seeded
 
 Evidence date: 2026-07-12
 Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
-(Iteration 4 Execute), `42eedae` (Iteration 5 live Monitor fidelity proof)
+(Iteration 4 Execute), `42eedae` (Iteration 5 live Monitor fidelity proof),
+`f96b5b4`, `abe257e`, `9b07330`, `47c332d` (Iteration 6 Analyze)
 Approved direction: Signal Ledger (Direction A)
 
 This ledger preserves the approved Iteration 2 visual contract and its
-historical seeded Monitor/Tune evidence, then records the Iteration 4 Execute
-and Iteration 5 live Monitor baseline advances. It does not claim the
+historical seeded Monitor/Tune evidence, then records the Iteration 4 Execute,
+Iteration 5 live Monitor, and Iteration 6 Analyze baseline advances. It does not claim the
 unavailable configured live/Postgres acceptance, a legacy navigation hide, or
 the Iteration 12 default flip.
 
@@ -72,6 +73,34 @@ not an in-app Browser pass. The configured Postgres lifecycle remains skipped,
 so Ready-State #3 remains open. Both owning legacy workflow rows, old deep
 links, and their rollback paths remain operational and visible; Iteration 5
 makes no cutover, navigation hide, or default-experience flip.
+
+## Iteration 6 offline Analyze fidelity addendum
+
+Direction A remains unchanged. Analyze now follows the Signal Ledger order:
+bounded local/Control source actions, first actionable failure and fix,
+likely-causal quality/file inventory, performance, searchable evidence, and
+issue-ready Markdown. The first visible region answers what failed, who is
+affected, what to inspect, and how to verify without making raw JSON the
+primary path.
+
+Controlled Playwright/System Chromium QA covers 1440×900 desktop, 900×900
+tablet, 430×932 portrait, and 932×430 short landscape. Tablet and portrait
+captures were inspected at original detail. Portrait preserves failure
+priority and a 48px selection dock above the six-item navigation; the inspector
+is absent until explicitly opened. All visible Analyze actions are at least
+44px, horizontal document overflow is zero, short-landscape focus restores on
+Escape, reduced motion disables transitions/animations, and computed Analyze
+styles remain identical across cold, legacy-first, and legacy-round-trip load
+orders.
+
+The complete Recipe Console configuration passes 119 available tests with one
+configured-live skip; the focused Analyze owners pass 19/19 including future
+schema, bounds, exhaustive search, late-response, keyboard picker, actual drop,
+and activated legacy-handoff proof. The in-app Browser was
+unavailable exactly as `No browser is available`, so this is fallback evidence,
+not an in-app Browser pass. No screenshot creates a new visual direction;
+Direction A remains the approved hierarchy and repository artifact truth owns
+the displayed copy and data.
 
 ## Controlled environment
 
@@ -180,6 +209,13 @@ they are not counted as live-service passes.
 | Iteration 5 exact legacy navigation/ticket pair | Passed | 28/28 Chromium tests; old deep links and the selected-run legacy handoff remain operational. |
 | Iteration 5 control-server check/tests | Passed | Control-server check and 57/57 Deno tests. |
 | Iteration 5 configured full-stack wrapper | Skipped; not passed | Exited successfully with exactly one configured skip because the required Postgres-backed stack was unavailable; the exact reason is recorded below. |
+| Iteration 6 focused artifact/Analyze Vitest set | Passed | 15/15 files, 226/226 tests after shared and app/state review fixes. |
+| Iteration 6 complete `packages/tests/rallar-black-box` set | Passed | 81/81 files, 786/786 tests with required loopback/IPC permission. |
+| Iteration 6 shared/app checks and production build | Passed | Shared-test and app TypeScript checks, reciprocal experience closure, and a 551-module build passed. Recipe Console CSS is 74.32 kB (12.10 gzip) and JS is 215.53 kB (58.63 gzip); the existing preserved large-chunk advisory remains. |
+| Iteration 6 complete Recipe Console Playwright config | Qualified | 119 passed, one configured-live test skipped with the exact unavailable-service reason. Analyze covers every contract viewport, keyboard/focus, 44px targets, reduced motion, operational/adversarial states, overflow, and CSS load orders. |
+| Iteration 6 Analyze browser owners | Passed | 19/19 across canonical, safety, visual, and handoff owners, including future schema, 25-file rejection, every required search field, late Control response context safety, keyboard-owned picker activation, actual drop, and activated legacy destinations; all owners are 90–267 lines. |
+| Iteration 6 exact legacy navigation/ticket pair | Passed | 28/28 Chromium tests; old tabs, aliases, and session-ticket behavior remain operational. |
+| Iteration 6 control-server contract regression | Passed | 57/57 Deno tests, including schema-v2 artifact export. |
 | Iteration 4 focused Vitest set | Passed | 18/18 files, 294/294 tests after all review fixes. |
 | Iteration 4 complete `packages/tests/rallar-black-box` set | Passed outside socket-restricted sandbox | 67/67 files, 656/656 tests. |
 | Iteration 4 Recipe Console Playwright config | Qualified | 89 passed, one configured-live test skipped with the exact unavailable-service reason below. Includes Execute lifecycle, responsive/accessibility, operational-state, CSS-isolation, and refreshed fidelity proof. |
@@ -326,3 +362,18 @@ skip, and final re-reviews report no remaining Critical or Important finding.
 This qualifies the code-backed live Monitor fidelity baseline, not the skipped
 Postgres acceptance or a strangler cutover. Legacy Runs and Distributed Recipes
 remain visible and deep-linkable; no navigation hide or default flip occurred.
+
+## Iteration 6 Analyze review verdict
+
+Independent shared-contract review closed three Important findings around
+index retention, precise JSONL provenance, and loose-file identity consistency.
+Independent app/state review closed six Important findings covering retained
+context truth, paired control/distributed authority, unsafe and malformed-
+Unicode identities, bounded filenames, and accurate malformed/concurrent
+operation announcements. Every item received focused RED/GREEN proof; final
+re-reviews report no Critical or Important finding.
+
+This qualifies Ready-State #6 and the bounded distributed-run Analyze
+capability. It does not qualify the skipped Postgres lifecycle, generic
+black-box-runner import, history/comparison, a navigation hide, or a default
+flip. Legacy Runs and Shared Test remain visible and deep-linkable.

@@ -1,6 +1,6 @@
 # Rallar Recipe Console Artifact Analysis Implementation Plan
 
-Status: Iteration 6 in progress; Task 0 complete, Tasks 1–6 pending
+Status: Iteration 6 complete; Tasks 0–6 and the code-backed exit passed
 Evidence date: 2026-07-12
 Branch: `codex/rallar-black-box-spa-reimplementation`
 Worktree: `tmp/worktrees/rallar-black-box-spa`
@@ -137,20 +137,20 @@ Files:
 - Add focused shared and app compatibility tests under
   `packages/tests/**/distributed-artifact-*.test.ts`
 
-- [ ] RED-test the actual seven-file control-server v2 envelope: it remains v2,
+- [x] RED-test the actual seven-file control-server v2 envelope: it remains v2,
   validates core/report/failures/metadata, and labels absent results/events as
   optional/linked rather than invalid.
-- [ ] RED-test loose core, partial evidence, malformed present JSON/JSONL,
+- [x] RED-test loose core, partial evidence, malformed present JSON/JSONL,
   unknown version, wrong envelope root, unsupported profile, ignored file, and
   missing identity distinctions. Valid sibling files and valid JSONL rows stay
   usable.
-- [ ] RED-test that unpacked files and a downloaded envelope converge on the
+- [x] RED-test that unpacked files and a downloaded envelope converge on the
   same analysis/snapshots while declared version and generated time remain
   deterministic.
-- [ ] Implement only additive public types/functions and correct v2 inference
+- [x] Implement only additive public types/functions and correct v2 inference
   against server behavior without changing its endpoint or payload contract.
-- [ ] Pass focused shared/app tests and shared-test TypeScript checks.
-- [ ] Commit `feat: normalize distributed artifact workspaces`.
+- [x] Pass focused shared/app tests and shared-test TypeScript checks.
+- [x] Commit shared compatibility and evidence as `f96b5b4` (`feat: normalize distributed artifact evidence`).
 
 ## Task 2: Derive Bounded Search And Issue Evidence
 
@@ -162,19 +162,19 @@ Files:
   one-agent failure, malformed optional evidence, and multi-agent evidence
 - Modify focused distributed artifact tests
 
-- [ ] RED-test failure/result/event/diagnostic projection with stable IDs,
+- [x] RED-test failure/result/event/diagnostic projection with stable IDs,
   correct provenance, bounded summaries, deduplication, stable source/time
   ordering, index/result limits, and exact omitted counts.
-- [ ] RED-test free text across agent, command, recipe, topic, diagnostic type,
+- [x] RED-test free text across agent, command, recipe, topic, diagnostic type,
   payload summary, and failure category; structured status/severity/transport
   and inclusive from/to filters; combined filters use AND semantics.
-- [ ] RED-test deterministic first actionable failure, likely causal trail
+- [x] RED-test deterministic first actionable failure, likely causal trail
   labels/sources, evidence-quality summary, and issue-ready markdown composition
   using an injected generation epoch. Exclude unrelated evidence where shared
   correlations support it; otherwise surface the heuristic limitation.
-- [ ] Keep all derivation reusable and UI-agnostic under `packages/shared-test`.
-- [ ] Pass focused tests and shared-test TypeScript checks.
-- [ ] Commit `feat: index distributed artifact evidence`.
+- [x] Keep all derivation reusable and UI-agnostic under `packages/shared-test`.
+- [x] Pass focused tests and shared-test TypeScript checks.
+- [x] Commit the bounded index/search slice in `f96b5b4` after independent review.
 
 ## Task 3: Bind Memory-Only Import And Control Operations
 
@@ -186,19 +186,20 @@ Files:
 - Modify `src/recipe-console/app/RecipeConsoleWorkspace.tsx`
 - Add focused Analyze state/boundary/structure tests
 
-- [ ] RED-test file count/per-file/total limits, duplicate basenames, unknown
+- [x] RED-test file count/per-file/total limits, duplicate basenames, unknown
   files, directory selection, exported-envelope intake, ambiguous input, read
   failure, and atomic valid-candidate replacement.
-- [ ] RED-test idle/importing/loading/ready/error states, prior-evidence
+- [x] RED-test idle/importing/loading/ready/error states, prior-evidence
   retention, clear, operation generations, context changes, identity mismatch,
   and abort-resistant late control responses.
-- [ ] RED-test that offline local import invokes no control transport, Control
-  Load uses only `connection.execution.exportRunArtifact`, and Export downloads
-  the loaded envelope with deterministic name/content that re-imports.
-- [ ] Keep the artifact payload memory-only above the unmounted view; project
+- [x] RED-test that offline local import invokes no artifact export endpoint
+  (the independent root control snapshot query may remain active), Control Load
+  uses only `connection.execution.exportRunArtifact`, and Export downloads the
+  loaded envelope with deterministic name/content that re-imports.
+- [x] Keep the artifact payload memory-only above the unmounted view; project
   safe run/filter state through the existing v1 codec only.
-- [ ] Pass focused tests, structure checks, and app typecheck.
-- [ ] Commit `feat: bind offline artifact analysis operations`.
+- [x] Pass focused tests, structure checks, and app typecheck.
+- [x] Commit operations with the cohesive Analyze workspace milestone `abe257e`.
 
 ## Task 4: Build Failure-First Analyze UI
 
@@ -212,25 +213,25 @@ Files:
 - Modify shell composition only through narrow Analyze callbacks/model props
 - Add/modify focused structure, URL, shell, status, and seeded-preview tests
 
-- [ ] RED-test composition ownership and ordering before React implementation:
+- [x] RED-test composition ownership and ordering before React implementation:
   actions -> failure verdict/fix -> likely causal trail/evidence quality ->
   performance -> search/results -> issue markdown.
-- [ ] Render picker plus drop zone, local/control provenance, loaded profile and
+- [x] Render picker plus drop zone, local/control provenance, loaded profile and
   version, first actionable failure, likely cause, next action, minimal fix,
   evidence file, affected agents/regions, verification command, likely causal
   trail, file-specific warnings, performance summary, and copyable markdown.
-- [ ] Render URL-backed search and bounded keyboard-operable result rows. An
+- [x] Render URL-backed search and bounded keyboard-operable result rows. An
   explicit row activation opens the one inspector and projects available
   agent/recipe/command context without making raw JSON the success path.
-- [ ] Render honest empty, reading, loaded partial/complete, malformed,
+- [x] Render honest empty, reading, loaded partial/complete, malformed,
   incompatible, stale retained, offline, authorization, credential-trust,
   identity mismatch, and recovered states. Reloaded URL without bytes requests
   re-import/load explicitly.
-- [ ] Preserve Signal Ledger desktop/tablet/portrait/short-landscape geometry,
+- [x] Preserve Signal Ledger desktop/tablet/portrait/short-landscape geometry,
   44px targets, contained scrolling, status announcements, reduced motion, and
   CSS isolation.
-- [ ] Pass focused tests, app typecheck/build, and scoped browser RED->GREEN.
-- [ ] Commit `feat: replace analyze preview with artifact workspace`.
+- [x] Pass focused tests, app typecheck/build, and scoped browser RED->GREEN.
+- [x] Commit `abe257e` (`feat: replace analyze preview with artifact workspace`).
 
 ## Task 5: Browser And Strangler Proof
 
@@ -241,47 +242,48 @@ Files:
 - Modify responsive, history, status, CSS-isolation, and shell specs where
   Analyze-specific coverage belongs
 
-- [ ] Keep the canonical acceptance name exact:
+- [x] Keep the canonical acceptance name exact:
   `imports a partial bundle offline and focuses the first actionable failure`.
-- [ ] Prove no control request during offline import; actual drag/drop and
-  keyboard picker fallback; wrapper/unpacked round trip; missing optional,
+- [x] Prove no artifact endpoint/export request during offline import; actual
+  drag/drop and keyboard picker fallback; wrapper/unpacked round trip; missing optional,
   malformed present, unknown version, duplicate, bounded-input, first failure,
   performance, likely causal trail, evidence quality, markdown, and search by
   every required field/time bound.
-- [ ] Prove visible Control Load and in-memory Export, identity mismatch,
+- [x] Prove visible Control Load and in-memory Export, identity mismatch,
   prior-evidence retention, abort-ignoring late response rejection, and offline
   re-import of the exported envelope.
-- [ ] Prove URL copy/back/forward and reload semantics for run IDs and filters;
+- [x] Prove URL copy/back/forward and reload semantics for run IDs and filters;
   prove artifact bytes do not persist and reload requests re-import.
-- [ ] Prove 1440x900, 900x900, 430x932, and 932x430; keyboard-only evidence and
+- [x] Prove 1440x900, 900x900, 430x932, and 932x430; keyboard-only evidence and
   inspector paths; 44px targets; focus restore/Escape; reduced motion; live
   announcements; zero document overflow; and actual Analyze CSS in both load
   orders.
-- [ ] Preserve and test contextual links/deep links for legacy Runs and the
+- [x] Preserve and test contextual links/deep links for legacy Runs and the
   Shared Test fallback. Do not hide or alter any legacy row or mount policy.
-- [ ] Commit `test: prove offline artifact failure analysis`.
+- [x] Commit the initial browser proof with `abe257e` and the final exact
+  keyboard/drop/legacy-handoff proof with `47c332d`.
 
 ## Task 6: Fresh Exit, Review, And Documentation
 
-- [ ] Run the iteration's exact focused validation plus artifact workspace
+- [x] Run the iteration's exact focused validation plus artifact workspace
   tests, complete app suite, shared/app typechecks, production build/chunk
   assertion, complete Recipe Console browser config, exact preserved legacy
   navigation/ticket pair, and control-server artifact tests if the shared
   boundary changed their expectations.
-- [ ] Perform desktop/mobile portrait/mobile landscape, keyboard, reduced
+- [x] Perform desktop/mobile portrait/mobile landscape, keyboard, reduced
   motion, operational-state, CSS-isolation, and visual-hierarchy QA. Try the
   in-app Browser first and record its exact unavailable reason before fallback.
-- [ ] Dispatch independent shared-contract, app-state, and browser/cutover
+- [x] Dispatch independent shared-contract, app-state, and browser/cutover
   reviews. Cover every Critical/Important finding with RED/GREEN proof and rerun
   fresh validation after the last fix.
-- [ ] Update this plan, parent plan, product spec, migration register, and
+- [x] Update this plan, parent plan, product spec, migration register, and
   fidelity ledger with actual commits, counts, compatibility decisions,
   cutover evidence, skips, and remaining risks.
-- [ ] Mark `runner.artifact-analysis` code-backed only after the canonical
+- [x] Mark `runner.artifact-analysis` code-backed only after the canonical
   offline acceptance passes. Keep `runner.runs`,
   `legacy.distributed-recipes`, `legacy.shared-test-import`, and
   `legacy.run-manager` visible, deep-linkable, and uncut.
-- [ ] Commit `docs: record offline artifact analysis exit`.
+- [x] Commit the exit documentation after the fresh proof below.
 
 ## Iteration 6 Focused Validation Contract
 
@@ -305,3 +307,36 @@ The parent plan's two named Vitest files remain mandatory but cannot alone prove
 artifact behavior. Live services are not required for the canonical offline
 exit. Any configured-service check that is unavailable is reported as skipped
 with its exact reason and is never counted as passed.
+
+## Fresh Exit Evidence
+
+- Shared foundation: `f96b5b4`; Analyze app/browser milestone: `abe257e`;
+  completed safety matrix: `9b07330`; exact keyboard/drop/legacy-handoff
+  proof: `47c332d`.
+- Focused shared/app contract: 15/15 files, 226/226 tests. Complete app suite:
+  81/81 files, 786/786 tests with required loopback/IPC permission.
+- Shared-test and app TypeScript checks pass. The production build transforms
+  551 modules; Recipe Console CSS is 74.32 kB (12.10 gzip) and JS is 215.53 kB
+  (58.63 gzip). The reciprocal experience closure passes; only the preserved
+  large-chunk advisory remains.
+- Complete Recipe Console browser configuration: 119 available tests passed;
+  one configured-live test skipped. The bounded Analyze canonical, safety, and
+  visual/handoff owners pass 19/19 including future-schema, bounds, exhaustive
+  search, late-response, keyboard-owned picker, actual DataTransfer drop, and
+  activated legacy destination proof. The exact preserved legacy
+  navigation/ticket pair passes 28/28.
+  Control-server contract regression passes 57/57.
+- Desktop, tablet, 430×932 portrait, and 932×430 short-landscape; keyboard-only
+  picker/evidence/inspector paths; 44px targets; focus trap/restore and Escape;
+  reduced motion; operational announcements; zero horizontal overflow; and
+  both legacy CSS load orders pass. Tablet and portrait captures were inspected
+  at original detail. The in-app Browser was unavailable exactly as `No browser
+  is available`; Playwright/System Chromium is fallback evidence, not an
+  in-app Browser pass.
+- Shared review closed three Important findings; app/state review closed six
+  Important findings. Every finding received RED/GREEN proof and final
+  independent re-reviews report no open Critical or Important issue.
+- Ready-State #6 is satisfied. No legacy row or mount policy changed. The
+  configured Postgres lifecycle remains **skipped, not passed**, for exactly:
+  `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`

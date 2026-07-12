@@ -400,7 +400,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 3 — Control Connection And Agent Board | **Complete** | The canonical bounded control adapter, serialized root query, explicit operational context, URL-backed run/agent selection, repository-derived board, credential-origin policy, and deep snapshot validation are implemented through `a7df46f`. Independent review, mocked lifecycle, actual local-control read, responsive/accessibility, legacy compatibility, server contracts, and qualified validation are recorded below; Ready-State #3 remains open for Iterations 4–5 and configured live/Postgres proof. |
 | 4 — Execute Workflow MVP | **Complete** | Shared catalog/manifest/target truth (`3fe2574`), the bounded credential-aware execution API (`76092f6`), guided Execute UI (`8d44a99`), and lifecycle acceptance (`bddde71`) pass the code-backed exit. Fresh validation, browser fallback QA, review fixes, and the unavailable configured-live qualification are recorded below. Ready-State #2 is satisfied; #3 remains open for live Monitor observation, distinct live cancellation, and configured Postgres proof. Both legacy workflow rows remain visible and uncut. |
 | 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
-| 6 — Artifact Analysis | Pending | No profile-aware Recipe Console importer cutover is represented as complete. |
+| 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | Pending | No timing/tuning acceptance evidence is represented as complete. |
 | 8 — History, Compare, Saved Filters, Retention | Pending | No retention preview or history/compare cutover is represented as complete. |
 | 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
@@ -694,6 +694,65 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Available failure correlations are operable and last-known evidence remains honest | Agent, recipe, command, diagnostic, timeline/event, and artifact destinations pass the exact Ready-State #5 acceptance; refresh failure, recovery, deletion, context change, and copied-link restoration remain explicit. |
 | Monitor actions use current authoritative control truth | Policy/unit and browser proofs cover Refresh, armed Cancel, Load/Export, stale/partial/offline blocking, identity checks, mutation projection, queued refresh, and abort-resistant late responses. |
 | The strangler boundary remains reversible | Both legacy workflow rows, aliases, deep links, rollback URLs, and mount policies remain operational; the new legacy Runs link restores the exact selected two-run context. |
+
+#### Iteration 6 artifact analysis exit — `f96b5b4`, `abe257e`, `9b07330`, `47c332d`
+
+- Shared-test now owns additive distributed-artifact workspace normalization,
+  the authoritative control-server schema-v2 profile, envelope/loose-file
+  convergence, future/malformed/partial compatibility inventory, deterministic
+  bounded evidence indexing/search, likely-causal issue output, and precise
+  provenance. Existing public exports and control-server contracts remain
+  compatible.
+- Recipe Console replaces the static Analyze preview with bounded file/folder/
+  drop intake, the existing credential-aware Control Load adapter, in-memory
+  Export, failure-first verdict/fix, likely causal trail, file quality,
+  performance, URL-backed search, issue Markdown, and one explicit contextual
+  inspector. Artifact bytes stay in a root hook while inactive Analyze UI is
+  unmounted; reload visibly requires re-import or Control Load.
+- Intake is capped at 24 files, 16 MiB per file, and 48 MiB total. Duplicate or
+  unsafe paths, unsafe/unbounded/malformed-Unicode identities, paired control/
+  distributed mismatches, context-stale and late responses, malformed
+  replacements, and concurrent local/control drops retain prior evidence and
+  fail visibly. Generic black-box-runner artifacts stay a separate preserved
+  Shared Test profile.
+- The exact canonical offline acceptance passes without any artifact endpoint
+  read. The complete Analyze matrix also proves loose/envelope round-trip,
+  future schema and bounded-input behavior, search fields/time ranges,
+  Control export/re-import without a second request, URL history/reload,
+  unmount/remount persistence, legacy handoffs, desktop/tablet/430×932/
+  932×430 layouts, keyboard/focus, 44px targets, reduced motion, announcements,
+  zero horizontal overflow, and CSS isolation in both load orders.
+- Fresh exit validation passes 226/226 focused tests across 15 files, 786/786
+  complete app tests across 81 files, shared-test and app TypeScript checks, a
+  551-module production build and experience-closure assertion, 119 available
+  Recipe Console Chromium tests, 28/28 preserved legacy navigation/ticket
+  tests, and 57/57 control-server Deno tests. One
+  configured-live test is skipped, not passed, for the exact reason below.
+  The in-app Browser was unavailable exactly as `No browser is available`, so
+  Playwright/System Chromium is fallback evidence rather than an in-app
+  Browser pass.
+- Independent shared-contract review closed three Important findings. The
+  final app/state audit closed six Important findings covering retained
+  context, paired identity authority, URL/filename hardening, malformed
+  Unicode, and truthful concurrent-operation announcements. Final re-reviews
+  report no open Critical or Important issue.
+- Ready-State #6 is code-backed. Ready-State #3 remains open because the
+  Postgres-backed configured lifecycle is unavailable and **skipped, not
+  passed**, for exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with
+  Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
+  apps/rallar-black-box available.`
+- No default, primary navigation, legacy visibility, legacy mount policy,
+  public export, endpoint, or rollback route changed. `runner.runs`,
+  `legacy.distributed-recipes`, `legacy.shared-test-import`, and
+  `legacy.run-manager` retain the responsibilities outside this distributed-
+  artifact cut.
+
+| Iteration 6 exit criterion | Code-backed evidence |
+| --- | --- |
+| A CI artifact reveals the first actionable failure without raw JSON | The exact canonical offline acceptance passes with verdict, likely cause, next action, fix area, evidence file, affected identity, verification command, quality, performance, search, and issue Markdown. |
+| Local and Control artifact operations are bounded and truthful | File limits, duplicate/path/identity hardening, generation/context authority, paired IDs, retained failures, Control Load, one-request Export, envelope re-import, reload clearing, and live announcements have unit/browser proof. |
+| Analyze is responsive, accessible, and isolated | All four contract viewports, keyboard-only picker/evidence/inspector paths, focus restore/Escape, 44px targets, reduced motion, zero horizontal overflow, and both CSS load orders pass. |
+| The strangler boundary remains reversible | Analyze unmounts inactive; loaded bytes remain bounded in the root hook; exact legacy Runs and Shared Test links pass; no legacy surface is hidden, re-homed, or removed. |
 
 #### Iteration 1 checkpoint — `63e7b2c`
 
@@ -1138,7 +1197,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Hidden mounted effects, polling, subscriptions, and runtime ownership | 1, 11 | Extract ownership before unmounting and satisfy `packages/tests/rallar-black-box/app-structure.test.ts` — `legacy routes resolve through dynamic imports only` plus `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions`. |
 | Source, DOM, and CSS selector compatibility can regress during extraction | 1, 2, 11 | Preserve source/public boundaries and add the structure assertion plus `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `CSS isolation fixture preserves representative legacy and Recipe Console controls`. |
 | URL/default flip and runner-agent launch compatibility | 2, 12 | Prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL` and `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `runner-agent launch URL opens advanced workbench consumes and scrubs the session-ticket fragment`; stale stored legacy navigation must not win on a blank URL after cutover. |
-| Artifact versions and partial bundles | 6 | Keep parsing profile/version aware and prove `tests/playwright/rallar-black-box/recipe-console-analyze.spec.ts` — `imports a partial bundle offline and focuses the first actionable failure`, including missing, incompatible, and malformed file distinctions. |
+| Future artifact versions and new profile drift | 12 and future contract changes | Iteration 6 now proves profile/version-aware partial, malformed, future-schema, envelope, and generic-profile distinctions through the canonical Analyze acceptance and shared workspace tests. Preserve the additive compatibility inventory and rerun those gates whenever a producer changes. |
 | Retention preview safety | 8 | Add optional dry-run behavior without changing the destructive default, require explicit confirmation, and prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup`. |
 | Qualitative visual and performance gates lack executable thresholds | 9, 12 | Iteration 2 now has four approved screenshot baselines and a 1% executable drift budget in `recipe-console-concept-fidelity.spec.ts`; Iteration 9 still owns bounded-render/interaction budgets and Iteration 12 owns final viewport, keyboard, touch, reduced-motion, and non-hover gates. |
 | Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
