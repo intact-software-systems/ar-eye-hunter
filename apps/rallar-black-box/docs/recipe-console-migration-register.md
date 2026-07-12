@@ -1,11 +1,29 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Iteration 3 control backbone complete, all workflow rows uncut
+Status: canonical migration register; Iteration 4 guided Execute in progress, all workflow rows uncut
 Evidence/status date: 2026-07-12
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 4 guided Execute implementation start — 2026-07-12
+
+Authoritative contract and UI audits found that the current Execute surface
+mixes the live Iteration 3 control board with seeded targets and preview-only
+Stage/Start state. The tests-first
+[implementation plan](../../../docs/superpowers/plans/2026-07-12-rallar-recipe-console-execute-workflow-implementation-plan.md)
+therefore replaces that target/action plane with shared-fixture catalog facts,
+fresh recipe-aware target derivation, validated manifest/resolution truth, and
+credential-aware Resolve/Create/Stage/Start/Cancel/Refresh/Export operations.
+Manual Start will remain disabled until authoritative state is `ready`, and
+duplicate-session/capability blockers require shared deterministic evidence.
+
+This is implementation work, not cutover evidence. `runner.recipes` still owns
+agent setup, readiness, local launch, and compatibility flows;
+`legacy.distributed-recipes` still owns history, Monitor, compare, and
+authoring. Both rollback URLs, primary visibility, mounts, and deep links remain
+unchanged until their complete named gates pass.
 
 ## Iteration 3 control connection and agent board exit — `a7df46f`
 
