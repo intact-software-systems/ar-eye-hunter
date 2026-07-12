@@ -408,7 +408,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
 | 8 — History, Compare, Saved Filters, Retention | **Complete** | Preview-first retention, shareable filters/presets, bounded History, comparison reuse, cleanup reconciliation, and exact copied-link/retention acceptance are qualified through `fd9055e` and `f762749`. Fresh focused/complete/server/browser/legacy gates and independent re-reviews are green; the configured live/Postgres lifecycle is explicitly skipped, not passed. Ready-State #8 and #9 are code-backed. No legacy surface is hidden or cut over. |
-| 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
+| 9 — Large-Run Scale And Virtualization | **In progress** | The reviewed child plan binds Ready-State #10 to a 15,000-row artifact, 5,000 History pairs, accessible deterministic windows, a single parsed shared pipeline, off-main Analyze derivation, numeric session-only telemetry, production-browser DOM/cardinality gates, and before/after profiling. Existing prefix caps are not represented as parity. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
 | 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
@@ -432,6 +432,21 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 - `control-run-manager.ts` remains the canonical typed control-server client until extraction. `recipe-console/control/control-api.ts` must delegate to or re-export it rather than duplicate endpoints or types.
 - Artifact validation is bundle-profile- and schema-version-aware. Supported partial bundles remain usable with visible file-specific warnings.
 - Iteration 8 retention preview is a backward-compatible, non-destructive dry run, for example an optional `dryRun: true`, followed by explicit destructive confirmation. The existing destructive default must not change silently.
+- Iteration 9 uses explicit accessible Previous/Next windows as variable-height
+  DOM virtualization; fixed-height spacer tables and a new virtualizer
+  dependency are rejected. Window state is ephemeral and model/query-bound.
+- Iteration 9 preserves existing artifact profiles. Generic
+  `artifact-index.json` compaction/truncation remains solely in the legacy
+  Shared Test importer because its runner identity cannot authoritatively prove
+  association with a distributed-run artifact.
+- Producer compaction, shared-index omission, and current render-window
+  omission are distinct. Only render-window omissions are browseable; no UI may
+  invent searchable rows for producer-compacted evidence.
+- Timing and heap measurements are same-machine evidence, not absolute CI
+  gates. Exact cardinality, traversal, mounted-DOM, parse-count, cancellation,
+  and event-loop-progress invariants are executable gates.
+- No Canvas timing plot is added without measured dense-DOM pressure. Current
+  Recipe Console has no such plot, so Canvas is explicitly deferred.
 - Fleet first receives a behavior-preserving legacy extraction. The new Fleet view consumes shared deterministic helpers and must not import a legacy panel.
 - Existing mounted-state guarantees are temporary documented exceptions. Draft, polling, subscription, media, and execution ownership must migrate before the corresponding view is lazily unmounted.
 - Old aliases deterministically open the documented legacy surface during migration. New Recipe Console URLs use the versioned codec.
