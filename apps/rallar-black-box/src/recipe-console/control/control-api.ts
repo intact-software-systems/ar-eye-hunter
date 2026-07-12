@@ -5,21 +5,23 @@ import type {
     ControlSnapshotBounds,
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
-    resolveBlackBoxControlToken,
-    shouldRefreshBlackBoxControlToken,
-    type BlackBoxControlTokenSession,
-} from '../../control-operator-token.ts';
-import {
-    ControlRunManagerHttpError,
     controlHttpBaseUrlFromWsUrl,
+    type ControlRunManagerFetch,
+    ControlRunManagerHttpError,
     fetchControlServerSnapshot,
     fetchDistributedRuns,
-    type ControlRunManagerFetch,
 } from '../../control-run-manager.ts';
 import {
-    TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
     type RecipeConsoleControlCredentialPolicy,
+    TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
 } from './control-credential-policy.ts';
+import { createControlAuthorizedTransport } from './control-authorized-transport.ts';
+import type {
+    AuthorizedControlResult,
+    RecipeConsoleControlAuthorization,
+} from './control-authorized-transport.ts';
+import { createRecipeConsoleControlExecutionApi } from './control-execution-api.ts';
+import type { RecipeConsoleControlExecutionApi } from './control-execution-api.ts';
 import {
     validateControlDistributedRuns,
     validateControlServerCoreSnapshot,
@@ -35,11 +37,6 @@ export const RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS = {
     heartbeats: 80,
 } as const satisfies ControlSnapshotBounds;
 
-export type RecipeConsoleControlAuthorization =
-    | 'anonymous'
-    | 'manual'
-    | 'brokered';
-
 export type RecipeConsoleControlSnapshotResult = Readonly<{
     snapshot: ControlServerSnapshot;
     completeness: 'complete' | 'partial';
@@ -49,9 +46,12 @@ export type RecipeConsoleControlSnapshotResult = Readonly<{
 
 export type RecipeConsoleControlApi = Readonly<{
     baseUrl: string;
-    readSnapshot(input?: Readonly<{
-        signal?: AbortSignal;
-    }>): Promise<RecipeConsoleControlSnapshotResult>;
+    execution: RecipeConsoleControlExecutionApi;
+    readSnapshot(
+        input?: Readonly<{
+            signal?: AbortSignal;
+        }>,
+    ): Promise<RecipeConsoleControlSnapshotResult>;
 }>;
 
 export type RecipeConsoleControlApiConfig = Readonly<{
@@ -73,53 +73,6 @@ export class RecipeConsoleControlProtocolError extends Error {
     }
 }
 
-class RecipeConsoleControlAuthorizationError extends Error {
-    readonly reachable = true;
-    readonly authorizationRequired = true;
-    readonly controlStatus: number;
-    readonly controlStatusText: string;
-    readonly brokerStatus?: number;
-    readonly brokerStatusText?: string;
-    readonly brokerError: unknown;
-
-    constructor(
-        controlError: ControlRunManagerHttpError,
-        brokerError: unknown,
-    ) {
-        super(errorMessage(brokerError));
-        this.name = 'RecipeConsoleControlAuthorizationError';
-        this.controlStatus = controlError.status;
-        this.controlStatusText = controlError.statusText;
-        this.brokerStatus = httpStatus(brokerError);
-        this.brokerStatusText = httpStatusText(brokerError);
-        this.brokerError = brokerError;
-    }
-}
-
-class RecipeConsoleControlCredentialTrustError extends ControlRunManagerHttpError {
-    readonly reachable = true;
-    readonly authorizationRequired = true;
-    readonly credentialTrustRequired = true;
-
-    constructor(
-        controlError: ControlRunManagerHttpError,
-        message: string,
-    ) {
-        super(message, controlError.status, controlError.statusText);
-        this.name = 'RecipeConsoleControlCredentialTrustError';
-    }
-}
-
-type AuthorizedResult<Value> = Readonly<{
-    value: Value;
-    authorization: RecipeConsoleControlAuthorization;
-}>;
-
-type EndpointAuthorizationState = {
-    requiresAuthorization: boolean;
-    challenge?: ControlRunManagerHttpError;
-};
-
 export function createRecipeConsoleControlApi(
     config: RecipeConsoleControlApiConfig,
 ): RecipeConsoleControlApi {
@@ -127,195 +80,34 @@ export function createRecipeConsoleControlApi(
     const bounds = config.bounds ?? RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS;
     const credentialPolicy = config.credentialPolicy ??
         TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY;
-    const configuredManualToken = config.manualToken?.trim() || undefined;
-    const manualToken = credentialPolicy.allowManualToken
-        ? configuredManualToken
-        : undefined;
-    let brokeredToken: BlackBoxControlTokenSession | undefined;
-    const runsAuthorization: EndpointAuthorizationState = {
-        requiresAuthorization: false,
-    };
-    const distributedRunsAuthorization: EndpointAuthorizationState = {
-        requiresAuthorization: false,
-    };
-
-    async function resolveBrokeredToken(signal?: AbortSignal): Promise<string> {
-        const request = fetchWithSignal(config.fetchFn, signal);
-        let brokerResponse: Response | undefined;
-        let resolved: Awaited<ReturnType<typeof resolveBlackBoxControlToken>>;
-        try {
-            resolved = await resolveBlackBoxControlToken({
-                apiBaseUrl: config.apiBaseUrl,
-                authSession: config.authSession,
-                brokeredToken,
-                fetchFn: async (input, init) => {
-                    const response = await request(input, init);
-                    brokerResponse = response;
-                    return response;
-                },
-            });
-        } catch (error) {
-            if (
-                brokerResponse &&
-                !brokerResponse.ok &&
-                !(error instanceof ControlRunManagerHttpError)
-            ) {
-                throw new ControlRunManagerHttpError(
-                    errorMessage(error),
-                    brokerResponse.status,
-                    brokerResponse.statusText,
-                );
-            }
-            throw error;
-        }
-        if (resolved.source !== 'brokered') {
-            return resolved.token;
-        }
-        brokeredToken = resolved.session;
-        return resolved.token;
-    }
-
-    async function authorizedRead<Value>(
-        operation: (token: string | undefined, fetchFn: ControlRunManagerFetch) => Promise<Value>,
-        endpointAuthorization: EndpointAuthorizationState,
-        signal?: AbortSignal,
-    ): Promise<AuthorizedResult<Value>> {
-        const fetchFn = fetchWithSignal(config.fetchFn, signal);
-        let authorization: RecipeConsoleControlAuthorization = manualToken
-            ? 'manual'
-            : endpointAuthorization.requiresAuthorization && brokeredToken
-            ? 'brokered'
-            : 'anonymous';
-        let token = manualToken ?? (
-            endpointAuthorization.requiresAuthorization
-                ? brokeredToken?.token
-                : undefined
-        );
-
-        if (
-            !manualToken &&
-            endpointAuthorization.requiresAuthorization &&
-            brokeredToken &&
-            shouldRefreshBlackBoxControlToken(brokeredToken)
-        ) {
-            try {
-                token = await resolveBrokeredToken(signal);
-            } catch (brokerError) {
-                if (signal?.aborted || isAbortError(brokerError)) {
-                    throw brokerError;
-                }
-                if (endpointAuthorization.challenge) {
-                    throw new RecipeConsoleControlAuthorizationError(
-                        endpointAuthorization.challenge,
-                        brokerError,
-                    );
-                }
-                throw brokerError;
-            }
-            authorization = 'brokered';
-        }
-
-        try {
-            return {
-                value: await operation(token, fetchFn),
-                authorization,
-            };
-        } catch (error) {
-            if (manualToken || !isAuthorizationError(error)) {
-                throw error;
-            }
-            if (!credentialPolicy.allowBrokeredToken) {
-                if (config.authSession || configuredManualToken) {
-                    throw new RecipeConsoleControlCredentialTrustError(
-                        error,
-                        credentialPolicy.blockedMessage ??
-                            'Automatic control credentials are blocked for this endpoint source.',
-                    );
-                }
-                throw error;
-            }
-            if (!config.authSession) {
-                throw error;
-            }
-
-            endpointAuthorization.requiresAuthorization = true;
-            endpointAuthorization.challenge = error;
-            if (token === undefined && brokeredToken) {
-                try {
-                    return {
-                        value: await operation(brokeredToken.token, fetchFn),
-                        authorization: 'brokered',
-                    };
-                } catch (cachedTokenError) {
-                    if (
-                        signal?.aborted ||
-                        isAbortError(cachedTokenError) ||
-                        !isAuthorizationError(cachedTokenError)
-                    ) {
-                        throw cachedTokenError;
-                    }
-                    endpointAuthorization.challenge = cachedTokenError;
-                }
-            }
-            brokeredToken = undefined;
-            try {
-                token = await resolveBrokeredToken(signal);
-            } catch (brokerError) {
-                if (signal?.aborted || isAbortError(brokerError)) {
-                    throw brokerError;
-                }
-                throw new RecipeConsoleControlAuthorizationError(
-                    endpointAuthorization.challenge ?? error,
-                    brokerError,
-                );
-            }
-            return {
-                value: await operation(token, fetchFn),
-                authorization: 'brokered',
-            };
-        }
-    }
-
-    async function authorizedResponseRead<Value>(
-        operation: (
-            token: string | undefined,
-            fetchFn: ControlRunManagerFetch,
-        ) => Promise<Value>,
-        endpointAuthorization: EndpointAuthorizationState,
-        signal?: AbortSignal,
-    ): Promise<AuthorizedResult<Value>> {
-        let receivedResponse = false;
-        try {
-            return await authorizedRead(
-                (token, fetchFn) => operation(
-                    token,
-                    async (input, init) => {
-                        const response = await fetchFn(input, init);
-                        receivedResponse = true;
-                        return response;
-                    },
-                ),
-                endpointAuthorization,
-                signal,
-            );
-        } catch (error) {
-            if (receivedResponse && isProtocolCandidate(error)) {
-                throw controlProtocolError(error);
-            }
-            throw error;
-        }
-    }
+    const transport = createControlAuthorizedTransport({
+        apiBaseUrl: config.apiBaseUrl,
+        authSession: config.authSession,
+        manualToken: config.manualToken,
+        fetchFn: config.fetchFn,
+        credentialPolicy,
+        protocolError: controlProtocolError,
+        isProtocolCandidate,
+    });
+    const runsAuthorization = transport.createEndpointAuthorization();
+    const distributedRunsAuthorization = transport.createEndpointAuthorization();
+    const execution = createRecipeConsoleControlExecutionApi({
+        baseUrl,
+        transport,
+    });
 
     return {
         baseUrl,
+        execution,
         async readSnapshot(input = {}) {
-            const server = await authorizedResponseRead(
-                (token, fetchFn) => fetchControlServerSnapshot({
-                    baseUrl,
-                    token,
-                    bounds,
-                    fetchFn,
-                }),
+            const server = await transport.response(
+                (token, fetchFn) =>
+                    fetchControlServerSnapshot({
+                        baseUrl,
+                        token,
+                        bounds,
+                        fetchFn,
+                    }),
                 runsAuthorization,
                 input.signal,
             );
@@ -344,15 +136,18 @@ export function createRecipeConsoleControlApi(
                 };
             }
 
-            let distributed: AuthorizedResult<readonly ControlDistributedRunSnapshot[]>;
+            let distributed: AuthorizedControlResult<
+                readonly ControlDistributedRunSnapshot[]
+            >;
             let snapshot: ControlServerSnapshot;
             try {
-                distributed = await authorizedResponseRead(
-                    (token, fetchFn) => fetchDistributedRuns({
-                        baseUrl,
-                        token,
-                        fetchFn,
-                    }),
+                distributed = await transport.response(
+                    (token, fetchFn) =>
+                        fetchDistributedRuns({
+                            baseUrl,
+                            token,
+                            fetchFn,
+                        }),
                     distributedRunsAuthorization,
                     input.signal,
                 );
@@ -391,7 +186,9 @@ export function createRecipeConsoleControlApi(
 function controlProtocolError(error: unknown): RecipeConsoleControlProtocolError {
     return error instanceof RecipeConsoleControlProtocolError
         ? error
-        : new RecipeConsoleControlProtocolError(errorMessage(error));
+        : new RecipeConsoleControlProtocolError(
+            error instanceof Error ? error.message : String(error),
+        );
 }
 
 function isProtocolCandidate(error: unknown): boolean {
@@ -423,33 +220,13 @@ function recipeConsoleControlBaseUrl(controlUrl: string | undefined): string {
     return controlHttpBaseUrlFromWsUrl(configured);
 }
 
-function fetchWithSignal(
-    fetchFn: ControlRunManagerFetch | undefined,
-    signal: AbortSignal | undefined,
-): ControlRunManagerFetch {
-    const request = fetchFn ?? fetch;
-    return (input, init) => request(input, {
-        ...init,
-        signal: signal ?? init?.signal,
-    });
-}
-
-function isAuthorizationError(error: unknown): error is ControlRunManagerHttpError {
-    return error instanceof ControlRunManagerHttpError &&
-        (error.status === 401 || error.status === 403);
-}
-
 function isAbortError(error: unknown): boolean {
     return Boolean(
         error &&
-        typeof error === 'object' &&
-        'name' in error &&
-        error.name === 'AbortError',
+            typeof error === 'object' &&
+            'name' in error &&
+            error.name === 'AbortError',
     );
-}
-
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
 }
 
 function combinedAuthorization(
@@ -461,22 +238,9 @@ function combinedAuthorization(
     return 'anonymous';
 }
 
-function httpStatus(error: unknown): number | undefined {
-    return error && typeof error === 'object' &&
-            'status' in error && typeof error.status === 'number'
-        ? error.status
-        : undefined;
-}
-
-function httpStatusText(error: unknown): string | undefined {
-    return error && typeof error === 'object' &&
-            'statusText' in error && typeof error.statusText === 'string'
-        ? error.statusText
-        : undefined;
-}
-
 export type {
     ControlDistributedRunSnapshot,
     ControlServerSnapshot,
     ControlSnapshotBounds,
+    RecipeConsoleControlAuthorization,
 };

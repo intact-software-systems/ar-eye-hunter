@@ -16,6 +16,25 @@ const COMPLETE_SNAPSHOT = {
     distributedRuns: [],
 } as const;
 
+const DISTRIBUTED_MANIFEST = {
+    schemaVersion: 1,
+    distributedRunId: 'distributed-execute-a',
+    controlRunId: 'run-a',
+    group: {
+        applicationId: 'app-a',
+        workspaceId: 'workspace-a',
+        groupId: 'group-a',
+    },
+    recipes: [{ recipeId: 'recipe-a' }],
+    targetPolicy: {
+        mode: 'selected-agents',
+        agentIds: ['agent-a'],
+        expectedParticipantCount: 1,
+    },
+    startMode: 'manual',
+    ackTimeoutMs: 15_000,
+} as const;
+
 function authSession(clientId: string, sessionId: string): AuthSession {
     return {
         clientId,
@@ -68,6 +87,51 @@ function protocolDistributedRun(
             },
         },
         rollup: { summary: { blockingFailures: 0 } },
+        ...overrides,
+    };
+}
+
+function protocolTargetResolution(
+    overrides: Readonly<Record<string, unknown>> = {},
+) {
+    return {
+        group: DISTRIBUTED_MANIFEST.group,
+        resolvedAtEpochMs: 10,
+        staleAfterMs: 15_000,
+        targetPolicyMode: 'selected-agents',
+        targetAgentIds: ['agent-a'],
+        roleAssignments: [],
+        blockers: [],
+        summary: {
+            agents: 1,
+            targetable: 1,
+            selected: 1,
+            expectedParticipantCount: 1,
+            missingExpectedParticipants: 0,
+            staleAgents: 0,
+            offlineAgents: 0,
+            wrongGroupAgents: 0,
+            agentsWithoutIdentity: 0,
+            roleCounts: {},
+            regions: {},
+            providers: {},
+        },
+        ...overrides,
+    };
+}
+
+function protocolDistributedArtifact(
+    overrides: Readonly<Record<string, unknown>> = {},
+) {
+    return {
+        artifactSchemaVersion: 2,
+        distributedRunId: 'distributed-execute-a',
+        generatedAtEpochMs: 20,
+        files: {
+            'distributed-run.json': '{}',
+            'manifest.json': '{}',
+            'control-run.json': '{}',
+        },
         ...overrides,
     };
 }
@@ -1147,6 +1211,360 @@ describe('Recipe Console control API', () => {
             message: 'Operator token required.',
             status: 401,
             statusText: 'Unauthorized',
+        });
+    });
+
+    it('delegates every execution operation to the canonical REST contract with cancellation', async () => {
+        const controller = new AbortController();
+        const requests: Array<{
+            path: string;
+            method: string;
+            body: string | undefined;
+            authorization: string | null;
+            signal: AbortSignal | null | undefined;
+        }> = [];
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test/control',
+            manualToken: 'operator-token',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async (input, init) => {
+                const url = new URL(String(input));
+                requests.push({
+                    path: url.pathname,
+                    method: init?.method ?? 'GET',
+                    body: typeof init?.body === 'string' ? init.body : undefined,
+                    authorization: authorization(init),
+                    signal: init?.signal,
+                });
+                if (url.pathname.endsWith('/artifacts')) {
+                    return Response.json(protocolDistributedArtifact());
+                }
+                if (url.pathname.endsWith('/resolve-targets')) {
+                    return Response.json(protocolTargetResolution());
+                }
+                const state = url.pathname.endsWith('/stage')
+                    ? 'waiting-for-ack'
+                    : url.pathname.endsWith('/start')
+                    ? 'running'
+                    : url.pathname.endsWith('/cancel')
+                    ? 'cancelled'
+                    : 'draft';
+                return Response.json(protocolDistributedRun(
+                    'distributed-execute-a',
+                    { state, manifest: DISTRIBUTED_MANIFEST },
+                ));
+            },
+        });
+        const request = { signal: controller.signal };
+
+        await expect(api.execution.resolveTargets({
+            manifest: DISTRIBUTED_MANIFEST,
+            ...request,
+        })).resolves.toMatchObject({ targetAgentIds: ['agent-a'] });
+        await expect(api.execution.createRun({
+            manifest: DISTRIBUTED_MANIFEST,
+            ...request,
+        })).resolves.toMatchObject({ state: 'draft' });
+        await expect(api.execution.stageRun({
+            distributedRunId: 'distributed-execute-a',
+            ...request,
+        })).resolves.toMatchObject({ state: 'waiting-for-ack' });
+        await expect(api.execution.startRun({
+            distributedRunId: 'distributed-execute-a',
+            ...request,
+        })).resolves.toMatchObject({ state: 'running' });
+        await expect(api.execution.cancelRun({
+            distributedRunId: 'distributed-execute-a',
+            reason: 'Operator stopped the run.',
+            ...request,
+        })).resolves.toMatchObject({ state: 'cancelled' });
+        await expect(api.execution.exportRunArtifact({
+            distributedRunId: 'distributed-execute-a',
+            ...request,
+        })).resolves.toMatchObject({ artifactSchemaVersion: 2 });
+
+        expect(requests).toEqual([
+            {
+                path: '/distributed-runs/resolve-targets',
+                method: 'POST',
+                body: JSON.stringify({ manifest: DISTRIBUTED_MANIFEST }),
+                authorization: 'Bearer operator-token',
+                signal: controller.signal,
+            },
+            {
+                path: '/distributed-runs',
+                method: 'POST',
+                body: JSON.stringify({ manifest: DISTRIBUTED_MANIFEST }),
+                authorization: 'Bearer operator-token',
+                signal: controller.signal,
+            },
+            {
+                path: '/distributed-runs/distributed-execute-a/stage',
+                method: 'POST',
+                body: undefined,
+                authorization: 'Bearer operator-token',
+                signal: controller.signal,
+            },
+            {
+                path: '/distributed-runs/distributed-execute-a/start',
+                method: 'POST',
+                body: undefined,
+                authorization: 'Bearer operator-token',
+                signal: controller.signal,
+            },
+            {
+                path: '/distributed-runs/distributed-execute-a/cancel',
+                method: 'POST',
+                body: JSON.stringify({ reason: 'Operator stopped the run.' }),
+                authorization: 'Bearer operator-token',
+                signal: controller.signal,
+            },
+            {
+                path: '/distributed-runs/distributed-execute-a/artifacts',
+                method: 'GET',
+                body: undefined,
+                authorization: 'Bearer operator-token',
+                signal: controller.signal,
+            },
+        ]);
+    });
+
+    it('keeps read, write, and artifact authorization challenges separate while reusing one broker token', async () => {
+        const requests: string[] = [];
+        let brokerRequests = 0;
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            authSession: authSession('client-a', 'session-a'),
+            fetchFn: async (input, init) => {
+                const path = new URL(String(input)).pathname;
+                const auth = authorization(init);
+                requests.push(`${path}:${auth}`);
+                if (path === '/api/black-box/control-token') {
+                    brokerRequests += 1;
+                    return Response.json({
+                        tokenType: 'Bearer',
+                        token: 'shared-execution-token',
+                        issuedAtEpochMs: 3_000_000_000_000,
+                        expiresAtEpochMs: 4_000_000_000_000,
+                        ttlMs: 1_000_000_000_000,
+                    });
+                }
+                if (!auth) {
+                    return Response.json(
+                        { error: 'Operator token required.' },
+                        { status: 401, statusText: 'Unauthorized' },
+                    );
+                }
+                if (path === '/runs') return Response.json(COMPLETE_SNAPSHOT);
+                if (path.endsWith('/artifacts')) {
+                    return Response.json(protocolDistributedArtifact());
+                }
+                return Response.json(protocolDistributedRun(
+                    'distributed-execute-a',
+                    { state: 'draft', manifest: DISTRIBUTED_MANIFEST },
+                ));
+            },
+        });
+
+        await api.readSnapshot({});
+        await api.execution.createRun({ manifest: DISTRIBUTED_MANIFEST });
+        await api.execution.stageRun({
+            distributedRunId: 'distributed-execute-a',
+        });
+        await api.execution.exportRunArtifact({
+            distributedRunId: 'distributed-execute-a',
+        });
+
+        expect(brokerRequests).toBe(1);
+        expect(requests).toEqual([
+            '/runs:null',
+            '/api/black-box/control-token:Bearer access-client-a',
+            '/runs:Bearer shared-execution-token',
+            '/distributed-runs:null',
+            '/distributed-runs:Bearer shared-execution-token',
+            '/distributed-runs/distributed-execute-a/stage:Bearer shared-execution-token',
+            '/distributed-runs/distributed-execute-a/artifacts:null',
+            '/distributed-runs/distributed-execute-a/artifacts:Bearer shared-execution-token',
+        ]);
+    });
+
+    it('refreshes a near-expiry broker token before a later execution write', async () => {
+        const now = Date.now();
+        const writeAuthorizations: Array<string | null> = [];
+        let brokerRequests = 0;
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            authSession: authSession('client-a', 'session-a'),
+            fetchFn: async (input, init) => {
+                const path = new URL(String(input)).pathname;
+                if (path === '/api/black-box/control-token') {
+                    brokerRequests += 1;
+                    return Response.json({
+                        tokenType: 'Bearer',
+                        token: `execution-token-${brokerRequests}`,
+                        issuedAtEpochMs: now,
+                        expiresAtEpochMs: brokerRequests === 1 ? now + 60_000 : now + 3_600_000,
+                        ttlMs: brokerRequests === 1 ? 60_000 : 3_600_000,
+                    });
+                }
+                const auth = authorization(init);
+                writeAuthorizations.push(auth);
+                if (!auth) {
+                    return Response.json(
+                        { error: 'Operator token required.' },
+                        { status: 401, statusText: 'Unauthorized' },
+                    );
+                }
+                return Response.json(protocolDistributedRun(
+                    'distributed-execute-a',
+                    { state: 'draft', manifest: DISTRIBUTED_MANIFEST },
+                ));
+            },
+        });
+
+        await api.execution.createRun({ manifest: DISTRIBUTED_MANIFEST });
+        await api.execution.stageRun({
+            distributedRunId: 'distributed-execute-a',
+        });
+
+        expect(brokerRequests).toBe(2);
+        expect(writeAuthorizations).toEqual([
+            null,
+            'Bearer execution-token-1',
+            'Bearer execution-token-2',
+        ]);
+    });
+
+    it('withholds ambient credentials from URL-selected execution writes', async () => {
+        const authorizations: Array<string | null> = [];
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://untrusted-control.test/control',
+            manualToken: 'environment-secret',
+            apiBaseUrl: 'https://api.test',
+            authSession: authSession('victim-client', 'victim-session'),
+            credentialPolicy: recipeConsoleControlCredentialPolicyFromSearch(
+                '?v=1&experience=recipe-console' +
+                    '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol',
+            ),
+            fetchFn: async (_input, init) => {
+                authorizations.push(authorization(init));
+                return Response.json(
+                    { error: 'Operator token required.' },
+                    { status: 401, statusText: 'Unauthorized' },
+                );
+            },
+        });
+
+        await expect(api.execution.createRun({
+            manifest: DISTRIBUTED_MANIFEST,
+        })).rejects.toMatchObject({
+            name: 'RecipeConsoleControlCredentialTrustError',
+            credentialTrustRequired: true,
+        });
+        expect(authorizations).toEqual([null]);
+    });
+
+    it.each(
+        [
+            ['resolveTargets', { targetAgentIds: 'agent-a' }, 'targetAgentIds'],
+            ['createRun', { state: 'future-state' }, 'state'],
+        ] as const,
+    )('rejects malformed successful %s responses as reachable protocol errors', async (
+        operation,
+        overrides,
+        message,
+    ) => {
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () =>
+                operation === 'resolveTargets'
+                    ? Response.json(protocolTargetResolution(overrides))
+                    : Response.json(protocolDistributedRun(
+                        'distributed-execute-a',
+                        { ...overrides, manifest: DISTRIBUTED_MANIFEST },
+                    )),
+        });
+
+        const request = operation === 'resolveTargets'
+            ? api.execution.resolveTargets({ manifest: DISTRIBUTED_MANIFEST })
+            : api.execution.createRun({ manifest: DISTRIBUTED_MANIFEST });
+        await expect(request).rejects.toMatchObject({
+            name: 'RecipeConsoleControlProtocolError',
+            reachable: true,
+            message: expect.stringContaining(message),
+        });
+    });
+
+    it('accepts a schema-v2 base artifact without optional enriched files', async () => {
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => Response.json(protocolDistributedArtifact()),
+        });
+
+        await expect(api.execution.exportRunArtifact({
+            distributedRunId: 'distributed-execute-a',
+        })).resolves.toEqual(protocolDistributedArtifact());
+    });
+
+    it.each(
+        [
+            ['artifactSchemaVersion', { artifactSchemaVersion: 1 }],
+            ['distributedRunId', { distributedRunId: 7 }],
+            ['generatedAtEpochMs', { generatedAtEpochMs: Number.NaN }],
+            ['distributed-run.json', {
+                files: {
+                    ...protocolDistributedArtifact().files,
+                    'distributed-run.json': null,
+                },
+            }],
+            ['manifest.json', {
+                files: {
+                    ...protocolDistributedArtifact().files,
+                    'manifest.json': false,
+                },
+            }],
+            ['control-run.json', {
+                files: {
+                    ...protocolDistributedArtifact().files,
+                    'control-run.json': {},
+                },
+            }],
+            ['target-resolution.json', {
+                files: {
+                    ...protocolDistributedArtifact().files,
+                    'target-resolution.json': 7,
+                },
+            }],
+            ['results.jsonl', {
+                files: {
+                    ...protocolDistributedArtifact().files,
+                    'results.jsonl': [],
+                },
+            }],
+        ] as const,
+    )('rejects a malformed successful artifact %s field', async (
+        field,
+        overrides,
+    ) => {
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () =>
+                Response.json(
+                    protocolDistributedArtifact(overrides),
+                ),
+        });
+
+        await expect(api.execution.exportRunArtifact({
+            distributedRunId: 'distributed-execute-a',
+        })).rejects.toMatchObject({
+            name: 'RecipeConsoleControlProtocolError',
+            reachable: true,
+            message: expect.stringContaining(field),
         });
     });
 });

@@ -19,6 +19,7 @@ import {
     type ControlQuerySnapshot,
 } from './control-query.ts';
 import type { RecipeConsoleControlCredentialPolicy } from './control-credential-policy.ts';
+import type { RecipeConsoleControlExecutionApi } from './control-execution-api.ts';
 
 export const CONTROL_QUERY_POLL_INTERVAL_MS = 5_000;
 export const CONTROL_QUERY_REQUEST_TIMEOUT_MS = 4_000;
@@ -35,6 +36,7 @@ export type RecipeConsoleControlBootstrap = Readonly<{
 export type RecipeConsoleControlConnection = Readonly<{
     bootstrap: RecipeConsoleControlBootstrap;
     baseUrl: string;
+    execution: RecipeConsoleControlExecutionApi | undefined;
     query: ControlQuerySnapshot<ControlServerSnapshot>;
     refresh(): Promise<void>;
 }>;
@@ -125,6 +127,7 @@ export function ControlConnectionProvider({
     const value = useMemo<RecipeConsoleControlConnection>(() => ({
         bootstrap,
         baseUrl: apiSetup.api?.baseUrl ?? 'Invalid control URL',
+        execution: apiSetup.api?.execution,
         query,
         refresh: service.refresh,
     }), [apiSetup, bootstrap, query, service.refresh]);

@@ -24,6 +24,12 @@ const controlAgentBoardPath =
 const controlSelectionPath =
     `${recipeConsoleRoot}/control/control-selection.ts`;
 
+const controlAuthorizedTransportPath =
+    `${recipeConsoleRoot}/control/control-authorized-transport.ts`;
+const controlExecutionApiPath = `${recipeConsoleRoot}/control/control-execution-api.ts`;
+const controlExecutionValidationPath =
+    `${recipeConsoleRoot}/control/control-execution-validation.ts`;
+
 function source(path: string): string {
     return readFileSync(resolve(repositoryRoot, path), 'utf8');
 }
@@ -167,6 +173,54 @@ describe('Recipe Console experience boundary', () => {
         expect(provider).not.toMatch(/control-client|control-run-manager|runtime-store/);
         expect(workspace).not.toMatch(
             /createRecipeConsoleControlApi|createControlQueryService|\.start\(\)|\.stop\(\)/,
+        );
+    });
+
+    test('keeps control authorization and execution behind bounded root-owned seams', () => {
+        for (
+            const path of [
+                controlAuthorizedTransportPath,
+                controlExecutionApiPath,
+                controlExecutionValidationPath,
+            ]
+        ) {
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+        }
+        if (
+            ![
+                controlAuthorizedTransportPath,
+                controlExecutionApiPath,
+                controlExecutionValidationPath,
+            ].every((path) => existsSync(resolve(repositoryRoot, path)))
+        ) {
+            return;
+        }
+
+        const controlApi = source(`${recipeConsoleRoot}/control/control-api.ts`);
+        const transport = source(controlAuthorizedTransportPath);
+        const execution = source(controlExecutionApiPath);
+        const validation = source(controlExecutionValidationPath);
+        const provider = source(controlConnectionProviderPath);
+
+        expect(controlApi).toContain(
+            "import { createControlAuthorizedTransport } from './control-authorized-transport.ts';",
+        );
+        expect(controlApi).toContain(
+            "import { createRecipeConsoleControlExecutionApi } from './control-execution-api.ts';",
+        );
+        expect(provider).toContain('execution: apiSetup.api?.execution');
+        expect(transport).toContain('resolveBlackBoxControlToken');
+        expect(execution).toContain('createDistributedRun');
+        expect(execution).toContain('resolveDistributedTargets');
+        expect(execution).toContain('fetchDistributedRunArtifactBundle');
+        expect(validation).toContain('validateControlExecutionArtifactBundle');
+
+        expect(controlApi.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(300);
+        expect(transport.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(320);
+        expect(execution.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(220);
+        expect(validation.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(220);
+        expect(`${transport}\n${execution}\n${validation}`).not.toMatch(
+            /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]|(?:registry|Registry|index\.ts)/,
         );
     });
 
