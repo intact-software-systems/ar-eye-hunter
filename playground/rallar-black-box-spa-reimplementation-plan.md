@@ -397,7 +397,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
 | 1 — Extract Pure App Helpers | **Complete** | Behavior-preserving helper, presentation, controller, and shell-composition slices reduce `App.tsx` from 28,265 to 234 lines. `App` now owns runtime/bootstrap, auth gates, shared shell controllers, and experience composition only; `LegacyAppShell` delegates the exact tab tree to six bounded hook-free groups. The exit evidence below passed without a hide, cutover, route, public-export, control-contract, or stylesheet change. |
 | 2 — New Recipe Console Shell | **Complete** | Direction A, Signal Ledger, is implemented as an explicit `v=1` seeded experience through code head `a397642`. The fidelity ledger records URL/history, responsive/accessibility, CSS/chunk isolation, concept, Browser-fallback, review, and fresh validation proof. No workflow is cut over and no legacy primary surface is hidden. |
-| 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
+| 3 — Control Connection And Agent Board | **Complete** | The canonical bounded control adapter, serialized root query, explicit operational context, URL-backed run/agent selection, repository-derived board, credential-origin policy, and deep snapshot validation are implemented through `a7df46f`. Independent review, mocked lifecycle, actual local-control read, responsive/accessibility, legacy compatibility, server contracts, and qualified validation are recorded below; Ready-State #3 remains open for Iterations 4–5 and configured live/Postgres proof. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
 | 5 — Monitor MVP | Pending | No Recipe Console monitor cutover is represented as complete. |
 | 6 — Artifact Analysis | Pending | No profile-aware Recipe Console importer cutover is represented as complete. |
@@ -503,6 +503,90 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | No broad legacy selector dependency | Structure tests lock scoped selectors/modules and reject legacy imports or broad new-system selectors. |
 | Approved concepts have no unexplained drift | Four 1440×900 / 430×932 / 932×430 baselines pass at 1%; the fidelity ledger explains every repository-truth and population difference. |
 | Default Recipe Console chunk excludes all legacy diagnostics | Production manifest/resource closure proves reciprocal hashed JS/CSS chunks; explicit Recipe Console requests no LegacyExperience or fixture resource. |
+
+#### Iteration 3 control connection and agent board exit — `a7df46f`
+
+- Recipe Console now owns a root-scoped, serialized control query that reads
+  the canonical bounded `GET /runs` client, falls back to the compatibility
+  distributed-run list only when the optional collection is absent, and
+  preserves last-good evidence across partial, stale, offline, authorization,
+  timeout, and recovery transitions. Polling is deduplicated, abortable, and
+  stops when the Recipe Console experience unmounts. Successful HTTP payloads
+  are deeply validated before repository derivation, including nested field
+  types and unique control-run, distributed-run, and agent identities;
+  malformed core snapshots remain reachable protocol failures and malformed
+  optional distributed context degrades to a truthful partial snapshot.
+- The top command bar reports reachability, authorization, control run, group,
+  connected agents, current-safe targets, active distributed run, and client
+  receipt time. Execute renders only repository-derived agent rows and blocker
+  reasons. Stale rows are explicitly last-known, every current-safe count is
+  zero, and unavailable URL IDs remain visible instead of selecting collection
+  index zero or seeded data.
+- Run and agent selection push typed v1 history, reload/copy/back/forward
+  restore them, and run changes clear incompatible dependent fields.
+  Deployment-configured endpoints may use configured manual or brokered
+  credentials. A URL-selected control endpoint receives only an anonymous
+  request unless the same incoming URL explicitly supplied `controlToken`;
+  ambient configured tokens and token brokering are withheld. A URL-selected
+  API endpoint never receives the stored auth session and cannot auto-consume
+  an agent-session ticket. The incoming provenance is captured before Recipe
+  Console synchronously scrubs sensitive query/hash fields ahead of either the
+  login gate or lazy experience request. Legacy and `mode=control`
+  runner-agent links retain their existing ticket behavior. After bootstrap,
+  tokens remain memory-only.
+- `App.tsx` is 260 lines of auth/bootstrap/experience glue,
+  `RecipeConsoleApp.tsx` is 33 lines, and the focused workspace is 195 lines.
+  The control service lives above the keyed preview workspace, so preview reset
+  does not duplicate or discard control polling. No legacy panel, legacy owner,
+  existing legacy mount policy, replacement registry, global stylesheet,
+  endpoint, default route, primary navigation, rollback URL, hide, or workflow
+  cutover changed. No existing export was removed, renamed, or made
+  incompatible; the additive `ControlRunManagerHttpError` and
+  `RecipeConsoleControlProtocolError` exports preserve message compatibility
+  without changing the server protocol.
+- Fresh exit validation passed the exact 155/155 ten-file focused unit slice,
+  567/567 complete app tests across 62 files outside the socket-restricted
+  sandbox, app typecheck and a 458-module production build, reciprocal
+  experience chunk proof, 64/64 Recipe Console Chromium tests, 28/28 preserved
+  legacy navigation/ticket tests, and
+  control-server check plus 57/57 tests. Shared-test TypeScript and the same
+  seven Deno entry checks passed; the Deno half used
+  `--node-modules-dir=none` because the isolated worktree's sparse local
+  `node_modules` cannot satisfy the root `nodeModulesDir: manual` lookup for
+  the parent checkout's installed `@types/node`.
+- Browser proof covers live, heartbeat-stale, offline-agent, wrong-group,
+  missing-identity, partial, stale-last-good, recovered, offline,
+  authorization-required, credential-trust-required, live-empty,
+  unavailable-ID, malformed-core, malformed-optional-context, and duplicate
+  identity states; stored-credential withholding from URL-selected origins;
+  pre-lazy secret scrubbing; and ticket blocking for URL-selected API origins.
+  Desktop, tablet, 430×932 portrait, 932×430 landscape, keyboard-only run/agent
+  selection, 44px control targets, reduced motion, status announcements,
+  overflow, CSS load order, and zero requests after an elapsed poll interval
+  across the legacy unmount pass. The independently reviewed 4% Execute
+  baseline delta is confined to the intentional control context and overview.
+  The in-app Browser remained unavailable exactly as `Browser is not available:
+  iab`; discovery returned `[]`, so controlled Playwright/System Chrome is the
+  recorded fallback rather than an in-app Browser pass. Independent final
+  code/contract and browser/validation review found no Critical or Important
+  issue.
+- The reproducible non-mutating standard-harness command
+  `RALLAR_BLACK_BOX_LOCAL_CONTROL_SMOKE=1 npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/control-foundation-local-smoke.spec.ts`
+  passed 1/1 against the actual local control process and observed a successful
+  bounded `GET /runs`. This read and the Deno contract suite are not lifecycle
+  evidence. The canonical `recipe-console-execute.spec.ts` configured-lifecycle
+  acceptance file is still absent and remains owned by Iterations 4–5. The
+  configured
+  Postgres-backed distributed lifecycle is **skipped, not passed**, for exactly:
+  `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+  Ready-State #3 therefore remains open for visible create, stage, start,
+  monitor, cancel, and export work in Iterations 4–5 plus that configured
+  lifecycle proof.
+
+| Iteration 3 exit criterion | Code-backed evidence |
+| --- | --- |
+| A user can tell whether the control server is reachable and which agents are safe before selecting a recipe | The announced command status distinguishes reachable authorization/control errors from unreachable offline state; the first Execute region lists canonical control context, current-safe count, and every repository-derived targetability reason. Live, partial, stale, offline, recovery, wrong-group, missing-identity, unavailable-ID, keyboard, touch, responsive, and actual local-control read proofs pass. |
 
 #### Iteration 1 checkpoint — `63e7b2c`
 

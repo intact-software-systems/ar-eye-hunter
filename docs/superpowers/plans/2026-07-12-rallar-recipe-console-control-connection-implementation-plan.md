@@ -46,8 +46,22 @@ control-run manager and shared-test snapshot/target contracts.
   view switches do not restart it.
 - Use a manual bootstrap token when supplied. Otherwise try an anonymous local
   read; after 401/403, resolve the existing brokered operator token and retry
-  once. Tokens remain memory-only and never appear in URLs, UI, logs, or local
-  storage.
+  once only when the endpoint provenance is trusted. Deployment-configured
+  endpoints may use configured manual or brokered credentials. A URL-selected
+  control endpoint receives only an anonymous request unless that same incoming
+  URL explicitly supplied `controlToken`; ambient configured tokens and token
+  brokering are withheld. A URL-selected API endpoint never receives the stored
+  auth session and cannot auto-consume an agent-session ticket. After bootstrap,
+  tokens remain memory-only and never appear in UI, logs, or local storage.
+- Capture endpoint/credential provenance before synchronously scrubbing
+  sensitive Recipe Console query/hash fields ahead of the login gate or lazy
+  experience request. Legacy and `mode=control` runner-agent URLs retain their
+  current ticket-consumption behavior.
+- Deeply validate successful control payloads before repository derivation,
+  including nested field types and unique control-run, distributed-run, and
+  agent identities. Treat malformed core data as a reachable protocol failure;
+  retain valid core runs as partial when only optional distributed context is
+  malformed.
 - A syntactically valid but unavailable URL ID remains visible and unresolved;
   it is never silently replaced by collection index zero or seeded data.
 - Without an explicit URL run, prefer a known bootstrap run and replace URL
@@ -63,8 +77,11 @@ control-run manager and shared-test snapshot/target contracts.
   count. Duplicate-session detection remains Iteration 4 work.
 - Explicit Recipe Console canonical/share URLs remove `controlUrl`; legacy and
   runner-agent URLs keep their current behavior.
-- Blank URLs remain legacy. No legacy primary navigation, mount policy,
-  rollback URL, endpoint, public export, or control protocol changes in I3.
+- Blank URLs remain legacy. No legacy primary navigation, existing legacy mount
+  policy, rollback URL, endpoint, owner, hide, or cutover changes in I3. No
+  existing export is removed, renamed, or made incompatible; additive
+  `ControlRunManagerHttpError` and `RecipeConsoleControlProtocolError` exports
+  preserve message compatibility without changing the control-server protocol.
 
 ## Task 1: Extract Bounded Recipe Console Composition
 
@@ -92,6 +109,9 @@ is 23 lines and the focused workspace owner is 171 lines.
 **Files:**
 
 - Create `apps/rallar-black-box/src/recipe-console/control/control-api.ts`
+- Create `apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts`
+- Create `apps/rallar-black-box/src/recipe-console/control/control-snapshot-validation.ts`
+- Create `apps/rallar-black-box/src/app/recipe-console-url-guard.ts`
 - Modify `apps/rallar-black-box/src/control-run-manager.ts`
 - Modify `apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts`
 - Modify `apps/rallar-black-box/src/recipe-console/routing/url-state-codec.ts`
@@ -117,8 +137,10 @@ is 23 lines and the focused workspace owner is 171 lines.
 Task 2 evidence: RED failed only for the missing adapter, structured HTTP
 status, and Recipe Console `controlUrl` scrubbing. Independent review then
 found and mutation-probed fallback/broker cancellation, malformed fallback,
-null snapshot, URL-userinfo, and broker-status edge cases; each received its
-own RED test and fix. Final focused validation passed 40/40 and app typecheck.
+null snapshot, URL-userinfo, broker-status, credential-origin, pre-lazy secret,
+ticket-origin, deep-shape, and duplicate-identity edge cases; each received its
+own RED test and fix. The Task 2 checkpoint passed 40/40 and app typecheck; the
+final review-remediation head is `a7df46f`.
 
 ## Task 3: Pure Query State And Serialized Polling Service
 
@@ -263,42 +285,65 @@ ARIA/scroll/truth fixes, and the independent re-review approved the result.
   live/Postgres lifecycle as skipped with the exact required reason.
 
 Task 7 evidence: the complete mocked/control and established browser suites
-pass 52/52 Recipe Console Chromium cases and 28/28 preserved legacy
+pass 64/64 Recipe Console Chromium cases and 28/28 preserved legacy
 navigation/ticket cases. Coverage includes live, heartbeat-stale agent,
 offline agent, wrong group, missing identity, partial, stale last-good,
-recovery, offline, authorization-required, live-empty, unavailable IDs,
-desktop, tablet, 430×932 portrait, 932×430 landscape, keyboard-only run/agent
-selection, 44px control targets, reduced motion, status announcements,
-overflow, poll cleanup after an elapsed interval, and real navigation CSS
-isolation. The independently reviewed 4% Execute visual delta was limited to
-the intentional control context/overview and is now the frozen-clock baseline.
+recovery, offline, authorization-required, credential-trust-required,
+live-empty, unavailable IDs, malformed core/optional payloads, duplicate
+identities, stored-credential withholding from URL-selected origins, pre-lazy
+secret scrubbing, and ticket blocking for a URL-selected API origin. Desktop,
+tablet, 430×932 portrait, 932×430 landscape, keyboard-only run/agent selection,
+44px control targets, reduced motion, status announcements, overflow, poll
+cleanup after an elapsed interval, and real navigation CSS isolation pass. The
+independently reviewed 4% Execute visual delta was limited to the intentional
+control context/overview and is now the frozen-clock baseline. The in-app
+Browser remained unavailable exactly as `Browser is not available: iab`;
+discovery returned `[]`, so controlled Playwright/System Chrome is the recorded
+fallback rather than an in-app Browser pass.
 
-The exact focused unit slice passed 117/117, the complete app suite passed
-531/531 outside the sandbox, typecheck/build passed, reciprocal experience
+The exact ten-file focused unit slice passed 155/155, the complete app suite
+passed 567/567 across 62 files outside the socket-restricted sandbox, app
+typecheck passed, the 458-module production build and reciprocal experience
 chunk proof passed, and the control server passed check plus 57/57 tests. The
 shared-test TypeScript check and all seven Deno check entries passed; the
 combined npm script required the equivalent `--node-modules-dir=none` Deno
 override because this isolated worktree has a deliberately sparse local
 `node_modules` under the repository's root `nodeModulesDir: manual`, so the
 unmodified script could not resolve `@types/node` despite the parent checkout's
-installed dependency. A temporary, non-mutating standard-harness smoke passed
-1/1 against the actual local control process and its real bounded `GET /runs`.
+installed dependency. The reproducible non-mutating standard-harness command
+`RALLAR_BLACK_BOX_LOCAL_CONTROL_SMOKE=1 npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/control-foundation-local-smoke.spec.ts`
+passed 1/1 against the actual local control process and its real bounded
+`GET /runs`. Independent final code/contract and browser/validation review found
+no Critical or Important issue. The local GET smoke and Deno suite prove
+read/contract behavior only, not a distributed lifecycle. The configured
+`recipe-console-execute.spec.ts` lifecycle acceptance remains absent; visible
+create, stage, start, monitor, cancel, and export remain Iterations 4–5.
 The Postgres-backed distributed lifecycle remains **skipped, not passed**, for
 exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
 apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
 
 ## Task 8: Review, Evidence, And Iteration Milestone
 
-- [ ] Dispatch independent contract/code review and browser/validation review.
-- [ ] Mutation-probe last-good retention, collection-index fallback, seed
+- [x] Dispatch independent contract/code review and browser/validation review.
+- [x] Mutation-probe last-good retention, collection-index fallback, seed
   fallback, URL-field loss, token/controlUrl leakage, duplicate polling, missing
-  abort, and stale-as-safe presentation.
-- [ ] Update the parent execution ledger and migration register with actual
+  abort, stale-as-safe presentation, credential-origin leakage, broker error
+  provenance, pre-lazy secret exposure, ticket-origin behavior, nested protocol
+  validation, and duplicate identities.
+- [x] Update the parent execution ledger and migration register with actual
   commits, decisions, exit evidence, remaining Ready-State #3 risk, and no
   workflow cutover/hide.
-- [ ] Rerun fresh exit validation after every review fix.
-- [ ] Commit `docs: record recipe console control exit` only when the I3 exit
+- [x] Rerun fresh exit validation after every review fix.
+- [x] Commit `docs: record recipe console control exit` only when the I3 exit
   criterion is satisfied.
+
+Task 8 evidence: independent final review approved the implementation with no
+Critical or Important issue, every review remediation received focused
+RED/GREEN proof, and fresh exit validation passed at code head `a7df46f`. This
+documentation milestone records the satisfied Iteration 3 exit. No legacy owner,
+existing legacy mount policy, navigation visibility, hide, rollback, or workflow
+cutover changed. Ready-State #3 remains open for Iterations 4–5 and the
+configured Postgres lifecycle proof.
 
 ## Exact Focused Validation
 
@@ -308,6 +353,7 @@ npx vitest run \
   packages/tests/rallar-black-box/control-run-manager.test.ts \
   packages/tests/rallar-black-box/control-agent-board.test.ts \
   packages/tests/rallar-black-box/recipe-console-control-api.test.ts \
+  packages/tests/rallar-black-box/recipe-console-control-command-context.test.ts \
   packages/tests/rallar-black-box/recipe-console-control-query.test.ts \
   packages/tests/rallar-black-box/recipe-console-control-selection.test.ts \
   packages/tests/rallar-black-box/recipe-console-url-state.test.ts \
