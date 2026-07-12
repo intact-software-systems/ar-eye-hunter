@@ -346,6 +346,46 @@ describe('Recipe Console experience boundary', () => {
         expect(models).not.toMatch(/ExecutePreviewModel|\bexecute\s*:/);
     });
 
+    test('binds Monitor operations to the root credential-aware control boundary', () => {
+        const monitorOwners = [
+            `${recipeConsoleRoot}/monitor/use-monitor-workspace.ts`,
+            `${recipeConsoleRoot}/monitor/use-monitor-operations.ts`,
+        ];
+        const sharedCancelDialog =
+            `${recipeConsoleRoot}/control/ControlRunCancelDialog.tsx`;
+        const sharedCancelStyle =
+            `${recipeConsoleRoot}/control/ControlRunCancelDialog.module.css`;
+        for (const path of [...monitorOwners, sharedCancelDialog, sharedCancelStyle]) {
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+        }
+        if (!monitorOwners.every(path => existsSync(resolve(repositoryRoot, path)))) {
+            return;
+        }
+
+        for (const path of [...monitorOwners, sharedCancelDialog]) {
+            expect(source(path).trimEnd().split(/\r?\n/).length, path)
+                .toBeLessThanOrEqual(300);
+        }
+        const monitorOperations = source(monitorOwners[1]);
+        expect(monitorOwners.map(path => source(path)).join('\n')).not.toMatch(
+            /(?:from\s+|import\()['"][^'"]*(?:legacy\/|seeded-console-state|control-run-manager|registry|index\.ts)['"]|\bfetch\s*\(|\bsetInterval\s*\(/,
+        );
+        expect(monitorOperations).toContain('connection.execution');
+        expect(monitorOperations).toContain('.cancelRun');
+        expect(monitorOperations).toContain('.exportRunArtifact');
+        expect(monitorOperations).toContain('refreshAfterCurrent');
+        expect(monitorOperations).toMatch(/AbortController|\.abort\(\)/);
+
+        const executeCancel = source(
+            `${recipeConsoleRoot}/execute/ExecuteCancelDialog.tsx`,
+        );
+        expect(executeCancel).toContain(
+            "../control/ControlRunCancelDialog.tsx",
+        );
+        expect(executeCancel).not.toMatch(/role=["']alertdialog["']/);
+        expect(source(sharedCancelDialog)).toMatch(/role=["']alertdialog["']/);
+    });
+
     test('keeps control fetch and poll ownership out of shell composition', () => {
         const forbiddenOwnership =
             /\bfetch\s*\(|\bsetInterval\s*\(|\bsetTimeout\s*\(|createRecipeConsoleControlApi|createControlQueryService|from ['"][^'"]*control-(?:api|query)\.ts['"]/;
