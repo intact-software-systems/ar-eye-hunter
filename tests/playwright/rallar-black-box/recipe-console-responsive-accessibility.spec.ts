@@ -224,6 +224,28 @@ test('keeps representative portrait touch controls at least 44px high', async ({
     }
 });
 
+test('reserves the portrait selection dock only for actionable evidence', async ({ page }) => {
+    await page.setViewportSize({ width: 430, height: 932 });
+    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=analyze');
+    await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'analyze');
+    await expect(page.getByRole('heading', { level: 1, name: 'Analyze' })).toBeVisible();
+    await expect(page.locator('[data-selection-dock]')).toHaveCount(0);
+
+    const workBounds = await page.locator('[data-work-surface]').boundingBox();
+    const navigationBounds = await page.locator('[data-primary-navigation]').boundingBox();
+    expect(workBounds).not.toBeNull();
+    expect(navigationBounds).not.toBeNull();
+    expect((workBounds?.y ?? 0) + (workBounds?.height ?? 0))
+        .toBe(navigationBounds?.y);
+
+    await page.getByRole('button', { name: 'Monitor', exact: true }).click();
+    const dock = page.locator('[data-selection-dock]');
+    await expect(dock).toBeVisible();
+    await expect(dock).toContainText('Failure · seed-agent-b');
+    await dock.getByRole('button', { name: 'Inspect' }).click();
+    await expect(page.getByRole('dialog', { name: 'Inspector' })).toBeVisible();
+});
+
 test('disables Recipe Console motion when reduced motion is requested', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 900, height: 900 });

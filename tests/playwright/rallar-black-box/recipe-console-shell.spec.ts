@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 
 test('renders command-duration Tune without invented stream evidence', async ({ page }) => {
@@ -333,7 +334,7 @@ test('renders repository-backed Execute preview without services', async ({ page
     await expect(recipeLedger.getByText('RTC Realtime Stability', { exact: true })).toHaveCount(0);
     await search.clear();
     const selectedRecipe = page.getByRole('button', { name: /RTC Realtime Stability/ });
-    await expect(selectedRecipe).toHaveAttribute('aria-selected', 'true');
+    await expect(selectedRecipe).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByText('Provider Parity', { exact: true })).toBeVisible();
     await expect(page.getByText('Composite Evidence', { exact: true })).toBeVisible();
     await expect(page.getByText('Expected Failure', { exact: true })).toBeVisible();
@@ -341,7 +342,7 @@ test('renders repository-backed Execute preview without services', async ({ page
     await expect(page.getByRole('complementary', { name: 'Inspector' })
         .getByRole('heading', { name: 'Provider Parity' })).toBeVisible();
     await selectedRecipe.click();
-    await expect(selectedRecipe).toHaveAttribute('aria-selected', 'true');
+    await expect(selectedRecipe).toHaveAttribute('aria-pressed', 'true');
 
     const targets = page.getByRole('region', { name: 'Sample targets and preflight' });
     await expect(targets.getByText('2/2 selected', { exact: true })).toBeVisible();
@@ -396,6 +397,131 @@ test('renders repository-backed Execute preview without services', async ({ page
     expect((await page.getByRole('button', { name: 'Start Preview' }).boundingBox())?.height)
         .toBeGreaterThanOrEqual(44);
     await expect(page.getByRole('region', { name: 'Recipes' })).toHaveCSS('overflow-y', 'visible');
+});
+
+test('keeps selected recipe truth aligned across Execute surfaces', async ({ page }) => {
+    await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+
+    const providerRecipe = page.getByRole('button', { name: /Provider Parity/ });
+    await providerRecipe.click();
+    await expect(providerRecipe).toHaveAttribute('aria-pressed', 'true');
+    await expect(providerRecipe).not.toHaveAttribute('aria-selected');
+    await expect.poll(() => providerRecipe.evaluate(element =>
+        getComputedStyle(element).boxShadow
+    )).toContain('inset');
+
+    const inspector = page.getByRole('complementary', { name: 'Inspector' });
+    await expect(inspector.getByRole('heading', { name: 'Provider Parity' })).toBeVisible();
+    await expect(inspector.getByText('10 manifest commands', { exact: true })).toBeVisible();
+
+    const preflight = page.getByRole('region', { name: 'Sample targets and preflight' })
+        .locator('details');
+    await expect(preflight.locator('summary')).toHaveText(
+        'Expanded preflight · 10 manifest commands',
+    );
+    await expect(preflight.locator('div').filter({ hasText: /^Commands10$/ }))
+        .toBeVisible();
+
+    await expect(page.getByRole('button', { name: 'Stage Preview', exact: true }))
+        .toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Start Preview', exact: true }))
+        .toBeDisabled();
+    await expect(page.getByText(
+        'Provider Parity has no matching deterministic target preview. Select RTC Realtime Stability to stage or start.',
+        { exact: true },
+    )).toBeVisible();
+    await expect(page.locator('[data-command-bar]')).toContainText(
+        'Target preview unavailable',
+    );
+    await expect(page.locator('[data-command-bar]')).not.toContainText('2/2 targetable');
+    const targets = page.getByRole('region', { name: 'Sample targets and preflight' });
+    await expect(targets.getByText('No matching target preview', { exact: true }))
+        .toBeVisible();
+    await expect(targets.getByRole('checkbox')).toHaveCount(0);
+});
+
+test('refreshes the active Execute seed without backend requests', async ({ page }) => {
+    const controlServerRequests: string[] = [];
+    page.on('request', request => {
+        const url = new URL(request.url());
+        if (
+            ['fetch', 'xhr'].includes(request.resourceType()) &&
+            (/^\/(?:runs|distributed-runs)(?:\/|$)/.test(url.pathname) ||
+                url.pathname === '/control' ||
+                url.pathname.startsWith('/control/') ||
+                url.pathname.startsWith('/api/black-box/control'))
+        ) {
+            controlServerRequests.push(request.url());
+        }
+    });
+    await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+
+    await page.getByRole('button', { name: 'Stage Preview', exact: true }).click();
+    await page.getByRole('button', { name: 'Start Preview', exact: true }).click();
+    await expect(page.locator('[data-preview-status]')).toHaveText('Started preview');
+
+    await page.getByRole('button', { name: 'Refresh preview', exact: true }).click();
+
+    await expect(page.locator('[data-preview-status]')).toHaveText('Idle preview');
+    await expect(page.getByRole('button', { name: /RTC Realtime Stability/ }))
+        .toHaveAttribute('aria-pressed', 'true');
+    expect(controlServerRequests).toEqual([]);
+});
+
+test('refreshes App-owned Monitor state without discarding known evidence', async ({ page }) => {
+    await page.goto('/?provider=simulated&experience=recipe-console&view=monitor');
+    const recipeFailure = page.locator('[data-failure-key="seed-rtc-recipe"]');
+    const commandFailure = page.locator('[data-failure-key="seed-start-receiver"]');
+    await recipeFailure.getByRole('option').click();
+    await expect(recipeFailure.getByRole('option')).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('button', { name: 'Simulate stale connection' }).click();
+    await expect(page.getByText('Stale · reconnecting', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Refresh preview', exact: true }).click();
+
+    await expect(page.getByRole('button', { name: 'Simulate stale connection' })).toBeVisible();
+    await expect(page.getByText('Stale · reconnecting', { exact: true })).toHaveCount(0);
+    await expect(commandFailure.getByRole('option')).toHaveAttribute('aria-selected', 'true');
+    await expect(recipeFailure.getByRole('option')).toHaveAttribute('aria-selected', 'false');
+    await expect(page.locator('[data-failure-key]')).toHaveCount(2);
+    await expect(page.getByRole('region', { name: 'Agent by phase matrix' })
+        .getByText('seed-agent-b', { exact: true })).toBeVisible();
+});
+
+test('exports the selected fixture as deterministic non-live preview JSON', async ({ page }) => {
+    await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+    await page.getByRole('button', { name: /Provider Parity/ }).click();
+
+    const firstDownloadPromise = page.waitForEvent('download', { timeout: 2_000 });
+    await page.getByRole('button', { name: 'Export Preview', exact: true }).click();
+    const firstDownload = await firstDownloadPromise;
+    const secondDownloadPromise = page.waitForEvent('download', { timeout: 2_000 });
+    await page.getByRole('button', { name: 'Export Preview', exact: true }).click();
+    const secondDownload = await secondDownloadPromise;
+
+    const expectedFilename =
+        'rallar-recipe-preview-provider-parity-rallar-provider-parity-recipe.json';
+    expect(firstDownload.suggestedFilename()).toBe(expectedFilename);
+    expect(secondDownload.suggestedFilename()).toBe(expectedFilename);
+    const firstPath = await firstDownload.path();
+    const secondPath = await secondDownload.path();
+    if (!firstPath || !secondPath) throw new Error('Preview download path is unavailable.');
+    const firstJson = await readFile(firstPath, 'utf8');
+    const secondJson = await readFile(secondPath, 'utf8');
+    expect(secondJson).toBe(firstJson);
+    const payload = JSON.parse(firstJson) as Record<string, unknown>;
+    expect(payload).toMatchObject({
+        schemaVersion: 1,
+        kind: 'rallar-recipe-console-preview',
+        preview: true,
+        live: false,
+        fixtureId: 'provider-parity',
+        recipeId: 'rallar-provider-parity-recipe',
+        recipe: {
+            recipeId: 'rallar-provider-parity-recipe',
+        },
+    });
+    expect((payload.recipe as { commands?: unknown[] }).commands).toHaveLength(10);
 });
 
 test('keeps one lazy experience mounted', async ({ page }) => {

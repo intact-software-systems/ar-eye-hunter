@@ -44,6 +44,14 @@ test('keeps empty stale and error states explicit without discarding evidence', 
 
     await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=monitor');
     await page.getByRole('button', { name: 'Simulate stale connection' }).click();
+    await expect.soft(page.getByRole('button', {
+        name: 'Return to seeded current state',
+        exact: true,
+    })).toBeVisible();
+    await expect.soft(page.getByRole('button', {
+        name: 'Restore live connection',
+        exact: true,
+    })).toHaveCount(0);
     const stale = page.locator('[data-state="stale"]');
     await expect(stale, 'Monitor should expose one semantic StaleState').toHaveCount(1);
     await expect(stale).toBeVisible();

@@ -58,7 +58,7 @@
     text-align: left;
 }
 
-.recipeButton[aria-selected="true"] {
+.recipeButton[aria-pressed="true"] {
     border-color: var(--rc-selected-border);
     box-shadow: inset 3px 0 var(--rc-selected-border);
     color: var(--rc-selected-text);

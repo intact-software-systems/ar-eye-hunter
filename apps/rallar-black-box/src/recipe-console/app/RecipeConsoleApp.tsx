@@ -1,6 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { ReactNode } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';
 import { AnalyzePreview } from '../analyze/AnalyzePreview.tsx';
 import { createRecipeConsoleSeedState } from '../data/seeded-console-state.ts';
@@ -16,6 +15,7 @@ import '../design/reset.css';
 import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
 import { useRecipeConsolePresentation } from '../shell/use-responsive-presentation.ts';
 import { TunePreview } from '../tune/TunePreview.tsx';
+import { recipeConsoleCommandContext } from './recipe-console-command-context.ts';
 
 export type RecipeConsoleAppProps = Readonly<{
     authSession?: AuthSession;
@@ -32,10 +32,11 @@ function activeWork(
     timingMetric: RecipeConsoleTimingMetric,
     onTimingMetricChange: (metric: RecipeConsoleTimingMetric) => void,
     onInspectAgent: (agentId: string) => void,
+    onExecuteTargetAvailabilityChange: (available: boolean) => void,
 ) {
     switch (view) {
         case 'execute':
-            return <ExecutePreview model={seedState.execute} onInspectorChange={onInspectorChange} />;
+            return <ExecutePreview model={seedState.execute} onInspectorChange={onInspectorChange} onTargetAvailabilityChange={onExecuteTargetAvailabilityChange} />;
         case 'monitor':
             return monitorWork;
         case 'analyze':
@@ -49,26 +50,7 @@ function activeWork(
     }
 }
 
-function commandContext(
-    view: RecipeConsoleView,
-    seedState: RecipeConsoleSeedState,
-    authBusy: boolean,
-): string {
-    if (view === 'tune') {
-        return `Tune · RTC timing · ${seedState.tune.distributedRunId} · Passed · Compare · More`;
-    }
-    if (view === 'monitor') {
-        const failed = seedState.monitor.agentProgress.filter(agent => agent.execution === 'failed').length;
-        return `Monitor · ${seedState.monitor.seed.distributedRun.distributedRunId} · Failed · ${failed}/${seedState.monitor.agentProgress.length} agents failed`;
-    }
-    if (view === 'execute') {
-        const { applicationId, workspaceId, groupId } = seedState.execute.group;
-        return `Execute · Preview · ${seedState.execute.defaultTargetIds.length}/${seedState.execute.targetRows.length} targetable · ${applicationId}/${workspaceId}/${groupId}`;
-    }
-    return `${view[0].toUpperCase()}${view.slice(1)} · ${authBusy ? 'Connecting' : 'Seeded offline preview'}`;
-}
-
-export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleAppProps) {
+function RecipeConsoleWorkspace({ authBusy, onRefresh }: RecipeConsoleAppProps & Readonly<{ onRefresh(): void }>) {
     const urlState = useRecipeConsoleUrlState();
     const presentation = useRecipeConsolePresentation();
     const [seedState] = useState(createRecipeConsoleSeedState);
@@ -82,6 +64,7 @@ export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleA
     );
     const [stale, setStale] = useState(false);
     const [tuneAgentId, setTuneAgentId] = useState<string>();
+    const [executeTargetPreviewAvailable, setExecuteTargetPreviewAvailable] = useState(true);
     const [inspectorTrigger, setInspectorTrigger] = useState<HTMLButtonElement | null>(null);
     const restoreFocusRef = useRef<HTMLButtonElement>(null);
     const selectedFailure = seedState.monitor.failureLedger.find(
@@ -119,14 +102,13 @@ export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleA
         monitorWork,
         urlState.state.timingMetric ?? 'command-duration',
         metric => urlState.navigate({ timingMetric: metric }),
-        inspectTuneAgent,
+        inspectTuneAgent, setExecuteTargetPreviewAvailable,
     );
 
-    useEffect(() => {
-        if (urlState.state.view === 'monitor') {
-            setInspectorOpen(presentation.inspector === 'rail');
-        }
-    }, [presentation.inspector, urlState.state.view]);
+    useEffect(() => setInspectorOpen(
+        urlState.state.view === 'execute' ||
+        (urlState.state.view === 'monitor' && presentation.inspector === 'rail'),
+    ), [presentation.inspector, urlState.state.view]);
 
     function navigate(view: RecipeConsoleView): void {
         urlState.navigate({ view });
@@ -142,12 +124,28 @@ export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleA
     }
 
     const monitorActive = urlState.state.view === 'monitor';
+    const executeActive = urlState.state.view === 'execute';
     const resolvedInspectorContent = monitorActive
         ? <FailureInspector failureKey={selectedFailureKey} model={seedState.monitor} />
         : urlState.state.view === 'tune' && tuneAgentId
         ? <section><h2>Agent timing</h2><p data-selected-agent>{tuneAgentId}</p><p>Repository-derived command-duration evidence.</p></section>
         : inspectorContent;
-    const commandBarContext = commandContext(urlState.state.view, seedState, authBusy);
+    const commandBarContext = recipeConsoleCommandContext(urlState.state.view, seedState, authBusy, executeTargetPreviewAvailable);
+    const selectionDockContent = monitorActive
+        ? `Failure · ${selectedFailure.agentId ?? selectedFailure.recipeId ?? selectedFailure.key}`
+        : executeActive
+        ? 'Recipe details selected'
+        : tuneAgentId
+        ? `Agent · ${tuneAgentId}`
+        : undefined;
+    const inspectSelection = monitorActive
+        ? (trigger: HTMLButtonElement) => selectFailure(selectedFailureKey, trigger)
+        : executeActive || tuneAgentId
+        ? (trigger: HTMLButtonElement) => {
+            setInspectorTrigger(trigger);
+            setInspectorOpen(true);
+        }
+        : undefined;
 
     return (
         <div className="recipe-console" data-view={urlState.state.view}>
@@ -160,13 +158,10 @@ export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleA
                 onCopyLink={copyLink}
                 onInspectorClose={() => setInspectorOpen(false)}
                 onNavigate={navigate}
-                onSelectionDockInspect={monitorActive
-                    ? trigger => selectFailure(selectedFailureKey, trigger)
-                    : undefined}
+                onRefresh={onRefresh}
+                onSelectionDockInspect={inspectSelection}
                 restoreFocusRef={restoreFocusRef}
-                selectionDockContent={monitorActive
-                    ? `Failure · ${selectedFailure.agentId ?? selectedFailure.recipeId ?? selectedFailure.key}`
-                    : undefined}
+                selectionDockContent={selectionDockContent}
                 urlIssues={urlState.issues}
                 workContent={(
                     <section aria-labelledby="recipe-console-view-heading">
@@ -177,4 +172,9 @@ export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleA
             />
         </div>
     );
+}
+
+export default function RecipeConsoleApp(props: RecipeConsoleAppProps) {
+    const [revision, setRevision] = useState<0 | 1>(0);
+    return <RecipeConsoleWorkspace key={revision} {...props} onRefresh={() => setRevision(value => value === 0 ? 1 : 0)} />;
 }

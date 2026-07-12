@@ -2,13 +2,19 @@ import type { ReactNode } from 'react';
 import { useEffect, useMemo } from 'react';
 import type { ExecutePreviewModel } from '../data/recipe-console-models.ts';
 import type { RallarBlackBoxRecipeFixture } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
+import {
+    distributedRecipeCommandPreview,
+    distributedRecipePreflight,
+} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import { StatusMark } from '../ui/StatusMark.tsx';
+import { downloadExecutePreview } from './execute-preview-export.ts';
 import { useExecutePreview, type ExecutePreviewStatus } from './use-execute-preview.ts';
 import styles from './ExecutePreview.module.css';
 
 export type ExecutePreviewProps = Readonly<{
     model: ExecutePreviewModel;
     onInspectorChange(content: ReactNode | undefined): void;
+    onTargetAvailabilityChange(available: boolean): void;
 }>;
 
 const STATUS_LABELS: Record<ExecutePreviewStatus, string> = {
@@ -24,9 +30,10 @@ const FEATURED_RECIPE_LABELS = [
     'Expected Failure',
 ] as const;
 
-function RecipeDetails({ model, fixture, selectedTargetCount }: Readonly<{
+function RecipeDetails({ model, fixture, commandPreviewLabel, selectedTargetCount }: Readonly<{
     model: ExecutePreviewModel;
     fixture: RallarBlackBoxRecipeFixture;
+    commandPreviewLabel: string;
     selectedTargetCount: number;
 }>) {
     const recipe = fixture.recipe;
@@ -38,10 +45,14 @@ function RecipeDetails({ model, fixture, selectedTargetCount }: Readonly<{
             <p>{fixture.description}</p>
             <dl className={styles.details}>
                 <dt>Provider</dt><dd>Simulated preview</dd>
-                <dt>Sample group</dt><dd><code>{model.group.applicationId}/{model.group.workspaceId}/{model.group.groupId}</code></dd>
-                <dt>Targets</dt><dd>{selectedTargetCount}</dd>
+                <dt>Sample group</dt><dd>{configuredSample
+                    ? <code>{model.group.applicationId}/{model.group.workspaceId}/{model.group.groupId}</code>
+                    : 'No matching deterministic sample'}</dd>
+                <dt>Targets</dt><dd>{configuredSample
+                    ? selectedTargetCount
+                    : 'No matching deterministic sample'}</dd>
                 <dt>Schema</dt><dd>Version {recipe.schemaVersion ?? 1}</dd>
-                <dt>Summary</dt><dd>{configuredSample ? model.commandPreview.label : `${recipe.commands.length} manifest commands`}</dd>
+                <dt>Summary</dt><dd>{commandPreviewLabel}</dd>
             </dl>
             <h3>Command sequence</h3>
             <ol className={styles.commandList}>
@@ -56,7 +67,11 @@ function RecipeDetails({ model, fixture, selectedTargetCount }: Readonly<{
     );
 }
 
-export function ExecutePreview({ model, onInspectorChange }: ExecutePreviewProps) {
+export function ExecutePreview({
+    model,
+    onInspectorChange,
+    onTargetAvailabilityChange,
+}: ExecutePreviewProps) {
     const preview = useExecutePreview(model);
     const normalizedQuery = preview.query.trim().toLowerCase();
     const visibleRecipes = model.catalogRows
@@ -80,18 +95,34 @@ export function ExecutePreview({ model, onInspectorChange }: ExecutePreviewProps
     const selectedFixture = model.catalogRows.find(
         fixture => fixture.fixtureId === preview.selectedRecipeId,
     ) ?? model.selectedFixture;
+    const selectedCommandPreview = useMemo(
+        () => distributedRecipeCommandPreview(selectedFixture.recipe),
+        [selectedFixture],
+    );
+    const selectedPreflight = useMemo(
+        () => distributedRecipePreflight(selectedFixture.recipe),
+        [selectedFixture],
+    );
+    const hasMatchingTargetPreview = selectedFixture.fixtureId === model.selectedFixture.fixtureId;
+    const unavailableReason = hasMatchingTargetPreview
+        ? undefined
+        : `${selectedFixture.label} has no matching deterministic target preview. Select ${model.selectedFixture.label} to stage or start.`;
     const inspector = useMemo(() => (
         <RecipeDetails
+            commandPreviewLabel={selectedCommandPreview.label}
             fixture={selectedFixture}
             model={model}
             selectedTargetCount={preview.selectedTargetIds.length}
         />
-    ), [model, preview.selectedTargetIds.length, selectedFixture]);
+    ), [model, preview.selectedTargetIds.length, selectedCommandPreview.label, selectedFixture]);
 
     useEffect(() => {
         onInspectorChange(inspector);
         return () => onInspectorChange(undefined);
     }, [inspector, onInspectorChange]);
+    useEffect(() => {
+        onTargetAvailabilityChange(hasMatchingTargetPreview);
+    }, [hasMatchingTargetPreview, onTargetAvailabilityChange]);
 
     return (
         <div className={styles.execute}>
@@ -113,7 +144,7 @@ export function ExecutePreview({ model, onInspectorChange }: ExecutePreviewProps
                 <div aria-label="Recipes" className={styles.recipeLedger} role="region">
                     {visibleRecipes.map(fixture => (
                         <button
-                            aria-selected={fixture.fixtureId === preview.selectedRecipeId}
+                            aria-pressed={fixture.fixtureId === preview.selectedRecipeId}
                             className={styles.recipeButton}
                             key={fixture.fixtureId}
                             onClick={() => preview.selectRecipe(fixture.fixtureId)}
@@ -129,10 +160,17 @@ export function ExecutePreview({ model, onInspectorChange }: ExecutePreviewProps
             <section aria-label="Sample targets and preflight" className={styles.region}>
                 <div className={styles.targetSummary}>
                     <div><p className={styles.eyebrow}>Deterministic sample data</p><h2>Targets</h2></div>
-                    <strong>{preview.selectedTargetIds.length}/{model.targetRows.length} selected</strong>
+                    <strong>{hasMatchingTargetPreview
+                        ? `${preview.selectedTargetIds.length}/${model.targetRows.length} selected`
+                        : 'No matching target preview'}</strong>
                 </div>
-                <p><strong>Control connectivity</strong> · <span>Required · not checked in preview</span></p>
-                <div className={styles.targetTable}>
+                {hasMatchingTargetPreview
+                    ? <p><strong>Control connectivity</strong> · <span>Required · not checked in preview</span></p>
+                    : null}
+                {unavailableReason
+                    ? <p className={styles.notice}>{unavailableReason}</p>
+                    : null}
+                {hasMatchingTargetPreview ? <div className={styles.targetTable}>
                     {model.targetRows.map(target => (
                         <label className={styles.targetRow} key={target.agentId}>
                             <input
@@ -145,32 +183,36 @@ export function ExecutePreview({ model, onInspectorChange }: ExecutePreviewProps
                             <StatusMark label={target.status === 'matched' ? 'Matched' : target.status} status={target.targetable ? 'passed' : 'warning'} />
                         </label>
                     ))}
-                </div>
+                </div> : null}
                 <details
                     className={styles.preflight}
                     onToggle={event => preview.setPreflightExpanded(event.currentTarget.open)}
                     open={preview.preflightExpanded}
                 >
-                    <summary>Expanded preflight · {model.commandPreview.label}</summary>
+                    <summary>Expanded preflight · {selectedCommandPreview.label}</summary>
                     <div className={styles.preflightGrid}>
-                        <div><span>Schema</span><strong>{model.preflight.errors.length ? 'Blocked' : 'Ready'}</strong></div>
-                        <div><span>Target resolution</span><strong>{model.targetRows.every(row => row.targetable) ? 'Ready' : 'Review'}</strong></div>
-                        <div><span>Commands</span><strong>{model.preflight.manifestCommandCount}</strong></div>
+                        <div><span>Schema</span><strong>{selectedPreflight.errors.length ? 'Blocked' : 'Ready'}</strong></div>
+                        <div><span>Target resolution</span><strong>{hasMatchingTargetPreview
+                            ? model.targetRows.every(row => row.targetable) ? 'Ready' : 'Review'
+                            : 'Unavailable'}</strong></div>
+                        <div><span>Commands</span><strong>{selectedPreflight.manifestCommandCount}</strong></div>
                     </div>
-                    {model.preflight.warnings.map(warning => <p className={styles.notice} key={warning}>{warning}</p>)}
+                    {selectedPreflight.warnings.map(warning => <p className={styles.notice} key={warning}>{warning}</p>)}
                 </details>
             </section>
 
             <div className={styles.actionBand}>
                 <div className={styles.actionStatus}>
                     <strong data-preview-status>{STATUS_LABELS[preview.previewStatus]}</strong>
-                    <span>{preview.selectedTargetIds.length}/{model.targetRows.length} targetable</span>
+                    <span>{hasMatchingTargetPreview
+                        ? `${preview.selectedTargetIds.length}/${model.targetRows.length} targetable`
+                        : 'No matching target preview'}</span>
                 </div>
                 <div className={styles.actions}>
-                    <button type="button">Export Preview</button>
+                    <button onClick={() => downloadExecutePreview(selectedFixture)} type="button">Export Preview</button>
                     <button aria-describedby="cancel-preview-reason" disabled type="button">Cancel Preview</button>
-                    <button onClick={preview.stagePreview} type="button">Stage Preview</button>
-                    <button data-primary-action="true" onClick={preview.startPreview} type="button">Start Preview</button>
+                    <button disabled={!hasMatchingTargetPreview} onClick={preview.stagePreview} type="button">Stage Preview</button>
+                    <button data-primary-action="true" disabled={!hasMatchingTargetPreview} onClick={preview.startPreview} type="button">Start Preview</button>
                 </div>
                 <p className={styles.cancelReason} id="cancel-preview-reason">Nothing to cancel until live execution is available.</p>
                 <p className={styles.notice}>Live execution begins in Iteration 4.</p>

@@ -49,7 +49,7 @@ export function MonitorPreview({
 
             <section className={styles.actions} data-monitor-section="actions">
                 <button onClick={onToggleStale} type="button">
-                    {stale ? 'Restore live connection' : 'Simulate stale connection'}
+                    {stale ? 'Return to seeded current state' : 'Simulate stale connection'}
                 </button>
                 {stale ? (
                     <div

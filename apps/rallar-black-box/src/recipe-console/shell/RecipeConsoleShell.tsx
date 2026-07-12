@@ -15,6 +15,7 @@ export type RecipeConsoleShellProps = Readonly<{
     commandBarContext: ReactNode;
     onNavigate(view: RecipeConsoleView): void;
     onCopyLink(): void;
+    onRefresh(): void;
     workContent: ReactNode;
     inspectorContent?: ReactNode;
     inspectorOpen: boolean;
@@ -31,20 +32,23 @@ export function RecipeConsoleShell({
     commandBarContext,
     onNavigate,
     onCopyLink,
+    onRefresh,
     workContent,
     inspectorContent,
     inspectorOpen,
     onInspectorClose,
     inspectorRestoreFocus,
-    selectionDockContent = 'Preview inspector selected',
+    selectionDockContent,
     onSelectionDockInspect,
     restoreFocusRef,
 }: RecipeConsoleShellProps) {
     const presentation = useRecipeConsolePresentation();
     const showInspector = Boolean(inspectorContent) && inspectorOpen;
+    const showSelectionDock = selectionDockContent !== undefined &&
+        onSelectionDockInspect !== undefined;
     return (
         <div
-            className={`${styles.shell} ${showInspector ? '' : styles.withoutInspector} ${urlIssues.length > 0 ? styles.withUrlIssues : ''} ${showInspector && currentView === 'monitor' ? styles.monitorInspector : ''}`}
+            className={`${styles.shell} ${showInspector ? '' : styles.withoutInspector} ${showSelectionDock ? '' : styles.withoutSelectionDock} ${urlIssues.length > 0 ? styles.withUrlIssues : ''} ${showInspector && currentView === 'monitor' ? styles.monitorInspector : ''}`}
             data-command-height={presentation.commandBarHeight}
             data-inspector-mode={presentation.inspector}
             data-navigation={presentation.navigation}
@@ -55,6 +59,7 @@ export function RecipeConsoleShell({
                 height={presentation.commandBarHeight}
                 issues={urlIssues}
                 onCopyLink={onCopyLink}
+                onRefresh={onRefresh}
             />
             <PrimaryNavigation
                 currentView={currentView}
@@ -74,14 +79,16 @@ export function RecipeConsoleShell({
                     {inspectorContent}
                 </InspectorHost>
             ) : null}
-            <div className={styles.selectionDock} data-selection-dock>
-                <span>{selectionDockContent}</span>
-                <button
-                    onClick={event => onSelectionDockInspect?.(event.currentTarget)}
-                    ref={restoreFocusRef}
-                    type="button"
-                >Inspect</button>
-            </div>
+            {showSelectionDock ? (
+                <div className={styles.selectionDock} data-selection-dock>
+                    <span>{selectionDockContent}</span>
+                    <button
+                        onClick={event => onSelectionDockInspect?.(event.currentTarget)}
+                        ref={restoreFocusRef}
+                        type="button"
+                    >Inspect</button>
+                </div>
+            ) : null}
         </div>
     );
 }

@@ -234,6 +234,23 @@
         grid-template-rows: 52px 44px minmax(0, 1fr) 48px 64px;
     }
 
+    .shell.withoutSelectionDock {
+        grid-template-areas:
+            "command"
+            "work"
+            "nav";
+        grid-template-rows: 52px minmax(0, 1fr) 64px;
+    }
+
+    .shell.withUrlIssues.withoutSelectionDock {
+        grid-template-areas:
+            "command"
+            "issue"
+            "work"
+            "nav";
+        grid-template-rows: 52px 44px minmax(0, 1fr) 64px;
+    }
+
     .primaryNavigation {
         width: auto;
         height: 64px;

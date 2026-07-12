@@ -111,6 +111,22 @@ test('commits all six views and restores them with browser back and forward', as
     }
 });
 
+test('restores the required Execute details inspector through browser history', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=execute');
+    await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible();
+    await expect(page.getByText('Recipe details', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Analyze', exact: true }).click();
+    await expectVisibleView(page, 'analyze');
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
+
+    await page.goBack();
+    await expectVisibleView(page, 'execute');
+    await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible();
+    await expect(page.getByText('Recipe details', { exact: true })).toBeVisible();
+});
+
 test('restores a complete copied v1 state without inventing reserved-field UI', async ({ context, page }) => {
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],

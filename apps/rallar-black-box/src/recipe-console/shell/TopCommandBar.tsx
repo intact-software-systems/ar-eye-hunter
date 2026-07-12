@@ -10,11 +10,13 @@ export function TopCommandBar({
     context,
     issues,
     onCopyLink,
+    onRefresh,
 }: Readonly<{
     height: 48 | 52;
     context: ReactNode;
     issues: readonly RecipeConsoleUrlIssue[];
     onCopyLink(): void;
+    onRefresh(): void;
 }>) {
     return (
         <>
@@ -30,7 +32,7 @@ export function TopCommandBar({
                         {issues.length > 0 ? `${issues.length} normalized` : 'Canonical'}
                     </CommandBarItem>
                 </div>
-                <IconButton aria-label="Refresh preview" icon="refresh" />
+                <IconButton aria-label="Refresh preview" icon="refresh" onClick={onRefresh} />
                 <IconButton aria-label="Copy canonical link" icon="copy" onClick={onCopyLink} />
             </header>
             {issues.length > 0 ? (
