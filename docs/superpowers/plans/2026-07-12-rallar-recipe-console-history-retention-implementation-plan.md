@@ -1,7 +1,7 @@
 # Rallar Recipe Console History, Compare, Saved Filters, And Retention Implementation Plan
 
 Status: in progress; Iteration 7 is green through `cc17169` and `382df72`;
-Tasks 0–5 are complete; Task 6 is in progress
+Tasks 0–6 are complete; Task 7 is in progress
 
 **Goal:** Complete parent Iteration 8 by making past distributed work
 findable, shareable, comparable, and safely cleanable without changing the
@@ -475,21 +475,48 @@ Files:
 - Modify `TuneWorkspace.tsx` only to compose one bounded History owner
 - Add/update structure tests
 
-- [ ] RED-test one History composition, no History feature state in
+- [x] RED-test one History composition, no History feature state in
   `RecipeConsoleWorkspace`, no legacy import, no duplicate compare derivation,
   no global CSS, and no file over 300 lines (`HistoryWorkspace` <= 180;
   `TuneWorkspace` remains <= 180).
-- [ ] Render exact source/provenance, active filter summary, Apply/Reset,
+- [x] Render exact source/provenance, active filter summary, Apply/Reset,
   table count/omission, empty/partial/stale/offline/error states, and safe
   legacy Runs handoff.
-- [ ] Operate filters, baseline/candidate handoff, save/apply/delete preset,
+- [x] Operate filters, baseline/candidate handoff, save/apply/delete preset,
   copy link, keyboard table/disclosures, and mobile controls through visible
   labeled elements; no hover-only evidence.
-- [ ] Keep current Tune evidence first at desktop, portrait, and short
+- [x] Keep current Tune evidence first at desktop, portrait, and short
   landscape. History tables own contained overflow and never create document
   X overflow.
-- [ ] Do not auto-select a previous run, fetch artifacts, execute Control
+- [x] Do not auto-select a previous run, fetch artifacts, execute Control
   recipes, or mutate recipe manifests.
+
+Task 6 is implemented in `055c96f`. `TuneWorkspace` delegates its scoped
+inspection lifecycle to a 75-line hook, then composes exactly one 176-line
+History workspace after all current Tune evidence. History statically belongs
+to the existing lazy Tune closure and owns only server-query projection,
+committed filters, preset controls, and safe precomputed row actions. The root
+workspace passes only query, navigation, and copy-link seams; it owns no History
+state and imports no History feature module.
+
+The Signal Ledger UI has visible semantic filters, deterministic UTC inputs,
+one-push full-field Apply/Reset, explicit saved-preset actions, exact source and
+freshness labels, bounded counts, a native keyboard-focusable table, generated
+row keys, full IDs, ID-specific Baseline/Candidate names, safe legacy Runs
+handoff, and empty/partial/stale/offline/error truth. Portrait filters collapse
+4→2→1 columns; the table alone scrolls horizontally, while Tune becomes the
+contained vertical scroller in short landscape. Out-of-Date-range but otherwise
+valid safe epochs remain visible as exact milliseconds rather than crashing.
+
+Fresh proof is 103/103 History/Tune/build-boundary tests, 63/63 broader Recipe
+Console/app structure tests, app TypeScript, and diff checks. The production
+build keeps the retention implementation outside the Tune static closure.
+Independent review found one Important accessibility issue—ambiguous repeated
+row-action names—which was RED-tested and fixed with exact distributed IDs.
+The UTC crash was also reproduced and fixed centrally. Final re-review reports
+no remaining Critical or Important issue. Task 8 still owns real-browser
+responsive, overflow, keyboard, CSS-isolation, and copied-link acceptance; no
+such browser proof is claimed here.
 
 ## Task 7: Add Preview-First Retention UI And Confirmation
 

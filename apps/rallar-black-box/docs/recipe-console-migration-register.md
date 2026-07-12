@@ -1,11 +1,34 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Iteration 8 History/retention foundations code-backed through `caa3980`, all legacy workflow rows visible and uncut
+Status: canonical migration register; Iteration 8 History UI and retention foundations code-backed through `055c96f`, all legacy workflow rows visible and uncut
 Evidence/status date: 2026-07-12
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 8 bounded History workspace — `055c96f`
+
+Task 6 composes exactly one focused History workspace after current Tune
+evidence inside the existing lazy Tune closure. The root workspace passes only
+the root query, URL navigation, and copy-link callback; it owns no History
+feature state. History renders exact source/freshness truth, committed filter
+summary, semantic Apply/Reset, bounded local presets, exact counts, full IDs,
+safe Baseline/Candidate handoff, empty/partial/stale/offline/error states, and a
+generic preserved legacy Runs link. It never fetches an artifact, auto-selects a
+past run, executes a recipe, derives a second comparison, or mutates a manifest.
+
+The flat Signal Ledger controls are keyboard-visible and at least 44px. Filters
+collapse 4→2→1 columns, the native table owns horizontal overflow, and Tune owns
+contained vertical scrolling in short landscape. Exact-ID action labels close
+screen-reader ambiguity, and shared guarded UTC formatting preserves safe
+epochs outside JavaScript's Date display range without a crash.
+
+Fresh proof is 103/103 History/Tune/build-boundary tests, 63/63 broader
+structure tests, app TypeScript, and final independent review with no Critical
+or Important issue. Browser responsive/keyboard/CSS-isolation acceptance and
+retention confirmation remain open. No legacy row, visibility, mount policy,
+deep link, rollback, default, or control-server contract changes.
 
 ## Iteration 8 bounded History model — `13070af`, `caa3980`
 

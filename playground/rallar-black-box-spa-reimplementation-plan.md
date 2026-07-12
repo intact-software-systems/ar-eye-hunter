@@ -407,7 +407,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
-| 8 — History, Compare, Saved Filters, Retention | **In progress** | Retention server/client foundations, shareable filters/presets, root provenance, bounded History rows, safe Tune selection reuse, and cleanup reconciliation are code-backed through `caa3980`. The combined filter/Candidate/cleanup/copied-link sequence, exact counts/100-row bound, linear identity work, and selective URL clearing pass focused validation/review. History/retention UI, async refresh ordering, browser matrix, and no-cutover exit remain open. |
+| 8 — History, Compare, Saved Filters, Retention | **In progress** | Retention foundations plus shareable filters/presets, root provenance, bounded rows, safe Tune selection, cleanup reconciliation, and the focused History workspace are code-backed through `055c96f`. Current Tune evidence remains first; exact provenance/counts, visible filters/presets/actions, contained table/short-landscape scrolling, and lazy retention exclusion pass focused validation/review. Retention confirmation UI, async refresh ordering, browser matrix, and no-cutover exit remain open. |
 | 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
@@ -613,6 +613,22 @@ links, and back/forward behavior remain stable. Fresh proof is 176/176 related
 tests, full shared TypeScript plus seven Deno entries, app TypeScript, and final
 review with no open Critical or Important issue. Async refresh-before-replace is
 still reserved for the Task 7 hook; no History UI or legacy cutover is claimed.
+
+Task 6 History UI is green through `055c96f`. A focused inspection hook keeps
+`TuneWorkspace` at 139 lines, and exactly one 176-line History workspace follows
+the current Tune evidence inside its existing lazy closure. The root passes
+only query/navigation/copy seams and owns no History state. Signal Ledger
+filters, presets, source/freshness labels, exact counts, full-ID table rows,
+safe comparison actions, copy link, legacy handoff, and operational states are
+visible without hover-only evidence or a new view.
+
+Filters collapse 4→2→1 columns, the table owns horizontal overflow, and Tune
+owns short-landscape vertical scrolling. Valid safe epochs beyond Date's
+display range degrade to exact milliseconds. Fresh proof is 103/103 focused
+History/Tune/build-boundary tests, 63/63 broader structure tests, app TypeScript,
+and final review with no open Critical or Important issue after exact-ID action
+labels closed an accessibility finding. Task 8 retains real-browser proof; no
+legacy visibility, mount, route, default, or control contract changed.
 
 #### Iteration 2 visual approval checkpoint — 2026-07-11
 

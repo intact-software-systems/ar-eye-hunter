@@ -58,6 +58,16 @@ claimed run outcome remains visible beside the incompatibility warning.
 
 **Given** two compatible run snapshots or artifact bundles, **when** the operator selects them as comparison inputs, **then** Tune shows recipe, participant, failure, timing, and received-message deltas and produces explicit candidate timing changes without silently mutating either recipe.
 
+### Server history and saved filters
+
+**Given** server run history, **when** the operator opens Tune, **then** current
+timing and candidate evidence remains first and a bounded History ledger follows
+with explicit root/fallback/stale/partial provenance, URL-backed semantic
+filters, saved local filter presets, safe Baseline/Candidate handoff, exact
+filtered/rendered/omitted counts, and no artifact-derived synthetic server row.
+At most 100 rows render before Iteration 9 windowing; unsafe, duplicate,
+malformed, missing, and ambiguous identities remain visible but cannot navigate.
+
 ## URL-state contract
 
 All new Recipe Console URLs use the typed, validated schema version `v=1`.
