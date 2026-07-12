@@ -691,6 +691,7 @@ describe('Hetzner distributed run artifact analysis', () => {
                             failedFrames: 0,
                             droppedFrames: 0,
                             backpressureCount: 0,
+                            pacing: { lateFrameCount: 0 },
                             requestedRateHz: 20,
                             achievedScheduleHz: 20,
                             achievedCompletionHz: 20,
@@ -719,6 +720,7 @@ describe('Hetzner distributed run artifact analysis', () => {
                             failedFrames: 0,
                             droppedFrames: 0,
                             backpressureCount: 1,
+                            pacing: { lateFrameCount: 0 },
                             requestedRateHz: 20,
                             achievedScheduleHz: 18,
                             achievedCompletionHz: 18,
@@ -764,6 +766,76 @@ describe('Hetzner distributed run artifact analysis', () => {
         });
         expect(analysis.performanceMarkdown).toContain('Stream timing: streams=2, frames=5/5');
         expect(analysis.performanceMarkdown).toContain('p99=50ms');
+    });
+
+    it('suppresses stream timing when another agent has only progress evidence', () => {
+        const analysis = analyzeDistributedRunArtifactFiles({
+            files: {
+                'distributed-run.json': JSON.stringify({
+                    distributedRunId: 'dist-stream-mixed-evidence',
+                    controlRunId: 'run-stream-mixed-evidence',
+                    state: 'passed',
+                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
+                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
+                    targetAgentIds: ['controller-01', 'controller-02'],
+                }),
+                'control-run.json': JSON.stringify({
+                    runId: 'run-stream-mixed-evidence',
+                    agents: [
+                        { agentId: 'controller-01', connected: true },
+                        { agentId: 'controller-02', connected: true },
+                    ],
+                    commands: [],
+                    results: [],
+                    events: [],
+                    stats: [],
+                    reports: [],
+                    heartbeats: [],
+                }),
+                'results.jsonl': [
+                    JSON.stringify({
+                        resultKey: 'controller-01:stream-complete',
+                        agentId: 'controller-01',
+                        commandId: 'stream-command',
+                        action: 'rtc.stream',
+                        ok: true,
+                        result: {
+                            commandId: 'rtc-realtime-position-stream',
+                            plannedFrames: 3,
+                            scheduledFrames: 3,
+                            attemptedFrames: 3,
+                            completedFrames: 3,
+                            failedFrames: 0,
+                            droppedFrames: 0,
+                            inFlightLimitDropCount: 0,
+                            backpressureCount: 0,
+                            pacing: { lateFrameCount: 0 },
+                        },
+                    }),
+                ].join('\n'),
+                'events.jsonl': JSON.stringify({
+                    kind: 'diagnostic',
+                    topic: 'rallar.bb.rtc.stream_progress',
+                    severity: 'info',
+                    agentId: 'controller-02',
+                    commandId: 'rtc-realtime-position-stream',
+                    payload: {
+                        topic: 'rallar.bb.rtc.stream_progress',
+                        severity: 'info',
+                        data: {
+                            plannedFrames: 3,
+                            scheduledFrames: 2,
+                            completedFrames: 2,
+                            failedFrames: 0,
+                            droppedFrames: 0,
+                            inFlightFrames: 0,
+                        },
+                    },
+                }),
+            },
+        });
+
+        expect(analysis.performance?.streamTiming).toBeUndefined();
     });
 
     it('uses the latest stream event when result JSONL is bounded', () => {
@@ -831,6 +903,9 @@ describe('Hetzner distributed run artifact analysis', () => {
                                 completedFrames: 100,
                                 failedFrames: 0,
                                 droppedFrames: 0,
+                                inFlightLimitDropCount: 0,
+                                backpressureCount: 0,
+                                pacing: { lateFrameCount: 0 },
                                 duration: { p50Ms: 25, p95Ms: 40, p99Ms: 45, maxMs: 50 },
                             },
                         },

@@ -130,6 +130,14 @@ export type DistributedRunPerformanceAnalysis = Readonly<{
     }>[];
 }>;
 
+export type DistributedRunSnapshotPerformanceInput = Readonly<{
+    distributedRun: ControlDistributedRunSnapshot;
+    controlRun: ControlRunSnapshot;
+    fleetReport?: unknown;
+    artifactResults?: readonly unknown[];
+    artifactEvents?: readonly unknown[];
+}>;
+
 export type DistributedRunTargetResolutionAnalysis = Readonly<{
     selected: number;
     expectedParticipantCount?: number;
@@ -274,7 +282,13 @@ export function analyzeDistributedRunArtifactFiles(
     const ok = booleanValue(fleetReport.ok) ?? booleanValue(readPath(distributedRun, ['rollup', 'ok'])) ??
         status === 'passed';
     const group = groupFromArtifacts(distributedRun, fleetReport);
-    const performance = derivePerformance(distributedRun, controlRun, fleetReport, results, events);
+    const performance = deriveDistributedRunSnapshotPerformance({
+        distributedRun,
+        controlRun,
+        fleetReport,
+        artifactResults: results,
+        artifactEvents: events,
+    });
     const targetResolution = targetResolutionAnalysis(targetResolutionRecord, distributedRun);
     const failure = ok
         ? undefined
@@ -623,6 +637,20 @@ function deriveFailure(input: Readonly<{
         affectedRegions: [],
         evidenceFile: 'distributed-run.json',
     };
+}
+
+export function deriveDistributedRunSnapshotPerformance(
+    input: DistributedRunSnapshotPerformanceInput,
+): DistributedRunPerformanceAnalysis {
+    return derivePerformance(
+        input.distributedRun,
+        input.controlRun,
+        asRecord(input.fleetReport),
+        arrayRecords(input.artifactResults),
+        input.artifactEvents === undefined
+            ? arrayRecords(input.controlRun.events)
+            : arrayRecords(input.artifactEvents),
+    );
 }
 
 function derivePerformance(
@@ -1145,6 +1173,7 @@ type StreamTimingSample = Readonly<{
     agentId?: string;
     commandId?: string;
     identityKey?: string;
+    completeness: 'terminal' | 'partial';
     failed?: boolean;
     nested?: boolean;
     summary: Record<string, unknown>;
@@ -1195,7 +1224,6 @@ function streamSamplesFromResult(
     inheritedAgentId?: string,
     inheritedIdentityKey?: string,
 ): readonly StreamTimingSample[] {
-    const action = firstString(result.action, result.kind, readPath(result, ['result', 'kind']));
     const summary = streamSummaryRecord(result.result) ??
         streamSummaryRecord(result.value) ??
         streamSummaryRecord(result.actual) ??
@@ -1204,15 +1232,16 @@ function streamSamplesFromResult(
     const resultIdentity = streamResultIdentity(result);
     const identityKey = firstString(inheritedIdentityKey, resultIdentity);
     const samples: StreamTimingSample[] = [];
-    if (summary || action === 'rtc.stream') {
+    if (summary) {
         samples.push({
             agentId,
-            commandId: firstString(summary?.commandId, commandIdFromResult(result)),
+            commandId: firstString(summary.commandId, commandIdFromResult(result)),
             identityKey,
+            completeness: 'terminal',
             failed: streamResultHasFailureSignal(result),
             nested: inheritedIdentityKey !== undefined,
-            summary: summary ?? {},
-            observations: arrayRecords(summary?.observations),
+            summary,
+            observations: arrayRecords(summary.observations),
         });
     }
     nestedRecipeResultRecords(result).forEach((nestedResult, nestedIndex) => {
@@ -1276,7 +1305,7 @@ function upsertBestStreamSample(
     samples: Map<string, StreamTimingSampleCandidate>,
     candidate: StreamTimingSampleCandidate,
 ): void {
-    const key = equivalentStreamSampleKey(samples, candidate.sample) ?? streamSampleKey(candidate.sample);
+    const key = equivalentStreamSampleKey(samples, candidate) ?? streamSampleKey(candidate.sample);
     const current = samples.get(key);
     if (!current || compareStreamSampleCandidates(candidate, current) > 0) {
         samples.set(key, candidate);
@@ -1287,7 +1316,10 @@ function compareStreamSampleCandidates(
     left: StreamTimingSampleCandidate,
     right: StreamTimingSampleCandidate,
 ): number {
-    return streamSampleEvidenceScore(left.sample) - streamSampleEvidenceScore(right.sample) ||
+    const terminalPriority = Number(left.sample.completeness === 'terminal') -
+        Number(right.sample.completeness === 'terminal');
+    return terminalPriority ||
+        streamSampleEvidenceScore(left.sample) - streamSampleEvidenceScore(right.sample) ||
         left.sourcePriority - right.sourcePriority ||
         left.index - right.index;
 }
@@ -1313,6 +1345,10 @@ function streamSampleFromEvent(event: Record<string, unknown>): StreamTimingSamp
     return {
         agentId: firstString(event.agentId),
         commandId: firstString(summary.commandId, event.commandId),
+        completeness: topic === 'rallar.bb.rtc.stream_completed' ||
+                topic === 'rallar.bb.rtc.stream_failed'
+            ? 'terminal'
+            : 'partial',
         failed: topic === 'rallar.bb.rtc.stream_failed' || eventSeverity(event) === 'error',
         summary,
         observations: arrayRecords(summary.observations),
@@ -1326,17 +1362,25 @@ function streamSampleKey(sample: StreamTimingSample): string {
 
 function equivalentStreamSampleKey(
     samples: Map<string, StreamTimingSampleCandidate>,
-    sample: StreamTimingSample,
+    candidate: StreamTimingSampleCandidate,
 ): string | undefined {
-    for (const [key, candidate] of samples) {
-        if (streamSamplesRepresentSameExecution(candidate.sample, sample)) {
+    for (const [key, current] of samples) {
+        if (streamSamplesRepresentSameExecution(
+            current.sample,
+            candidate.sample,
+            current.sourcePriority !== candidate.sourcePriority,
+        )) {
             return key;
         }
     }
     return undefined;
 }
 
-function streamSamplesRepresentSameExecution(left: StreamTimingSample, right: StreamTimingSample): boolean {
+function streamSamplesRepresentSameExecution(
+    left: StreamTimingSample,
+    right: StreamTimingSample,
+    crossSource: boolean,
+): boolean {
     if (streamSampleBaseKey(left) !== streamSampleBaseKey(right)) {
         return false;
     }
@@ -1348,7 +1392,7 @@ function streamSamplesRepresentSameExecution(left: StreamTimingSample, right: St
             return false;
         }
         if (left.nested !== true && right.nested !== true) {
-            return false;
+            return crossSource && streamSampleFingerprint(left) === streamSampleFingerprint(right);
         }
         return streamSampleFingerprint(left) === streamSampleFingerprint(right);
     }
@@ -1583,32 +1627,33 @@ function firstDefinedNumber(values: readonly (number | undefined)[]): number | u
 function streamTimingFromSamples(
     samples: readonly StreamTimingSample[],
 ): DistributedRunPerformanceAnalysis['streamTiming'] {
-    if (samples.length === 0) {
+    if (samples.length === 0 || !samples.every(hasCompleteStreamTimingEvidence)) {
         return undefined;
     }
+    const completeSamples = samples;
 
-    const durations = samples.flatMap(streamSampleObservationDurations);
-    const plannedFrames = sumStreamNumber(samples, 'plannedFrames');
-    const scheduledFrames = sumStreamNumber(samples, 'scheduledFrames');
-    const attemptedFrames = sumStreamNumber(samples, 'attemptedFrames');
-    const completedFrames = sumStreamNumber(samples, 'completedFrames');
-    const failedFrames = sumStreamNumber(samples, 'failedFrames');
-    const droppedFrames = sumStreamNumber(samples, 'droppedFrames');
-    const inFlightLimitDropCount = samples.reduce(
+    const durations = completeSamples.flatMap(streamSampleObservationDurations);
+    const plannedFrames = sumStreamNumber(completeSamples, 'plannedFrames');
+    const scheduledFrames = sumStreamNumber(completeSamples, 'scheduledFrames');
+    const attemptedFrames = sumStreamNumber(completeSamples, 'attemptedFrames');
+    const completedFrames = sumStreamNumber(completeSamples, 'completedFrames');
+    const failedFrames = sumStreamNumber(completeSamples, 'failedFrames');
+    const droppedFrames = sumStreamNumber(completeSamples, 'droppedFrames');
+    const inFlightLimitDropCount = completeSamples.reduce(
         (sum, sample) => sum + streamSampleInFlightLimitDropCount(sample),
         0,
     );
-    const backpressureCount = sumStreamNumber(samples, 'backpressureCount');
-    const maxStartDriftMs = maxDefined(samples.map(sample =>
+    const backpressureCount = sumStreamNumber(completeSamples, 'backpressureCount');
+    const maxStartDriftMs = maxDefined(completeSamples.map(sample =>
         numberValue(readPath(sample.summary, ['pacing', 'maxStartDriftMs']))
     ));
-    const lateFrameCount = samples.reduce(
+    const lateFrameCount = completeSamples.reduce(
         (sum, sample) => sum + (numberValue(readPath(sample.summary, ['pacing', 'lateFrameCount'])) ?? 0),
         0,
     );
 
     return {
-        streamCount: samples.length,
+        streamCount: completeSamples.length,
         plannedFrames,
         scheduledFrames,
         attemptedFrames,
@@ -1620,14 +1665,20 @@ function streamTimingFromSamples(
         sendSuccessRatio: attemptedFrames > 0
             ? roundMetric(completedFrames / attemptedFrames)
             : undefined,
-        requestedRateHz: averageDefined(samples.map(sample => numberValue(sample.summary.requestedRateHz))),
-        achievedScheduleHz: averageDefined(samples.map(sample => numberValue(sample.summary.achievedScheduleHz))),
-        achievedCompletionHz: averageDefined(samples.map(sample => numberValue(sample.summary.achievedCompletionHz))),
+        requestedRateHz: averageDefined(completeSamples.map(sample => numberValue(sample.summary.requestedRateHz))),
+        achievedScheduleHz: averageDefined(completeSamples.map(sample => numberValue(sample.summary.achievedScheduleHz))),
+        achievedCompletionHz: averageDefined(completeSamples.map(sample => numberValue(sample.summary.achievedCompletionHz))),
         maxStartDriftMs,
         lateFrameCount,
-        duration: streamDurationTimingFromSamples(samples, durations),
-        slowestAgents: slowestStreamAgentRows(samples),
+        duration: streamDurationTimingFromSamples(completeSamples, durations),
+        slowestAgents: slowestStreamAgentRows(completeSamples),
     };
+}
+
+function hasCompleteStreamTimingEvidence(sample: StreamTimingSample): boolean {
+    return sample.completeness === 'terminal' && [
+        'plannedFrames', 'completedFrames', 'failedFrames', 'droppedFrames',
+    ].every(key => numberValue(sample.summary[key]) !== undefined);
 }
 
 function sumStreamNumber(samples: readonly StreamTimingSample[], key: string): number {
@@ -2151,22 +2202,33 @@ function normalizeDistributedRunRecord(
     const rollup = asRecord(record.rollup);
     const rollupFailures = arrayRecords(rollup.failures).map(normalizeRollupFailureRecord);
     const commandLinks = arrayRecords(record.commandLinks);
+    const rawManifest = asRecord(record.manifest);
+    const distributedRunId = firstString(
+        record.distributedRunId,
+        rawManifest.distributedRunId,
+        'unknown-distributed-run',
+    ) ?? 'unknown-distributed-run';
+    const controlRunId = firstString(
+        record.controlRunId,
+        rawManifest.controlRunId,
+        distributedRunId,
+        'unknown-control-run',
+    ) ?? 'unknown-control-run';
     return {
-        distributedRunId: firstString(record.distributedRunId, 'unknown-distributed-run') ?? 'unknown-distributed-run',
-        controlRunId: firstString(record.controlRunId, record.distributedRunId, 'unknown-control-run') ?? 'unknown-control-run',
+        distributedRunId,
+        controlRunId,
         manifest: ({
-            schemaVersion: numberValue(readPath(record, ['manifest', 'schemaVersion'])) ?? 1,
-            distributedRunId: firstString(readPath(record, ['manifest', 'distributedRunId']), record.distributedRunId, 'unknown-distributed-run') ??
-                'unknown-distributed-run',
-            controlRunId: firstString(readPath(record, ['manifest', 'controlRunId']), record.controlRunId, 'unknown-control-run') ??
-                'unknown-control-run',
-            group: asRecord(readPath(record, ['manifest', 'group'])),
-            recipes: arrayRecords(readPath(record, ['manifest', 'recipes'])) as ControlDistributedRunSnapshot['manifest']['recipes'],
-            targetPolicy: asRecord(readPath(record, ['manifest', 'targetPolicy'])) as ControlDistributedRunSnapshot['manifest']['targetPolicy'],
-            roleAssignments: arrayRecords(readPath(record, ['manifest', 'roleAssignments'])) as ControlDistributedRunSnapshot['manifest']['roleAssignments'],
-            startMode: firstString(readPath(record, ['manifest', 'startMode']), 'manual') as ControlDistributedRunSnapshot['manifest']['startMode'],
-            displayName: firstString(readPath(record, ['manifest', 'displayName'])),
-            metadata: asRecord(readPath(record, ['manifest', 'metadata'])),
+            ...recognizedDistributedManifestFields(rawManifest),
+            schemaVersion: numberValue(rawManifest.schemaVersion) ?? 1,
+            distributedRunId,
+            controlRunId,
+            group: asRecord(rawManifest.group),
+            recipes: arrayRecords(rawManifest.recipes) as ControlDistributedRunSnapshot['manifest']['recipes'],
+            targetPolicy: asRecord(rawManifest.targetPolicy) as ControlDistributedRunSnapshot['manifest']['targetPolicy'],
+            roleAssignments: arrayRecords(rawManifest.roleAssignments) as ControlDistributedRunSnapshot['manifest']['roleAssignments'],
+            startMode: firstString(rawManifest.startMode, 'manual') as ControlDistributedRunSnapshot['manifest']['startMode'],
+            displayName: firstString(rawManifest.displayName),
+            metadata: asRecord(rawManifest.metadata),
         } as unknown as ControlDistributedRunSnapshot['manifest']),
         state: firstString(record.state, 'unknown') as ControlDistributedRunSnapshot['state'],
         createdAtEpochMs: numberValue(record.createdAtEpochMs) ?? numberValue(record.startedAtEpochMs) ?? 0,
@@ -2195,6 +2257,27 @@ function normalizeDistributedRunRecord(
         },
         error: optionalRecord(record.error) as ControlDistributedRunSnapshot['error'],
     };
+}
+
+function recognizedDistributedManifestFields(
+    manifest: Record<string, unknown>,
+): Record<string, unknown> {
+    const recognized: Record<string, unknown> = {};
+    for (const key of [
+        'description',
+        'variables',
+        'secretRefs',
+        'roleAssignmentPolicy',
+        'ackTimeoutMs',
+        'barrier',
+        'startDeadlineEpochMs',
+        'artifactPolicy',
+    ]) {
+        if (manifest[key] !== undefined) {
+            recognized[key] = manifest[key];
+        }
+    }
+    return recognized;
 }
 
 function normalizeControlRunRecord(
@@ -2250,6 +2333,7 @@ function normalizeControlResultRecord(
         protocolVersion: 1,
         runId: firstString(result.runId, fallbackRunId) ?? fallbackRunId,
         agentId: firstString(result.agentId, 'unknown-agent') ?? 'unknown-agent',
+        resultKey: firstString(result.resultKey),
         commandId: commandIdFromResult(result) ?? 'unknown-command',
         ok,
         result: normalizeResultPayload(result),

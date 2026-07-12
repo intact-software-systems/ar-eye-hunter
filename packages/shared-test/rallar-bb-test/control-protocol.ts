@@ -189,9 +189,15 @@ function validateNumberField(
     key: string,
     path: string,
 ): ControlCommandValidationResult {
-    return value[key] === undefined || typeof value[key] === 'number'
+    if (value[key] === undefined) {
+        return { ok: true };
+    }
+    if (typeof value[key] !== 'number') {
+        return fail(`${path}.${key} must be a number.`);
+    }
+    return Number.isFinite(value[key])
         ? { ok: true }
-        : fail(`${path}.${key} must be a number.`);
+        : fail(`${path}.${key} must be a finite number.`);
 }
 
 function validatePositiveNumberField(
@@ -394,7 +400,53 @@ function validateLoopCommand(
     if (!result.ok) {
         return result;
     }
-    return validateBooleanField(command, 'continueOnFailure', 'loop');
+    result = validateBooleanField(command, 'continueOnFailure', 'loop');
+    return !result.ok ? result : validateLoopThresholds(command.thresholds);
+}
+
+function validateLoopThresholds(value: unknown): ControlCommandValidationResult {
+    if (value === undefined) {
+        return { ok: true };
+    }
+    if (!isRecord(value)) {
+        return fail('loop.thresholds must be an object.');
+    }
+    let result = validateKeys(value, [
+        'minAchievedRateHz',
+        'maxAverageStartDriftMs',
+        'maxStartDriftMs',
+        'maxJitterMs',
+        'minSendSuccessRatio',
+        'failOnBackpressure',
+    ], 'loop.thresholds');
+    if (!result.ok) {
+        return result;
+    }
+    for (const field of [
+        'minAchievedRateHz',
+        'maxAverageStartDriftMs',
+        'maxStartDriftMs',
+        'maxJitterMs',
+    ]) {
+        result = validateNumberField(value, field, 'loop.thresholds');
+        if (!result.ok) {
+            return result;
+        }
+        if (value[field] !== undefined && (value[field] as number) < 0) {
+            return fail(`loop.thresholds.${field} must be >= 0.`);
+        }
+    }
+    result = validateNumberField(value, 'minSendSuccessRatio', 'loop.thresholds');
+    if (!result.ok) {
+        return result;
+    }
+    if (
+        value.minSendSuccessRatio !== undefined &&
+        ((value.minSendSuccessRatio as number) < 0 || (value.minSendSuccessRatio as number) > 1)
+    ) {
+        return fail('loop.thresholds.minSendSuccessRatio must be between 0 and 1.');
+    }
+    return validateBooleanField(value, 'failOnBackpressure', 'loop.thresholds');
 }
 
 function validateParallelCommand(
@@ -1059,6 +1111,7 @@ export function validateRallarBlackBoxTestCommand(
                     'delayMs',
                     'continueOnFailure',
                     'maxCommands',
+                    'thresholds',
                 ],
                 'loop',
             );
