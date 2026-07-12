@@ -1,7 +1,7 @@
 # Rallar Black Box SPA Reimplementation Plan
 
 Date: 2026-07-06
-Last reviewed: 2026-07-11
+Last reviewed: 2026-07-12
 
 ## Goal
 
@@ -16,9 +16,10 @@ Reimplement `apps/rallar-black-box` as a lean operator SPA for distributed recip
 
 This is not a plan for a generic Rallar admin console. Direct Auth, Groups, WS, RTC, Data, CRDT, Media, REST, and manual workbench tools remain useful, but they should become supporting diagnostics or advanced tools instead of the main product surface.
 
-## Current Findings
+## Pre-migration Baseline Findings
 
-The existing SPA is capable but too broad for the distributed-recipe job:
+At the 2026-07-06 baseline, the existing SPA was capable but too broad for the
+distributed-recipe job:
 
 - `apps/rallar-black-box/src/App.tsx` is 28,265 lines and owns shell, fetching, execution, monitoring, artifact import, recipe authoring, fleet views, direct Rallar tools, and many forms in one file.
 - `apps/rallar-black-box/src/styles.css` is 7,380 lines, so a new look and feel should not be achieved by layering more global selectors onto the existing CSS. The rewrite needs an isolated design system and stylesheet boundary.
@@ -395,7 +396,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | --- | --- | --- |
 | 0 — Product Cut And Evidence Map | **Complete** | Product cut, five observable stories, v1 URL contract, 14-item Ready-State traceability, full surface register, exact rollback URLs, and the qualified baseline below are recorded. No runtime behavior changed. |
 | 1 — Extract Pure App Helpers | **Complete** | Behavior-preserving helper, presentation, controller, and shell-composition slices reduce `App.tsx` from 28,265 to 234 lines. `App` now owns runtime/bootstrap, auth gates, shared shell controllers, and experience composition only; `LegacyAppShell` delegates the exact tab tree to six bounded hook-free groups. The exit evidence below passed without a hide, cutover, route, public-export, control-contract, or stylesheet change. |
-| 2 — New Recipe Console Shell | **In progress** | Direction A, Signal Ledger, was approved on 2026-07-11 with four checked-in concept states and a repository-truth design contract. No shell, codec, CSS-isolation proof, chunk proof, or workflow cutover is represented as complete yet. |
+| 2 — New Recipe Console Shell | **Complete** | Direction A, Signal Ledger, is implemented as an explicit `v=1` seeded experience through code head `a397642`. The fidelity ledger records URL/history, responsive/accessibility, CSS/chunk isolation, concept, Browser-fallback, review, and fresh validation proof. No workflow is cut over and no legacy primary surface is hidden. |
 | 3 — Control Connection And Agent Board | Pending | No new control query layer or live-service acceptance evidence is represented as complete. |
 | 4 — Execute Workflow MVP | Pending | No Recipe Console execution cutover is represented as complete. |
 | 5 — Monitor MVP | Pending | No Recipe Console monitor cutover is represented as complete. |
@@ -449,6 +450,59 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 - This checkpoint approves direction only. It does not prove the Iteration 2
   runtime, fidelity, accessibility, CSS-isolation, or chunk exit criteria and
   does not cut over or hide any legacy surface.
+
+#### Iteration 2 exit checkpoint — `a397642`
+
+- The explicit `experience=recipe-console` path now mounts the bounded
+  180-line `RecipeConsoleApp` through a separate lazy experience closure;
+  blank, old-alias, and explicit legacy URLs still mount only the preserved
+  legacy experience. `App.tsx` remains 225 lines of auth/bootstrap/experience
+  routing glue.
+- The typed `v=1` codec, canonical replace/push behavior, safe unknown-field
+  preservation, sensitive query/hash scrubbing, exact legacy-popstate
+  preservation, and six-view back/forward restoration have executable proof.
+- Execute, failed Monitor, Analyze, Tune, Fleet, and Advanced render from
+  deterministic repository-backed seeds without services. Alternative recipe
+  selection derives its own command truth and cannot reuse or enable an
+  unmatched target preview. Refresh resets seeded workspace state; Export emits
+  deterministic `preview: true` / `live: false` JSON. No UI claims live control
+  connectivity or live execution.
+- Desktop, 430×932 portrait, 900px tablet, and 932×430 short landscape pass
+  geometry, overflow, touch, keyboard, focus trap/restore, reduced-motion,
+  stale/error/empty, and one-inspector checks. Four controlled-Darwin pixel
+  baselines use a 1% drift budget and were compared at original detail with the
+  four approved native concepts. Repository-truth copy deviations are recorded
+  in the [Iteration 2 fidelity ledger](../apps/rallar-black-box/docs/recipe-console-iteration-2-fidelity-ledger.md).
+- In-app Browser QA was attempted first and was unavailable exactly as
+  `Browser is not available: iab`; discovery returned `[]`. System Chrome
+  fallback completed every target flow with clean canonical-page console and
+  document health. Both CSS load-order captures were byte-identical, and
+  Recipe Console/legacy round trips retained isolated computed styles.
+- Fresh final validation after the last review fix passed 81/81 focused tests,
+  typecheck, the 442-module production build, chunk-closure assertion, 40/40
+  Recipe Console Chromium tests, 28/28 legacy navigation/ticket tests, and
+  460/460 complete `packages/tests/rallar-black-box` tests. The Recipe Console
+  JS/CSS are 47.31/25.37 kB minified; the preserved lazy LegacyExperience JS
+  remains 780.37 kB and owns the known >500 kB advisory.
+- Whole-iteration review initially found five Important issues, and the exit
+  audit later found one selection-correlation leak. Focused RED/GREEN fixes
+  closed all six plus the native-button semantic and favicon console-health
+  findings. Final independent re-review found no Critical or Important issue.
+  One minor possible one-render Execute context transition remains documented
+  in the fidelity ledger.
+- Live/Postgres coverage was skipped, not passed, for this exact reason:
+  `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+  Iterations 3–12 remain pending; every migration-register row remains uncut.
+
+| Iteration 2 exit criterion | Code-backed evidence |
+| --- | --- |
+| Seeded shell renders without a backend | 40/40 Recipe Console browser tests include repository-backed Execute/Monitor/Tune and bounded Analyze/Fleet/Advanced with zero control requests. |
+| Legacy runner surfaces remain reachable | Blank, old aliases, explicit legacy links, exact popstate URLs, 28/28 legacy browser tests, and mutually exclusive mount checks pass. |
+| Visually distinct with no CSS leakage | Scoped tokens/reset, CSS Modules, both load orders, navigation round trip, byte-identical isolation screenshots, and representative computed-style equality pass. |
+| No broad legacy selector dependency | Structure tests lock scoped selectors/modules and reject legacy imports or broad new-system selectors. |
+| Approved concepts have no unexplained drift | Four 1440×900 / 430×932 / 932×430 baselines pass at 1%; the fidelity ledger explains every repository-truth and population difference. |
+| Default Recipe Console chunk excludes all legacy diagnostics | Production manifest/resource closure proves reciprocal hashed JS/CSS chunks; explicit Recipe Console requests no LegacyExperience or fixture resource. |
 
 #### Iteration 1 checkpoint — `63e7b2c`
 
@@ -895,7 +949,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | URL/default flip and runner-agent launch compatibility | 2, 12 | Prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL` and `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `runner-agent launch URL opens advanced workbench consumes and scrubs the session-ticket fragment`; stale stored legacy navigation must not win on a blank URL after cutover. |
 | Artifact versions and partial bundles | 6 | Keep parsing profile/version aware and prove `tests/playwright/rallar-black-box/recipe-console-analyze.spec.ts` — `imports a partial bundle offline and focuses the first actionable failure`, including missing, incompatible, and malformed file distinctions. |
 | Retention preview safety | 8 | Add optional dry-run behavior without changing the destructive default, require explicit confirmation, and prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup`. |
-| Qualitative visual and performance gates lack executable thresholds | 2, 9, 12 | Iteration 2 records approved screenshot baselines and an executable drift budget in `recipe-console-shell.spec.ts`; Iteration 9 encodes bounded-render and interaction budgets in `recipe-console-scale.spec.ts`; Iteration 12 encodes viewport, keyboard, touch, reduced-motion, and non-hover gates in `recipe-console-accessibility.spec.ts`. |
+| Qualitative visual and performance gates lack executable thresholds | 9, 12 | Iteration 2 now has four approved screenshot baselines and a 1% executable drift budget in `recipe-console-concept-fidelity.spec.ts`; Iteration 9 still owns bounded-render/interaction budgets and Iteration 12 owns final viewport, keyboard, touch, reduced-motion, and non-hover gates. |
 | Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
 | Preserved legacy CRDT controls are 30px high at desktop and 932x430 landscape, and its fixed editor/diagnostic/table tracks create an 807px document at 430px portrait | 12 | Keep the exact parity extraction unchanged; add narrow-screen CRDT grid collapse and locally contained table scrolling, require 44px touch targets in touch viewports, and prove zero page overflow in `recipe-console-accessibility.spec.ts`. |
 | Preserved legacy Auth, Groups/Clients, and Rallar Server action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact parity extractions unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
