@@ -1,3 +1,6 @@
+import type { DistributedFailureExplanation } from
+    '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+
 export const RECIPE_CONSOLE_URL_VERSION = 1 as const;
 
 export const RECIPE_CONSOLE_VIEWS = [
@@ -39,6 +42,17 @@ export const RECIPE_CONSOLE_RUN_STATUSES = [
     'timed-out',
 ] as const;
 
+export const RECIPE_CONSOLE_FAILURE_CATEGORIES = [
+    'targeting',
+    'readiness',
+    'barrier',
+    'command',
+    'rtc-stream-performance',
+    'diagnostic',
+    'runtime',
+    'unknown',
+] as const satisfies readonly DistributedFailureExplanation['category'][];
+
 export const RECIPE_CONSOLE_TIMING_METRICS = [
     'command-duration',
     'stream-send-duration',
@@ -65,6 +79,10 @@ export const RECIPE_CONSOLE_OWNED_URL_KEYS = [
     'diagnosticSeverity',
     'transport',
     'historyQuery',
+    'historyGroup',
+    'historyRecipeId',
+    'historyProfile',
+    'failureCategory',
     'status',
     'from',
     'to',
@@ -105,6 +123,8 @@ export type RecipeConsoleDiagnosticSeverity =
     typeof RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES[number];
 export type RecipeConsoleTransport = typeof RECIPE_CONSOLE_TRANSPORTS[number];
 export type RecipeConsoleRunStatus = typeof RECIPE_CONSOLE_RUN_STATUSES[number];
+export type RecipeConsoleFailureCategory =
+    typeof RECIPE_CONSOLE_FAILURE_CATEGORIES[number];
 export type RecipeConsoleTimingMetric = typeof RECIPE_CONSOLE_TIMING_METRICS[number];
 export type RecipeConsoleFleetMapLayer =
     typeof RECIPE_CONSOLE_FLEET_MAP_LAYERS[number];
@@ -121,6 +141,10 @@ export type RecipeConsoleUrlState = Readonly<{
     diagnosticSeverity?: RecipeConsoleDiagnosticSeverity;
     transport?: RecipeConsoleTransport;
     historyQuery?: string;
+    historyGroup?: string;
+    historyRecipeId?: string;
+    historyProfile?: string;
+    failureCategory?: RecipeConsoleFailureCategory;
     status?: RecipeConsoleRunStatus;
     from?: number;
     to?: number;

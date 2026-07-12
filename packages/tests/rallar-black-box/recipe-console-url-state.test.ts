@@ -65,6 +65,10 @@ describe('Recipe Console URL state codec', () => {
             diagnosticSeverity: 'warning',
             transport: 'messages.rtc',
             historyQuery: ' failed ack ',
+            historyGroup: ' bb-group ',
+            historyRecipeId: ' health-only ',
+            historyProfile: ' smoke ',
+            failureCategory: 'readiness',
             status: 'waiting-for-barrier',
             from: '100',
             to: '900',
@@ -90,6 +94,10 @@ describe('Recipe Console URL state codec', () => {
             diagnosticSeverity: 'warning',
             transport: 'messages.rtc',
             historyQuery: 'failed ack',
+            historyGroup: 'bb-group',
+            historyRecipeId: 'health-only',
+            historyProfile: 'smoke',
+            failureCategory: 'readiness',
             status: 'waiting-for-barrier',
             from: 100,
             to: 900,
@@ -130,11 +138,15 @@ describe('Recipe Console URL state codec', () => {
     it('uses the first duplicate value and reports duplicate and range normalization', () => {
         const parsed = parseRecipeConsoleUrl(
             '?provider=simulated&v=1&experience=recipe-console&view=monitor&view=tune' +
+            '&historyGroup=group-a&historyGroup=group-b' +
+            '&failureCategory=readiness&failureCategory=barrier' +
             '&from=900&to=100&fleetMapLayers=failures,live-agents',
         );
 
         expect(parsed.state).toMatchObject({
             view: 'monitor',
+            historyGroup: 'group-a',
+            failureCategory: 'readiness',
             from: 100,
             to: 900,
             fleetMapLayers: ['live-agents', 'failures'],
@@ -147,6 +159,18 @@ describe('Recipe Console URL state codec', () => {
             code: 'duplicate',
             value: 'tune',
         }));
+        expect(parsed.issues).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                field: 'historyGroup',
+                code: 'duplicate',
+                value: 'group-b',
+            }),
+            expect.objectContaining({
+                field: 'failureCategory',
+                code: 'duplicate',
+                value: 'barrier',
+            }),
+        ]));
         expect(parsed.canonicalSearch).toContain('provider=simulated');
     });
 
@@ -154,6 +178,7 @@ describe('Recipe Console URL state codec', () => {
         const parsed = parseRecipeConsoleUrl(
             '?v=1&experience=recipe-console&view=Monitor' +
             '&diagnosticSeverity=ERROR&transport=HTTP&status=Running' +
+            '&failureCategory=Readiness' +
             '&timingMetric=Command-Duration&fleetMapLayers=Failures',
         );
 
@@ -168,9 +193,61 @@ describe('Recipe Console URL state codec', () => {
             expect.objectContaining({ field: 'diagnosticSeverity', code: 'invalid' }),
             expect.objectContaining({ field: 'transport', code: 'invalid' }),
             expect.objectContaining({ field: 'status', code: 'invalid' }),
+            expect.objectContaining({ field: 'failureCategory', code: 'invalid' }),
             expect.objectContaining({ field: 'timingMetric', code: 'invalid' }),
             expect.objectContaining({ field: 'fleetMapLayers', code: 'invalid' }),
         ]));
+        expect(new URLSearchParams(parsed.canonicalSearch).has('failureCategory'))
+            .toBe(false);
+    });
+
+    it('copies committed History filters without conflating the operational recipe identity', () => {
+        const href = createRecipeConsoleShareHref({
+            origin: 'https://console.test',
+            pathname: '/operator',
+            search: '?provider=simulated&futureField=keep&TOKEN=query-secret',
+            hash: '#trace=keep',
+        }, {
+            ...BASE_STATE,
+            view: 'tune',
+            recipeId: 'operational-recipe',
+            historyQuery: 'failed ack',
+            historyGroup: 'bb-group',
+            historyRecipeId: 'history-recipe',
+            historyProfile: 'smoke',
+            failureCategory: 'readiness',
+            status: 'failed',
+            from: 100,
+            to: 900,
+            compareLeft: 'baseline-a',
+            compareRight: 'candidate-a',
+            timingMetric: 'stream-cadence',
+        });
+        const copied = new URL(href);
+
+        expect(Object.fromEntries(copied.searchParams)).toMatchObject({
+            provider: 'simulated',
+            futureField: 'keep',
+            recipeId: 'operational-recipe',
+            historyQuery: 'failed ack',
+            historyGroup: 'bb-group',
+            historyRecipeId: 'history-recipe',
+            historyProfile: 'smoke',
+            failureCategory: 'readiness',
+            status: 'failed',
+            from: '100',
+            to: '900',
+            compareLeft: 'baseline-a',
+            compareRight: 'candidate-a',
+            timingMetric: 'stream-cadence',
+        });
+        expect(copied.searchParams.has('TOKEN')).toBe(false);
+        expect(copied.hash).toBe('#trace=keep');
+        expect(parseRecipeConsoleUrl(copied.search).state).toMatchObject({
+            recipeId: 'operational-recipe',
+            historyRecipeId: 'history-recipe',
+            failureCategory: 'readiness',
+        });
     });
 
     it('round-trips raw RTC artifact transport evidence for Analyze filters', () => {

@@ -460,6 +460,7 @@ export type DistributedRunHistoryFilter = Readonly<{
     user?: string;
     status?: string;
     failureType?: string;
+    failureCategory?: string;
     fromEpochMs?: number;
     toEpochMs?: number;
 }>;
@@ -2242,26 +2243,34 @@ export function filterDistributedRuns(
     const user = normalizeFilterText(filter.user);
     const status = normalizeFilterText(filter.status);
     const failureType = normalizeFilterText(filter.failureType);
+    const failureCategory = normalizeFilterText(filter.failureCategory);
 
     return [...runs]
         .filter(run => {
+            const manifest = distributedRunHistoryManifest(run);
             if (status && normalizeFilterText(run.state) !== status) {
                 return false;
             }
-            if (groupId && !normalizeFilterText(run.manifest.group.groupId).includes(groupId)) {
+            if (
+                groupId &&
+                !normalizeFilterText(historyManifestString(manifest.group.groupId)).includes(groupId)
+            ) {
                 return false;
             }
-            if (recipeId && !run.manifest.recipes.some(selection =>
-                normalizeFilterText(recipeSelectionId(selection)).includes(recipeId)
+            if (recipeId && !manifest.recipes.some(({ selection, index }) =>
+                normalizeFilterText(recipeSelectionId(selection, index)).includes(recipeId)
             )) {
                 return false;
             }
-            if (profile && !run.manifest.recipes.some(selection =>
-                normalizeFilterText(selection.profile).includes(profile)
+            if (profile && !manifest.recipes.some(({ selection }) =>
+                normalizeFilterText(historyManifestString(selection.profile)).includes(profile)
             )) {
                 return false;
             }
-            if (user && !normalizeFilterText(String(run.manifest.metadata?.createdBy ?? '')).includes(user)) {
+            if (
+                user &&
+                !normalizeFilterText(historyManifestString(manifest.metadata.createdBy)).includes(user)
+            ) {
                 return false;
             }
             if (filter.fromEpochMs !== undefined && run.createdAtEpochMs < filter.fromEpochMs) {
@@ -2271,6 +2280,12 @@ export function filterDistributedRuns(
                 return false;
             }
             if (failureType && !distributedRunMatchesFailureType(run, failureType)) {
+                return false;
+            }
+            if (
+                failureCategory &&
+                !distributedRunMatchesFailureCategory(run, failureCategory)
+            ) {
                 return false;
             }
             if (!query) {
@@ -3232,6 +3247,31 @@ function distributedRunFailures(
     results: readonly ControlResultSnapshot[],
     commands: ReadonlyMap<string, ControlCommandSnapshot>,
 ): readonly DistributedRunFailureRow[] {
+    const rows = [...distributedRunRecordedFailures(distributedRun)];
+    results
+        .filter(result => !result.ok)
+        .forEach(result => {
+            const command = commands.get(result.commandId);
+            rows.push({
+                kind: 'command',
+                key: result.commandId,
+                commandId: result.commandId,
+                agentId: result.agentId,
+                recipeId: command?.envelope.command.kind === 'recipe.run'
+                    ? command.envelope.command.recipe?.recipeId
+                    : undefined,
+                code: result.error?.code ?? result.result?.error?.code,
+                message: result.error?.message ?? result.result?.error?.message ?? 'Command failed.',
+                atEpochMs: result.result?.endedAtEpochMs ?? command?.completedAtEpochMs,
+            });
+        });
+
+    return rows.sort((left, right) => (right.atEpochMs ?? 0) - (left.atEpochMs ?? 0));
+}
+
+function distributedRunRecordedFailures(
+    distributedRun: ControlDistributedRunSnapshot,
+): DistributedRunFailureRow[] {
     const rows: DistributedRunFailureRow[] = [];
     if (distributedRun.error) {
         rows.push({
@@ -3254,26 +3294,7 @@ function distributedRunFailures(
             recipeId: failure.kind === 'recipe' ? failure.key : undefined,
         });
     });
-
-    results
-        .filter(result => !result.ok)
-        .forEach(result => {
-            const command = commands.get(result.commandId);
-            rows.push({
-                kind: 'command',
-                key: result.commandId,
-                commandId: result.commandId,
-                agentId: result.agentId,
-                recipeId: command?.envelope.command.kind === 'recipe.run'
-                    ? command.envelope.command.recipe?.recipeId
-                    : undefined,
-                code: result.error?.code ?? result.result?.error?.code,
-                message: result.error?.message ?? result.result?.error?.message ?? 'Command failed.',
-                atEpochMs: result.result?.endedAtEpochMs ?? command?.completedAtEpochMs,
-            });
-        });
-
-    return rows.sort((left, right) => (right.atEpochMs ?? 0) - (left.atEpochMs ?? 0));
+    return rows;
 }
 
 function firstDistributedFailure(
@@ -4078,21 +4099,65 @@ function distributedRunMatchesFailureType(
     return failures.includes(failureType);
 }
 
+function distributedRunMatchesFailureCategory(
+    run: ControlDistributedRunSnapshot,
+    category: string,
+): boolean {
+    const failures = distributedRunRecordedFailures(run);
+    if (category === 'any') {
+        return failures.length > 0;
+    }
+    return failures.some(failure =>
+        explanationForFailure(run, failure).category === category
+    );
+}
+
+function distributedRunHistoryManifest(run: ControlDistributedRunSnapshot): Readonly<{
+    record: Record<string, unknown>;
+    group: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+    recipes: readonly Readonly<{
+        selection: RallarBlackBoxDistributedRunRecipeSelection;
+        index: number;
+    }>[];
+}> {
+    const record = asRecord(run.manifest);
+    const recipes = Array.isArray(record.recipes)
+        ? record.recipes.flatMap((selection, index) => isRecord(selection)
+            ? [{
+                selection: selection as RallarBlackBoxDistributedRunRecipeSelection,
+                index,
+            }]
+            : [])
+        : [];
+    return {
+        record,
+        group: asRecord(record.group),
+        metadata: asRecord(record.metadata),
+        recipes,
+    };
+}
+
+function historyManifestString(value: unknown): string {
+    return typeof value === 'string' ? value : '';
+}
+
 function distributedRunSearchText(run: ControlDistributedRunSnapshot): string {
+    const manifest = distributedRunHistoryManifest(run);
     return [
         run.distributedRunId,
         run.controlRunId,
         run.state,
-        run.manifest.displayName,
-        run.manifest.group.applicationId,
-        run.manifest.group.workspaceId,
-        run.manifest.group.groupId,
-        String(run.manifest.metadata?.createdBy ?? ''),
+        historyManifestString(manifest.record.displayName),
+        historyManifestString(manifest.group.applicationId),
+        historyManifestString(manifest.group.workspaceId),
+        historyManifestString(manifest.group.groupId),
+        historyManifestString(manifest.metadata.createdBy),
         ...run.targetAgentIds,
-        ...run.manifest.recipes.flatMap((selection, index) => [
+        ...manifest.recipes.flatMap(({ selection, index }) => [
             recipeSelectionId(selection, index),
-            selection.profile,
-            selection.role,
+            historyManifestString(selection.profile),
+            historyManifestString(selection.role),
         ]),
         ...distributedRunFailureSignatures(run),
     ].filter(Boolean).join(' ').toLowerCase();

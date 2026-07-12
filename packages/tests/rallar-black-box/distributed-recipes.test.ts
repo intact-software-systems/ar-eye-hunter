@@ -3451,6 +3451,290 @@ describe('distributed recipes helpers', () => {
         }).map(run => run.distributedRunId)).toEqual(['dist-2']);
     });
 
+    it('filters actual run and rollup failures by their semantic explanation category', () => {
+        const targetingRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-targeting',
+            updatedAtEpochMs: 4_000,
+            error: {
+                code: 'RALLAR_BB_DISTRIBUTED_NO_TARGET_AGENTS',
+                message: 'No target agents resolved.',
+            },
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [],
+            },
+        };
+        const barrierRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-barrier',
+            updatedAtEpochMs: 3_000,
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [{
+                    kind: 'participant',
+                    key: 'agent-a',
+                    state: 'failed',
+                    required: true,
+                    error: {
+                        code: 'RALLAR_BB_DISTRIBUTED_BARRIER_TIMEOUT',
+                        message: 'Barrier timed out.',
+                    },
+                }],
+            },
+        };
+        const readinessRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-readiness',
+            updatedAtEpochMs: 2_500,
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [{
+                    kind: 'participant',
+                    key: 'agent-b',
+                    state: 'failed',
+                    required: true,
+                    error: {
+                        code: 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT',
+                        message: 'Agent ACK timeout.',
+                    },
+                }],
+            },
+        };
+        const rtcStreamRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-rtc-stream',
+            updatedAtEpochMs: 2_750,
+            error: {
+                code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                message: 'RTC stream pacing exceeded maxDroppedFrames.',
+            },
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [],
+            },
+        };
+        const multipleCategoryRun: ControlDistributedRunSnapshot = {
+            ...targetingRun,
+            distributedRunId: 'dist-multiple-categories',
+            updatedAtEpochMs: 4_500,
+            rollup: barrierRun.rollup,
+        };
+
+        const runs = [
+            readinessRun,
+            distributedRun,
+            targetingRun,
+            barrierRun,
+            rtcStreamRun,
+            multipleCategoryRun,
+        ];
+        expect(filterDistributedRuns(runs, {
+            failureCategory: ' TARGETING ',
+        }).map(run => run.distributedRunId)).toEqual([
+            'dist-multiple-categories',
+            'dist-targeting',
+        ]);
+        expect(filterDistributedRuns(runs, {
+            failureCategory: 'barrier',
+        }).map(run => run.distributedRunId)).toEqual([
+            'dist-multiple-categories',
+            'dist-barrier',
+        ]);
+        expect(filterDistributedRuns(runs, {
+            failureCategory: 'readiness',
+        }).map(run => run.distributedRunId)).toEqual(['dist-readiness']);
+        expect(filterDistributedRuns(runs, {
+            failureCategory: 'rtc-stream-performance',
+        }).map(run => run.distributedRunId)).toEqual(['dist-rtc-stream']);
+        expect(filterDistributedRuns(runs, {
+            failureCategory: 'unknown',
+        }).map(run => run.distributedRunId)).toEqual(['dist-1']);
+        expect(filterDistributedRuns(runs, {
+            failureCategory: 'any',
+        }).map(run => run.distributedRunId)).toEqual([
+            'dist-multiple-categories',
+            'dist-targeting',
+            'dist-barrier',
+            'dist-rtc-stream',
+            'dist-readiness',
+            'dist-1',
+        ]);
+    });
+
+    it('does not synthesize a readiness failure category for a nonterminal run without actual failures', () => {
+        const runningRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-running',
+            state: 'running',
+            rollup: {
+                ...distributedRun.rollup,
+                state: 'running',
+                ok: true,
+                failures: [],
+                summary: {
+                    ...distributedRun.rollup.summary,
+                    failedParticipants: 0,
+                    failedRecipes: 0,
+                    blockingFailures: 0,
+                },
+            },
+        };
+
+        expect(filterDistributedRuns([runningRun], {
+            failureCategory: 'readiness',
+        })).toEqual([]);
+    });
+
+    it('preserves raw failure text matching, inclusive dates, combined filters, and empty results', () => {
+        expect(filterDistributedRuns([distributedRun], {
+            query: 'RECEIVER DID NOT OBSERVE',
+            groupId: 'BB-GROUP',
+            recipeId: 'HEALTH',
+            profile: 'SMOKE',
+            user: 'ALICE',
+            status: 'FAILED',
+            failureType: ' RECIPE_FAILED ',
+            failureCategory: 'UNKNOWN',
+            fromEpochMs: distributedRun.createdAtEpochMs,
+            toEpochMs: distributedRun.createdAtEpochMs,
+        }).map(run => run.distributedRunId)).toEqual(['dist-1']);
+
+        expect(filterDistributedRuns([distributedRun], {
+            failureType: 'any',
+        }).map(run => run.distributedRunId)).toEqual(['dist-1']);
+        expect(filterDistributedRuns([distributedRun], {
+            fromEpochMs: distributedRun.createdAtEpochMs + 1,
+        })).toEqual([]);
+        expect(filterDistributedRuns([distributedRun], {
+            toEpochMs: distributedRun.createdAtEpochMs - 1,
+        })).toEqual([]);
+        expect(filterDistributedRuns([distributedRun], {
+            fromEpochMs: distributedRun.createdAtEpochMs + 1,
+            toEpochMs: distributedRun.createdAtEpochMs - 1,
+        })).toEqual([]);
+        expect(filterDistributedRuns([distributedRun], {
+            failureCategory: 'targeting',
+        })).toEqual([]);
+    });
+
+    it('keeps descending history order stable when updated timestamps tie', () => {
+        const firstTie = {
+            ...distributedRun,
+            distributedRunId: 'dist-first-tie',
+            updatedAtEpochMs: 4_000,
+        };
+        const secondTie = {
+            ...distributedRun,
+            distributedRunId: 'dist-second-tie',
+            updatedAtEpochMs: 4_000,
+        };
+        const newest = {
+            ...distributedRun,
+            distributedRunId: 'dist-newest',
+            updatedAtEpochMs: 5_000,
+        };
+
+        expect(filterDistributedRuns(
+            [firstTie, newest, secondTie],
+            {},
+        ).map(run => run.distributedRunId)).toEqual([
+            'dist-newest',
+            'dist-first-tie',
+            'dist-second-tie',
+        ]);
+    });
+
+    it('treats malformed manifest fields as absent without losing top-level history evidence', () => {
+        const malformedManifestRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-malformed-manifest',
+            manifest: undefined as unknown as ControlDistributedRunSnapshot['manifest'],
+        };
+        const malformedFieldsRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-malformed-fields',
+            manifest: {
+                displayName: { text: 'not searchable' },
+                group: {
+                    applicationId: { text: 'not searchable' },
+                    workspaceId: { text: 'not searchable' },
+                    groupId: { text: 'not searchable' },
+                },
+                recipes: { recipeId: 'not-an-array' },
+                metadata: { createdBy: { name: 'not searchable' } },
+            } as unknown as ControlDistributedRunSnapshot['manifest'],
+        };
+        const independentSelectionRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-independent-selections',
+            manifest: {
+                ...distributedRun.manifest,
+                recipes: [
+                    null,
+                    { profile: 'regression' },
+                    { recipeId: 'other-recipe', profile: 'smoke' },
+                    {
+                        recipeId: 'malformed-profile',
+                        profile: { text: 'not searchable' },
+                        role: { text: 'not searchable' },
+                    },
+                ],
+            } as unknown as ControlDistributedRunSnapshot['manifest'],
+        };
+
+        expect(filterDistributedRuns([
+            malformedManifestRun,
+            malformedFieldsRun,
+        ], {
+            query: 'DIST-MALFORMED-MANIFEST',
+            status: 'failed',
+            failureType: 'recipe',
+            failureCategory: 'unknown',
+        }).map(run => run.distributedRunId)).toEqual([
+            'dist-malformed-manifest',
+        ]);
+        expect(filterDistributedRuns([malformedManifestRun], {
+            groupId: 'bb-group',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedManifestRun], {
+            recipeId: 'health-only',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedManifestRun], {
+            profile: 'smoke',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedManifestRun], {
+            user: 'alice',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedFieldsRun], {
+            groupId: 'bb-group',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedFieldsRun], {
+            recipeId: 'not-an-array',
+        })).toEqual([]);
+        expect(filterDistributedRuns([
+            malformedFieldsRun,
+            independentSelectionRun,
+        ], {
+            query: '[object object]',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedFieldsRun], {
+            groupId: '[object object]',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedFieldsRun], {
+            user: '[object object]',
+        })).toEqual([]);
+        expect(filterDistributedRuns([independentSelectionRun], {
+            profile: '[object object]',
+        })).toEqual([]);
+        expect(filterDistributedRuns([independentSelectionRun], {
+            recipeId: 'recipe-2',
+            profile: 'smoke',
+        }).map(run => run.distributedRunId)).toEqual([
+            'dist-independent-selections',
+        ]);
+    });
+
     it('compares distributed runs by recipe, participants, failures, timing, and received messages', () => {
         const rightRun: ControlDistributedRunSnapshot = {
             ...distributedRun,

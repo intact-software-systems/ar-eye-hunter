@@ -69,6 +69,90 @@ function expectNoSensitiveKeys(search: string): void {
 }
 
 describe('Recipe Console URL history', () => {
+    it('commits History Apply and Reset as one push each without clearing unrelated state', () => {
+        const port = new MemoryHistoryPort(
+            '?provider=simulated&futureField=keep&v=1&experience=recipe-console&view=tune' +
+            '&recipeId=operational-recipe&compareLeft=baseline-a&compareRight=candidate-a' +
+            '&timingMetric=stream-cadence',
+        );
+        const history = createRecipeConsoleUrlHistory(port);
+
+        const applied = history.push({
+            historyQuery: 'failed ack',
+            historyGroup: 'bb-group',
+            historyRecipeId: 'history-recipe',
+            historyProfile: 'smoke',
+            failureCategory: 'readiness',
+            status: 'failed',
+            from: 100,
+            to: 900,
+        });
+
+        expect(port.pushed).toHaveLength(1);
+        expect(applied.state).toMatchObject({
+            recipeId: 'operational-recipe',
+            historyQuery: 'failed ack',
+            historyGroup: 'bb-group',
+            historyRecipeId: 'history-recipe',
+            historyProfile: 'smoke',
+            failureCategory: 'readiness',
+            compareLeft: 'baseline-a',
+            compareRight: 'candidate-a',
+            timingMetric: 'stream-cadence',
+        });
+
+        const reset = history.push({
+            historyQuery: undefined,
+            historyGroup: undefined,
+            historyRecipeId: undefined,
+            historyProfile: undefined,
+            failureCategory: undefined,
+            status: undefined,
+            from: undefined,
+            to: undefined,
+        });
+
+        expect(port.pushed).toHaveLength(2);
+        for (const field of [
+            'historyQuery',
+            'historyGroup',
+            'historyRecipeId',
+            'historyProfile',
+            'failureCategory',
+            'status',
+            'from',
+            'to',
+        ]) {
+            expect(new URLSearchParams(port.pushed[1]).has(field), field).toBe(false);
+        }
+        expect(reset.state).toMatchObject({
+            recipeId: 'operational-recipe',
+            compareLeft: 'baseline-a',
+            compareRight: 'candidate-a',
+            timingMetric: 'stream-cadence',
+        });
+        expect(new URLSearchParams(port.pushed[1]).get('provider')).toBe('simulated');
+        expect(new URLSearchParams(port.pushed[1]).get('futureField')).toBe('keep');
+    });
+
+    it('changes operational recipe selection independently from the History recipe filter', () => {
+        const port = new MemoryHistoryPort(
+            '?v=1&experience=recipe-console&view=tune' +
+            '&recipeId=operational-a&historyRecipeId=history-recipe',
+        );
+        const history = createRecipeConsoleUrlHistory(port);
+
+        const selected = history.push({ recipeId: 'operational-b' });
+        expect(selected.state).toMatchObject({
+            recipeId: 'operational-b',
+            historyRecipeId: 'history-recipe',
+        });
+
+        const cleared = history.push({ recipeId: undefined });
+        expect(cleared.state.recipeId).toBeUndefined();
+        expect(cleared.state.historyRecipeId).toBe('history-recipe');
+    });
+
     it('pushes recipe selection while removing dependent run and command keys', () => {
         const port = new MemoryHistoryPort(
             '?v=1&experience=recipe-console&view=execute&controlRunId=run-a' +
@@ -157,23 +241,45 @@ describe('Recipe Console URL history', () => {
             '?v=1&experience=recipe-console&view=execute',
         );
         const history = createRecipeConsoleUrlHistory(port);
-        const received: string[] = [];
+        const received: Array<Readonly<{
+            view: string;
+            historyRecipeId?: string;
+            failureCategory?: string;
+            recipeId?: string;
+            compareLeft?: string;
+            timingMetric?: string;
+        }>> = [];
         const unsubscribe = history.subscribe(value => {
-            received.push(
-                `${value.state.view}:${value.state.controlRunId ?? ''}:${value.state.from ?? ''}`,
-            );
+            received.push({
+                view: value.state.view,
+                historyRecipeId: value.state.historyRecipeId,
+                failureCategory: value.state.failureCategory,
+                recipeId: value.state.recipeId,
+                compareLeft: value.state.compareLeft,
+                timingMetric: value.state.timingMetric,
+            });
         });
 
         port.emitPopState(
-            '?v=1&experience=recipe-console&view=monitor&controlRunId=run-b&from=100',
+            '?provider=simulated&futureField=keep&v=1&experience=recipe-console&view=tune' +
+            '&historyRecipeId=history-recipe&failureCategory=barrier' +
+            '&recipeId=operational-recipe&compareLeft=baseline-a' +
+            '&timingMetric=stream-drift',
         );
 
-        expect(received).toEqual(['monitor:run-b:100']);
+        expect(received).toEqual([{
+            view: 'tune',
+            historyRecipeId: 'history-recipe',
+            failureCategory: 'barrier',
+            recipeId: 'operational-recipe',
+            compareLeft: 'baseline-a',
+            timingMetric: 'stream-drift',
+        }]);
         expect(port.pushed).toEqual([]);
         expect(port.replaced).toEqual([]);
 
         unsubscribe();
         port.emitPopState('?v=1&experience=recipe-console&view=fleet');
-        expect(received).toEqual(['monitor:run-b:100']);
+        expect(received).toHaveLength(1);
     });
 });

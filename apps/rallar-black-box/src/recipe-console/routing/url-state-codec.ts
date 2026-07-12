@@ -1,6 +1,7 @@
 import {
     LEGACY_APP_URL_ALIAS_KEYS,
     RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES,
+    RECIPE_CONSOLE_FAILURE_CATEGORIES,
     RECIPE_CONSOLE_FLEET_MAP_LAYERS,
     RECIPE_CONSOLE_OWNED_URL_KEYS,
     RECIPE_CONSOLE_RUN_STATUSES,
@@ -61,6 +62,12 @@ export function serializeRecipeConsoleUrl(
     }
     if (state.status && RECIPE_CONSOLE_RUN_STATUSES.includes(state.status)) {
         params.set('status', state.status);
+    }
+    if (
+        state.failureCategory &&
+        RECIPE_CONSOLE_FAILURE_CATEGORIES.includes(state.failureCategory)
+    ) {
+        params.set('failureCategory', state.failureCategory);
     }
     if (state.timingMetric && RECIPE_CONSOLE_TIMING_METRICS.includes(state.timingMetric)) {
         params.set('timingMetric', state.timingMetric);
@@ -145,6 +152,12 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
     );
     state.transport = readEnum(params, 'transport', RECIPE_CONSOLE_TRANSPORTS, issues);
     state.status = readEnum(params, 'status', RECIPE_CONSOLE_RUN_STATUSES, issues);
+    state.failureCategory = readEnum(
+        params,
+        'failureCategory',
+        RECIPE_CONSOLE_FAILURE_CATEGORIES,
+        issues,
+    );
     state.timingMetric = readEnum(
         params,
         'timingMetric',
