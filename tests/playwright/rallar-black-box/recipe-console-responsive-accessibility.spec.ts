@@ -261,6 +261,15 @@ test('disables Recipe Console motion when reduced motion is requested', async ({
 
 test('renders all six views without relevant console warnings or errors', async ({ page }) => {
     const diagnostics: string[] = [];
+    await page.route(
+        /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/,
+        route => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            headers: { 'access-control-allow-origin': '*' },
+            body: JSON.stringify({ runs: [], distributedRuns: [] }),
+        }),
+    );
     page.on('console', message => {
         if (message.type() === 'warning' || message.type() === 'error') {
             diagnostics.push(`${message.type()}: ${message.text()}`);

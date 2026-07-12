@@ -1,16 +1,36 @@
 import { readFile } from 'node:fs/promises';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
+
+async function routeLiveEmptyControl(page: Page): Promise<void> {
+    await page.route(CONTROL_ROUTE, route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify({ runs: [], distributedRuns: [] }),
+    }));
+}
+
+async function routeOfflineControl(page: Page): Promise<void> {
+    await page.route(CONTROL_ROUTE, route => route.abort('connectionfailed'));
+}
 
 test('renders command-duration Tune without invented stream evidence', async ({ page }) => {
     await page.setViewportSize({ width: 932, height: 430 });
+    await routeLiveEmptyControl(page);
     await page.goto('/?provider=simulated&experience=recipe-console&view=tune');
 
     await expect(page.locator('[data-command-bar]')).toHaveCSS('height', '48px');
     expect((await page.locator('[data-primary-navigation]').boundingBox())?.width).toBe(60);
     const commandBar = page.locator('[data-command-bar]');
-    await expect(commandBar).toContainText('Tune · RTC timing');
-    await expect(commandBar).toContainText('seed-high-latency-rtc');
-    await expect(commandBar).toContainText('Passed');
+    await expect(commandBar.locator('[data-status="passed"]'))
+        .toContainText('Live · reachable');
+    await expect(commandBar).toContainText('Control server');
+    await expect(commandBar).toContainText('http://localhost:5180');
+    await expect(commandBar).toContainText(
+        'rallar-black-box/default/rallar-black-box-room',
+    );
     await expect(commandBar).not.toContainText('Baseline');
     await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
 
@@ -322,7 +342,7 @@ test('traps and restores focus in tablet and landscape overlays', async ({ page 
     )).toBe(0);
 });
 
-test('renders repository-backed Execute preview without services', async ({ page }) => {
+test('keeps the repository-backed Execute preview usable with control offline', async ({ page }) => {
     const controlServerRequests: string[] = [];
     page.on('request', (request) => {
         const url = new URL(request.url());
@@ -335,6 +355,7 @@ test('renders repository-backed Execute preview without services', async ({ page
         }
     });
 
+    await routeOfflineControl(page);
     await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
 
     const search = page.getByRole('searchbox', { name: 'Search recipes' });
@@ -399,7 +420,8 @@ test('renders repository-backed Execute preview without services', async ({ page
         .getByRole('heading', { name: 'Failure · seed-agent-b' })).toBeVisible();
     await expect(page.locator('[data-inspector-host]')
         .getByText('RTC Realtime Stability', { exact: true })).toHaveCount(0);
-    expect(controlServerRequests).toEqual([]);
+    await expect.poll(() => controlServerRequests.length).toBeGreaterThan(0);
+    expect(new URL(controlServerRequests[0]).pathname).toBe('/runs');
 
     await page.setViewportSize({ width: 430, height: 932 });
     await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
@@ -441,17 +463,17 @@ test('keeps selected recipe truth aligned across Execute surfaces', async ({ pag
         'Provider Parity has no matching deterministic target preview. Select RTC Realtime Stability to stage or start.',
         { exact: true },
     )).toBeVisible();
-    await expect(page.locator('[data-command-bar]')).toContainText(
+    await expect(page.locator('[data-command-bar]')).toContainText('Safe targets');
+    await expect(page.locator('[data-command-bar]')).not.toContainText(
         'Target preview unavailable',
     );
-    await expect(page.locator('[data-command-bar]')).not.toContainText('2/2 targetable');
     const targets = page.getByRole('region', { name: 'Sample targets and preflight' });
     await expect(targets.getByText('No matching target preview', { exact: true }))
         .toBeVisible();
     await expect(targets.getByRole('checkbox')).toHaveCount(0);
 });
 
-test('refreshes the active Execute seed without backend requests', async ({ page }) => {
+test('refreshes the active Execute preview and control data', async ({ page }) => {
     const controlServerRequests: string[] = [];
     page.on('request', request => {
         const url = new URL(request.url());
@@ -465,18 +487,23 @@ test('refreshes the active Execute seed without backend requests', async ({ page
             controlServerRequests.push(request.url());
         }
     });
+    await routeOfflineControl(page);
     await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+    await expect(page.locator('[data-command-bar] [data-status="failed"]'))
+        .toContainText('Offline · unreachable');
 
     await page.getByRole('button', { name: 'Stage Preview', exact: true }).click();
     await page.getByRole('button', { name: 'Start Preview', exact: true }).click();
     await expect(page.locator('[data-preview-status]')).toHaveText('Started preview');
 
-    await page.getByRole('button', { name: 'Refresh preview', exact: true }).click();
+    const requestsBeforeRefresh = controlServerRequests.length;
+    await page.getByRole('button', { name: 'Refresh control data', exact: true }).click();
 
     await expect(page.locator('[data-preview-status]')).toHaveText('Idle preview');
     await expect(page.getByRole('button', { name: /RTC Realtime Stability/ }))
         .toHaveAttribute('aria-pressed', 'true');
-    expect(controlServerRequests).toEqual([]);
+    await expect.poll(() => controlServerRequests.length)
+        .toBe(requestsBeforeRefresh + 1);
 });
 
 test('refreshes App-owned Monitor state without discarding known evidence', async ({ page }) => {
@@ -488,7 +515,7 @@ test('refreshes App-owned Monitor state without discarding known evidence', asyn
     await page.getByRole('button', { name: 'Simulate stale connection' }).click();
     await expect(page.getByText('Stale · reconnecting', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Refresh preview', exact: true }).click();
+    await page.getByRole('button', { name: 'Refresh control data', exact: true }).click();
 
     await expect(page.getByRole('button', { name: 'Simulate stale connection' })).toBeVisible();
     await expect(page.getByText('Stale · reconnecting', { exact: true })).toHaveCount(0);

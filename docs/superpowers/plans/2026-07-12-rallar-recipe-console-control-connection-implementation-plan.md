@@ -248,19 +248,44 @@ ARIA/scroll/truth fixes, and the independent re-review approved the result.
 - Add an actual-control smoke only if the existing standard harness can run it
   without changing production contracts.
 
-- [ ] Route-mock connected, stale-after-success, recovered, offline, partial,
+- [x] Route-mock connected, stale-after-success, recovered, offline, partial,
   authorization-required, live-empty, wrong-group, and unavailable URL states.
-- [ ] Prove run/agent push, reload, copied link, back/forward, manual refresh,
+- [x] Prove run/agent push, reload, copied link, back/forward, manual refresh,
   one poller across view changes, and zero polls after crossing to legacy.
-- [ ] Prove desktop, tablet, 430×932 portrait, 932×430 landscape, keyboard,
+- [x] Prove desktop, tablet, 430×932 portrait, 932×430 landscape, keyboard,
   touch targets, reduced motion, overflow, status announcements, and CSS
   isolation/load order.
-- [ ] Run the exact I3 focused Vitest slice, app typecheck/build, chunk proof,
+- [x] Run the exact I3 focused Vitest slice, app typecheck/build, chunk proof,
   `deno task check`, and `deno task test` in the control server.
-- [ ] Run the complete Recipe Console Playwright config, exact legacy
+- [x] Run the complete Recipe Console Playwright config, exact legacy
   navigation/ticket pair, complete app Vitest suite, and shared-test check.
-- [ ] Attempt the available actual local-control smoke. Record any unavailable
+- [x] Attempt the available actual local-control smoke. Record any unavailable
   live/Postgres lifecycle as skipped with the exact required reason.
+
+Task 7 evidence: the complete mocked/control and established browser suites
+pass 52/52 Recipe Console Chromium cases and 28/28 preserved legacy
+navigation/ticket cases. Coverage includes live, heartbeat-stale agent,
+offline agent, wrong group, missing identity, partial, stale last-good,
+recovery, offline, authorization-required, live-empty, unavailable IDs,
+desktop, tablet, 430×932 portrait, 932×430 landscape, keyboard-only run/agent
+selection, 44px control targets, reduced motion, status announcements,
+overflow, poll cleanup after an elapsed interval, and real navigation CSS
+isolation. The independently reviewed 4% Execute visual delta was limited to
+the intentional control context/overview and is now the frozen-clock baseline.
+
+The exact focused unit slice passed 117/117, the complete app suite passed
+531/531 outside the sandbox, typecheck/build passed, reciprocal experience
+chunk proof passed, and the control server passed check plus 57/57 tests. The
+shared-test TypeScript check and all seven Deno check entries passed; the
+combined npm script required the equivalent `--node-modules-dir=none` Deno
+override because this isolated worktree has a deliberately sparse local
+`node_modules` under the repository's root `nodeModulesDir: manual`, so the
+unmodified script could not resolve `@types/node` despite the parent checkout's
+installed dependency. A temporary, non-mutating standard-harness smoke passed
+1/1 against the actual local control process and its real bounded `GET /runs`.
+The Postgres-backed distributed lifecycle remains **skipped, not passed**, for
+exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
 
 ## Task 8: Review, Evidence, And Iteration Milestone
 

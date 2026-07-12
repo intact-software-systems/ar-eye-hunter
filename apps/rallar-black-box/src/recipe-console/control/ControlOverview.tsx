@@ -30,6 +30,17 @@ export function ControlOverview({
                         aria-label="Control run"
                         disabled={runs.length === 0}
                         onChange={event => onSelectControlRun(event.currentTarget.value)}
+                        onKeyDown={(event) => {
+                            const nextRunId = controlRunIdForKey(
+                                event.key,
+                                runs,
+                                selection.controlRun?.runId,
+                            );
+                            if (nextRunId && nextRunId !== selection.controlRun?.runId) {
+                                event.preventDefault();
+                                onSelectControlRun(nextRunId);
+                            }
+                        }}
                         value={selection.controlRun?.runId ?? ''}
                     >
                         <option disabled value="">{runPlaceholder(runs)}</option>
@@ -119,4 +130,28 @@ function ControlStateNotice({
 
 function runPlaceholder(runs: readonly ControlRunSnapshot[]): string {
     return runs.length === 0 ? 'No control runs' : 'Select a control run';
+}
+
+function controlRunIdForKey(
+    key: string,
+    runs: readonly ControlRunSnapshot[],
+    selectedRunId: string | undefined,
+): string | undefined {
+    if (runs.length === 0) return undefined;
+    const selectedIndex = runs.findIndex(run => run.runId === selectedRunId);
+    switch (key) {
+        case 'Home':
+            return runs[0].runId;
+        case 'End':
+            return runs.at(-1)?.runId;
+        case 'ArrowUp':
+            return runs[Math.max(0, selectedIndex < 0 ? 0 : selectedIndex - 1)].runId;
+        case 'ArrowDown':
+            return runs[Math.min(
+                runs.length - 1,
+                selectedIndex < 0 ? 0 : selectedIndex + 1,
+            )].runId;
+        default:
+            return undefined;
+    }
 }

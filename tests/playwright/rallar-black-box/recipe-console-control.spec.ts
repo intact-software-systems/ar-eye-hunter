@@ -366,6 +366,8 @@ test('retains last-good rows after a failed manual refresh but reports zero curr
     await expect.poll(mock.runRequestCount).toBe(requestsBeforeRefresh + 1);
     await expect(commandStatus(page, 'stale', 'Stale'))
         .toBeVisible();
+    await expect(page.locator('[data-command-bar]').getByRole('status'))
+        .toHaveText('Stale · unreachable');
     await expect(agentRow(page, 'agent-last-good')).toBeVisible();
     await expect(commandContextItem(page, 'Safe targets')).toContainText(
         '0 current · 1 last known',
@@ -412,6 +414,8 @@ test('distinguishes reachable authorization failure from offline', async ({ cont
 
     await expect(commandStatus(page, 'warning', 'Authorization required'))
         .toBeVisible();
+    await expect(page.locator('[data-command-bar]').getByRole('status'))
+        .toHaveText('Authorization required · reachable');
     const overview = page.getByRole('region', { name: 'Control overview' });
     await expect(overview.getByRole('heading', { name: 'Authorization required' }))
         .toBeVisible();
@@ -422,10 +426,61 @@ test('distinguishes reachable authorization failure from offline', async ({ cont
     await expect(overview).not.toContainText('Control server offline');
 });
 
-test('commits run and keyboard agent selections and restores both with history', async ({
+test('announces recovery from offline to live and restores canonical rows', async ({
     context,
     page,
 }) => {
+    await installControlRouteMock(context, [
+        { kind: 'network-error' },
+        { kind: 'snapshot', snapshot: liveBoardSnapshot() },
+    ]);
+
+    await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-canonical`);
+
+    const announcedStatus = page.locator('[data-command-bar]').getByRole('status');
+    await expect(announcedStatus).toHaveText('Offline · unreachable');
+    await page.getByRole('button', { name: 'Refresh control data' }).click();
+    await expect(announcedStatus).toHaveText('Live · reachable');
+    await expect(agentRow(page, 'agent-matched')).toHaveAttribute(
+        'data-target-status',
+        'matched',
+    );
+});
+
+test('preserves unavailable URL selections without collection-index fallback', async ({
+    context,
+    page,
+}) => {
+    const snapshot = liveBoardSnapshot();
+    await installControlRouteMock(context, [{ kind: 'snapshot', snapshot }]);
+    await page.goto(
+        `${RECIPE_CONSOLE_ROUTE}&controlRunId=control-unavailable` +
+        '&distributedRunId=distributed-unavailable&agentId=agent-unavailable',
+    );
+
+    await expect(commandContextItem(page, 'Control run'))
+        .toContainText('control-unavailable');
+    await expect(page.getByRole('list', { name: 'Control selection notices' }))
+        .toContainText(
+            'Control run control-unavailable is not present in the latest snapshot.',
+        );
+    await expect(page.getByRole('combobox', { name: 'Control run' })).toHaveValue('');
+    await expect(controlBoard(page).locator('[data-control-agent-row]')).toHaveCount(0);
+    const url = new URL(page.url());
+    expect(url.searchParams.get('controlRunId')).toBe('control-unavailable');
+    expect(url.searchParams.get('distributedRunId')).toBe('distributed-unavailable');
+    expect(url.searchParams.get('agentId')).toBe('agent-unavailable');
+});
+
+test('commits, reloads, copies, and restores run and keyboard agent selections', async ({
+    baseURL,
+    context,
+    page,
+}) => {
+    await context.grantPermissions(
+        ['clipboard-read', 'clipboard-write'],
+        { origin: new URL(baseURL ?? page.url()).origin },
+    );
     const west = controlRun('control-west', [
         controlAgent('control-west', 'agent-west'),
     ]);
@@ -441,7 +496,9 @@ test('commits run and keyboard agent selections and restores both with history',
     const runSelect = page.getByRole('combobox', { name: 'Control run' });
     await expect(runSelect).toHaveValue('control-west');
 
-    await runSelect.selectOption('control-east');
+    await runSelect.focus();
+    await expect(runSelect).toBeFocused();
+    await page.keyboard.press('Home');
     await expect(page).toHaveURL(/(?:\?|&)controlRunId=control-east(?:&|$)/);
     await expect(page).not.toHaveURL(/(?:\?|&)agentId=/);
     await expect(agentRow(page, 'agent-east')).toBeVisible();
@@ -465,6 +522,142 @@ test('commits run and keyboard agent selections and restores both with history',
     await page.goForward();
     await expect(agentRow(page, 'agent-east')).toHaveAttribute('aria-selected', 'true');
     await expect(page).toHaveURL(/(?:\?|&)agentId=agent-east(?:&|$)/);
+
+    await page.reload();
+    await expect(runSelect).toHaveValue('control-east');
+    await expect(agentRow(page, 'agent-east')).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('button', { name: 'Copy canonical link' }).click();
+    const copiedHref = await page.evaluate(() => navigator.clipboard.readText());
+    const copied = new URL(copiedHref);
+    expect(copied.searchParams.get('controlRunId')).toBe('control-east');
+    expect(copied.searchParams.get('agentId')).toBe('agent-east');
+    expect(copied.searchParams.has('controlUrl')).toBe(false);
+});
+
+test('owns one poll timer across views and clears it when Recipe Console unmounts', async ({
+    context,
+    page,
+}) => {
+    await page.addInitScript(() => {
+        const active = new Map<number, number>();
+        const nativeSetTimeout = window.setTimeout.bind(window);
+        const nativeClearTimeout = window.clearTimeout.bind(window);
+        Object.defineProperty(window, 'setTimeout', {
+            configurable: true,
+            value: (handler: TimerHandler, timeout?: number, ...args: unknown[]): number => {
+                let id = 0;
+                const wrapped = (...callbackArgs: unknown[]): void => {
+                    active.delete(id);
+                    if (typeof handler === 'function') {
+                        handler(...callbackArgs);
+                    }
+                };
+                id = nativeSetTimeout(wrapped, timeout, ...args);
+                active.set(id, timeout ?? 0);
+                return id;
+            },
+            writable: true,
+        });
+        Object.defineProperty(window, 'clearTimeout', {
+            configurable: true,
+            value: (id?: number): void => {
+                if (id !== undefined) {
+                    active.delete(id);
+                    nativeClearTimeout(id);
+                }
+            },
+            writable: true,
+        });
+        Object.defineProperty(window, '__recipeConsoleTimeoutProbe', {
+            value: {
+                activePolls: (): number =>
+                    [...active.values()].filter(timeout => timeout === 5_000).length,
+            },
+        });
+    });
+    const activePolls = (): Promise<number> => page.evaluate(() =>
+        (window as Window & {
+            __recipeConsoleTimeoutProbe: { activePolls(): number };
+        }).__recipeConsoleTimeoutProbe.activePolls()
+    );
+    const mock = await installControlRouteMock(context, [{
+        kind: 'snapshot',
+        snapshot: liveBoardSnapshot(),
+    }]);
+
+    await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-canonical`);
+    await expect.poll(activePolls).toBe(1);
+    await page.getByRole('button', { name: 'Monitor', exact: true }).click();
+    await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'monitor');
+    await expect.poll(activePolls).toBe(1);
+    await page.getByRole('button', { name: 'Analyze', exact: true }).click();
+    await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'analyze');
+    await expect.poll(activePolls).toBe(1);
+
+    await page.evaluate(() => {
+        history.pushState(
+            {},
+            '',
+            '/?provider=simulated&experience=legacy&workspace=black-box-runner&tab=recipes',
+        );
+        dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await expect(page.locator('.app-shell')).toBeVisible();
+    await expect(page.locator('.recipe-console')).toHaveCount(0);
+    await expect.poll(activePolls).toBe(0);
+    const requestsAfterUnmount = mock.runRequestCount();
+    await page.waitForTimeout(5_500);
+    expect(mock.runRequestCount()).toBe(requestsAfterUnmount);
+});
+
+test('keeps the connected board usable at tablet and portrait touch sizes', async ({
+    context,
+    page,
+}) => {
+    await installControlRouteMock(context, [{
+        kind: 'snapshot',
+        snapshot: liveBoardSnapshot(),
+    }]);
+
+    for (const viewport of [
+        { width: 900, height: 900 },
+        { width: 430, height: 932 },
+    ]) {
+        await page.setViewportSize(viewport);
+        await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-canonical`);
+        const closeInspector = page.getByRole('button', { name: 'Close inspector' });
+        if (await closeInspector.isVisible()) {
+            await closeInspector.click();
+        }
+
+        const board = controlBoard(page);
+        await expect(board).toBeVisible();
+        const runSelect = page.getByRole('combobox', { name: 'Control run' });
+        expect((await runSelect.boundingBox())?.height)
+            .toBeGreaterThanOrEqual(44);
+        const rows = board.locator('[data-control-agent-row]');
+        await expect(rows).toHaveCount(5);
+        for (const bounds of await rows.evaluateAll(elements =>
+            elements.map(element => {
+                const rect = element.getBoundingClientRect();
+                return { height: rect.height, width: rect.width };
+            })
+        )) {
+            expect(bounds.height).toBeGreaterThanOrEqual(44);
+            expect(bounds.width).toBeGreaterThanOrEqual(44);
+        }
+
+        const lastRow = agentRow(page, 'agent-missing-identity');
+        await lastRow.scrollIntoViewIfNeeded();
+        const reachable = await lastRow.evaluate((element) => {
+            const row = element.getBoundingClientRect();
+            const work = element.closest('[data-work-surface]')?.getBoundingClientRect();
+            return Boolean(work) && row.top >= work!.top && row.bottom <= work!.bottom;
+        });
+        expect(reachable).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth))
+            .toBeLessThanOrEqual(viewport.width);
+    }
 });
 
 test('keeps the complete Execute workflow scrollable in mobile landscape', async ({

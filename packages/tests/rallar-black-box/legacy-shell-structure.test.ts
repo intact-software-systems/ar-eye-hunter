@@ -687,7 +687,7 @@ describe('rallar-black-box legacy shell ownership', () => {
         expect.soft(
             appDeclaration ? fingerprint([appDeclaration]) : '',
             'lazy experience cutover leaves App bootstrap/routing behavior exact',
-        ).toBe('32262623d52e4353839ed6ce14a46ebacd38a0d42b2ebbeb920092d86344ae94');
+        ).toBe('7ef118b49602e9a6e6c4daab4a9eda3902a404f8cfa6b98d23913871d4a3c85f');
         expect.soft(
             createHash('sha256')
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))

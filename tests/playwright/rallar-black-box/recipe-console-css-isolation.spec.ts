@@ -72,17 +72,42 @@ test('survives Recipe Console to legacy to Recipe Console navigation', async ({ 
     const recipeUrl = '/?provider=simulated&v=1&experience=recipe-console&view=execute';
     await page.goto(recipeUrl);
     const commandBar = page.locator('[data-command-bar]');
+    const controlOverview = page.getByRole('region', { name: 'Control overview' });
     await expect(commandBar).toBeVisible();
-    const before = await commandBar.evaluate(node => {
-        const style = getComputedStyle(node);
-        return {
-            backgroundColor: style.backgroundColor,
-            borderBottomColor: style.borderBottomColor,
-            color: style.color,
-            display: style.display,
-            height: style.height,
-        };
+    await expect(controlOverview).toBeVisible();
+    const captureRealRecipeStyles = async () => ({
+        commandBar: await commandBar.evaluate(node => {
+            const style = getComputedStyle(node);
+            return {
+                backgroundColor: style.backgroundColor,
+                borderBottomColor: style.borderBottomColor,
+                color: style.color,
+                display: style.display,
+                height: style.height,
+            };
+        }),
+        controlOverview: await controlOverview.evaluate(node => {
+            const style = getComputedStyle(node);
+            return {
+                backgroundColor: style.backgroundColor,
+                borderTopColor: style.borderTopColor,
+                display: style.display,
+                gap: style.gap,
+                padding: style.padding,
+            };
+        }),
+        controlRunSelect: await controlOverview.getByRole('combobox', {
+            name: 'Control run',
+        }).evaluate(node => {
+            const style = getComputedStyle(node);
+            return {
+                backgroundColor: style.backgroundColor,
+                borderRadius: style.borderRadius,
+                minHeight: style.minHeight,
+            };
+        }),
     });
+    const before = await captureRealRecipeStyles();
 
     await page.evaluate(() => {
         history.pushState({}, '', '/?provider=simulated&experience=legacy&tab=auth');
@@ -96,17 +121,9 @@ test('survives Recipe Console to legacy to Recipe Console navigation', async ({ 
         dispatchEvent(new PopStateEvent('popstate'));
     }, recipeUrl);
     await expect(commandBar).toBeVisible();
+    await expect(controlOverview).toBeVisible();
     await expect(page.locator('.app-shell')).toHaveCount(0);
-    const after = await commandBar.evaluate(node => {
-        const style = getComputedStyle(node);
-        return {
-            backgroundColor: style.backgroundColor,
-            borderBottomColor: style.borderBottomColor,
-            color: style.color,
-            display: style.display,
-            height: style.height,
-        };
-    });
+    const after = await captureRealRecipeStyles();
     expect(after).toEqual(before);
 });
 

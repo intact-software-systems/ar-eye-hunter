@@ -29,7 +29,14 @@ export function TopCommandBar({
                 data-command-bar
             >
                 <strong className={styles.productName}>Recipe Console</strong>
-                <StatusMark label={statusLabel} status={status} />
+                <div
+                    aria-atomic="true"
+                    aria-live="polite"
+                    className={styles.controlStatus}
+                    role="status"
+                >
+                    <StatusMark label={statusLabel} status={status} />
+                </div>
                 <div className={styles.commandContext}>
                     {context}
                     <CommandBarItem label="URL">

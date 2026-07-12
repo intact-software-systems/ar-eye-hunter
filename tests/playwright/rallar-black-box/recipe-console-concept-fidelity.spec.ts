@@ -1,5 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
 
+const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
+
+async function routeLiveEmptyControl(page: Page): Promise<void> {
+    await page.route(CONTROL_ROUTE, route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify({ runs: [], distributedRuns: [] }),
+    }));
+}
+
 type ConceptCase = Readonly<{
     name: string;
     snapshot: string;
@@ -19,8 +30,13 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
                 .toBeVisible();
             await expect(page.getByRole('heading', { name: 'Recipe ledger' })).toBeVisible();
             await expect(page.getByRole('complementary', { name: 'Inspector' })).toBeVisible();
-            await expect(page.locator('[data-command-bar]'))
-                .toContainText('Execute · Preview · 2/2 targetable · rallar-server/default/seed-room');
+            await expect(page.locator('[data-command-bar] [data-status="passed"]'))
+                .toContainText('Live · reachable');
+            const commandBar = page.locator('[data-command-bar]');
+            await expect(commandBar.getByText('Control run', { exact: true }).locator('..'))
+                .toContainText('Select run');
+            await expect(commandBar.getByText('Safe targets', { exact: true }).locator('..'))
+                .toContainText('0');
             const recipeRegion = page.locator('section[aria-labelledby="recipe-ledger-heading"]');
             const ledgerRegion = page.getByRole('region', { name: 'Recipes' });
             const targetRegion = page.getByRole('region', { name: 'Sample targets and preflight' });
@@ -29,20 +45,28 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
             const targetBounds = await targetRegion.boundingBox();
             expect(Math.abs((recipeBounds?.y ?? 0) - (targetBounds?.y ?? 0)))
                 .toBeLessThanOrEqual(1);
-            for (const label of [
+            const featuredLabels = [
                 'RTC Realtime Stability',
                 'Provider Parity',
                 'Composite Evidence',
                 'Expected Failure',
-            ]) {
-                const rowBounds = await page.getByRole('button', { name: new RegExp(label) })
-                    .boundingBox();
-                expect(rowBounds?.y ?? Number.POSITIVE_INFINITY).toBeGreaterThanOrEqual(
-                    ledgerBounds?.y ?? 0,
-                );
-                expect((rowBounds?.y ?? 0) + (rowBounds?.height ?? 0))
-                    .toBeLessThanOrEqual((ledgerBounds?.y ?? 0) + (ledgerBounds?.height ?? 0) + 1);
+            ] as const;
+            for (const label of featuredLabels) {
+                await expect(page.getByRole('button', { name: new RegExp(label) }))
+                    .toHaveCount(1);
             }
+            const lastFeatured = page.getByRole('button', {
+                name: new RegExp(featuredLabels.at(-1) ?? ''),
+            });
+            await lastFeatured.scrollIntoViewIfNeeded();
+            const lastBounds = await lastFeatured.boundingBox();
+            expect(lastBounds?.y ?? Number.NEGATIVE_INFINITY)
+                .toBeGreaterThanOrEqual(ledgerBounds?.y ?? 0);
+            expect((lastBounds?.y ?? 0) + (lastBounds?.height ?? 0))
+                .toBeLessThanOrEqual((ledgerBounds?.y ?? 0) + (ledgerBounds?.height ?? 0) + 1);
+            await ledgerRegion.evaluate(element => {
+                element.scrollTop = 0;
+            });
         },
     },
     {
@@ -52,8 +76,8 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
         view: 'monitor',
         ready: async page => {
             await expect(page.getByText('Outcome failed', { exact: true })).toBeVisible();
-            await expect(page.locator('[data-command-bar]'))
-                .toContainText('Monitor · seed-failed-command · Failed · 1/2 agents failed');
+            await expect(page.locator('[data-command-bar] [data-status="passed"]'))
+                .toContainText('Live · reachable');
             await expect(page.locator('[data-monitor-section="matrix"] [data-status-shape]'))
                 .toHaveCount(6);
             const inspector = page.getByRole('complementary', { name: 'Inspector' });
@@ -97,6 +121,8 @@ test.describe('approved Signal Ledger concept fidelity', () => {
     for (const concept of CONCEPT_CASES) {
         test(concept.name, async ({ page }) => {
             await page.setViewportSize(concept.viewport);
+            await page.clock.setFixedTime(new Date('2026-07-12T00:00:00.000Z'));
+            await routeLiveEmptyControl(page);
             await page.goto(
                 `/?provider=simulated&v=1&experience=recipe-console&view=${concept.view}`,
             );

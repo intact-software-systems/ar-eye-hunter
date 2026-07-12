@@ -49,6 +49,11 @@
     font-size: 14px;
 }
 
+.controlStatus {
+    display: flex;
+    flex: 0 0 auto;
+}
+
 .commandContext {
     display: flex;
     min-width: 0;
