@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { describe, expect, test } from 'vitest';
@@ -10,10 +10,19 @@ const legacyExperiencePath =
     'apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx';
 const recipeConsolePath =
     'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleApp.tsx';
+const recipeConsoleWorkspacePath =
+    'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleWorkspace.tsx';
 const recipeConsoleRoot = 'apps/rallar-black-box/src/recipe-console';
 
 function source(path: string): string {
     return readFileSync(resolve(repositoryRoot, path), 'utf8');
+}
+
+function filesBelow(path: string): string[] {
+    return readdirSync(resolve(repositoryRoot, path), {
+        recursive: true,
+        encoding: 'utf8',
+    }).map(entry => `${path}/${entry}`);
 }
 
 describe('Recipe Console experience boundary', () => {
@@ -68,17 +77,23 @@ describe('Recipe Console experience boundary', () => {
 
     test('keeps Recipe Console independent of legacy modules and bounded', () => {
         expect(existsSync(resolve(repositoryRoot, recipeConsolePath))).toBe(true);
+        expect(existsSync(resolve(repositoryRoot, recipeConsoleWorkspacePath))).toBe(true);
         const recipeConsole = source(recipeConsolePath);
-        expect(recipeConsole).toContain('className="recipe-console"');
-        expect(recipeConsole).toContain('data-view={urlState.state.view}');
+        const workspace = source(recipeConsoleWorkspacePath);
+        expect(recipeConsole).toContain('<RecipeConsoleWorkspace');
+        expect(workspace).toContain('className="recipe-console"');
+        expect(workspace).toContain('data-view={urlState.state.view}');
         expect(recipeConsole).not.toMatch(/(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/);
+        expect(workspace).not.toMatch(/(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/);
         expect(recipeConsole.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(180);
+        expect(workspace.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(220);
     });
 
     test('builds the scoped Signal Ledger shell from bounded modules', () => {
         const requiredFiles = [
             'design/tokens.css',
             'design/reset.css',
+            'app/RecipeConsoleWorkspace.tsx',
             'app/recipe-console-navigation.ts',
             'shell/RecipeConsoleShell.tsx',
             'shell/RecipeConsoleShell.module.css',
@@ -124,17 +139,17 @@ describe('Recipe Console experience boundary', () => {
         expect(shell.match(/\{inspectorContent\}/g)).toHaveLength(1);
         expect(shell.trimEnd().split(/\r?\n/).length).toBeLessThan(300);
 
-        const app = source(recipeConsolePath);
-        expect(app).toMatch(/switch\s*\(view\)/);
-        expect(app).toMatch(
+        const workspace = source(recipeConsoleWorkspacePath);
+        expect(workspace).toMatch(/switch\s*\(view\)/);
+        expect(workspace).toMatch(
             /activeWork\(\s*urlState\.state\.view,\s*seedState,\s*setInspectorContent,\s*monitorWork,/,
         );
-        expect(app).not.toMatch(/display\s*:\s*['"]none|(?:^|\s)hidden(?:=|\s|>)/m);
-        expect(app).not.toMatch(/(?:registry|Registry|index\.ts)/);
-        expect(app).toContain('createRecipeConsoleSeedState');
+        expect(workspace).not.toMatch(/display\s*:\s*['"]none|(?:^|\s)hidden(?:=|\s|>)/m);
+        expect(workspace).not.toMatch(/(?:registry|Registry|index\.ts)/);
+        expect(workspace).toContain('createRecipeConsoleSeedState');
 
-        for (const path of requiredFiles.filter(path => path.endsWith('.tsx'))) {
-            const file = source(`${recipeConsoleRoot}/${path}`);
+        for (const path of filesBelow(recipeConsoleRoot).filter(path => path.endsWith('.tsx'))) {
+            const file = source(path);
             expect(file.trimEnd().split(/\r?\n/).length, path).toBeLessThan(300);
             expect(file, path).not.toMatch(/^\s{4,}function\s+[A-Z]\w*/m);
         }
@@ -198,7 +213,7 @@ describe('Recipe Console experience boundary', () => {
             ['fleet/FleetPreview.tsx', "import { FleetPreview } from '../fleet/FleetPreview.tsx';", '<FleetPreview'],
             ['advanced/AdvancedPreview.tsx', "import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';", '<AdvancedPreview'],
         ] as const;
-        const app = source(recipeConsolePath);
+        const app = source(recipeConsoleWorkspacePath);
 
         for (const [path, directImport, render] of focusedModules) {
             const absolutePath = resolve(repositoryRoot, recipeConsoleRoot, path);
