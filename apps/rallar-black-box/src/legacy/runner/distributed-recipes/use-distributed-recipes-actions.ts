@@ -9,6 +9,7 @@ import {
 } from '../../../control-run-manager.ts';
 import {
     defaultDistributedRecipeTargetIds,
+    reconcileDistributedRecipeTargetIds,
     type DistributedRecipeRolePattern,
 } from '../../../distributed-recipes.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
@@ -128,12 +129,8 @@ export function useDistributedRecipesActions({
     ]);
 
     useEffect(() => {
-        const defaults = defaultDistributedRecipeTargetIds(targetRows);
         setSelectedAgentIds((previous) => {
-            const kept = previous.filter((agentId) =>
-                targetRows.some((row) => row.agentId === agentId),
-            );
-            const next = kept.length > 0 ? kept : defaults;
+            const next = reconcileDistributedRecipeTargetIds(previous, targetRows);
             return sameStringArray(previous, next) ? previous : next;
         });
     }, [targetRows]);

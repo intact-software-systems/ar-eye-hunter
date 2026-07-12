@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+    formatDistributedRunManifestValidationErrors,
+    validateDistributedRunManifest,
+} from '../../shared-test/rallar-bb-test/mod.ts';
+import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     formatJsonSchemaValidationErrors,
     validateJsonSchema,
@@ -142,6 +146,46 @@ describe('rallar-bb-test distributed run contract', () => {
             ok: true,
             errors: [],
         });
+    });
+
+    it('combines JSON Schema and domain manifest validation without touching legacy UI code', () => {
+        const valid = validateDistributedRunManifest(validManifest());
+        const schemaInvalid = validateDistributedRunManifest({
+            ...validManifest(),
+            schemaVersion: 2,
+        });
+        const contractInvalid = validateDistributedRunManifest(validManifest({
+            distributedRunId: '   ',
+        }));
+
+        expect(valid).toMatchObject({
+            ok: true,
+            schemaValidation: { ok: true },
+            contractValidation: { ok: true },
+            errors: [],
+        });
+        expect(schemaInvalid).toMatchObject({
+            ok: false,
+            schemaValidation: { ok: false },
+            errors: [expect.objectContaining({
+                source: 'schema',
+                path: '$.schemaVersion',
+            })],
+        });
+        expect(schemaInvalid.contractValidation).toBeUndefined();
+        expect(contractInvalid).toMatchObject({
+            ok: false,
+            schemaValidation: { ok: true },
+            contractValidation: { ok: false },
+            errors: [{
+                source: 'contract',
+                path: '$.distributedRunId',
+                message: 'A non-empty string is required.',
+            }],
+        });
+        expect(formatDistributedRunManifestValidationErrors(contractInvalid.errors)).toBe(
+            '$.distributedRunId: A non-empty string is required.',
+        );
     });
 
     it('accepts ordered target role policy for global fleet manifests', () => {

@@ -1,4 +1,7 @@
-import type { RallarBlackBoxTestCommandKind } from '@shared-test/rallar-bb-test/types.ts';
+import type {
+    RallarBlackBoxTestCommandKind,
+    RallarBlackBoxTestRecipe,
+} from '@shared-test/rallar-bb-test/types.ts';
 import {
     isDistributedRunTerminalState,
     type RallarBlackBoxDistributedGroupRef,
@@ -105,6 +108,7 @@ export type DeriveControlAgentBoardRowsInput = Readonly<{
     group?: RallarBlackBoxDistributedGroupRef;
     agentIds?: readonly string[];
     requiredCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
+    requiredRecipes?: readonly RallarBlackBoxTestRecipe[];
     distributedRuns?: readonly ControlDistributedRunSnapshot[];
     selectedDistributedRun?: ControlDistributedRunSnapshot;
     monitorAgentProgress?: readonly DistributedRunAgentProgressRow[];
@@ -126,6 +130,7 @@ export function deriveControlAgentBoardRows(
             run: input.run,
             group: input.group,
             requiredCommandKinds: input.requiredCommandKinds ?? [],
+            requiredRecipes: input.requiredRecipes ?? [],
             nowEpochMs,
             staleAfterMs: input.staleAfterMs,
         })

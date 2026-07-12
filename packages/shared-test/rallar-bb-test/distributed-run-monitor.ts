@@ -144,6 +144,7 @@ export type DistributedRecipePreflightSummary = Readonly<{
 
 export type DistributedRecipeTargetStatus =
     | 'matched'
+    | 'duplicate-session'
     | 'stale'
     | 'offline'
     | 'different-group'
@@ -715,17 +716,87 @@ export function distributedRecipeTargetRows(input: Readonly<{
     run: ControlRunSnapshot | undefined;
     group: RallarBlackBoxDistributedGroupRef;
     requiredCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
+    requiredRecipes?: readonly RallarBlackBoxTestRecipe[];
     nowEpochMs?: number;
     staleAfterMs?: number;
 }>): readonly DistributedRecipeTargetRow[] {
     const nowEpochMs = input.nowEpochMs ?? Date.now();
     const staleAfterMs = input.staleAfterMs ?? 30_000;
-    const requiredCrdtTransports = crdtTransportsForCommandKinds(input.requiredCommandKinds ?? []);
-    return [...(input.run?.agents ?? [])]
-        .sort((left, right) => left.agentId.localeCompare(right.agentId))
-        .map(agent =>
-            distributedRecipeTargetRow(agent, input.group, nowEpochMs, staleAfterMs, requiredCrdtTransports)
-        );
+    const agents = [...(input.run?.agents ?? [])]
+        .sort((left, right) => left.agentId.localeCompare(right.agentId));
+    const requiredCommandKinds = uniqueValues([
+        ...(input.requiredCommandKinds ?? []),
+        ...(input.requiredRecipes ?? []).flatMap(distributedRecipeCommandKinds),
+    ]);
+    const requiresCrdtRuntime = hasCrdtCommandKind(requiredCommandKinds);
+    const requiredCrdtTransports = uniqueValues(
+        (input.requiredRecipes ?? []).flatMap(distributedRecipeCrdtTransports),
+    );
+    const rows = agents.map(agent =>
+        distributedRecipeTargetRow(
+            agent,
+            input.group,
+            nowEpochMs,
+            staleAfterMs,
+            requiresCrdtRuntime,
+            requiredCrdtTransports,
+        )
+    );
+    const duplicateIdentityCounts = new Map<string, number>();
+
+    rows.forEach((row, index) => {
+        if (!isFreshGroupTargetStatus(row.status)) {
+            return;
+        }
+        const identityKey = distributedRecipeTargetIdentityKey(agents[index]);
+        if (identityKey) {
+            duplicateIdentityCounts.set(
+                identityKey,
+                (duplicateIdentityCounts.get(identityKey) ?? 0) + 1,
+            );
+        }
+    });
+
+    return rows.map((row, index) => {
+        if (!isFreshGroupTargetStatus(row.status)) {
+            return row;
+        }
+        const identityKey = distributedRecipeTargetIdentityKey(agents[index]);
+        if (!identityKey || (duplicateIdentityCounts.get(identityKey) ?? 0) < 2) {
+            return row;
+        }
+        return {
+            ...row,
+            status: 'duplicate-session',
+            targetable: false,
+            reason:
+                'Multiple fresh control agents report the same normalized Rallar identity and session.',
+        };
+    });
+}
+
+/**
+ * Normalizes the scoped principal/session identity used to block duplicate live
+ * targets. Client-instance IDs deliberately do not split one authenticated
+ * Rallar session into independently targetable agents.
+ */
+export function distributedRecipeTargetIdentityKey(
+    agent: ControlAgentSnapshot,
+): string | undefined {
+    const identity = agent.identity;
+    const principal = normalizedIdentityPart(
+        identity?.principalId ?? identity?.clientId ?? identity?.username,
+    );
+    const session = normalizedIdentityPart(identity?.sessionId);
+    const applicationId = normalizedIdentityPart(identity?.applicationId);
+    const workspaceId = normalizedIdentityPart(identity?.workspaceId);
+    const groupId = normalizedIdentityPart(identity?.groupId);
+
+    if (!principal || !session || !applicationId || !workspaceId || !groupId) {
+        return undefined;
+    }
+
+    return [applicationId, workspaceId, groupId, principal, session].join('\u0000');
 }
 
 export function defaultDistributedRecipeTargetIds(
@@ -734,6 +805,16 @@ export function defaultDistributedRecipeTargetIds(
     return rows
         .filter(row => row.targetable)
         .map(row => row.agentId);
+}
+
+export function reconcileDistributedRecipeTargetIds(
+    selectedAgentIds: readonly string[],
+    rows: readonly DistributedRecipeTargetRow[],
+): readonly string[] {
+    const defaults = defaultDistributedRecipeTargetIds(rows);
+    const targetable = new Set(defaults);
+    const retained = selectedAgentIds.filter((agentId) => targetable.has(agentId));
+    return retained.length > 0 ? retained : defaults;
 }
 
 export function deriveDistributedWorldFleetTargetGate(input: Readonly<{
@@ -1435,12 +1516,35 @@ function hasCrdtCommandKind(commandKinds: readonly RallarBlackBoxTestCommandKind
     return commandKinds.some(kind => kind.startsWith('crdt.'));
 }
 
-function crdtTransportsForCommandKinds(
-    commandKinds: readonly RallarBlackBoxTestCommandKind[],
+export function distributedRecipeCrdtTransports(
+    recipe: RallarBlackBoxTestRecipe,
 ): readonly RallarBlackBoxTestCrdtTransport[] {
-    return hasCrdtCommandKind(commandKinds)
-        ? ['local-only', 'ws', 'rtc', 'ws-then-rtc', 'rtc-with-ws-fallback']
-        : [];
+    return uniqueValues(recipe.commands.flatMap(crdtTransportsForCommand));
+}
+
+function crdtTransportsForCommand(
+    command: RallarBlackBoxTestCommand,
+): readonly RallarBlackBoxTestCrdtTransport[] {
+    switch (command.kind) {
+        case 'crdt.open':
+        case 'crdt.sync':
+            return command.transport ? [command.transport] : [];
+        case 'crdt.wait':
+            return command.sync && typeof command.sync === 'object' && command.sync.transport
+                ? [command.sync.transport]
+                : [];
+        case 'loop':
+            return command.commands.flatMap(crdtTransportsForCommand);
+        case 'parallel':
+            return command.groups.flatMap(group =>
+                group.commands.flatMap(crdtTransportsForCommand)
+            );
+        case 'recipe.load':
+        case 'recipe.run':
+            return command.recipe?.commands.flatMap(crdtTransportsForCommand) ?? [];
+        default:
+            return [];
+    }
 }
 
 function commandKindsForCommand(command: RallarBlackBoxTestCommand): readonly RallarBlackBoxTestCommandKind[] {
@@ -2325,6 +2429,7 @@ function distributedRecipeTargetRow(
     group: RallarBlackBoxDistributedGroupRef,
     nowEpochMs: number,
     staleAfterMs: number,
+    requiresCrdtRuntime: boolean,
     requiredCrdtTransports: readonly RallarBlackBoxTestCrdtTransport[],
 ): DistributedRecipeTargetRow {
     const identity = agent.identity;
@@ -2386,7 +2491,7 @@ function distributedRecipeTargetRow(
         };
     }
 
-    if (requiredCrdtTransports.length > 0 && !crdt?.supported) {
+    if (requiresCrdtRuntime && !crdt?.supported) {
         return {
             ...base,
             status: 'missing-crdt-runtime',
@@ -2412,6 +2517,18 @@ function distributedRecipeTargetRow(
         targetable: true,
         reason: 'Agent is connected and reports the selected global group.',
     };
+}
+
+function isFreshGroupTargetStatus(status: DistributedRecipeTargetStatus): boolean {
+    return status === 'matched' ||
+        status === 'missing-crdt-runtime' ||
+        status === 'missing-crdt-transport';
+}
+
+function normalizedIdentityPart(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0
+        ? value.trim().toLowerCase()
+        : undefined;
 }
 
 function buildTargetPolicy(input: Readonly<{

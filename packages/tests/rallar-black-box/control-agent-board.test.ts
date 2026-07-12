@@ -9,6 +9,7 @@ import type {
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import type { DistributedRunAgentProgressRow } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 
 const group: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
@@ -293,6 +294,57 @@ describe('control agent board derivation', () => {
         expect(summarizeControlAgentBoardRows(rows)).toMatchObject({
             targetable: 1,
             missingCapability: 1,
+        });
+    });
+
+    it('renders exact selected-recipe CRDT transport targetability', () => {
+        const wsOnly = agent('agent-a', { crdt: true });
+        const run = controlRun([{
+            ...wsOnly,
+            identity: {
+                ...wsOnly.identity!,
+                capabilities: {
+                    crdt: {
+                        supported: true,
+                        transports: ['ws'],
+                    },
+                },
+            },
+        }]);
+        const recipe = (transport: 'rtc' | 'ws'): RallarBlackBoxTestRecipe => ({
+            schemaVersion: 1,
+            recipeId: `crdt-${transport}`,
+            commands: [{
+                kind: 'crdt.open',
+                handle: 'document',
+                name: 'document',
+                transport,
+            }],
+        });
+
+        const rtcRows = deriveControlAgentBoardRows({
+            run,
+            group,
+            requiredCommandKinds: ['crdt.open'],
+            requiredRecipes: [recipe('rtc')],
+            nowEpochMs: 2_500,
+        });
+        const wsRows = deriveControlAgentBoardRows({
+            run,
+            group,
+            requiredCommandKinds: ['crdt.open'],
+            requiredRecipes: [recipe('ws')],
+            nowEpochMs: 2_500,
+        });
+
+        expect(rtcRows[0]).toMatchObject({
+            targetStatus: 'missing-crdt-transport',
+            targetable: false,
+            targetReason: 'Agent CRDT runtime does not report rtc transport support.',
+        });
+        expect(wsRows[0]).toMatchObject({
+            targetStatus: 'matched',
+            targetable: true,
         });
     });
 

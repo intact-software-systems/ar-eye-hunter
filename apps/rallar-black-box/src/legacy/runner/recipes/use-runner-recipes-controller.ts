@@ -173,9 +173,10 @@ export function useRunnerRecipesController({
                 run: controlRun,
                 group: groupRef,
                 requiredCommandKinds: recipePreflight?.commandKinds ?? [],
+                requiredRecipes: selectedRecipe?.recipe ? [selectedRecipe.recipe] : [],
                 nowEpochMs: Date.now(),
             }),
-        [controlRun, groupRef, recipePreflight],
+        [controlRun, groupRef, recipePreflight, selectedRecipe?.recipe],
     );
     const recipeAgentRows = useMemo(
         () =>
@@ -183,13 +184,21 @@ export function useRunnerRecipesController({
                 run: controlRun,
                 group: groupRef,
                 requiredCommandKinds: recipePreflight?.commandKinds ?? [],
+                requiredRecipes: selectedRecipe?.recipe ? [selectedRecipe.recipe] : [],
                 distributedRuns: [
                     ...(controlSnapshot?.distributedRuns ?? []),
                     ...(distributedRun ? [distributedRun] : []),
                 ],
                 nowEpochMs: Date.now(),
             }),
-        [controlRun, controlSnapshot?.distributedRuns, distributedRun, groupRef, recipePreflight],
+        [
+            controlRun,
+            controlSnapshot?.distributedRuns,
+            distributedRun,
+            groupRef,
+            recipePreflight,
+            selectedRecipe?.recipe,
+        ],
     );
     const recipeAgentSummary = useMemo(
         () => summarizeControlAgentBoardRows(recipeAgentRows),
@@ -523,6 +532,7 @@ export function useRunnerRecipesController({
                 run: latestControlRun,
                 group: groupRef,
                 requiredCommandKinds: preflight.commandKinds,
+                requiredRecipes: [selectedRecipe.distributedItem.recipe],
             });
             const agentIds = defaultDistributedRecipeTargetIds(resolvedRows);
             if (agentIds.length === 0) {

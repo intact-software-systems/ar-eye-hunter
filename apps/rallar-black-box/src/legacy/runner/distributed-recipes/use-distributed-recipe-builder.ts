@@ -14,6 +14,7 @@ import {
     deriveDistributedWorldFleetTargetGate,
     distributedRecipePreflight,
     distributedRecipeTargetRows,
+    reconcileDistributedRecipeTargetIds,
     type DistributedRecipeRolePattern,
     type DistributedRecipeTargetPolicyMode,
     type DistributedRunAgentProgressRow,
@@ -153,13 +154,18 @@ export function useDistributedRecipeBuilder({
                 run,
                 group: groupRef,
                 requiredCommandKinds: selectedPreflightCommandKinds,
+                requiredRecipes: selectedRecipes.map((item) => item.recipe),
                 nowEpochMs: Date.now(),
             }),
-        [groupRef, run, selectedPreflightCommandKinds],
+        [groupRef, run, selectedPreflightCommandKinds, selectedRecipes],
+    );
+    const effectiveSelectedAgentIds = useMemo(
+        () => reconcileDistributedRecipeTargetIds(selectedAgentIds, targetRows),
+        [selectedAgentIds, targetRows],
     );
     const selectedAgentSet = useMemo(
-        () => new Set(selectedAgentIds),
-        [selectedAgentIds],
+        () => new Set(effectiveSelectedAgentIds),
+        [effectiveSelectedAgentIds],
     );
     const targetableRows = targetRows.filter((row) => row.targetable);
     const usesWorldFleetTargets = targetPolicyMode === 'all-online-group-members';
@@ -177,7 +183,7 @@ export function useDistributedRecipeBuilder({
             displayName: `Distributed ${selectedRecipes.map((item) => item.title).join(', ')}`,
             group: groupRef,
             recipes: selectedRecipes,
-            targetAgentIds: usesWorldFleetTargets ? [] : selectedAgentIds,
+            targetAgentIds: usesWorldFleetTargets ? [] : effectiveSelectedAgentIds,
             targetPolicyMode,
             rolePattern,
             ackTimeoutMs,
@@ -195,8 +201,8 @@ export function useDistributedRecipeBuilder({
             expectedParticipantCount:
                 usesWorldFleetTargets
                     ? expectedParticipantCount
-                    : selectedAgentIds.length > 0
-                    ? selectedAgentIds.length
+                    : effectiveSelectedAgentIds.length > 0
+                    ? effectiveSelectedAgentIds.length
                     : undefined,
         });
     }, [
@@ -207,7 +213,7 @@ export function useDistributedRecipeBuilder({
         groupRef,
         expectedParticipantCount,
         rolePattern,
-        selectedAgentIds,
+        effectiveSelectedAgentIds,
         selectedRecipes,
         selectedRunId,
         startDelayMs,
@@ -249,6 +255,7 @@ export function useDistributedRecipeBuilder({
                 run,
                 group: groupRef,
                 requiredCommandKinds: selectedPreflightCommandKinds,
+                requiredRecipes: selectedRecipes.map((item) => item.recipe),
                 distributedRuns,
                 selectedDistributedRun,
                 monitorAgentProgress: monitorAgentProgress ?? [],
@@ -261,6 +268,7 @@ export function useDistributedRecipeBuilder({
             selectedDistributedRun,
             monitorAgentProgress,
             selectedPreflightCommandKinds,
+            selectedRecipes,
         ],
     );
     const distributedTargetAgentSummary = useMemo(
@@ -284,7 +292,7 @@ export function useDistributedRecipeBuilder({
         setExpectedParticipantCount, ackTimeoutMs, setAckTimeoutMs,
         barrierEnabled, setBarrierEnabled, barrierTimeoutMs, setBarrierTimeoutMs,
         startMode, setStartMode, startDelayMs, setStartDelayMs,
-        selectedAgentIds, setSelectedAgentIds, groupRef, profileOptions,
+        selectedAgentIds: effectiveSelectedAgentIds, setSelectedAgentIds, groupRef, profileOptions,
         filteredRecipes, selectedRecipes, selectedRecipePreflights,
         selectedPreflightEffectiveOperations, selectedPreflightWarnings,
         selectedPreflightErrors, targetRows, selectedAgentSet, targetableRows,

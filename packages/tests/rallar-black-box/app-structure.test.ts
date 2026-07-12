@@ -1018,39 +1018,6 @@ describe('rallar-black-box app source ownership', () => {
         const appSource = repositorySource(appSourcePath);
         const distributedLeafModules = [
             {
-                path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/distributed-recipe-catalog.ts',
-                importerPath:
-                    'apps/rallar-black-box/src/legacy/runner/recipes/runner-recipe-catalog.ts',
-                appImport:
-                    '../distributed-recipes/distributed-recipe-catalog.ts',
-                appSeams: [
-                    'DISTRIBUTED_RECIPE_CATALOG',
-                    'configuredDistributedRecipeCatalogItem',
-                ],
-                declarations: [
-                    {
-                        seam: 'RTC_REALTIME_STABILITY_CATALOG_TITLE',
-                        pattern:
-                            /^\s*const\s+RTC_REALTIME_STABILITY_CATALOG_TITLE\s*=/m,
-                    },
-                    {
-                        seam: 'DISTRIBUTED_RECIPE_CATALOG',
-                        pattern:
-                            /^\s*export\s+const\s+DISTRIBUTED_RECIPE_CATALOG\s*:/m,
-                    },
-                    {
-                        seam: 'configuredDistributedRecipeCatalogItem',
-                        pattern:
-                            /^\s*export\s+function\s+configuredDistributedRecipeCatalogItem\s*\(/m,
-                    },
-                    {
-                        seam: 'distributedRecipeMatches',
-                        pattern:
-                            /^\s*export\s+function\s+distributedRecipeMatches\s*\(/m,
-                    },
-                ],
-            },
-            {
                 path: 'apps/rallar-black-box/src/legacy/runner/distributed-recipes/distributed-manifest-validation.ts',
                 importerPath:
                     'apps/rallar-black-box/src/legacy/runner/recipes/use-runner-recipes-controller.ts',
@@ -1201,6 +1168,47 @@ describe('rallar-black-box app source ownership', () => {
                 .map((match) => match[1])
                 .join('\n');
         };
+
+        const sharedCatalogPath =
+            'packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
+        const legacyCatalogPath =
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/distributed-recipe-catalog.ts';
+        const legacyCatalogImporterPath =
+            'apps/rallar-black-box/src/legacy/runner/recipes/runner-recipe-catalog.ts';
+        const legacyCatalogImport =
+            '../distributed-recipes/distributed-recipe-catalog.ts';
+        const sharedCatalogSource = repositorySource(sharedCatalogPath);
+        const legacyCatalogSource = repositorySource(legacyCatalogPath);
+
+        expect(sharedCatalogSource).toMatch(
+            /^\s*const\s+RTC_REALTIME_STABILITY_CATALOG_TITLE\s*=/m,
+        );
+        expect(sharedCatalogSource).toMatch(
+            /^\s*export\s+const\s+DISTRIBUTED_RECIPE_CATALOG\s*:/m,
+        );
+        expect(sharedCatalogSource).toMatch(
+            /^\s*export\s+function\s+configuredDistributedRecipeCatalogItem\s*\(/m,
+        );
+        expect(sharedCatalogSource).toMatch(
+            /^\s*export\s+function\s+distributedRecipeMatches\s*\(/m,
+        );
+        expect(sharedCatalogSource).toMatch(
+            /^\s*export\s+function\s+projectDistributedRecipeCatalog\s*\(/m,
+        );
+        expect(legacyCatalogSource).toMatch(
+            /^\s*export\s*{[\s\S]*\bDISTRIBUTED_RECIPE_CATALOG\b[\s\S]*\bconfiguredDistributedRecipeCatalogItem\b[\s\S]*\bdistributedRecipeMatches\b[\s\S]*}\s*from\s*'@shared-test\/rallar-bb-test\/distributed-recipe-catalog\.ts';\s*$/m,
+        );
+        expect(legacyCatalogSource.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(8);
+        expect(legacyCatalogSource).not.toMatch(/RALLAR_BLACK_BOX_RECIPE_FIXTURES/);
+
+        const legacyCatalogImportedSeams = importedSeams(
+            repositorySource(legacyCatalogImporterPath),
+            legacyCatalogImport,
+        );
+        expect(legacyCatalogImportedSeams).toMatch(/\bDISTRIBUTED_RECIPE_CATALOG\b/);
+        expect(legacyCatalogImportedSeams).toMatch(
+            /\bconfiguredDistributedRecipeCatalogItem\b/,
+        );
 
         const sourceByPath = new Map<string, string>();
         for (const owner of distributedLeafModules) {
@@ -1834,6 +1842,7 @@ describe('rallar-black-box app source ownership', () => {
             'selectedPreflightErrors',
             'selectedPreflightCommandKinds',
             'targetRows',
+            'effectiveSelectedAgentIds',
             'selectedAgentSet',
             'targetableRows',
             'usesWorldFleetTargets',
@@ -1859,7 +1868,22 @@ describe('rallar-black-box app source ownership', () => {
             'monitorAgentProgress: monitorAgentProgress ?? [],',
         );
         expect(builderSource, 'monitor progress dependency').toMatch(
-            /\[\s*distributedRuns,\s*groupRef,\s*run,\s*selectedDistributedRun,\s*monitorAgentProgress,\s*selectedPreflightCommandKinds,\s*]/,
+            /\[\s*distributedRuns,\s*groupRef,\s*run,\s*selectedDistributedRun,\s*monitorAgentProgress,\s*selectedPreflightCommandKinds,\s*selectedRecipes,\s*]/,
+        );
+        expect(builderSource, 'builder target rows retain selected recipe transport truth')
+            .toContain('requiredRecipes: selectedRecipes.map((item) => item.recipe),');
+        expect(
+            [...builderSource.matchAll(/\brequiredRecipes\s*:/g)],
+            'target rows and target board both retain selected recipe transport truth',
+        ).toHaveLength(2);
+        expect(builderSource, 'builder target rows refresh with selected recipes').toMatch(
+            /\[\s*groupRef,\s*run,\s*selectedPreflightCommandKinds,\s*selectedRecipes,?\s*]/,
+        );
+        expect(builderSource, 'builder derives synchronous safe selected IDs').toMatch(
+            /const\s+effectiveSelectedAgentIds\s*=\s*useMemo\s*\(/,
+        );
+        expect(builderSource, 'manifest uses only synchronous safe selected IDs').toContain(
+            'targetAgentIds: usesWorldFleetTargets ? [] : effectiveSelectedAgentIds,',
         );
         expect(builderSource, 'builder effect/ref').not.toMatch(/\buse(?:Effect|Ref)\b/);
         expect(builderSource, 'builder API action import').not.toMatch(
@@ -1885,7 +1909,7 @@ describe('rallar-black-box app source ownership', () => {
         const effectMarkers = [
             'if (didInitialRefresh.current)',
             'setTargetResolutionPreview(undefined);',
-            'const defaults = defaultDistributedRecipeTargetIds(targetRows);',
+            'reconcileDistributedRecipeTargetIds(previous, targetRows)',
         ].map((marker) => actionsSource.indexOf(marker));
         expect.soft(effectMarkers.every((position) => position >= 0), 'effect markers').toBe(
             true,
@@ -1901,6 +1925,9 @@ describe('rallar-black-box app source ownership', () => {
         );
         expect(actionsSource, 'target reconciliation dependencies').toContain(
             '}, [targetRows]);',
+        );
+        expect(actionsSource, 'state reconciliation uses targetable truth').toContain(
+            'reconcileDistributedRecipeTargetIds(previous, targetRows)',
         );
         expect(actionsSource, 'canonical sameStringArray').toMatch(
             /import\s*{\s*sameStringArray\s*}\s*from\s*'\.\.\/\.\.\/shared\/same-string-array\.ts';/,
@@ -5884,6 +5911,16 @@ describe('rallar-black-box app source ownership', () => {
             'recipeAgentRows',
             'recipeAgentSummary',
         ]);
+        expect.soft(
+            [...controller.matchAll(/\brequiredRecipes\s*:/g)],
+            'all three legacy runner target and board resolutions retain selected recipe transport truth',
+        ).toHaveLength(3);
+        expect.soft(controller, 'visible runner target rows use the selected recipe').toContain(
+            'requiredRecipes: selectedRecipe?.recipe ? [selectedRecipe.recipe] : [],',
+        );
+        expect.soft(controller, 'launch target resolution uses the distributed recipe').toContain(
+            'requiredRecipes: [selectedRecipe.distributedItem.recipe],',
+        );
         const aggregate = [catalogHook, agentHook, controller].join('\n');
         expect.soft([...aggregate.matchAll(/\buseState(?:<|\s*\()/g)]).toHaveLength(27);
         expect.soft([...aggregate.matchAll(/\buseMemo\s*\(/g)]).toHaveLength(10);
@@ -6098,7 +6135,7 @@ describe('rallar-black-box app source ownership', () => {
             [catalogHookPath, 'useRunnerRecipeCatalog', '4bf50cb94592de66fdc974223a5659e76ed261a3932d647acd7225650b79a584'],
             [agentHookPath, 'useRunnerAgentLaunchState', 'a01124ddab504f883eedc382ba31afb593e406a7884a6331ef62072999ba02c1'],
             [agentActionsPath, 'createRunnerAgentLaunchActions', '3501b2153573cdfed7b3e8d2f47dc512217d12562e0fad6de7c526c71c8e181f'],
-            [controllerPath, 'useRunnerRecipesController', 'fe9ad4ae358e5f206983c3cff2bfa9e20fa0124d92985b93bd7a18fee9a36a76'],
+            [controllerPath, 'useRunnerRecipesController', '843af2bc4cecace127dcf7fefca7afe67a84f83d0e4a24b09248898f058132e1'],
             [panelPath, 'RunnerRecipesPanel', 'ec8f1d339081250a5760d16b43587177836f9bf10cfbc22bbd94161096e6d650'],
         ] as const) {
             const declaration = functionDeclaration(path, name);

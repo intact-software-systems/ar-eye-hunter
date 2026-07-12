@@ -148,6 +148,15 @@ explain:
 
 Only `matched` rows are targetable by default.
 
+The operator target-row projection uses a normalized duplicate identity key of
+`applicationId`, `workspaceId`, `groupId`, the first reported
+`principalId`/`clientId`/`username`, and `sessionId`. String parts are trimmed
+and compared case-insensitively. Two fresh connected agents with the same key
+are both `duplicate-session`; `clientInstanceId` does not split one authenticated
+session into independently targetable agents. Stale, offline, wrong-group, and
+incomplete-identity rows keep their more specific evidence status and do not
+make an otherwise unique fresh session look duplicated.
+
 `resolveDistributedTargetAgentIds(...)` applies the manifest target policy to
 the match result:
 
