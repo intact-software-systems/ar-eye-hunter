@@ -407,7 +407,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
-| 8 — History, Compare, Saved Filters, Retention | **In progress** | Retention server/client foundations, shareable semantic History filters, and bounded non-secret saved presets are code-backed through `1e19dfb`. Authorization-first guarded cleanup, context-bound client safety, dynamic-only chunks, actual-failure classification, malformed-manifest resilience, distinct v1 History URL fields, explicit URL precedence, StrictMode-safe writes, and storage-port version protection pass focused validation/review. The combined cleanup URL sequence, models/UI, browser matrix, and no-cutover exit remain open. |
+| 8 — History, Compare, Saved Filters, Retention | **In progress** | Retention server/client foundations, shareable filters/presets, root provenance, bounded History rows, safe Tune selection reuse, and cleanup reconciliation are code-backed through `caa3980`. The combined filter/Candidate/cleanup/copied-link sequence, exact counts/100-row bound, linear identity work, and selective URL clearing pass focused validation/review. History/retention UI, async refresh ordering, browser matrix, and no-cutover exit remain open. |
 | 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
@@ -596,6 +596,23 @@ the injected storage port changes. Writes are now outside functional updaters
 and replacement ports are read before interaction. Final independent re-review
 reports no Critical or Important issue. No UI, legacy visibility, mount policy,
 deep link, rollback, default, or control contract changed.
+
+Task 5 History projection and cleanup reconciliation are green through
+`13070af` and `caa3980`. Root query snapshots retain root/fallback/unavailable
+provenance through stale failures. The pure model applies the canonical shared
+filter/order across the full server collection for exact counts, then limits
+identity/manifest projection to 100 visible rows without deriving Tune
+performance. Unsafe, duplicate, malformed, missing, and ambiguous identities
+remain visible but cannot navigate; exact retention candidates keep generated
+keys and unsanitized consequence truth.
+
+Baseline/Candidate actions reuse Tune's safe patches. Cleanup uses captured
+pre-cleanup associations to clear only deleted focus/dependent/comparison URL
+fields while filters, timing, unknown state, newer valid selections, copied
+links, and back/forward behavior remain stable. Fresh proof is 176/176 related
+tests, full shared TypeScript plus seven Deno entries, app TypeScript, and final
+review with no open Critical or Important issue. Async refresh-before-replace is
+still reserved for the Task 7 hook; no History UI or legacy cutover is claimed.
 
 #### Iteration 2 visual approval checkpoint — 2026-07-11
 

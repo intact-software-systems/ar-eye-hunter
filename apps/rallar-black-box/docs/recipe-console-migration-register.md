@@ -1,11 +1,36 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Iteration 8 retention/filter/preset foundation code-backed through `1e19dfb`, all legacy workflow rows visible and uncut
+Status: canonical migration register; Iteration 8 History/retention foundations code-backed through `caa3980`, all legacy workflow rows visible and uncut
 Evidence/status date: 2026-07-12
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 8 bounded History model — `13070af`, `caa3980`
+
+Task 5 retains root/fallback/unavailable provenance through the serialized root
+query and builds a pure bounded server-history model from that one authority.
+Shared filtering remains the sole order/filter truth; shared-test also owns the
+malformed-safe group, recipe, profile, and actual-failure labels. History
+reports exact counts while projecting at most 100 rows, uses generated ordinal
+keys, quarantines unsafe/duplicate/invalid identities, and disables selection
+for missing or ambiguous control pairs. Exact retention consequences remain
+visible and are never sanitized through URL policy.
+
+Baseline and Candidate reuse Tune's identity-safe patches. Pre-cleanup
+association capture and cleanup reconciliation preserve History filters,
+timing, harmless unknown state, and newer valid selections while clearing only
+deleted focus/dependent/comparison fields. The combined filtered Candidate,
+cleanup, copied-link, and back/forward sequence is green; async
+refresh-before-replace remains a Task 7 UI-hook responsibility.
+
+Fresh proof is 176/176 related tests, complete shared TypeScript and seven Deno
+entries, app TypeScript, and final review with no Critical or Important issue.
+The review-driven scalability fix limits identity/manifest work to the visible
+100 and skips Tune performance derivation while retaining exact full-set counts
+and linear duplicate/pair detection. No History UI is composed yet and no row,
+visibility, mount, deep link, rollback, default, or server contract changes.
 
 ## Iteration 8 bounded History presets — `1e19dfb`
 

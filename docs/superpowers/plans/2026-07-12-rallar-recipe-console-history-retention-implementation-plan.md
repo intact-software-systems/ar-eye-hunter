@@ -1,8 +1,7 @@
 # Rallar Recipe Console History, Compare, Saved Filters, And Retention Implementation Plan
 
 Status: in progress; Iteration 7 is green through `cc17169` and `382df72`;
-Tasks 0–4 are complete, with Task 3's cleanup-sequence proof deferred to Task
-5; Task 5 is in progress
+Tasks 0–5 are complete; Task 6 is in progress
 
 **Goal:** Complete parent Iteration 8 by making past distributed work
 findable, shareable, comparable, and safely cleanable without changing the
@@ -348,7 +347,7 @@ Files:
   invalid, duplicate, sensitive, unknown, and legacy-alias fields.
 - [x] RED-test one-push Apply/Reset and popstate/copy-link restoration without
   clearing comparison, timing, provider, or harmless unknown state.
-- [ ] RED-test filter → Candidate selection → cleanup → copied URL/back-forward
+- [x] RED-test filter → Candidate selection → cleanup → copied URL/back-forward
   so `historyRecipeId` and other filters survive while operational `recipeId`
   follows the selected run and may be cleared independently.
 - [x] Keep committed filters shareable and make explicit URL state override any
@@ -367,9 +366,9 @@ Fresh proof is 78/78 focused shared/URL tests, shared-test TypeScript plus all
 seven Deno entries, app TypeScript, and diff checks. Independent review found no
 Critical or Important implementation defect. The required combined filter →
 Candidate → cleanup → copied URL/back-forward sequence remains explicitly open
-until Task 5 supplies cleanup reconciliation. Task 4 now proves that loaded
-presets remain inert until an explicit apply and that saves always capture the
-latest committed URL state.
+through Task 5's pre-cleanup association reconciliation, copied-link, and
+back/forward proof. Task 4 proves that loaded presets remain inert until an
+explicit apply and that saves always capture the latest committed URL state.
 
 ## Task 4: Build Bounded Saved-Filter Persistence
 
@@ -419,26 +418,51 @@ Files:
 - Add `apps/rallar-black-box/src/recipe-console/history/retention-selection-patch.ts`
 - Add `packages/tests/rallar-black-box/recipe-console-history-model.test.ts`
 
-- [ ] RED-test exact rows from root distributed/control pairs, pairing status,
+- [x] RED-test exact rows from root distributed/control pairs, pairing status,
   group/recipe/profile/failure labels, created/updated time, control status,
   partial/stale/offline provenance, total/rendered/omitted counts, and 100-row
   bound.
-- [ ] RED-test unsafe/duplicate/malformed identities are quarantined from
+- [x] RED-test unsafe/duplicate/malformed identities are quarantined from
   navigation, selection, filenames, and React keys. Every retention candidate
   remains visibly rendered with a generated key and its exact control ID;
   retention output/token truth is never filtered through URL-identity policy.
-- [ ] RED-test visible Baseline action patches `compareLeft` only; Candidate
+- [x] RED-test visible Baseline action patches `compareLeft` only; Candidate
   atomically aligns `compareRight`, `distributedRunId`, and `controlRunId` and
   clears dependent agent/recipe/command fields.
-- [ ] RED-test cleanup reconciliation against the pre-cleanup association map:
+- [x] RED-test cleanup reconciliation against the pre-cleanup association map:
   deleted focus/right/left/control IDs clear only dependent fields; unrelated
   filter/comparison/timing/unknown state remains.
-- [ ] RED-test cleanup leaving one survivor against existing sole-control-run
+- [x] RED-test cleanup leaving one survivor against existing sole-control-run
   bootstrap. History filters remain stable, deleted selections do not revive,
   and any authoritative sole-survivor selection is explicit in the expected
   post-refresh model rather than mistaken for a previous-run auto-selection.
-- [ ] Reuse Tune's safe identity and selection patch behavior or extract one
+- [x] Reuse Tune's safe identity and selection patch behavior or extract one
   shared app-local pure helper; never fork its rules.
+
+Task 5 is implemented in `13070af` and `caa3980`. The serialized root query now
+retains whether distributed history came from the root snapshot, canonical
+fallback, or was unavailable, including across stale refresh failures. The pure
+History model uses `filterDistributedRuns(...)` as its sole filter/order
+authority, reports exact available/filtered/rendered/omitted counts, projects at
+most 100 rows, reuses Tune's safe identity and selection behavior, and preserves
+exact retention consequences behind ordinal keys.
+
+Shared-test owns the one malformed-safe group/recipe/profile/actual-failure
+label projection. Pre-cleanup association capture and pure reconciliation clear
+only deleted focus/comparison/dependent URL fields, preserve filters, timing,
+unknown state, and newer valid selections, and keep sole-survivor bootstrap
+explicit. The combined filter → Candidate → cleanup → copied URL → back/forward
+sequence is green. Refresh-before-replace ordering remains intentionally owned
+by Task 7's asynchronous cleanup hook.
+
+Fresh proof is 176/176 related shared, History, URL, Tune, selection, and
+distributed-recipe tests, complete shared-test TypeScript plus all seven Deno
+entries, app TypeScript, and diff checks. Review exposed one Important issue:
+the initial model built Tune performance for every unfiltered run before the
+100-row cap. A RED getter fixture reproduced it; global duplicate/control maps
+are now linear while identity/manifest work is limited to 100 visible unique
+runs and two relevant controls per identity, with performance derivation off.
+Independent re-review reports no remaining Critical or Important issue.
 
 ## Task 6: Compose Focused History And Saved-Filter UI In Tune
 
