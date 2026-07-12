@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
@@ -14,6 +13,64 @@ async function routeLiveEmptyControl(page: Page): Promise<void> {
 
 async function routeOfflineControl(page: Page): Promise<void> {
     await page.route(CONTROL_ROUTE, route => route.abort('connectionfailed'));
+}
+
+const EXECUTE_GROUP = {
+    applicationId: 'rallar-black-box',
+    workspaceId: 'default',
+    groupId: 'rallar-black-box-room',
+} as const;
+
+function liveExecuteSnapshot() {
+    const runId = 'execute-control-a';
+    const now = Date.now();
+    const agents = ['execute-agent-a', 'execute-agent-b'].map((agentId) => ({
+        runId,
+        agentId,
+        connected: true,
+        registeredAtEpochMs: now - 2_000,
+        lastSeenAtEpochMs: now - 500,
+        lastHeartbeatAtEpochMs: now - 500,
+        status: 'connected',
+        identity: {
+            principalId: `${agentId}-principal`,
+            sessionId: `${agentId}-session`,
+            ...EXECUTE_GROUP,
+            providerMode: 'browser-rallar',
+            browserName: 'chromium',
+            region: 'eu-north',
+        },
+        connectionSequence: 1,
+        reconnectCount: 0,
+        receivedResultCount: 0,
+        receivedEventCount: 0,
+        completedCommandIds: [],
+        resumeCompletedCommandIds: [],
+    }));
+    return {
+        runs: [{
+            runId,
+            createdAtEpochMs: now - 10_000,
+            updatedAtEpochMs: now - 500,
+            agents,
+            commands: [],
+            results: [],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: [],
+        }],
+        distributedRuns: [],
+    };
+}
+
+async function routeLiveExecuteControl(page: Page): Promise<void> {
+    await page.route(CONTROL_ROUTE, route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify(liveExecuteSnapshot()),
+    }));
 }
 
 test('renders command-duration Tune without invented stream evidence', async ({ page }) => {
@@ -342,7 +399,7 @@ test('traps and restores focus in tablet and landscape overlays', async ({ page 
     )).toBe(0);
 });
 
-test('keeps the repository-backed Execute preview usable with control offline', async ({ page }) => {
+test('keeps the repository catalog and preflight usable with control offline', async ({ page }) => {
     const controlServerRequests: string[] = [];
     page.on('request', (request) => {
         const url = new URL(request.url());
@@ -359,59 +416,64 @@ test('keeps the repository-backed Execute preview usable with control offline', 
     await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
 
     const search = page.getByRole('searchbox', { name: 'Search recipes' });
-    const recipeLedger = page.getByRole('region', { name: 'Recipes' });
+    const recipeLedger = page.getByRole('region', { name: 'Recipe ledger' });
     await expect(search).toBeVisible();
     await search.fill('pRoViDeR pArItY');
     await expect(recipeLedger.getByText('Provider Parity', { exact: true })).toBeVisible();
     await expect(recipeLedger.getByText('RTC Realtime Stability', { exact: true })).toHaveCount(0);
     await search.clear();
-    const selectedRecipe = page.getByRole('button', { name: /RTC Realtime Stability/ });
-    await expect(selectedRecipe).toHaveAttribute('aria-pressed', 'true');
+    const selectedRecipe = page.locator(
+        '[data-execute-recipe][data-recipe-id="rtc-realtime-stability"]',
+    );
+    await expect(selectedRecipe).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByText('Provider Parity', { exact: true })).toBeVisible();
     await expect(page.getByText('Composite Evidence', { exact: true })).toBeVisible();
     await expect(page.getByText('Expected Failure', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: /Provider Parity/ }).click();
+    await page.locator(
+        '[data-execute-recipe][data-recipe-id="rallar-provider-parity-recipe"]',
+    ).click();
+    await expect(page).toHaveURL(/recipeId=rallar-provider-parity-recipe/);
     await expect(page.getByRole('complementary', { name: 'Inspector' })
         .getByRole('heading', { name: 'Provider Parity' })).toBeVisible();
     await selectedRecipe.click();
-    await expect(selectedRecipe).toHaveAttribute('aria-pressed', 'true');
+    await expect(selectedRecipe).toHaveAttribute('aria-selected', 'true');
 
-    const targets = page.getByRole('region', { name: 'Sample targets and preflight' });
-    await expect(targets.getByText('2/2 selected', { exact: true })).toBeVisible();
-    await expect(targets.getByText('seed-agent-a', { exact: true })).toBeVisible();
-    await expect(targets.getByText('seed-agent-b', { exact: true })).toBeVisible();
-    const firstTarget = targets.getByRole('checkbox', { name: 'Select seed-agent-a' });
-    await firstTarget.uncheck();
-    await expect(targets.getByText('1/2 selected', { exact: true })).toBeVisible();
-    await firstTarget.check();
-    await expect(targets.getByText('2/2 selected', { exact: true })).toBeVisible();
-    await expect(targets.getByText('Required · not checked in preview', { exact: true }))
+    const targets = page.getByRole('region', { name: 'Targets' });
+    await expect(targets.getByText('No current target evidence', { exact: true }))
         .toBeVisible();
+    const offlineTargetEvidence = targets.getByText(
+        'Control is offline. Refresh to retry.',
+        { exact: true },
+    );
+    await expect(offlineTargetEvidence).toHaveCount(2);
+    await expect(offlineTargetEvidence.first()).toBeVisible();
+    await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
+    await expect(targets.getByRole('checkbox')).toHaveCount(0);
 
-    await expect(page.getByText('5 manifest commands - 25 stream frames', { exact: true }))
-        .toBeVisible();
-    const preflight = targets.locator('details');
-    await expect(preflight).toHaveAttribute('open', '');
-    await preflight.locator('summary').click();
-    await expect(preflight).not.toHaveAttribute('open', '');
-    await preflight.locator('summary').click();
-    await expect(preflight).toHaveAttribute('open', '');
-    await expect(page.getByText('Preview only', { exact: true })).toBeVisible();
-    const cancel = page.getByRole('button', { name: 'Cancel Preview' });
-    await expect(cancel).toBeDisabled();
-    await expect(page.getByText('Nothing to cancel until live execution is available.', { exact: true }))
-        .toBeVisible();
-    const start = page.getByRole('button', { name: 'Start Preview', exact: true });
-    await expect(start).toHaveCount(1);
-    await expect(start).toHaveAttribute('data-primary-action', 'true');
-    await expect(page.getByText('Live execution begins in Iteration 4.', { exact: true }))
-        .toBeVisible();
+    const preflight = page.getByRole('region', { name: 'Preflight' });
+    await expect(preflight.getByText('Recipe ready', { exact: true })).toBeVisible();
+    await expect(preflight.getByText('Manifest commands', { exact: true }).locator('..'))
+        .toContainText('5');
+    await expect(page.locator('[data-execute-manifest]')).toContainText('Unavailable');
 
-    await expect(page.locator('[data-preview-status]')).toHaveText('Idle preview');
-    await page.getByRole('button', { name: 'Stage Preview', exact: true }).click();
-    await expect(page.locator('[data-preview-status]')).toHaveText('Staged preview');
-    await start.click();
-    await expect(page.locator('[data-preview-status]')).toHaveText('Started preview');
+    const actions = page.getByRole('region', { name: 'Execute actions' });
+    for (const action of [
+        'Resolve targets',
+        'Create draft',
+        'Stage run',
+        'Start run',
+        'Export artifact',
+        'Cancel run',
+    ]) {
+        await expect(actions.getByRole('button', { name: action, exact: true }))
+            .toBeDisabled();
+    }
+    await expect(actions.getByRole('button', { name: 'Refresh', exact: true }))
+        .toBeEnabled();
+    await expect(actions).toContainText('Live or partial control truth is required.');
+    await expect(page.getByText(/Preview action|Stage Preview|Start Preview|Export Preview/))
+        .toHaveCount(0);
+
     await expect(page.locator('[data-inspector-host]')).toHaveCount(1);
     await page.getByRole('button', { name: 'Monitor', exact: true }).click();
     await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'monitor');
@@ -427,53 +489,52 @@ test('keeps the repository-backed Execute preview usable with control offline', 
     await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
     expect((await page.getByRole('searchbox', { name: 'Search recipes' }).boundingBox())?.height)
         .toBeGreaterThanOrEqual(44);
-    expect((await page.getByRole('button', { name: 'Start Preview' }).boundingBox())?.height)
+    expect((await page.getByRole('button', { name: 'Refresh', exact: true }).boundingBox())?.height)
         .toBeGreaterThanOrEqual(44);
-    await expect(page.getByRole('region', { name: 'Recipes' })).toHaveCSS('overflow-y', 'visible');
+    await expect(page.getByRole('region', { name: 'Recipe ledger' }).getByRole('listbox'))
+        .toHaveCSS('overflow-y', 'visible');
 });
 
 test('keeps selected recipe truth aligned across Execute surfaces', async ({ page }) => {
+    await routeLiveExecuteControl(page);
     await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
 
-    const providerRecipe = page.getByRole('button', { name: /Provider Parity/ });
+    const providerRecipe = page.locator(
+        '[data-execute-recipe][data-recipe-id="rallar-provider-parity-recipe"]',
+    );
     await providerRecipe.click();
-    await expect(providerRecipe).toHaveAttribute('aria-pressed', 'true');
-    await expect(providerRecipe).not.toHaveAttribute('aria-selected');
-    await expect.poll(() => providerRecipe.evaluate(element =>
-        getComputedStyle(element).boxShadow
-    )).toContain('inset');
+    await expect(providerRecipe).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(/recipeId=rallar-provider-parity-recipe/);
 
     const inspector = page.getByRole('complementary', { name: 'Inspector' });
     await expect(inspector.getByRole('heading', { name: 'Provider Parity' })).toBeVisible();
-    await expect(inspector.getByText('10 manifest commands', { exact: true })).toBeVisible();
+    await expect(inspector.getByText('Manifest commands', { exact: true }).locator('..'))
+        .toContainText('10');
 
-    const preflight = page.getByRole('region', { name: 'Sample targets and preflight' })
-        .locator('details');
-    await expect(preflight.locator('summary')).toHaveText(
-        'Expanded preflight · 10 manifest commands',
-    );
-    await expect(preflight.locator('div').filter({ hasText: /^Commands10$/ }))
-        .toBeVisible();
+    const preflight = page.getByRole('region', { name: 'Preflight' });
+    await expect(preflight.getByText('Manifest commands', { exact: true }).locator('..'))
+        .toContainText('10');
+    await expect(page.locator('[data-execute-manifest]'))
+        .toContainText('rallar-provider-parity-recipe');
 
-    await expect(page.getByRole('button', { name: 'Stage Preview', exact: true }))
-        .toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Start Preview', exact: true }))
-        .toBeDisabled();
-    await expect(page.getByText(
-        'Provider Parity has no matching deterministic target preview. Select RTC Realtime Stability to stage or start.',
-        { exact: true },
-    )).toBeVisible();
-    await expect(page.locator('[data-command-bar]')).toContainText('Safe targets');
-    await expect(page.locator('[data-command-bar]')).not.toContainText(
-        'Target preview unavailable',
+    const targets = page.getByRole('region', { name: 'Targets' });
+    await expect(targets.locator('[data-target-status="matched"]')).toHaveCount(2);
+    await expect(targets.getByRole('checkbox')).toHaveCount(2);
+    await expect(targets.getByText('2 selected', { exact: true })).toBeVisible();
+    const actions = page.getByRole('region', { name: 'Execute actions' });
+    await expect(actions.getByRole('button', { name: 'Resolve targets' })).toBeEnabled();
+    await expect(actions.getByRole('button', { name: 'Create draft' })).toBeDisabled();
+    await expect(actions).toContainText(
+        'Resolve the current manifest and safe targets first.',
     );
-    const targets = page.getByRole('region', { name: 'Sample targets and preflight' });
-    await expect(targets.getByText('No matching target preview', { exact: true }))
-        .toBeVisible();
-    await expect(targets.getByRole('checkbox')).toHaveCount(0);
+    await expect(actions.getByRole('button', { name: 'Stage run' })).toBeDisabled();
+    await expect(actions.getByRole('button', { name: 'Start run' })).toBeDisabled();
+    await expect(page.locator('[data-command-bar]')
+        .getByText('Safe targets', { exact: true }).locator('..'))
+        .toContainText('2 selected · 2 recipe-safe');
 });
 
-test('refreshes the active Execute preview and control data', async ({ page }) => {
+test('refreshes Execute control truth without discarding the uncreated draft', async ({ page }) => {
     const controlServerRequests: string[] = [];
     page.on('request', request => {
         const url = new URL(request.url());
@@ -487,23 +548,32 @@ test('refreshes the active Execute preview and control data', async ({ page }) =
             controlServerRequests.push(request.url());
         }
     });
-    await routeOfflineControl(page);
+    await routeLiveExecuteControl(page);
     await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
-    await expect(page.locator('[data-command-bar] [data-status="failed"]'))
-        .toContainText('Offline · unreachable');
-
-    await page.getByRole('button', { name: 'Stage Preview', exact: true }).click();
-    await page.getByRole('button', { name: 'Start Preview', exact: true }).click();
-    await expect(page.locator('[data-preview-status]')).toHaveText('Started preview');
+    await expect(page.locator('[data-command-bar] [data-status="passed"]'))
+        .toContainText('Live · reachable');
+    const targets = page.getByRole('region', { name: 'Targets' });
+    const firstTarget = targets.getByRole('checkbox', { name: 'Select execute-agent-a' });
+    await expect(firstTarget).toBeChecked();
+    await firstTarget.uncheck();
+    await expect(targets.getByText('1 selected', { exact: true })).toBeVisible();
+    const manifestJson = page.locator('[data-execute-manifest] pre code');
+    await expect(manifestJson).toContainText('"distributedRunId"');
+    const draftBeforeRefresh = await manifestJson.textContent();
 
     const requestsBeforeRefresh = controlServerRequests.length;
     await page.getByRole('button', { name: 'Refresh control data', exact: true }).click();
 
-    await expect(page.locator('[data-preview-status]')).toHaveText('Idle preview');
-    await expect(page.getByRole('button', { name: /RTC Realtime Stability/ }))
-        .toHaveAttribute('aria-pressed', 'true');
     await expect.poll(() => controlServerRequests.length)
-        .toBe(requestsBeforeRefresh + 1);
+        .toBeGreaterThan(requestsBeforeRefresh);
+    await expect(manifestJson).toHaveText(draftBeforeRefresh ?? '');
+    await expect(firstTarget).not.toBeChecked();
+    await expect(targets.getByText('1 selected', { exact: true })).toBeVisible();
+    await expect(page.locator(
+        '[data-execute-recipe][data-recipe-id="rtc-realtime-stability"]',
+    )).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(() => controlServerRequests.length)
+        .toBeGreaterThan(requestsBeforeRefresh);
 });
 
 test('refreshes App-owned Monitor state without discarding known evidence', async ({ page }) => {
@@ -526,40 +596,19 @@ test('refreshes App-owned Monitor state without discarding known evidence', asyn
         .getByText('seed-agent-b', { exact: true })).toBeVisible();
 });
 
-test('exports the selected fixture as deterministic non-live preview JSON', async ({ page }) => {
+test('requires known distributed-run truth before artifact export', async ({ page }) => {
+    await routeLiveExecuteControl(page);
     await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
-    await page.getByRole('button', { name: /Provider Parity/ }).click();
-
-    const firstDownloadPromise = page.waitForEvent('download', { timeout: 2_000 });
-    await page.getByRole('button', { name: 'Export Preview', exact: true }).click();
-    const firstDownload = await firstDownloadPromise;
-    const secondDownloadPromise = page.waitForEvent('download', { timeout: 2_000 });
-    await page.getByRole('button', { name: 'Export Preview', exact: true }).click();
-    const secondDownload = await secondDownloadPromise;
-
-    const expectedFilename =
-        'rallar-recipe-preview-provider-parity-rallar-provider-parity-recipe.json';
-    expect(firstDownload.suggestedFilename()).toBe(expectedFilename);
-    expect(secondDownload.suggestedFilename()).toBe(expectedFilename);
-    const firstPath = await firstDownload.path();
-    const secondPath = await secondDownload.path();
-    if (!firstPath || !secondPath) throw new Error('Preview download path is unavailable.');
-    const firstJson = await readFile(firstPath, 'utf8');
-    const secondJson = await readFile(secondPath, 'utf8');
-    expect(secondJson).toBe(firstJson);
-    const payload = JSON.parse(firstJson) as Record<string, unknown>;
-    expect(payload).toMatchObject({
-        schemaVersion: 1,
-        kind: 'rallar-recipe-console-preview',
-        preview: true,
-        live: false,
-        fixtureId: 'provider-parity',
-        recipeId: 'rallar-provider-parity-recipe',
-        recipe: {
-            recipeId: 'rallar-provider-parity-recipe',
-        },
-    });
-    expect((payload.recipe as { commands?: unknown[] }).commands).toHaveLength(10);
+    let downloadCount = 0;
+    page.on('download', () => downloadCount += 1);
+    const actions = page.getByRole('region', { name: 'Execute actions' });
+    await expect(actions.getByRole('button', { name: 'Export artifact' }))
+        .toBeDisabled();
+    await expect(actions).toContainText(
+        'Select a known distributed run to export.',
+    );
+    await expect(page.getByRole('button', { name: 'Export Preview' })).toHaveCount(0);
+    expect(downloadCount).toBe(0);
 });
 
 test('keeps one lazy experience mounted', async ({ page }) => {

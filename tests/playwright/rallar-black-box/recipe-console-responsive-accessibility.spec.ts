@@ -151,15 +151,15 @@ test('keeps representative portrait touch controls at least 44px high', async ({
         'recipe search',
     );
     await expectMinimumTargetHeight(
-        page.getByRole('region', { name: 'Recipes' }).locator('button'),
+        page.getByRole('region', { name: 'Recipe ledger' }).locator('button'),
         'recipe row',
     );
     await expectMinimumTargetHeight(
-        page.locator('details').filter({ hasText: 'Expanded preflight' }).locator('summary'),
-        'preflight summary',
+        page.locator('[data-execute-manifest] summary'),
+        'manifest summary',
     );
     await expectMinimumTargetHeight(
-        page.getByRole('button', { name: /Preview$/ }),
+        page.locator('[data-execute-action-band] button'),
         'Execute action',
     );
 

@@ -236,12 +236,31 @@ function commandStatus(
         .filter({ hasText: label });
 }
 
-function controlBoard(page: Page) {
-    return page.getByRole('region', { name: 'Control agent board' });
+function executeTargets(page: Page) {
+    return page.locator('[data-execute-targets]');
 }
 
-function agentRow(page: Page, agentId: string) {
-    return controlBoard(page).locator(`[data-control-agent-row][data-agent-id="${agentId}"]`);
+function targetRow(page: Page, agentId: string) {
+    return executeTargets(page).locator('[data-execute-target]').filter({
+        has: page.getByText(agentId, { exact: true }),
+    });
+}
+
+function executeActionBand(page: Page) {
+    return page.locator('[data-execute-action-band]');
+}
+
+function targetEmptyState(page: Page) {
+    return executeTargets(page).getByRole('status').filter({
+        hasText: 'No current target evidence',
+    });
+}
+
+function actionRequirement(page: Page, action: string) {
+    return executeActionBand(page)
+        .locator('[aria-label="Action requirements"]')
+        .locator('p')
+        .filter({ hasText: new RegExp(`^${action}:`) });
 }
 
 test('renders live command context and canonical repository-derived target reasons', async ({
@@ -255,8 +274,8 @@ test('renders live command context and canonical repository-derived target reaso
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-canonical`);
 
-    const overview = page.getByRole('region', { name: 'Control overview' });
-    await expect(overview).toBeVisible();
+    const targets = executeTargets(page);
+    await expect(targets).toBeVisible();
     await expect(commandStatus(page, 'passed', 'Live'))
         .toBeVisible();
     await expect(commandContextItem(page, 'Control server')).toContainText(
@@ -272,8 +291,9 @@ test('renders live command context and canonical repository-derived target reaso
         'dist-live-canonical · running',
     );
 
-    const board = controlBoard(page);
-    await expect(board.locator('[data-control-agent-row]')).toHaveCount(5);
+    await expect(targets.getByRole('combobox', { name: 'Control run' }))
+        .toHaveValue('control-canonical');
+    await expect(targets.locator('[data-execute-target]')).toHaveCount(5);
     for (const [agentId, status] of [
         ['agent-matched', 'matched'],
         ['agent-stale', 'stale'],
@@ -281,16 +301,21 @@ test('renders live command context and canonical repository-derived target reaso
         ['agent-wrong-group', 'different-group'],
         ['agent-missing-identity', 'missing-identity'],
     ] as const) {
-        const row = agentRow(page, agentId);
+        const row = targetRow(page, agentId);
         await expect(row).toHaveAttribute('data-target-status', status);
         await expect(row.getByText(TARGET_REASONS[status], { exact: true }))
             .toBeVisible();
-        await expect(row).toHaveAccessibleName(
-            `Select agent ${agentId}. ${TARGET_REASONS[status]}`,
-        );
+        await expect(row.getByText(agentId, { exact: true })).toBeVisible();
+        if (status === 'matched') {
+            await expect(row.getByRole('checkbox', { name: `Select ${agentId}` }))
+                .toBeChecked();
+        } else {
+            await expect(row.getByRole('checkbox')).toHaveCount(0);
+            await expect(row.getByLabel('Not selectable')).toBeVisible();
+        }
     }
-    await expect(board).not.toContainText('seed-agent-a');
-    await expect(board).not.toContainText('seed-agent-b');
+    await expect(targets).not.toContainText('seed-agent-a');
+    await expect(targets).not.toContainText('seed-agent-b');
 });
 
 test('shows initial network failure as offline without seeded board fallback', async ({
@@ -305,18 +330,27 @@ test('shows initial network failure as offline without seeded board fallback', a
         .toBeVisible();
     await expect(commandContextItem(page, 'Connected')).toContainText('Unknown');
     await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
-    const overview = page.getByRole('region', { name: 'Control overview' });
-    await expect(overview.getByRole('heading', { name: 'Control server offline' }))
+    const targets = executeTargets(page);
+    const empty = targetEmptyState(page);
+    await expect(empty.getByText('No current target evidence', { exact: true }))
         .toBeVisible();
-    await expect(overview.getByText(
-        'No last-known control snapshot is available.',
+    await expect(empty.getByText(
+        'Control is offline. Refresh to retry.',
         { exact: true },
     )).toBeVisible();
-    const runPicker = overview.getByRole('combobox', { name: 'Control run' });
+    const runPicker = targets.getByRole('combobox', { name: 'Control run' });
     await expect(runPicker).toContainText('Control runs unavailable');
     await expect(runPicker).not.toContainText('No control runs');
-    await expect(controlBoard(page).locator('[data-control-agent-row]')).toHaveCount(0);
-    await expect(controlBoard(page)).not.toContainText('seed-agent');
+    await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
+    await expect(targets).not.toContainText('seed-agent');
+    await expect(executeActionBand(page).getByRole('button', { name: 'Refresh' }))
+        .toBeEnabled();
+    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+        .toBeDisabled();
+    await expect(actionRequirement(page, 'Resolve targets'))
+        .toHaveText('Resolve targets: Live or partial control truth is required.');
+    await expect(actionRequirement(page, 'Create draft'))
+        .toHaveText('Create draft: Complete live control truth is required.');
 });
 
 test('keeps malformed successful control responses reachable', async ({
@@ -333,10 +367,18 @@ test('keeps malformed successful control responses reachable', async ({
     await expect(page.locator('[data-command-bar]').getByRole('status'))
         .toHaveText('Control error · reachable');
     await expect(commandContextItem(page, 'Connected')).toContainText('Unknown');
-    const overview = page.getByRole('region', { name: 'Control overview' });
-    await expect(overview.getByRole('heading', { name: 'Control server error' }))
+    const targets = executeTargets(page);
+    const empty = targetEmptyState(page);
+    await expect(empty.getByText('No current target evidence', { exact: true }))
         .toBeVisible();
-    await expect(overview).not.toContainText('Control server offline');
+    await expect(empty.getByText(
+        'Control is reachable but returned invalid data. Refresh to retry.',
+        { exact: true },
+    )).toBeVisible();
+    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+        .toBeDisabled();
+    await expect(actionRequirement(page, 'Resolve targets'))
+        .toHaveText('Resolve targets: Live or partial control truth is required.');
 });
 
 test('contains nested malformed control snapshots before repository derivation', async ({
@@ -357,9 +399,13 @@ test('contains nested malformed control snapshots before repository derivation',
 
     await expect(page.locator('[data-command-bar]').getByRole('status'))
         .toHaveText('Control error · reachable');
-    await expect(page.getByRole('region', { name: 'Control overview' })
-        .getByRole('heading', { name: 'Control server error' }))
-        .toBeVisible();
+    await expect(targetEmptyState(page).getByText(
+        'Control is reachable but returned invalid data. Refresh to retry.',
+        { exact: true },
+    )).toBeVisible();
+    await expect(executeTargets(page).locator('[data-execute-target]')).toHaveCount(0);
+    await expect(actionRequirement(page, 'Resolve targets'))
+        .toHaveText('Resolve targets: Live or partial control truth is required.');
     expect(pageErrors).toEqual([]);
 });
 
@@ -379,16 +425,21 @@ test('keeps usable rows in a partial snapshot and labels active-run context unkn
 
     await expect(commandStatus(page, 'partial', 'Partial'))
         .toBeVisible();
-    await expect(agentRow(page, 'agent-partial')).toHaveAttribute(
+    const row = targetRow(page, 'agent-partial');
+    await expect(row).toHaveAttribute(
         'data-target-status',
         'matched',
     );
+    await expect(row.getByRole('checkbox', { name: 'Select agent-partial' }))
+        .toBeEnabled();
     await expect(commandContextItem(page, 'Safe targets')).toContainText('1');
     await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
-    await expect(page.getByRole('region', { name: 'Control overview' }).getByText(
-        'Distributed-run context is unavailable; agent connectivity remains usable.',
-        { exact: true },
-    )).toBeVisible();
+    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+        .toBeEnabled();
+    await expect(executeActionBand(page).getByRole('button', { name: 'Create draft' }))
+        .toBeDisabled();
+    await expect(actionRequirement(page, 'Create draft'))
+        .toHaveText('Create draft: Complete live control truth is required.');
 });
 
 test('keeps usable rows when optional distributed context is malformed', async ({
@@ -408,15 +459,18 @@ test('keeps usable rows when optional distributed context is malformed', async (
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=${runId}`);
 
     await expect(commandStatus(page, 'partial', 'Partial')).toBeVisible();
-    await expect(agentRow(page, 'agent-partial-protocol')).toHaveAttribute(
+    const row = targetRow(page, 'agent-partial-protocol');
+    await expect(row).toHaveAttribute(
         'data-target-status',
         'matched',
     );
+    await expect(row.getByRole('checkbox', { name: 'Select agent-partial-protocol' }))
+        .toBeEnabled();
     await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
-    await expect(page.getByRole('region', { name: 'Control overview' }).getByText(
-        'Distributed-run context is unavailable; agent connectivity remains usable.',
-        { exact: true },
-    )).toBeVisible();
+    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+        .toBeEnabled();
+    await expect(actionRequirement(page, 'Create draft'))
+        .toHaveText('Create draft: Complete live control truth is required.');
 });
 
 test('keeps agent rows usable while announcing distributed-context authorization', async ({
@@ -435,16 +489,19 @@ test('keeps agent rows usable while announcing distributed-context authorization
 
     await expect(page.locator('[data-command-bar]').getByRole('status'))
         .toHaveText('Authorization required · reachable · partial');
-    await expect(agentRow(page, 'agent-partial-auth')).toHaveAttribute(
+    const row = targetRow(page, 'agent-partial-auth');
+    await expect(row).toHaveAttribute(
         'data-target-status',
         'matched',
     );
+    await expect(row.getByRole('checkbox', { name: 'Select agent-partial-auth' }))
+        .toBeEnabled();
     await expect(commandContextItem(page, 'Safe targets')).toContainText('1');
     await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
-    await expect(page.getByRole('region', { name: 'Control overview' }).getByText(
-        'Agent connectivity remains usable; authorization is required for distributed-run context.',
-        { exact: true },
-    )).toBeVisible();
+    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+        .toBeEnabled();
+    await expect(actionRequirement(page, 'Create draft'))
+        .toHaveText('Create draft: Complete live control truth is required.');
 });
 
 test('retains partial authorization when the configured token broker is unavailable', async ({
@@ -490,14 +547,17 @@ test('retains partial authorization when the configured token broker is unavaila
 
     await expect(page.locator('[data-command-bar]').getByRole('status'))
         .toHaveText('Authorization required · reachable · partial');
-    await expect(agentRow(page, 'agent-partial-broker-error')).toHaveAttribute(
+    const row = targetRow(page, 'agent-partial-broker-error');
+    await expect(row).toHaveAttribute(
         'data-target-status',
         'matched',
     );
-    await expect(page.getByRole('region', { name: 'Control overview' }).getByText(
-        'Agent connectivity remains usable; authorization is required for distributed-run context.',
-        { exact: true },
-    )).toBeVisible();
+    await expect(row.getByRole('checkbox', { name: 'Select agent-partial-broker-error' }))
+        .toBeEnabled();
+    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+        .toBeEnabled();
+    await expect(actionRequirement(page, 'Create draft'))
+        .toHaveText('Create draft: Complete live control truth is required.');
     expect(brokerAuthorizations).toEqual(['Bearer configured-session-token']);
 });
 
@@ -517,7 +577,7 @@ test('retains last-good rows after a failed manual refresh but reports zero curr
         { kind: 'network-error' },
     ]);
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=${runId}`);
-    await expect(agentRow(page, 'agent-last-good')).toHaveAttribute(
+    await expect(targetRow(page, 'agent-last-good')).toHaveAttribute(
         'data-target-status',
         'matched',
     );
@@ -534,23 +594,28 @@ test('retains last-good rows after a failed manual refresh but reports zero curr
         .toBeVisible();
     await expect(page.locator('[data-command-bar]').getByRole('status'))
         .toHaveText('Stale · unreachable');
-    await expect(agentRow(page, 'agent-last-good')).toBeVisible();
+    const lastKnownRow = targetRow(page, 'agent-last-good');
+    await expect(lastKnownRow).toBeVisible();
+    await expect(lastKnownRow.getByRole('checkbox')).toHaveCount(0);
+    await expect(lastKnownRow.getByLabel('Not selectable')).toBeVisible();
     await expect(commandContextItem(page, 'Safe targets')).toContainText(
-        '0 current · 1 last known',
+        '0 current · 1 last-known recipe-safe',
     );
     await expect(commandContextItem(page, 'Active run')).toContainText(
         'dist-live-canonical · running · last known',
     );
-    await expect(controlBoard(page).getByText(
-        '0 safe now · 1 last known targetable',
+    await expect(executeTargets(page).getByText(
+        'Last-known evidence · Stale',
         { exact: true },
     )).toBeVisible();
-    await expect(controlBoard(page).getByText('Blocked now', { exact: true })
-        .locator('..')).toContainText('1');
-    await expect(page.getByRole('region', { name: 'Control overview' }).getByText(
-        'Last-known agent evidence is retained, but no target is currently safe.',
+    await expect(executeTargets(page).getByText(
+        'Target evidence is retained for diagnosis. Selection is disabled until current control truth returns.',
         { exact: true },
     )).toBeVisible();
+    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+        .toBeDisabled();
+    await expect(actionRequirement(page, 'Resolve targets'))
+        .toHaveText('Resolve targets: Live or partial control truth is required.');
 });
 
 test('renders a truthful live-empty control state', async ({ context, page }) => {
@@ -563,19 +628,23 @@ test('renders a truthful live-empty control state', async ({ context, page }) =>
 
     await expect(commandStatus(page, 'passed', 'Live'))
         .toBeVisible();
-    const overview = page.getByRole('region', { name: 'Control overview' });
-    await expect(overview.getByRole('heading', { name: 'No control runs' })).toBeVisible();
-    await expect(overview.getByText(
-        'The control server is live and currently reports no runs.',
+    const targets = executeTargets(page);
+    const empty = targetEmptyState(page);
+    await expect(empty.getByText('No current target evidence', { exact: true }))
+        .toBeVisible();
+    await expect(empty.getByText(
+        'The selected live control run contains no target agents.',
         { exact: true },
     )).toBeVisible();
+    await expect(targets.getByRole('combobox', { name: 'Control run' }))
+        .toContainText('Control runs unavailable');
     await expect(commandContextItem(page, 'Connected')).toContainText('0/0');
     await expect(commandContextItem(page, 'Active run')).toContainText('None');
-    await expect(controlBoard(page).getByText(
-        'No agents are available because the control server reports no runs.',
-        { exact: true },
-    )).toBeVisible();
-    await expect(controlBoard(page).locator('[data-control-agent-row]')).toHaveCount(0);
+    await expect(commandContextItem(page, 'Safe targets'))
+        .toContainText('0 selected · 0 recipe-safe');
+    await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
+    await expect(actionRequirement(page, 'Resolve targets'))
+        .toHaveText('Resolve targets: Select at least one current-safe target.');
 });
 
 for (const unresolvedCase of [
@@ -604,17 +673,29 @@ for (const unresolvedCase of [
 
         await expect(commandContextItem(page, 'Connected')).toContainText('Unknown');
         await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
-        const board = controlBoard(page);
-        await expect(board.getByText('Select a control run', { exact: true })).toBeVisible();
-        await expect(board.getByText(
-            'Select an available control run to inspect its agents.',
+        await expect(commandContextItem(page, 'Safe targets'))
+            .toContainText('0 selected · 0 recipe-safe');
+        const targets = executeTargets(page);
+        const runPicker = targets.getByRole('combobox', { name: 'Control run' });
+        await expect(runPicker).toHaveValue('');
+        await expect(runPicker).toContainText('Select a control run');
+        const empty = targetEmptyState(page);
+        await expect(empty.getByText('No current target evidence', { exact: true }))
+            .toBeVisible();
+        await expect(empty.getByText(
+            'The selected live control run contains no target agents.',
             { exact: true },
         )).toBeVisible();
-        for (const label of ['Agents', 'Connected', 'Safe now', 'Blocked now']) {
-            await expect(board.getByText(label, { exact: true }).locator('..'))
-                .toContainText('Unknown');
+        await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
+        await expect(targets).not.toContainText('agent-a');
+        await expect(targets).not.toContainText('agent-b');
+        if (unresolvedCase.routeSuffix) {
+            await expect(targets.getByRole('alert')).toHaveText(
+                'Control run missing-control-run is not present in the latest snapshot.',
+            );
         }
-        await expect(board).not.toContainText('No agents are available in the selected control run.');
+        await expect(actionRequirement(page, 'Resolve targets'))
+            .toHaveText('Resolve targets: Select at least one current-safe target.');
     });
 }
 
@@ -631,14 +712,17 @@ test('distinguishes reachable authorization failure from offline', async ({ cont
         .toBeVisible();
     await expect(page.locator('[data-command-bar]').getByRole('status'))
         .toHaveText('Authorization required · reachable');
-    const overview = page.getByRole('region', { name: 'Control overview' });
-    await expect(overview.getByRole('heading', { name: 'Authorization required' }))
+    const targets = executeTargets(page);
+    const empty = targetEmptyState(page);
+    await expect(empty.getByText('No current target evidence', { exact: true }))
         .toBeVisible();
-    await expect(overview.getByText(
-        'Control server reachable · authorization required',
+    await expect(empty.getByText(
+        'Control authorization is required.',
         { exact: true },
     )).toBeVisible();
-    await expect(overview).not.toContainText('Control server offline');
+    await expect(targets).not.toContainText('Control is offline');
+    await expect(actionRequirement(page, 'Resolve targets'))
+        .toHaveText('Resolve targets: Live or partial control truth is required.');
 });
 
 test('keeps stored credentials away from URL-selected control and API origins', async ({
@@ -684,9 +768,12 @@ test('keeps stored credentials away from URL-selected control and API origins', 
 
     await expect(commandStatus(page, 'warning', 'Authorization required'))
         .toBeVisible();
-    await expect(page.getByRole('region', { name: 'Control overview' }).getByText(
-        /URL-configured control endpoint/,
+    await expect(targetEmptyState(page).getByText(
+        'Automatic credentials were withheld for this URL-selected control endpoint.',
+        { exact: true },
     )).toBeVisible();
+    await expect(actionRequirement(page, 'Create draft'))
+        .toHaveText('Create draft: Complete live control truth is required.');
     expect(controlAuthorizations).toEqual([null]);
     expect(brokerAuthorizations).toEqual([]);
 });
@@ -706,7 +793,7 @@ test('announces recovery from offline to live and restores canonical rows', asyn
     await expect(announcedStatus).toHaveText('Offline · unreachable');
     await page.getByRole('button', { name: 'Refresh control data' }).click();
     await expect(announcedStatus).toHaveText('Live · reachable');
-    await expect(agentRow(page, 'agent-matched')).toHaveAttribute(
+    await expect(targetRow(page, 'agent-matched')).toHaveAttribute(
         'data-target-status',
         'matched',
     );
@@ -725,19 +812,25 @@ test('preserves unavailable URL selections without collection-index fallback', a
 
     await expect(commandContextItem(page, 'Control run'))
         .toContainText('control-unavailable');
-    await expect(page.getByRole('list', { name: 'Control selection notices' }))
-        .toContainText(
-            'Control run control-unavailable is not present in the latest snapshot.',
-        );
-    await expect(page.getByRole('combobox', { name: 'Control run' })).toHaveValue('');
-    await expect(controlBoard(page).locator('[data-control-agent-row]')).toHaveCount(0);
+    const targets = executeTargets(page);
+    await expect(targets.getByRole('alert')).toHaveText(
+        'Control run control-unavailable is not present in the latest snapshot.',
+    );
+    const runPicker = targets.getByRole('combobox', { name: 'Control run' });
+    await expect(runPicker).toHaveValue('');
+    await expect(runPicker).toHaveAttribute('aria-invalid', 'true');
+    await expect(runPicker).toHaveAttribute(
+        'aria-describedby',
+        'execute-control-run-issue',
+    );
+    await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
     const url = new URL(page.url());
     expect(url.searchParams.get('controlRunId')).toBe('control-unavailable');
     expect(url.searchParams.get('distributedRunId')).toBe('distributed-unavailable');
     expect(url.searchParams.get('agentId')).toBe('agent-unavailable');
 });
 
-test('commits, reloads, copies, and restores run and keyboard agent selections', async ({
+test('commits, reloads, copies, and restores run selection while target checks stay bounded', async ({
     baseURL,
     context,
     page,
@@ -763,39 +856,41 @@ test('commits, reloads, copies, and restores run and keyboard agent selections',
 
     await runSelect.focus();
     await expect(runSelect).toBeFocused();
-    await page.keyboard.press('Home');
+    await page.keyboard.type('control-east');
     await expect(page).toHaveURL(/(?:\?|&)controlRunId=control-east(?:&|$)/);
     await expect(page).not.toHaveURL(/(?:\?|&)agentId=/);
-    await expect(agentRow(page, 'agent-east')).toBeVisible();
-
-    const eastAgent = agentRow(page, 'agent-east');
-    await eastAgent.focus();
-    await expect(eastAgent).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(eastAgent).toHaveAttribute('aria-selected', 'true');
-    await expect(page).toHaveURL(/(?:\?|&)agentId=agent-east(?:&|$)/);
-
-    await page.goBack();
-    await expect(runSelect).toHaveValue('control-east');
+    const eastRow = targetRow(page, 'agent-east');
+    await expect(eastRow).toBeVisible();
+    const eastTarget = eastRow.getByRole('checkbox', { name: 'Select agent-east' });
+    await expect(eastTarget).toBeChecked();
+    await eastTarget.focus();
+    await expect(eastTarget).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(eastTarget).not.toBeChecked();
     await expect(page).not.toHaveURL(/(?:\?|&)agentId=/);
+
+    // Target selection is bounded draft state: it must not create a history entry.
     await page.goBack();
     await expect(runSelect).toHaveValue('control-west');
-    await expect(agentRow(page, 'agent-west')).toBeVisible();
+    await expect(targetRow(page, 'agent-west')).toBeVisible();
 
     await page.goForward();
     await expect(runSelect).toHaveValue('control-east');
-    await page.goForward();
-    await expect(agentRow(page, 'agent-east')).toHaveAttribute('aria-selected', 'true');
-    await expect(page).toHaveURL(/(?:\?|&)agentId=agent-east(?:&|$)/);
+    await expect(targetRow(page, 'agent-east')
+        .getByRole('checkbox', { name: 'Select agent-east' }))
+        .toBeChecked();
+    await expect(page).not.toHaveURL(/(?:\?|&)agentId=/);
 
     await page.reload();
     await expect(runSelect).toHaveValue('control-east');
-    await expect(agentRow(page, 'agent-east')).toHaveAttribute('aria-selected', 'true');
+    await expect(targetRow(page, 'agent-east')
+        .getByRole('checkbox', { name: 'Select agent-east' }))
+        .toBeChecked();
     await page.getByRole('button', { name: 'Copy canonical link' }).click();
     const copiedHref = await page.evaluate(() => navigator.clipboard.readText());
     const copied = new URL(copiedHref);
     expect(copied.searchParams.get('controlRunId')).toBe('control-east');
-    expect(copied.searchParams.get('agentId')).toBe('agent-east');
+    expect(copied.searchParams.has('agentId')).toBe(false);
     expect(copied.searchParams.has('controlUrl')).toBe(false);
 });
 
@@ -895,12 +990,12 @@ test('keeps the connected board usable at tablet and portrait touch sizes', asyn
             await closeInspector.click();
         }
 
-        const board = controlBoard(page);
-        await expect(board).toBeVisible();
-        const runSelect = page.getByRole('combobox', { name: 'Control run' });
+        const targets = executeTargets(page);
+        await expect(targets).toBeVisible();
+        const runSelect = targets.getByRole('combobox', { name: 'Control run' });
         expect((await runSelect.boundingBox())?.height)
             .toBeGreaterThanOrEqual(44);
-        const rows = board.locator('[data-control-agent-row]');
+        const rows = targets.locator('[data-execute-target]');
         await expect(rows).toHaveCount(5);
         for (const bounds of await rows.evaluateAll(elements =>
             elements.map(element => {
@@ -912,7 +1007,7 @@ test('keeps the connected board usable at tablet and portrait touch sizes', asyn
             expect(bounds.width).toBeGreaterThanOrEqual(44);
         }
 
-        const lastRow = agentRow(page, 'agent-missing-identity');
+        const lastRow = targetRow(page, 'agent-missing-identity');
         await lastRow.scrollIntoViewIfNeeded();
         const reachable = await lastRow.evaluate((element) => {
             const row = element.getBoundingClientRect();
@@ -947,9 +1042,12 @@ test('keeps the complete Execute workflow scrollable in mobile landscape', async
     expect(scrollState.overflowY).toBe('auto');
     expect(scrollState.scrollHeight).toBeGreaterThan(scrollState.clientHeight);
 
-    const start = page.getByRole('button', { name: 'Start Preview', exact: true });
-    await start.scrollIntoViewIfNeeded();
-    const withinWorkspace = await start.evaluate((element) => {
+    const actionBand = executeActionBand(page);
+    await expect(actionBand).toBeVisible();
+    const resolve = actionBand.getByRole('button', { name: 'Resolve targets' });
+    await expect(resolve).toBeEnabled();
+    await resolve.scrollIntoViewIfNeeded();
+    const withinWorkspace = await resolve.evaluate((element) => {
         const button = element.getBoundingClientRect();
         const owner = element.closest('[data-execute-workspace]')?.getBoundingClientRect();
         return Boolean(owner) && button.top >= owner!.top && button.bottom <= owner!.bottom;

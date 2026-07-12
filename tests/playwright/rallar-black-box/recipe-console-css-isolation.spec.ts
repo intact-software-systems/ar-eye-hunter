@@ -1,4 +1,10 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+
+const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
+const RECIPE_URL =
+    '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
+    '&controlRunId=execute-control-a';
+const MATCHED_REASON = 'Agent is connected and reports the selected global group.';
 
 const legacySelectors = [
     '[data-isolation-legacy-panel]',
@@ -18,7 +24,7 @@ const recipeSelectors = [
 ] as const;
 
 async function capture(
-    page: import('@playwright/test').Page,
+    page: Page,
     mode: string,
     selectors: readonly string[],
     fixture = '/test/fixtures/recipe-console-css-isolation.html',
@@ -48,6 +54,113 @@ async function capture(
     return { requests, styles };
 }
 
+function liveExecuteSnapshot() {
+    const runId = 'execute-control-a';
+    const evidenceAtEpochMs = Date.now();
+    const group = {
+        applicationId: 'rallar-black-box',
+        workspaceId: 'default',
+        groupId: 'rallar-black-box-room',
+    } as const;
+    const agents = ['execute-agent-a', 'execute-agent-b'].map(agentId => ({
+        runId,
+        agentId,
+        connected: true,
+        registeredAtEpochMs: evidenceAtEpochMs - 1_500,
+        lastSeenAtEpochMs: evidenceAtEpochMs,
+        lastHeartbeatAtEpochMs: evidenceAtEpochMs,
+        status: 'connected',
+        identity: {
+            principalId: `${agentId}-principal`,
+            sessionId: `${agentId}-session`,
+            ...group,
+            providerMode: 'browser-rallar',
+            browserName: 'chromium',
+            region: 'eu-north',
+        },
+        connectionSequence: 1,
+        reconnectCount: 0,
+        receivedResultCount: 0,
+        receivedEventCount: 0,
+        completedCommandIds: [],
+        resumeCompletedCommandIds: [],
+    }));
+    return {
+        runs: [{
+            runId,
+            createdAtEpochMs: evidenceAtEpochMs - 9_500,
+            updatedAtEpochMs: evidenceAtEpochMs,
+            agents,
+            commands: [],
+            results: [],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: [],
+        }],
+        distributedRuns: [],
+    };
+}
+
+async function routeLiveExecuteControl(context: BrowserContext): Promise<void> {
+    await context.route(CONTROL_ROUTE, route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify(liveExecuteSnapshot()),
+    }));
+}
+
+async function navigateInApp(page: Page, url: string): Promise<void> {
+    await page.evaluate(nextUrl => {
+        history.pushState({}, '', nextUrl);
+        dispatchEvent(new PopStateEvent('popstate'));
+    }, url);
+}
+
+async function captureRealRecipeStyles(page: Page) {
+    const catalog = page.getByRole('region', { name: 'Recipe ledger' });
+    const targets = page.getByRole('region', { name: 'Targets' });
+    const actionBand = page.getByRole('region', { name: 'Execute actions' });
+    const targetRow = targets.locator('[data-target-status="matched"]').first();
+    await expect(catalog).toBeVisible();
+    await expect(targets).toBeVisible();
+    await expect(actionBand).toBeVisible();
+    await expect(targetRow).toBeVisible();
+
+    const style = async (selector: ReturnType<Page['locator']>, properties: readonly string[]) =>
+        selector.evaluate((node, names) => {
+            const computed = getComputedStyle(node);
+            return Object.fromEntries(names.map(name => [name, computed.getPropertyValue(name)]));
+        }, properties);
+
+    return {
+        catalog: await style(catalog, [
+            'background-color', 'border-top-color', 'display', 'grid-template-rows',
+        ]),
+        targets: await style(targets, [
+            'background-color', 'border-top-color', 'display', 'min-width',
+        ]),
+        actionBand: await style(actionBand, [
+            'background-color', 'border-top-color', 'display', 'grid-template-columns',
+        ]),
+        controlRunSelect: await style(targets.getByRole('combobox', {
+            name: 'Control run',
+        }), [
+            'background-color', 'border-radius', 'border-top-color', 'min-height',
+        ]),
+        checkbox: await style(targetRow.getByRole('checkbox'), [
+            'accent-color', 'height', 'width',
+        ]),
+        status: await style(targetRow.locator('[data-status="passed"]'), [
+            'background-color', 'border-top-color', 'border-radius', 'color', 'padding',
+        ]),
+        reason: await style(targetRow.getByText(MATCHED_REASON, { exact: true }), [
+            'color', 'font-size', 'line-height', 'overflow', 'white-space',
+        ]),
+    };
+}
+
 test('is independent of stylesheet load order', async ({ page }) => {
     const legacyFirstLegacy = await capture(page, 'both', legacySelectors);
     const legacyFirstRecipe = await capture(page, 'both', recipeSelectors);
@@ -68,63 +181,119 @@ test('is independent of stylesheet load order', async ({ page }) => {
     expect(recipeFirstRecipe.styles).toEqual(legacyFirstRecipe.styles);
 });
 
-test('survives Recipe Console to legacy to Recipe Console navigation', async ({ page }) => {
-    const recipeUrl = '/?provider=simulated&v=1&experience=recipe-console&view=execute';
-    await page.goto(recipeUrl);
-    const commandBar = page.locator('[data-command-bar]');
-    const controlOverview = page.getByRole('region', { name: 'Control overview' });
-    await expect(commandBar).toBeVisible();
-    await expect(controlOverview).toBeVisible();
-    const captureRealRecipeStyles = async () => ({
-        commandBar: await commandBar.evaluate(node => {
-            const style = getComputedStyle(node);
-            return {
-                backgroundColor: style.backgroundColor,
-                borderBottomColor: style.borderBottomColor,
-                color: style.color,
-                display: style.display,
-                height: style.height,
-            };
-        }),
-        controlOverview: await controlOverview.evaluate(node => {
-            const style = getComputedStyle(node);
-            return {
-                backgroundColor: style.backgroundColor,
-                borderTopColor: style.borderTopColor,
-                display: style.display,
-                gap: style.gap,
-                padding: style.padding,
-            };
-        }),
-        controlRunSelect: await controlOverview.getByRole('combobox', {
-            name: 'Control run',
-        }).evaluate(node => {
-            const style = getComputedStyle(node);
-            return {
-                backgroundColor: style.backgroundColor,
-                borderRadius: style.borderRadius,
-                minHeight: style.minHeight,
-            };
-        }),
-    });
-    const before = await captureRealRecipeStyles();
+test('survives Recipe Console to legacy to Recipe Console navigation', async ({
+    context,
+    page,
+}) => {
+    await routeLiveExecuteControl(context);
+    await page.goto(RECIPE_URL);
+    const before = await captureRealRecipeStyles(page);
 
-    await page.evaluate(() => {
-        history.pushState({}, '', '/?provider=simulated&experience=legacy&tab=auth');
-        dispatchEvent(new PopStateEvent('popstate'));
-    });
+    await navigateInApp(page, '/?provider=simulated&experience=legacy&tab=auth');
     await expect(page.locator('.app-shell')).toBeVisible();
     await expect(page.locator('.recipe-console')).toHaveCount(0);
 
-    await page.evaluate((url) => {
-        history.pushState({}, '', url);
-        dispatchEvent(new PopStateEvent('popstate'));
-    }, recipeUrl);
-    await expect(commandBar).toBeVisible();
-    await expect(controlOverview).toBeVisible();
+    await navigateInApp(page, RECIPE_URL);
     await expect(page.locator('.app-shell')).toHaveCount(0);
-    const after = await captureRealRecipeStyles();
+    const after = await captureRealRecipeStyles(page);
     expect(after).toEqual(before);
+});
+
+test('matches cold Recipe styles when legacy components load first', async ({
+    context,
+    page,
+}) => {
+    await routeLiveExecuteControl(context);
+    await page.goto(RECIPE_URL);
+    const coldRecipe = await captureRealRecipeStyles(page);
+
+    const legacyFirst = await context.newPage();
+    await legacyFirst.goto('/?provider=simulated&experience=legacy&tab=auth');
+    await expect(legacyFirst.locator('.app-shell')).toBeVisible();
+    await expect(legacyFirst.locator('.recipe-console')).toHaveCount(0);
+    await navigateInApp(legacyFirst, RECIPE_URL);
+    await expect(legacyFirst.locator('.app-shell')).toHaveCount(0);
+
+    expect(await captureRealRecipeStyles(legacyFirst)).toEqual(coldRecipe);
+    await legacyFirst.close();
+});
+
+test('keeps complete target status evidence reachable across Execute viewports', async ({
+    context,
+    page,
+}) => {
+    await routeLiveExecuteControl(context);
+    for (const contract of [
+        { name: 'desktop', viewport: { width: 1440, height: 900 }, overflow: false },
+        { name: 'portrait', viewport: { width: 430, height: 932 }, overflow: true },
+        { name: 'short landscape', viewport: { width: 932, height: 430 }, overflow: false },
+    ] as const) {
+        await page.setViewportSize(contract.viewport);
+        await page.goto(RECIPE_URL);
+
+        const targets = page.getByRole('region', { name: 'Targets' });
+        const scroller = targets.getByRole('region', { name: 'Target evidence table' });
+        const row = targets.locator('[data-target-status="matched"]').first();
+        const status = row.locator('[data-status="passed"]');
+        const reason = row.getByText(MATCHED_REASON, { exact: true });
+        await expect(scroller, `${contract.name} target scroller`).toHaveAttribute(
+            'tabindex',
+            '0',
+        );
+        await expect(status, `${contract.name} matched status`).toBeVisible();
+        await expect(reason, `${contract.name} full target reason`).toHaveText(MATCHED_REASON);
+
+        const overflow = await scroller.evaluate(
+            element => element.scrollWidth - element.clientWidth,
+        );
+        if (contract.overflow) {
+            expect(overflow, `${contract.name} horizontal overflow`).toBeGreaterThan(1);
+            await scroller.focus();
+            await expect(scroller).toBeFocused();
+            await page.keyboard.press('ArrowRight');
+            await expect.poll(
+                () => scroller.evaluate(element => element.scrollLeft),
+                { message: `${contract.name} ArrowRight scroll` },
+            ).toBeGreaterThan(0);
+            for (let index = 0; index < 24; index += 1) {
+                await page.keyboard.press('ArrowRight');
+            }
+            await expect.poll(() => scroller.evaluate(element => ({
+                remaining: element.scrollWidth - element.clientWidth - element.scrollLeft,
+            }))).toEqual({ remaining: 0 });
+        } else {
+            expect(overflow, `${contract.name} horizontal overflow`).toBeLessThanOrEqual(1);
+        }
+
+        const reachability = await scroller.evaluate((element, selectors) => {
+            const scrollerBounds = element.getBoundingClientRect();
+            const statusNode = element.querySelector(selectors.status);
+            const reasonNode = Array.from(element.querySelectorAll('span')).find(
+                node => node.textContent === selectors.reason,
+            );
+            if (!statusNode || !reasonNode) return undefined;
+            const statusBounds = statusNode.getBoundingClientRect();
+            const reasonBounds = reasonNode.getBoundingClientRect();
+            return {
+                reasonClipped: reasonNode.scrollHeight > reasonNode.clientHeight + 1 ||
+                    reasonNode.scrollWidth > reasonNode.clientWidth + 1,
+                reasonRight: reasonBounds.right,
+                scrollerLeft: scrollerBounds.left,
+                scrollerRight: scrollerBounds.right,
+                statusLeft: statusBounds.left,
+            };
+        }, {
+            status: '[data-target-status="matched"] [data-status="passed"]',
+            reason: MATCHED_REASON,
+        });
+        expect(reachability, `${contract.name} target evidence bounds`).toBeDefined();
+        expect(reachability?.statusLeft, `${contract.name} status left edge`)
+            .toBeGreaterThanOrEqual((reachability?.scrollerLeft ?? 0) - 1);
+        expect(reachability?.reasonRight, `${contract.name} reason right edge`)
+            .toBeLessThanOrEqual((reachability?.scrollerRight ?? 0) + 1);
+        expect(reachability?.reasonClipped, `${contract.name} full reason clipping`)
+            .toBe(false);
+    }
 });
 
 test('keeps representative legacy and recipe console styles isolated', async ({ page }) => {

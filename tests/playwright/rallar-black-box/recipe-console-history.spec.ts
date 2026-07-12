@@ -288,7 +288,7 @@ test('shows the exact visible fallback for an invalid view', async ({ context, p
     const issueBounds = await page.locator('[data-url-issues]').boundingBox();
     const headingBounds = await page.getByRole('heading', {
         level: 1,
-        name: 'Execute',
+        name: 'Execute recipe',
     }).boundingBox();
     expect(issueBounds).not.toBeNull();
     expect(headingBounds).not.toBeNull();
@@ -324,6 +324,8 @@ test('canonicalizes initial and popstate URLs with replaceState', async ({ page 
         (window as Window & { __recipeConsoleReplaceCalls: string[] })
             .__recipeConsoleReplaceCalls.length
     )).toBe(1);
+    await expect.poll(() => currentUrl(page).searchParams.get('recipeId'))
+        .toBe('rtc-realtime-stability');
 
     await page.evaluate(() => {
         history.pushState(
@@ -342,7 +344,7 @@ test('canonicalizes initial and popstate URLs with replaceState', async ({ page 
     await expect.poll(() => page.evaluate(() =>
         (window as Window & { __recipeConsoleReplaceCalls: string[] })
             .__recipeConsoleReplaceCalls.length
-    )).toBe(2);
+    )).toBe(3);
     expect(await page.evaluate(() => history.length)).toBe(initialLength + 1);
     expect(currentUrl(page).searchParams.get('futureField')).toBe('keep');
 });

@@ -104,6 +104,72 @@ test('does not auto-consume a Recipe Console ticket at a URL-selected API origin
     expect(untrustedRequests).toEqual([]);
 });
 
+test('retains endpoint provenance when legacy transitions to Recipe Console', async ({
+    context,
+    page,
+}) => {
+    const controlAuthorizations: Array<string | null> = [];
+    const brokerAuthorizations: Array<string | null> = [];
+    await context.addInitScript(() => {
+        localStorage.setItem('auth.session', JSON.stringify({
+            clientId: 'victim-client',
+            sessionId: 'victim-session',
+            username: 'victim',
+            accessToken: 'victim-primary-session-token',
+            expiresAtEpochMs: 4_000_000_000_000,
+        }));
+    });
+    await context.route('https://untrusted-control.test/**', async (route) => {
+        const authorization = route.request().headers().authorization ?? null;
+        controlAuthorizations.push(authorization);
+        await route.fulfill({
+            status: authorization ? 200 : 401,
+            contentType: 'application/json',
+            headers: { 'access-control-allow-origin': '*' },
+            body: JSON.stringify(authorization
+                ? { runs: [], distributedRuns: [] }
+                : { error: 'Operator token required.' }),
+        });
+    });
+    await context.route('https://untrusted-api.test/**', async (route) => {
+        brokerAuthorizations.push(route.request().headers().authorization ?? null);
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            headers: { 'access-control-allow-origin': '*' },
+            body: JSON.stringify({
+                tokenType: 'Bearer',
+                token: 'brokered-operator-secret',
+                issuedAtEpochMs: Date.now(),
+                expiresAtEpochMs: Date.now() + 3_600_000,
+                ttlMs: 3_600_000,
+            }),
+        });
+    });
+
+    await page.goto(
+        '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth' +
+        '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol' +
+        '&apiBaseUrl=https%3A%2F%2Funtrusted-api.test',
+    );
+    await expect(page.locator('.app-shell')).toBeVisible();
+
+    await page.evaluate(() => {
+        history.pushState(
+            {},
+            '',
+            '/?provider=simulated&v=1&experience=recipe-console&view=execute',
+        );
+        dispatchEvent(new PopStateEvent('popstate'));
+    });
+
+    await expect(page.locator('.recipe-console')).toBeVisible();
+    await expect(page.locator('[data-command-bar]').getByRole('status'))
+        .toContainText('Authorization required');
+    expect(controlAuthorizations).toEqual([null]);
+    expect(brokerAuthorizations).toEqual([]);
+});
+
 test('proves each production experience static closure without fixture or peer resources', async ({ browser }) => {
     const productionBaseUrl = 'http://127.0.0.1:4176';
     const recipeResources = await coldEntry(

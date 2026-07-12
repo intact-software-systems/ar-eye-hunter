@@ -11,6 +11,63 @@ async function routeLiveEmptyControl(page: Page): Promise<void> {
     }));
 }
 
+function liveExecuteSnapshot() {
+    const runId = 'execute-control-a';
+    const evidenceAtEpochMs = Date.parse('2026-07-11T23:59:59.500Z');
+    const group = {
+        applicationId: 'rallar-black-box',
+        workspaceId: 'default',
+        groupId: 'rallar-black-box-room',
+    } as const;
+    const agents = ['execute-agent-a', 'execute-agent-b'].map((agentId) => ({
+        runId,
+        agentId,
+        connected: true,
+        registeredAtEpochMs: evidenceAtEpochMs - 1_500,
+        lastSeenAtEpochMs: evidenceAtEpochMs,
+        lastHeartbeatAtEpochMs: evidenceAtEpochMs,
+        status: 'connected',
+        identity: {
+            principalId: `${agentId}-principal`,
+            sessionId: `${agentId}-session`,
+            ...group,
+            providerMode: 'browser-rallar',
+            browserName: 'chromium',
+            region: 'eu-north',
+        },
+        connectionSequence: 1,
+        reconnectCount: 0,
+        receivedResultCount: 0,
+        receivedEventCount: 0,
+        completedCommandIds: [],
+        resumeCompletedCommandIds: [],
+    }));
+    return {
+        runs: [{
+            runId,
+            createdAtEpochMs: evidenceAtEpochMs - 9_500,
+            updatedAtEpochMs: evidenceAtEpochMs,
+            agents,
+            commands: [],
+            results: [],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: [],
+        }],
+        distributedRuns: [],
+    };
+}
+
+async function routeLiveExecuteControl(page: Page): Promise<void> {
+    await page.route(CONTROL_ROUTE, route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify(liveExecuteSnapshot()),
+    }));
+}
+
 type ConceptCase = Readonly<{
     name: string;
     snapshot: string;
@@ -34,17 +91,27 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
                 .toContainText('Live · reachable');
             const commandBar = page.locator('[data-command-bar]');
             await expect(commandBar.getByText('Control run', { exact: true }).locator('..'))
-                .toContainText('Select run');
+                .toContainText('execute-control-a');
             await expect(commandBar.getByText('Safe targets', { exact: true }).locator('..'))
-                .toContainText('0');
-            const recipeRegion = page.locator('section[aria-labelledby="recipe-ledger-heading"]');
-            const ledgerRegion = page.getByRole('region', { name: 'Recipes' });
-            const targetRegion = page.getByRole('region', { name: 'Sample targets and preflight' });
-            const recipeBounds = await recipeRegion.boundingBox();
-            const ledgerBounds = await ledgerRegion.boundingBox();
+                .toContainText('2 selected · 2 recipe-safe');
+            const catalogRegion = page.getByRole('region', { name: 'Recipe ledger' });
+            const ledger = catalogRegion.getByRole('listbox', { name: 'Available recipes' });
+            const targetRegion = page.getByRole('region', { name: 'Targets' });
+            const catalogBounds = await catalogRegion.boundingBox();
             const targetBounds = await targetRegion.boundingBox();
-            expect(Math.abs((recipeBounds?.y ?? 0) - (targetBounds?.y ?? 0)))
+            const ledgerBounds = await ledger.boundingBox();
+            expect(Math.abs((catalogBounds?.y ?? 0) - (targetBounds?.y ?? 0)))
                 .toBeLessThanOrEqual(1);
+            await expect(targetRegion.locator('[data-target-status="matched"]'))
+                .toHaveCount(2);
+            await expect(targetRegion.getByRole('checkbox')).toHaveCount(2);
+            await expect(page.getByRole('region', { name: 'Preflight' })).toBeVisible();
+            await expect(page.locator('[data-execute-manifest]')).toBeVisible();
+            const actions = page.getByRole('region', { name: 'Execute actions' });
+            await expect(actions.getByRole('button', { name: 'Resolve targets' }))
+                .toBeEnabled();
+            await expect(actions.getByRole('button', { name: 'Create draft' }))
+                .toBeDisabled();
             const featuredLabels = [
                 'RTC Realtime Stability',
                 'Provider Parity',
@@ -52,11 +119,13 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
                 'Expected Failure',
             ] as const;
             for (const label of featuredLabels) {
-                await expect(page.getByRole('button', { name: new RegExp(label) }))
+                await expect(catalogRegion.locator('[data-execute-recipe]').filter({
+                    hasText: label,
+                }))
                     .toHaveCount(1);
             }
-            const lastFeatured = page.getByRole('button', {
-                name: new RegExp(featuredLabels.at(-1) ?? ''),
+            const lastFeatured = catalogRegion.locator('[data-execute-recipe]').filter({
+                hasText: featuredLabels.at(-1) ?? '',
             });
             await lastFeatured.scrollIntoViewIfNeeded();
             const lastBounds = await lastFeatured.boundingBox();
@@ -64,7 +133,10 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
                 .toBeGreaterThanOrEqual(ledgerBounds?.y ?? 0);
             expect((lastBounds?.y ?? 0) + (lastBounds?.height ?? 0))
                 .toBeLessThanOrEqual((ledgerBounds?.y ?? 0) + (ledgerBounds?.height ?? 0) + 1);
-            await ledgerRegion.evaluate(element => {
+            await ledger.evaluate(element => {
+                element.scrollTop = 0;
+            });
+            await page.locator('[data-work-surface]').evaluate(element => {
                 element.scrollTop = 0;
             });
         },
@@ -122,7 +194,11 @@ test.describe('approved Signal Ledger concept fidelity', () => {
         test(concept.name, async ({ page }) => {
             await page.setViewportSize(concept.viewport);
             await page.clock.setFixedTime(new Date('2026-07-12T00:00:00.000Z'));
-            await routeLiveEmptyControl(page);
+            if (concept.view === 'execute') {
+                await routeLiveExecuteControl(page);
+            } else {
+                await routeLiveEmptyControl(page);
+            }
             await page.goto(
                 `/?provider=simulated&v=1&experience=recipe-console&view=${concept.view}`,
             );
