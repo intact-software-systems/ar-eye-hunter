@@ -45,6 +45,24 @@ export function createAnalyzeEnvelopeFile(): AnalyzeUploadFile {
     };
 }
 
+export function createAnalyzeEnvelopeFileForSchema(
+    artifactSchemaVersion: number,
+): AnalyzeUploadFile {
+    return upload('future-schema-artifact.json', JSON.stringify({
+        ...createAnalyzeArtifactEnvelope(),
+        artifactSchemaVersion,
+    }, null, 2));
+}
+
+export function createAnalyzeCandidateFiles(
+    count: number,
+): readonly AnalyzeUploadFile[] {
+    return Array.from({ length: count }, (_, index) => upload(
+        `candidate-${String(index + 1).padStart(2, '0')}.json`,
+        JSON.stringify({ candidate: index + 1 }),
+    ));
+}
+
 export function createAnalyzeLooseFilesForIdentity(identity: Readonly<{
     distributedRunId: string;
     controlRunId: string;

@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
     createAnalyzeArtifactEnvelopeForIdentity,
+    createAnalyzeCandidateFiles,
+    createAnalyzeEnvelopeFileForSchema,
     createAnalyzeLooseFiles,
     createAnalyzeLooseFilesForIdentity,
     createDuplicateAnalyzeFiles,
@@ -57,6 +59,48 @@ test('retains prior analysis after malformed and duplicate replacement selection
     await expect(analyzeVerdict(page)).toContainText(ANALYZE_FAILURE_MESSAGE);
 });
 
+test('keeps future-schema evidence usable and rejects an over-limit replacement truthfully', async ({ context, page }) => {
+    await installRecipeConsoleAnalyzeFixture(context);
+    await page.goto(ANALYZE_ROUTE);
+    await chooseAnalyzeFiles(page, [createAnalyzeEnvelopeFileForSchema(99)]);
+    await expect(artifactStatus(page)).toHaveText('Artifact ready');
+    await expect(analyzeVerdict(page)).toHaveAttribute('data-artifact-support', 'unsupported');
+    await expect(analyzeVerdict(page)).toContainText(ANALYZE_FAILURE_MESSAGE);
+    await expect(analyzeSource(page).locator('[data-analyze-provenance]'))
+        .toContainText('unsupported · schema v99');
+    const unknownVersion = page.locator('[data-analyze-section="quality"]')
+        .locator('[data-file-status="unknown-version"]');
+    await expect(unknownVersion).toContainText('$artifactSchemaVersion');
+    await expect(unknownVersion).toContainText('Unknown Version');
+    await expect(unknownVersion).toContainText(
+        'Artifact schema version 99 is not supported.',
+    );
+
+    for (const [query, kind] of [
+        ['rtc.route.prior', 'event'],
+        ['rallar.browser.rtc.no_relay', 'diagnostic'],
+        ['expectedcandidate', 'result'],
+        ['command', 'failure'],
+    ] as const) {
+        await analyzeSearch(page).getByLabel('Search evidence').fill(query);
+        await analyzeSearch(page).getByRole('button', { name: 'Apply search' }).click();
+        await expect(analyzeSearch(page).locator(`[data-evidence-kind="${kind}"]`))
+            .not.toHaveCount(0);
+    }
+
+    await chooseAnalyzeFiles(page, createAnalyzeCandidateFiles(25));
+    await expect(artifactStatus(page)).toHaveText('Needs attention');
+    await expect(operationError(page)).toHaveText(
+        'Previous analysis retained. Select at most 24 files; received 25.',
+    );
+    await expect(analyzePoliteAnnouncement(page)).toHaveText(
+        'Artifact selection rejected. Previous analysis retained.',
+    );
+    await expect(analyzeVerdict(page)).toHaveAttribute('data-artifact-support', 'unsupported');
+    await expect(analyzeVerdict(page)).toContainText(ANALYZE_FAILURE_MESSAGE);
+    await expect(unknownVersion).toContainText('Artifact schema version 99 is not supported.');
+});
+
 test('announces Control artifact loading and ready completion', async ({ context, page }) => {
     const fixture = await installRecipeConsoleAnalyzeFixture(context);
     fixture.deferNextArtifactResponse();
@@ -91,6 +135,39 @@ test('rejects a dropped artifact without reading it while Control loading is bus
     await expect(artifactStatus(page)).toHaveText('Artifact ready');
     await expect(analyzeSource(page).locator('[data-analyze-provenance]'))
         .toContainText(`Control artifact ${ANALYZE_DISTRIBUTED_RUN_ID}`);
+});
+
+test('keeps prior evidence stale when a late Control request loses URL authority', async ({ context, page }) => {
+    const fixture = await installRecipeConsoleAnalyzeFixture(context);
+    await page.goto(ANALYZE_ROUTE);
+    await chooseAnalyzeFiles(page, createAnalyzeLooseFiles());
+    fixture.setArtifactResponse(createAnalyzeArtifactEnvelopeForIdentity({
+        outerDistributedRunId: 'distributed-x',
+        fileDistributedRunId: 'distributed-x',
+        fileControlRunId: 'control-x',
+    }));
+    await pushAnalyzeContext(page, { controlRunId: 'control-x', distributedRunId: 'distributed-x' });
+    fixture.deferNextArtifactResponse();
+    await page.locator('[data-analyze-load-artifact]').click();
+    await fixture.waitForDeferredArtifactRequest();
+    try {
+        await pushAnalyzeContext(page, { controlRunId: 'control-b', distributedRunId: 'distributed-b' });
+    } finally {
+        fixture.releaseDeferredArtifactResponse();
+    }
+    await expect(artifactStatus(page)).toHaveText('Needs attention');
+    await expect(operationError(page)).toContainText('interrupted by a context change');
+    await expect(analyzePoliteAnnouncement(page)).toHaveText(
+        'Control artifact load failed. Previous analysis retained.',
+    );
+    const selected = new URL(page.url()).searchParams;
+    expect(selected.get('controlRunId')).toBe('control-b');
+    expect(selected.get('distributedRunId')).toBe('distributed-b');
+    await expect(analyzeSource(page).locator('[data-analyze-provenance]'))
+        .not.toContainText('distributed-x');
+    const retainedHref = new URL(await analyzeLegacyRunsLink(page).getAttribute('href') ?? '', page.url());
+    expect(retainedHref.searchParams.get('controlRunId')).toBe(ANALYZE_CONTROL_RUN_ID);
+    expect(retainedHref.searchParams.get('distributedRunId')).toBe(ANALYZE_DISTRIBUTED_RUN_ID);
 });
 
 test('marks retained evidence stale across URL context history and keeps legacy handoff on the loaded run', async ({ context, page }) => {
