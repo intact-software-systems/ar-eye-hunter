@@ -228,6 +228,53 @@ describe('control agent board derivation', () => {
         });
     });
 
+    it('uses a strict 30,000ms heartbeat freshness boundary', () => {
+        const fresh = deriveControlAgentBoardRows({
+            run: controlRun([agent('agent-a', { lastHeartbeatAtEpochMs: 2_000 })]),
+            group,
+            nowEpochMs: 32_000,
+        });
+        const stale = deriveControlAgentBoardRows({
+            run: controlRun([agent('agent-a', { lastHeartbeatAtEpochMs: 2_000 })]),
+            group,
+            nowEpochMs: 32_001,
+        });
+
+        expect(fresh[0]).toMatchObject({ targetStatus: 'matched', targetable: true });
+        expect(stale[0]).toMatchObject({ targetStatus: 'stale', targetable: false });
+    });
+
+    it('does not invent staleness when a connected scoped agent has no timestamps', () => {
+        const {
+            lastHeartbeatAtEpochMs: _heartbeat,
+            lastSeenAtEpochMs: _seen,
+            ...withoutTimestamps
+        } = agent('agent-a');
+        const rows = deriveControlAgentBoardRows({
+            run: controlRun([withoutTimestamps]),
+            group,
+            nowEpochMs: 100_000,
+        });
+
+        expect(rows[0]).toMatchObject({
+            heartbeatAgeMs: undefined,
+            targetStatus: 'matched',
+            targetable: true,
+        });
+    });
+
+    it('marks otherwise matching agents not-scoped when no group is supplied', () => {
+        const rows = deriveControlAgentBoardRows({
+            run: controlRun([agent('agent-a')]),
+            nowEpochMs: 2_500,
+        });
+
+        expect(rows[0]).toMatchObject({
+            targetStatus: 'not-scoped',
+            targetable: false,
+        });
+    });
+
     it('requires CRDT capability when recipe command kinds need CRDT runtime', () => {
         const rows = deriveControlAgentBoardRows({
             run: controlRun([
