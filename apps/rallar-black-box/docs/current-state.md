@@ -160,7 +160,11 @@ The SPA currently provides:
 The control server in `apps/rallar-black-box-control-server` currently provides:
 
 - `GET /health`
-- `POST /retention/cleanup`
+- `POST /retention/cleanup`: the bare request preserves the existing
+  destructive cleanup behavior; `?dryRun=true` returns bounded exact control,
+  distributed-run, and fleet-report consequences plus a short-lived plan
+  token; `?planToken=...` confirms only an unchanged authorized preview. Manual
+  preview/cleanup leaves current sockets and stored artifact files intact.
 - `GET /runs` with bounded snapshot query parameters
 - `GET /runs/:runId` with bounded snapshot query parameters
 - `POST /runs/:runId/commands` for bulk enqueue to selected agents
@@ -325,14 +329,17 @@ The main gaps are:
   services are supplied
 - permission-denied, forbidden, expiry, CORS, missing-peer, stale-agent, duplicate-session, and exact server-provided
   NACK assertions still need stable provisioned-environment fixtures
-- the control server has optional snapshot persistence, but retention policy, artifact search, and production-grade
-  durable storage remain planned; Run Manager reset/delete affects only local control snapshots and connected control
-  sockets
+- the control server has optional snapshot persistence plus bounded automatic
+  retention and authorization-first preview/guarded manual cleanup, but
+  artifact search, a Recipe Console retention UI, and production-grade durable
+  storage remain planned; Run Manager reset/delete affects only local control
+  snapshots and connected control sockets
 - monitor-server ingestion is not connected
 - long-running, seeded-traffic, and bounded-parallel runner support exists in shared-test and selected entries are
   visible in the SPA, but full matrix browsing, large-run virtualization, and durable artifact retention are not
   implemented yet
-- large run artifact search and retention policy are not implemented
+- large-run artifact search and the Recipe Console retention workflow are not
+  implemented yet
 - Flow Builder is implemented for command composition and export, but full shared-runner assertion execution, richer
   recording from other tabs, and durable flow storage are still planned
 - auth and permission negative testing is visible in the Auth tab, but expiry/forbidden/CORS matrices still need real

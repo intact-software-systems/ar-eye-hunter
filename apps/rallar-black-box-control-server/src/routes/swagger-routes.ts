@@ -417,18 +417,53 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
         tags: ['Retention'],
         summary: 'Apply configured run retention',
         description:
-          'Deletes the oldest in-memory runs beyond `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS`. Requires the admin token or a signed logged-in operator token when configured.',
+          'Without a preview query, preserves the legacy destructive cleanup behavior. `dryRun=true` returns a non-destructive consequence preview and short-lived plan token; `planToken` confirms only that exact current plan. Manual cleanup removes in-memory control/distributed/fleet state but does not close existing sockets or delete stored artifact files. Requires the admin token or a signed logged-in operator token when configured.',
         security: [{ bearerAuth: [] }, { queryToken: [] }],
+        parameters: [
+          {
+            in: 'query',
+            name: 'dryRun',
+            required: false,
+            schema: { type: 'string', enum: ['true'] },
+            description: 'Return the exact non-destructive retention consequence preview.',
+          },
+          {
+            in: 'query',
+            name: 'planToken',
+            required: false,
+            schema: {
+              type: 'string',
+              maxLength: 512,
+              pattern: '^v1\\.[0-9a-z]+\\.[A-Za-z0-9_-]+$',
+            },
+            description: 'Confirm a current preview. Cannot be combined with dryRun.',
+          },
+        ],
         responses: {
           '200': {
-            description: 'Retention cleanup result.',
+            description: 'Legacy/guarded cleanup result or non-destructive preview.',
             content: {
               'application/json': {
-                schema: { $ref: '#/components/schemas/RetentionCleanupResponse' },
+                schema: {
+                  oneOf: [
+                    { $ref: '#/components/schemas/RetentionCleanupResponse' },
+                    { $ref: '#/components/schemas/RetentionPreviewResponse' },
+                  ],
+                },
               },
             },
           },
+          '400': { $ref: '#/components/responses/BadRequest' },
           '401': { $ref: '#/components/responses/Unauthorized' },
+          '409': { $ref: '#/components/responses/Conflict' },
+          '413': {
+            description: 'Retention preview exceeds bounded planning limits.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ErrorResponse' },
+              },
+            },
+          },
         },
       },
     },
@@ -1321,11 +1356,92 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
       },
       RetentionCleanupResponse: {
         type: 'object',
+        additionalProperties: false,
         required: ['deletedRunIds', 'retainedRuns', 'maxRuns'],
         properties: {
           deletedRunIds: { type: 'array', items: { type: 'string' } },
           retainedRuns: { type: 'integer' },
           maxRuns: { type: 'integer' },
+        },
+      },
+      RetentionCandidate: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'runId',
+          'createdAtEpochMs',
+          'updatedAtEpochMs',
+          'connectedAgentCount',
+          'issuedRunTokenCount',
+          'distributedRuns',
+          'fleetReportIds',
+        ],
+        properties: {
+          runId: { type: 'string' },
+          createdAtEpochMs: { type: 'integer' },
+          updatedAtEpochMs: { type: 'integer' },
+          connectedAgentCount: { type: 'integer', minimum: 0 },
+          issuedRunTokenCount: { type: 'integer', minimum: 0 },
+          distributedRuns: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['distributedRunId', 'state'],
+              properties: {
+                distributedRunId: { type: 'string' },
+                state: { type: 'string' },
+              },
+            },
+          },
+          fleetReportIds: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      RetentionPreviewResponse: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'deletedRunIds',
+          'retainedRuns',
+          'maxRuns',
+          'dryRun',
+          'wouldDeleteRuns',
+          'wouldDeleteRunIds',
+          'wouldDeleteDistributedRunIds',
+          'wouldDeleteFleetReportIds',
+          'projectedRetainedRuns',
+          'preserves',
+          'planToken',
+        ],
+        properties: {
+          deletedRunIds: { type: 'array', items: { type: 'string' }, maxItems: 0 },
+          retainedRuns: { type: 'integer', minimum: 0 },
+          maxRuns: { type: 'integer' },
+          dryRun: { type: 'boolean', enum: [true] },
+          wouldDeleteRuns: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/RetentionCandidate' },
+          },
+          wouldDeleteRunIds: { type: 'array', items: { type: 'string' } },
+          wouldDeleteDistributedRunIds: { type: 'array', items: { type: 'string' } },
+          wouldDeleteFleetReportIds: { type: 'array', items: { type: 'string' } },
+          projectedRetainedRuns: { type: 'integer', minimum: 0 },
+          preserves: {
+            type: 'object',
+            additionalProperties: false,
+            description:
+              'Manual preview/cleanup preserves connected agent sockets and stored artifact files.',
+            required: ['connectedAgentSockets', 'storedArtifactFiles'],
+            properties: {
+              connectedAgentSockets: { type: 'boolean', enum: [true] },
+              storedArtifactFiles: { type: 'boolean', enum: [true] },
+            },
+          },
+          planToken: {
+            type: 'string',
+            maxLength: 512,
+            pattern: '^v1\\.[0-9a-z]+\\.[A-Za-z0-9_-]+$',
+          },
         },
       },
       ControlRunArtifactBundle: {

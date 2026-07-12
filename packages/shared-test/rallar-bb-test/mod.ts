@@ -6,6 +6,7 @@ export * from './distributed-run-validation.ts';
 export * from './control-protocol.ts';
 export * from './control-client.ts';
 export * from './control-snapshots.ts';
+export * from './control-retention.ts';
 export * from './distributed-run-monitor.ts';
 export * from './distributed-run-tuning.ts';
 export * from './distributed-run-tuning-candidate.ts';

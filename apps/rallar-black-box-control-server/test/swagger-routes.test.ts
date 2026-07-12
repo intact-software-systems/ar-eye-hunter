@@ -6,6 +6,7 @@ import {
 
 type OpenApiSchema = Readonly<{
   $ref?: string;
+  additionalProperties?: boolean;
   enum?: readonly unknown[];
   items?: OpenApiSchema;
   properties?: Record<string, OpenApiSchema>;
@@ -119,6 +120,56 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
   assert(
     Boolean(fleetBundle?.properties?.files?.properties?.['summary.md']),
     'Fleet report bundle should document shareable summary.md.',
+  );
+});
+
+Deno.test('control OpenAPI documents preview-first guarded retention compatibility', () => {
+  const spec = controlOpenApiSpec(new Request('http://127.0.0.1:5180/openapi.json')) as {
+    paths?: Record<string, {
+      post?: {
+        parameters?: readonly {
+          name?: string;
+          schema?: { enum?: readonly string[]; pattern?: string; maxLength?: number };
+        }[];
+        responses?: Record<string, {
+          content?: { 'application/json'?: { schema?: { $ref?: string; oneOf?: unknown[] } } };
+        }>;
+      };
+    }>;
+    components?: { schemas?: Record<string, OpenApiSchema> };
+  };
+  const operation = spec.paths?.['/retention/cleanup']?.post;
+  const dryRun = operation?.parameters?.find((parameter) => parameter.name === 'dryRun');
+  const planToken = operation?.parameters?.find((parameter) => parameter.name === 'planToken');
+  const success = operation?.responses?.['200']?.content?.['application/json']?.schema;
+  const schemas = spec.components?.schemas;
+
+  assertEquals(dryRun?.schema?.enum, ['true']);
+  assertEquals(planToken?.schema?.maxLength, 512);
+  assert(planToken?.schema?.pattern?.startsWith('^v1\\.'));
+  assertEquals(success?.oneOf, [
+    { $ref: '#/components/schemas/RetentionCleanupResponse' },
+    { $ref: '#/components/schemas/RetentionPreviewResponse' },
+  ]);
+  assert(operation?.responses?.['400']);
+  assert(operation?.responses?.['401']);
+  assert(operation?.responses?.['409']);
+  assert(operation?.responses?.['413']);
+  assertEquals(schemas?.RetentionCleanupResponse?.required, [
+    'deletedRunIds',
+    'retainedRuns',
+    'maxRuns',
+  ]);
+  assertEquals(schemas?.RetentionCleanupResponse?.additionalProperties, false);
+  assertEquals(schemas?.RetentionPreviewResponse?.additionalProperties, false);
+  assertEquals(schemas?.RetentionCandidate?.additionalProperties, false);
+  assert(schemas?.RetentionPreviewResponse?.required?.includes('planToken'));
+  assert(schemas?.RetentionPreviewResponse?.required?.includes('wouldDeleteRuns'));
+  assert(
+    Boolean(
+      schemas?.RetentionCandidate?.properties?.issuedRunTokenCount &&
+        schemas?.RetentionPreviewResponse?.properties?.preserves,
+    ),
   );
 });
 
