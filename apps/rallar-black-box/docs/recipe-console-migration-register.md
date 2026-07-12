@@ -1,11 +1,42 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Iteration 7 tuning/comparison code-backed through `cc17169` and `382df72`, all legacy workflow rows visible and uncut
+Status: canonical migration register; Iteration 8 retention server foundation code-backed through `07564df`, all legacy workflow rows visible and uncut
 Evidence/status date: 2026-07-12
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 8 retention server foundation — `07564df`
+
+Task 1 adds only backward-compatible shared/control-server capability. A pure
+bounded shared-test plan describes exact control, linked distributed-run, and
+linked fleet-report consequences. The authorized server route keeps bare
+`POST /retention/cleanup` destructive with its exact three-field shape, adds
+non-destructive `?dryRun=true`, and accepts `?planToken=...` only while a short-
+lived process/consequence-bound HMAC still matches a fresh synchronous plan.
+Invalid preview/confirm queries return `400`, stale/expired/process drift
+returns uniform `409`, and bounded preview overflow returns `413`; authorization
+always runs before these checks and a plan token is never authorization.
+
+Preview and manual cleanup read no request body, close no socket, and delete no
+stored artifact file. Automatic persistence pruning retains its existing
+registered-socket/artifact cleanup. Bare/automatic pruning also remains
+unbounded by preview limits, preserving behavior beyond 1,000 candidates.
+OpenAPI, current-state, and command-execution documentation distinguish all
+three modes without implying that preview deletes.
+
+Fresh evidence is 31/31 focused shared tests, complete shared TypeScript and
+seven-entry Deno checks, app TypeScript, server check, and 79/79 real-loopback
+server tests. Independent reviews closed legacy-bound leakage, noncanonical
+signature aliases, and overlapping OpenAPI success schemas, then reported no
+remaining Critical or Important issue.
+
+This server foundation is not History/retention UI parity or cutover proof.
+`runner.runs`, `runner.compare`, `legacy.distributed-recipes`, and
+`legacy.run-manager` retain their visibility, mounts, deep links, and rollback
+responsibilities. Task 2's lazy authorized client and Tasks 3–9 History, saved-
+filter, confirmation UI, URL, browser, and exit proofs remain open.
 
 ## Iteration 7 timing/tuning implementation start — 2026-07-12
 

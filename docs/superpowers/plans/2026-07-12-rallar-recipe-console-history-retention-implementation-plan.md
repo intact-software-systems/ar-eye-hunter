@@ -1,7 +1,7 @@
 # Rallar Recipe Console History, Compare, Saved Filters, And Retention Implementation Plan
 
 Status: in progress; Iteration 7 is green through `cc17169` and `382df72`;
-Task 0 is complete and Task 1 is pending
+Tasks 0–1 are complete and Task 2 is pending
 
 **Goal:** Complete parent Iteration 8 by making past distributed work
 findable, shareable, comparable, and safely cleanable without changing the
@@ -173,44 +173,72 @@ Files:
 - Modify focused server control-service, API, and Swagger tests
 - Add `packages/tests/shared-test/rallar-bb-test-control-retention.test.ts`
 
-- [ ] RED-test a pure retention plan for disabled retention, exact cap, ties,
+- [x] RED-test a pure retention plan for disabled retention, exact cap, ties,
   insertion-order-compatible candidates, associated distributed/fleet IDs,
   and no mutation or time advancement.
-- [ ] RED-test that `pruneRuns(...)` applies the exact precomputed plan and
-  preserves its existing return order and deletion behavior.
-- [ ] RED-test authorized `?dryRun=true` through the real route: candidates,
+- [x] RED-test that `applyRetentionPlan(...)` applies one exact precomputed plan
+  while legacy/automatic `pruneRuns(...)` preserves its prior unbounded fast
+  path, return order, and deletion behavior beyond preview limits.
+- [x] RED-test authorized `?dryRun=true` through the real route: candidates,
   current/projected counts, empty `deletedRunIds`, and byte-for-byte unchanged
   service/persistence/artifact/socket state.
-- [ ] RED-test no preview query keeps the existing response shape, destructive
+- [x] RED-test no preview query keeps the existing response shape, destructive
   default, ignored arbitrary/malformed body behavior, and unknown-query
   tolerance.
-- [ ] RED-test plan-token confirmation success and `409` drift for candidate
+- [x] RED-test plan-token confirmation success and `409` drift for candidate
   identity, cap, connected agents, linked distributed state, and linked fleet
   reports. Include control/distributed/fleet content changes and issued run-
   token changes that retain the same timestamps. Expose only the safe issued-
   token count. Bind tokens to a process nonce and expiry; after any asynchronous
   cryptographic verification, re-plan, byte-compare, and prune synchronously so
   digest computation cannot introduce a mutation race.
-- [ ] RED-test invalid/duplicate `dryRun` and `planToken`, token with preview,
+- [x] RED-test invalid/duplicate `dryRun` and `planToken`, token with preview,
   overlong token, and all `400`/`409` paths as non-mutating.
-- [ ] RED-test the real route's authorization-first parity for preview and
+- [x] RED-test the real route's authorization-first parity for preview and
   guarded confirmation. Unauthorized requests with valid, invalid, duplicate,
   and overlong query values disclose no candidates/token and never mutate;
   a valid `planToken` never substitutes for the existing admin authorization.
-- [ ] RED-test that a plan token from another server process, an expired token,
+- [x] RED-test that a plan token from another server process, an expired token,
   and a token whose internal issued-run-token state changed return `409`
   without mutation or consequence disclosure beyond the existing stale error.
-- [ ] Inject clock, process nonce/key, and cryptographic operations into the
+- [x] Inject clock, process nonce/key, and cryptographic operations into the
   bounded token adapter so expiry, process change, and digest races are
   deterministic without weakening production entropy or signatures.
-- [ ] Fix the API-test environment helper that currently overwrites a caller's
+- [x] Fix the API-test environment helper that currently overwrites a caller's
   `RALLAR_BLACK_BOX_RETENTION_MAX_RUNS` with `0`; capture RED first.
-- [ ] Update OpenAPI query/response/400/409 contracts and test exact schema.
+- [x] Update OpenAPI query/response/400/409/413 contracts and test exact schema.
   The `409` schema remains an error response and does not return a fresh preview
   or token; clients must request a new authorized dry run.
-- [ ] Update `current-state.md` and `command-execution.md`: retain the bare
+- [x] Update `current-state.md` and `command-execution.md`: retain the bare
   destructive cleanup example as legacy behavior and add explicit dry-run plus
   guarded-confirm examples and warnings without implying the preview deletes.
+
+Task 1 is implemented in `07564df`. Shared-test owns two bounded pure owners
+for stable consequence planning/canonicalization; the control server owns
+bounded query, HMAC token, and cleanup-route adapters. Preview tokens are
+short-lived, process/consequence-bound, exact 32-byte HMAC-SHA256 values with
+canonical base64url encoding. Confirmation captures, verifies, then performs a
+fresh synchronous byte comparison and applies the exact plan with no await
+gap. Safe per-run revisions cover same-timestamp hidden/token drift; raw token
+values never enter shared input, response, log, or persistence.
+
+The real route proves authorization before query validation, nonempty linked
+distributed/fleet consequences, zero preview mutation, exact legacy/guarded
+success shapes, wrong-process/tampered/reused-token `409`, ignored malformed
+bodies, artifact preservation, and the manual/automatic socket-artifact split.
+Preview planning is bounded at 1,000 candidates, 100,000 collection items/
+canonical nodes, 64 depth, 1 MiB per string, and 8 MiB incremental canonical
+UTF-8; preview returns `413` and confirm returns uniform `409` when bounds are
+exceeded. Bare/automatic legacy pruning deliberately bypasses those preview
+bounds and remains operable beyond 1,000 candidates.
+
+Fresh Task 1 validation passes 31/31 focused shared tests, the complete
+shared-test TypeScript and seven-entry Deno checks, app TypeScript, control-
+server check, and 79/79 complete control-server tests with real loopback. New
+production owners are 42–282 lines. Independent code/security/contract reviews
+closed three demonstrated Important defects (legacy bound leakage,
+noncanonical signature aliases, and overlapping OpenAPI success schemas) and
+end with no remaining Critical or Important issue.
 
 Task 1 validation:
 

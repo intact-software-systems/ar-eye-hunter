@@ -402,7 +402,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
-| 8 — History, Compare, Saved Filters, Retention | **In progress** | The tests-first implementation plan is reviewed and ready after the green Iteration 7 exit. History, saved filters, authorization-first dry-run/confirm retention, stale-preview concurrency, URL restoration, and no-cutover gates remain open until their named proofs pass. |
+| 8 — History, Compare, Saved Filters, Retention | **In progress** | Task 0 audit/baseline and Task 1 shared/control-server retention (`07564df`) are green. Authorization-first bounded preview, short-lived process/consequence-bound confirmation, exact legacy compatibility, OpenAPI/docs, real-loopback tests, and independent review pass. The lazy client, History/filter/preset UI, URL restoration, browser matrix, and no-cutover exit remain open. |
 | 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
@@ -523,6 +523,26 @@ Task 0 baseline is green: 194/194 focused unit tests, control-server check and
 580-module build, reciprocal chunks, and 9/9 available History browser tests.
 The configured-live owner was discovered and skipped, not passed, for the
 unchanged required-service reason recorded below.
+
+Task 1 is green through `07564df`. Additive shared-test owners derive a bounded
+stable deletion plan from passive control/distributed/fleet truth. The server's
+new query, HMAC-token, and cleanup adapters authorize first, never read request
+bodies, preview without mutation, and require a fresh synchronous consequence
+match after async token verification. Same-timestamp hidden/token state uses
+safe monotonic revisions; raw run-token values are never exposed. Preview
+bounds return `413`, guarded drift/expiry/process mismatch returns uniform
+`409`, and bare/automatic legacy pruning remains unbounded with its exact
+three-field response and socket/artifact semantics.
+
+Fresh proof is 31/31 focused shared tests, the complete shared TypeScript plus
+seven-entry Deno check, app TypeScript, server check, and 79/79 real-loopback
+server tests. Real HTTP coverage includes nonempty linked distributed/fleet
+consequences, authorization-first malformed/duplicate/overlong queries, an
+issued token that does not authorize, wrong-process/tamper/reuse conflicts,
+malformed ignored bodies, exact response whitelists, manual artifact survival,
+and automatic registered-socket/artifact deletion. Final independent reviews
+report no Critical or Important issue. No Recipe Console UI, legacy visibility,
+deep link, rollback, or cutover changed in Task 1.
 
 #### Iteration 2 visual approval checkpoint — 2026-07-11
 
