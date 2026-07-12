@@ -465,6 +465,28 @@ export type DistributedRunHistoryFilter = Readonly<{
     toEpochMs?: number;
 }>;
 
+export type DistributedRunHistoryLabels = Readonly<{
+    displayName?: string;
+    group: Readonly<{
+        applicationId?: string;
+        workspaceId?: string;
+        groupId?: string;
+        label: string;
+    }>;
+    recipes: readonly Readonly<{
+        recipeId: string;
+        profile?: string;
+        role?: string;
+        label: string;
+    }>[];
+    failures: readonly Readonly<{
+        category: DistributedFailureExplanation['category'];
+        code?: string;
+        message: string;
+        label: string;
+    }>[];
+}>;
+
 export type DistributedRunCompareSummary = Readonly<{
     leftId: string;
     rightId: string;
@@ -2294,6 +2316,53 @@ export function filterDistributedRuns(
             return distributedRunSearchText(run).includes(query);
         })
         .sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs);
+}
+
+export function projectDistributedRunHistoryLabels(
+    run: ControlDistributedRunSnapshot,
+): DistributedRunHistoryLabels {
+    const manifest = distributedRunHistoryManifest(run);
+    const applicationId = optionalHistoryLabel(manifest.group.applicationId);
+    const workspaceId = optionalHistoryLabel(manifest.group.workspaceId);
+    const groupId = optionalHistoryLabel(manifest.group.groupId);
+    const recipes = manifest.recipes.map(({ selection, index }) => {
+        const recipeId = recipeSelectionId(selection, index);
+        const profile = optionalHistoryLabel(selection.profile);
+        const role = optionalHistoryLabel(selection.role);
+        return {
+            recipeId,
+            profile,
+            role,
+            label: profile ? `${recipeId} · ${profile}` : recipeId,
+        };
+    });
+    const failures = distributedRunRecordedFailures(run).map(failure => {
+        const code = optionalHistoryLabel(failure.code);
+        const message = optionalHistoryLabel(failure.message) ?? 'Recorded failure';
+        const category = explanationForFailure(run, {
+            ...failure,
+            code,
+            message,
+        }).category;
+        return {
+            category,
+            code,
+            message,
+            label: code ? `${code}: ${message}` : message,
+        };
+    });
+    return {
+        displayName: optionalHistoryLabel(manifest.record.displayName),
+        group: {
+            applicationId,
+            workspaceId,
+            groupId,
+            label: [applicationId, workspaceId, groupId].filter(Boolean).join(' / ') ||
+                'Unknown group',
+        },
+        recipes,
+        failures,
+    };
 }
 
 export function compareDistributedRuns(input: Readonly<{
@@ -4140,6 +4209,12 @@ function distributedRunHistoryManifest(run: ControlDistributedRunSnapshot): Read
 
 function historyManifestString(value: unknown): string {
     return typeof value === 'string' ? value : '';
+}
+
+function optionalHistoryLabel(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0
+        ? value
+        : undefined;
 }
 
 function distributedRunSearchText(run: ControlDistributedRunSnapshot): string {

@@ -58,6 +58,7 @@ export type TuneRunCatalog = Readonly<{
 export function buildTuneRunCatalog(_input: Readonly<{
     distributedRuns: readonly ControlDistributedRunSnapshot[];
     controlRuns: readonly ControlRunSnapshot[];
+    includePerformanceEvidence?: boolean;
     retainedArtifact?: AnalyzeArtifactModel;
     retainedArtifactStatus?: 'idle' | 'pending' | 'ready' | 'error';
     retainedArtifactFocusRunId?: string;
@@ -112,7 +113,7 @@ export function buildTuneRunCatalog(_input: Readonly<{
             ? 'paired' as const
             : controlRows.length === 0 ? 'missing' as const : 'ambiguous' as const;
         const controlRun = pairStatus === 'paired' ? controlRows[0] : undefined;
-        const performance = controlRun
+        const performance = controlRun && input.includePerformanceEvidence !== false
             ? deriveDistributedRunSnapshotPerformance({ distributedRun, controlRun })
             : undefined;
         const controlEvidence: TuneRunEvidence = {
