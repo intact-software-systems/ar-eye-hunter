@@ -100,9 +100,12 @@ function failureView(model: MonitorWorkspaceModel, failureKey: string,
 function agentView(model: MonitorWorkspaceModel, agentId: string): ReactNode {
     const agent = model.monitor.agentProgress.find(row => row.agentId === agentId);
     if (!agent) return <MissingEvidence kind="agent" id={agentId} />;
+    const controlAgent = model.source.controlRun.agents.find(row => row.agentId === agentId);
     return <EvidenceSection title="Agent phase truth" description="Live phase and evidence totals for this agent.">
         <Facts values={[
             ['Role', agent.role ?? 'Unassigned'],
+            ['Connection', controlAgent ? controlAgent.connected ? 'Connected' : 'Disconnected' : 'Unknown'],
+            ['Reconnects', String(controlAgent?.reconnectCount ?? 0)],
             ['Readiness', agent.readiness], ['Barrier', agent.barrier],
             ['Execution', agent.execution], ['Completed', String(agent.completedCommandCount)],
             ['Failed', String(agent.failedCommandCount)], ['Results', String(agent.resultCount)],

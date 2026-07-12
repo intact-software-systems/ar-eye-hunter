@@ -1,4 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
+import {
+    installRecipeConsoleMonitorFixture,
+    MONITOR_DIAGNOSTIC_ID,
+    MONITOR_DISTRIBUTED_RUN_ID,
+    MONITOR_FAILURE_AGENT_ID,
+    MONITOR_FAILURE_CODE,
+    MONITOR_FAILURE_COMMAND_ID,
+    MONITOR_FAILURE_MESSAGE,
+    MONITOR_FAILURE_RECIPE_ID,
+    MONITOR_ROUTE,
+} from './recipe-console-monitor-fixture.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 
@@ -231,9 +242,10 @@ test('routes bounded Analyze Fleet and Advanced previews', async ({ page }) => {
     await expect(page.locator('[data-preview-view="analyze"]')).toBeVisible();
 });
 
-test('renders failure-first Monitor from canonical evidence', async ({ page }) => {
+test('renders failure-first Monitor from canonical evidence', async ({ context, page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/?provider=simulated&experience=recipe-console&view=monitor');
+    await installRecipeConsoleMonitorFixture(context);
+    await page.goto(MONITOR_ROUTE);
 
     const monitorSections = page.locator('[data-monitor-section]');
     await expect(monitorSections).toHaveCount(5);
@@ -246,70 +258,53 @@ test('renders failure-first Monitor from canonical evidence', async ({ page }) =
         'matrix',
         'timeline',
     ]);
-    await expect(page.getByText('Outcome failed', { exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Failures (2)' })).toBeVisible();
-    const recipeFailure = page.locator('[data-failure-key="seed-rtc-recipe"]');
-    const commandFailure = page.locator('[data-failure-key="seed-start-receiver"]');
-    await expect(recipeFailure).toContainText('SYNTHETIC_RECIPE_FAILED');
-    await expect(recipeFailure).toContainText('Receiver did not observe the RTC payload.');
-    await expect(commandFailure).toContainText('SYNTHETIC_ASSERTION_FAILED');
-    await expect(commandFailure).toContainText('Receiver did not observe the RTC payload.');
-    await expect(commandFailure.getByRole('option')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[data-monitor-section="verdict"]'))
+        .toHaveAttribute('data-run-state', 'failed');
+    await expect(page.getByRole('heading', { name: 'Failures (1)' })).toBeVisible();
+    const commandFailure = page.locator(
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+    );
+    await expect(commandFailure).toContainText(MONITOR_FAILURE_CODE);
+    await expect(commandFailure).toContainText(MONITOR_FAILURE_MESSAGE);
+    await expect(commandFailure).toHaveAttribute('aria-pressed', 'true');
 
     const matrix = page.getByRole('region', { name: 'Agent by phase matrix' });
-    await expect(matrix.getByText('seed-agent-a', { exact: true })).toBeVisible();
-    await expect(matrix.getByText('seed-agent-b', { exact: true })).toBeVisible();
-    await expect(matrix.getByRole('columnheader', { name: 'Stage' })).toBeVisible();
-    await expect(matrix.getByRole('columnheader', { name: 'Start' })).toBeVisible();
+    await expect(matrix.getByText(MONITOR_FAILURE_AGENT_ID, { exact: true })).toBeVisible();
+    await expect(matrix.getByRole('columnheader', { name: 'ACK' })).toBeVisible();
+    await expect(matrix.getByRole('columnheader', { name: 'Execution' })).toBeVisible();
 
     const inspector = page.getByRole('complementary', { name: 'Inspector' });
-    await expect(inspector.getByRole('heading', { name: 'Failure · seed-agent-b' }))
+    await expect(inspector.getByRole('heading', { name: 'Failure evidence' }))
         .toBeVisible();
     await expect(inspector.getByRole('heading', { name: 'Likely cause' })).toBeVisible();
-    await expect(inspector.getByText('Receiver did not observe the RTC payload.', { exact: true }))
-        .toBeVisible();
+    await expect(inspector).toContainText(MONITOR_FAILURE_MESSAGE);
     await expect(inspector.getByRole('heading', { name: 'Next action' })).toBeVisible();
-    await expect(inspector.getByText(
-        'Open command seed-start-receiver on agent seed-agent-b, inspect the command payload/result, and compare sibling agents running the same recipe.',
-        { exact: true },
-    )).toBeVisible();
-    await expect(inspector.getByRole('heading', { name: 'Minimal fix area' })).toBeVisible();
     const minimalFix = inspector.locator('[data-minimal-fix]');
-    await expect(minimalFix.getByText('seed-agent-b', { exact: true })).toBeVisible();
-    await expect(minimalFix.getByText('seed-start-receiver', { exact: true })).toBeVisible();
-    await expect(minimalFix.getByText('seed-rtc-recipe', { exact: true })).toBeVisible();
-    await expect(inspector.getByRole('heading', { name: 'Correlated evidence' })).toBeVisible();
-    await expect(inspector.locator('[data-causal-kind]')).toHaveCount(5);
-    await expect(inspector.locator('[data-causal-kind="diagnostic"]'))
-        .toContainText('seed-start-receiver-error-diagnostic');
-    await expect(inspector.getByRole('link', { name: 'Open legacy RTC diagnostic' }))
-        .toHaveAttribute('href', '/?provider=simulated&experience=legacy&tab=rtc-diagnostics');
-
-    await recipeFailure.getByRole('option').click();
-    await expect(inspector.getByRole('heading', { name: 'Failure · seed-rtc-recipe' }))
-        .toBeVisible();
-    await expect(inspector.locator('[data-causal-kind="diagnostic"]')).toHaveCount(0);
-    await expect(inspector).not.toContainText('seed-start-receiver-error-diagnostic');
-    await expect(inspector.getByText(
-        'No runtime diagnostic is directly correlated with this recipe rollup.',
-        { exact: true },
+    await expect(minimalFix).toContainText(MONITOR_FAILURE_AGENT_ID);
+    await expect(minimalFix).toContainText(MONITOR_FAILURE_COMMAND_ID);
+    await expect(minimalFix).toContainText(MONITOR_FAILURE_RECIPE_ID);
+    await expect(inspector.locator(
+        `[data-evidence-destination="diagnostic"][data-evidence-id="${MONITOR_DIAGNOSTIC_ID}"]`,
     )).toBeVisible();
-    await commandFailure.getByRole('option').click();
-
-    const stale = page.getByRole('button', { name: 'Simulate stale connection' });
-    await stale.click();
-    await expect(page.getByText('Stale · reconnecting', { exact: true })).toBeVisible();
-    await expect(page.getByText('Last known evidence 12s ago', { exact: true })).toBeVisible();
-    await expect(page.locator('[data-failure-key]')).toHaveCount(2);
-    await expect(matrix.getByText('seed-agent-b', { exact: true })).toBeVisible();
+    const legacyLink = inspector.getByRole('link', {
+        name: 'Open this run in legacy Runs',
+    });
+    await expect(legacyLink).toBeVisible();
+    const legacyUrl = new URL(await legacyLink.getAttribute('href') ?? '', page.url());
+    expect(legacyUrl.searchParams.get('experience')).toBe('legacy');
+    expect(legacyUrl.searchParams.get('workspace')).toBe('black-box-runner');
+    expect(legacyUrl.searchParams.get('tab')).toBe('runs');
+    expect(legacyUrl.searchParams.get('distributedRunId'))
+        .toBe(MONITOR_DISTRIBUTED_RUN_ID);
 });
 
-test('opens one portrait failure inspector and restores focus', async ({ page }) => {
+test('opens one portrait failure inspector and restores focus', async ({ context, page }) => {
     await page.setViewportSize({ width: 430, height: 932 });
-    await page.goto('/?provider=simulated&experience=recipe-console&view=monitor');
+    await installRecipeConsoleMonitorFixture(context);
+    await page.goto(MONITOR_ROUTE);
 
     const dock = page.locator('[data-selection-dock]');
-    await expect(dock).toContainText('Failure · seed-agent-b');
+    await expect(dock).toContainText(`Failure · ${MONITOR_FAILURE_AGENT_ID}`);
     await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
     const inspect = dock.getByRole('button', { name: 'Inspect' });
     await inspect.click();
@@ -319,7 +314,7 @@ test('opens one portrait failure inspector and restores focus', async ({ page })
     await expect(sheet).toHaveAttribute('aria-modal', 'true');
     await expect(sheet).toHaveAttribute('data-mode', 'sheet');
     const close = sheet.getByRole('button', { name: 'Close inspector' });
-    const legacyLink = sheet.getByRole('link', { name: 'Open legacy RTC diagnostic' });
+    const legacyLink = sheet.getByRole('link', { name: 'Open this run in legacy Runs' });
     await expect(close).toBeFocused();
     await page.keyboard.press('Shift+Tab');
     await expect(legacyLink).toBeFocused();
@@ -334,22 +329,26 @@ test('opens one portrait failure inspector and restores focus', async ({ page })
         .toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth))
         .toBe(true);
-    await expect(page.locator('[data-monitor-section="timeline"] details')).not.toHaveAttribute('open', '');
+    await expect(page.locator('[data-monitor-section="timeline"] details[open]'))
+        .toHaveCount(0);
 });
 
-test('traps and restores focus in tablet and landscape overlays', async ({ page }) => {
+test('traps and restores focus in tablet and landscape overlays', async ({ context, page }) => {
+    await installRecipeConsoleMonitorFixture(context);
     for (const viewport of [{ width: 900, height: 900 }, { width: 932, height: 430 }]) {
         await page.setViewportSize(viewport);
-        await page.goto('/?provider=simulated&experience=recipe-console&view=monitor');
+        await page.goto(MONITOR_ROUTE);
         await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
-        const inspect = page.getByRole('button', { name: 'Inspect failure' });
+        const inspect = page.locator(
+            `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+        );
         await inspect.click();
 
         const overlay = page.getByRole('dialog', { name: 'Inspector' });
         await expect(overlay).toHaveCount(1);
         await expect(overlay).toHaveAttribute('data-mode', 'overlay');
         const close = overlay.getByRole('button', { name: 'Close inspector' });
-        const legacyLink = overlay.getByRole('link', { name: 'Open legacy RTC diagnostic' });
+        const legacyLink = overlay.getByRole('link', { name: 'Open this run in legacy Runs' });
         await expect(close).toBeFocused();
         await page.keyboard.press('Shift+Tab');
         await expect(legacyLink).toBeFocused();
@@ -361,8 +360,10 @@ test('traps and restores focus in tablet and landscape overlays', async ({ page 
     }
 
     await page.setViewportSize({ width: 900, height: 900 });
-    await page.goto('/?provider=simulated&experience=recipe-console&view=monitor');
-    const routeTrigger = page.getByRole('button', { name: 'Inspect failure' });
+    await page.goto(MONITOR_ROUTE);
+    const routeTrigger = page.locator(
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+    );
     await routeTrigger.click();
     await routeTrigger.evaluate(element => {
         const state = window as Window & { __unrelatedRestoreCount?: number };
@@ -380,8 +381,10 @@ test('traps and restores focus in tablet and landscape overlays', async ({ page 
         (window as Window & { __unrelatedRestoreCount?: number }).__unrelatedRestoreCount
     )).toBe(0);
 
-    await page.goto('/?provider=simulated&experience=recipe-console&view=monitor');
-    const resizeTrigger = page.getByRole('button', { name: 'Inspect failure' });
+    await page.goto(MONITOR_ROUTE);
+    const resizeTrigger = page.locator(
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+    );
     await resizeTrigger.click();
     await resizeTrigger.evaluate(element => {
         const state = window as Window & { __unrelatedResizeRestoreCount?: number };
@@ -477,11 +480,10 @@ test('keeps the repository catalog and preflight usable with control offline', a
     await expect(page.locator('[data-inspector-host]')).toHaveCount(1);
     await page.getByRole('button', { name: 'Monitor', exact: true }).click();
     await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'monitor');
-    await expect(page.locator('[data-inspector-host]')).toHaveCount(1);
-    await expect(page.locator('[data-inspector-host]')
-        .getByRole('heading', { name: 'Failure · seed-agent-b' })).toBeVisible();
-    await expect(page.locator('[data-inspector-host]')
-        .getByText('RTC Realtime Stability', { exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Control evidence unavailable' }))
+        .toBeVisible();
+    await expect(page.locator('[data-selection-dock]')).toHaveCount(0);
     await expect.poll(() => controlServerRequests.length).toBeGreaterThan(0);
     expect(new URL(controlServerRequests[0]).pathname).toBe('/runs');
 
@@ -576,24 +578,22 @@ test('refreshes Execute control truth without discarding the uncreated draft', a
         .toBeGreaterThan(requestsBeforeRefresh);
 });
 
-test('refreshes App-owned Monitor state without discarding known evidence', async ({ page }) => {
-    await page.goto('/?provider=simulated&experience=recipe-console&view=monitor');
-    const recipeFailure = page.locator('[data-failure-key="seed-rtc-recipe"]');
-    const commandFailure = page.locator('[data-failure-key="seed-start-receiver"]');
-    await recipeFailure.getByRole('option').click();
-    await expect(recipeFailure.getByRole('option')).toHaveAttribute('aria-selected', 'true');
-    await page.getByRole('button', { name: 'Simulate stale connection' }).click();
-    await expect(page.getByText('Stale · reconnecting', { exact: true })).toBeVisible();
-
+test('refreshes live Monitor truth without discarding selected evidence', async ({ context, page }) => {
+    const fixture = await installRecipeConsoleMonitorFixture(context);
+    await page.goto(MONITOR_ROUTE);
+    const commandFailure = page.locator(
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+    );
+    await commandFailure.click();
+    await expect(commandFailure).toHaveAttribute('aria-pressed', 'true');
+    const readsBeforeRefresh = fixture.runRequestCount();
     await page.getByRole('button', { name: 'Refresh control data', exact: true }).click();
 
-    await expect(page.getByRole('button', { name: 'Simulate stale connection' })).toBeVisible();
-    await expect(page.getByText('Stale · reconnecting', { exact: true })).toHaveCount(0);
-    await expect(commandFailure.getByRole('option')).toHaveAttribute('aria-selected', 'true');
-    await expect(recipeFailure.getByRole('option')).toHaveAttribute('aria-selected', 'false');
-    await expect(page.locator('[data-failure-key]')).toHaveCount(2);
+    await expect.poll(fixture.runRequestCount).toBeGreaterThan(readsBeforeRefresh);
+    await expect(commandFailure).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-failure-key]')).toHaveCount(1);
     await expect(page.getByRole('region', { name: 'Agent by phase matrix' })
-        .getByText('seed-agent-b', { exact: true })).toBeVisible();
+        .getByText(MONITOR_FAILURE_AGENT_ID, { exact: true })).toBeVisible();
 });
 
 test('requires known distributed-run truth before artifact export', async ({ page }) => {

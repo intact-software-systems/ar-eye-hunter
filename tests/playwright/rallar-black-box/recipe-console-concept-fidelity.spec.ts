@@ -1,4 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
+import {
+    installRecipeConsoleMonitorFixture,
+    MONITOR_ROUTE,
+} from './recipe-console-monitor-fixture.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 
@@ -191,17 +195,19 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
 
 test.describe('approved Signal Ledger concept fidelity', () => {
     for (const concept of CONCEPT_CASES) {
-        test(concept.name, async ({ page }) => {
+        test(concept.name, async ({ context, page }) => {
             await page.setViewportSize(concept.viewport);
             await page.clock.setFixedTime(new Date('2026-07-12T00:00:00.000Z'));
             if (concept.view === 'execute') {
                 await routeLiveExecuteControl(page);
+            } else if (concept.view === 'monitor') {
+                await installRecipeConsoleMonitorFixture(context);
             } else {
                 await routeLiveEmptyControl(page);
             }
-            await page.goto(
-                `/?provider=simulated&v=1&experience=recipe-console&view=${concept.view}`,
-            );
+            await page.goto(concept.view === 'monitor'
+                ? MONITOR_ROUTE
+                : `/?provider=simulated&v=1&experience=recipe-console&view=${concept.view}`);
             await expect(page.locator('.recipe-console')).toHaveAttribute(
                 'data-view',
                 concept.view,

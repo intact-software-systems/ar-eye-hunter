@@ -8,6 +8,8 @@
 .selector {
     display: grid;
     min-width: 0;
+    grid-template-columns: minmax(180px, .55fr) minmax(0, 1.45fr);
+    align-items: end;
     gap: 12px;
     padding: 14px 16px;
     border: 1px solid var(--rc-border);
@@ -21,6 +23,12 @@
     align-items: flex-end;
     justify-content: space-between;
     gap: 12px;
+}
+
+.selectorHeading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .selectorHeading h2,
@@ -65,6 +73,7 @@
 }
 
 .selectionIssue {
+    grid-column: 1 / -1;
     margin: 0;
     padding: 9px 11px;
     border-left: 3px solid var(--rc-status-warning-border);
@@ -87,13 +96,31 @@
     }
 
     .selector {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+        padding-block: 10px;
         padding-inline: 12px;
     }
 
-    .selectorHeading,
+    .selectorHeading {
+        align-items: center;
+        flex-direction: row;
+    }
+
+    .selectorHeading h2 {
+        font-size: 14px;
+    }
+
+    .selectorHeading .eyebrow {
+        display: none;
+    }
+
     .selectorFields {
         align-items: stretch;
-        flex-direction: column;
+    }
+
+    .selectorFields label > span {
+        display: none;
     }
 }
 

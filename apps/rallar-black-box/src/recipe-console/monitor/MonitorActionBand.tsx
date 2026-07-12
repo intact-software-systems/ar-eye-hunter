@@ -17,6 +17,12 @@ const LABELS: Readonly<Record<MonitorAction, string>> = {
     'export-artifact': 'Export artifact',
     cancel: 'Cancel run',
 };
+const ACTION_ORDER: readonly MonitorAction[] = [
+    'refresh',
+    'cancel',
+    'load-artifact',
+    'export-artifact',
+];
 
 export function MonitorActionBand({
     policy,
@@ -86,7 +92,7 @@ export function MonitorActionBand({
                 </div>
             ) : null}
             <div className={styles.actions}>
-                {(Object.keys(LABELS) as MonitorAction[]).map(action => (
+                {ACTION_ORDER.map(action => (
                     <ActionButton
                         action={action}
                         buttonRef={action === 'refresh'
@@ -101,7 +107,7 @@ export function MonitorActionBand({
                 ))}
             </div>
             <div aria-label="Action requirements" className={styles.reasons}>
-                {(Object.keys(LABELS) as MonitorAction[]).map(action => {
+                {ACTION_ORDER.map(action => {
                     const decision = policy[action];
                     return decision.enabled ? null : (
                         <p id={`monitor-${action}-reason`} key={action}>
@@ -136,6 +142,7 @@ function ActionButton({
         <button
             aria-describedby={decision.enabled ? undefined : `monitor-${action}-reason`}
             data-destructive={action === 'cancel' || undefined}
+            data-monitor-action={action}
             data-primary-action={action === 'refresh' || undefined}
             disabled={!decision.enabled}
             onClick={() => void handler()}

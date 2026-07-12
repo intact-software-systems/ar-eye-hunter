@@ -158,8 +158,14 @@
     }
 
     .actions button {
-        min-width: calc(50% - 5px);
-        flex: 1;
+        min-width: 118px;
+        flex: 0 0 auto;
+    }
+
+    .actions {
+        justify-content: flex-start;
+        flex-wrap: nowrap;
+        overflow-x: auto;
     }
 }
 

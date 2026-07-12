@@ -33,8 +33,7 @@ async function expectVisibleView(page: Page, view: RecipeConsoleView): Promise<v
                 .toBeVisible();
             break;
         case 'monitor':
-            await expect(page.locator('[data-monitor-section="verdict"]'))
-                .toContainText('Outcome failed');
+            await expect(page.locator('[data-monitor-workspace]')).toBeVisible();
             break;
         case 'analyze':
             await expect(page.locator('[data-preview-view="analyze"]'))

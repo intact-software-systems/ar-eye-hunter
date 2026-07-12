@@ -54,9 +54,13 @@ export function createFullStackApiV1WebServer(
         apiBaseUrl?: string;
         spaBaseUrl?: string;
         reuseExistingServer?: boolean;
+        requireFreshPostgres?: boolean;
     }> = {},
 ): FullStackApiV1WebServer {
     const mode = input.mode ?? readFullStackApiServerMode();
+    if (input.requireFreshPostgres === true && mode !== 'postgres') {
+        throw new Error('Fresh Postgres API isolation requires mode postgres.');
+    }
     const apiBaseUrl = normalizeBaseUrl(
         input.apiBaseUrl ?? readFullStackApiBaseUrl(),
     );
@@ -69,9 +73,115 @@ export function createFullStackApiV1WebServer(
             ? createMemoryApiCommand(apiBaseUrl, spaBaseUrl)
             : createPostgresApiCommand(apiBaseUrl, spaBaseUrl),
         url: `${apiBaseUrl}/api/config`,
-        reuseExistingServer: input.reuseExistingServer ?? true,
+        reuseExistingServer: input.requireFreshPostgres === true
+            ? false
+            : input.reuseExistingServer ?? true,
         timeout: mode === 'memory' ? 120_000 : 90_000,
     };
+}
+
+export function assertFullStackApiConfigEvidence(
+    value: unknown,
+    expectedApiBaseUrl: string,
+): void {
+    if (!isRecord(value)) {
+        throw new Error('Configured API configuration must be a JSON object.');
+    }
+    const apiBaseUrl = normalizeBaseUrl(expectedApiBaseUrl);
+    if (value.apiBaseUrl !== apiBaseUrl) {
+        throw new Error(
+            `Configured API apiBaseUrl must be ${apiBaseUrl}. Received: ${String(value.apiBaseUrl)}`,
+        );
+    }
+    const wsBaseUrl = toWsBaseUrl(apiBaseUrl);
+    if (value.wsBaseUrl !== wsBaseUrl) {
+        throw new Error(
+            `Configured API wsBaseUrl must be ${wsBaseUrl}. Received: ${String(value.wsBaseUrl)}`,
+        );
+    }
+    if (!isRecord(value.endpoints) ||
+        typeof value.endpoints.createWs !== 'string' ||
+        value.endpoints.createWs.trim().length === 0
+    ) {
+        throw new Error(
+            'Configured API endpoints.createWs must be a non-empty string.',
+        );
+    }
+}
+
+export function assertFullStackReadinessHttpEvidence(input: Readonly<{
+    service: 'API' | 'control';
+    ok: boolean;
+    status: number;
+    statusText: string;
+}>): void {
+    if (!input.ok) {
+        throw new Error(
+            `Configured ${input.service} readiness returned HTTP ${input.status} ${input.statusText}.`,
+        );
+    }
+}
+
+export function assertFullStackControlHealthEvidence(value: unknown): void {
+    if (!isRecord(value)) {
+        throw new Error('Configured control health must be a JSON object.');
+    }
+    if (value.ok !== true) {
+        throw new Error(`Configured control health ok must be true. Received: ${String(value.ok)}`);
+    }
+    if (value.app !== 'rallar-black-box-control-server') {
+        throw new Error(
+            `Configured control health app must be rallar-black-box-control-server. Received: ${String(value.app)}`,
+        );
+    }
+    if (value.protocolVersion !== 1) {
+        throw new Error(
+            `Configured control health protocolVersion must be 1. Received: ${String(value.protocolVersion)}`,
+        );
+    }
+}
+
+export type FullStackConfiguredServiceProbe =
+    | Readonly<{ kind: 'unavailable' }>
+    | Readonly<{
+        kind: 'reachable';
+        ok: boolean;
+        status: number;
+        statusText: string;
+        readJson(): Promise<unknown>;
+    }>;
+
+export async function evaluateFullStackConfiguredServiceEvidence(
+    input: Readonly<{
+        api: FullStackConfiguredServiceProbe;
+        control: FullStackConfiguredServiceProbe;
+        expectedApiBaseUrl: string;
+    }>,
+): Promise<'ready' | 'unavailable'> {
+    if (input.api.kind === 'reachable') {
+        assertFullStackReadinessHttpEvidence({
+            service: 'API',
+            ok: input.api.ok,
+            status: input.api.status,
+            statusText: input.api.statusText,
+        });
+        assertFullStackApiConfigEvidence(
+            await input.api.readJson(),
+            input.expectedApiBaseUrl,
+        );
+    }
+    if (input.control.kind === 'reachable') {
+        assertFullStackReadinessHttpEvidence({
+            service: 'control',
+            ok: input.control.ok,
+            status: input.control.status,
+            statusText: input.control.statusText,
+        });
+        assertFullStackControlHealthEvidence(await input.control.readJson());
+    }
+    return input.api.kind === 'unavailable' || input.control.kind === 'unavailable'
+        ? 'unavailable'
+        : 'ready';
 }
 
 export function createFullStackMemoryEnvBlock(): string {
@@ -123,9 +233,13 @@ function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string): string 
 }
 
 function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
-    return `cd ../.. && CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
+    return `cd ../.. && RALLAR_SQL_BACKEND=postgres CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
     } deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function normalizeBaseUrl(value: string): string {

@@ -1,6 +1,5 @@
 import {
     expect,
-    type APIRequestContext,
     type BrowserContext,
     type Page,
     type Route,
@@ -19,17 +18,6 @@ import type {
     RallarBlackBoxDistributedTargetResolution,
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import { DISTRIBUTED_RECIPE_CATALOG } from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import {
-    cleanupRallarPage,
-    expectFullStackApiReady,
-    FULL_STACK_SPA_ORIGIN,
-    loginUser,
-    openBrowserControlAgent,
-    readExhaustivePostgresConfig,
-    uniqueGroupId,
-    uniqueRunId,
-    waitForControlRunAgent,
-} from './full-stack-helpers.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 const GROUP = {
@@ -40,45 +28,6 @@ const GROUP = {
 const EXECUTE_ROUTE =
     '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
     '&applicationId=rallar-server&workspaceId=default&roomId=execute-live-group';
-const CONFIGURED_LIVE_SKIP_REASON =
-    'Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1, ' +
-    'apps/rallar-black-box-control-server, and apps/rallar-black-box available.';
-const CONFIGURED_POSTGRES = readExhaustivePostgresConfig();
-const CONFIGURED_POSTGRES_MODE =
-    (process.env.RALLAR_BLACK_BOX_API_MODE?.trim() ?? 'postgres') ===
-    'postgres';
-
-async function configuredPostgresStackReady(
-    request: APIRequestContext,
-): Promise<boolean> {
-    if (!CONFIGURED_POSTGRES.enabled || !CONFIGURED_POSTGRES_MODE) return false;
-    try {
-        const [apiResponse, controlResponse] = await Promise.all([
-            request.get(`${CONFIGURED_POSTGRES.apiBaseUrl}/api/config`, {
-                failOnStatusCode: false,
-                headers: { origin: FULL_STACK_SPA_ORIGIN },
-                timeout: 5_000,
-            }),
-            request.get(`${CONFIGURED_POSTGRES.controlBaseUrl}/health`, {
-                failOnStatusCode: false,
-                timeout: 5_000,
-            }),
-        ]);
-        if (!apiResponse.ok() || !controlResponse.ok()) return false;
-        const health = (await controlResponse.json()) as Partial<{
-            ok: boolean;
-            app: string;
-            protocolVersion: number;
-        }>;
-        return (
-            health.ok === true &&
-            health.app === 'rallar-black-box-control-server' &&
-            health.protocolVersion === 1
-        );
-    } catch {
-        return false;
-    }
-}
 
 function agent(
     runId: string,
@@ -772,6 +721,21 @@ test('runs a simulated distributed ACK recipe through visible controls', async (
         'Bearer execute-primary-session-token',
     ]);
     await expect(page.locator('textarea')).toHaveCount(0);
+
+    const passedUrl = new URL(page.url());
+    const passedDistributedRunId = passedUrl.searchParams.get('distributedRunId');
+    expect(passedUrl.searchParams.get('controlRunId')).toBe('execute-control-a');
+    expect(passedDistributedRunId).toMatch(/^dist-/);
+    await page.getByRole('button', { name: 'Monitor', exact: true }).click();
+    const monitorUrl = new URL(page.url());
+    expect(monitorUrl.searchParams.get('controlRunId')).toBe('execute-control-a');
+    expect(monitorUrl.searchParams.get('distributedRunId')).toBe(
+        passedDistributedRunId,
+    );
+    const monitorVerdict = page.locator('[data-monitor-section="verdict"]');
+    await expect(monitorVerdict).toHaveAttribute('data-run-state', 'passed');
+    await expect(monitorVerdict).toHaveAttribute('data-evidence-freshness', 'current');
+    await expect(monitorVerdict.locator('[data-status="passed"]')).toContainText('Passed');
 });
 
 test('generates a fresh run ID when the same recipe starts another run', async ({
@@ -1552,216 +1516,6 @@ test('renders one live recipe-aware target plane without seeded fallback', async
             .locator('[data-execute-action-band]')
             .getByRole('button', { name: 'Resolve targets' }),
     ).toBeEnabled();
-});
-
-test('completes the configured live distributed run lifecycle and exports its artifact', async ({
-    browser,
-    page,
-    request,
-}, testInfo) => {
-    testInfo.annotations.push({
-        type: 'coverage-gap',
-        description:
-            'Iteration 5 must add live Monitor observation and a distinct live cancellation proof before Ready-State #3 can close.',
-    });
-    test.skip(
-        !CONFIGURED_POSTGRES.enabled || !CONFIGURED_POSTGRES_MODE,
-        CONFIGURED_LIVE_SKIP_REASON,
-    );
-    test.skip(
-        !(await configuredPostgresStackReady(request)),
-        CONFIGURED_LIVE_SKIP_REASON,
-    );
-    test.setTimeout(180_000);
-    await expectFullStackApiReady(request, CONFIGURED_POSTGRES);
-
-    const groupId = uniqueGroupId(testInfo);
-    const controlRunId = uniqueRunId(testInfo);
-    const agentAId = `${controlRunId}-agent-a`;
-    const agentBId = `${controlRunId}-agent-b`;
-    const operatorSessionId = `${controlRunId}-operator-session`;
-    const agents: Array<Awaited<ReturnType<typeof openBrowserControlAgent>>> =
-        [];
-
-    function operatorUrl(): string {
-        return `${FULL_STACK_SPA_ORIGIN}/?${new URLSearchParams({
-            provider: 'browser-rallar',
-            v: '1',
-            experience: 'recipe-console',
-            view: 'execute',
-            recipeId: 'rtc-realtime-stability',
-            apiBaseUrl: CONFIGURED_POSTGRES.apiBaseUrl,
-            controlUrl: CONFIGURED_POSTGRES.controlWsUrl,
-            applicationId: CONFIGURED_POSTGRES.applicationId,
-            workspaceId: CONFIGURED_POSTGRES.workspaceId,
-            roomId: groupId,
-            controlRunId,
-            actor: CONFIGURED_POSTGRES.userC.actor,
-            sessionId: operatorSessionId,
-        }).toString()}`;
-    }
-
-    try {
-        agents.push(
-            await openBrowserControlAgent(
-                browser,
-                CONFIGURED_POSTGRES,
-                CONFIGURED_POSTGRES.userA,
-                { runId: controlRunId, agentId: agentAId, groupId },
-            ),
-        );
-        agents.push(
-            await openBrowserControlAgent(
-                browser,
-                CONFIGURED_POSTGRES,
-                CONFIGURED_POSTGRES.userB,
-                { runId: controlRunId, agentId: agentBId, groupId },
-            ),
-        );
-        await Promise.all([
-            waitForControlRunAgent(request, controlRunId, agentAId),
-            waitForControlRunAgent(request, controlRunId, agentBId),
-        ]);
-        await loginUser(page, CONFIGURED_POSTGRES, CONFIGURED_POSTGRES.userC, {
-            groupId,
-            sessionId: operatorSessionId,
-            tab: 'rallar-server',
-        });
-        await page.goto(operatorUrl());
-        await expect(page).toHaveURL(/(?:\?|&)provider=browser-rallar(?:&|$)/);
-
-        const liveRecipe = page.locator(
-            '[data-execute-recipe][data-recipe-id="rtc-realtime-stability"]',
-        );
-        await expect(liveRecipe).toHaveAttribute('aria-selected', 'true');
-        await expect(liveRecipe).toContainText('browser-rallar');
-        await expect(liveRecipe).toContainText('Live services');
-        const targets = page.locator('[data-execute-targets]');
-        await expect(targets.locator('[data-execute-target]')).toHaveCount(2, {
-            timeout: 30_000,
-        });
-        await expect(targets).toContainText(agentAId);
-        await expect(targets).toContainText(agentBId);
-        await expect(
-            targets.locator('[data-target-status="matched"]'),
-        ).toHaveCount(2);
-
-        const actions = page.locator('[data-execute-action-band]');
-        await actions.getByRole('button', { name: 'Resolve targets' }).click();
-        await actions.getByRole('button', { name: 'Arm Create draft' }).click();
-        await actions
-            .getByRole('button', { name: 'Create draft', exact: true })
-            .click();
-        const status = page.locator('[data-execute-run-status]');
-        await expect(status).toHaveAttribute('data-run-state', 'draft');
-        const distributedRunId = new URL(page.url()).searchParams.get(
-            'distributedRunId',
-        );
-        expect(distributedRunId).toMatch(/^dist-/);
-        if (!distributedRunId)
-            throw new Error('Created run URL omitted distributedRunId.');
-
-        await actions.getByRole('button', { name: 'Arm Stage run' }).click();
-        await actions
-            .getByRole('button', { name: 'Stage run', exact: true })
-            .click();
-        await expect(status).toHaveAttribute('data-run-state', 'ready', {
-            timeout: 60_000,
-        });
-        await actions.getByRole('button', { name: 'Arm Start run' }).click();
-        await actions
-            .getByRole('button', { name: 'Start run', exact: true })
-            .click();
-        await expect(status).toHaveAttribute('data-run-state', 'passed', {
-            timeout: 90_000,
-        });
-
-        const downloadPromise = page.waitForEvent('download');
-        await actions.getByRole('button', { name: 'Export artifact' }).click();
-        const download = await downloadPromise;
-        expect(download.suggestedFilename()).toBe(
-            `${distributedRunId}-artifact.json`,
-        );
-        const downloadPath = await download.path();
-        if (!downloadPath)
-            throw new Error('Artifact download path is unavailable.');
-        const artifact = JSON.parse(await readFile(downloadPath, 'utf8')) as {
-            artifactSchemaVersion?: number;
-            distributedRunId?: string;
-            files?: Record<string, string>;
-        };
-        expect(artifact).toMatchObject({
-            artifactSchemaVersion: 2,
-            distributedRunId,
-            files: {
-                'distributed-run.json': expect.any(String),
-                'manifest.json': expect.any(String),
-                'target-resolution.json': expect.any(String),
-                'control-run.json': expect.any(String),
-                'report.json': expect.any(String),
-                'metadata.json': expect.any(String),
-            },
-        });
-        const files = artifact.files ?? {};
-        expect(JSON.parse(files['manifest.json'] ?? '{}')).toMatchObject({
-            distributedRunId,
-            controlRunId,
-            group: { groupId },
-            recipes: [{ recipeId: 'rtc-realtime-stability' }],
-            targetPolicy: {
-                mode: 'selected-agents',
-                agentIds: [agentAId, agentBId].sort(),
-                expectedParticipantCount: 2,
-            },
-        });
-        expect(JSON.parse(files['distributed-run.json'] ?? '{}')).toMatchObject(
-            {
-                distributedRunId,
-                controlRunId,
-                state: 'passed',
-                targetAgentIds: [agentAId, agentBId].sort(),
-                rollup: { state: 'passed', ok: true },
-            },
-        );
-        expect(JSON.parse(files['report.json'] ?? '{}')).toMatchObject({
-            artifactSchemaVersion: 2,
-            execution: 'distributed-run',
-            distributedRunId,
-            controlRunId,
-            state: 'passed',
-            ok: true,
-        });
-        expect(JSON.parse(files['control-run.json'] ?? '{}')).toMatchObject({
-            runId: controlRunId,
-            agents: expect.arrayContaining([
-                expect.objectContaining({
-                    agentId: agentAId,
-                    identity: expect.objectContaining({
-                        groupId,
-                        providerMode: 'browser-rallar',
-                    }),
-                }),
-                expect.objectContaining({
-                    agentId: agentBId,
-                    identity: expect.objectContaining({
-                        groupId,
-                        providerMode: 'browser-rallar',
-                    }),
-                }),
-            ]),
-            results: expect.arrayContaining([
-                expect.objectContaining({ ok: true }),
-            ]),
-        });
-
-        // Iteration 5 must extend this configured proof through live Monitor truth
-        // and a distinct non-terminal run cancelled from visible controls. The
-        // current Monitor surface is seeded, so asserting it here would be false proof.
-    } finally {
-        await cleanupRallarPage(page);
-        await Promise.all(agents.map((agent) => cleanupRallarPage(agent.page)));
-        await Promise.all(agents.map((agent) => agent.context.close()));
-    }
 });
 
 test('keeps catalog and preflight available while offline actions remain blocked', async ({

@@ -11,7 +11,8 @@ export function MonitorVerdict({
     connection: MonitorConnectionTruth;
 }>) {
     const failure = model.monitor.failures[0];
-    const nextAction = model.report.nextActions[0]?.nextAction ??
+    const nextAction = compactFailureAction(failure) ??
+        model.report.nextActions[0]?.nextAction ??
         model.verdict.nextAction ??
         fallbackNextAction(model.source.distributedRun.state);
     const affected = failure?.agentId ?? failure?.recipeId ??
@@ -87,4 +88,15 @@ function fallbackNextAction(state: string): string {
     if (state === 'waiting-for-barrier') return 'Inspect barrier readiness.';
     if (state === 'running') return 'Inspect agent and recipe progress.';
     return 'Inspect the evidence ledger below.';
+}
+
+function compactFailureAction(
+    failure: MonitorWorkspaceModel['monitor']['failures'][number] | undefined,
+): string | undefined {
+    if (failure?.commandId) {
+        return `Open command ${failure.commandId}${failure.agentId ? ` on ${failure.agentId}` : ''}.`;
+    }
+    if (failure?.recipeId) return `Open recipe ${failure.recipeId}.`;
+    if (failure?.agentId) return `Inspect agent ${failure.agentId}.`;
+    return undefined;
 }

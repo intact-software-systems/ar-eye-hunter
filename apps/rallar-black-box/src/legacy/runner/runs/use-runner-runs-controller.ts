@@ -56,6 +56,7 @@ import {
     readDistributedRunSeedFromUrl,
     writeDistributedRunSeedToUrl,
 } from './distributed-run-seed-url.ts';
+import { readLegacyRunsUrlSelection } from './legacy-run-url-selection.ts';
 import {
     DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
     RUNNER_DISTRIBUTED_POLL_MS,
@@ -94,16 +95,18 @@ export function useRunnerRunsController({
     const [controlToken, setControlToken] = useState(
         preferredDistributedRun?.controlToken ?? bootstrap.controlToken ?? '',
     );
-    const [controlRunId, setControlRunId] = useState(
+    const [controlRunId, setControlRunId] = useState(() =>
         initialSyntheticSeed?.controlRun.runId ??
+            readLegacyRunsUrlSelection()?.controlRunId ??
             preferredDistributedRun?.controlRunId ?? control.runId ??
             bootstrap.runId ?? '',
     );
     const [distributedRuns, setDistributedRuns] = useState<
         readonly ControlDistributedRunSnapshot[]
     >(() => initialSyntheticSeed ? [initialSyntheticSeed.distributedRun] : []);
-    const [selectedDistributedRunId, setSelectedDistributedRunId] = useState(
+    const [selectedDistributedRunId, setSelectedDistributedRunId] = useState(() =>
         initialSyntheticSeed?.distributedRun.distributedRunId ??
+            readLegacyRunsUrlSelection()?.distributedRunId ??
             preferredDistributedRun?.distributedRunId ?? '',
     );
     const [selectedDistributedRun, setSelectedDistributedRun] = useState<

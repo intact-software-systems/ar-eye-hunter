@@ -49,6 +49,7 @@ export function MonitorRunSelector({
                 <label>
                     <span>Control run</span>
                     <select
+                        aria-label="Control run"
                         disabled={disabled || controlRuns.length === 0}
                         onChange={event => onSelectControlRun(event.target.value)}
                         value={controlRunId ?? ''}
@@ -64,6 +65,7 @@ export function MonitorRunSelector({
                 <label>
                     <span>Distributed run</span>
                     <select
+                        aria-label="Distributed run"
                         aria-describedby={issue ? 'monitor-run-selection-issue' : undefined}
                         disabled={disabled || !controlRunId || distributedRuns.length === 0}
                         onChange={event => onSelectDistributedRun(event.target.value)}

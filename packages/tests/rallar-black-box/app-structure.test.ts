@@ -6575,7 +6575,7 @@ describe('rallar-black-box app source ownership', () => {
             ),
             'Runs exact token-complete pre-return controller AST',
         ).toBe(
-            'f0fa38d6a05764e97e09ae1738d5c8e67d8426cf879881ad364db000d16197c7',
+            '58f49db225ab78525d9f0c2b25a7396417c588d8219b56151e699ff5410a9b49',
         );
         const effectCalls = controller.body!.statements.flatMap((statement) =>
             ts.isExpressionStatement(statement) &&
@@ -6973,6 +6973,7 @@ describe('rallar-black-box app source ownership', () => {
                     '../runner-contracts.ts|type:RunnerDistributedRunSelection',
                     './distributed-artifact-import.ts|type:DistributedArtifactImportStatus,value:distributedArtifactImportStatus',
                     './distributed-run-seed-url.ts|value:readDistributedRunSeedFromUrl,value:writeDistributedRunSeedToUrl',
+                    './legacy-run-url-selection.ts|value:readLegacyRunsUrlSelection',
                     './runner-runs-constants.ts|value:DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,value:RUNNER_DISTRIBUTED_POLL_MS',
                     '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts|type:DistributedRunAnalysis,type:DistributedRunArtifactFiles,value:analyzeDistributedRunArtifactFiles,value:distributedArtifactBundleFromFiles,value:distributedArtifactSnapshotsFromFiles',
                     '@shared-test/rallar-bb-test/distributed-run.ts|value:isDistributedRunTerminalState',
@@ -7145,7 +7146,7 @@ describe('rallar-black-box app source ownership', () => {
             task9aAstFingerprint(preReturnStatements),
             'controller exact token-complete pre-return AST',
         ).toBe(
-            'f0fa38d6a05764e97e09ae1738d5c8e67d8426cf879881ad364db000d16197c7',
+            '58f49db225ab78525d9f0c2b25a7396417c588d8219b56151e699ff5410a9b49',
         );
 
         const statementsByName = new Map<string, ts.VariableStatement>();

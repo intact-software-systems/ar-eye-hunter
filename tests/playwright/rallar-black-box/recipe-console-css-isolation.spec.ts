@@ -1,4 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import {
+    installRecipeConsoleMonitorFixture,
+    MONITOR_ROUTE,
+} from './recipe-console-monitor-fixture.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 const RECIPE_URL =
@@ -161,6 +165,48 @@ async function captureRealRecipeStyles(page: Page) {
     };
 }
 
+async function captureRealMonitorStyles(page: Page) {
+    const verdict = page.locator('[data-monitor-section="verdict"]');
+    const failure = page.locator('[data-failure-key]').first();
+    const matrix = page.locator('[data-monitor-section="matrix"]');
+    const evidence = page.locator('[data-monitor-section="timeline"] summary').first();
+    const actions = page.locator('[data-monitor-section="actions"]');
+    const inspector = page.locator('[data-monitor-inspector]');
+    for (const owner of [verdict, failure, matrix, evidence, actions, inspector]) {
+        await expect(owner).toBeVisible();
+    }
+    const style = async (
+        owner: ReturnType<Page['locator']>,
+        properties: readonly string[],
+    ) => owner.evaluate((node, names) => {
+        const computed = getComputedStyle(node);
+        return Object.fromEntries(names.map(name => [
+            name,
+            computed.getPropertyValue(name),
+        ]));
+    }, properties);
+    return {
+        verdict: await style(verdict, [
+            'background-color', 'border-top-color', 'display', 'padding',
+        ]),
+        failure: await style(failure, [
+            'background-color', 'border-left-color', 'min-height', 'display',
+        ]),
+        matrix: await style(matrix, [
+            'background-color', 'border-top-color', 'display', 'min-width',
+        ]),
+        evidence: await style(evidence, [
+            'background-color', 'min-height', 'padding', 'font-weight',
+        ]),
+        actions: await style(actions, [
+            'background-color', 'border-top-color', 'display', 'position',
+        ]),
+        inspector: await style(inspector, [
+            'display', 'min-width', 'overflow-wrap', 'padding',
+        ]),
+    };
+}
+
 test('is independent of stylesheet load order', async ({ page }) => {
     const legacyFirstLegacy = await capture(page, 'both', legacySelectors);
     const legacyFirstRecipe = await capture(page, 'both', recipeSelectors);
@@ -215,6 +261,40 @@ test('matches cold Recipe styles when legacy components load first', async ({
     await expect(legacyFirst.locator('.app-shell')).toHaveCount(0);
 
     expect(await captureRealRecipeStyles(legacyFirst)).toEqual(coldRecipe);
+    await legacyFirst.close();
+});
+
+test('preserves live Monitor styles across a legacy round trip', async ({
+    context,
+    page,
+}) => {
+    await installRecipeConsoleMonitorFixture(context);
+    await page.goto(MONITOR_ROUTE);
+    const before = await captureRealMonitorStyles(page);
+
+    await navigateInApp(page, '/?provider=simulated&experience=legacy&tab=auth');
+    await expect(page.locator('.app-shell')).toBeVisible();
+    await navigateInApp(page, MONITOR_ROUTE);
+    await expect(page.locator('.app-shell')).toHaveCount(0);
+
+    expect(await captureRealMonitorStyles(page)).toEqual(before);
+});
+
+test('matches cold Monitor styles when legacy components load first', async ({
+    context,
+    page,
+}) => {
+    await installRecipeConsoleMonitorFixture(context);
+    await page.goto(MONITOR_ROUTE);
+    const coldMonitor = await captureRealMonitorStyles(page);
+
+    const legacyFirst = await context.newPage();
+    await legacyFirst.goto('/?provider=simulated&experience=legacy&tab=auth');
+    await expect(legacyFirst.locator('.app-shell')).toBeVisible();
+    await navigateInApp(legacyFirst, MONITOR_ROUTE);
+    await expect(legacyFirst.locator('.app-shell')).toHaveCount(0);
+
+    expect(await captureRealMonitorStyles(legacyFirst)).toEqual(coldMonitor);
     await legacyFirst.close();
 });
 

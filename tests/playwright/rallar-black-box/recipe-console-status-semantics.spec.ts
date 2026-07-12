@@ -1,4 +1,12 @@
 import { expect, test } from '@playwright/test';
+import {
+    installRecipeConsoleMonitorFixture,
+    MONITOR_FAILURE_AGENT_ID,
+    MONITOR_FAILURE_COMMAND_ID,
+    MONITOR_FAILURE_CODE,
+    MONITOR_FAILURE_MESSAGE,
+    MONITOR_ROUTE,
+} from './recipe-console-monitor-fixture.ts';
 
 test('pairs every operational status with text and shape', async ({ page }) => {
     await page.goto('/test/fixtures/recipe-console-css-isolation.html?mode=recipe-console');
@@ -24,7 +32,11 @@ test('pairs every operational status with text and shape', async ({ page }) => {
     await expect(page.locator('[data-status="failed"]')).toHaveCSS('border-left-width', '4px');
 });
 
-test('keeps empty stale and error states explicit without discarding evidence', async ({ page }) => {
+test('keeps empty stale and error states explicit without discarding evidence', async ({
+    context,
+    page,
+}) => {
+    const monitorFixture = await installRecipeConsoleMonitorFixture(context);
     await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=analyze');
     const empty = page.locator('[data-state="empty"]');
     await expect(empty).toHaveAttribute('aria-live', 'polite');
@@ -42,27 +54,36 @@ test('keeps empty stale and error states explicit without discarding evidence', 
     })).toBeVisible();
     await expect(error).toContainText('No control connection is available in offline preview.');
 
-    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=monitor');
-    await page.getByRole('button', { name: 'Simulate stale connection' }).click();
-    await expect.soft(page.getByRole('button', {
-        name: 'Return to seeded current state',
-        exact: true,
-    })).toBeVisible();
-    await expect.soft(page.getByRole('button', {
-        name: 'Restore live connection',
-        exact: true,
-    })).toHaveCount(0);
-    const stale = page.locator('[data-state="stale"]');
-    await expect(stale, 'Monitor should expose one semantic StaleState').toHaveCount(1);
-    await expect(stale).toBeVisible();
-    await expect(stale).toHaveAttribute('aria-live', 'polite');
-    await expect(stale).toContainText('Stale · reconnecting');
-    await expect(stale).toContainText('Last known evidence 12s ago');
-
-    await expect(page.locator('[data-failure-key]')).toHaveCount(2);
-    await expect(page.locator('[data-failure-key="seed-start-receiver"]'))
-        .toContainText('SYNTHETIC_ASSERTION_FAILED');
+    await page.goto(MONITOR_ROUTE);
+    const verdict = page.locator('[data-monitor-section="verdict"]');
+    const failure = page.locator(
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+    );
+    await expect(verdict).toHaveAttribute('aria-live', 'polite');
+    await expect(verdict).toHaveAttribute('data-evidence-freshness', 'current');
+    await expect(failure).toContainText(MONITOR_FAILURE_CODE);
+    await expect(failure).toContainText(MONITOR_FAILURE_MESSAGE);
     const matrix = page.getByRole('region', { name: 'Agent by phase matrix' });
-    await expect(matrix.getByText('seed-agent-a', { exact: true })).toBeVisible();
-    await expect(matrix.getByText('seed-agent-b', { exact: true })).toBeVisible();
+    await expect(matrix.getByText(MONITOR_FAILURE_AGENT_ID, { exact: true })).toBeVisible();
+
+    monitorFixture.failNextRunRead();
+    const readsBeforeFailure = monitorFixture.runRequestCount();
+    const actions = page.getByRole('region', { name: 'Monitor actions' });
+    await actions.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect.poll(monitorFixture.runRequestCount).toBeGreaterThan(readsBeforeFailure);
+
+    await expect(verdict).toHaveAttribute('data-evidence-freshness', 'last-known');
+    await expect(verdict).toHaveAttribute('data-evidence-completeness', 'complete');
+    await expect(verdict).toContainText('Last-known evidence — remote actions blocked');
+    await expect(page.locator('[data-monitor-run-selector]'))
+        .toContainText('Last-known truth');
+    await expect(failure).toContainText(MONITOR_FAILURE_MESSAGE);
+    await expect(matrix.getByText(MONITOR_FAILURE_AGENT_ID, { exact: true })).toBeVisible();
+
+    monitorFixture.recoverRunReads();
+    const readsBeforeRecovery = monitorFixture.runRequestCount();
+    await actions.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect.poll(monitorFixture.runRequestCount).toBeGreaterThan(readsBeforeRecovery);
+    await expect(verdict).toHaveAttribute('data-evidence-freshness', 'current');
+    await expect(verdict).toContainText('Current complete evidence');
 });

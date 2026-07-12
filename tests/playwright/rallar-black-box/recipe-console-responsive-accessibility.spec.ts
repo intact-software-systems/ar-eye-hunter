@@ -1,4 +1,10 @@
 import { expect, test, type Locator } from '@playwright/test';
+import {
+    installRecipeConsoleMonitorFixture,
+    MONITOR_FAILURE_AGENT_ID,
+    MONITOR_FAILURE_COMMAND_ID,
+    MONITOR_ROUTE,
+} from './recipe-console-monitor-fixture.ts';
 
 async function expectMinimumTargetHeight(locator: Locator, label: string): Promise<void> {
     await expect(locator.first(), `${label} should resolve a visible control`).toBeVisible();
@@ -88,9 +94,13 @@ test('renders scoped shell geometry at every contract viewport', async ({ page }
     await expect(page.locator('[data-inspector-host]')).toHaveCSS('transition-duration', '0s');
 });
 
-test('keeps the 900px tablet inspector overlaid without squeezing work', async ({ page }) => {
+test('keeps the 900px tablet inspector overlaid without squeezing work', async ({
+    context,
+    page,
+}) => {
     await page.setViewportSize({ width: 900, height: 900 });
-    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=monitor');
+    await installRecipeConsoleMonitorFixture(context);
+    await page.goto(MONITOR_ROUTE);
 
     const work = page.locator('[data-work-surface]');
     const before = await work.boundingBox();
@@ -99,7 +109,7 @@ test('keeps the 900px tablet inspector overlaid without squeezing work', async (
     expect(before?.width).toBe(836);
     await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Inspect failure', exact: true }).click();
+    await page.locator(`[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`).click();
     const overlay = page.getByRole('dialog', { name: 'Inspector' });
     await expect(overlay).toHaveAttribute('data-mode', 'overlay');
     const after = await work.boundingBox();
@@ -108,6 +118,68 @@ test('keeps the 900px tablet inspector overlaid without squeezing work', async (
     expect(overlayBounds?.width).toBe(360);
     expect(overlayBounds?.x).toBe(540);
     expect(overlayBounds?.x ?? 900).toBeLessThan((after?.x ?? 0) + (after?.width ?? 0));
+});
+
+test('keeps short-landscape Monitor contained through a keyboard-only evidence path', async ({
+    context,
+    page,
+}) => {
+    await page.setViewportSize({ width: 932, height: 430 });
+    const fixture = await installRecipeConsoleMonitorFixture(context);
+    await page.goto(MONITOR_ROUTE);
+
+    const failure = page.locator(
+        `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+    );
+    await failure.focus();
+    await page.keyboard.press('Enter');
+    const inspector = page.getByRole('dialog', { name: 'Inspector' });
+    await expect(inspector).toBeVisible();
+    await expect(inspector.getByRole('button', { name: 'Close inspector' }))
+        .toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(inspector.getByRole('link', {
+        name: 'Open this run in legacy Runs',
+    })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(failure).toBeFocused();
+
+    const matrix = page.locator('[data-monitor-matrix-scroller]');
+    expect(await matrix.evaluate(element => element.scrollWidth > element.clientWidth))
+        .toBe(true);
+    expect(await page.evaluate(() => ({
+        x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        y: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    }))).toEqual({ x: 0, y: 0 });
+
+    fixture.setRunState('running');
+    const actions = page.getByRole('region', { name: 'Monitor actions' });
+    const refresh = actions.getByRole('button', { name: 'Refresh', exact: true });
+    await refresh.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('[data-monitor-section="verdict"]'))
+        .toHaveAttribute('data-run-state', 'running');
+
+    const arm = actions.getByRole('button', { name: 'Arm Cancel', exact: true });
+    await arm.focus();
+    await page.keyboard.press('Enter');
+    await expect(actions.getByRole('button', { name: 'Cancel armed', exact: true }))
+        .toBeFocused();
+    const cancel = actions.getByRole('button', { name: 'Cancel run', exact: true });
+    await cancel.focus();
+    await page.keyboard.press('Space');
+    const cancelDialog = page.getByRole('alertdialog', {
+        name: 'Cancel distributed run?',
+    });
+    await expect(cancelDialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(cancelDialog).toHaveCount(0);
+    await expect(cancel).toBeFocused();
+    expect(await page.evaluate(() => ({
+        x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        y: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    }))).toEqual({ x: 0, y: 0 });
 });
 
 test('moves Tune matrix focus with every arrow without activating inspection', async ({ page }) => {
@@ -135,8 +207,12 @@ test('moves Tune matrix focus with every arrow without activating inspection', a
     await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-b');
 });
 
-test('keeps representative portrait touch controls at least 44px high', async ({ page }) => {
+test('keeps representative portrait touch controls at least 44px high', async ({
+    context,
+    page,
+}) => {
     await page.setViewportSize({ width: 430, height: 932 });
+    await installRecipeConsoleMonitorFixture(context);
     await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=execute');
     await expectMinimumTargetHeight(
         page.locator('[data-command-bar] button'),
@@ -163,13 +239,28 @@ test('keeps representative portrait touch controls at least 44px high', async ({
         'Execute action',
     );
 
-    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=monitor');
+    await page.goto(MONITOR_ROUTE);
     await expectMinimumTargetHeight(
-        page.getByRole('button', { name: 'Simulate stale connection' }),
-        'Monitor stale control',
+        page.getByRole('region', { name: 'Monitor actions' }).locator('button'),
+        'Monitor action',
+    );
+    const monitorActionOrder = await page
+        .getByRole('region', { name: 'Monitor actions' })
+        .locator('[data-monitor-action]')
+        .evaluateAll(buttons => buttons.map(button => ({
+            label: button.textContent?.trim() ?? '',
+            left: button.getBoundingClientRect().left,
+        })));
+    expect(monitorActionOrder.map(action => action.label)).toEqual(
+        ['Refresh', 'Cancel run', 'Load artifact', 'Export artifact'],
+    );
+    expect(monitorActionOrder.map(action => action.label)).toEqual(
+        [...monitorActionOrder]
+            .sort((left, right) => left.left - right.left)
+            .map(action => action.label),
     );
     await expectMinimumTargetHeight(
-        page.locator('[data-failure-key] button'),
+        page.locator('[data-failure-key]'),
         'Monitor failure control',
     );
     await expectMinimumTargetHeight(
@@ -224,9 +315,13 @@ test('keeps representative portrait touch controls at least 44px high', async ({
     }
 });
 
-test('reserves the portrait selection dock only for actionable evidence', async ({ page }) => {
+test('reserves the portrait selection dock only for actionable evidence', async ({
+    context,
+    page,
+}) => {
     await page.setViewportSize({ width: 430, height: 932 });
-    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=analyze');
+    await installRecipeConsoleMonitorFixture(context);
+    await page.goto(MONITOR_ROUTE.replace('view=monitor', 'view=analyze'));
     await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'analyze');
     await expect(page.getByRole('heading', { level: 1, name: 'Analyze' })).toBeVisible();
     await expect(page.locator('[data-selection-dock]')).toHaveCount(0);
@@ -241,16 +336,20 @@ test('reserves the portrait selection dock only for actionable evidence', async 
     await page.getByRole('button', { name: 'Monitor', exact: true }).click();
     const dock = page.locator('[data-selection-dock]');
     await expect(dock).toBeVisible();
-    await expect(dock).toContainText('Failure · seed-agent-b');
+    await expect(dock).toContainText(`Failure · ${MONITOR_FAILURE_AGENT_ID}`);
     await dock.getByRole('button', { name: 'Inspect' }).click();
-    await expect(page.getByRole('dialog', { name: 'Inspector' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Inspector' })).toHaveCount(1);
 });
 
-test('disables Recipe Console motion when reduced motion is requested', async ({ page }) => {
+test('disables Recipe Console motion when reduced motion is requested', async ({
+    context,
+    page,
+}) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 900, height: 900 });
-    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=monitor');
-    await page.getByRole('button', { name: 'Inspect failure', exact: true }).click();
+    await installRecipeConsoleMonitorFixture(context);
+    await page.goto(MONITOR_ROUTE);
+    await page.locator(`[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`).click();
 
     const overlay = page.getByRole('dialog', { name: 'Inspector' });
     await expect(overlay).toHaveCSS('transition-duration', '0s');
