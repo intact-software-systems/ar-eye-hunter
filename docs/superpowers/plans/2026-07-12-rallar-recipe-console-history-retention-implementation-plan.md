@@ -1,7 +1,7 @@
 # Rallar Recipe Console History, Compare, Saved Filters, And Retention Implementation Plan
 
 Status: in progress; Iteration 7 is green through `cc17169` and `382df72`;
-Tasks 0–7 are complete; Task 8 is in progress
+Tasks 0–8 are complete; Task 9 is in progress
 
 **Goal:** Complete parent Iteration 8 by making past distributed work
 findable, shareable, comparable, and safely cleanable without changing the
@@ -586,22 +586,33 @@ Files:
 - Extend deterministic control fixture(s) without live services
 - Modify CSS-isolation/responsive/accessibility specs only for real History UI
 
-- [ ] GREEN exact Ready-State test:
+- [x] GREEN exact Ready-State test:
   `restores versioned view selection filters comparison and timing metric from a copied URL`.
-- [ ] GREEN exact retention test:
+- [x] GREEN exact retention test:
   `previews retention impact before confirmed destructive cleanup`.
-- [ ] Add visible-control tests for combined filtering, past-failure discovery,
+- [x] Add visible-control tests for combined filtering, past-failure discovery,
   baseline/candidate selection, compare output, saved preset save/apply/delete,
   cancelled cleanup, drift conflict, auth failure, and post-delete URL cleanup.
-- [ ] Assert preview/confirm HTTP bodies and request counts; a preview or
+- [x] Assert preview/confirm HTTP bodies and request counts; a preview or
   cancelled dialog must never issue a destructive request.
-- [ ] Cover 1440x900, 900x900, 430x932, and 932x430; keyboard-only filters,
+- [x] Cover 1440x900, 900x900, 430x932, and 932x430; keyboard-only filters,
   table actions, saved presets, dialog, copy link, back/forward, focus restore,
   reduced motion, 44px coarse targets, announcements, zero document overflow,
   and both legacy/Tune CSS load orders.
-- [ ] Prove History/retention code remains absent when Tune never opens and is
+- [x] Prove History/retention code remains absent when Tune never opens and is
   unmounted with Tune when inactive. The chunk assertion includes retention
   request/validation implementation, not only History React components.
+
+Task 8 is code-backed in `fd9055e`. The exact copied-URL and guarded-retention
+tests pass beside the combined all-eight-filter keyboard, comparison, preset,
+copy, cleanup, reset, back, and forward workflow. The 55-case History/Tune/
+chunk/responsive/CSS browser matrix, 12 focused UI/build-boundary tests,
+typecheck, production build, and three independent re-reviews are green.
+Review-driven fixes made exact identifiers bidi/whitespace safe, kept long
+candidate lists keyboard-scrollable inside the modal trap, established Recipe
+Console disabled-control opacity authority, and strengthened post-confirm
+token-absence/deletion-result evidence. No legacy surface was hidden or cut
+over; Task 9 still owns the fresh iteration-wide exit and final documentation.
 
 ## Task 9: Reviews, Fresh Exit, Documentation, And Milestone Commits
 
