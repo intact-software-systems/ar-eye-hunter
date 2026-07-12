@@ -1,15 +1,12 @@
 import {
-    useCallback,
-    useEffect,
-    useLayoutEffect,
     useMemo,
-    useState,
     type ReactNode,
 } from 'react';
-import type { ControlServerSnapshot } from
-    '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
-import type { ControlQuerySnapshot } from '../control/control-query.ts';
+import {
+    HistoryWorkspace,
+    type HistoryWorkspaceProps,
+} from '../history/HistoryWorkspace.tsx';
 import type { RecipeConsoleUrlState } from
     '../routing/url-state-contract.ts';
 import {
@@ -19,21 +16,16 @@ import {
 import { TuneCommandTiming } from './TuneCommandTiming.tsx';
 import { TuneComparison } from './TuneComparison.tsx';
 import { TuneHints } from './TuneHints.tsx';
-import { TuneInspector } from './TuneInspector.tsx';
 import { TuneSourceSelection } from './TuneSourceSelection.tsx';
 import { TuneStreamHealth } from './TuneStreamHealth.tsx';
-import {
-    tuneInspectionAuthority,
-    tuneInspectionLabel,
-    type TuneInspection,
-} from './tune-inspection.ts';
 import { buildTuneRunCatalog } from './tune-run-catalog.ts';
 import { deriveTuneSelectionModel } from './tune-selection-model.ts';
 import { deriveTuneSourceModel } from './tune-source-model.ts';
+import { useTuneInspectionHost } from './use-tune-inspection-host.tsx';
 import styles from './TuneWorkspace.module.css';
 
 export type TuneWorkspaceProps = Readonly<{
-    query: ControlQuerySnapshot<ControlServerSnapshot>;
+    query: HistoryWorkspaceProps['query'];
     retained: Readonly<{
         status: 'idle' | 'pending' | 'ready' | 'error';
         model?: AnalyzeArtifactModel;
@@ -42,6 +34,7 @@ export type TuneWorkspaceProps = Readonly<{
     urlState: RecipeConsoleUrlState;
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
     onInspect(trigger: HTMLButtonElement): void;
+    onCopyLink(): void;
     onInspectorChange(content: ReactNode | undefined): void;
     onSelectionLabelChange(label: string | undefined): void;
 }>;
@@ -52,6 +45,7 @@ export default function TuneWorkspace({
     urlState,
     navigate,
     onInspect,
+    onCopyLink,
     onInspectorChange,
     onSelectionLabelChange,
 }: TuneWorkspaceProps) {
@@ -97,51 +91,12 @@ export default function TuneWorkspace({
         retainedArtifact: retained.model,
         urlState,
     }), [catalog, query, retained.model, urlState]);
-    const inspectionAuthority = tuneInspectionAuthority(source);
-    const [scopedInspection, setScopedInspection] = useState<Readonly<{
-        authority: string;
-        selection: TuneInspection;
-    }>>();
-    const inspection = scopedInspection?.authority === inspectionAuthority
-        ? scopedInspection.selection
-        : undefined;
-    const inspector = useMemo(() => inspection ? (
-        <TuneInspector selection={inspection} source={source} />
-    ) : undefined, [inspection, source]);
-    const inspect = useCallback((
-        next: TuneInspection,
-        trigger: HTMLButtonElement,
-    ) => {
-        setScopedInspection({
-            authority: inspectionAuthority,
-            selection: next,
-        });
-        onInspect(trigger);
-    }, [inspectionAuthority, onInspect]);
-
-    useLayoutEffect(() => {
-        onInspectorChange(inspector);
-        onSelectionLabelChange(inspection
-            ? tuneInspectionLabel(inspection)
-            : undefined);
-    }, [
-        inspection,
-        inspector,
+    const inspect = useTuneInspectionHost({
+        source,
+        onInspect,
         onInspectorChange,
         onSelectionLabelChange,
-    ]);
-    useEffect(() => {
-        if (
-            scopedInspection &&
-            scopedInspection.authority !== inspectionAuthority
-        ) {
-            setScopedInspection(undefined);
-        }
-    }, [inspectionAuthority, scopedInspection]);
-    useEffect(() => () => {
-        onInspectorChange(undefined);
-        onSelectionLabelChange(undefined);
-    }, [onInspectorChange, onSelectionLabelChange]);
+    });
 
     return (
         <div
@@ -173,6 +128,12 @@ export default function TuneWorkspace({
                 source={source}
             />
             <TuneComparison selection={selection} />
+            <HistoryWorkspace
+                navigate={navigate}
+                onCopyLink={onCopyLink}
+                query={query}
+                urlState={urlState}
+            />
         </div>
     );
 }

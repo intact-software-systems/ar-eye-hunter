@@ -1,0 +1,139 @@
+.panel {
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.heading {
+    display: flex;
+    min-width: 0;
+    align-items: start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.heading > div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.heading h3,
+.heading p {
+    margin: 0;
+}
+
+.heading h3 {
+    font-size: 16px;
+}
+
+.heading > p,
+.eyebrow,
+.field span {
+    color: var(--rc-muted);
+    font-size: 11px;
+}
+
+.eyebrow {
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+
+.form {
+    display: grid;
+    min-width: 0;
+    gap: 10px;
+}
+
+.grid {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.field {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+    font-weight: 750;
+}
+
+.field input,
+.field select,
+.actions button {
+    min-height: 44px;
+    border: 1px solid var(--rc-border);
+    border-radius: 5px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    font: inherit;
+}
+
+.field input,
+.field select {
+    width: 100%;
+    min-width: 0;
+    padding: 0 10px;
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.actions button:focus-visible {
+    outline: 2px solid var(--rc-primary);
+    outline-offset: 2px;
+}
+
+.actions {
+    display: flex;
+    min-width: 0;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 2px;
+    border-top: 1px solid var(--rc-border);
+}
+
+.actions button {
+    min-width: 104px;
+    padding: 0 14px;
+    font-weight: 800;
+}
+
+.actions .primary {
+    border-color: var(--rc-primary);
+    color: white;
+    background: var(--rc-primary);
+}
+
+@media (max-width: 900px) {
+    .grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    .panel {
+        padding: 12px;
+    }
+
+    .heading {
+        display: grid;
+    }
+
+    .grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .actions button {
+        min-width: 0;
+    }
+}

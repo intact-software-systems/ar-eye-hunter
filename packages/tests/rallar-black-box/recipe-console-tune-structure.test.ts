@@ -13,6 +13,7 @@ const workspacePath = `${recipeConsoleRoot}/app/RecipeConsoleWorkspace.tsx`;
 const activeWorkPath = `${recipeConsoleRoot}/app/RecipeConsoleActiveWork.tsx`;
 const tuneRoot = `${recipeConsoleRoot}/tune`;
 const tuneWorkspacePath = `${tuneRoot}/TuneWorkspace.tsx`;
+const tuneInspectionHostPath = `${tuneRoot}/use-tune-inspection-host.tsx`;
 
 function source(path: string): string {
     return readFileSync(resolve(repositoryRoot, path), 'utf8');
@@ -94,6 +95,33 @@ describe('Recipe Console Tune composition boundary', () => {
         );
         expect(workspace).not.toMatch(
             /const\s*\[\s*\w*(?:tune|seed)\w*\s*,[^\]]*\]\s*=\s*useState/iu,
+        );
+    });
+
+    test('keeps scoped inspection synchronization in a focused Tune owner', () => {
+        const workspace = source(tuneWorkspacePath);
+
+        expect(existsSync(resolve(repositoryRoot, tuneInspectionHostPath)))
+            .toBe(true);
+        expect(importedSpecifiers(workspace).filter(
+            specifier => specifier === './use-tune-inspection-host.tsx',
+        )).toEqual(['./use-tune-inspection-host.tsx']);
+        expect(workspace).toMatch(
+            /\bconst\s+inspect\s*=\s*useTuneInspectionHost\s*\(\s*\{/,
+        );
+        expect(workspace).not.toMatch(
+            /\b(?:TuneInspector|tuneInspectionAuthority|tuneInspectionLabel|scopedInspection|setScopedInspection|useLayoutEffect|useState)\b/,
+        );
+
+        const inspectionHost = source(tuneInspectionHostPath);
+        expect(inspectionHost).toMatch(/\bexport function useTuneInspectionHost\b/);
+        expect(inspectionHost).toMatch(/<TuneInspector\b/);
+        expect(inspectionHost).toMatch(/\btuneInspectionAuthority\s*\(/);
+        expect(inspectionHost).toMatch(/\btuneInspectionLabel\s*\(/);
+        expect(inspectionHost).toMatch(/\bonInspect\s*\(\s*trigger\s*\)/);
+        expect(inspectionHost).toMatch(/\buseLayoutEffect\s*\(/);
+        expect(inspectionHost).toMatch(
+            /onInspectorChange\s*\(\s*undefined\s*\)[\s\S]*onSelectionLabelChange\s*\(\s*undefined\s*\)/,
         );
     });
 

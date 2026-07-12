@@ -105,6 +105,7 @@ export function RecipeConsoleWorkspace() {
             monitorWork={monitorWork}
             tune={{
                 navigate: urlState.navigate,
+                onCopyLink: copyLink,
                 onInspect: inspectEvidence,
                 onInspectorChange: setInspectorContent,
                 onSelectionLabelChange: setSelectionLabel,

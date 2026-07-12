@@ -3,6 +3,8 @@ import type { ControlServerSnapshot } from
     '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';
 import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
+import type { RecipeConsoleControlQueryProvenance } from
+    '../control/control-api.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import { FleetPreview } from '../fleet/FleetPreview.tsx';
 import type {
@@ -14,7 +16,10 @@ import { StatePanel } from '../ui/StatePanel.tsx';
 const TuneWorkspace = lazy(() => import('../tune/TuneWorkspace.tsx'));
 
 type TuneWorkInput = Readonly<{
-    query: ControlQuerySnapshot<ControlServerSnapshot>;
+    query: ControlQuerySnapshot<
+        ControlServerSnapshot,
+        RecipeConsoleControlQueryProvenance
+    >;
     retained: Readonly<{
         status: 'idle' | 'pending' | 'ready' | 'error';
         model?: AnalyzeArtifactModel;
@@ -22,6 +27,7 @@ type TuneWorkInput = Readonly<{
     }>;
     urlState: RecipeConsoleUrlState;
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
+    onCopyLink(): void;
     onInspect(trigger: HTMLButtonElement): void;
     onInspectorChange(content: ReactNode | undefined): void;
     onSelectionLabelChange(label: string | undefined): void;

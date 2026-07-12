@@ -27,7 +27,13 @@
 
 @media (max-height: 520px) and (min-width: 720px) {
     .workspace {
+        height: 100%;
+        min-height: 0;
         gap: 10px;
+        padding-right: 4px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
     }
 
     .evidencePlane {
