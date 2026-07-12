@@ -208,6 +208,17 @@ test('renders failure-first Monitor from canonical evidence', async ({ page }) =
     await expect(inspector.getByRole('link', { name: 'Open legacy RTC diagnostic' }))
         .toHaveAttribute('href', '/?provider=simulated&experience=legacy&tab=rtc-diagnostics');
 
+    await recipeFailure.getByRole('option').click();
+    await expect(inspector.getByRole('heading', { name: 'Failure · seed-rtc-recipe' }))
+        .toBeVisible();
+    await expect(inspector.locator('[data-causal-kind="diagnostic"]')).toHaveCount(0);
+    await expect(inspector).not.toContainText('seed-start-receiver-error-diagnostic');
+    await expect(inspector.getByText(
+        'No runtime diagnostic is directly correlated with this recipe rollup.',
+        { exact: true },
+    )).toBeVisible();
+    await commandFailure.getByRole('option').click();
+
     const stale = page.getByRole('button', { name: 'Simulate stale connection' });
     await stale.click();
     await expect(page.getByText('Stale · reconnecting', { exact: true })).toBeVisible();

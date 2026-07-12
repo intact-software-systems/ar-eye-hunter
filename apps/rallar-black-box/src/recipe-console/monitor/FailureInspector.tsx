@@ -1,4 +1,5 @@
 import type { MonitorPreviewModel } from '../data/recipe-console-models.ts';
+import { runCausalTrailForFailure } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import styles from './MonitorPreview.module.css';
 
 export type FailureInspectorProps = Readonly<{
@@ -10,6 +11,14 @@ export function FailureInspector({ model, failureKey }: FailureInspectorProps) {
     const failure = model.failureLedger.find(row => row.key === failureKey) ??
         model.selectedCommandFailure;
     const identity = failure.agentId ?? failure.recipeId ?? failure.key;
+    const causalTrail = runCausalTrailForFailure({
+        causalTrail: model.verdict.causalTrail,
+        failure,
+        runtimeDiagnostics: model.monitor.runtimeDiagnostics,
+    });
+    const hasDirectDiagnostic = model.monitor.runtimeDiagnostics.some(row =>
+        row.correlatedFailureKeys.includes(failure.key)
+    );
     return (
         <article className={styles.inspector}>
             <p className={styles.eyebrow}>Selected failure</p>
@@ -32,8 +41,11 @@ export function FailureInspector({ model, failureKey }: FailureInspectorProps) {
             </section>
             <section>
                 <h3>Correlated evidence</h3>
+                {!hasDirectDiagnostic && failure.kind === 'recipe' ? (
+                    <p>No runtime diagnostic is directly correlated with this recipe rollup.</p>
+                ) : null}
                 <ol className={styles.evidenceList}>
-                    {model.verdict.causalTrail.map(item => (
+                    {causalTrail.map(item => (
                         <li
                             data-causal-kind={item.kind}
                             key={`${item.kind}:${item.targetId ?? item.label}`}

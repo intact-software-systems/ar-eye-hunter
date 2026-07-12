@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRecipeConsoleSeedState } from '../../../apps/rallar-black-box/src/recipe-console/data/seeded-console-state.ts';
+import { runCausalTrailForFailure } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 
 describe('Recipe Console seeded state', () => {
     it('builds Execute from the shared RTC stability fixture and canonical sample targets', () => {
@@ -77,6 +78,25 @@ describe('Recipe Console seeded state', () => {
         });
         expect(monitor.monitor.latency.maxMs).toBe(520);
         expect(monitor.agentProgress).toHaveLength(2);
+
+        const recipeFailure = monitor.failureLedger.find(row => row.kind === 'recipe');
+        if (!recipeFailure) throw new Error('Recipe rollup failure is unavailable.');
+        expect(runCausalTrailForFailure({
+            causalTrail: monitor.verdict.causalTrail,
+            failure: recipeFailure,
+            runtimeDiagnostics: monitor.monitor.runtimeDiagnostics,
+        }).map(item => item.kind)).toEqual(['artifact']);
+        expect(runCausalTrailForFailure({
+            causalTrail: monitor.verdict.causalTrail,
+            failure: monitor.selectedCommandFailure,
+            runtimeDiagnostics: monitor.monitor.runtimeDiagnostics,
+        }).map(item => item.kind)).toEqual([
+            'failure-category',
+            'command-result',
+            'diagnostic',
+            'artifact',
+            'events',
+        ]);
     });
 
     it('projects only stable command-duration Tune evidence', () => {

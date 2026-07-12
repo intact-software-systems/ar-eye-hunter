@@ -625,6 +625,36 @@ export type RunVerdictView = Readonly<{
     causalTrail: readonly RunCausalTrailItem[];
 }>;
 
+export function runCausalTrailForFailure(input: Readonly<{
+    causalTrail: readonly RunCausalTrailItem[];
+    failure: DistributedRunFailureRow;
+    runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
+}>): readonly RunCausalTrailItem[] {
+    const directDiagnosticIds = new Set(input.runtimeDiagnostics
+        .filter(row => row.correlatedFailureKeys.includes(input.failure.key))
+        .map(row => row.eventId));
+
+    return input.causalTrail.filter(item => {
+        if (item.kind === 'artifact') {
+            return true;
+        }
+        if (item.kind === 'diagnostic') {
+            return item.targetId !== undefined && directDiagnosticIds.has(item.targetId);
+        }
+        if (input.failure.kind === 'command') {
+            return item.commandId === input.failure.commandId;
+        }
+        if (input.failure.kind === 'recipe') {
+            return item.commandId === undefined && item.recipeId === input.failure.recipeId;
+        }
+        if (input.failure.kind === 'participant') {
+            return item.commandId === undefined && item.agentId === input.failure.agentId;
+        }
+        return item.commandId === undefined && item.agentId === undefined &&
+            item.recipeId === undefined;
+    });
+}
+
 export type DistributedRunWarningRegressionExpectation = Readonly<{
     messageEvidence?: readonly string[];
     diagnosticTypeIds?: readonly string[];
