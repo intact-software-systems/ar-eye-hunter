@@ -6,6 +6,12 @@ const root = resolve(import.meta.dirname, '../../..');
 const recipeRoot = 'apps/rallar-black-box/src/recipe-console';
 const historyRoot = `${recipeRoot}/history`;
 const historyWorkspace = `${historyRoot}/HistoryWorkspace.tsx`;
+const historyHeader = `${historyRoot}/HistoryHeader.tsx`;
+const historyRetentionWorkspace = `${historyRoot}/HistoryRetentionWorkspace.tsx`;
+const retentionCleanup = `${historyRoot}/use-retention-cleanup.ts`;
+const retentionCleanupModel = `${historyRoot}/retention-cleanup-model.ts`;
+const retentionPanel = `${historyRoot}/RetentionPanel.tsx`;
+const retentionDialog = `${historyRoot}/RetentionConfirmDialog.tsx`;
 const tuneWorkspace = `${recipeRoot}/tune/TuneWorkspace.tsx`;
 const workspace = `${recipeRoot}/app/RecipeConsoleWorkspace.tsx`;
 const activeWork = `${recipeRoot}/app/RecipeConsoleActiveWork.tsx`;
@@ -50,6 +56,18 @@ describe('Recipe Console History composition boundary', () => {
         expect(active.match(/<TuneWorkspace\b/g)).toHaveLength(1);
     });
 
+    test('delegates History heading and provenance presentation to one focused owner', () => {
+        expect(existsSync(resolve(root, historyHeader))).toBe(true);
+        const history = source(historyWorkspace);
+        expect(importedSpecifiers(history).filter(specifier =>
+            specifier === './HistoryHeader.tsx'
+        )).toEqual(['./HistoryHeader.tsx']);
+        expect(history.match(/<HistoryHeader\b/g)).toHaveLength(1);
+        expect(history).not.toMatch(
+            /function (?:provenanceLabel|provenanceTone|historyNotice|filterSummary)\b/,
+        );
+    });
+
     test('keeps History owners focused, read-only, and locally styled', () => {
         const owners = filesBelow(historyRoot)
             .filter(path => /\.(?:ts|tsx|css)$/.test(path))
@@ -60,7 +78,7 @@ describe('Recipe Console History composition boundary', () => {
 
         expect(lines(historyWorkspace)).toBeLessThanOrEqual(180);
         expect(lines(tuneWorkspace)).toBeLessThanOrEqual(180);
-        for (const path of owners.filter(path => /\.(?:tsx|css)$/.test(path))) {
+        for (const path of owners.filter(path => /\.(?:ts|tsx|css)$/.test(path))) {
             expect(lines(path), path).toBeLessThanOrEqual(300);
         }
 
@@ -94,6 +112,64 @@ describe('Recipe Console History composition boundary', () => {
         expect(eager).not.toMatch(
             /control-retention-(?:api|request|validation)|planToken/,
         );
+    });
+
+    test('owns one lazy token-free retention workflow below History', () => {
+        for (const path of [
+            historyRetentionWorkspace,
+            retentionCleanup,
+            retentionCleanupModel,
+            retentionPanel,
+            retentionDialog,
+        ]) expect(existsSync(resolve(root, path)), path).toBe(true);
+
+        const history = source(historyWorkspace);
+        const owner = source(historyRetentionWorkspace);
+        const hook = source(retentionCleanup);
+        const production = filesBelow(historyRoot)
+            .filter(path => /\.(?:ts|tsx)$/.test(path))
+            .map(source)
+            .join('\n');
+        const retentionOwners = [
+            historyRetentionWorkspace,
+            retentionCleanup,
+            retentionCleanupModel,
+            retentionPanel,
+            retentionDialog,
+        ].map(source).join('\n');
+        const rootOwners = `${source(workspace)}\n${source(activeWork)}`;
+
+        expect(importedSpecifiers(history).filter(specifier =>
+            specifier === './HistoryRetentionWorkspace.tsx'
+        )).toEqual(['./HistoryRetentionWorkspace.tsx']);
+        expect(history.match(/<HistoryRetentionWorkspace\b/g)).toHaveLength(1);
+        expect(rootOwners).not.toMatch(
+            /HistoryRetentionWorkspace|RetentionPanel|RetentionConfirmDialog|useRetentionCleanup/,
+        );
+        expect(hook).toMatch(/await capability\.load\(\)/);
+        expect(hook).toMatch(
+            /useLayoutEffect\(\(\) => \{\s*const context = \+\+contextRef\.current;/,
+        );
+        const controlRetentionImports = [...hook.matchAll(
+            /import\s+(?:type\s+)?(?:\{[^}]*\}|[^;]*?)\s+from\s+['"][^'"]*control-retention[^'"]*['"];/g,
+        )].map(match => match[0]);
+        expect(controlRetentionImports).toHaveLength(2);
+        expect(controlRetentionImports.every(value => /^import\s+type\b/.test(value)))
+            .toBe(true);
+        expect(production).not.toMatch(/\bplanToken\b|\bfetch\s*\(/);
+        expect(retentionOwners).not.toMatch(
+            /localStorage|sessionStorage|indexedDB|document\.cookie|console\./,
+        );
+
+        const refresh = owner.indexOf('await refreshAfterCurrent()');
+        const selectionPatch = owner.indexOf(
+            'retentionSelectionPatchAfterCleanup',
+            refresh,
+        );
+        const replaceSelection = owner.indexOf('replace(patch)', refresh);
+        expect(refresh).toBeGreaterThan(-1);
+        expect(selectionPatch).toBeGreaterThan(refresh);
+        expect(replaceSelection).toBeGreaterThan(selectionPatch);
     });
 
     test('keeps History reachable in short landscape with contained table overflow', () => {

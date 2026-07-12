@@ -1,0 +1,13 @@
+.identifier {
+    display: inline;
+    direction: ltr;
+    unicode-bidi: isolate-override;
+    white-space: break-spaces;
+    overflow-wrap: anywhere;
+}
+
+.identifier code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 12px;
+    white-space: inherit;
+}

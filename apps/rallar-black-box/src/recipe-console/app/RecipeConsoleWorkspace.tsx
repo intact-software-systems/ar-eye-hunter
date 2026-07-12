@@ -110,11 +110,14 @@ export function RecipeConsoleWorkspace() {
                 onInspectorChange: setInspectorContent,
                 onSelectionLabelChange: setSelectionLabel,
                 query: control.connection.query,
+                refreshAfterCurrent: control.connection.refreshAfterCurrent,
+                replace: urlState.replace,
                 retained: {
                     error: analyze.error,
                     model: analyze.model,
                     status: analyze.status,
                 },
+                retention: control.connection.retention,
                 urlState: urlState.state,
             }}
             view={urlState.state.view}

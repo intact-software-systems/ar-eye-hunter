@@ -35,6 +35,9 @@ export type TuneWorkspaceProps = Readonly<{
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
     onInspect(trigger: HTMLButtonElement): void;
     onCopyLink(): void;
+    retention: HistoryWorkspaceProps['retention'];
+    replace: HistoryWorkspaceProps['replace'];
+    refreshAfterCurrent: HistoryWorkspaceProps['refreshAfterCurrent'];
     onInspectorChange(content: ReactNode | undefined): void;
     onSelectionLabelChange(label: string | undefined): void;
 }>;
@@ -48,6 +51,9 @@ export default function TuneWorkspace({
     onCopyLink,
     onInspectorChange,
     onSelectionLabelChange,
+    retention,
+    replace,
+    refreshAfterCurrent,
 }: TuneWorkspaceProps) {
     const focusRunId = urlState.compareRight ?? urlState.distributedRunId;
     const catalog = useMemo(() => buildTuneRunCatalog({
@@ -132,6 +138,9 @@ export default function TuneWorkspace({
                 navigate={navigate}
                 onCopyLink={onCopyLink}
                 query={query}
+                refreshAfterCurrent={refreshAfterCurrent}
+                replace={replace}
+                retention={retention}
                 urlState={urlState}
             />
         </div>

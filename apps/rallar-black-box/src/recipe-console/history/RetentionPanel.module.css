@@ -1,0 +1,287 @@
+.panel {
+    display: grid;
+    min-width: 0;
+    border-block: 1px solid var(--rc-border);
+}
+.heading {
+    display: flex;
+    min-width: 0;
+    min-height: 60px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--rc-border);
+}
+.heading > div:first-child {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+.panel :where(h3, h4, p) {
+    margin: 0;
+}
+.heading h3,
+.previewHeading h4,
+.result h4 {
+    font-size: 16px;
+}
+.eyebrow {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+
+.actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+}
+.actions button {
+    min-height: 44px;
+    border: 1px solid var(--rc-primary);
+    border-radius: 0;
+    padding: 0 14px;
+    color: var(--rc-primary);
+    background: var(--rc-surface);
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+}
+.actions .review {
+    color: white;
+    background: var(--rc-primary);
+}
+.actions button:focus-visible,
+.disclosure summary:focus-visible,
+.totalDisclosure summary:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: 2px;
+}
+.actions button:disabled {
+    border-color: var(--rc-status-disabled-border);
+    color: var(--rc-status-disabled-text);
+    background: var(--rc-status-disabled-bg);
+    cursor: not-allowed;
+}
+
+.status {
+    min-height: 44px;
+    padding: 13px 14px;
+    color: var(--rc-muted);
+    border-bottom: 1px solid var(--rc-border);
+    overflow-wrap: anywhere;
+}
+.evidence {
+    display: grid;
+    min-width: 0;
+}
+.previewHeading {
+    display: flex;
+    min-width: 0;
+    min-height: 48px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--rc-border);
+}
+.current,
+.stale {
+    overflow-wrap: anywhere;
+    font-size: 12px;
+}
+.current {
+    color: var(--rc-status-passed-text);
+}
+.stale {
+    color: var(--rc-status-warning-text);
+}
+
+.counts {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    margin: 0;
+    padding: 0;
+    border-bottom: 1px solid var(--rc-border);
+    list-style: none;
+}
+.counts li {
+    min-width: 0;
+    min-height: 44px;
+    padding: 12px 10px;
+    border-inline-end: 1px solid var(--rc-border);
+    overflow-wrap: anywhere;
+    text-align: center;
+}
+.counts li:last-child {
+    border-inline-end: 0;
+}
+
+.empty,
+.warning {
+    min-height: 44px;
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--rc-border);
+    overflow-wrap: anywhere;
+}
+.empty {
+    color: var(--rc-muted);
+}
+.warning {
+    color: var(--rc-status-warning-text);
+    background: var(--rc-status-warning-bg);
+}
+
+.candidates {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.candidate {
+    display: grid;
+    min-width: 0;
+    border-bottom: 1px solid var(--rc-border);
+}
+.candidateHeading {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 110px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--rc-border);
+}
+.candidateHeading span {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+}
+.candidateFacts time {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+.candidateFacts {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-bottom: 1px solid var(--rc-border);
+}
+.candidateFacts span {
+    min-width: 0;
+    padding: 10px 14px;
+    border-inline-end: 1px solid var(--rc-border);
+    overflow-wrap: anywhere;
+}
+.candidateFacts span:last-child {
+    border-inline-end: 0;
+}
+
+.disclosure,
+.totalDisclosure {
+    min-width: 0;
+    border-bottom: 1px solid var(--rc-border);
+}
+.disclosure summary,
+.totalDisclosure summary {
+    display: list-item;
+    min-height: 44px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+}
+.disclosure ul,
+.totalDisclosure ul {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+    margin: 0;
+    padding: 10px 14px 12px 34px;
+    border-top: 1px solid var(--rc-border);
+}
+.disclosure li {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+.totalDisclosure li {
+    min-width: 0;
+}
+.disclosure p,
+.totalDisclosure p {
+    padding: 10px 14px 12px;
+    border-top: 1px solid var(--rc-border);
+    color: var(--rc-muted);
+}
+
+.result {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--rc-border);
+}
+.result h4,
+.result p {
+    padding-inline: 14px;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 800px) {
+    .counts {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .counts li:nth-child(3) {
+        border-inline-end: 0;
+    }
+    .counts li:nth-child(-n + 3) {
+        border-bottom: 1px solid var(--rc-border);
+    }
+    .candidateFacts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .candidateFacts span:nth-child(2) {
+        border-inline-end: 0;
+    }
+    .candidateFacts span:nth-child(-n + 2) {
+        border-bottom: 1px solid var(--rc-border);
+    }
+}
+
+@media (max-width: 560px) {
+    .heading,
+    .previewHeading {
+        display: grid;
+        align-items: start;
+    }
+    .actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .actions button:only-child {
+        grid-column: 1 / -1;
+    }
+    .candidateHeading,
+    .candidateFacts,
+    .counts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .counts li,
+    .counts li:nth-child(3),
+    .candidateFacts span,
+    .candidateFacts span:nth-child(2) {
+        border-inline-end: 0;
+        border-bottom: 1px solid var(--rc-border);
+        text-align: start;
+    }
+    .counts li:last-child,
+    .candidateFacts span:last-child {
+        border-bottom: 0;
+    }
+}

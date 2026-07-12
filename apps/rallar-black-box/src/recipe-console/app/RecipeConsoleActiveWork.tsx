@@ -3,8 +3,10 @@ import type { ControlServerSnapshot } from
     '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';
 import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
-import type { RecipeConsoleControlQueryProvenance } from
-    '../control/control-api.ts';
+import type {
+    RecipeConsoleControlQueryProvenance,
+    RecipeConsoleControlRetentionCapability,
+} from '../control/control-api.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import { FleetPreview } from '../fleet/FleetPreview.tsx';
 import type {
@@ -28,6 +30,9 @@ type TuneWorkInput = Readonly<{
     urlState: RecipeConsoleUrlState;
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
     onCopyLink(): void;
+    retention: RecipeConsoleControlRetentionCapability | undefined;
+    replace(patch: Partial<RecipeConsoleUrlState>): void;
+    refreshAfterCurrent(): Promise<void>;
     onInspect(trigger: HTMLButtonElement): void;
     onInspectorChange(content: ReactNode | undefined): void;
     onSelectionLabelChange(label: string | undefined): void;

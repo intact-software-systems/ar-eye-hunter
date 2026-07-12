@@ -27,6 +27,13 @@ const urlState: RecipeConsoleUrlState = {
     status: 'failed',
 };
 
+function retentionProps() {
+    return {
+        refreshAfterCurrent: vi.fn(async () => {}),
+        replace: vi.fn(),
+    };
+}
+
 function query(input: Readonly<{
     status: ControlQuerySnapshot<ControlServerSnapshot>['status'];
     snapshot?: ControlServerSnapshot;
@@ -79,6 +86,7 @@ describe('HistoryWorkspace', () => {
     it('shows committed filters, exact provenance, copy, legacy handoff, and empty truth', async () => {
         const onCopyLink = vi.fn();
         await act(async () => root?.render(createElement(HistoryWorkspace, {
+            ...retentionProps(),
             navigate: vi.fn(),
             onCopyLink,
             query: query({
@@ -120,6 +128,7 @@ describe('HistoryWorkspace', () => {
 
     it('keeps filters usable while distributed history is unavailable', async () => {
         await act(async () => root?.render(createElement(HistoryWorkspace, {
+            ...retentionProps(),
             navigate: vi.fn(),
             onCopyLink: vi.fn(),
             query: query({ status: 'offline' }),
@@ -135,6 +144,7 @@ describe('HistoryWorkspace', () => {
 
     it('distinguishes fallback, last-known, and partial source truth', async () => {
         await act(async () => root?.render(createElement(HistoryWorkspace, {
+            ...retentionProps(),
             navigate: vi.fn(),
             onCopyLink: vi.fn(),
             query: query({
@@ -150,6 +160,7 @@ describe('HistoryWorkspace', () => {
         );
 
         await act(async () => root?.render(createElement(HistoryWorkspace, {
+            ...retentionProps(),
             navigate: vi.fn(),
             onCopyLink: vi.fn(),
             query: query({
@@ -165,6 +176,7 @@ describe('HistoryWorkspace', () => {
         );
 
         await act(async () => root?.render(createElement(HistoryWorkspace, {
+            ...retentionProps(),
             navigate: vi.fn(),
             onCopyLink: vi.fn(),
             query: query({
@@ -183,6 +195,7 @@ describe('HistoryWorkspace', () => {
 
     it('keeps a safe epoch outside the Date display range visible without crashing', async () => {
         await act(async () => root?.render(createElement(HistoryWorkspace, {
+            ...retentionProps(),
             navigate: vi.fn(),
             onCopyLink: vi.fn(),
             query: query({
