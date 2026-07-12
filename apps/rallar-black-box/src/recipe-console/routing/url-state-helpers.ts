@@ -1,5 +1,6 @@
 import {
     RECIPE_CONSOLE_FLEET_MAP_LAYERS,
+    RECIPE_CONSOLE_NON_SHAREABLE_URL_KEYS,
     RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
     type RecipeConsoleFleetMapLayer,
     type RecipeConsoleUrlIssue,
@@ -19,7 +20,10 @@ export const OPTIONAL_STRING_FIELDS = [
 ] as const satisfies readonly (keyof RecipeConsoleUrlState)[];
 
 const SENSITIVE_KEYS = new Set(
-    RECIPE_CONSOLE_SENSITIVE_URL_KEYS.map(key => key.toLowerCase()),
+    [
+        ...RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
+        ...RECIPE_CONSOLE_NON_SHAREABLE_URL_KEYS,
+    ].map(key => key.toLowerCase()),
 );
 
 export function toSearch(params: URLSearchParams): string {

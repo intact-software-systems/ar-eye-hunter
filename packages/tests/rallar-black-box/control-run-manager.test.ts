@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    ControlRunManagerHttpError,
     controlHttpBaseUrlFromWsUrl,
     controlRunAgentRows,
     controlRunCommandRows,
@@ -232,6 +233,24 @@ describe('rallar-black-box control run manager', () => {
         expect(artifact.files['report.json']).toBe('{}');
         expect(eventsJsonl).toContain('step-result');
         expect(failureBundle).toEqual({ failures: [] });
+    });
+
+    it('preserves response status on HTTP errors without changing the server message', async () => {
+        const request = fetchControlServerSnapshot({
+            baseUrl: 'http://control.test',
+            fetchFn: async () => Response.json(
+                { error: 'Operator token required.' },
+                { status: 401, statusText: 'Unauthorized' },
+            ),
+        });
+
+        await expect(request).rejects.toMatchObject({
+            name: 'ControlRunManagerHttpError',
+            message: 'Operator token required.',
+            status: 401,
+            statusText: 'Unauthorized',
+        });
+        await expect(request).rejects.toBeInstanceOf(ControlRunManagerHttpError);
     });
 
     it('calls distributed-run lifecycle endpoints', async () => {

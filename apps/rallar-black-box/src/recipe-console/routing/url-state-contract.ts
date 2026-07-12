@@ -95,6 +95,10 @@ export const RECIPE_CONSOLE_SENSITIVE_URL_KEYS = [
     'token',
 ] as const;
 
+export const RECIPE_CONSOLE_NON_SHAREABLE_URL_KEYS = [
+    'controlUrl',
+] as const;
+
 export type RecipeConsoleView = typeof RECIPE_CONSOLE_VIEWS[number];
 export type RecipeConsoleDiagnosticSeverity =
     typeof RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES[number];

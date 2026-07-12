@@ -99,6 +99,18 @@ export type EnqueueBulkControlCommandResult = Readonly<{
     commands: readonly ControlCommandEnvelope[];
 }>;
 
+export class ControlRunManagerHttpError extends Error {
+    readonly status: number;
+    readonly statusText: string;
+
+    constructor(message: string, status: number, statusText: string) {
+        super(message);
+        this.name = 'ControlRunManagerHttpError';
+        this.status = status;
+        this.statusText = statusText;
+    }
+}
+
 const DEFAULT_CONTROL_HTTP_BASE_URL = 'http://localhost:5180';
 const CONTROL_PATH_SUFFIX = '/control';
 
@@ -635,12 +647,27 @@ function applyFleetReportFilter(url: URL, filter: ControlFleetReportFilter): voi
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
     const text = await response.text();
-    const value = text.length > 0 ? JSON.parse(text) : {};
+    let value: unknown = {};
+    let parseError: unknown;
+    if (text.length > 0) {
+        try {
+            value = JSON.parse(text);
+        } catch (error) {
+            parseError = error;
+        }
+    }
     if (!response.ok) {
         const message = value && typeof value === 'object' && 'error' in value
             ? String((value as { error: unknown }).error)
             : `Control server request failed: ${response.status} ${response.statusText}`;
-        throw new Error(message);
+        throw new ControlRunManagerHttpError(
+            message,
+            response.status,
+            response.statusText,
+        );
+    }
+    if (parseError) {
+        throw parseError;
     }
     return value as T;
 }
@@ -659,7 +686,11 @@ async function readTextResponse(response: Response): Promise<string> {
                 message = text;
             }
         }
-        throw new Error(message);
+        throw new ControlRunManagerHttpError(
+            message,
+            response.status,
+            response.statusText,
+        );
     }
     return text;
 }

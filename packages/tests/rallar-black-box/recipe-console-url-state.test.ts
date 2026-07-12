@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { resolveAppExperience } from '../../../apps/rallar-black-box/src/app/experience-route.ts';
+import { createRunnerAgentLaunchUrl } from '../../../apps/rallar-black-box/src/runner-agent-launch.ts';
 import {
     RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
     type RecipeConsoleUrlState,
@@ -258,6 +260,55 @@ describe('Recipe Console URL state codec', () => {
         expect(href).not.toContain('query-secret');
         expect(href).not.toContain('fragment-secret');
         expect(href).not.toContain('also-secret');
+    });
+
+    it('removes control server URLs and their nested tokens from explicit canonical and copied links', () => {
+        const controlUrl = 'wss://control.test/control?token=nested-control-secret';
+        const baseSearch = new URLSearchParams({
+            provider: 'simulated',
+            v: '1',
+            experience: 'recipe-console',
+            view: 'monitor',
+            controlUrl,
+            CONTROLURL: 'wss://other.test/control?token=upper-nested-secret',
+        }).toString();
+
+        const parsed = parseRecipeConsoleUrl(`?${baseSearch}`);
+        const serialized = serializeRecipeConsoleUrl(BASE_STATE, `?${baseSearch}`);
+        const href = createRecipeConsoleShareHref({
+            origin: 'https://console.test',
+            pathname: '/operator',
+            search: `?${baseSearch}`,
+            hash: '#trace=keep',
+        }, BASE_STATE);
+
+        for (const output of [parsed.canonicalSearch, serialized, href]) {
+            const url = new URL(output, 'https://console.test/operator');
+            expect(lowerCaseKeys(url.search)).not.toContain('controlurl');
+            expect(output).not.toContain('nested-control-secret');
+            expect(output).not.toContain('upper-nested-secret');
+        }
+        expect(parsed.canonicalSearch).toContain('provider=simulated');
+        expect(href).toContain('provider=simulated');
+    });
+
+    it('keeps controlUrl on legacy runner-agent links and resolves them as legacy', () => {
+        const controlUrl = 'wss://control.test/control?token=legacy-agent-token';
+        const href = createRunnerAgentLaunchUrl({
+            origin: 'https://console.test',
+            providerMode: 'simulated',
+            controlWsUrl: controlUrl,
+            runId: 'run-a',
+            agentId: 'agent-a',
+            groupId: 'group-a',
+            apiBaseUrl: 'https://api.test',
+            applicationId: 'rallar-black-box',
+            workspaceId: 'default',
+        });
+        const url = new URL(href);
+
+        expect(url.searchParams.get('controlUrl')).toBe(controlUrl);
+        expect(resolveAppExperience(url.search)).toBe('legacy');
     });
 
     it('preserves a non-field fragment exactly in a copied link', () => {
