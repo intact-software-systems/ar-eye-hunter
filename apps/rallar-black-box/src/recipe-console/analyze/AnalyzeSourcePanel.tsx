@@ -1,17 +1,10 @@
-import {
-    useId,
-    useState,
-    type ChangeEvent,
-    type DragEvent,
-} from 'react';
+import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import type { AnalyzeWorkspaceController } from './use-analyze-workspace.ts';
 import styles from './AnalyzeSource.module.css';
-
 const DIRECTORY_INPUT_ATTRIBUTES = {
     directory: '',
     webkitdirectory: '',
 } as const;
-
 export function AnalyzeSourcePanel({
     controller,
     legacyRunsHref,
@@ -21,8 +14,8 @@ export function AnalyzeSourcePanel({
     legacyRunsHref: string;
     legacySharedTestHref: string;
 }>) {
-    const filesId = useId();
-    const folderId = useId();
+    const filesInputRef = useRef<HTMLInputElement>(null);
+    const folderInputRef = useRef<HTMLInputElement>(null);
     const [dragActive, setDragActive] = useState(false);
     const [announcement, setAnnouncement] = useState(
         'Choose JSON artifact files, a folder, or drop a CI bundle.',
@@ -124,17 +117,29 @@ export function AnalyzeSourcePanel({
                         <span>JSON/JSONL files or one exported artifact envelope</span>
                     </div>
                     <div className={styles.pickerActions}>
-                        <label htmlFor={filesId}>Choose files</label>
-                        <label htmlFor={folderId}>Choose folder</label>
+                        <button
+                            disabled={Boolean(controller.busyAction)}
+                            onClick={() => filesInputRef.current?.click()}
+                            type="button"
+                        >
+                            Choose files
+                        </button>
+                        <button
+                            disabled={Boolean(controller.busyAction)}
+                            onClick={() => folderInputRef.current?.click()}
+                            type="button"
+                        >
+                            Choose folder
+                        </button>
                     </div>
                     <input
                         accept=".json,.jsonl,application/json,application/x-ndjson"
                         className={styles.fileInput}
                         data-analyze-file-input
                         disabled={Boolean(controller.busyAction)}
-                        id={filesId}
                         multiple
                         onChange={selectFiles}
+                        ref={filesInputRef}
                         type="file"
                     />
                     <input
@@ -142,9 +147,9 @@ export function AnalyzeSourcePanel({
                         className={styles.fileInput}
                         data-analyze-directory-input
                         disabled={Boolean(controller.busyAction)}
-                        id={folderId}
                         multiple
                         onChange={selectFiles}
+                        ref={folderInputRef}
                         type="file"
                     />
                 </div>
