@@ -17,6 +17,13 @@ const STATUS_LABELS: Record<ExecutePreviewStatus, string> = {
     'started-preview': 'Started preview',
 };
 
+const FEATURED_RECIPE_LABELS = [
+    'RTC Realtime Stability',
+    'Provider Parity',
+    'Composite Evidence',
+    'Expected Failure',
+] as const;
+
 function RecipeDetails({ model, fixture, selectedTargetCount }: Readonly<{
     model: ExecutePreviewModel;
     fixture: RallarBlackBoxRecipeFixture;
@@ -52,13 +59,24 @@ function RecipeDetails({ model, fixture, selectedTargetCount }: Readonly<{
 export function ExecutePreview({ model, onInspectorChange }: ExecutePreviewProps) {
     const preview = useExecutePreview(model);
     const normalizedQuery = preview.query.trim().toLowerCase();
-    const visibleRecipes = model.catalogRows.filter(fixture =>
-        !normalizedQuery || [
-            fixture.label,
-            fixture.description,
-            fixture.recipe.recipeId,
-        ].some(value => value.toLowerCase().includes(normalizedQuery))
-    );
+    const visibleRecipes = model.catalogRows
+        .filter(fixture =>
+            !normalizedQuery || [
+                fixture.label,
+                fixture.description,
+                fixture.recipe.recipeId,
+            ].some(value => value.toLowerCase().includes(normalizedQuery))
+        )
+        .sort((left, right) => {
+            const rank = (fixture: RallarBlackBoxRecipeFixture): number => {
+                if (fixture.fixtureId === preview.selectedRecipeId) return -1;
+                const featured = FEATURED_RECIPE_LABELS.indexOf(
+                    fixture.label as typeof FEATURED_RECIPE_LABELS[number],
+                );
+                return featured < 0 ? FEATURED_RECIPE_LABELS.length : featured;
+            };
+            return rank(left) - rank(right);
+        });
     const selectedFixture = model.catalogRows.find(
         fixture => fixture.fixtureId === preview.selectedRecipeId,
     ) ?? model.selectedFixture;

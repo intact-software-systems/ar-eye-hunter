@@ -410,12 +410,17 @@ test('keeps one lazy experience mounted', async ({ page }) => {
     await expect(page.locator('.recipe-console')).toBeVisible();
     await expect(page.locator('.app-shell')).toHaveCount(0);
 
-    await page.evaluate(() => {
-        history.pushState({}, '', '/?provider=simulated&tab=monitor');
+    const legacyHref = '/?provider=simulated&tab=monitor&futureField=keep#trace=legacy';
+    await page.evaluate((href) => {
+        history.pushState({}, '', href);
         dispatchEvent(new PopStateEvent('popstate'));
-    });
+    }, legacyHref);
     await expect(page.locator('.app-shell')).toBeVisible();
     await expect(page.locator('.recipe-console')).toHaveCount(0);
+    await expect.poll(() => {
+        const url = new URL(page.url());
+        return `${url.pathname}${url.search}${url.hash}`;
+    }).toBe(legacyHref);
 });
 
 test('keeps auth summary typography before either experience loads', async ({ page }) => {

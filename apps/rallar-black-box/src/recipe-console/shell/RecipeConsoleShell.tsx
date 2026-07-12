@@ -44,7 +44,7 @@ export function RecipeConsoleShell({
     const showInspector = Boolean(inspectorContent) && inspectorOpen;
     return (
         <div
-            className={`${styles.shell} ${showInspector ? '' : styles.withoutInspector}`}
+            className={`${styles.shell} ${showInspector ? '' : styles.withoutInspector} ${urlIssues.length > 0 ? styles.withUrlIssues : ''} ${showInspector && currentView === 'monitor' ? styles.monitorInspector : ''}`}
             data-command-height={presentation.commandBarHeight}
             data-inspector-mode={presentation.inspector}
             data-navigation={presentation.navigation}
@@ -53,7 +53,7 @@ export function RecipeConsoleShell({
             <TopCommandBar
                 context={commandBarContext}
                 height={presentation.commandBarHeight}
-                issueCount={urlIssues.length}
+                issues={urlIssues}
                 onCopyLink={onCopyLink}
             />
             <PrimaryNavigation

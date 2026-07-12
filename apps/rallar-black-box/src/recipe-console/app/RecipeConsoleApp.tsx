@@ -49,6 +49,25 @@ function activeWork(
     }
 }
 
+function commandContext(
+    view: RecipeConsoleView,
+    seedState: RecipeConsoleSeedState,
+    authBusy: boolean,
+): string {
+    if (view === 'tune') {
+        return `Tune · RTC timing · ${seedState.tune.distributedRunId} · Passed · Compare · More`;
+    }
+    if (view === 'monitor') {
+        const failed = seedState.monitor.agentProgress.filter(agent => agent.execution === 'failed').length;
+        return `Monitor · ${seedState.monitor.seed.distributedRun.distributedRunId} · Failed · ${failed}/${seedState.monitor.agentProgress.length} agents failed`;
+    }
+    if (view === 'execute') {
+        const { applicationId, workspaceId, groupId } = seedState.execute.group;
+        return `Execute · Preview · ${seedState.execute.defaultTargetIds.length}/${seedState.execute.targetRows.length} targetable · ${applicationId}/${workspaceId}/${groupId}`;
+    }
+    return `${view[0].toUpperCase()}${view.slice(1)} · ${authBusy ? 'Connecting' : 'Seeded offline preview'}`;
+}
+
 export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleAppProps) {
     const urlState = useRecipeConsoleUrlState();
     const presentation = useRecipeConsolePresentation();
@@ -128,9 +147,7 @@ export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleA
         : urlState.state.view === 'tune' && tuneAgentId
         ? <section><h2>Agent timing</h2><p data-selected-agent>{tuneAgentId}</p><p>Repository-derived command-duration evidence.</p></section>
         : inspectorContent;
-    const commandBarContext = urlState.state.view === 'tune'
-        ? `Tune · RTC timing · ${seedState.tune.distributedRunId} · Passed · Compare · More`
-        : `${authBusy ? 'Connecting' : 'Seeded'} · ${seedState.execute.defaultTargetIds.length} targets`;
+    const commandBarContext = commandContext(urlState.state.view, seedState, authBusy);
 
     return (
         <div className="recipe-console" data-view={urlState.state.view}>
@@ -153,7 +170,7 @@ export default function RecipeConsoleApp({ authBusy, authError }: RecipeConsoleA
                 urlIssues={urlState.issues}
                 workContent={(
                     <section aria-labelledby="recipe-console-view-heading">
-                        <h1 id="recipe-console-view-heading">{urlState.state.view[0].toUpperCase()}{urlState.state.view.slice(1)}</h1>
+                        <h1 id="recipe-console-view-heading">{urlState.state.view === 'execute' ? 'Execute recipe' : `${urlState.state.view[0].toUpperCase()}${urlState.state.view.slice(1)}`}</h1>
                         {work}
                     </section>
                 )}

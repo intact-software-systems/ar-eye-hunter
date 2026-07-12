@@ -1,0 +1,63 @@
+.commandBar {
+    z-index: 3;
+    display: flex;
+    grid-area: command;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px 0 14px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.commandBar > * {
+    min-width: 0;
+    min-height: 0;
+}
+
+.commandBar > button {
+    min-width: 44px;
+    min-height: 44px;
+    flex: 0 0 44px;
+}
+
+.commandBar52 {
+    height: 52px;
+}
+
+.commandBar48 {
+    height: 48px;
+}
+
+.urlIssueStrip {
+    z-index: 6;
+    display: flex;
+    grid-area: issue;
+    height: 44px;
+    align-items: center;
+    padding: 8px 12px;
+    overflow: hidden;
+    border: 1px solid var(--rc-status-warning-border);
+    color: var(--rc-status-warning-text);
+    background: var(--rc-status-warning-bg);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.productName {
+    flex: 0 0 auto;
+    font-size: 14px;
+}
+
+.commandContext {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    justify-content: flex-end;
+}
+
+@media (max-width: 767px) {
+    .commandContext {
+        display: none;
+    }
+}

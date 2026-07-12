@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { resolveAppExperience } from '../../app/experience-route.ts';
 import {
     createRecipeConsoleUrlHistory,
     type RecipeConsoleHistoryPort,
@@ -7,7 +8,10 @@ import {
     createRecipeConsoleShareHref,
     scrubRecipeConsoleHash,
 } from './url-state-codec.ts';
-import type { RecipeConsoleUrlState } from './url-state-contract.ts';
+import type {
+    ParsedRecipeConsoleUrl,
+    RecipeConsoleUrlState,
+} from './url-state-contract.ts';
 
 function writeBrowserSearch(method: 'pushState' | 'replaceState', search: string): void {
     const url = new URL(window.location.href);
@@ -28,6 +32,20 @@ function createBrowserPort(): RecipeConsoleHistoryPort {
     };
 }
 
+function replaceNonCanonicalBrowserUrl(value: ParsedRecipeConsoleUrl): void {
+    if (resolveAppExperience(window.location.search) !== 'recipe-console') {
+        return;
+    }
+    const canonicalHash = scrubRecipeConsoleHash(window.location.hash);
+    if (
+        window.location.search === value.canonicalSearch &&
+        window.location.hash === canonicalHash
+    ) {
+        return;
+    }
+    writeBrowserSearch('replaceState', value.canonicalSearch);
+}
+
 export function useRecipeConsoleUrlState() {
     const history = useMemo(
         () => createRecipeConsoleUrlHistory(createBrowserPort()),
@@ -35,7 +53,13 @@ export function useRecipeConsoleUrlState() {
     );
     const [value, setValue] = useState(history.read);
 
-    useEffect(() => history.subscribe(setValue), [history]);
+    useEffect(() => {
+        replaceNonCanonicalBrowserUrl(value);
+        return history.subscribe(next => {
+            replaceNonCanonicalBrowserUrl(next);
+            setValue(next);
+        });
+    }, [history]);
 
     const navigate = useCallback((patch: Partial<RecipeConsoleUrlState>): void => {
         setValue(history.push(patch));

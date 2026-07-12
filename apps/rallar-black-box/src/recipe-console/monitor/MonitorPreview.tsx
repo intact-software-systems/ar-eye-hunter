@@ -2,6 +2,24 @@ import type { MonitorPreviewModel } from '../data/recipe-console-models.ts';
 import { StatusMark } from '../ui/StatusMark.tsx';
 import styles from './MonitorPreview.module.css';
 
+type ProgressStatus = MonitorPreviewModel['agentProgress'][number]['readiness'];
+
+function progressMark(status: ProgressStatus, missingLabel = 'Missing') {
+    const tone = status === 'running'
+        ? 'running'
+        : status === 'ready' || status === 'passed'
+        ? 'passed'
+        : status === 'failed'
+        ? 'failed'
+        : status === 'missing' || status === 'cancelled'
+        ? 'disabled'
+        : 'partial';
+    const label = status === 'missing'
+        ? missingLabel
+        : `${status[0].toUpperCase()}${status.slice(1)}`;
+    return <StatusMark label={label} status={tone} />;
+}
+
 export type MonitorPreviewProps = Readonly<{
     model: MonitorPreviewModel;
     selectedFailureKey: string;
@@ -34,7 +52,11 @@ export function MonitorPreview({
                     {stale ? 'Restore live connection' : 'Simulate stale connection'}
                 </button>
                 {stale ? (
-                    <div className={styles.staleLine}>
+                    <div
+                        aria-live="polite"
+                        className={styles.staleLine}
+                        data-state="stale"
+                    >
                         <StatusMark label="Stale · reconnecting" status="stale" />
                         <span>Last known evidence 12s ago</span>
                     </div>
@@ -76,7 +98,10 @@ export function MonitorPreview({
             </section>
 
             <section data-monitor-section="matrix">
-                <h2>Agent × phase</h2>
+                <div className={styles.matrixHeading}>
+                    <h2>Agent × phase</h2>
+                    <span className={styles.swipeAffordance}>Swipe phases</span>
+                </div>
                 <div
                     aria-label="Agent by phase matrix"
                     className={styles.matrixScroller}
@@ -91,9 +116,9 @@ export function MonitorPreview({
                                 <tr key={agent.agentId}>
                                     <th scope="row"><code>{agent.agentId}</code></th>
                                     <td>{agent.role}</td>
-                                    <td>{agent.readiness}</td>
-                                    <td>{agent.barrier === 'missing' ? 'Not required' : agent.barrier}</td>
-                                    <td data-tone={agent.execution}>{agent.execution}</td>
+                                    <td>{progressMark(agent.readiness)}</td>
+                                    <td>{progressMark(agent.barrier, 'Not required')}</td>
+                                    <td data-tone={agent.execution}>{progressMark(agent.execution)}</td>
                                     <td>{agent.resultCount}</td>
                                     <td>{agent.eventCount}</td>
                                 </tr>

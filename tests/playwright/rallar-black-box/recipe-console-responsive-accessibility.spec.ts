@@ -1,4 +1,20 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
+
+async function expectMinimumTargetHeight(locator: Locator, label: string): Promise<void> {
+    await expect(locator.first(), `${label} should resolve a visible control`).toBeVisible();
+    const count = await locator.count();
+    expect(count, `${label} should resolve at least one control`).toBeGreaterThan(0);
+    for (let index = 0; index < count; index += 1) {
+        const bounds = await locator.nth(index).boundingBox();
+        expect(bounds, `${label} ${index + 1} should have rendered bounds`).not.toBeNull();
+        if (bounds) {
+            expect.soft(bounds.width, `${label} ${index + 1} target width`)
+                .toBeGreaterThanOrEqual(44);
+            expect.soft(bounds.height, `${label} ${index + 1} target height`)
+                .toBeGreaterThanOrEqual(44);
+        }
+    }
+}
 
 test('renders scoped shell geometry at every contract viewport', async ({ page }) => {
     const route = '/?provider=simulated&v=1&experience=recipe-console&view=';
@@ -70,4 +86,222 @@ test('renders scoped shell geometry at every contract viewport', async ({ page }
     await page.setViewportSize({ width: 900, height: 900 });
     await page.goto(`${route}execute`);
     await expect(page.locator('[data-inspector-host]')).toHaveCSS('transition-duration', '0s');
+});
+
+test('keeps the 900px tablet inspector overlaid without squeezing work', async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=monitor');
+
+    const work = page.locator('[data-work-surface]');
+    const before = await work.boundingBox();
+    expect(before).not.toBeNull();
+    expect(before?.x).toBe(64);
+    expect(before?.width).toBe(836);
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Inspect failure', exact: true }).click();
+    const overlay = page.getByRole('dialog', { name: 'Inspector' });
+    await expect(overlay).toHaveAttribute('data-mode', 'overlay');
+    const after = await work.boundingBox();
+    const overlayBounds = await overlay.boundingBox();
+    expect(after).toEqual(before);
+    expect(overlayBounds?.width).toBe(360);
+    expect(overlayBounds?.x).toBe(540);
+    expect(overlayBounds?.x ?? 900).toBeLessThan((after?.x ?? 0) + (after?.width ?? 0));
+});
+
+test('moves Tune matrix focus with every arrow without activating inspection', async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=tune');
+
+    const agentA = page.getByRole('gridcell', { name: /seed-agent-a/ });
+    const agentB = page.getByRole('gridcell', { name: /seed-agent-b/ });
+    const agentC = page.getByRole('gridcell', { name: /seed-agent-c/ });
+    await agentA.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(agentB).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(agentC).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(agentA).toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await expect(agentC).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(agentB).toBeFocused();
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
+
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog', { name: 'Inspector' })).toBeVisible();
+    await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-b');
+});
+
+test('keeps representative portrait touch controls at least 44px high', async ({ page }) => {
+    await page.setViewportSize({ width: 430, height: 932 });
+    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=execute');
+    await expectMinimumTargetHeight(
+        page.locator('[data-command-bar] button'),
+        'Execute command-bar button',
+    );
+    await expectMinimumTargetHeight(
+        page.locator('[data-primary-navigation] button'),
+        'primary navigation button',
+    );
+    await expectMinimumTargetHeight(
+        page.getByRole('searchbox', { name: 'Search recipes' }),
+        'recipe search',
+    );
+    await expectMinimumTargetHeight(
+        page.getByRole('region', { name: 'Recipes' }).locator('button'),
+        'recipe row',
+    );
+    await expectMinimumTargetHeight(
+        page.locator('details').filter({ hasText: 'Expanded preflight' }).locator('summary'),
+        'preflight summary',
+    );
+    await expectMinimumTargetHeight(
+        page.getByRole('button', { name: /Preview$/ }),
+        'Execute action',
+    );
+
+    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=monitor');
+    await expectMinimumTargetHeight(
+        page.getByRole('button', { name: 'Simulate stale connection' }),
+        'Monitor stale control',
+    );
+    await expectMinimumTargetHeight(
+        page.locator('[data-failure-key] button'),
+        'Monitor failure control',
+    );
+    await expectMinimumTargetHeight(
+        page.locator('[data-monitor-section="timeline"] summary'),
+        'Monitor timeline summary',
+    );
+    await expectMinimumTargetHeight(
+        page.locator('[data-selection-dock] button'),
+        'portrait selection-dock button',
+    );
+
+    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=tune');
+    await expectMinimumTargetHeight(
+        page.locator('[data-tune-agent]'),
+        'Tune agent row',
+    );
+    await expectMinimumTargetHeight(
+        page.getByRole('group', { name: 'Timing metric' }).locator('button'),
+        'Tune timing segment',
+    );
+
+    for (const view of ['analyze', 'fleet', 'advanced']) {
+        await page.goto(
+            `/?provider=simulated&v=1&experience=recipe-console&view=${view}`,
+        );
+        await expectMinimumTargetHeight(
+            page.locator('[data-command-bar] button'),
+            `${view} command-bar button`,
+        );
+        await expectMinimumTargetHeight(
+            page.locator('[data-primary-navigation] button'),
+            `${view} primary navigation button`,
+        );
+    }
+    await expectMinimumTargetHeight(
+        page.locator('[data-preview-view="advanced"] a'),
+        'Advanced compatibility link',
+    );
+
+    const navigationButtons = page.locator('[data-primary-navigation] button');
+    const navigationBounds = await navigationButtons.evaluateAll(buttons =>
+        buttons.map(button => {
+            const bounds = button.getBoundingClientRect();
+            return { left: bounds.left, right: bounds.right };
+        })
+    );
+    for (let index = 1; index < navigationBounds.length; index += 1) {
+        expect(
+            navigationBounds[index].left - navigationBounds[index - 1].right,
+            `portrait navigation gap ${index}`,
+        ).toBeGreaterThanOrEqual(8);
+    }
+});
+
+test('disables Recipe Console motion when reduced motion is requested', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=monitor');
+    await page.getByRole('button', { name: 'Inspect failure', exact: true }).click();
+
+    const overlay = page.getByRole('dialog', { name: 'Inspector' });
+    await expect(overlay).toHaveCSS('transition-duration', '0s');
+    await expect(overlay).toHaveCSS('animation-name', 'none');
+    await expect(page.getByRole('button', { name: 'Close inspector' }))
+        .toHaveCSS('transition-duration', '0s');
+});
+
+test('renders all six views without relevant console warnings or errors', async ({ page }) => {
+    const diagnostics: string[] = [];
+    page.on('console', message => {
+        if (message.type() === 'warning' || message.type() === 'error') {
+            diagnostics.push(`${message.type()}: ${message.text()}`);
+        }
+    });
+    page.on('pageerror', error => diagnostics.push(`pageerror: ${error.message}`));
+
+    for (const view of ['execute', 'monitor', 'analyze', 'tune', 'fleet', 'advanced']) {
+        await page.goto(
+            `/?provider=simulated&v=1&experience=recipe-console&view=${view}`,
+        );
+        await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', view);
+        await page.evaluate(() => new Promise<void>(resolve => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }));
+    }
+
+    expect(diagnostics).toEqual([]);
+});
+
+test('uses roving keyboard navigation without activating focus-only keys', async ({ page }) => {
+    for (const contract of [
+        { viewport: { width: 1440, height: 900 }, presentation: 'rail', activate: 'Enter' },
+        { viewport: { width: 430, height: 932 }, presentation: 'bottom', activate: 'Space' },
+    ] as const) {
+        await page.setViewportSize(contract.viewport);
+        await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=execute');
+
+        const navigation = page.getByRole('navigation', { name: 'Recipe Console' });
+        const items = navigation.getByRole('button');
+        const execute = navigation.getByRole('button', { name: 'Execute' });
+        const advanced = navigation.getByRole('button', { name: 'Advanced' });
+        await expect(navigation).toHaveAttribute('data-presentation', contract.presentation);
+        await expect(items).toHaveCount(6);
+        expect(await items.evaluateAll(buttons => buttons.map(button => button.tabIndex)))
+            .toEqual([0, -1, -1, -1, -1, -1]);
+        await expect(execute).toHaveAttribute('aria-current', 'page');
+
+        await execute.focus();
+        for (const [key, focused] of [
+            ['ArrowLeft', advanced],
+            ['ArrowRight', execute],
+            ['ArrowUp', advanced],
+            ['ArrowDown', execute],
+            ['End', advanced],
+            ['Home', execute],
+            ['End', advanced],
+        ] as const) {
+            await page.keyboard.press(key);
+            await expect(focused).toBeFocused();
+            await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'execute');
+            expect(new URL(page.url()).searchParams.get('view')).toBe('execute');
+            await expect(execute).toHaveAttribute('aria-current', 'page');
+        }
+
+        expect(await items.evaluateAll(buttons => buttons.map(button => button.tabIndex)))
+            .toEqual([-1, -1, -1, -1, -1, 0]);
+        await page.keyboard.press(contract.activate);
+        await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'advanced');
+        expect(new URL(page.url()).searchParams.get('view')).toBe('advanced');
+        await expect(advanced).toHaveAttribute('aria-current', 'page');
+        await expect(execute).not.toHaveAttribute('aria-current', 'page');
+        expect(await items.evaluateAll(buttons => buttons.map(button => button.tabIndex)))
+            .toEqual([-1, -1, -1, -1, -1, 0]);
+    }
 });
