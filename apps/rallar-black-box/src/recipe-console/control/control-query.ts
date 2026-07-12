@@ -1,0 +1,375 @@
+export const CONTROL_QUERY_FRESHNESS_MS = 15_000;
+
+export type ControlQueryStatus =
+    | 'connecting'
+    | 'live'
+    | 'partial'
+    | 'stale'
+    | 'offline';
+
+export type ControlQueryReachability =
+    | 'unknown'
+    | 'reachable'
+    | 'unreachable';
+
+export type ControlQueryAuthorization = 'unknown' | 'ready' | 'required';
+
+export type ControlQueryError = Readonly<{
+    kind: 'http' | 'network' | 'timeout' | 'aborted' | 'unknown';
+    message: string;
+    status?: number;
+}>;
+
+export type ControlQueryResult<Snapshot> = Readonly<{
+    completeness: 'complete' | 'partial';
+    snapshot: Snapshot;
+}>;
+
+export type ControlQuerySnapshot<Snapshot> = Readonly<{
+    status: ControlQueryStatus;
+    reachability: ControlQueryReachability;
+    authorization: ControlQueryAuthorization;
+    snapshot?: Snapshot;
+    attemptedAtEpochMs?: number;
+    receivedAtEpochMs?: number;
+    isRefreshing: boolean;
+    lastError?: ControlQueryError;
+}>;
+
+export type ControlQueryEvent<Snapshot> =
+    | Readonly<{ type: 'attempt-started'; atEpochMs: number }>
+    | Readonly<{
+        type: 'attempt-succeeded';
+        atEpochMs: number;
+        result: ControlQueryResult<Snapshot>;
+    }>
+    | Readonly<{
+        type: 'attempt-failed';
+        atEpochMs: number;
+        error: ControlQueryError;
+    }>;
+
+export function createInitialControlQueryState<Snapshot>(): ControlQuerySnapshot<Snapshot> {
+    return {
+        status: 'connecting',
+        reachability: 'unknown',
+        authorization: 'unknown',
+        isRefreshing: false,
+    };
+}
+
+export function transitionControlQueryState<Snapshot>(
+    state: ControlQuerySnapshot<Snapshot>,
+    event: ControlQueryEvent<Snapshot>,
+): ControlQuerySnapshot<Snapshot> {
+    const atEpochMs = monotonicEpochMs(state, event.atEpochMs);
+    switch (event.type) {
+        case 'attempt-started':
+            return {
+                ...state,
+                attemptedAtEpochMs: atEpochMs,
+                isRefreshing: true,
+            };
+        case 'attempt-succeeded':
+            return {
+                status: event.result.completeness === 'complete' ? 'live' : 'partial',
+                reachability: 'reachable',
+                authorization: 'ready',
+                snapshot: event.result.snapshot,
+                attemptedAtEpochMs: state.attemptedAtEpochMs ?? atEpochMs,
+                receivedAtEpochMs: atEpochMs,
+                isRefreshing: false,
+            };
+        case 'attempt-failed': {
+            const authorizationRequired = event.error.kind === 'http' &&
+                (event.error.status === 401 || event.error.status === 403);
+            return {
+                ...state,
+                status: state.snapshot === undefined ? 'offline' : 'stale',
+                reachability: event.error.kind === 'http'
+                    ? 'reachable'
+                    : event.error.kind === 'network' || event.error.kind === 'timeout'
+                    ? 'unreachable'
+                    : 'unknown',
+                authorization: authorizationRequired
+                    ? 'required'
+                    : state.authorization,
+                attemptedAtEpochMs: state.attemptedAtEpochMs ?? atEpochMs,
+                isRefreshing: false,
+                lastError: event.error,
+            };
+        }
+    }
+}
+
+export function observeControlQueryFreshness<Snapshot>(
+    state: ControlQuerySnapshot<Snapshot>,
+    nowEpochMs: number,
+    freshnessMs = CONTROL_QUERY_FRESHNESS_MS,
+): ControlQuerySnapshot<Snapshot> {
+    if (
+        state.snapshot === undefined ||
+        state.receivedAtEpochMs === undefined ||
+        (state.status !== 'live' && state.status !== 'partial') ||
+        nowEpochMs - state.receivedAtEpochMs <= freshnessMs
+    ) {
+        return state;
+    }
+    return {
+        ...state,
+        status: 'stale',
+    };
+}
+
+type TimerHandle = ReturnType<typeof setTimeout>;
+
+export type ControlQueryScheduler = Readonly<{
+    setTimeout(callback: () => void, delayMs: number): TimerHandle;
+    clearTimeout(handle: TimerHandle): void;
+}>;
+
+export type ControlQueryServiceOptions<Snapshot> = Readonly<{
+    query(input: Readonly<{ signal: AbortSignal }>): Promise<ControlQueryResult<Snapshot>>;
+    now(): number;
+    scheduler: ControlQueryScheduler;
+    pollIntervalMs: number;
+    requestTimeoutMs: number;
+    freshnessMs?: number;
+}>;
+
+export type ControlQueryService<Snapshot> = Readonly<{
+    start(): void;
+    stop(): void;
+    refresh(): Promise<void>;
+    getSnapshot(): ControlQuerySnapshot<Snapshot>;
+    subscribe(listener: () => void): () => void;
+}>;
+
+export function createControlQueryService<Snapshot>(
+    options: ControlQueryServiceOptions<Snapshot>,
+): ControlQueryService<Snapshot> {
+    let state = createInitialControlQueryState<Snapshot>();
+    let running = false;
+    let generation = 0;
+    let pollTimer: TimerHandle | undefined;
+    let requestTimer: TimerHandle | undefined;
+    let requestController: AbortController | undefined;
+    let activeRequestId: number | undefined;
+    let nextRequestId = 0;
+    let inFlight: Promise<void> | undefined;
+    const listeners = new Set<() => void>();
+
+    function publish(next: ControlQuerySnapshot<Snapshot>): void {
+        if (next === state) {
+            return;
+        }
+        state = next;
+        listeners.forEach(listener => listener());
+    }
+
+    function clearPollTimer(): void {
+        if (pollTimer !== undefined) {
+            options.scheduler.clearTimeout(pollTimer);
+            pollTimer = undefined;
+        }
+    }
+
+    function schedulePoll(currentGeneration: number): void {
+        if (!running || currentGeneration !== generation) {
+            return;
+        }
+        clearPollTimer();
+        pollTimer = options.scheduler.setTimeout(() => {
+            pollTimer = undefined;
+            if (running && currentGeneration === generation) {
+                void refresh();
+            }
+        }, options.pollIntervalMs);
+    }
+
+    function refresh(): Promise<void> {
+        if (inFlight) {
+            return inFlight;
+        }
+        if (!running) {
+            running = true;
+            generation += 1;
+        }
+        clearPollTimer();
+        const currentGeneration = generation;
+        const requestId = ++nextRequestId;
+        activeRequestId = requestId;
+        publish(transitionControlQueryState(
+            observeControlQueryFreshness(
+                state,
+                options.now(),
+                options.freshnessMs ?? CONTROL_QUERY_FRESHNESS_MS,
+            ),
+            {
+                type: 'attempt-started',
+                atEpochMs: options.now(),
+            },
+        ));
+
+        const controller = new AbortController();
+        requestController = controller;
+        let timeoutHandle!: TimerHandle;
+        let timedOut = false;
+        const timeout = new Promise<never>((_resolve, reject) => {
+            timeoutHandle = options.scheduler.setTimeout(() => {
+                timedOut = true;
+                reject(new ControlQueryTimeoutError(options.requestTimeoutMs));
+                controller.abort();
+            }, options.requestTimeoutMs);
+            requestTimer = timeoutHandle;
+        });
+        let query: Promise<ControlQueryResult<Snapshot>>;
+        try {
+            query = options.query({ signal: controller.signal });
+        } catch (error) {
+            query = Promise.reject(error);
+        }
+
+        let request!: Promise<void>;
+        request = (async () => {
+            try {
+                const result = await Promise.race([query, timeout]);
+                if (running && currentGeneration === generation) {
+                    publish(transitionControlQueryState(state, {
+                        type: 'attempt-succeeded',
+                        atEpochMs: options.now(),
+                        result,
+                    }));
+                }
+            } catch (error) {
+                if (running && currentGeneration === generation) {
+                    publish(transitionControlQueryState(state, {
+                        type: 'attempt-failed',
+                        atEpochMs: options.now(),
+                        error: controlQueryError(
+                            timedOut
+                                ? new ControlQueryTimeoutError(options.requestTimeoutMs)
+                                : error,
+                        ),
+                    }));
+                }
+            } finally {
+                if (activeRequestId === requestId) {
+                    options.scheduler.clearTimeout(timeoutHandle);
+                    if (requestTimer === timeoutHandle) {
+                        requestTimer = undefined;
+                    }
+                    if (requestController === controller) {
+                        requestController = undefined;
+                    }
+                    activeRequestId = undefined;
+                }
+                if (inFlight === request) {
+                    inFlight = undefined;
+                }
+                schedulePoll(currentGeneration);
+            }
+        })();
+        inFlight = request;
+        return request;
+    }
+
+    function start(): void {
+        if (running) {
+            return;
+        }
+        running = true;
+        generation += 1;
+        void refresh();
+    }
+
+    function stop(): void {
+        if (!running && !inFlight && pollTimer === undefined) {
+            return;
+        }
+        running = false;
+        generation += 1;
+        clearPollTimer();
+        if (requestTimer !== undefined) {
+            options.scheduler.clearTimeout(requestTimer);
+            requestTimer = undefined;
+        }
+        requestController?.abort();
+        requestController = undefined;
+        activeRequestId = undefined;
+        inFlight = undefined;
+        if (state.isRefreshing) {
+            publish({
+                ...state,
+                isRefreshing: false,
+            });
+        }
+    }
+
+    return {
+        start,
+        stop,
+        refresh,
+        getSnapshot: () => state,
+        subscribe(listener) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        },
+    };
+}
+
+function monotonicEpochMs<Snapshot>(
+    state: ControlQuerySnapshot<Snapshot>,
+    atEpochMs: number,
+): number {
+    return Math.max(
+        atEpochMs,
+        state.attemptedAtEpochMs ?? atEpochMs,
+        state.receivedAtEpochMs ?? atEpochMs,
+    );
+}
+
+class ControlQueryTimeoutError extends Error {
+    readonly timeout = true;
+
+    constructor(timeoutMs: number) {
+        super(`Control server request timed out after ${timeoutMs} ms.`);
+        this.name = 'ControlQueryTimeoutError';
+    }
+}
+
+function controlQueryError(error: unknown): ControlQueryError {
+    if (error instanceof ControlQueryTimeoutError) {
+        return {
+            kind: 'timeout',
+            message: error.message,
+        };
+    }
+    const record = error && typeof error === 'object'
+        ? error as Record<string, unknown>
+        : undefined;
+    const message = error instanceof Error ? error.message : String(error);
+    if (typeof record?.status === 'number') {
+        return {
+            kind: 'http',
+            status: record.status,
+            message,
+        };
+    }
+    if (record?.name === 'AbortError') {
+        return {
+            kind: 'aborted',
+            message,
+        };
+    }
+    if (error instanceof TypeError) {
+        return {
+            kind: 'network',
+            message,
+        };
+    }
+    return {
+        kind: 'unknown',
+        message,
+    };
+}
