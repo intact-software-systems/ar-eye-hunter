@@ -1,7 +1,7 @@
 # Rallar Recipe Console History, Compare, Saved Filters, And Retention Implementation Plan
 
 Status: in progress; Iteration 7 is green through `cc17169` and `382df72`;
-Tasks 0–6 are complete; Task 7 is in progress
+Tasks 0–7 are complete; Task 8 is in progress
 
 **Goal:** Complete parent Iteration 8 by making past distributed work
 findable, shareable, comparable, and safely cleanable without changing the
@@ -529,27 +529,54 @@ Files:
 - Modify History composition and root refresh callback only through bounded
   props
 
-- [ ] RED-test idle/previewing/preview-ready/confirming/succeeded/drift/error/
+- [x] RED-test idle/previewing/preview-ready/confirming/succeeded/drift/error/
   unavailable states, operation generation, stale response suppression, abort,
   remount reset, and exact request counts.
-- [ ] RED-test endpoint/base-URL, credential-origin, and connection-generation
+- [x] RED-test endpoint/base-URL, credential-origin, and connection-generation
   changes both before preview resolution and after preview success. They abort
   work, mark the old consequence list non-current, discard the token, and keep
   Confirm disabled.
-- [ ] Preview must show cap, current/projected counts, exact would-delete IDs,
+- [x] Preview must show cap, current/projected counts, exact would-delete IDs,
   connected-agent/socket consequences, each linked distributed run's state,
   and the explicit fact that current sockets and artifact files remain.
-- [ ] Preview never mutates. Cancel/Escape/outside-dismiss emits no destructive
+- [x] Preview never mutates. Cancel/Escape/outside-dismiss emits no destructive
   request. Confirm is disabled until a current successful preview exists.
-- [ ] Alertdialog traps focus, announces destructive scope, supports keyboard
+- [x] Alertdialog traps focus, announces destructive scope, supports keyboard
   confirm/cancel, restores focus, prevents double submit, and exposes visible
   busy/error/drift status without motion dependence.
-- [ ] Confirm sends the exact opaque preview token. On success, reconcile URL state,
+- [x] Confirm sends the exact opaque preview token. On success, reconcile URL state,
   refresh the root serialized query, and show actual deletions. On `409`, keep
   the prior list visible with an explicit stale marker, discard its token,
   disable Confirm, and require a new preview request before reopening confirmation.
-- [ ] Withhold cleanup entirely when endpoint provenance/credentials are unsafe;
+- [x] Withhold cleanup entirely when endpoint provenance/credentials are unsafe;
   never persist preview IDs or authorization material.
+
+Task 7 is green through `7256379`. The bounded History retention workspace
+loads its authorized client only after Preview, projects a frozen token-free
+consequence model, and requires a keyboard-accessible preview-first
+`alertdialog`. Exact control/distributed/fleet IDs, connected-agent and issued-
+token counts, linked distributed states, current/projected/cap counts, and the
+unchanged socket/artifact consequences remain visible. Exact identifiers
+preserve whitespace and isolate bidi controls without rewriting server truth.
+
+Endpoint, API-base, credential-origin, connection-generation, authorization,
+credential-trust, StrictMode, abort-resistant response, and post-confirm
+refresh drift all invalidate in layout authority before a stale confirmation
+or URL replacement can proceed. Cancel, Escape, and backdrop dismissal issue
+zero destructive requests; `409` keeps stale evidence visible and requires a
+fresh preview. Success refreshes the serialized root query before selectively
+reconciling deleted URL selections, while filters and unrelated comparison
+state remain stable. Retention owners cannot persist or log preview/token/
+authorization material.
+
+Fresh proof is 121/121 focused retention/client/History/Tune/build-boundary
+tests, app TypeScript, a 616-module production build, and the reciprocal
+experience-chunk assertion. Independent state/race, UI/accessibility, and test-
+traceability re-reviews report no remaining Critical or Important issue. Task
+8 still owns real-browser retention, copied-link, responsive, keyboard,
+reduced-motion, overflow, CSS-isolation, and unmount acceptance. No legacy
+visibility, mount policy, route, rollback, default, cutover, public export, or
+existing control-server contract changed.
 
 ## Task 8: Canonical Browser Acceptance And Operational QA
 

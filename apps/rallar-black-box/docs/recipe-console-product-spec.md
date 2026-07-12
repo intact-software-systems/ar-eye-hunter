@@ -68,6 +68,24 @@ filtered/rendered/omitted counts, and no artifact-derived synthetic server row.
 At most 100 rows render before Iteration 9 windowing; unsafe, duplicate,
 malformed, missing, and ambiguous identities remain visible but cannot navigate.
 
+### Preview-first history retention
+
+**Given** authorized control-server history, **when** the operator previews
+local retention cleanup, **then** History shows the cap, current/projected
+counts, every affected control/distributed/fleet identity, connected-agent and
+issued-token counts, linked distributed states, and the explicit fact that
+existing sockets and stored artifact files remain. No mutation occurs until a
+current preview is reviewed and explicitly confirmed in an accessible
+alertdialog.
+
+Cancel, Escape, and outside dismissal never confirm. Endpoint, API-base,
+credential-origin, connection-generation, authorization, or credential-trust
+changes invalidate the preview and discard its private token. A conflict keeps
+the old consequence list visibly stale and requires a fresh preview. Success
+refreshes root history before clearing only URL selections associated with
+actual deletions; History filters and unrelated valid state remain unchanged.
+Preview IDs, tokens, authorization material, and artifacts are never persisted.
+
 ## URL-state contract
 
 All new Recipe Console URLs use the typed, validated schema version `v=1`.
@@ -239,3 +257,20 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
   legacy mount policy, control-server contract, deep link, rollback route, or
   workflow cutover changed. No existing public export was removed, renamed, or
   broken; the shared tuning exports are additive.
+
+### Iteration 8 Task 7 evidence checkpoint — `7256379`
+
+- Preview-first retention composition, token-free consequence projection,
+  exact whitespace/bidi-safe IDs, accessible confirmation/cancellation, stale
+  conflict truth, authorization withholding, and refresh-before-selection
+  reconciliation are code-backed under the existing lazy Tune/History route.
+- Focused retention/client/History/Tune/build-boundary validation passed
+  121/121. App TypeScript, the 616-module production build, and reciprocal
+  experience-chunk assertion passed. Independent state/race,
+  UI/accessibility, and evidence-traceability reviews report no remaining
+  Critical or Important issue.
+- Canonical real-browser copied-link, retention, responsive, keyboard,
+  reduced-motion, CSS-isolation, overflow, and inactive-unmount acceptance
+  remain Task 8 work and are not claimed here. No legacy row is hidden or cut
+  over; the default, deep links, rollback routes, mount policies, public
+  exports, and existing control-server contracts remain unchanged.
