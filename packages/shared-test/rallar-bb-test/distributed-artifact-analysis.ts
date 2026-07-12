@@ -17,6 +17,7 @@ export type DistributedRunArtifactFiles = Readonly<Record<string, string | undef
 export type DistributedRunAnalysisInput = Readonly<{
     files: DistributedRunArtifactFiles;
     generatedAtEpochMs?: number;
+    artifactSchemaVersion?: number;
 }>;
 
 export type DistributedRunArtifactParseWarning = Readonly<{
@@ -147,6 +148,7 @@ export type DistributedRunTargetResolutionAnalysis = Readonly<{
 
 export type DistributedRunAnalysis = Readonly<{
     generatedAtEpochMs: number;
+    artifactSchemaVersion?: number;
     distributedRunId: string;
     controlRunId?: string;
     status: string;
@@ -224,10 +226,8 @@ const DISTRIBUTED_ARTIFACT_FILE_NAMES = new Set([
     'metadata.json',
 ]);
 
-const DISTRIBUTED_ARTIFACT_V2_REQUIRED_FILE_NAMES = [
+const DISTRIBUTED_ARTIFACT_V2_EVIDENCE_FILE_NAMES = [
     'report.json',
-    'results.jsonl',
-    'events.jsonl',
     'failures.json',
     'metadata.json',
 ] as const;
@@ -242,6 +242,7 @@ const CONTROL_POST_ERROR_FILE_NAMES = [
 export function analyzeDistributedRunArtifactFiles(
     input: DistributedRunAnalysisInput,
 ): DistributedRunAnalysis {
+    const generatedAtEpochMs = input.generatedAtEpochMs ?? Date.now();
     const {
         parseWarnings,
         distributedRunRecord,
@@ -257,8 +258,9 @@ export function analyzeDistributedRunArtifactFiles(
     const controlRun = normalizeControlRunRecord(controlRunRecord, distributedRun.controlRunId, results, events);
     const artifactBundle = distributedArtifactBundleFromFiles(
         input.files,
-        input.generatedAtEpochMs ?? Date.now(),
+        generatedAtEpochMs,
         distributedRun.distributedRunId,
+        input.artifactSchemaVersion,
     );
     const spa = deriveSpaAnalysis(distributedRun, controlRun, artifactBundle, parseWarnings);
 
@@ -295,7 +297,8 @@ export function analyzeDistributedRunArtifactFiles(
     };
 
     const base: Omit<DistributedRunAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown' | 'performanceMarkdown'> = {
-        generatedAtEpochMs: input.generatedAtEpochMs ?? Date.now(),
+        generatedAtEpochMs,
+        artifactSchemaVersion: artifactBundle?.artifactSchemaVersion ?? input.artifactSchemaVersion ?? 1,
         distributedRunId,
         controlRunId,
         status,
@@ -324,6 +327,7 @@ export function distributedArtifactBundleFromFiles(
     files: DistributedRunArtifactFiles,
     generatedAtEpochMs = Date.now(),
     fallbackDistributedRunId = 'imported-distributed-run',
+    artifactSchemaVersionOverride?: number,
 ): ControlDistributedRunArtifactBundle | undefined {
     const distributedRunText = files['distributed-run.json'];
     const controlRunText = files['control-run.json'];
@@ -341,10 +345,11 @@ export function distributedArtifactBundleFromFiles(
     if (!bundleFiles['manifest.json']) {
         bundleFiles['manifest.json'] = manifestText;
     }
-    const artifactSchemaVersion = DISTRIBUTED_ARTIFACT_V2_REQUIRED_FILE_NAMES
-        .every(fileName => bundleFiles[fileName] !== undefined)
-        ? 2
-        : 1;
+    const artifactSchemaVersion = artifactSchemaVersionOverride ??
+        (DISTRIBUTED_ARTIFACT_V2_EVIDENCE_FILE_NAMES
+                .every(fileName => bundleFiles[fileName] !== undefined)
+            ? 2
+            : 1);
 
     return {
         artifactSchemaVersion,
@@ -360,6 +365,7 @@ export function distributedArtifactBundleFromFiles(
 export function distributedArtifactSnapshotsFromFiles(
     files: DistributedRunArtifactFiles,
     generatedAtEpochMs = Date.now(),
+    artifactSchemaVersion?: number,
 ): DistributedRunArtifactSnapshots {
     const {
         distributedRunRecord,
@@ -381,6 +387,7 @@ export function distributedArtifactSnapshotsFromFiles(
             files,
             generatedAtEpochMs,
             distributedRun.distributedRunId,
+            artifactSchemaVersion,
         ),
     };
 }

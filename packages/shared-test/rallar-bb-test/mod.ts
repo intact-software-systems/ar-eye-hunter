@@ -10,6 +10,8 @@ export * from './distributed-run-monitor.ts';
 export * from './distributed-run-evidence.ts';
 export * from './distributed-recipe-catalog.ts';
 export * from './distributed-artifact-analysis.ts';
+export * from './distributed-artifact-workspace.ts';
+export * from './distributed-artifact-evidence.ts';
 export * from './recipe-fixtures.ts';
 export * from './schema.ts';
 export * from './redaction.ts';
