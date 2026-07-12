@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';
 import { AnalyzePreview } from '../analyze/AnalyzePreview.tsx';
 import { createRecipeConsoleSeedState } from '../data/seeded-console-state.ts';
@@ -12,7 +12,10 @@ import { useRecipeConsoleUrlState } from '../routing/use-recipe-console-url-stat
 import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
 import { useRecipeConsolePresentation } from '../shell/use-responsive-presentation.ts';
 import { TunePreview } from '../tune/TunePreview.tsx';
-import { recipeConsoleCommandContext } from './recipe-console-command-context.ts';
+import { ControlCommandContext } from '../control/ControlCommandContext.tsx';
+import { controlCommandStatus } from '../control/ControlCommandContext.tsx';
+import { useControlConnection } from '../control/ControlConnectionProvider.tsx';
+import { deriveRecipeConsoleControlSelection } from '../control/control-selection.ts';
 
 function activeWork(
     view: RecipeConsoleView,
@@ -41,14 +44,22 @@ function activeWork(
 }
 
 export function RecipeConsoleWorkspace({
-    authBusy,
     onRefresh,
 }: Readonly<{
-    authBusy: boolean;
     onRefresh(): void;
 }>) {
     const urlState = useRecipeConsoleUrlState();
     const presentation = useRecipeConsolePresentation();
+    const control = useControlConnection();
+    const controlSelection = useMemo(() => deriveRecipeConsoleControlSelection({
+        urlState: urlState.state,
+        snapshot: control.query.snapshot,
+        bootstrapRunId: control.bootstrap.bootstrapRunId,
+        bootstrapGroup: control.bootstrap.bootstrapGroup,
+        queryStatus: control.query.status,
+        nowEpochMs: Date.now(),
+    }), [control.bootstrap, control.query, urlState.state]);
+    const controlStatus = controlCommandStatus(control.query);
     const [seedState] = useState(createRecipeConsoleSeedState);
     const [inspectorOpen, setInspectorOpen] = useState(
         () => urlState.state.view === 'execute' ||
@@ -106,6 +117,19 @@ export function RecipeConsoleWorkspace({
         (urlState.state.view === 'monitor' && presentation.inspector === 'rail'),
     ), [presentation.inspector, urlState.state.view]);
 
+    useEffect(() => {
+        if (
+            controlSelection.urlReplacePatch &&
+            (control.query.status === 'live' || control.query.status === 'partial')
+        ) {
+            urlState.replace(controlSelection.urlReplacePatch);
+        }
+    }, [
+        control.query.status,
+        controlSelection.urlReplacePatch,
+        urlState.replace,
+    ]);
+
     function navigate(view: RecipeConsoleView): void {
         urlState.navigate({ view });
         setInspectorContent(undefined);
@@ -126,7 +150,13 @@ export function RecipeConsoleWorkspace({
         : urlState.state.view === 'tune' && tuneAgentId
         ? <section><h2>Agent timing</h2><p data-selected-agent>{tuneAgentId}</p><p>Repository-derived command-duration evidence.</p></section>
         : inspectorContent;
-    const commandBarContext = recipeConsoleCommandContext(urlState.state.view, seedState, authBusy, executeTargetPreviewAvailable);
+    const commandBarContext = (
+        <ControlCommandContext
+            baseUrl={control.baseUrl}
+            query={control.query}
+            selection={controlSelection}
+        />
+    );
     const selectionDockContent = monitorActive
         ? `Failure · ${selectedFailure.agentId ?? selectedFailure.recipeId ?? selectedFailure.key}`
         : executeActive
@@ -147,6 +177,8 @@ export function RecipeConsoleWorkspace({
         <div className="recipe-console" data-view={urlState.state.view}>
             <RecipeConsoleShell
                 commandBarContext={commandBarContext}
+                commandBarStatus={controlStatus.status}
+                commandBarStatusLabel={controlStatus.label}
                 currentView={urlState.state.view}
                 inspectorContent={resolvedInspectorContent}
                 inspectorOpen={inspectorOpen}
@@ -154,7 +186,10 @@ export function RecipeConsoleWorkspace({
                 onCopyLink={copyLink}
                 onInspectorClose={() => setInspectorOpen(false)}
                 onNavigate={navigate}
-                onRefresh={onRefresh}
+                onRefresh={() => {
+                    void control.refresh();
+                    onRefresh();
+                }}
                 onSelectionDockInspect={inspectSelection}
                 restoreFocusRef={restoreFocusRef}
                 selectionDockContent={selectionDockContent}

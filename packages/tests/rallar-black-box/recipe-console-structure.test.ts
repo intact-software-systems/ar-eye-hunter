@@ -13,6 +13,10 @@ const recipeConsolePath =
 const recipeConsoleWorkspacePath =
     'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleWorkspace.tsx';
 const recipeConsoleRoot = 'apps/rallar-black-box/src/recipe-console';
+const controlConnectionProviderPath =
+    `${recipeConsoleRoot}/control/ControlConnectionProvider.tsx`;
+const controlCommandContextPath =
+    `${recipeConsoleRoot}/control/ControlCommandContext.tsx`;
 
 function source(path: string): string {
     return readFileSync(resolve(repositoryRoot, path), 'utf8');
@@ -87,6 +91,153 @@ describe('Recipe Console experience boundary', () => {
         expect(workspace).not.toMatch(/(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/);
         expect(recipeConsole.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(180);
         expect(workspace.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(220);
+    });
+
+    test('passes only the narrow control bootstrap into the lazy Recipe Console', () => {
+        const app = source(appPath);
+        const recipeConsole = source(recipeConsolePath);
+
+        expect(recipeConsole).toContain('RecipeConsoleControlBootstrap');
+        expect(recipeConsole).toMatch(
+            /controlBootstrap:\s*RecipeConsoleControlBootstrap/,
+        );
+        expect(recipeConsole).not.toContain('RallarBlackBoxBootstrapConfig');
+        expect(recipeConsole).not.toContain('RuntimeStoreSnapshot');
+
+        expect(app).toContain('controlBootstrap={{');
+        expect(app).toMatch(/controlUrl:\s*bootstrap\.controlUrl/);
+        expect(app).toMatch(/bootstrapRunId:\s*bootstrap\.runId/);
+        expect(app).toMatch(/apiBaseUrl:\s*bootstrap\.apiBaseUrl/);
+        expect(app).toMatch(/manualToken:\s*bootstrap\.controlToken/);
+        expect(app).toMatch(/authSession,?/);
+        expect(app).toMatch(
+            /bootstrapGroup:\s*\{[\s\S]*applicationId:\s*bootstrap\.applicationId,[\s\S]*workspaceId:\s*bootstrap\.workspaceId,[\s\S]*groupId:\s*bootstrap\.roomId,[\s\S]*\}/,
+        );
+        expect(app).not.toMatch(/<RecipeConsoleApp\b[^>]*\bruntime=/);
+        expect(app).not.toMatch(/<RecipeConsoleApp\b[^>]*\bbootstrap=\{bootstrap\}/);
+    });
+
+    test('owns one control query above keyed preview workspace remounts', () => {
+        expect(existsSync(resolve(repositoryRoot, controlConnectionProviderPath)))
+            .toBe(true);
+        if (!existsSync(resolve(repositoryRoot, controlConnectionProviderPath))) {
+            return;
+        }
+
+        const provider = source(controlConnectionProviderPath);
+        const recipeConsole = source(recipeConsolePath);
+        const workspace = source(recipeConsoleWorkspacePath);
+
+        expect(recipeConsole).toContain(
+            "import { ControlConnectionProvider } from '../control/ControlConnectionProvider.tsx';",
+        );
+        expect(recipeConsole).toMatch(
+            /<ControlConnectionProvider\b[\s\S]*<RecipeConsoleWorkspace\b[\s\S]*key=\{revision\}[\s\S]*<\/ControlConnectionProvider>/,
+        );
+        expect(recipeConsole).not.toMatch(
+            /<ControlConnectionProvider\b[^>]*\bkey=/,
+        );
+        expect(provider).toMatch(
+            /import\s*\{[^}]*createRecipeConsoleControlApi[^}]*\}\s*from ['"]\.\/control-api\.ts['"]/,
+        );
+        expect(provider).toMatch(
+            /import\s*\{[^}]*createControlQueryService[^}]*\}\s*from ['"]\.\/control-query\.ts['"]/,
+        );
+        expect(provider.match(/\bcreateRecipeConsoleControlApi\(/g)).toHaveLength(1);
+        expect(provider.match(/\bcreateControlQueryService\(/g)).toHaveLength(1);
+        expect(provider).toContain('useEffect');
+        expect(provider).toContain('useSyncExternalStore');
+        expect(provider).toMatch(/\.start\(\)/);
+        expect(provider).toMatch(
+            /return\s*\(\)\s*=>\s*\{?[\s\S]{0,120}?\.stop\(\)/,
+        );
+        expect(provider).not.toMatch(/(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/);
+        expect(provider).not.toMatch(/control-client|control-run-manager|runtime-store/);
+        expect(workspace).not.toMatch(
+            /createRecipeConsoleControlApi|createControlQueryService|\.start\(\)|\.stop\(\)/,
+        );
+    });
+
+    test('keeps control fetch and poll ownership out of shell composition', () => {
+        const forbiddenOwnership =
+            /\bfetch\s*\(|\bsetInterval\s*\(|\bsetTimeout\s*\(|createRecipeConsoleControlApi|createControlQueryService|from ['"][^'"]*control-(?:api|query)\.ts['"]/;
+        for (const path of [
+            appPath,
+            recipeConsolePath,
+            recipeConsoleWorkspacePath,
+            `${recipeConsoleRoot}/shell/TopCommandBar.tsx`,
+        ]) {
+            expect(source(path), path).not.toMatch(forbiddenOwnership);
+        }
+
+        const runtimeOwners = filesBelow(recipeConsoleRoot)
+            .filter(path => path.endsWith('.tsx'))
+            .filter(path => /createRecipeConsoleControlApi|createControlQueryService/
+                .test(source(path)));
+        expect(runtimeOwners).toEqual([controlConnectionProviderPath]);
+    });
+
+    test('wires a focused live command context and explicit status mark', () => {
+        expect(existsSync(resolve(repositoryRoot, controlCommandContextPath)))
+            .toBe(true);
+        if (!existsSync(resolve(repositoryRoot, controlCommandContextPath))) {
+            return;
+        }
+
+        const context = source(controlCommandContextPath);
+        const workspace = source(recipeConsoleWorkspacePath);
+        const shell = source(`${recipeConsoleRoot}/shell/RecipeConsoleShell.tsx`);
+        const commandBar = source(`${recipeConsoleRoot}/shell/TopCommandBar.tsx`);
+
+        expect(workspace).toContain(
+            "import { ControlCommandContext } from '../control/ControlCommandContext.tsx';",
+        );
+        expect(workspace).toContain('<ControlCommandContext');
+        expect(workspace).not.toContain('recipeConsoleCommandContext');
+        expect(context).toContain('<CommandBarItem');
+        for (const label of [
+            'Control server',
+            'Control run',
+            'Group',
+            'Connected',
+            'Safe targets',
+            'Active run',
+            'Last updated',
+        ]) {
+            expect(context, label).toContain(label);
+        }
+        expect(context).not.toMatch(
+            /\bfetch\s*\(|\bsetInterval\s*\(|\bsetTimeout\s*\(|createControlQueryService|createRecipeConsoleSeedState|Seeded offline preview/,
+        );
+
+        expect(commandBar).toMatch(/\bstatus,\s*\n?\s*statusLabel,/);
+        expect(commandBar).toMatch(/status:\s*OperationalStatus/);
+        expect(commandBar).toMatch(/statusLabel:\s*string/);
+        expect(commandBar).toContain(
+            '<StatusMark label={statusLabel} status={status} />',
+        );
+        expect(commandBar).not.toContain(
+            '<StatusMark label="Preview" status="partial" />',
+        );
+        expect(shell).toMatch(/commandBarStatus:\s*OperationalStatus/);
+        expect(shell).toMatch(/commandBarStatusLabel:\s*string/);
+        expect(shell).toContain('status={commandBarStatus}');
+        expect(shell).toContain('statusLabel={commandBarStatusLabel}');
+    });
+
+    test('keeps new control TSX modules focused and within import boundaries', () => {
+        for (const path of [controlConnectionProviderPath, controlCommandContextPath]) {
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+            if (!existsSync(resolve(repositoryRoot, path))) {
+                continue;
+            }
+            const file = source(path);
+            expect(file.trimEnd().split(/\r?\n/).length, path).toBeLessThan(300);
+            expect(file, path).not.toMatch(
+                /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]|control-client|runtime-store|(?:registry|Registry|index\.ts)/,
+            );
+            expect(file, path).not.toMatch(/^\s{4,}function\s+[A-Z]\w*/m);
+        }
     });
 
     test('builds the scoped Signal Ledger shell from bounded modules', () => {

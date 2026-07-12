@@ -216,6 +216,17 @@ export default function App() {
                     authSession={authSession}
                     authBusy={authBusy}
                     authError={authError}
+                    controlBootstrap={{
+                        controlUrl: bootstrap.controlUrl,
+                        bootstrapRunId: bootstrap.runId,
+                        apiBaseUrl: bootstrap.apiBaseUrl,
+                        manualToken: bootstrap.controlToken,
+                        bootstrapGroup: {
+                            applicationId: bootstrap.applicationId,
+                            workspaceId: bootstrap.workspaceId,
+                            groupId: bootstrap.roomId,
+                        },
+                    }}
                     onLogout={logout}
                 />
                 : <LegacyExperience runtime={runtime} auth={auth}/>

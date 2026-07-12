@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import type { RecipeConsoleUrlIssue } from '../routing/url-state-contract.ts';
 import { CommandBarItem } from '../ui/CommandBarItem.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
-import { StatusMark } from '../ui/StatusMark.tsx';
+import { StatusMark, type OperationalStatus } from '../ui/StatusMark.tsx';
 import styles from './TopCommandBar.module.css';
 
 export function TopCommandBar({
@@ -11,12 +11,16 @@ export function TopCommandBar({
     issues,
     onCopyLink,
     onRefresh,
+    status,
+    statusLabel,
 }: Readonly<{
     height: 48 | 52;
     context: ReactNode;
     issues: readonly RecipeConsoleUrlIssue[];
     onCopyLink(): void;
     onRefresh(): void;
+    status: OperationalStatus;
+    statusLabel: string;
 }>) {
     return (
         <>
@@ -25,14 +29,14 @@ export function TopCommandBar({
                 data-command-bar
             >
                 <strong className={styles.productName}>Recipe Console</strong>
-                <StatusMark label="Preview" status="partial" />
+                <StatusMark label={statusLabel} status={status} />
                 <div className={styles.commandContext}>
-                    <CommandBarItem label="Context">{context}</CommandBarItem>
+                    {context}
                     <CommandBarItem label="URL">
                         {issues.length > 0 ? `${issues.length} normalized` : 'Canonical'}
                     </CommandBarItem>
                 </div>
-                <IconButton aria-label="Refresh preview" icon="refresh" onClick={onRefresh} />
+                <IconButton aria-label="Refresh control data" icon="refresh" onClick={onRefresh} />
                 <IconButton aria-label="Copy canonical link" icon="copy" onClick={onCopyLink} />
             </header>
             {issues.length > 0 ? (

@@ -3,6 +3,7 @@ import type {
     RecipeConsoleUrlIssue,
     RecipeConsoleView,
 } from '../routing/url-state-contract.ts';
+import type { OperationalStatus } from '../ui/StatusMark.tsx';
 import { InspectorHost } from './InspectorHost.tsx';
 import { PrimaryNavigation } from './PrimaryNavigation.tsx';
 import { TopCommandBar } from './TopCommandBar.tsx';
@@ -13,6 +14,8 @@ export type RecipeConsoleShellProps = Readonly<{
     currentView: RecipeConsoleView;
     urlIssues: readonly RecipeConsoleUrlIssue[];
     commandBarContext: ReactNode;
+    commandBarStatus: OperationalStatus;
+    commandBarStatusLabel: string;
     onNavigate(view: RecipeConsoleView): void;
     onCopyLink(): void;
     onRefresh(): void;
@@ -30,6 +33,8 @@ export function RecipeConsoleShell({
     currentView,
     urlIssues,
     commandBarContext,
+    commandBarStatus,
+    commandBarStatusLabel,
     onNavigate,
     onCopyLink,
     onRefresh,
@@ -60,6 +65,8 @@ export function RecipeConsoleShell({
                 issues={urlIssues}
                 onCopyLink={onCopyLink}
                 onRefresh={onRefresh}
+                status={commandBarStatus}
+                statusLabel={commandBarStatusLabel}
             />
             <PrimaryNavigation
                 currentView={currentView}
