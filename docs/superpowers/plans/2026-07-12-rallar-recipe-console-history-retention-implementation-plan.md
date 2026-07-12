@@ -1,7 +1,7 @@
 # Rallar Recipe Console History, Compare, Saved Filters, And Retention Implementation Plan
 
 Status: in progress; Iteration 7 is green through `cc17169` and `382df72`;
-Tasks 0–1 are complete and Task 2 is pending
+Tasks 0–2 are complete and Task 3 is in progress
 
 **Goal:** Complete parent Iteration 8 by making past distributed work
 findable, shareable, comparable, and safely cleanable without changing the
@@ -271,29 +271,57 @@ Files:
 - Add focused retention request/API tests and retain existing control-manager
   tests as compatibility regression only
 
-- [ ] RED-test low-level request serialization: preview sends only
+- [x] RED-test low-level request serialization: preview sends only
   `dryRun=true`; guarded confirm sends only the opaque plan token; legacy
   cleanup keeps the unmodified endpoint URL and body behavior.
-- [ ] RED-test malformed 2xx payloads, invalid IDs/counts/cap, inconsistent
+- [x] RED-test malformed 2xx payloads, invalid IDs/counts/cap, inconsistent
   preview/deletion fields, 400, 409, abort, and non-JSON responses.
-- [ ] RED-test existing anonymous/manual/brokered retry policy, credential-origin
+- [x] RED-test existing anonymous/manual/brokered retry policy, credential-origin
   withholding, and no token/query leakage for retention.
-- [ ] RED-test canonical HTTP-error identity and existing 401/403 authorized
+- [x] RED-test canonical HTTP-error identity and existing 401/403 authorized
   retry after the error-class extraction. The lazy request imports the tiny
   canonical owner directly; the existing public
   `ControlRunManagerHttpError` export remains identity-compatible.
-- [ ] Expose a narrow `retention.preview(...)` and
+- [x] Expose a narrow `retention.preview(...)` and
   `retention.confirm(...)` API from the lazy History boundary; do not duplicate
   transport or endpoint authorization logic.
-- [ ] RED-test that retention request/validation code is dynamically imported
+- [x] RED-test that retention request/validation code is dynamically imported
   only after History invokes it and remains absent from inactive Recipe Console
   chunks. An AST/static-import gate forbids value imports or re-exports from
   `control-run-manager.ts`, the root provider, and eager `control-api.ts`.
   Endpoint, credential-origin, or connection-generation changes abort and
   invalidate preview state before a confirmation can be sent.
-- [ ] Keep types sourced from shared-test and preserve every existing public
+- [x] Keep types sourced from shared-test and preserve every existing public
   manager/API import path. Do not add retention serialization to or re-export
   it through the eagerly loaded `control-run-manager.ts`.
+
+Task 2 is implemented in `7197beb`. The legacy manager export and the tiny
+canonical HTTP-error owner share exact constructor identity. A generic
+authorized endpoint owns credential injection and one endpoint challenge, so
+the lazy retention feature never receives a raw manual or brokered token and a
+brokered preview authorizes confirmation immediately. The provider exposes a
+redacted connection context plus an opaque generation/signal, closes replaced
+contexts in layout lifecycle without breaking StrictMode replay, and suppresses
+abort-resistant stale imports/responses. Validated previews are immutable and
+context-branded; confirmation accepts the exact current preview rather than an
+arbitrary token, and preview/confirm concurrency is serialized.
+
+Low-level requests preserve the bare legacy form and serialize preview/confirm
+as bodyless POSTs with only their documented query. Exact preview/confirmation
+validation uses shared candidate/state/limit contracts, rejects unknown or
+inconsistent success payloads, applies cumulative collection/node/depth/string/
+UTF-8 budgets, and reconciles consequences linearly. Build validation proves
+the 9.94 kB (3.39 kB gzip) retention client is a separate dynamic entry whose
+request/validator sentinels are absent from main, eager Recipe Console, and
+inactive Tune static closures.
+
+Fresh Task 2 validation passes 59/59 retention-client tests, 70/70 existing
+manager/control-API tests, 23/23 structure/build-boundary tests, app TypeScript,
+the 590-module production build, and the experience-chunk assertion. Independent
+security/seam/provider reviews closed the demonstrated Important context race,
+raw-bootstrap exposure, post-response TypeError mapping, confirm/preview race,
+transient import retry, and quadratic/unbounded validation defects and report no
+remaining Critical or Important finding.
 
 ## Task 3: Extend Shared History Filtering And V1 URL State
 

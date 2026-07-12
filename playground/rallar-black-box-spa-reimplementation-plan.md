@@ -402,7 +402,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
-| 8 — History, Compare, Saved Filters, Retention | **In progress** | Task 0 audit/baseline and Task 1 shared/control-server retention (`07564df`) are green. Authorization-first bounded preview, short-lived process/consequence-bound confirmation, exact legacy compatibility, OpenAPI/docs, real-loopback tests, and independent review pass. The lazy client, History/filter/preset UI, URL restoration, browser matrix, and no-cutover exit remain open. |
+| 8 — History, Compare, Saved Filters, Retention | **In progress** | Tasks 0–2 are green through the shared/server retention foundation (`07564df`) and lazy credential-safe client (`7197beb`). Authorization-first bounded preview, guarded confirmation, exact legacy compatibility, context-bound client concurrency/abort safety, cumulative validation limits, dynamic-only chunks, and independent review pass. History filtering/URL state, presets, models/UI, browser matrix, and no-cutover exit remain open. |
 | 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
@@ -543,6 +543,24 @@ malformed ignored bodies, exact response whitelists, manual artifact survival,
 and automatic registered-socket/artifact deletion. Final independent reviews
 report no Critical or Important issue. No Recipe Console UI, legacy visibility,
 deep link, rollback, or cutover changed in Task 1.
+
+Task 2 is green through `7197beb`. The existing public manager error export now
+re-exports one tiny canonical constructor, and 401/403 retry identity remains
+compatible. A generic authorized endpoint owns credential injection and a
+shared preview/confirm challenge while the lazy feature receives no raw token.
+The provider exposes only a redacted context, opaque generation, and abort
+signal; layout-lifecycle replacement, StrictMode replay, stale import/response,
+cross-context preview, confirm/preview concurrency, and transient chunk retry
+are explicitly covered. Exact immutable validators use shared types and
+cumulative limits with linear consequence reconciliation.
+
+Fresh proof is 59/59 retention-client tests, 70/70 existing manager/control-API
+tests, 23/23 structure/build-boundary tests, app TypeScript, a 590-module build,
+and the experience-chunk assertion. The 9.94 kB (3.39 kB gzip) retention client
+is a separate dynamic entry; its request/validation sentinels are absent from
+main, eager Recipe Console, and inactive Tune static closures. Final independent
+review reports no Critical or Important issue. This client milestone adds no
+History UI, hide, cutover, default, deep-link, or control-server-contract change.
 
 #### Iteration 2 visual approval checkpoint — 2026-07-11
 

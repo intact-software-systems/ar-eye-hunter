@@ -1,11 +1,35 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Iteration 8 retention server foundation code-backed through `07564df`, all legacy workflow rows visible and uncut
+Status: canonical migration register; Iteration 8 retention server/client foundation code-backed through `7197beb`, all legacy workflow rows visible and uncut
 Evidence/status date: 2026-07-12
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 8 lazy authorized retention client — `7197beb`
+
+Task 2 adds a dynamic-only, preview-first client without exposing credentials to
+feature code. The root transport owns authorization injection and one shared
+preview/confirm challenge; the provider exposes a redacted context plus opaque
+generation/signal and closes replaced contexts in layout lifecycle with
+StrictMode-safe cleanup. Immutable previews are branded to the connection that
+produced them, confirmation accepts only that exact current preview, and
+concurrent/stale/abort-resistant work cannot become current UI truth.
+
+The legacy manager error import remains identity-compatible. Low-level preview,
+confirm, and bare compatibility requests are bodyless and exact; validators
+whitelist every success field, verify all candidate/global relationships, and
+apply shared cumulative collection/node/depth/string/UTF-8 budgets with linear
+reconciliation. Fresh proof is 59/59 retention-client tests, 70/70 existing
+manager/control-API tests, 23/23 structure/build-boundary tests, app TypeScript,
+a 590-module build, and dynamic-chunk sentinels absent from main, eager Recipe
+Console, and inactive Tune closures. Independent review reports no Critical or
+Important issue.
+
+This client is capability only. No History UI is composed yet and no migration
+row is cut over or hidden; all legacy visibility, mounts, deep links, and
+rollback responsibilities remain unchanged.
 
 ## Iteration 8 retention server foundation — `07564df`
 
@@ -35,8 +59,8 @@ remaining Critical or Important issue.
 This server foundation is not History/retention UI parity or cutover proof.
 `runner.runs`, `runner.compare`, `legacy.distributed-recipes`, and
 `legacy.run-manager` retain their visibility, mounts, deep links, and rollback
-responsibilities. Task 2's lazy authorized client and Tasks 3–9 History, saved-
-filter, confirmation UI, URL, browser, and exit proofs remain open.
+responsibilities. Task 2's client is now green in `7197beb`; Tasks 3–9 History,
+saved-filter, confirmation UI, URL, browser, and exit proofs remain open.
 
 ## Iteration 7 timing/tuning implementation start — 2026-07-12
 
