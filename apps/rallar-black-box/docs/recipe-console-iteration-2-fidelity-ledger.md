@@ -1,16 +1,44 @@
 # Recipe Console Iteration 2 Fidelity Ledger
 
-Status: complete for the Iteration 2 seeded shell; no workflow cutover or
-live-service acceptance is claimed
+Status: Iteration 2 shell complete; the Execute baseline is qualified through
+Iteration 4 guided workflow, while Monitor and Tune remain seeded
 
 Evidence date: 2026-07-12
-Implementation head: `a397642` (`fix: scope monitor evidence to selected failure`)
+Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71` (Iteration 4 Execute)
 Approved direction: Signal Ledger (Direction A)
 
-This ledger qualifies the seeded Recipe Console shell only. It records visual,
-responsive, interaction, URL, isolation, and chunk evidence; it does not claim
-live control connectivity, live execution, a replacement workflow cutover, a
-legacy navigation hide, or the Iteration 12 default flip.
+This ledger preserves the approved Iteration 2 visual contract and its seeded
+Monitor/Tune evidence, then records the Iteration 4 Execute baseline advance.
+It does not claim the unavailable configured live/Postgres acceptance, a legacy
+navigation hide, or the Iteration 12 default flip.
+
+## Iteration 4 Execute fidelity addendum
+
+Direction A remains unchanged. The executable Execute baseline now uses a
+deterministic mocked-live two-agent fixture: `execute-control-a`, `execute-agent-a`,
+`execute-agent-b`, group `rallar-black-box/default/rallar-black-box-room`, and
+the repository `RTC Realtime Stability` recipe. The approved command bar,
+labeled rail, parallel recipe/target work planes, contextual inspector, and
+bottom action band remain intact; repository and control truth replace the
+Iteration 2 preview copy.
+
+Execute now exposes the real catalog/profile badges, every target status and
+blocker reason, preflight requirements, a read-only raw manifest, authoritative
+run state, and only the currently valid Resolve/Create/Stage/Start/Cancel/
+Refresh/Export actions. Resolve is the only initial mutation; no preview action
+or editable manifest remains. Desktop and short landscape keep every target
+status visible. Portrait uses a labeled, focusable, keyboard-scrollable target
+region rather than clipping or hiding evidence.
+
+The refreshed Darwin Execute baseline at
+`../../../tests/playwright/rallar-black-box/recipe-console-concept-fidelity.spec.ts-snapshots/signal-ledger-execute-desktop-chromium-darwin.png`
+was inspected at original detail. The complete Recipe Console configuration
+passes 89 tests with one configured-live skip. The in-app Browser was
+unavailable exactly as `No browser is available`, so Playwright/System Chromium
+is the recorded fallback, not an in-app Browser pass. Desktop, tablet, portrait,
+landscape, keyboard-only paths, 44px targets, reduced motion, focus restoration,
+contained scrolling, operational states, and actual Execute CSS in both load
+orders pass.
 
 ## Controlled environment
 
@@ -41,7 +69,7 @@ deterministic derivations govern copy and data.
 
 | Dimension | Evidence and decision |
 | --- | --- |
-| Copy and data truth | **Intentional, explained deviation.** Execute selects the real `RTC Realtime Stability` fixture, `rallar-server/default/seed-room`, `seed-agent-a` and `seed-agent-b`, 2/2 sample targets, five manifest commands, and 25 stream frames. It says `Required · not checked in preview`; it does not repeat the concept's illustrative ACK recipe, 8/8 target set, or live connectivity. |
+| Copy and data truth | **Intentional, explained deviation.** Execute selects the real `RTC Realtime Stability` fixture and the deterministic mocked-live two-agent state recorded in the Iteration 4 addendum. Catalog, group, targets, blockers, preflight, manifest, run state, and available actions are derived from repository/control truth. It does not repeat the concept's illustrative ACK recipe or 8/8 target set. Monitor and Tune retain their separately qualified Iteration 2 seeds until their own migrations. |
 | Failed Monitor truth | The canonical `failed-command` seed renders distributed run `seed-failed-command`, control run `seed-control-failed-command`, recipe `seed-rtc-recipe`, and one of two agents failed. The two rows are `SYNTHETIC_RECIPE_FAILED` and `SYNTHETIC_ASSERTION_FAILED`; both say `Receiver did not observe the RTC payload.` The command-correlated row uses `seed-agent-b` and `seed-start-receiver`. |
 | Tune truth | The canonical `high-latency-rtc` seed is visibly **Passed**. Agent means are 112.5, 1,010, and 1,190 ms; P50 is 1,010 ms and P95/P99/Max are 1,190 ms. Source stage/start pairs remain 95/130, 980/1,040, and 1,120/1,260 ms. Cadence, drift, disposition, and backpressure say unavailable because the fixture has no RTC timeline evidence. |
 | Layout and hierarchy | Edge-to-edge shell, persistent command band, exact six-destination order, continuous ruled work planes, one contextual inspector, and failure-before-raw-evidence ordering match the approved direction. There is no centered dashboard or card wall. |
@@ -64,7 +92,9 @@ deterministic derivations govern copy and data.
   replacement and before push/copy operations.
 - All six destinations push and restore through back/forward. A popstate to an
   exact legacy deep link is not rewritten by the departing Recipe Console.
-- Seed actions are labelled Preview and issue no control-server requests.
+- Execute actions are the guided live Resolve/Create/Stage/Start/Cancel/Refresh/
+  Export controls. A mutation is unavailable unless its authoritative state,
+  current target evidence, arming phrase, and credential policy permit it.
 - Empty, stale, reconnecting, error, failed, partial, and unavailable states
   preserve known evidence and provide text-plus-shape semantics.
 
@@ -78,7 +108,8 @@ Playwright. Port 5186 was stopped after QA.
 
 | Flow / viewport | Fallback evidence |
 | --- | --- |
-| Execute, 1440×900 | Title `Rallar Black Box`, canonical Recipe Console marker/URL, meaningful DOM, 11 repository fixtures, required four featured fixtures, 2/2 targets, and exact sample group. No framework overlay or page error. |
+| Execute Iteration 4, all viewports | The deterministic two-agent workflow exposed full target status/reasons, guided lifecycle state, read-only manifest, keyboard-scrollable portrait evidence, 44px targets, reduced motion, focus trap/restore, contained scrolling, and actual Execute CSS in both load orders. |
+| Execute Iteration 2 historical, 1440×900 | Title `Rallar Black Box`, canonical Recipe Console marker/URL, meaningful DOM, 11 repository fixtures, required four featured fixtures, 2/2 targets, and exact sample group. No framework overlay or page error. Superseded by the Iteration 4 row above. |
 | Execute → failed Monitor → Tune | URLs committed each view. Monitor exposed both exact synthetic codes, seeded recipe/command IDs, six status shapes, and the desktop inspector. Tune committed Send-duration then Command metrics and kept unavailable RTC evidence explicit. |
 | Blank and old-alias entries | Blank `provider=simulated` and `workspace=black-box-runner&tab=recipes` mounted only legacy, preserved the URL, and left Recipe Console unmounted. |
 | Monitor portrait, 430×932 | Dock opened one 430×620 sheet at the bottom, focus trapped in both directions, Escape closed it and restored focus, and document horizontal overflow was zero. |
@@ -99,6 +130,11 @@ expected unavailable-service requests to `localhost:5180` and
 
 | Command | Result | Evidence |
 | --- | --- | --- |
+| Iteration 4 focused Vitest set | Passed | 18/18 files, 294/294 tests after all review fixes. |
+| Iteration 4 complete `packages/tests/rallar-black-box` set | Passed outside socket-restricted sandbox | 67/67 files, 656/656 tests. |
+| Iteration 4 Recipe Console Playwright config | Qualified | 89 passed, one configured-live test skipped with the exact unavailable-service reason below. Includes Execute lifecycle, responsive/accessibility, operational-state, CSS-isolation, and refreshed fidelity proof. |
+| Iteration 4 exact legacy navigation/ticket pair | Passed | 28/28 Chromium tests; old deep links and ticket-origin behavior remain operational. |
+| Iteration 4 build/chunk/control-server exit | Passed | SPA and shared-test typechecks, 479-module build, reciprocal lazy-closure assertion, control-server check, and 57/57 Deno tests. Recipe Console JS is 110.48 kB minified; only the preserved LegacyExperience chunk triggers the existing 500 kB warning. |
 | Focused Iteration 2 eleven-file Vitest set | Passed | 11/11 files, 81/81 tests, 487ms. Covers experience precedence, URL codec/history, seeds, shell structure, responsive presentation, keyboard navigation, build boundary, auth, and legacy composition/structure. |
 | `npm --workspace rallar-black-box run typecheck` | Passed | `tsc --noEmit`, exit 0. |
 | `npm --workspace rallar-black-box run build` | Passed with preserved advisory | 442 modules, 140ms. Only the lazy LegacyExperience JS exceeds 500 kB. |
@@ -117,7 +153,7 @@ represented as product passes. Other non-failing output was the known
 `NO_COLOR`/`FORCE_COLOR` message, Node experimental `localStorage` warning,
 and the expected unsafe-artifact-filename skip diagnostic.
 
-| Production asset | Minified | Gzip |
+| Iteration 2 production asset | Minified | Gzip |
 | --- | ---: | ---: |
 | Recipe Console CSS | 25.37 kB | 5.24 kB |
 | Recipe Console JS | 47.31 kB | 14.32 kB |
@@ -137,6 +173,12 @@ explicitly enabled. Current exact skip reason:
 
 `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
 
+The Iteration 4 configured acceptance now requires the exhaustive Postgres mode,
+authenticated `browser-rallar` agents, visible lifecycle controls, and exported
+artifact validation. It was skipped under the gate above. Live Monitor
+observation and a distinct live cancellation remain Iteration 5 work; neither
+is represented as passed here.
+
 ## Remaining risks and deferrals
 
 - The pixel baselines are controlled-Darwin evidence. Other platforms execute
@@ -147,13 +189,14 @@ explicitly enabled. Current exact skip reason:
 - The preserved lazy LegacyExperience chunk remains larger than 500 kB. The
   new Recipe Console closure does not absorb it; legacy decomposition remains
   later strangler work.
-- No live control polling, execution, run-monitor, artifact-import, comparison,
-  tuning, fleet, or diagnostics cutover is claimed. Iterations 3–12 own those
-  capabilities and their live-service acceptance evidence.
+- Iteration 4 implements live control polling and the guided Execute workflow,
+  but the configured Postgres lifecycle remains skipped. Run Monitor,
+  artifact-import, comparison, tuning, fleet, diagnostics cutovers, and the
+  remaining live-service acceptance evidence belong to Iterations 5–12.
 - Every migration-register row remains uncut and every old deep link remains a
   rollback path. No primary legacy surface is hidden in Iteration 2.
 
-## Review verdict
+## Iteration 2 review verdict
 
 The first whole-iteration review was not approved and reported five Important
 findings: history-restored Execute inspection, unconditional portrait dock,
@@ -184,3 +227,15 @@ theoretically show the unavailable label for one render until the remounted
 Execute effect reports the default fixture. No incorrect action is enabled;
 the durable-state assertions pass. This is retained as minor follow-up rather
 than misrepresented as closed evidence.
+
+## Iteration 4 Execute review verdict
+
+Independent code/contract and browser/cutover passes found one Critical and
+twelve Important issues in total, including credential-origin leakage risks,
+stale post-await mutations, target drift, refresh ordering, URL diagnostics,
+run identity reuse, operation-state cleanup, and Cancel focus policy. Each was
+first reproduced by a focused failing assertion or mutation probe, fixed, and
+included in the fresh 294/294 focused and 89-passed/one-skipped browser exit.
+No Critical or Important Iteration 4 finding remains open. Both legacy workflow
+rows stay visible and uncut because their complete cutover proofs are not yet
+satisfied.

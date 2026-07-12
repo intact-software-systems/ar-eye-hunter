@@ -398,7 +398,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 1 — Extract Pure App Helpers | **Complete** | Behavior-preserving helper, presentation, controller, and shell-composition slices reduce `App.tsx` from 28,265 to 234 lines. `App` now owns runtime/bootstrap, auth gates, shared shell controllers, and experience composition only; `LegacyAppShell` delegates the exact tab tree to six bounded hook-free groups. The exit evidence below passed without a hide, cutover, route, public-export, control-contract, or stylesheet change. |
 | 2 — New Recipe Console Shell | **Complete** | Direction A, Signal Ledger, is implemented as an explicit `v=1` seeded experience through code head `a397642`. The fidelity ledger records URL/history, responsive/accessibility, CSS/chunk isolation, concept, Browser-fallback, review, and fresh validation proof. No workflow is cut over and no legacy primary surface is hidden. |
 | 3 — Control Connection And Agent Board | **Complete** | The canonical bounded control adapter, serialized root query, explicit operational context, URL-backed run/agent selection, repository-derived board, credential-origin policy, and deep snapshot validation are implemented through `a7df46f`. Independent review, mocked lifecycle, actual local-control read, responsive/accessibility, legacy compatibility, server contracts, and qualified validation are recorded below; Ready-State #3 remains open for Iterations 4–5 and configured live/Postgres proof. |
-| 4 — Execute Workflow MVP | **In progress** | Authoritative audits and the tests-first [guided Execute implementation plan](../docs/superpowers/plans/2026-07-12-rallar-recipe-console-execute-workflow-implementation-plan.md) are complete. Shared catalog/manifest/target truth landed at `3fe2574`, the bounded credential-aware execution API at `76092f6`, and pure URL/manifest/resolution/action/lifecycle truth is green with 104 focused assertions and independent review. Visible controller/UI, browser lifecycle proof, and exit validation remain pending. Both legacy workflow rows remain visible and uncut. |
+| 4 — Execute Workflow MVP | **Complete** | Shared catalog/manifest/target truth (`3fe2574`), the bounded credential-aware execution API (`76092f6`), guided Execute UI (`8d44a99`), and lifecycle acceptance (`bddde71`) pass the code-backed exit. Fresh validation, browser fallback QA, review fixes, and the unavailable configured-live qualification are recorded below. Ready-State #2 is satisfied; #3 remains open for live Monitor observation, distinct live cancellation, and configured Postgres proof. Both legacy workflow rows remain visible and uncut. |
 | 5 — Monitor MVP | Pending | No Recipe Console monitor cutover is represented as complete. |
 | 6 — Artifact Analysis | Pending | No profile-aware Recipe Console importer cutover is represented as complete. |
 | 7 — Timing And Recipe Tuning Lab | Pending | No timing/tuning acceptance evidence is represented as complete. |
@@ -574,19 +574,65 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   `RALLAR_BLACK_BOX_LOCAL_CONTROL_SMOKE=1 npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/control-foundation-local-smoke.spec.ts`
   passed 1/1 against the actual local control process and observed a successful
   bounded `GET /runs`. This read and the Deno contract suite are not lifecycle
-  evidence. The canonical `recipe-console-execute.spec.ts` configured-lifecycle
-  acceptance file is still absent and remains owned by Iterations 4–5. The
-  configured
+  evidence. At the Iteration 3 checkpoint the canonical
+  `recipe-console-execute.spec.ts` configured-lifecycle acceptance file was
+  absent and remained owned by Iterations 4–5. The configured
   Postgres-backed distributed lifecycle is **skipped, not passed**, for exactly:
   `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
   apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
-  Ready-State #3 therefore remains open for visible create, stage, start,
+  Ready-State #3 therefore remained open for visible create, stage, start,
   monitor, cancel, and export work in Iterations 4–5 plus that configured
-  lifecycle proof.
+  lifecycle proof. Iteration 4 now supplies the acceptance and visible Execute
+  controls; the live Monitor, distinct live-cancellation, and configured-service
+  gaps are recorded in its exit checkpoint below.
 
 | Iteration 3 exit criterion | Code-backed evidence |
 | --- | --- |
 | A user can tell whether the control server is reachable and which agents are safe before selecting a recipe | The announced command status distinguishes reachable authorization/control errors from unreachable offline state; the first Execute region lists canonical control context, current-safe count, and every repository-derived targetability reason. Live, partial, stale, offline, recovery, wrong-group, missing-identity, unavailable-ID, keyboard, touch, responsive, and actual local-control read proofs pass. |
+
+#### Iteration 4 exit checkpoint — `8d44a99`, `bddde71`
+
+- The explicit Recipe Console Execute route now owns repository catalog/profile
+  selection, recipe-aware targets, preflight, read-only manifest, authoritative
+  status, and guided Resolve/Create/Stage/Start/Cancel/Refresh/schema-v2 Export.
+  The seeded preview plane and duplicate generic agent board are removed. Pure
+  recipe/run truth stays outside React, shared reusable catalog/manifest/target
+  derivation lives in `packages/shared-test/**`, and raw transport ownership
+  remains at the root control boundary.
+- Credential origin is captured across initial legacy-to-Recipe history
+  transitions. URL-selected endpoints cannot consume ambient manual, session,
+  or brokered credentials, and runtime policy omission fails closed. All
+  mutations reject stale post-await responses, target drift refuses Stage,
+  post-mutation Refresh is ordered after pending reads, fresh reruns receive new
+  identities, and reachable protocol, authorization, credential-trust, stale,
+  partial, and offline states remain distinct.
+- Fresh exit validation passed 294/294 focused tests across 18 files, 656/656
+  complete app tests across 67 files, shared-test and app typechecks, a
+  479-module build, reciprocal experience-chunk proof, 89 Recipe Console
+  Chromium tests with one configured-live skip, 28/28 exact legacy
+  navigation/ticket tests, and control-server check plus 57/57 Deno tests.
+- Desktop, tablet, 430×932 portrait, 932×430 landscape, keyboard-only paths,
+  44px targets, reduced motion, focus trap/restore, scrolling containment,
+  operational announcements, and actual Execute CSS in both load orders pass.
+  The refreshed Direction A Execute baseline was inspected at original detail.
+  The in-app Browser was unavailable exactly as `No browser is available`, so
+  controlled Playwright/System Chromium is fallback evidence, not an in-app
+  Browser pass.
+- Independent code/contract and browser/cutover reviews found one Critical and
+  twelve Important issues across their passes. Every finding received focused
+  RED/GREEN coverage, mutation proof where applicable, and the fresh exit rerun;
+  no Critical or Important Iteration 4 finding remains open.
+- The configured Postgres-backed lifecycle is **skipped, not passed**, for
+  exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+  The configured test now uses authenticated `browser-rallar` agents and checks
+  the exported artifact. Live Monitor observation and a distinct live
+  cancellation remain Iteration 5 work. Ready-State #2 is satisfied; #3 remains
+  open.
+- `runner.recipes` still owns agent setup, readiness, and local launch, while
+  `legacy.distributed-recipes` still owns Monitor, history, compare,
+  diagnostics, and authoring. Both legacy rows remain visible, deep-linkable,
+  mounted by their preserved policies, and uncut with unchanged rollback URLs.
 
 #### Iteration 1 checkpoint — `63e7b2c`
 

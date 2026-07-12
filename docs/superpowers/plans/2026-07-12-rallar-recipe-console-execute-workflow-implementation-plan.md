@@ -213,25 +213,36 @@ terminal advancement can replace mutation truth.
 - Test `packages/tests/rallar-black-box/recipe-console-structure.test.ts`
 - Create `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts`
 
-- [ ] Add structure/browser RED assertions before React implementation: no
+- [x] Add structure/browser RED assertions before React implementation: no
   seeded agents or Preview actions, no legacy imports, no raw control ownership,
   thin workspace/controller composition, TSX below 300 lines, scoped CSS.
-- [ ] Render searchable/profile-filtered catalog rows with provider,
+- [x] Render searchable/profile-filtered catalog rows with provider,
   live-service, schema, and preflight badges.
-- [ ] Render one recipe-aware target plane with every blocker reason, selection
+- [x] Render one recipe-aware target plane with every blocker reason, selection
   controls only for current-safe rows, and explicit last-known/unavailable
   states. Avoid a second generic agent board above it.
-- [ ] Render preflight tree/service requirements, read-only raw manifest
+- [x] Render preflight tree/service requirements, read-only raw manifest
   disclosure, authoritative run identity/state/error, and the state-specific
   action band with associated disabled reasons.
-- [ ] Keep inspector selection, portrait dock, focus restoration, URL history,
+- [x] Keep inspector selection, portrait dock, focus restoration, URL history,
   keyboard selection, accessible Cancel confirmation, and reduced-motion
   semantics coherent. Refresh authoritative Execute data without key-remounting
   or discarding an uncreated draft; preserve the existing reset behavior for
   other seeded views.
-- [ ] Run structure/workflow tests, focused browser RED/GREEN, typecheck, and
+- [x] Run structure/workflow tests, focused browser RED/GREEN, typecheck, and
   build.
-- [ ] Commit `feat: replace execute preview with guided workflow`.
+- [x] Commit `feat: replace execute preview with guided workflow`.
+
+**Actual evidence (2026-07-12):** commit `8d44a99`; the seeded target/action
+plane, preview hook/export/CSS, and duplicate generic control board are gone.
+The bounded Execute composition owns catalog, one recipe-aware target plane,
+preflight, read-only manifest, authoritative status, explicit action arming,
+Cancel, and inspector surfaces. `App.tsx` is 260 lines,
+`RecipeConsoleApp.tsx` is 28, every Execute TSX owner is below 300 lines, and
+the controller/support owners are at or below 300 lines. Review-driven
+RED/GREEN proof also covers fresh rerun IDs, post-await configuration guards,
+queued post-mutation truth refresh, operation-state reset, reachable protocol
+errors, credential-trust truth, and StrictMode-safe URL diagnostics.
 
 ## Task 5: Lifecycle Orchestration, Cancel, And Export
 
@@ -241,52 +252,82 @@ terminal advancement can replace mutation truth.
 - Create `apps/rallar-black-box/src/recipe-console/execute/execute-artifact-export.ts`
 - Extend `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts`
 
-- [ ] RED-test visible Resolve → Create → Stage → wait-ready → Start against a
+- [x] RED-test visible Resolve → Create → Stage → wait-ready → Start against a
   mocked simulated `Composite Evidence` distributed ACK lifecycle. Assert
   brokered write auth, manifest content, URLs, no JSON editing, run identity,
   progress, and terminal response truth.
-- [ ] RED-test duplicate submission suppression, mutation abort/cleanup,
+- [x] RED-test duplicate submission suppression, mutation abort/cleanup,
   revalidation drift, structured HTTP/protocol/trust errors, refresh after both
   success and failure, and draft preservation across global Refresh. Include a
   changed server resolution after the explicit Resolve and prove no Stage
   request is sent.
-- [ ] RED-test Cancel for a non-terminal run and an actual downloaded artifact
+- [x] RED-test Cancel for a non-terminal run and an actual downloaded artifact
   bundle with deterministic filename/content; keep terminal Cancel disabled.
-- [ ] Add the env-gated configured lifecycle test and preserve the exact
+- [x] Add the env-gated configured lifecycle test and preserve the exact
   unavailable-service skip reason.
-- [ ] Keep these canonical acceptance names exact:
+- [x] Keep these canonical acceptance names exact:
   `runs a simulated distributed ACK recipe through visible controls`;
   `diagnoses non-targetable agents before staging`;
   `restores an existing Execute run from a copied v1 URL`; and
   `completes the configured live distributed run lifecycle and exports its artifact`.
-- [ ] Run focused tests/browser spec, typecheck/build, chunk assertion, and
+- [x] Run focused tests/browser spec, typecheck/build, chunk assertion, and
   control-server check/test.
-- [ ] Commit `test: prove guided recipe execution lifecycle`.
+- [x] Commit `test: prove guided recipe execution lifecycle`.
+
+**Actual evidence (2026-07-12):** commit `bddde71`; the focused Execute spec
+passes 22 mocked/browser cases and skips one configured-live case. It proves
+the visible simulated ACK lifecycle, exact target drift refusal, duplicate
+submission suppression, abort-ignoring stale Create/Export rejection,
+post-mutation refresh ordering, structured HTTP/protocol/trust errors,
+draft-preserving Refresh, deterministic artifact content, accessible Cancel,
+waiting-barrier/terminal policy, and URL restoration. The configured case now
+uses the canonical exhaustive-Postgres gate and authenticated
+`browser-rallar` agents, validates artifact contents, and cannot qualify under
+memory mode. It was **skipped, not passed**, because the required services
+were unavailable, for exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with
+Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
+apps/rallar-black-box available.` Live Monitor observation and a distinct live
+cancellation remain explicit Iteration 5 work; Ready-State #3 stays open.
 
 ## Task 6: Browser QA, Review, Cutover Evidence, And Exit
 
-- [ ] Update the Execute concept fixture/baseline to a mocked live two-agent
+- [x] Update the Execute concept fixture/baseline to a mocked live two-agent
   state while retaining the approved Signal Ledger hierarchy. Update the
   fidelity ledger with the repository-truth change; no new visual direction is
   introduced.
-- [ ] Prove 1440×900 desktop, 900×900 tablet, 430×932 portrait, 932×430
+- [x] Prove 1440×900 desktop, 900×900 tablet, 430×932 portrait, 932×430
   landscape, keyboard-only operation, 44px touch targets, focus trap/restore,
   reduced motion, contained scrolling, status announcements, and CSS isolation
   in both load orders.
-- [ ] Prove ready, blocked, waiting ACK/barrier, running, cancelled, passed,
+- [x] Prove ready, blocked, waiting ACK/barrier, running, cancelled, passed,
   terminal-failed, mutation error, stale, offline, partial, authorization, and
   credential-trust states.
-- [ ] Run exact focused tests, complete app tests, complete Recipe Console
+- [x] Run exact focused tests, complete app tests, complete Recipe Console
   Playwright config, exact legacy navigation/ticket pair, typecheck/build/chunk
   proof, shared-test checks, and control-server check/test.
-- [ ] Dispatch independent code/contract and browser/cutover reviews; cover
+- [x] Dispatch independent code/contract and browser/cutover reviews; cover
   every Critical/Important finding with RED/GREEN proof and rerun fresh exit
   validation after the last fix.
-- [ ] Update the parent plan, this implementation plan, fidelity ledger, and
+- [x] Update the parent plan, this implementation plan, fidelity ledger, and
   migration register with actual commits, evidence, skipped live proof, and
   remaining risks. Keep both legacy workflow rows uncut and visible.
-- [ ] Commit `docs: record guided recipe execution exit` only after the
+- [x] Commit `docs: record guided recipe execution exit` only after the
   Iteration 4 exit criterion passes.
+
+**Exit evidence (2026-07-12):** 18 focused Vitest files pass 294/294; the
+complete app suite passes 656/656 across 67 files; shared-test and SPA
+typechecks pass; the 479-module production build and reciprocal experience
+chunk assertion pass; the complete Recipe Console configuration passes 89
+with the one configured-live skip above; the exact legacy navigation/ticket
+pair passes 28/28; and control-server check plus 57/57 Deno tests pass.
+Desktop, tablet, portrait, and landscape proof includes keyboard-only paths,
+44px targets, reduced motion, focus trap/restore, full target-reason
+reachability, operational announcements, and actual Execute CSS in both load
+orders. The in-app Browser was unavailable (`No browser is available`), so
+controlled Playwright/System Chromium is recorded as fallback, not as an
+in-app Browser pass. Independent code/contract and browser/cutover reviews
+found one Critical and twelve Important issues across their passes; every
+finding received RED/GREEN coverage and the fresh exit validation above.
 
 ## Exact Focused Validation
 
