@@ -15,8 +15,10 @@ import {
 } from './control-api.ts';
 import {
     createControlQueryService,
+    type ControlQueryAuthorization,
     type ControlQuerySnapshot,
 } from './control-query.ts';
+import type { RecipeConsoleControlCredentialPolicy } from './control-credential-policy.ts';
 
 export const CONTROL_QUERY_POLL_INTERVAL_MS = 5_000;
 export const CONTROL_QUERY_REQUEST_TIMEOUT_MS = 4_000;
@@ -26,6 +28,7 @@ export type RecipeConsoleControlBootstrap = Readonly<{
     bootstrapRunId?: string;
     apiBaseUrl: string;
     manualToken?: string;
+    credentialPolicy: RecipeConsoleControlCredentialPolicy;
     bootstrapGroup: RallarBlackBoxDistributedGroupRef;
 }>;
 
@@ -70,6 +73,7 @@ export function ControlConnectionProvider({
                     manualToken: bootstrap.manualToken,
                     apiBaseUrl: bootstrap.apiBaseUrl,
                     authSession,
+                    credentialPolicy: bootstrap.credentialPolicy,
                 }),
             };
         } catch (error) {
@@ -79,6 +83,7 @@ export function ControlConnectionProvider({
         authSession,
         bootstrap.apiBaseUrl,
         bootstrap.controlUrl,
+        bootstrap.credentialPolicy,
         bootstrap.manualToken,
     ]);
     const service = useMemo(() => createControlQueryService({
@@ -90,6 +95,7 @@ export function ControlConnectionProvider({
             return {
                 completeness: result.completeness,
                 snapshot: result.snapshot,
+                authorization: partialQueryAuthorization(result.partialError),
             };
         },
         now: Date.now,
@@ -128,6 +134,21 @@ export function ControlConnectionProvider({
             {children}
         </ControlConnectionContext.Provider>
     );
+}
+
+function partialQueryAuthorization(
+    error: unknown,
+): ControlQueryAuthorization {
+    const record = error && typeof error === 'object'
+        ? error as Record<string, unknown>
+        : undefined;
+    if (record?.authorizationRequired === true) {
+        return 'required';
+    }
+    const status = typeof record?.status === 'number'
+        ? record.status
+        : record?.controlStatus;
+    return status === 401 || status === 403 ? 'required' : 'ready';
 }
 
 export function useControlConnection(): RecipeConsoleControlConnection {

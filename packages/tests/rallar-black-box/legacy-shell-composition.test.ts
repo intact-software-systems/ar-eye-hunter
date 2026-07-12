@@ -87,6 +87,8 @@ const expectedGuardFingerprints = new Map<string, string>([
 
 const expectedImportInventory = new Map<string, readonly string[]>([
     [appPath, [
+        './app/recipe-console-url-guard.ts|value:captureInitialRecipeConsoleControlCredentialPolicy',
+        './app/recipe-console-url-guard.ts|value:scrubCurrentRecipeConsoleUrlBeforeLoad',
         './app/use-experience-route.ts|value:useExperienceRoute',
         './auth-flow.ts|value:authErrorMessage',
         './auth-flow.ts|value:bootstrapPatchFromAuthSession',
@@ -218,6 +220,7 @@ const expectedImportInventory = new Map<string, readonly string[]>([
 
 const expectedTopLevelInventory = new Map<string, readonly string[]>([
     [appPath, [
+        'variable:initialRecipeConsoleControlCredentialPolicy',
         'variable:RecipeConsoleApp',
         'variable:LegacyExperience',
         'export-default-function:App',

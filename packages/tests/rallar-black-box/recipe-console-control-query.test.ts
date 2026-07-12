@@ -133,6 +133,27 @@ describe('Recipe Console control query state', () => {
         });
     });
 
+    it('keeps partial snapshot authorization orthogonal to usable data', () => {
+        const succeeded = transitionControlQueryState(
+            createInitialControlQueryState<TestSnapshot>(),
+            {
+                type: 'attempt-succeeded',
+                atEpochMs: 2_100,
+                result: {
+                    ...partial({ runIds: ['run-a'], distributedRunIds: [] }),
+                    authorization: 'required',
+                },
+            },
+        );
+
+        expect(succeeded).toMatchObject({
+            status: 'partial',
+            reachability: 'reachable',
+            authorization: 'required',
+            snapshot: { runIds: ['run-a'], distributedRunIds: [] },
+        });
+    });
+
     it('retains the last-good snapshot and marks it stale after a failed refresh', () => {
         const live = transitionControlQueryState(
             transitionControlQueryState(createInitialControlQueryState<TestSnapshot>(), {
@@ -200,6 +221,27 @@ describe('Recipe Console control query state', () => {
         expect(failed.receivedAtEpochMs).toBeUndefined();
     });
 
+    it('keeps successful HTTP protocol failures reachable', () => {
+        const failed = transitionControlQueryState(
+            createInitialControlQueryState<TestSnapshot>(),
+            {
+                type: 'attempt-failed',
+                atEpochMs: 4_200,
+                error: {
+                    kind: 'protocol',
+                    message: 'Control server snapshot runs must be an array.',
+                },
+            },
+        );
+
+        expect(failed).toMatchObject({
+            status: 'offline',
+            reachability: 'reachable',
+            authorization: 'unknown',
+            lastError: { kind: 'protocol' },
+        });
+    });
+
     it.each([401, 403])(
         'keeps HTTP %s reachability separate from authorization',
         status => {
@@ -258,6 +300,38 @@ describe('Recipe Console control query state', () => {
             authorization: 'required',
             snapshot: LIVE_SNAPSHOT,
             receivedAtEpochMs: 5_125,
+        });
+    });
+
+    it('keeps broker failure provenance orthogonal to the control authorization challenge', () => {
+        const failed = transitionControlQueryState(
+            createInitialControlQueryState<TestSnapshot>(),
+            {
+                type: 'attempt-failed',
+                atEpochMs: 5_200,
+                error: {
+                    kind: 'http',
+                    status: 503,
+                    message: 'Token broker unavailable.',
+                    reachability: 'reachable',
+                    authorizationRequired: true,
+                    controlStatus: 401,
+                    brokerStatus: 503,
+                },
+            },
+        );
+
+        expect(failed).toMatchObject({
+            status: 'offline',
+            reachability: 'reachable',
+            authorization: 'required',
+            lastError: {
+                kind: 'http',
+                status: 503,
+                authorizationRequired: true,
+                controlStatus: 401,
+                brokerStatus: 503,
+            },
         });
     });
 
@@ -525,6 +599,99 @@ describe('Recipe Console serialized control query service', () => {
             authorization: 'required',
             lastError: { kind: 'http', status: 401 },
         });
+
+        service.stop();
+    });
+
+    it('classifies a broker outage without rewriting it as the control 401', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(85_000);
+        const brokerError = Object.assign(
+            new Error('Token broker unavailable.'),
+            { status: 503, statusText: 'Service Unavailable' },
+        );
+        const authorizationError = Object.assign(
+            new Error('Token broker unavailable.'),
+            {
+                reachable: true,
+                authorizationRequired: true,
+                controlStatus: 401,
+                controlStatusText: 'Unauthorized',
+                brokerStatus: 503,
+                brokerStatusText: 'Service Unavailable',
+                brokerError,
+            },
+        );
+        const service = createControlQueryService<TestSnapshot>({
+            query: async () => {
+                throw authorizationError;
+            },
+            now: Date.now,
+            scheduler: fakeTimerScheduler(),
+            pollIntervalMs: 5_000,
+            requestTimeoutMs: 4_000,
+        });
+
+        service.start();
+        await flushMicrotasks();
+
+        expect(service.getSnapshot()).toMatchObject({
+            status: 'offline',
+            reachability: 'reachable',
+            authorization: 'required',
+            lastError: {
+                kind: 'http',
+                status: 503,
+                message: 'Token broker unavailable.',
+                reachability: 'reachable',
+                authorizationRequired: true,
+                controlStatus: 401,
+                brokerStatus: 503,
+            },
+        });
+
+        service.stop();
+    });
+
+    it('does not invent broker provenance for a credential-trust boundary', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(87_000);
+        const service = createControlQueryService<TestSnapshot>({
+            query: async () => {
+                throw Object.assign(
+                    new Error('Stored credentials withheld for URL endpoint.'),
+                    {
+                        status: 401,
+                        statusText: 'Unauthorized',
+                        reachable: true,
+                        authorizationRequired: true,
+                        credentialTrustRequired: true,
+                    },
+                );
+            },
+            now: Date.now,
+            scheduler: fakeTimerScheduler(),
+            pollIntervalMs: 5_000,
+            requestTimeoutMs: 4_000,
+        });
+
+        service.start();
+        await flushMicrotasks();
+
+        const snapshot = service.getSnapshot();
+        expect(snapshot).toMatchObject({
+            status: 'offline',
+            reachability: 'reachable',
+            authorization: 'required',
+            lastError: {
+                kind: 'http',
+                status: 401,
+                controlStatus: 401,
+                controlStatusText: 'Unauthorized',
+                credentialTrustRequired: true,
+            },
+        });
+        expect(snapshot.lastError?.brokerStatus).toBeUndefined();
 
         service.stop();
     });

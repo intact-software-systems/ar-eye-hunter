@@ -39,13 +39,16 @@ describe('Recipe Console experience boundary', () => {
     test('keeps App as a two-way lazy experience router after auth gates', () => {
         const app = source(appPath);
         const dynamicExperienceImports = [...app.matchAll(
-            /lazy\(\(\)\s*=>\s*import\(['"]([^'"]+)['"]\)\s*\)/g,
+            /\bimport\(['"]([^'"]+)['"]\)/g,
         )].map(match => match[1]);
 
         expect(dynamicExperienceImports).toEqual([
             './recipe-console/app/RecipeConsoleApp.tsx',
             './legacy/shell/LegacyExperience.tsx',
         ]);
+        expect(app).toMatch(
+            /const RecipeConsoleApp = lazy\(\(\) => \{[\s\S]*scrubCurrentRecipeConsoleUrlBeforeLoad\(\);[\s\S]*return import\('\.\/recipe-console\/app\/RecipeConsoleApp\.tsx'\);[\s\S]*\}\);/,
+        );
         expect(app).toContain(
             "import { useExperienceRoute } from './app/use-experience-route.ts';",
         );
@@ -115,6 +118,9 @@ describe('Recipe Console experience boundary', () => {
         expect(app).toMatch(/bootstrapRunId:\s*bootstrap\.runId/);
         expect(app).toMatch(/apiBaseUrl:\s*bootstrap\.apiBaseUrl/);
         expect(app).toMatch(/manualToken:\s*bootstrap\.controlToken/);
+        expect(app).toMatch(
+            /credentialPolicy:\s*initialRecipeConsoleControlCredentialPolicy/,
+        );
         expect(app).toMatch(/authSession,?/);
         expect(app).toMatch(
             /bootstrapGroup:\s*\{[\s\S]*applicationId:\s*bootstrap\.applicationId,[\s\S]*workspaceId:\s*bootstrap\.workspaceId,[\s\S]*groupId:\s*bootstrap\.roomId,[\s\S]*\}/,

@@ -16,7 +16,12 @@ export function controlCommandStatus(
         case 'live':
             return { status: 'passed', label: `Live · ${query.reachability}` };
         case 'partial':
-            return { status: 'partial', label: `Partial · ${query.reachability}` };
+            return query.authorization === 'required'
+                ? {
+                    status: 'warning',
+                    label: `Authorization required · ${query.reachability} · partial`,
+                }
+                : { status: 'partial', label: `Partial · ${query.reachability}` };
         case 'stale':
             return query.authorization === 'required'
                 ? {
@@ -40,15 +45,21 @@ export function controlCommandStatus(
 export function controlCommandActiveRunLabel(
     context: RecipeConsoleActiveRunContext,
     queryStatus: ControlQuerySnapshot<ControlServerSnapshot>['status'],
+    distributedRunContextAvailable: boolean,
+    controlRunContextAvailable = true,
 ): string {
+    if (!distributedRunContextAvailable || !controlRunContextAvailable) {
+        return 'Unknown';
+    }
+    const lastKnown = queryStatus === 'stale' ? ' · last known' : '';
     if (context.kind === 'sole') {
         const run = context.runs[0];
-        return `${run.distributedRunId} · ${run.state}`;
+        return `${run.distributedRunId} · ${run.state}${lastKnown}`;
     }
     if (context.kind === 'ambiguous') {
-        return `${context.runs.length} active`;
+        return `${context.runs.length} active${lastKnown}`;
     }
-    return queryStatus === 'partial' ? 'Unknown' : 'None';
+    return `None${lastKnown}`;
 }
 
 export function ControlCommandContext({
@@ -61,12 +72,18 @@ export function ControlCommandContext({
     selection: RecipeConsoleControlSelection;
 }>) {
     const connected = selection.boardRows.filter(row => row.connected).length;
-    const connectedLabel = query.status === 'stale'
+    const controlRunContextAvailable = selection.controlRun !== undefined ||
+        query.snapshot?.runs.length === 0;
+    const connectedLabel = query.snapshot === undefined || !controlRunContextAvailable
+        ? 'Unknown'
+        : query.status === 'stale'
         ? `${connected}/${selection.boardRows.length} last known`
         : `${connected}/${selection.boardRows.length}`;
     const activeLabel = controlCommandActiveRunLabel(
         selection.activeRunContext,
         query.status,
+        query.snapshot?.distributedRuns !== undefined,
+        controlRunContextAvailable,
     );
     const safeLabel = query.status === 'stale'
         ? `0 current · ${selection.lastKnownTargetableCount} last known`

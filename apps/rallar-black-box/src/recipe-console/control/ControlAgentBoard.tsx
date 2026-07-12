@@ -9,6 +9,7 @@ import type { ControlQueryStatus } from './control-query.ts';
 import styles from './ControlOverview.module.css';
 
 export function ControlAgentBoard({
+    controlContext,
     queryStatus,
     rows,
     safeTargetableCount,
@@ -16,6 +17,7 @@ export function ControlAgentBoard({
     summary,
     onSelectAgent,
 }: Readonly<{
+    controlContext: 'unavailable' | 'empty' | 'unresolved' | 'selected';
     queryStatus: ControlQueryStatus;
     rows: readonly ControlAgentBoardRow[];
     safeTargetableCount: number;
@@ -24,6 +26,9 @@ export function ControlAgentBoard({
     onSelectAgent(agentId: string): void;
 }>) {
     const lastKnown = queryStatus === 'stale';
+    const hasCountEvidence = controlContext === 'selected' || controlContext === 'empty';
+    const metricValue = (value: number): number | 'Unknown' =>
+        hasCountEvidence ? value : 'Unknown';
     return (
         <section aria-label="Control agent board" className={styles.board}>
             <div className={styles.boardHeader}>
@@ -31,16 +36,20 @@ export function ControlAgentBoard({
                     <p className={styles.eyebrow}>Repository-derived targeting truth</p>
                     <h3>Control agent board</h3>
                 </div>
-                <strong>{lastKnown
+                <strong>{controlContext === 'unresolved'
+                    ? 'Select a control run'
+                    : controlContext === 'unavailable'
+                    ? 'Control context unavailable'
+                    : lastKnown
                     ? `${safeTargetableCount} safe now · ${summary.targetable} last known targetable`
                     : `${safeTargetableCount} safe to target`}</strong>
             </div>
             <MetricStrip
                 items={[
-                    { label: 'Agents', value: summary.total },
-                    { label: lastKnown ? 'Connected (last known)' : 'Connected', value: summary.connected },
-                    { label: 'Safe now', value: safeTargetableCount },
-                    { label: 'Blocked now', value: summary.total - safeTargetableCount },
+                    { label: 'Agents', value: metricValue(summary.total) },
+                    { label: lastKnown ? 'Connected (last known)' : 'Connected', value: metricValue(summary.connected) },
+                    { label: 'Safe now', value: metricValue(safeTargetableCount) },
+                    { label: 'Blocked now', value: metricValue(summary.total - safeTargetableCount) },
                 ]}
                 label="Control agent summary"
             />
@@ -71,11 +80,26 @@ export function ControlAgentBoard({
                     </SelectableRow>
                 ))}
                 {rows.length === 0 ? (
-                    <p className={styles.emptyBoard}>No agents are available in the selected control context.</p>
+                    <p className={styles.emptyBoard}>{emptyBoardMessage(controlContext)}</p>
                 ) : null}
             </div>
         </section>
     );
+}
+
+function emptyBoardMessage(
+    controlContext: 'unavailable' | 'empty' | 'unresolved' | 'selected',
+): string {
+    switch (controlContext) {
+        case 'unavailable':
+            return 'Agent evidence is unavailable until a control snapshot is received.';
+        case 'empty':
+            return 'No agents are available because the control server reports no runs.';
+        case 'unresolved':
+            return 'Select an available control run to inspect its agents.';
+        case 'selected':
+            return 'No agents are available in the selected control run.';
+    }
 }
 
 function agentOptionAccessibleName(

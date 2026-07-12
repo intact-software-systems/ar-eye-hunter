@@ -64,6 +64,15 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
     const distributedRuns = input.snapshot?.distributedRuns ?? [];
     const hasSnapshot = input.snapshot !== undefined;
     const hasDistributedRunCollection = input.snapshot?.distributedRuns !== undefined;
+    const snapshotEvidence = input.queryStatus === 'stale'
+        ? 'last-known snapshot'
+        : 'latest snapshot';
+    const selectedContextEvidence = input.queryStatus === 'stale'
+        ? 'last-known selected context'
+        : 'selected context';
+    const controlSnapshotEvidence = input.queryStatus === 'stale'
+        ? 'last-known control snapshot'
+        : 'control snapshot';
     const issues: RecipeConsoleControlSelectionIssue[] = [];
     const explicitControlRunId = input.urlState.controlRunId;
     let controlRunId = explicitControlRunId;
@@ -79,7 +88,7 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
             issues.push(issue(
                 'controlRunId',
                 'unavailable',
-                `Control run ${explicitControlRunId} is not present in the latest snapshot.`,
+                `Control run ${explicitControlRunId} is not present in the ${snapshotEvidence}.`,
                 explicitControlRunId,
             ));
         }
@@ -124,13 +133,13 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
             ? issue(
                 'distributedRunId',
                 'incompatible',
-                `Distributed run ${distributedRunId} belongs to another control run.`,
+                `Distributed run ${distributedRunId} belongs to another control run in the ${snapshotEvidence}.`,
                 distributedRunId,
             )
             : issue(
                 'distributedRunId',
                 'unavailable',
-                `Distributed run ${distributedRunId} is not available in the selected context.`,
+                `Distributed run ${distributedRunId} is not available in the ${selectedContextEvidence}.`,
                 distributedRunId,
             ));
     }
@@ -138,7 +147,7 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
         issues.push(issue(
             'distributedRuns',
             'unavailable',
-            'The control snapshot does not include distributed-run context.',
+            `The ${controlSnapshotEvidence} does not include distributed-run context.`,
         ));
     }
 
@@ -150,7 +159,7 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
         issues.push(issue(
             'agentId',
             'unavailable',
-            `Agent ${agentId} is not present in the selected control run.`,
+            `Agent ${agentId} is not present in the selected control run in the ${snapshotEvidence}.`,
             agentId,
         ));
     }

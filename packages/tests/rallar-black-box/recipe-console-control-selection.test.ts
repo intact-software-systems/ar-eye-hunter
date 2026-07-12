@@ -173,6 +173,57 @@ describe('Recipe Console control selection', () => {
         ]);
     });
 
+    it('qualifies every unavailable selection notice derived from stale evidence', () => {
+        const missingParent = derive({
+            urlState: { ...baseUrlState, controlRunId: 'missing-run' },
+            queryStatus: 'stale',
+            snapshot: {
+                runs: [controlRun('run-a')],
+                distributedRuns: [],
+            },
+        });
+        const missingChildren = derive({
+            urlState: {
+                ...baseUrlState,
+                controlRunId: 'run-a',
+                distributedRunId: 'missing-distributed',
+                agentId: 'missing-agent',
+            },
+            queryStatus: 'stale',
+            snapshot: {
+                runs: [controlRun('run-a')],
+                distributedRuns: [],
+            },
+        });
+        const incompatible = derive({
+            urlState: {
+                ...baseUrlState,
+                controlRunId: 'run-a',
+                distributedRunId: 'distributed-other',
+            },
+            queryStatus: 'stale',
+            snapshot: {
+                runs: [controlRun('run-a'), controlRun('run-b')],
+                distributedRuns: [distributedRun('distributed-other', 'run-b')],
+            },
+        });
+        const missingCollection = derive({
+            urlState: { ...baseUrlState, controlRunId: 'run-a' },
+            queryStatus: 'stale',
+            snapshot: { runs: [controlRun('run-a')] },
+        });
+        const messages = [
+            ...missingParent.issues,
+            ...missingChildren.issues,
+            ...incompatible.issues,
+            ...missingCollection.issues,
+        ].map(issue => issue.message);
+
+        expect(messages).toHaveLength(5);
+        expect(messages.every(message => message.includes('last-known'))).toBe(true);
+        expect(messages.every(message => !message.includes('latest snapshot'))).toBe(true);
+    });
+
     it('waits for authoritative collections and parent selection before diagnosing deep-link IDs', () => {
         const connecting = derive({
             urlState: {

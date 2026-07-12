@@ -11,6 +11,10 @@ import {
 } from './auth-flow.ts';
 import { readAuthSessionFromRallarAuthState } from './auth-lifecycle.ts';
 import { useExperienceRoute } from './app/use-experience-route.ts';
+import {
+    captureInitialRecipeConsoleControlCredentialPolicy,
+    scrubCurrentRecipeConsoleUrlBeforeLoad,
+} from './app/recipe-console-url-guard.ts';
 import { loadBrowserRallarFacade } from './legacy/rallar/load-browser-rallar-facade.ts';
 import { LoginScreen } from './legacy/shell/LoginScreen.tsx';
 import {
@@ -21,9 +25,13 @@ import { readCurrentAuthSession } from './legacy/shell/read-current-auth-session
 
 // Recipe Console work belongs under `src/recipe-console/**`; legacy extraction belongs under `src/legacy/**`; no new feature panel belongs in `App.tsx`.
 
-const RecipeConsoleApp = lazy(() =>
-    import('./recipe-console/app/RecipeConsoleApp.tsx')
-);
+const initialRecipeConsoleControlCredentialPolicy =
+    captureInitialRecipeConsoleControlCredentialPolicy();
+
+const RecipeConsoleApp = lazy(() => {
+    scrubCurrentRecipeConsoleUrlBeforeLoad();
+    return import('./recipe-console/app/RecipeConsoleApp.tsx');
+});
 const LegacyExperience = lazy(() =>
     import('./legacy/shell/LegacyExperience.tsx')
 );
@@ -31,6 +39,7 @@ const LegacyExperience = lazy(() =>
 export default function App() {
     const runtime = useRallarBlackBoxRuntimeStore();
     const { bootstrap } = runtime;
+    const canConsumeBootstrapAgentTicket = !initialRecipeConsoleControlCredentialPolicy.apiBaseUrlFromLocation;
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(
         () =>
             bootstrap.rallarAgentSessionTicket
@@ -57,7 +66,10 @@ export default function App() {
 
                 facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl });
                 unsubscribe = facade.auth.onChange((state) => {
-                    if (bootstrap.rallarAgentSessionTicket) {
+                    if (
+                        bootstrap.rallarAgentSessionTicket &&
+                        canConsumeBootstrapAgentTicket
+                    ) {
                         return;
                     }
                     const nextSession = readAuthSessionFromRallarAuthState(state);
@@ -75,7 +87,12 @@ export default function App() {
             cancelled = true;
             unsubscribe?.();
         };
-    }, [bootstrap.apiBaseUrl, bootstrap.rallarAgentSessionTicket, requiresLogin]);
+    }, [
+        bootstrap.apiBaseUrl,
+        bootstrap.rallarAgentSessionTicket,
+        canConsumeBootstrapAgentTicket,
+        requiresLogin,
+    ]);
 
     useEffect(() => {
         if (requiresLogin && authSession) {
@@ -91,7 +108,8 @@ export default function App() {
     useEffect(() => {
         if (
             !requiresLogin ||
-            !bootstrap.rallarAgentSessionTicket
+            !bootstrap.rallarAgentSessionTicket ||
+            !canConsumeBootstrapAgentTicket
         ) {
             return;
         }
@@ -143,6 +161,7 @@ export default function App() {
     }, [
         bootstrap.apiBaseUrl,
         bootstrap.rallarAgentSessionTicket,
+        canConsumeBootstrapAgentTicket,
         requiresLogin,
     ]);
 
@@ -162,7 +181,11 @@ export default function App() {
         }
     };
 
-    if (requiresLogin && bootstrap.rallarAgentSessionTicket) {
+    if (
+        requiresLogin &&
+        bootstrap.rallarAgentSessionTicket &&
+        canConsumeBootstrapAgentTicket
+    ) {
         return (
             <main className="auth-shell">
                 <section className="auth-panel">
@@ -221,6 +244,7 @@ export default function App() {
                         bootstrapRunId: bootstrap.runId,
                         apiBaseUrl: bootstrap.apiBaseUrl,
                         manualToken: bootstrap.controlToken,
+                        credentialPolicy: initialRecipeConsoleControlCredentialPolicy,
                         bootstrapGroup: {
                             applicationId: bootstrap.applicationId,
                             workspaceId: bootstrap.workspaceId,

@@ -7,6 +7,9 @@ import {
     createRecipeConsoleControlApi,
     RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS,
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
+import {
+    recipeConsoleControlCredentialPolicyFromSearch,
+} from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
 
 const COMPLETE_SNAPSHOT = {
     runs: [],
@@ -27,7 +30,88 @@ function authorization(init: RequestInit | undefined): string | null {
     return new Headers(init?.headers).get('Authorization');
 }
 
+function protocolControlAgent(agentId: string) {
+    return {
+        agentId,
+        connected: true,
+        completedCommandIds: [],
+        receivedResultCount: 0,
+        receivedEventCount: 0,
+        reconnectCount: 0,
+    };
+}
+
+function protocolControlRun(runId: string, agentIds: readonly string[] = []) {
+    return {
+        runId,
+        agents: agentIds.map(protocolControlAgent),
+        commands: [],
+    };
+}
+
+function protocolDistributedRun(
+    distributedRunId: string,
+    overrides: Readonly<Record<string, unknown>> = {},
+) {
+    return {
+        distributedRunId,
+        controlRunId: 'run-a',
+        state: 'running',
+        updatedAtEpochMs: 1,
+        targetAgentIds: [],
+        commandLinks: [],
+        manifest: {
+            group: {
+                applicationId: 'app-a',
+                workspaceId: 'workspace-a',
+                groupId: 'group-a',
+            },
+        },
+        rollup: { summary: { blockingFailures: 0 } },
+        ...overrides,
+    };
+}
+
 describe('Recipe Console control API', () => {
+    it('trusts configured endpoints but makes URL endpoint credentials provenance-aware', () => {
+        expect(recipeConsoleControlCredentialPolicyFromSearch(
+            '?v=1&experience=recipe-console&view=execute',
+        )).toMatchObject({
+            allowManualToken: true,
+            allowBrokeredToken: true,
+        });
+        expect(recipeConsoleControlCredentialPolicyFromSearch(
+            '?v=1&experience=recipe-console&controlUrl=https%3A%2F%2Funtrusted.test',
+        )).toMatchObject({
+            allowManualToken: false,
+            allowBrokeredToken: false,
+            controlUrlFromLocation: true,
+            controlTokenFromLocation: false,
+        });
+        expect(recipeConsoleControlCredentialPolicyFromSearch(
+            '?v=1&experience=recipe-console' +
+            '&controlUrl=https%3A%2F%2Funtrusted.test&controlToken=caller-token',
+        )).toMatchObject({
+            allowManualToken: true,
+            allowBrokeredToken: false,
+            controlUrlFromLocation: true,
+            controlTokenFromLocation: true,
+        });
+        expect(recipeConsoleControlCredentialPolicyFromSearch(
+            '?v=1&experience=recipe-console&apiBaseUrl=https%3A%2F%2Funtrusted-api.test',
+        )).toMatchObject({
+            allowManualToken: true,
+            allowBrokeredToken: false,
+            apiBaseUrlFromLocation: true,
+        });
+        expect(recipeConsoleControlCredentialPolicyFromSearch(
+            '?mode=control&controlUrl=https%3A%2F%2Flegacy-control.test',
+        )).toMatchObject({
+            allowManualToken: true,
+            allowBrokeredToken: true,
+        });
+    });
+
     it('owns the bounded Recipe Console snapshot defaults', () => {
         expect(RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS).toEqual({
             commands: 120,
@@ -188,11 +272,238 @@ describe('Recipe Console control API', () => {
         });
 
         await expect(api.readSnapshot({})).rejects.toMatchObject({
-            name: 'ControlRunManagerHttpError',
+            name: 'RecipeConsoleControlAuthorizationError',
             message: 'Session expired.',
-            status: 401,
-            statusText: 'Unauthorized',
+            reachable: true,
+            authorizationRequired: true,
+            controlStatus: 401,
+            brokerStatus: 401,
+            brokerStatusText: 'Unauthorized',
         });
+    });
+
+    it('preserves broker HTTP provenance separately from the control authorization challenge', async () => {
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'wss://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            authSession: authSession('client-a', 'session-a'),
+            fetchFn: async (input) => String(input).includes('/control-token')
+                ? Response.json(
+                    { error: 'Token broker unavailable.' },
+                    { status: 503, statusText: 'Service Unavailable' },
+                )
+                : Response.json(
+                    { error: 'Operator token required.' },
+                    { status: 401, statusText: 'Unauthorized' },
+                ),
+        });
+
+        await expect(api.readSnapshot({})).rejects.toMatchObject({
+            name: 'RecipeConsoleControlAuthorizationError',
+            message: 'Token broker unavailable.',
+            reachable: true,
+            authorizationRequired: true,
+            controlStatus: 401,
+            controlStatusText: 'Unauthorized',
+            brokerStatus: 503,
+            brokerStatusText: 'Service Unavailable',
+        });
+    });
+
+    it('keeps proactive near-expiry broker authorization failures structured', async () => {
+        const now = Date.now();
+        let brokerRequests = 0;
+        const controlAuthorizations: Array<string | null> = [];
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'wss://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            authSession: authSession('client-a', 'session-a'),
+            fetchFn: async (input, init) => {
+                if (String(input).includes('/control-token')) {
+                    brokerRequests += 1;
+                    return brokerRequests === 1
+                        ? Response.json({
+                            tokenType: 'Bearer',
+                            token: 'near-expiry-token',
+                            issuedAtEpochMs: now,
+                            expiresAtEpochMs: now + 60_000,
+                            ttlMs: 60_000,
+                        })
+                        : Response.json(
+                            { error: 'Session expired during refresh.' },
+                            { status: 403, statusText: 'Forbidden' },
+                        );
+                }
+                const auth = authorization(init);
+                controlAuthorizations.push(auth);
+                return auth
+                    ? Response.json(COMPLETE_SNAPSHOT)
+                    : Response.json(
+                        { error: 'Operator token required.' },
+                        { status: 401, statusText: 'Unauthorized' },
+                    );
+            },
+        });
+
+        await expect(api.readSnapshot({})).resolves.toMatchObject({
+            authorization: 'brokered',
+        });
+        await expect(api.readSnapshot({})).rejects.toMatchObject({
+            name: 'RecipeConsoleControlAuthorizationError',
+            message: 'Session expired during refresh.',
+            reachable: true,
+            authorizationRequired: true,
+            controlStatus: 401,
+            brokerStatus: 403,
+            brokerStatusText: 'Forbidden',
+        });
+        expect(brokerRequests).toBe(2);
+        expect(controlAuthorizations).toEqual([
+            null,
+            'Bearer near-expiry-token',
+        ]);
+    });
+
+    it('keeps public runs usable when protected fallback token refresh fails', async () => {
+        const now = Date.now();
+        const requests: string[] = [];
+        let brokerRequests = 0;
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'wss://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            authSession: authSession('client-a', 'session-a'),
+            fetchFn: async (input, init) => {
+                const url = new URL(String(input));
+                const auth = authorization(init);
+                if (url.pathname === '/api/black-box/control-token') {
+                    brokerRequests += 1;
+                    requests.push(`broker:${auth}`);
+                    return brokerRequests === 1
+                        ? Response.json({
+                            tokenType: 'Bearer',
+                            token: 'near-expiry-fallback-token',
+                            issuedAtEpochMs: now,
+                            expiresAtEpochMs: now + 60_000,
+                            ttlMs: 60_000,
+                        })
+                        : Response.json(
+                            { error: 'Configured token broker unavailable.' },
+                            { status: 503, statusText: 'Service Unavailable' },
+                        );
+                }
+                if (url.pathname === '/runs') {
+                    requests.push(`runs:${auth}`);
+                    return Response.json({ runs: [] });
+                }
+                requests.push(`distributed:${auth}`);
+                return auth
+                    ? Response.json({ distributedRuns: [] })
+                    : Response.json(
+                        { error: 'Distributed authorization required.' },
+                        { status: 401, statusText: 'Unauthorized' },
+                    );
+            },
+        });
+
+        await expect(api.readSnapshot({})).resolves.toMatchObject({
+            completeness: 'complete',
+            authorization: 'brokered',
+        });
+        await expect(api.readSnapshot({})).resolves.toMatchObject({
+            snapshot: { runs: [] },
+            completeness: 'partial',
+            authorization: 'anonymous',
+            partialError: {
+                name: 'RecipeConsoleControlAuthorizationError',
+                authorizationRequired: true,
+                controlStatus: 401,
+                brokerStatus: 503,
+            },
+        });
+        expect(requests).toEqual([
+            'runs:null',
+            'distributed:null',
+            'broker:Bearer access-client-a',
+            'distributed:Bearer near-expiry-fallback-token',
+            'runs:null',
+            'broker:Bearer access-client-a',
+        ]);
+    });
+
+    it('never sends stored credentials to a URL-selected control origin', async () => {
+        const requests: Array<{
+            url: string;
+            authorization: string | null;
+        }> = [];
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://untrusted-control.test/control',
+            manualToken: 'environment-control-secret',
+            apiBaseUrl: 'https://api.test',
+            authSession: authSession('victim-client', 'victim-session'),
+            credentialPolicy: recipeConsoleControlCredentialPolicyFromSearch(
+                '?v=1&experience=recipe-console' +
+                '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol',
+            ),
+            fetchFn: async (input, init) => {
+                requests.push({
+                    url: String(input),
+                    authorization: authorization(init),
+                });
+                return Response.json(
+                    { error: 'Operator token required.' },
+                    { status: 401, statusText: 'Unauthorized' },
+                );
+            },
+        });
+
+        await expect(api.readSnapshot({})).rejects.toMatchObject({
+            name: 'RecipeConsoleControlCredentialTrustError',
+            status: 401,
+            reachable: true,
+            authorizationRequired: true,
+            credentialTrustRequired: true,
+            message: expect.stringContaining('URL-configured control endpoint'),
+        });
+        expect(requests).toEqual([{
+            url: expect.stringContaining('https://untrusted-control.test/runs?'),
+            authorization: null,
+        }]);
+    });
+
+    it('never sends the stored auth session to a URL-selected token broker', async () => {
+        const requests: Array<{
+            url: string;
+            authorization: string | null;
+        }> = [];
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://configured-control.test/control',
+            apiBaseUrl: 'https://untrusted-api.test',
+            authSession: authSession('victim-client', 'victim-session'),
+            credentialPolicy: recipeConsoleControlCredentialPolicyFromSearch(
+                '?v=1&experience=recipe-console' +
+                '&apiBaseUrl=https%3A%2F%2Funtrusted-api.test',
+            ),
+            fetchFn: async (input, init) => {
+                requests.push({
+                    url: String(input),
+                    authorization: authorization(init),
+                });
+                return Response.json(
+                    { error: 'Operator token required.' },
+                    { status: 401, statusText: 'Unauthorized' },
+                );
+            },
+        });
+
+        await expect(api.readSnapshot({})).rejects.toMatchObject({
+            name: 'RecipeConsoleControlCredentialTrustError',
+            credentialTrustRequired: true,
+            message: expect.stringContaining('URL-configured API endpoint'),
+        });
+        expect(requests).toEqual([{
+            url: expect.stringContaining('https://configured-control.test/runs?'),
+            authorization: null,
+        }]);
     });
 
     it('does not wrap cancellation during token brokering as an authorization failure', async () => {
@@ -298,6 +609,96 @@ describe('Recipe Console control API', () => {
         });
     });
 
+    it('preserves the strongest authorization provenance across combined reads', async () => {
+        const requests: string[] = [];
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'wss://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            authSession: authSession('client-a', 'session-a'),
+            fetchFn: async (input, init) => {
+                const url = new URL(String(input));
+                const auth = authorization(init);
+                requests.push(`${url.pathname}:${auth}`);
+                if (url.pathname === '/api/black-box/control-token') {
+                    return Response.json({
+                        tokenType: 'Bearer',
+                        token: 'brokered-core-token',
+                        issuedAtEpochMs: 3_000_000_000_000,
+                        expiresAtEpochMs: 4_000_000_000_000,
+                        ttlMs: 1_000_000_000_000,
+                    });
+                }
+                if (url.pathname === '/runs') {
+                    return auth
+                        ? Response.json({ runs: [] })
+                        : Response.json(
+                            { error: 'Core authorization required.' },
+                            { status: 401, statusText: 'Unauthorized' },
+                        );
+                }
+                return Response.json({ distributedRuns: [] });
+            },
+        });
+
+        await expect(api.readSnapshot({})).resolves.toMatchObject({
+            completeness: 'complete',
+            authorization: 'brokered',
+        });
+        expect(requests).toEqual([
+            '/runs:null',
+            '/api/black-box/control-token:Bearer access-client-a',
+            '/runs:Bearer brokered-core-token',
+            '/distributed-runs:null',
+        ]);
+    });
+
+    it('reuses one broker token when both control snapshot endpoints require it', async () => {
+        const requests: string[] = [];
+        let brokerRequests = 0;
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'wss://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            authSession: authSession('client-a', 'session-a'),
+            fetchFn: async (input, init) => {
+                const url = new URL(String(input));
+                const auth = authorization(init);
+                requests.push(`${url.pathname}:${auth}`);
+                if (url.pathname === '/api/black-box/control-token') {
+                    brokerRequests += 1;
+                    return Response.json({
+                        tokenType: 'Bearer',
+                        token: 'shared-broker-token',
+                        issuedAtEpochMs: 3_000_000_000_000,
+                        expiresAtEpochMs: 4_000_000_000_000,
+                        ttlMs: 1_000_000_000_000,
+                    });
+                }
+                if (!auth) {
+                    return Response.json(
+                        { error: 'Operator token required.' },
+                        { status: 401, statusText: 'Unauthorized' },
+                    );
+                }
+                return url.pathname === '/runs'
+                    ? Response.json({ runs: [] })
+                    : Response.json({ distributedRuns: [] });
+            },
+        });
+
+        await expect(api.readSnapshot({})).resolves.toMatchObject({
+            completeness: 'complete',
+            authorization: 'brokered',
+        });
+        expect(brokerRequests).toBe(1);
+        expect(requests).toEqual([
+            '/runs:null',
+            '/api/black-box/control-token:Bearer access-client-a',
+            '/runs:Bearer shared-broker-token',
+            '/distributed-runs:null',
+            '/distributed-runs:Bearer shared-broker-token',
+        ]);
+    });
+
     it('retains usable runs as partial when the distributed-run fallback fails', async () => {
         const api = createRecipeConsoleControlApi({
             controlUrl: 'wss://control.test/control',
@@ -322,6 +723,33 @@ describe('Recipe Console control API', () => {
         });
     });
 
+    it.each([401, 403])(
+        'retains structured fallback HTTP %s authorization on a partial snapshot',
+        async status => {
+            const api = createRecipeConsoleControlApi({
+                controlUrl: 'wss://control.test/control',
+                apiBaseUrl: 'https://api.test',
+                fetchFn: async (input) => String(input).endsWith('/distributed-runs')
+                    ? Response.json(
+                        { error: 'Distributed-run authorization required.' },
+                        { status },
+                    )
+                    : Response.json({ runs: [] }),
+            });
+
+            const result = await api.readSnapshot({});
+
+            expect(result).toMatchObject({
+                snapshot: { runs: [] },
+                completeness: 'partial',
+                partialError: {
+                    name: 'ControlRunManagerHttpError',
+                    status,
+                },
+            });
+        },
+    );
+
     it('does not convert distributed fallback cancellation into a partial snapshot', async () => {
         const controller = new AbortController();
         const api = createRecipeConsoleControlApi({
@@ -343,7 +771,7 @@ describe('Recipe Console control API', () => {
     it.each([
         { distributedRuns: { invalid: true } },
         { runs: [] },
-    ])('rejects malformed distributed fallback payloads %#', async payload => {
+    ])('retains usable runs when optional distributed fallback payloads are malformed %#', async payload => {
         const api = createRecipeConsoleControlApi({
             controlUrl: 'wss://control.test/control',
             apiBaseUrl: 'https://api.test',
@@ -352,14 +780,109 @@ describe('Recipe Console control API', () => {
                 : Response.json({ runs: [] }),
         });
 
-        await expect(api.readSnapshot({})).rejects.toThrow(
+        const result = await api.readSnapshot({});
+
+        expect(result).toMatchObject({
+            snapshot: { runs: [] },
+            completeness: 'partial',
+            authorization: 'anonymous',
+            partialError: {
+                name: 'RecipeConsoleControlProtocolError',
+                reachable: true,
+                message: 'Control server snapshot distributedRuns must be an array.',
+            },
+        });
+    });
+
+    it.each([
+        [
+            { invalid: true },
             'Control server snapshot distributedRuns must be an array.',
-        );
+        ],
+        [
+            [null],
+            'Control server snapshot distributedRuns[0] must be an object.',
+        ],
+        [
+            [{
+                distributedRunId: 'distributed-malformed',
+                controlRunId: 'run-a',
+                state: 'running',
+                updatedAtEpochMs: 1,
+                targetAgentIds: [],
+                commandLinks: [],
+                rollup: { summary: { blockingFailures: 0 } },
+            }],
+            'Control server snapshot distributedRuns[0].manifest must be an object.',
+        ],
+        [
+            [{
+                distributedRunId: 'distributed-future',
+                controlRunId: 'run-a',
+                state: 'future-unknown',
+                updatedAtEpochMs: 1,
+                targetAgentIds: [],
+                commandLinks: [],
+                manifest: {
+                    group: {
+                        applicationId: 'app-a',
+                        workspaceId: 'workspace-a',
+                        groupId: 'group-a',
+                    },
+                },
+                rollup: { summary: { blockingFailures: 0 } },
+            }],
+            'Control server snapshot distributedRuns[0].state must be a known distributed-run state.',
+        ],
+        [
+            [{
+                distributedRunId: 'distributed-target-resolution',
+                controlRunId: 'run-a',
+                state: 'running',
+                updatedAtEpochMs: 1,
+                targetAgentIds: ['agent-a'],
+                commandLinks: [],
+                manifest: {
+                    group: {
+                        applicationId: 'app-a',
+                        workspaceId: 'workspace-a',
+                        groupId: 'group-a',
+                    },
+                },
+                rollup: { summary: { blockingFailures: 0 } },
+                targetResolution: {},
+            }],
+            'Control server snapshot distributedRuns[0].targetResolution.roleAssignments must be an array.',
+        ],
+    ])('retains usable runs when embedded optional distributed context is malformed %#', async (
+        distributedRuns,
+        message,
+    ) => {
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'wss://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => Response.json({
+                runs: [],
+                distributedRuns,
+            }),
+        });
+
+        const result = await api.readSnapshot({});
+
+        expect(result).toMatchObject({
+            snapshot: { runs: [] },
+            completeness: 'partial',
+            partialError: {
+                name: 'RecipeConsoleControlProtocolError',
+                reachable: true,
+                message,
+            },
+        });
+        expect('distributedRuns' in result.snapshot).toBe(false);
     });
 
     it.each([
         [{ distributedRuns: [] }, 'runs'],
-        [{ runs: [], distributedRuns: {} }, 'distributedRuns'],
         [{ runs: [], distributedRuns: [], fleetReports: {} }, 'fleetReports'],
         [null, 'runs'],
     ])('rejects a malformed top-level %s snapshot', async (payload, field) => {
@@ -369,9 +892,213 @@ describe('Recipe Console control API', () => {
             fetchFn: async () => Response.json(payload),
         });
 
-        await expect(api.readSnapshot({})).rejects.toThrow(
+        const request = api.readSnapshot({});
+        await expect(request).rejects.toMatchObject({
+            name: 'RecipeConsoleControlProtocolError',
+            reachable: true,
+        });
+        await expect(request).rejects.toThrow(
             `Control server snapshot ${field} must be an array.`,
         );
+    });
+
+    it.each([
+        [
+            {
+                runs: [
+                    protocolControlRun('run-duplicate'),
+                    protocolControlRun('run-duplicate'),
+                ],
+                distributedRuns: [],
+            },
+            'Control server snapshot runs must contain unique runId values.',
+        ],
+        [
+            {
+                runs: [protocolControlRun('run-a', [
+                    'agent-duplicate',
+                    'agent-duplicate',
+                ])],
+                distributedRuns: [],
+            },
+            'Control server snapshot runs[0].agents must contain unique agentId values.',
+        ],
+    ])('rejects duplicate core control identities %#', async (payload, message) => {
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'wss://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => Response.json(payload),
+        });
+
+        const request = api.readSnapshot({});
+        await expect(request).rejects.toMatchObject({
+            name: 'RecipeConsoleControlProtocolError',
+            reachable: true,
+        });
+        await expect(request).rejects.toThrow(message);
+    });
+
+    it.each([
+        [
+            [
+                protocolDistributedRun('distributed-duplicate'),
+                protocolDistributedRun('distributed-duplicate'),
+            ],
+            'Control server snapshot distributedRuns must contain unique distributedRunId values.',
+        ],
+        [
+            [protocolDistributedRun('distributed-a', {
+                targetAgentIds: ['agent-duplicate', 'agent-duplicate'],
+            })],
+            'Control server snapshot distributedRuns[0].targetAgentIds must contain unique values.',
+        ],
+    ])('retains core runs when distributed identities are duplicated %#', async (
+        distributedRuns,
+        message,
+    ) => {
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'wss://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => Response.json({
+                runs: [protocolControlRun('run-a')],
+                distributedRuns,
+            }),
+        });
+
+        await expect(api.readSnapshot({})).resolves.toMatchObject({
+            snapshot: { runs: [{ runId: 'run-a' }] },
+            completeness: 'partial',
+            partialError: {
+                name: 'RecipeConsoleControlProtocolError',
+                reachable: true,
+                message,
+            },
+        });
+    });
+
+    it.each([
+        [
+            { runId: 'run-malformed', agents: null },
+            'Control server snapshot runs[0].agents must be an array.',
+        ],
+        [
+            { runId: 'run-malformed', agents: [], commands: null },
+            'Control server snapshot runs[0].commands must be an array.',
+        ],
+        [
+            {
+                runId: 'run-malformed',
+                agents: [{
+                    agentId: 'agent-malformed',
+                    connected: true,
+                    completedCommandIds: null,
+                    receivedResultCount: 0,
+                    receivedEventCount: 0,
+                    reconnectCount: 0,
+                }],
+                commands: [],
+            },
+            'Control server snapshot runs[0].agents[0].completedCommandIds must be an array.',
+        ],
+        [
+            {
+                runId: 'run-malformed',
+                agents: [{
+                    agentId: 'agent-malformed',
+                    connected: true,
+                    completedCommandIds: [],
+                    receivedResultCount: 0,
+                    receivedEventCount: 0,
+                    reconnectCount: 0,
+                    lastHeartbeatAtEpochMs: '1',
+                }],
+                commands: [],
+            },
+            'Control server snapshot runs[0].agents[0].lastHeartbeatAtEpochMs must be a finite number.',
+        ],
+        [
+            {
+                runId: 'run-malformed',
+                agents: [{
+                    agentId: 'agent-malformed',
+                    connected: true,
+                    completedCommandIds: [],
+                    receivedResultCount: 0,
+                    receivedEventCount: 0,
+                    reconnectCount: 0,
+                    lastSeenAtEpochMs: '1',
+                }],
+                commands: [],
+            },
+            'Control server snapshot runs[0].agents[0].lastSeenAtEpochMs must be a finite number.',
+        ],
+        [
+            {
+                runId: 'run-malformed',
+                agents: [{
+                    agentId: 'agent-malformed',
+                    connected: true,
+                    completedCommandIds: [],
+                    receivedResultCount: 0,
+                    receivedEventCount: 0,
+                    reconnectCount: 0,
+                    identity: { updatedAtEpochMs: '1' },
+                }],
+                commands: [],
+            },
+            'Control server snapshot runs[0].agents[0].identity.updatedAtEpochMs must be a finite number.',
+        ],
+        [
+            {
+                runId: 'run-malformed',
+                agents: [{
+                    agentId: 'agent-malformed',
+                    connected: true,
+                    completedCommandIds: [],
+                    receivedResultCount: 0,
+                    receivedEventCount: 0,
+                    reconnectCount: 0,
+                    identity: { principalId: { toString: null } },
+                }],
+                commands: [],
+            },
+            'Control server snapshot runs[0].agents[0].identity.principalId must be a string.',
+        ],
+    ])('rejects nested control-run shapes that are unsafe for repository derivations %#', async (
+        run,
+        message,
+    ) => {
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'wss://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => Response.json({
+                runs: [run],
+                distributedRuns: [],
+            }),
+        });
+
+        const request = api.readSnapshot({});
+        await expect(request).rejects.toMatchObject({
+            name: 'RecipeConsoleControlProtocolError',
+            reachable: true,
+        });
+        await expect(request).rejects.toThrow(message);
+    });
+
+    it('marks invalid JSON from a successful control response as reachable', async () => {
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'wss://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => new Response('{', {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+            }),
+        });
+
+        await expect(api.readSnapshot({})).rejects.toMatchObject({
+            name: 'RecipeConsoleControlProtocolError',
+            reachable: true,
+        });
     });
 
     it('surfaces a nonempty invalid configured control URL without falling back to localhost', async () => {

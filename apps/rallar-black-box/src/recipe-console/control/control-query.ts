@@ -15,14 +15,22 @@ export type ControlQueryReachability =
 export type ControlQueryAuthorization = 'unknown' | 'ready' | 'required';
 
 export type ControlQueryError = Readonly<{
-    kind: 'http' | 'network' | 'timeout' | 'aborted' | 'unknown';
+    kind: 'http' | 'network' | 'timeout' | 'aborted' | 'protocol' | 'unknown';
     message: string;
     status?: number;
+    reachability?: ControlQueryReachability;
+    authorizationRequired?: boolean;
+    controlStatus?: number;
+    controlStatusText?: string;
+    brokerStatus?: number;
+    brokerStatusText?: string;
+    credentialTrustRequired?: boolean;
 }>;
 
 export type ControlQueryResult<Snapshot> = Readonly<{
     completeness: 'complete' | 'partial';
     snapshot: Snapshot;
+    authorization?: ControlQueryAuthorization;
 }>;
 
 export type ControlQuerySnapshot<Snapshot> = Readonly<{
@@ -74,23 +82,27 @@ export function transitionControlQueryState<Snapshot>(
             return {
                 status: event.result.completeness === 'complete' ? 'live' : 'partial',
                 reachability: 'reachable',
-                authorization: 'ready',
+                authorization: event.result.authorization ?? 'ready',
                 snapshot: event.result.snapshot,
                 attemptedAtEpochMs: state.attemptedAtEpochMs ?? atEpochMs,
                 receivedAtEpochMs: atEpochMs,
                 isRefreshing: false,
             };
         case 'attempt-failed': {
-            const authorizationRequired = event.error.kind === 'http' &&
-                (event.error.status === 401 || event.error.status === 403);
+            const authorizationRequired = event.error.authorizationRequired === true ||
+                event.error.kind === 'http' &&
+                    (event.error.status === 401 || event.error.status === 403);
             return {
                 ...state,
                 status: state.snapshot === undefined ? 'offline' : 'stale',
-                reachability: event.error.kind === 'http'
+                reachability: event.error.reachability ?? (
+                    event.error.kind === 'http' ||
+                        event.error.kind === 'protocol'
                     ? 'reachable'
                     : event.error.kind === 'network' || event.error.kind === 'timeout'
                     ? 'unreachable'
-                    : 'unknown',
+                    : 'unknown'
+                ),
                 authorization: authorizationRequired
                     ? 'required'
                     : state.authorization,
@@ -349,10 +361,44 @@ function controlQueryError(error: unknown): ControlQueryError {
         ? error as Record<string, unknown>
         : undefined;
     const message = error instanceof Error ? error.message : String(error);
+    if (record?.authorizationRequired === true) {
+        const brokerError = record.brokerError;
+        const broker = brokerError === undefined
+            ? typeof record.status === 'number'
+                ? { kind: 'http' as const, message, status: record.status }
+                : { kind: 'unknown' as const, message }
+            : controlQueryError(brokerError);
+        return {
+            ...broker,
+            message,
+            reachability: record.reachable === true
+                ? 'reachable'
+                : broker.reachability,
+            authorizationRequired: true,
+            controlStatus: numberProperty(record, 'controlStatus') ??
+                (brokerError === undefined
+                    ? numberProperty(record, 'status')
+                    : undefined),
+            controlStatusText: stringProperty(record, 'controlStatusText') ??
+                (brokerError === undefined
+                    ? stringProperty(record, 'statusText')
+                    : undefined),
+            brokerStatus: numberProperty(record, 'brokerStatus') ??
+                (brokerError === undefined ? undefined : broker.status),
+            brokerStatusText: stringProperty(record, 'brokerStatusText'),
+            credentialTrustRequired: record.credentialTrustRequired === true || undefined,
+        };
+    }
     if (typeof record?.status === 'number') {
         return {
             kind: 'http',
             status: record.status,
+            message,
+        };
+    }
+    if (record?.reachable === true) {
+        return {
+            kind: 'protocol',
             message,
         };
     }
@@ -372,4 +418,18 @@ function controlQueryError(error: unknown): ControlQueryError {
         kind: 'unknown',
         message,
     };
+}
+
+function numberProperty(
+    record: Record<string, unknown>,
+    key: string,
+): number | undefined {
+    return typeof record[key] === 'number' ? record[key] : undefined;
+}
+
+function stringProperty(
+    record: Record<string, unknown>,
+    key: string,
+): string | undefined {
+    return typeof record[key] === 'string' ? record[key] : undefined;
 }

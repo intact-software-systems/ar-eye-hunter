@@ -17,6 +17,7 @@ export function ControlOverview({
     onSelectControlRun(controlRunId: string): void;
 }>) {
     const runs = connection.query.snapshot?.runs ?? [];
+    const currentControlContext = controlContext(connection, selection);
     return (
         <section aria-label="Control overview" className={styles.overview}>
             <div className={styles.overviewHeader}>
@@ -43,7 +44,9 @@ export function ControlOverview({
                         }}
                         value={selection.controlRun?.runId ?? ''}
                     >
-                        <option disabled value="">{runPlaceholder(runs)}</option>
+                        <option disabled value="">
+                            {runPlaceholder(runs, currentControlContext)}
+                        </option>
                         {runs.map(run => (
                             <option key={run.runId} value={run.runId}>{run.runId}</option>
                         ))}
@@ -65,6 +68,7 @@ export function ControlOverview({
                 </ul>
             ) : null}
             <ControlAgentBoard
+                controlContext={currentControlContext}
                 onSelectAgent={onSelectAgent}
                 queryStatus={connection.query.status}
                 rows={selection.boardRows}
@@ -74,6 +78,15 @@ export function ControlOverview({
             />
         </section>
     );
+}
+
+function controlContext(
+    connection: RecipeConsoleControlConnection,
+    selection: RecipeConsoleControlSelection,
+): 'unavailable' | 'empty' | 'unresolved' | 'selected' {
+    if (!connection.query.snapshot) return 'unavailable';
+    if (connection.query.snapshot.runs.length === 0) return 'empty';
+    return selection.controlRun ? 'selected' : 'unresolved';
 }
 
 function ControlStateNotice({
@@ -90,7 +103,9 @@ function ControlStateNotice({
     if (query.authorization === 'required' && !query.snapshot) {
         return (
             <StatePanel kind="error" title="Authorization required">
-                Control server reachable · authorization required
+                {query.lastError?.credentialTrustRequired
+                    ? query.lastError.message
+                    : 'Control server reachable · authorization required'}
             </StatePanel>
         );
     }
@@ -114,7 +129,9 @@ function ControlStateNotice({
     if (query.status === 'partial') {
         return (
             <StatePanel kind="stale" title="Partial control snapshot">
-                Distributed-run context is unavailable; agent connectivity remains usable.
+                {query.authorization === 'required'
+                    ? 'Agent connectivity remains usable; authorization is required for distributed-run context.'
+                    : 'Distributed-run context is unavailable; agent connectivity remains usable.'}
             </StatePanel>
         );
     }
@@ -128,7 +145,11 @@ function ControlStateNotice({
     return null;
 }
 
-function runPlaceholder(runs: readonly ControlRunSnapshot[]): string {
+function runPlaceholder(
+    runs: readonly ControlRunSnapshot[],
+    context: 'unavailable' | 'empty' | 'unresolved' | 'selected',
+): string {
+    if (context === 'unavailable') return 'Control runs unavailable';
     return runs.length === 0 ? 'No control runs' : 'Select a control run';
 }
 

@@ -33,6 +33,7 @@ const TARGET_REASONS = {
 
 type ControlMockStep =
     | Readonly<{ kind: 'snapshot'; snapshot: ControlServerSnapshot }>
+    | Readonly<{ kind: 'raw-snapshot'; snapshot: unknown }>
     | Readonly<{ kind: 'http-error'; status: number; message: string }>
     | Readonly<{ kind: 'network-error' }>;
 
@@ -182,6 +183,7 @@ async function installControlRouteMock(
     steps: readonly ControlMockStep[],
     options: Readonly<{
         distributedRunsFallback?: readonly ControlDistributedRunSnapshot[];
+        distributedRunsPayload?: unknown;
         distributedRunsStatus?: number;
     }> = {},
 ): Promise<ControlRouteMock> {
@@ -206,7 +208,9 @@ async function installControlRouteMock(
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
             const status = options.distributedRunsStatus ?? 200;
             await fulfillJson(route, status, status === 200
-                ? { distributedRuns: options.distributedRunsFallback ?? [] }
+                ? options.distributedRunsPayload ?? {
+                    distributedRuns: options.distributedRunsFallback ?? [],
+                }
                 : { error: 'Distributed-run context unavailable.' });
             return;
         }
@@ -299,6 +303,8 @@ test('shows initial network failure as offline without seeded board fallback', a
 
     await expect(commandStatus(page, 'failed', 'Offline'))
         .toBeVisible();
+    await expect(commandContextItem(page, 'Connected')).toContainText('Unknown');
+    await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
     const overview = page.getByRole('region', { name: 'Control overview' });
     await expect(overview.getByRole('heading', { name: 'Control server offline' }))
         .toBeVisible();
@@ -306,8 +312,55 @@ test('shows initial network failure as offline without seeded board fallback', a
         'No last-known control snapshot is available.',
         { exact: true },
     )).toBeVisible();
+    const runPicker = overview.getByRole('combobox', { name: 'Control run' });
+    await expect(runPicker).toContainText('Control runs unavailable');
+    await expect(runPicker).not.toContainText('No control runs');
     await expect(controlBoard(page).locator('[data-control-agent-row]')).toHaveCount(0);
     await expect(controlBoard(page)).not.toContainText('seed-agent');
+});
+
+test('keeps malformed successful control responses reachable', async ({
+    context,
+    page,
+}) => {
+    await installControlRouteMock(context, [{
+        kind: 'raw-snapshot',
+        snapshot: { runs: null, distributedRuns: [] },
+    }]);
+
+    await page.goto(RECIPE_CONSOLE_ROUTE);
+
+    await expect(page.locator('[data-command-bar]').getByRole('status'))
+        .toHaveText('Control error · reachable');
+    await expect(commandContextItem(page, 'Connected')).toContainText('Unknown');
+    const overview = page.getByRole('region', { name: 'Control overview' });
+    await expect(overview.getByRole('heading', { name: 'Control server error' }))
+        .toBeVisible();
+    await expect(overview).not.toContainText('Control server offline');
+});
+
+test('contains nested malformed control snapshots before repository derivation', async ({
+    context,
+    page,
+}) => {
+    const pageErrors: string[] = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+    await installControlRouteMock(context, [{
+        kind: 'raw-snapshot',
+        snapshot: {
+            runs: [{ runId: 'run-malformed', agents: null }],
+            distributedRuns: [],
+        },
+    }]);
+
+    await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=run-malformed`);
+
+    await expect(page.locator('[data-command-bar]').getByRole('status'))
+        .toHaveText('Control error · reachable');
+    await expect(page.getByRole('region', { name: 'Control overview' })
+        .getByRole('heading', { name: 'Control server error' }))
+        .toBeVisible();
+    expect(pageErrors).toEqual([]);
 });
 
 test('keeps usable rows in a partial snapshot and labels active-run context unknown', async ({
@@ -338,6 +391,116 @@ test('keeps usable rows in a partial snapshot and labels active-run context unkn
     )).toBeVisible();
 });
 
+test('keeps usable rows when optional distributed context is malformed', async ({
+    context,
+    page,
+}) => {
+    const runId = 'control-partial-protocol';
+    await installControlRouteMock(context, [{
+        kind: 'snapshot',
+        snapshot: {
+            runs: [controlRun(runId, [controlAgent(runId, 'agent-partial-protocol')])],
+        },
+    }], {
+        distributedRunsPayload: { distributedRuns: { invalid: true } },
+    });
+
+    await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=${runId}`);
+
+    await expect(commandStatus(page, 'partial', 'Partial')).toBeVisible();
+    await expect(agentRow(page, 'agent-partial-protocol')).toHaveAttribute(
+        'data-target-status',
+        'matched',
+    );
+    await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
+    await expect(page.getByRole('region', { name: 'Control overview' }).getByText(
+        'Distributed-run context is unavailable; agent connectivity remains usable.',
+        { exact: true },
+    )).toBeVisible();
+});
+
+test('keeps agent rows usable while announcing distributed-context authorization', async ({
+    context,
+    page,
+}) => {
+    const runId = 'control-partial-auth';
+    await installControlRouteMock(context, [{
+        kind: 'snapshot',
+        snapshot: {
+            runs: [controlRun(runId, [controlAgent(runId, 'agent-partial-auth')])],
+        },
+    }], { distributedRunsStatus: 401 });
+
+    await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=${runId}`);
+
+    await expect(page.locator('[data-command-bar]').getByRole('status'))
+        .toHaveText('Authorization required · reachable · partial');
+    await expect(agentRow(page, 'agent-partial-auth')).toHaveAttribute(
+        'data-target-status',
+        'matched',
+    );
+    await expect(commandContextItem(page, 'Safe targets')).toContainText('1');
+    await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
+    await expect(page.getByRole('region', { name: 'Control overview' }).getByText(
+        'Agent connectivity remains usable; authorization is required for distributed-run context.',
+        { exact: true },
+    )).toBeVisible();
+});
+
+test('retains partial authorization when the configured token broker is unavailable', async ({
+    context,
+    page,
+}) => {
+    const runId = 'control-partial-broker-error';
+    const brokerAuthorizations: string[] = [];
+    await context.addInitScript(() => {
+        localStorage.setItem('auth.session', JSON.stringify({
+            clientId: 'configured-client',
+            sessionId: 'configured-session',
+            username: 'configured-user',
+            accessToken: 'configured-session-token',
+            expiresAtEpochMs: 4_000_000_000_000,
+        }));
+    });
+    await context.route('https://api.example.invalid/**', async (route) => {
+        if (route.request().method() === 'OPTIONS') {
+            await route.fulfill({
+                status: 204,
+                headers: {
+                    'access-control-allow-origin': '*',
+                    'access-control-allow-methods': 'POST, OPTIONS',
+                    'access-control-allow-headers': 'authorization, x-client-id, content-type',
+                },
+            });
+            return;
+        }
+        brokerAuthorizations.push(route.request().headers().authorization ?? 'missing');
+        await fulfillJson(route, 503, { error: 'Configured token broker unavailable.' });
+    });
+    await installControlRouteMock(context, [{
+        kind: 'snapshot',
+        snapshot: {
+            runs: [controlRun(runId, [
+                controlAgent(runId, 'agent-partial-broker-error'),
+            ])],
+        },
+    }], { distributedRunsStatus: 401 });
+
+    await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=${runId}`);
+
+    await expect(page.locator('[data-command-bar]').getByRole('status'))
+        .toHaveText('Authorization required · reachable · partial');
+    await expect(agentRow(page, 'agent-partial-broker-error')).toHaveAttribute(
+        'data-target-status',
+        'matched',
+    );
+    await expect(page.getByRole('region', { name: 'Control overview' }).getByText(
+        'Agent connectivity remains usable; authorization is required for distributed-run context.',
+        { exact: true },
+    )).toBeVisible();
+    expect(brokerAuthorizations).toEqual(['Bearer configured-session-token']);
+});
+
 test('retains last-good rows after a failed manual refresh but reports zero current safe targets', async ({
     context,
     page,
@@ -348,7 +511,7 @@ test('retains last-good rows after a failed manual refresh but reports zero curr
             kind: 'snapshot',
             snapshot: {
                 runs: [controlRun(runId, [controlAgent(runId, 'agent-last-good')])],
-                distributedRuns: [],
+                distributedRuns: [activeDistributedRun(runId, ['agent-last-good'])],
             },
         },
         { kind: 'network-error' },
@@ -359,6 +522,9 @@ test('retains last-good rows after a failed manual refresh but reports zero curr
         'matched',
     );
     await expect(commandStatus(page, 'passed', 'Live')).toBeVisible();
+    await expect(commandContextItem(page, 'Active run')).toContainText(
+        'dist-live-canonical · running',
+    );
 
     const requestsBeforeRefresh = mock.runRequestCount();
     await page.getByRole('button', { name: 'Refresh control data' }).click();
@@ -371,6 +537,9 @@ test('retains last-good rows after a failed manual refresh but reports zero curr
     await expect(agentRow(page, 'agent-last-good')).toBeVisible();
     await expect(commandContextItem(page, 'Safe targets')).toContainText(
         '0 current · 1 last known',
+    );
+    await expect(commandContextItem(page, 'Active run')).toContainText(
+        'dist-live-canonical · running · last known',
     );
     await expect(controlBoard(page).getByText(
         '0 safe now · 1 last known targetable',
@@ -400,8 +569,54 @@ test('renders a truthful live-empty control state', async ({ context, page }) =>
         'The control server is live and currently reports no runs.',
         { exact: true },
     )).toBeVisible();
+    await expect(commandContextItem(page, 'Connected')).toContainText('0/0');
+    await expect(commandContextItem(page, 'Active run')).toContainText('None');
+    await expect(controlBoard(page).getByText(
+        'No agents are available because the control server reports no runs.',
+        { exact: true },
+    )).toBeVisible();
     await expect(controlBoard(page).locator('[data-control-agent-row]')).toHaveCount(0);
 });
+
+for (const unresolvedCase of [
+    {
+        name: 'multiple unselected runs',
+        routeSuffix: '',
+    },
+    {
+        name: 'an unavailable explicit run',
+        routeSuffix: '&controlRunId=missing-control-run',
+    },
+] as const) {
+    test(`keeps ${unresolvedCase.name} non-authoritative`, async ({ context, page }) => {
+        await installControlRouteMock(context, [{
+            kind: 'snapshot',
+            snapshot: {
+                runs: [
+                    controlRun('control-a', [controlAgent('control-a', 'agent-a')]),
+                    controlRun('control-b', [controlAgent('control-b', 'agent-b')]),
+                ],
+                distributedRuns: [],
+            },
+        }]);
+
+        await page.goto(`${RECIPE_CONSOLE_ROUTE}${unresolvedCase.routeSuffix}`);
+
+        await expect(commandContextItem(page, 'Connected')).toContainText('Unknown');
+        await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
+        const board = controlBoard(page);
+        await expect(board.getByText('Select a control run', { exact: true })).toBeVisible();
+        await expect(board.getByText(
+            'Select an available control run to inspect its agents.',
+            { exact: true },
+        )).toBeVisible();
+        for (const label of ['Agents', 'Connected', 'Safe now', 'Blocked now']) {
+            await expect(board.getByText(label, { exact: true }).locator('..'))
+                .toContainText('Unknown');
+        }
+        await expect(board).not.toContainText('No agents are available in the selected control run.');
+    });
+}
 
 test('distinguishes reachable authorization failure from offline', async ({ context, page }) => {
     await installControlRouteMock(context, [{
@@ -424,6 +639,56 @@ test('distinguishes reachable authorization failure from offline', async ({ cont
         { exact: true },
     )).toBeVisible();
     await expect(overview).not.toContainText('Control server offline');
+});
+
+test('keeps stored credentials away from URL-selected control and API origins', async ({
+    context,
+    page,
+}) => {
+    const controlAuthorizations: Array<string | null> = [];
+    const brokerAuthorizations: Array<string | null> = [];
+    await context.addInitScript(() => {
+        localStorage.setItem('auth.session', JSON.stringify({
+            clientId: 'victim-client',
+            sessionId: 'victim-session',
+            username: 'victim',
+            accessToken: 'victim-primary-session-token',
+            expiresAtEpochMs: 4_000_000_000_000,
+        }));
+    });
+    await context.route('https://untrusted-control.test/**', async (route) => {
+        const auth = route.request().headers().authorization ?? null;
+        controlAuthorizations.push(auth);
+        if (auth) {
+            await fulfillJson(route, 200, { runs: [], distributedRuns: [] });
+            return;
+        }
+        await fulfillJson(route, 401, { error: 'Operator token required.' });
+    });
+    await context.route('https://untrusted-api.test/**', async (route) => {
+        brokerAuthorizations.push(route.request().headers().authorization ?? null);
+        await fulfillJson(route, 200, {
+            tokenType: 'Bearer',
+            token: 'brokered-operator-secret',
+            issuedAtEpochMs: Date.now(),
+            expiresAtEpochMs: Date.now() + 3_600_000,
+            ttlMs: 3_600_000,
+        });
+    });
+
+    await page.goto(
+        `${RECIPE_CONSOLE_ROUTE}` +
+        '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol' +
+        '&apiBaseUrl=https%3A%2F%2Funtrusted-api.test',
+    );
+
+    await expect(commandStatus(page, 'warning', 'Authorization required'))
+        .toBeVisible();
+    await expect(page.getByRole('region', { name: 'Control overview' }).getByText(
+        /URL-configured control endpoint/,
+    )).toBeVisible();
+    expect(controlAuthorizations).toEqual([null]);
+    expect(brokerAuthorizations).toEqual([]);
 });
 
 test('announces recovery from offline to live and restores canonical rows', async ({

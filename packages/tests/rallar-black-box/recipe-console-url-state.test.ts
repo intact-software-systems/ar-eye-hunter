@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveAppExperience } from '../../../apps/rallar-black-box/src/app/experience-route.ts';
+import { scrubRecipeConsoleHrefBeforeLoad } from '../../../apps/rallar-black-box/src/app/recipe-console-url-guard.ts';
 import { createRunnerAgentLaunchUrl } from '../../../apps/rallar-black-box/src/runner-agent-launch.ts';
 import {
     RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
@@ -292,6 +293,27 @@ describe('Recipe Console URL state codec', () => {
         expect(href).toContain('provider=simulated');
     });
 
+    it('scrubs Recipe Console secrets synchronously without canonicalizing diagnostic fields', () => {
+        const input = 'https://console.test/operator' +
+            '?provider=simulated&v=1&experience=recipe-console&view=unsupported' +
+            '&futureField=keep&TOKEN=query-secret' +
+            '&CONTROLURL=wss%3A%2F%2Fcontrol.test%2Fcontrol%3Ftoken%3Dnested-secret' +
+            '#agentSessionTicket=fragment-secret&trace=keep&PaSsWoRd=fragment-password';
+
+        const output = new URL(scrubRecipeConsoleHrefBeforeLoad(input));
+
+        expect(output.searchParams.get('provider')).toBe('simulated');
+        expect(output.searchParams.get('view')).toBe('unsupported');
+        expect(output.searchParams.get('futureField')).toBe('keep');
+        expect(lowerCaseKeys(output.search)).not.toContain('token');
+        expect(lowerCaseKeys(output.search)).not.toContain('controlurl');
+        expect(output.hash).toBe('#trace=keep');
+        expect(output.href).not.toContain('query-secret');
+        expect(output.href).not.toContain('nested-secret');
+        expect(output.href).not.toContain('fragment-secret');
+        expect(output.href).not.toContain('fragment-password');
+    });
+
     it('keeps controlUrl on legacy runner-agent links and resolves them as legacy', () => {
         const controlUrl = 'wss://control.test/control?token=legacy-agent-token';
         const href = createRunnerAgentLaunchUrl({
@@ -309,6 +331,24 @@ describe('Recipe Console URL state codec', () => {
 
         expect(url.searchParams.get('controlUrl')).toBe(controlUrl);
         expect(resolveAppExperience(url.search)).toBe('legacy');
+    });
+
+    it('leaves credential-bearing runner-agent links byte-for-byte unchanged', () => {
+        const href = createRunnerAgentLaunchUrl({
+            origin: 'https://console.test',
+            providerMode: 'browser-rallar',
+            controlWsUrl: 'wss://control.test/control?token=nested-agent-token',
+            runId: 'run-a',
+            agentId: 'agent-a',
+            groupId: 'group-a',
+            apiBaseUrl: 'https://api.test',
+            applicationId: 'rallar-black-box',
+            workspaceId: 'default',
+            controlToken: 'runner-control-token',
+            agentSessionTicket: 'one-time-agent-ticket',
+        });
+
+        expect(scrubRecipeConsoleHrefBeforeLoad(href)).toBe(href);
     });
 
     it('preserves a non-field fragment exactly in a copied link', () => {

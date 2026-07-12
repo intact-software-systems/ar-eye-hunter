@@ -42,6 +42,68 @@ test('keeps one lazy experience mounted without loading the other experience', a
     }
 });
 
+test('scrubs an explicit Recipe Console URL even while the login gate delays lazy loading', async ({ page }) => {
+    const experienceResources: string[] = [];
+    page.on('request', (request) => {
+        if (request.resourceType() === 'script' || request.resourceType() === 'stylesheet') {
+            experienceResources.push(request.url());
+        }
+    });
+    await page.goto(
+        '/?provider=browser-rallar&v=1&experience=recipe-console&view=execute' +
+        '&controlToken=query-secret' +
+        '&controlUrl=wss%3A%2F%2Fcontrol.test%2Fcontrol%3Ftoken%3Dnested-secret' +
+        '#TOKEN=fragment-secret&trace=keep',
+    );
+
+    await expect(page.getByRole('heading', { name: 'Rallar Server Login' }))
+        .toBeVisible();
+    const url = new URL(page.url());
+    expect([...url.searchParams.keys()].map(key => key.toLowerCase()))
+        .not.toEqual(expect.arrayContaining(['controltoken', 'controlurl']));
+    expect(url.hash).toBe('#trace=keep');
+    expect(url.href).not.toContain('query-secret');
+    expect(url.href).not.toContain('nested-secret');
+    expect(url.href).not.toContain('fragment-secret');
+    await expect(page.locator('.recipe-console')).toHaveCount(0);
+    expect(experienceResources.some(url => url.includes('RecipeConsoleApp')))
+        .toBe(false);
+});
+
+test('does not auto-consume a Recipe Console ticket at a URL-selected API origin', async ({
+    context,
+    page,
+}) => {
+    const untrustedRequests: string[] = [];
+    await context.route('https://untrusted-api.test/**', async (route) => {
+        untrustedRequests.push(`${route.request().method()} ${route.request().url()}`);
+        await route.fulfill({
+            status: 500,
+            contentType: 'application/json',
+            headers: { 'access-control-allow-origin': '*' },
+            body: JSON.stringify({ error: 'Untrusted endpoint should not be called.' }),
+        });
+    });
+
+    await page.goto(
+        '/?provider=browser-rallar&v=1&experience=recipe-console&view=execute' +
+        '&apiBaseUrl=https%3A%2F%2Funtrusted-api.test' +
+        '#agentSessionTicket=victim-one-time-ticket',
+    );
+    await page.waitForTimeout(250);
+
+    expect(untrustedRequests).toEqual([]);
+    await expect(page.getByRole('heading', { name: 'Rallar Server Login' }))
+        .toBeVisible();
+    expect(new URL(page.url()).hash).toBe('');
+    await page.evaluate(() => {
+        history.pushState(null, '', '/?provider=browser-rallar&experience=legacy');
+        dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await page.waitForTimeout(250);
+    expect(untrustedRequests).toEqual([]);
+});
+
 test('proves each production experience static closure without fixture or peer resources', async ({ browser }) => {
     const productionBaseUrl = 'http://127.0.0.1:4176';
     const recipeResources = await coldEntry(
@@ -66,3 +128,51 @@ test('proves each production experience static closure without fixture or peer r
     expect(legacyResources.some(url => url.includes('RecipeConsoleApp'))).toBe(false);
     expect(legacyResources.some(url => url.includes('recipe-console-css-isolation'))).toBe(false);
 });
+
+for (const baseUrl of [
+    'http://127.0.0.1:5176',
+    'http://127.0.0.1:4176',
+] as const) {
+    test(`scrubs Recipe Console secrets before its lazy script request at ${baseUrl}`, async ({ browser }) => {
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        let hrefAtLazyRequest: string | undefined;
+        await page.route('**/*RecipeConsoleApp*', async (route) => {
+            if (
+                hrefAtLazyRequest === undefined &&
+                route.request().resourceType() === 'script'
+            ) {
+                hrefAtLazyRequest = page.url();
+            }
+            await route.continue();
+        });
+        const url = new URL('/', baseUrl);
+        url.search = new URLSearchParams({
+            provider: 'simulated',
+            v: '1',
+            experience: 'recipe-console',
+            view: 'execute',
+            futureField: 'keep',
+            TOKEN: 'query-secret',
+            CONTROLURL: 'wss://control.test/control?token=nested-secret',
+        }).toString();
+        url.hash = new URLSearchParams({
+            agentSessionTicket: 'fragment-secret',
+            trace: 'keep',
+        }).toString();
+
+        await page.goto(url.href);
+        await expect(page.locator('.recipe-console')).toBeVisible();
+
+        expect(hrefAtLazyRequest).toBeDefined();
+        const captured = new URL(hrefAtLazyRequest ?? url.href);
+        expect(captured.searchParams.get('futureField')).toBe('keep');
+        expect([...captured.searchParams.keys()].map(key => key.toLowerCase()))
+            .not.toEqual(expect.arrayContaining(['token', 'controlurl']));
+        expect(captured.hash).toBe('#trace=keep');
+        expect(captured.href).not.toContain('query-secret');
+        expect(captured.href).not.toContain('nested-secret');
+        expect(captured.href).not.toContain('fragment-secret');
+        await context.close();
+    });
+}

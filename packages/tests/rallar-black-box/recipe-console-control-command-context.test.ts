@@ -66,17 +66,43 @@ describe('Recipe Console control command context truth', () => {
         expect(controlCommandActiveRunLabel({
             kind: 'sole',
             runs: [activeRun('run-active', 'running')],
-        }, 'live')).toBe('run-active · running');
+        }, 'live', true)).toBe('run-active · running');
         expect(controlCommandActiveRunLabel({
             kind: 'ambiguous',
             runs: [
                 activeRun('run-a', 'draft'),
                 activeRun('run-b', 'running'),
             ],
-        }, 'live')).toBe('2 active');
-        expect(controlCommandActiveRunLabel({ kind: 'none', runs: [] }, 'partial'))
+        }, 'live', true)).toBe('2 active');
+        expect(controlCommandActiveRunLabel({ kind: 'none', runs: [] }, 'partial', false))
             .toBe('Unknown');
-        expect(controlCommandActiveRunLabel({ kind: 'none', runs: [] }, 'live'))
+        expect(controlCommandActiveRunLabel({ kind: 'none', runs: [] }, 'live', true, true))
             .toBe('None');
+    });
+
+    it('does not turn an unresolved control-run context into an authoritative zero', () => {
+        expect(controlCommandActiveRunLabel(
+            { kind: 'none', runs: [] },
+            'live',
+            true,
+            false,
+        )).toBe('Unknown');
+    });
+
+    it('qualifies unavailable and stale distributed-run evidence', () => {
+        const active = {
+            kind: 'sole' as const,
+            runs: [activeRun('run-active', 'running')],
+        };
+        expect(controlCommandActiveRunLabel(active, 'connecting', false))
+            .toBe('Unknown');
+        expect(controlCommandActiveRunLabel(active, 'offline', false))
+            .toBe('Unknown');
+        expect(controlCommandActiveRunLabel(active, 'stale', false))
+            .toBe('Unknown');
+        expect(controlCommandActiveRunLabel(active, 'stale', true))
+            .toBe('run-active · running · last known');
+        expect(controlCommandActiveRunLabel({ kind: 'none', runs: [] }, 'stale', true))
+            .toBe('None · last known');
     });
 });
