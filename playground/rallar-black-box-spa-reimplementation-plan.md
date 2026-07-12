@@ -401,7 +401,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 4 — Execute Workflow MVP | **Complete** | Shared catalog/manifest/target truth (`3fe2574`), the bounded credential-aware execution API (`76092f6`), guided Execute UI (`8d44a99`), and lifecycle acceptance (`bddde71`) pass the code-backed exit. Fresh validation, browser fallback QA, review fixes, and the unavailable configured-live qualification are recorded below. Ready-State #2 is satisfied; #3 remains open for live Monitor observation, distinct live cancellation, and configured Postgres proof. Both legacy workflow rows remain visible and uncut. |
 | 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
-| 7 — Timing And Recipe Tuning Lab | Pending | No timing/tuning acceptance evidence is represented as complete. |
+| 7 — Timing And Recipe Tuning Lab | **In progress** | The tests-first implementation plan binds shared deterministic knob/candidate/hint ownership, retained-artifact/root-control authority, explicit URL-backed comparison, no-mutation proof, and Direction A/browser exit gates. The current seeded Tune remains until those proofs pass; no cutover is claimed. |
 | 8 — History, Compare, Saved Filters, Retention | Pending | No retention preview or history/compare cutover is represented as complete. |
 | 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
@@ -431,6 +431,33 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 - Existing mounted-state guarantees are temporary documented exceptions. Draft, polling, subscription, media, and execution ownership must migrate before the corresponding view is lazily unmounted.
 - Old aliases deterministically open the documented legacy surface during migration. New Recipe Console URLs use the versioned codec.
 - The default flip is an explicit Iteration 12 cutover and occurs only after all 14 Ready-State items have evidence.
+
+#### Iteration 7 tuning lab implementation start — 2026-07-12
+
+The critical repository audit confirmed that Tune still renders only the
+`high-latency-rtc` seed even though shared artifact analysis already owns the
+required command and RTC stream health metrics and the v1 codec already owns
+comparison and timing selection. The tests-first
+[implementation plan](../docs/superpowers/plans/2026-07-12-rallar-recipe-console-tuning-lab-implementation-plan.md)
+therefore replaces seed ownership with shared deterministic knob inventory,
+validated clone-only candidate patches, evidence-backed tuning hints, explicit
+comparison through the existing `compareDistributedRuns(...)`, and a bounded
+Tune composition fed by the retained Analyze artifact and one root control
+query.
+
+Binding decisions are deliberately conservative: comparison inputs remain
+explicit; incompatible pairs warn without tightening the public compare API;
+reference-only recipes expose no invented knobs; operator-entered values are
+required before patch output; readiness blockers suppress timeout/threshold
+loosening; and Tune neither retains a second artifact nor imports a Control
+execution API. The 118/118 focused baseline and shared/app TypeScript checks
+pass at clean head `20e1df5`.
+
+This is an implementation-start checkpoint, not parity or cutover evidence.
+`runner.runs`, `runner.compare`, and `legacy.distributed-recipes` retain their
+current visibility, mounts, deep links, comparison/history responsibilities,
+and rollback URLs. Ready-State #7 and #8 remain open until the exact named
+browser acceptances and the full qualified exit pass.
 
 #### Iteration 2 visual approval checkpoint — 2026-07-11
 

@@ -7,6 +7,26 @@ This register is the source of truth for surface-by-surface strangler status, co
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
 
+## Iteration 7 timing/tuning implementation start — 2026-07-12
+
+Repository truth confirms that the current Tune view is still the seeded
+`high-latency-rtc` preview and consumes neither retained artifact nor root
+control evidence. The tests-first
+[implementation plan](../../../docs/superpowers/plans/2026-07-12-rallar-recipe-console-tuning-lab-implementation-plan.md)
+binds the replacement to additive shared-test ownership for performance,
+exact recipe-knob inventory, clone-only validated candidate patches, tuning
+hints, and the existing public `compareDistributedRuns(...)` behavior. Recipe
+Console will compose those deterministic results from the one retained Analyze
+artifact and one root control query without a second poller or mutation API.
+
+This checkpoint changes no row status, primary visibility, mount policy,
+default, alias, deep link, public export, server contract, or rollback route.
+`runner.runs`, `runner.compare`, and `legacy.distributed-recipes` remain the
+operational fallbacks until the exact Ready-State #7/#8 and no-mutation,
+responsive/accessibility, CSS-isolation, legacy-handoff, and full fresh-exit
+proofs pass. The clean baseline is 118/118 focused tests plus shared/app
+TypeScript checks at `20e1df5`.
+
 ## Iteration 6 artifact analysis exit — `f96b5b4`, `abe257e`, `9b07330`, `47c332d`
 
 `runner.artifact-analysis` is now code-backed for the bounded distributed-run
