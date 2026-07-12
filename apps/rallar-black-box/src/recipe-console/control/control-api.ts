@@ -54,8 +54,18 @@ const MISSING_CONTROL_CREDENTIAL_POLICY = {
 export type RecipeConsoleControlSnapshotResult = Readonly<{
     snapshot: ControlServerSnapshot;
     completeness: 'complete' | 'partial';
+    distributedRunsSource: RecipeConsoleControlDistributedRunsSource;
     authorization: RecipeConsoleControlAuthorization;
     partialError?: unknown;
+}>;
+
+export type RecipeConsoleControlDistributedRunsSource =
+    | 'root-snapshot'
+    | 'canonical-fallback'
+    | 'unavailable';
+
+export type RecipeConsoleControlQueryProvenance = Readonly<{
+    distributedRunsSource: RecipeConsoleControlDistributedRunsSource;
 }>;
 
 export type RecipeConsoleControlRetentionCapability =
@@ -158,6 +168,7 @@ export function createRecipeConsoleControlApi(
                     return {
                         snapshot: withoutDistributedRuns(server.value),
                         completeness: 'partial',
+                        distributedRunsSource: 'unavailable',
                         authorization: server.authorization,
                         partialError: controlProtocolError(error),
                     };
@@ -165,6 +176,7 @@ export function createRecipeConsoleControlApi(
                 return {
                     snapshot: server.value,
                     completeness: 'complete',
+                    distributedRunsSource: 'root-snapshot',
                     authorization: server.authorization,
                 };
             }
@@ -200,6 +212,7 @@ export function createRecipeConsoleControlApi(
                 return {
                     snapshot: server.value,
                     completeness: 'partial',
+                    distributedRunsSource: 'unavailable',
                     authorization: server.authorization,
                     partialError: normalizedPartialError,
                 };
@@ -207,6 +220,7 @@ export function createRecipeConsoleControlApi(
             return {
                 snapshot,
                 completeness: 'complete',
+                distributedRunsSource: 'canonical-fallback',
                 authorization: combinedAuthorization(
                     server.authorization,
                     distributed.authorization,

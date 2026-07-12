@@ -268,6 +268,7 @@ describe('Recipe Console control API', () => {
         expect(result).toEqual({
             snapshot: COMPLETE_SNAPSHOT,
             completeness: 'complete',
+            distributedRunsSource: 'root-snapshot',
             authorization: 'anonymous',
         });
     });
@@ -734,6 +735,7 @@ describe('Recipe Console control API', () => {
         expect(result).toEqual({
             snapshot: COMPLETE_SNAPSHOT,
             completeness: 'complete',
+            distributedRunsSource: 'canonical-fallback',
             authorization: 'anonymous',
         });
     });
@@ -844,6 +846,7 @@ describe('Recipe Console control API', () => {
 
         expect(result.snapshot).toEqual({ runs: [] });
         expect(result.completeness).toBe('partial');
+        expect(result.distributedRunsSource).toBe('unavailable');
         expect(result.authorization).toBe('anonymous');
         expect(result.partialError).toBeInstanceOf(ControlRunManagerHttpError);
         expect(result.partialError).toMatchObject({

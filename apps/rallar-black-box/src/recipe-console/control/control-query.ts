@@ -27,29 +27,32 @@ export type ControlQueryError = Readonly<{
     credentialTrustRequired?: boolean;
 }>;
 
-export type ControlQueryResult<Snapshot> = Readonly<{
+export type ControlQueryResult<Snapshot, Provenance = unknown> = Readonly<{
     completeness: 'complete' | 'partial';
     snapshot: Snapshot;
+    provenance?: Provenance;
     authorization?: ControlQueryAuthorization;
 }>;
 
-export type ControlQuerySnapshot<Snapshot> = Readonly<{
+export type ControlQuerySnapshot<Snapshot, Provenance = unknown> = Readonly<{
     status: ControlQueryStatus;
     reachability: ControlQueryReachability;
     authorization: ControlQueryAuthorization;
     snapshot?: Snapshot;
+    completeness?: ControlQueryResult<Snapshot>['completeness'];
+    provenance?: Provenance;
     attemptedAtEpochMs?: number;
     receivedAtEpochMs?: number;
     isRefreshing: boolean;
     lastError?: ControlQueryError;
 }>;
 
-export type ControlQueryEvent<Snapshot> =
+export type ControlQueryEvent<Snapshot, Provenance = unknown> =
     | Readonly<{ type: 'attempt-started'; atEpochMs: number }>
     | Readonly<{
         type: 'attempt-succeeded';
         atEpochMs: number;
-        result: ControlQueryResult<Snapshot>;
+        result: ControlQueryResult<Snapshot, Provenance>;
     }>
     | Readonly<{
         type: 'attempt-failed';
@@ -57,7 +60,10 @@ export type ControlQueryEvent<Snapshot> =
         error: ControlQueryError;
     }>;
 
-export function createInitialControlQueryState<Snapshot>(): ControlQuerySnapshot<Snapshot> {
+export function createInitialControlQueryState<
+    Snapshot,
+    Provenance = unknown,
+>(): ControlQuerySnapshot<Snapshot, Provenance> {
     return {
         status: 'connecting',
         reachability: 'unknown',
@@ -66,10 +72,10 @@ export function createInitialControlQueryState<Snapshot>(): ControlQuerySnapshot
     };
 }
 
-export function transitionControlQueryState<Snapshot>(
-    state: ControlQuerySnapshot<Snapshot>,
-    event: ControlQueryEvent<Snapshot>,
-): ControlQuerySnapshot<Snapshot> {
+export function transitionControlQueryState<Snapshot, Provenance = unknown>(
+    state: ControlQuerySnapshot<Snapshot, Provenance>,
+    event: ControlQueryEvent<Snapshot, Provenance>,
+): ControlQuerySnapshot<Snapshot, Provenance> {
     const atEpochMs = monotonicEpochMs(state, event.atEpochMs);
     switch (event.type) {
         case 'attempt-started':
@@ -84,6 +90,8 @@ export function transitionControlQueryState<Snapshot>(
                 reachability: 'reachable',
                 authorization: event.result.authorization ?? 'ready',
                 snapshot: event.result.snapshot,
+                completeness: event.result.completeness,
+                provenance: event.result.provenance,
                 attemptedAtEpochMs: state.attemptedAtEpochMs ?? atEpochMs,
                 receivedAtEpochMs: atEpochMs,
                 isRefreshing: false,
@@ -114,11 +122,11 @@ export function transitionControlQueryState<Snapshot>(
     }
 }
 
-export function observeControlQueryFreshness<Snapshot>(
-    state: ControlQuerySnapshot<Snapshot>,
+export function observeControlQueryFreshness<Snapshot, Provenance = unknown>(
+    state: ControlQuerySnapshot<Snapshot, Provenance>,
     nowEpochMs: number,
     freshnessMs = CONTROL_QUERY_FRESHNESS_MS,
-): ControlQuerySnapshot<Snapshot> {
+): ControlQuerySnapshot<Snapshot, Provenance> {
     if (
         state.snapshot === undefined ||
         state.receivedAtEpochMs === undefined ||
@@ -140,8 +148,10 @@ export type ControlQueryScheduler = Readonly<{
     clearTimeout(handle: TimerHandle): void;
 }>;
 
-export type ControlQueryServiceOptions<Snapshot> = Readonly<{
-    query(input: Readonly<{ signal: AbortSignal }>): Promise<ControlQueryResult<Snapshot>>;
+export type ControlQueryServiceOptions<Snapshot, Provenance = unknown> = Readonly<{
+    query(input: Readonly<{ signal: AbortSignal }>): Promise<
+        ControlQueryResult<Snapshot, Provenance>
+    >;
     now(): number;
     scheduler: ControlQueryScheduler;
     pollIntervalMs: number;
@@ -149,19 +159,19 @@ export type ControlQueryServiceOptions<Snapshot> = Readonly<{
     freshnessMs?: number;
 }>;
 
-export type ControlQueryService<Snapshot> = Readonly<{
+export type ControlQueryService<Snapshot, Provenance = unknown> = Readonly<{
     start(): void;
     stop(): void;
     refresh(): Promise<void>;
     refreshAfterCurrent(): Promise<void>;
-    getSnapshot(): ControlQuerySnapshot<Snapshot>;
+    getSnapshot(): ControlQuerySnapshot<Snapshot, Provenance>;
     subscribe(listener: () => void): () => void;
 }>;
 
-export function createControlQueryService<Snapshot>(
-    options: ControlQueryServiceOptions<Snapshot>,
-): ControlQueryService<Snapshot> {
-    let state = createInitialControlQueryState<Snapshot>();
+export function createControlQueryService<Snapshot, Provenance = unknown>(
+    options: ControlQueryServiceOptions<Snapshot, Provenance>,
+): ControlQueryService<Snapshot, Provenance> {
+    let state = createInitialControlQueryState<Snapshot, Provenance>();
     let running = false;
     let generation = 0;
     let pollTimer: TimerHandle | undefined;
@@ -172,7 +182,7 @@ export function createControlQueryService<Snapshot>(
     let inFlight: Promise<void> | undefined;
     const listeners = new Set<() => void>();
 
-    function publish(next: ControlQuerySnapshot<Snapshot>): void {
+    function publish(next: ControlQuerySnapshot<Snapshot, Provenance>): void {
         if (next === state) {
             return;
         }
@@ -236,7 +246,7 @@ export function createControlQueryService<Snapshot>(
             }, options.requestTimeoutMs);
             requestTimer = timeoutHandle;
         });
-        let query: Promise<ControlQueryResult<Snapshot>>;
+        let query: Promise<ControlQueryResult<Snapshot, Provenance>>;
         try {
             query = options.query({ signal: controller.signal });
         } catch (error) {

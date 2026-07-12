@@ -14,6 +14,7 @@ import {
 import {
     createRecipeConsoleControlApi,
     type RecipeConsoleControlApi,
+    type RecipeConsoleControlQueryProvenance,
     type RecipeConsoleControlRetentionCapability,
 } from './control-api.ts';
 import {
@@ -46,7 +47,10 @@ export type RecipeConsoleControlConnection = Readonly<{
     baseUrl: string;
     execution: RecipeConsoleControlExecutionApi | undefined;
     retention: RecipeConsoleControlRetentionCapability | undefined;
-    query: ControlQuerySnapshot<ControlServerSnapshot>;
+    query: ControlQuerySnapshot<
+        ControlServerSnapshot,
+        RecipeConsoleControlQueryProvenance
+    >;
     refresh(): Promise<void>;
     refreshAfterCurrent(): Promise<void>;
 }>;
@@ -116,6 +120,9 @@ export function ControlConnectionProvider({
             return {
                 completeness: result.completeness,
                 snapshot: result.snapshot,
+                provenance: {
+                    distributedRunsSource: result.distributedRunsSource,
+                },
                 authorization: partialQueryAuthorization(result.partialError),
             };
         },

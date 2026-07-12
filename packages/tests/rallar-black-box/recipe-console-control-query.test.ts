@@ -12,6 +12,13 @@ type TestSnapshot = Readonly<{
     distributedRunIds: readonly string[];
 }>;
 
+type TestQueryProvenance = Readonly<{
+    distributedRunsSource:
+        | 'root-snapshot'
+        | 'canonical-fallback'
+        | 'unavailable';
+}>;
+
 type Deferred<T> = Readonly<{
     promise: Promise<T>;
     resolve(value: T): void;
@@ -132,6 +139,44 @@ describe('Recipe Console control query state', () => {
             snapshot: { runIds: ['run-a'], distributedRunIds: [] },
         });
     });
+
+    it.each([
+        ['complete', 'canonical-fallback'],
+        ['partial', 'unavailable'],
+    ] as const)(
+        'retains last successful %s completeness and %s provenance while stale',
+        (completeness, distributedRunsSource) => {
+            const initial = createInitialControlQueryState<
+                TestSnapshot,
+                TestQueryProvenance
+            >();
+            const succeeded = transitionControlQueryState(initial, {
+                type: 'attempt-succeeded',
+                atEpochMs: 2_075,
+                result: {
+                    completeness,
+                    snapshot: LIVE_SNAPSHOT,
+                    provenance: { distributedRunsSource },
+                },
+            });
+            const stale = transitionControlQueryState(succeeded, {
+                type: 'attempt-failed',
+                atEpochMs: 2_100,
+                error: { kind: 'network', message: 'connection refused' },
+            });
+
+            expect(succeeded).toMatchObject({
+                completeness,
+                provenance: { distributedRunsSource },
+            });
+            expect(stale).toMatchObject({
+                status: 'stale',
+                completeness,
+                provenance: { distributedRunsSource },
+                snapshot: LIVE_SNAPSHOT,
+            });
+        },
+    );
 
     it('keeps partial snapshot authorization orthogonal to usable data', () => {
         const succeeded = transitionControlQueryState(
