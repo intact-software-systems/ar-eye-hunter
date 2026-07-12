@@ -1,11 +1,27 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Iteration 8 retention server/client foundation code-backed through `7197beb`, all legacy workflow rows visible and uncut
+Status: canonical migration register; Iteration 8 retention/filter foundation code-backed through `48b2fd0`, all legacy workflow rows visible and uncut
 Evidence/status date: 2026-07-12
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 8 shareable History filters — `48b2fd0`
+
+Task 3 adds semantic failure-category filtering over actual run/rollup evidence,
+malformed-manifest-safe group/recipe/profile/user filtering, and four additive
+v1 URL fields: `historyGroup`, `historyRecipeId`, `historyProfile`, and
+`failureCategory`. Operational `recipeId`, comparison, timing, provider, and
+harmless unknown state remain independent and copy/popstate compatible. Legacy
+raw `failureType`, query, substring, inclusive date, and stable order behavior
+is unchanged.
+
+Fresh proof is 78/78 focused tests, shared TypeScript and seven Deno entries,
+app TypeScript, and independent review with no Critical or Important
+implementation defect. The combined cleanup/back-forward sequence is deferred
+to Task 5, and URL-over-preset precedence to Task 4; no parity or cutover claim
+uses those pending criteria. All legacy rows remain visible and rollbackable.
 
 ## Iteration 8 lazy authorized retention client — `7197beb`
 

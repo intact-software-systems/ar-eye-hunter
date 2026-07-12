@@ -75,6 +75,10 @@ All new Recipe Console URLs use the typed, validated schema version `v=1`.
 | `diagnosticSeverity` | Diagnostic severity filter |
 | `transport` | Transport filter |
 | `historyQuery` | History text query |
+| `historyGroup` | History group substring filter |
+| `historyRecipeId` | History recipe substring filter; distinct from operational `recipeId` |
+| `historyProfile` | History recipe-profile substring filter |
+| `failureCategory` | Semantic failure category filter |
 | `status` | Run/status filter |
 | `from` | Inclusive time-range start |
 | `to` | Inclusive time-range end |
@@ -98,7 +102,7 @@ All new Recipe Console URLs use the typed, validated schema version `v=1`.
 
 ## Local storage rules
 
-Local storage may contain personal defaults only: collapsed panels, last control URL, preferred density, recent recipe profile, and a theme preference if one is introduced. URL state owns shareable operational context.
+Local storage may contain personal defaults only: collapsed panels, last control URL, preferred density, recent recipe profile, bounded saved History-filter presets, and a theme preference if one is introduced. URL state owns shareable operational context. Saved presets contain only the whitelisted History filters; explicit URL fields always win.
 
 Never persist secrets, raw credentials, session tickets, large artifact payloads, transient hover state, pointer positions, animation state, or equivalent ephemeral presentation state. Existing redacted draft persistence remains a temporary legacy responsibility until its migration-register owner proves an explicit replacement.
 

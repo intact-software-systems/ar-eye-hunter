@@ -1,7 +1,8 @@
 # Rallar Recipe Console History, Compare, Saved Filters, And Retention Implementation Plan
 
 Status: in progress; Iteration 7 is green through `cc17169` and `382df72`;
-Tasks 0–2 are complete and Task 3 is in progress
+Tasks 0–2 are complete; Task 3 code is green with its cleanup-sequence proof
+deferred to Task 5, and Task 4 is in progress
 
 **Goal:** Complete parent Iteration 8 by making past distributed work
 findable, shareable, comparable, and safely cleanable without changing the
@@ -335,23 +336,39 @@ Files:
 - Modify URL state/history unit and browser tests
 - Update the product-spec URL table and local-storage rules
 
-- [ ] RED-test additive semantic `failureCategory` matching against repository
+- [x] RED-test additive semantic `failureCategory` matching against repository
   failure classification while preserving raw `failureType` behavior. Match
   actual run/rollup failures, never a synthetic readiness explanation attached
   only because a run is nonterminal.
-- [ ] RED-test group, recipe, profile, status, text, semantic failure category,
+- [x] RED-test group, recipe, profile, status, text, semantic failure category,
   inclusive created-time bounds, combined filters, empty results, malformed
   manifests, and stable descending order.
-- [ ] RED-test parse/normalize/serialize for `historyGroup`,
+- [x] RED-test parse/normalize/serialize for `historyGroup`,
   `historyRecipeId`, `historyProfile`, and `failureCategory` beside valid,
   invalid, duplicate, sensitive, unknown, and legacy-alias fields.
-- [ ] RED-test one-push Apply/Reset and popstate/copy-link restoration without
+- [x] RED-test one-push Apply/Reset and popstate/copy-link restoration without
   clearing comparison, timing, provider, or harmless unknown state.
 - [ ] RED-test filter → Candidate selection → cleanup → copied URL/back-forward
   so `historyRecipeId` and other filters survive while operational `recipeId`
   follows the selected run and may be cleared independently.
 - [ ] Keep committed filters shareable and make explicit URL state override any
   locally saved preset.
+
+Task 3 filter/codec code is implemented in `48b2fd0`. Shared history filtering
+preserves every legacy raw filter and stable date/order behavior, adds semantic
+category matching through the canonical explanation classifier over actual
+run/rollup failures only, and safely treats malformed manifest fields as absent
+without reindexing fallback recipe identities. The v1 codec owns four additive
+fields, keeps `historyRecipeId` independent from operational `recipeId`, rejects
+invalid/duplicate categories canonically, and preserves comparison, timing,
+provider, harmless unknown, copy-link, and popstate truth.
+
+Fresh proof is 78/78 focused shared/URL tests, shared-test TypeScript plus all
+seven Deno entries, app TypeScript, and diff checks. Independent review found no
+Critical or Important implementation defect. The required combined filter →
+Candidate → cleanup → copied URL/back-forward sequence remains explicitly open
+until Task 5 supplies cleanup reconciliation; explicit-URL-over-preset proof
+remains open until Task 4. Neither is counted as passed here.
 
 ## Task 4: Build Bounded Saved-Filter Persistence
 

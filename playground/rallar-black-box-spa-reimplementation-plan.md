@@ -364,6 +364,10 @@ Use the URL for shareable operational state:
 - `diagnosticSeverity`
 - `transport`
 - `historyQuery`
+- `historyGroup`
+- `historyRecipeId` (never overload operational `recipeId`)
+- `historyProfile`
+- `failureCategory`
 - `status`
 - `from`
 - `to`
@@ -380,6 +384,7 @@ Use local storage only for personal defaults:
 - last control URL
 - preferred page density
 - recent recipe profile
+- bounded saved History-filter presets
 - theme if added later
 
 Do not persist secrets, raw credentials, large artifact payloads, transient hover state, pointer positions, or animation state in the URL or local storage.
@@ -402,7 +407,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
-| 8 — History, Compare, Saved Filters, Retention | **In progress** | Tasks 0–2 are green through the shared/server retention foundation (`07564df`) and lazy credential-safe client (`7197beb`). Authorization-first bounded preview, guarded confirmation, exact legacy compatibility, context-bound client concurrency/abort safety, cumulative validation limits, dynamic-only chunks, and independent review pass. History filtering/URL state, presets, models/UI, browser matrix, and no-cutover exit remain open. |
+| 8 — History, Compare, Saved Filters, Retention | **In progress** | Retention server/client foundations and shareable semantic History filters are code-backed through `48b2fd0`. Authorization-first guarded cleanup, context-bound client safety, dynamic-only chunks, actual-failure classification, malformed-manifest resilience, and distinct v1 History URL fields pass focused validation/review. The combined cleanup URL sequence, presets, models/UI, browser matrix, and no-cutover exit remain open. |
 | 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
@@ -561,6 +566,21 @@ is a separate dynamic entry; its request/validation sentinels are absent from
 main, eager Recipe Console, and inactive Tune static closures. Final independent
 review reports no Critical or Important issue. This client milestone adds no
 History UI, hide, cutover, default, deep-link, or control-server-contract change.
+
+Task 3 filter and URL code is green through `48b2fd0`. The shared filter matches
+semantic categories through the existing explanation classifier over actual
+run and rollup failures only, never the synthetic nonterminal readiness advice;
+all legacy raw filters, inclusive dates, substring behavior, and stable ordering
+remain intact. Malformed manifest fields become absent evidence while original
+recipe fallback indices remain stable. The v1 codec adds `historyGroup`,
+`historyRecipeId`, `historyProfile`, and a typed `failureCategory` without
+overloading operational `recipeId` or clearing comparison/timing/unknown state.
+
+Fresh proof is 78/78 focused tests, shared TypeScript plus all seven Deno entries,
+app TypeScript, and independent review with no implementation defect. The
+combined filter → Candidate → cleanup → copied URL/back-forward proof is still
+open for Task 5 reconciliation, and explicit URL precedence over saved presets
+is still open for Task 4; neither is claimed early.
 
 #### Iteration 2 visual approval checkpoint — 2026-07-11
 
