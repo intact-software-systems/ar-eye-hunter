@@ -1,6 +1,6 @@
 # Recipe Console Timing And Tuning Lab Implementation Plan
 
-Status: Iteration 7 in progress; Task 0 complete, Tasks 1–8 pending
+Status: complete; Tasks 0–8 and every qualified Iteration 7 exit gate pass
 Date: 2026-07-12
 Parent: `playground/rallar-black-box-spa-reimplementation-plan.md`
 
@@ -145,22 +145,28 @@ cut. No legacy surface is hidden or re-homed in Iteration 7.
 - [x] Dispatch independent shared-contract and app/browser plan reviews; close
   every Critical or Important issue before implementation.
 - [x] Commit this implementation plan and the parent/register in-progress
-  checkpoint as `1f21d2d` before behavior code; retain final review corrections
-  in the next documentation milestone.
+  checkpoint as `1f21d2d` before behavior code; final review corrections are
+  committed in `902806d`.
 
 ## Task 1: Lock Canonical Browser RED Before Implementation
 
-- [ ] Create bounded Tune browser data/fixture helpers and
+- [x] Create bounded Tune browser data/fixture helpers and
   `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` with all three
   exact acceptance names before shared or React implementation.
-- [ ] Build one real RTC stream envelope imported through visible Analyze and a
+- [x] Build one real RTC stream envelope imported through visible Analyze and a
   two-run cross-control snapshot fixture with an actual recipe/profile delta,
   participant delta, failure delta, run-duration delta, and received-message
   delta. Each legacy run-detail endpoint remains operable after handoff.
-- [ ] Capture the expected seed-era RED: the stream test lacks real RTC health,
+- [x] Capture the expected seed-era RED: the stream test lacks real RTC health,
   the comparison test lacks explicit URL-backed categories, and the candidate
   test lacks validated copy/no-mutation output. Record unrelated fixture/setup
   failures separately and do not count them as the intended RED.
+
+The exact three-test Chromium run reaches Analyze `Artifact ready`, the Tune
+route, and both comparison URLs before failing only on the absent
+`data-tune-workspace`, `data-tune-comparison`, and `data-tune-candidate`
+replacement behaviors. An initial malformed control-command fixture failure
+was corrected and rerun; it is not counted as the required RED.
 
 ## Task 2: Expose Snapshot Performance And Inventory Exact Knobs
 
@@ -168,71 +174,98 @@ Files:
 
 - Add `packages/shared-test/rallar-bb-test/distributed-run-tuning.ts`
 - Modify `packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts`
-- Modify `packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts`
+- Consume the existing `distributed-artifact-workspace.ts` snapshot boundary;
+  no implementation edit was required
 - Modify `packages/shared-test/rallar-bb-test/control-protocol.ts`
 - Modify `packages/shared-test/rallar-bb-test/mod.ts`
 - Add `packages/tests/rallar-black-box/distributed-recipe-tuning.test.ts`
 - Modify focused public-surface/analysis tests only when additive exports require it
 
-- [ ] RED-test the additive snapshot performance wrapper against artifact
+- [x] RED-test the additive snapshot performance wrapper against artifact
   derivation for command and RTC stream evidence, including absent/partial
   results without invented values.
-- [ ] RED-test deterministic knob inventory for manifest ACK/barrier values;
+- [x] RED-test deterministic knob inventory for manifest ACK/barrier values;
   inline root, loop, parallel-group, and embedded-recipe commands; JSON Pointer
   escaping; duplicate command IDs; optional/missing values; effective
   `intervalMs` precedence over shadowed `rateHz`; explicit ineffective/blocked
   metadata for that row; and stable order.
-- [ ] Inventory `rateHz`, `durationMs`, `intervalMs`, `maxInFlight`,
+- [x] Inventory `rateHz`, `durationMs`, `intervalMs`, `maxInFlight`,
   `ackTimeoutMs`, `barrier.timeoutMs`, and every numeric RTC stream threshold.
   Each row carries recipe/command identity, kind, exact pointer, current value,
   numeric constraint, and source limitation. Optional values render their
   current value as visibly unset rather than invented.
-- [ ] RED-test that loose/envelope normalization preserves recognized raw
+- [x] RED-test that loose/envelope normalization preserves recognized raw
   manifest tuning fields while still enforcing normalized run/control
   identities and required structure.
-- [ ] RED-test and fix the agent validator's additive loop-threshold drift so a
+- [x] RED-test and fix the agent validator's additive loop-threshold drift so a
   schema-supported loop recipe passes schema, manifest, agent, and preflight
   validation after an unrelated candidate edit.
-- [ ] Represent reference-only recipes as explicit limitations. Do not import
+- [x] Represent reference-only recipes as explicit limitations. Do not import
   app models, resolve repository fixtures implicitly, or invent current values.
-- [ ] Preserve every existing public export and compare/control contract.
+- [x] Preserve every existing public export and compare/control contract.
+
+Task 2 closed after independent review drove focused regressions for normalized
+identity consistency, real control-envelope/JSONL RTC de-duplication,
+summary-free and field-partial evidence, canonical sampled observations,
+finite direct numeric validation, malformed/deep/wide bounded traversal, and
+the complete manifest/compatibility/agent/preflight chain. The final fresh
+Task 2 slice passes 49/49 with shared-test TypeScript and `git diff --check`.
+No artifact-workspace change was needed because its existing snapshot boundary
+already exposes the normalized objects consumed by the new public wrapper.
 
 ## Task 3: Validate Deliberate Candidate Changes Without Mutation
 
-- [ ] RED-test exact-path candidate creation, JSON Pointer escaping,
+- [x] RED-test exact-path candidate creation, JSON Pointer escaping,
   deterministic operation/diff order, add versus replace, integer/finite/range
   rejection, unknown path rejection, stale expected values, duplicate changes,
   missing-threshold-parent materialization, disabled/missing-barrier blocking,
   shadowed-rate rejection, and multiple overlapping changes.
-- [ ] RED-test recursive recipe compatibility plus manifest validation errors
+- [x] RED-test recursive recipe compatibility plus manifest validation errors
   and prove a deeply frozen source manifest is unchanged on success and error.
-- [ ] Return a typed result containing cloned candidate manifest, copyable JSON
+- [x] Return a typed result containing cloned candidate manifest, copyable JSON
   Patch, readable manifest diff, and file/path-specific validation issues.
-- [ ] Apply every emitted patch in tests and require deep equality with the
+- [x] Apply every emitted patch in tests and require deep equality with the
   returned clone, including an absent `thresholds` parent and multiple changes
   sharing one newly materialized parent.
-- [ ] Keep candidate helpers pure and deterministic. No clock, random ID,
+- [x] Keep candidate helpers pure and deterministic. No clock, random ID,
   clipboard, network, filesystem, or React dependency enters shared-test.
+
+Task 3 captured 5/5 missing-module RED before implementation. Independent
+review added RED/GREEN coverage for explicit `thresholds: undefined`, malformed
+recipe collections, RFC 6901 dynamic keys, and exact top-level plus embedded
+recipe agent/preflight paths. The final focused candidate slice passes 9/9;
+both public candidate owners remain below 300 lines, and shared-test TypeScript
+plus `git diff --check` pass.
 
 ## Task 4: Derive Evidence-Backed Tuning Hints And Performance Deltas
 
-- [ ] RED-test target/readiness-first precedence across missing, stale,
+- [x] RED-test target/readiness-first precedence across missing, stale,
   offline, wrong-group, identity, and expected-participant blockers.
-- [ ] RED-test lower-rate/cadence hints for drops, in-flight-limit drops,
+- [x] RED-test lower-rate/cadence hints for drops, in-flight-limit drops,
   backpressure, and material cadence/drift degradation without recommending a
   blind `maxInFlight` increase.
-- [ ] RED-test clean ACK and barrier timeout evidence, stream threshold
+- [x] RED-test clean ACK and barrier timeout evidence, stream threshold
   adjustment evidence, and isolated slow-agent evidence with exact affected
   agent and knob paths when available.
-- [ ] RED-test insufficient/partial evidence, reference-only recipes, clean
+- [x] RED-test insufficient/partial evidence, reference-only recipes, clean
   runs, multiple streams, duplicate command IDs, multiple equal slow agents,
   pointer ambiguity, and deterministic priority/order.
-- [ ] Hints cite shared analysis categories and numeric evidence, state why the
+- [x] Hints cite shared analysis categories and numeric evidence, state why the
   action is appropriate, and identify the next exact knob or agent inspection.
-- [ ] Add a narrow deterministic performance comparison for the selected
+- [x] Add a narrow deterministic performance comparison for the selected
   `timingMetric` and RTC frame/cadence/drift/drop/backpressure evidence. Compose
   it beside, never instead of or inside, the unchanged public
   `compareDistributedRuns(...)` structural summary.
+
+Task 4 captured three missing-module RED suites and closed at 32/32 focused
+tests after independent review added safety proof for absent readiness,
+incomplete/reference-only inventory, aggregate-versus-per-execution threshold
+semantics, disabled/missing barriers, blocked-timeout fall-through, and
+threshold-free multi-execution cadence. No rule recommends a blind
+`maxInFlight` increase. Average drift and jitter remain inventory-visible but
+are not evaluated because the current shared performance contract does not
+expose those aggregates. All production owners remain below 300 lines;
+shared-test TypeScript and `git diff --check` pass.
 
 ## Task 5: Build Pure Tune Source, Selection, And Comparison Models
 
@@ -243,22 +276,33 @@ Files:
 - Add `packages/tests/rallar-black-box/recipe-console-tune-selection.test.ts`
 - Modify URL/history tests only to cover previously unexercised restoration
 
-- [ ] RED-test retained matching artifact authority, mismatched retained
+- [x] RED-test retained matching artifact authority, mismatched retained
   artifact warning, unsupported/future-schema candidate blocking, selected
   live/partial/stale control truth, bounded control provenance, reference-only
   limitation, missing performance, and no-evidence state.
-- [ ] RED-test explicit left/right lookup, same-run and invalid IDs, control-run
+- [x] RED-test explicit left/right lookup, same-run and invalid IDs, control-run
   pairing, atomic right/focus/control alignment, left-only patching,
   artifact/control de-duplication, deterministic option order, compatibility
   warnings, cross-control pairing, and every shared compare category.
-- [ ] RED-test existing safe identity projection for oversized IDs, control
+- [x] RED-test existing safe identity projection for oversized IDs, control
   characters, malformed Unicode, and unsafe retained evidence. Quarantined IDs
   never enter compare fields, legacy URLs, filenames, or React keys.
-- [ ] Derive presentation models only from shared performance, hints,
+- [x] Derive presentation models only from shared performance, hints,
   inventory, candidate, and compare helpers. Do not duplicate calculations in
   React or import seeded diagnostics.
-- [ ] Keep URL patch helpers pure: run/comparison/metric changes push through
+- [x] Keep URL patch helpers pure: run/comparison/metric changes push through
   the existing v1 history contract and clear only dependent state.
+
+Task 5 captured the intended 14/14 model RED plus hardening RED for duplicate
+distributed/control identities, mixed artifact/control authority, missing
+control pairs, stale-limit leakage, malformed recipes, and legacy-provider
+handoff. Independent review then found that pending, errored, unsupported, and
+non-focus retained artifacts could still leak into comparison authority. Exact
+RED/GREEN cases now require explicit ready, supported, focus-matching artifact
+identity before promotion while preserving all other artifact evidence for
+inspection. The final fresh pure-model slice passes 23/23; the Task 5 plus
+URL/history slice passes 40/40, app/shared TypeScript and `git diff --check`
+pass, and the independent authority re-review is clean.
 
 ## Task 6: Replace Tune Preview With Bounded Lazy Signal Ledger Composition
 
@@ -273,76 +317,129 @@ Files:
 - Remove or replace `recipe-console-seeded-state.test.ts` and seed-specific
   structure assertions with no-seed and lazy-Tune gates
 
-- [ ] RED-test root composition before React changes: one `TuneWorkspace`, no
+- [x] RED-test root composition before React changes: one `TuneWorkspace`, no
   Tune seed/model/import, no root Tune state machine, and all source owners
   below structure caps.
-- [ ] Load Tune through a local `React.lazy`/Suspense route boundary. Prove its
+- [x] Load Tune through a local `React.lazy`/Suspense route boundary. Prove its
   production chunk is absent from inactive Recipe Console views and the Tune UI
   is unmounted when inactive; root Analyze/control services remain the only
   view-independent state owners.
-- [ ] Render command min/P50/P95/P99/max, average/spread/outliers and slowest
+- [x] Render command min/P50/P95/P99/max, average/spread/outliers and slowest
   agents; stream planned/scheduled/attempted/completed/failed/dropped/in-flight
   drops, requested/achieved Hz, drift, late frames, backpressure, duration
   percentiles, and slowest stream agents.
-- [ ] Render decision-first hints, exact knob current values/paths, deliberate
+- [x] Render decision-first hints, exact knob current values/paths, deliberate
   candidate input, validation, copyable patch/diff, truthful clipboard status,
   and unchanged-source evidence. Candidate state fingerprints resolved source
   identity/support plus deterministic manifest knob truth, not routine control
   timestamps. A newer `updatedAtEpochMs` with identical knobs preserves the
   draft; changed identity, support, or knob truth resets it. No action mutates
   or calls Control.
-- [ ] Render explicit baseline/candidate selectors and all recipe, participant,
+- [x] Render explicit baseline/candidate selectors and all recipe, participant,
   failure, timing, and received-message deltas with compatibility warnings.
-- [ ] Render honest empty, partial, stale, mismatch, reference-only, invalid
+- [x] Render honest empty, partial, stale, mismatch, reference-only, invalid
   comparison, same-run, and unavailable-metric states.
-- [ ] Route one contextual inspector through the existing shell callback;
+- [x] Route one contextual inspector through the existing shell callback;
   preserve focus trap/restore, selection dock, 44px targets, and the exact
   legacy Runs handoff built from the resolved candidate's own control/run IDs.
 
 ## Task 7: Turn Canonical RED Green And Complete Browser QA
 
-- [ ] Turn the three Task 1 canonical RED tests green without weakening their
+- [x] Turn the three Task 1 canonical RED tests green without weakening their
   visible-control, exact-category, copy, or no-request assertions.
-- [ ] Import a real RTC stream artifact through visible Analyze controls,
+- [x] Import a real RTC stream artifact through visible Analyze controls,
   navigate to Tune, and prove frame disposition, P95/P99, cadence, drift,
   drops, in-flight drops, backpressure, a specific slow agent, and a sourced
   tuning hint.
-- [ ] Prove an exact knob edit produces valid copyable patch/diff output while
+- [x] Prove an exact knob edit produces valid copyable patch/diff output while
   source value and request counts remain unchanged.
-- [ ] Compare two explicit runs, reload/copy/back/forward the v1 URL, and prove
+- [x] Compare two explicit runs, reload/copy/back/forward the v1 URL, and prove
   every shared delta category, the selected performance delta, atomic focus
   alignment, plus invalid/same-run/compatibility states.
-- [ ] Prove no artifact or mutation request is made by Tune and activate the
+- [x] Prove no artifact or mutation request is made by Tune and activate the
   exact selected-run legacy Runs destination.
-- [ ] Cover 1440×900, 900×900, 430×932, and 932×430; keyboard-only selection,
+- [x] Cover 1440×900, 900×900, 430×932, and 932×430; keyboard-only selection,
   metric, agent, knob, candidate, compare, copy, inspector, and handoff paths;
   focus restore/Escape; 44px targets; reduced motion; announcements; zero
   document overflow; and actual Tune CSS under both legacy load orders.
-- [ ] Refresh the approved Direction A Tune baseline only after semantic and
+- [x] Refresh the approved Direction A Tune baseline only after semantic and
   geometry assertions pass. Replace the concept test's empty Tune control seed
   with deterministic real evidence, then inspect the durable image at original
   detail.
 
 ## Task 8: Fresh Exit, Review, Documentation, And Milestone Commits
 
-- [ ] Run the focused validation contract below after every implementation
+- [x] Run the focused validation contract below after every implementation
   slice and the complete app/Recipe Console suites after the last fix.
-- [ ] Run shared/app typechecks, production build, reciprocal experience-chunk
+- [x] Run shared/app typechecks, production build, reciprocal experience-chunk
   assertion, exact preserved legacy navigation/ticket pair, and control-server
   tests if a shared contract changes their expectations.
-- [ ] Try the in-app Browser first; if unavailable, record the exact reason and
+- [x] Try the in-app Browser first; if unavailable, record the exact reason and
   use controlled Playwright/System Chromium without calling it an in-app pass.
-- [ ] Dispatch independent shared-contract, app/state, browser/accessibility,
+- [x] Dispatch independent shared-contract, app/state, browser/accessibility,
   and cutover reviews. Add RED/GREEN proof for every Critical or Important
   finding and rerun fresh validation.
-- [ ] Update this plan, parent plan, product spec, migration register, and
+- [x] Update this plan, parent plan, product spec, migration register, and
   fidelity ledger with actual commits, counts, Ready-State evidence, skips,
   compatibility decisions, cutover status, and remaining risks.
-- [ ] Mark Ready-State #7 and the bounded #8 comparison plane code-backed only
+- [x] Mark Ready-State #7 and the bounded #8 comparison plane code-backed only
   after their exact tests pass. Keep Iteration 8 history/retention work open.
-- [ ] Keep `runner.runs`, `runner.compare`, and
+- [x] Keep `runner.runs`, `runner.compare`, and
   `legacy.distributed-recipes` visible and uncut; commit cohesive green
   milestones locally and do not push or open a PR.
+
+## Iteration 7 Exit — `cc17169`, `382df72`
+
+The shared milestone `cc17169` adds deterministic snapshot performance,
+complete recursive knob inventory, clone-only validated candidate patches,
+readiness-first tuning hints, and additive performance deltas without changing
+an existing public signature. The app milestone `382df72` removes the Tune
+seed and composes a lazy, unmounted-when-inactive Tune workspace from the one
+retained Analyze artifact and the root control query. Every Tune production
+owner is at most 300 lines; `RecipeConsoleWorkspace` remains composition glue.
+
+The three canonical browser acceptances pass. The real RTC fixture shows 30
+planned, 28 scheduled, 23 attempted, 22 completed, one failed, five dropped,
+two in-flight drops, six late frames, four backpressure events, 30/28/22 Hz,
+28 ms max drift, and 23/68/92/92 ms P50/P95/P99/max send duration. Command evidence
+shows 400/400/1,200/1,200/1,200 ms min/P50/P95/P99/max, an 800 ms mean, 3×
+spread, and one outlier. The explicit comparison exposes recipe, participant,
+failure, timing, received-message, and selected performance deltas. Fourteen
+editable knobs, blocked/shadowed rows, exact JSON Pointer output, readable diff,
+copy status, source immutability, and zero mutation/artifact requests are all
+asserted.
+
+Fresh exit evidence:
+
+- 247/247 focused Vitest tests across 20 files.
+- The complete app suite is qualified green: 881 tests passed in the sandbox;
+  its only two failures were denied tsx IPC/loopback in
+  `headless-worker-script.test.ts`, whose exact nine-test file then passed 9/9
+  with the required permission. The suite contains 883 tests across 93 files.
+- The complete shared-test check passed TypeScript and all seven configured
+  Deno entry points. App TypeScript, `git diff --check`, the 580-module
+  production build, and the reciprocal experience-chunk assertion passed.
+  Tune emits a separate 34.19 kB JS / 13.70 kB CSS lazy entry; only the
+  preserved LegacyExperience JS retains the existing >500 kB advisory.
+- The complete Recipe Console configuration passed 137 available Chromium
+  tests with one configured-live test skipped. The exact Tune suite passed
+  12/12, the focused browser matrix 58/58, the chunk suite 7/7, and the exact
+  preserved legacy navigation/ticket pair 28/28.
+- Control-server check and 57/57 Deno tests passed. Independent shared,
+  app/state, browser/accessibility, and cutover re-reviews report no remaining
+  Critical or Important finding.
+
+The in-app Browser was unavailable exactly as `No browser is available`;
+controlled Playwright/System Chromium is fallback evidence, not an in-app
+pass. The configured live/Postgres owner was skipped, not passed, because:
+`Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+
+Ready-State #7 and the bounded comparison evidence for #8 are code-backed.
+Ready-State #9 and Iteration 8 history, saved filters, retention, and repeated-
+workflow coverage remain open. No legacy surface was hidden, re-homed, or cut
+over; `runner.runs`, `runner.compare`, and `legacy.distributed-recipes` retain
+their existing deep links and rollback behavior.
 
 ## Focused Validation Contract
 

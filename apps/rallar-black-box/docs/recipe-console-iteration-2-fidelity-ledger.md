@@ -1,19 +1,21 @@
 # Recipe Console Iteration 2 Fidelity Ledger
 
-Status: Iteration 2 visual direction preserved; Execute, live Monitor, and
-offline Analyze are qualified through Iteration 6, while Tune remains seeded
+Status: Iteration 2 visual direction preserved; Execute, live Monitor, offline
+Analyze, and real-evidence Tune are qualified through Iteration 7
 
 Evidence date: 2026-07-12
 Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
 (Iteration 4 Execute), `42eedae` (Iteration 5 live Monitor fidelity proof),
-`f96b5b4`, `abe257e`, `9b07330`, `47c332d` (Iteration 6 Analyze)
+`f96b5b4`, `abe257e`, `9b07330`, `47c332d` (Iteration 6 Analyze),
+`cc17169`, `382df72` (Iteration 7 Tune)
 Approved direction: Signal Ledger (Direction A)
 
 This ledger preserves the approved Iteration 2 visual contract and its
 historical seeded Monitor/Tune evidence, then records the Iteration 4 Execute,
-Iteration 5 live Monitor, and Iteration 6 Analyze baseline advances. It does not claim the
-unavailable configured live/Postgres acceptance, a legacy navigation hide, or
-the Iteration 12 default flip.
+Iteration 5 live Monitor, Iteration 6 Analyze, and Iteration 7 Tune baseline
+advances. It does not claim the unavailable configured live/Postgres
+acceptance, Ready-State #9, a legacy navigation hide, or the Iteration 12
+default flip.
 
 ## Iteration 4 Execute fidelity addendum
 
@@ -102,6 +104,35 @@ not an in-app Browser pass. No screenshot creates a new visual direction;
 Direction A remains the approved hierarchy and repository artifact truth owns
 the displayed copy and data.
 
+## Iteration 7 real-evidence Tune fidelity addendum
+
+Direction A remains unchanged. Tune now opens as a separate lazy, inactive-
+unmounted entry and reads the one retained Analyze artifact plus the root
+control query. The seed is gone. The short-landscape Signal Ledger preserves
+the compact rail, flat ruled regions, decision/evidence-first order, contained
+work scrolling, and contextual inspection while replacing the concept's
+invented matrix with repository-authoritative command and RTC stream planes.
+
+The durable real fixture shows source status and provenance; 30 planned, 28
+scheduled, 23 attempted, 22 completed, one failed, five dropped, two in-flight
+drops, six late frames, four backpressure events, 30/28/22 Hz requested/
+scheduled/achieved cadence, 28 ms max drift, and 23/68/92/92 ms P50/P95/P99/
+max send duration. Command timing is 400/400/1,200/1,200/1,200 ms min/P50/P95/
+P99/max, with an 800 ms mean, 3× spread, one outlier, and specific slow agent
+`tune-agent-slow`. Fourteen editable recipe knobs, visibly blocked/shadowed
+rows, readiness-first hints, explicit two-run deltas, candidate JSON Patch/
+diff, source immutability, and no mutation requests replace seed-era claims.
+
+Controlled QA covers 1440×900, 900×900, 430×932, and 932×430; keyboard-only
+source/comparison/metric/agent/knob/candidate/copy/inspector/handoff paths;
+focus trap/restore; 44px targets; reduced motion; atomic announcements; zero
+document overflow; and actual Tune CSS in both legacy load orders. The complete
+Recipe Console configuration passes 137 available tests with one exact
+configured-live skip. The focused matrix passes 58/58 and Tune passes 12/12.
+The refreshed 932×430 baseline was inspected at original detail after semantic
+and geometry gates passed. The in-app Browser remained unavailable exactly as
+`No browser is available`; this is Playwright/System Chromium fallback proof.
+
 ## Controlled environment
 
 | Item | Value |
@@ -127,25 +158,25 @@ visual contract.
 | Execute desktop | `docs/recipe-console-concepts/iteration-2-signal-ledger-execute-desktop.png` (1586×992) | `../../../tests/playwright/rallar-black-box/recipe-console-concept-fidelity.spec.ts-snapshots/signal-ledger-execute-desktop-chromium-darwin.png` (1440×900) | Hierarchy retained: command bar, labeled 184px rail, parallel recipe/target planes, persistent details inspector, and bottom action band. Intentional data/copy differences are listed below. |
 | Live failed Monitor desktop | `docs/recipe-console-concepts/iteration-2-signal-ledger-monitor-failed-desktop.png` (1586×992) | `../../../tests/playwright/rallar-black-box/recipe-console-concept-fidelity.spec.ts-snapshots/signal-ledger-monitor-failed-desktop-chromium-darwin.png` (1440×900, Iteration 5 refresh) | Failure-first order, ruled ledger, matrix, secondary timeline, and 360px contextual evidence rail retained. Deterministic live control/distributed-run failure evidence replaces the historical seed and illustrative concept rows. |
 | Live Monitor portrait | `docs/recipe-console-concepts/iteration-2-signal-ledger-monitor-portrait.png` (851×1847) | `../../../tests/playwright/rallar-black-box/recipe-console-concept-fidelity.spec.ts-snapshots/signal-ledger-monitor-portrait-chromium-darwin.png` (430×932, Iteration 5 refresh) | Verdict → failures → contained matrix → timeline order, persistent `Swipe phases`, 48px selection dock, and 64px six-item bottom navigation retained. Inspector is unmounted until the sheet opens. |
-| Tune short landscape | `docs/recipe-console-concepts/iteration-2-signal-ledger-tune-landscape.png` (1847×851) | `../../../tests/playwright/rallar-black-box/recipe-console-concept-fidelity.spec.ts-snapshots/signal-ledger-tune-landscape-chromium-darwin.png` (932×430) | Compact rail and 52/48 matrix/timing split retained. The real command-duration distribution replaces invented stream metrics. |
+| Tune short landscape | `docs/recipe-console-concepts/iteration-2-signal-ledger-tune-landscape.png` (1847×851) | `../../../tests/playwright/rallar-black-box/recipe-console-concept-fidelity.spec.ts-snapshots/signal-ledger-tune-landscape-chromium-darwin.png` (932×430, Iteration 7 refresh) | Compact rail, flat ruled source/decision/evidence regions, command/stream two-plane evidence, and contained scrolling retained. Real artifact/control truth, explicit uncommitted comparison placeholders, and sourced timing replace the illustrative seed matrix. |
 
 ## Fidelity decision ledger
 
 | Dimension | Evidence and decision |
 | --- | --- |
-| Copy and data truth | **Intentional, explained deviation.** Execute selects the real `RTC Realtime Stability` fixture and the deterministic mocked-live two-agent state recorded in the Iteration 4 addendum. Monitor now selects deterministic live control/distributed-run truth recorded in the Iteration 5 addendum. Repository/control evidence governs both surfaces; neither repeats the concepts' illustrative ACK recipe or 8/8 target set. Tune alone retains its separately qualified Iteration 2 seed. |
+| Copy and data truth | **Intentional, explained deviation.** Execute selects the real `RTC Realtime Stability` fixture and deterministic mocked-live two-agent state recorded in the Iteration 4 addendum. Monitor uses deterministic live control/distributed-run truth from Iteration 5; Analyze uses artifact truth from Iteration 6; Tune uses the retained real artifact and bounded root-control snapshot from Iteration 7. None repeats the concepts' illustrative ACK recipe, 8/8 target set, or seeded tuning values. |
 | Historical Iteration 2 Monitor truth | The original canonical `failed-command` seed rendered distributed run `seed-failed-command`, control run `seed-control-failed-command`, recipe `seed-rtc-recipe`, and one of two agents failed. The two rows were `SYNTHETIC_RECIPE_FAILED` and `SYNTHETIC_ASSERTION_FAILED`; both said `Receiver did not observe the RTC payload.` The command-correlated row used `seed-agent-b` and `seed-start-receiver`. This remains concept-history evidence, not the current Monitor source. |
 | Iteration 5 live Monitor truth | The deterministic fixture renders control run `monitor-control-live`, distributed run `monitor-distributed-live`, recipe `monitor-later-failure`, sender/receiver agent evidence, and failure `MONITOR_EXPECTED_PAYLOAD_MISSING` on `monitor-start-receiver`. The fixture changes authoritative snapshots to prove disconnect → reconnect, complete/partial/last-known/offline recovery, operational run transitions, bounded events, cancellation, artifact operations, deletion, and late-response rejection. |
-| Tune truth | The canonical `high-latency-rtc` seed is visibly **Passed**. Agent means are 112.5, 1,010, and 1,190 ms; P50 is 1,010 ms and P95/P99/Max are 1,190 ms. Source stage/start pairs remain 95/130, 980/1,040, and 1,120/1,260 ms. Cadence, drift, disposition, and backpressure say unavailable because the fixture has no RTC timeline evidence. |
+| Tune truth | Real artifact/control evidence replaces `high-latency-rtc`. The RTC stream has 30 planned, 28 scheduled, 23 attempted, 22 completed, one failed, five dropped, two in-flight drops, six late frames, four backpressure events, 30/28/22 Hz requested/scheduled/achieved cadence, 28 ms max drift, and 23/68/92/92 ms P50/P95/P99/max duration. Command min/P50/P95/P99/max are 400/400/1,200/1,200/1,200 ms, with an 800 ms mean, 3× spread, one outlier, and slow agent `tune-agent-slow`. Missing/partial/reference-only evidence remains visibly unavailable rather than invented. |
 | Layout and hierarchy | Edge-to-edge shell, persistent command band, exact six-destination order, continuous ruled work planes, one contextual inspector, and failure-before-raw-evidence ordering match the approved direction. There is no centered dashboard or card wall. |
 | Typography | System/Inter-compatible sans typography, 18px route/section hierarchy, compact 12–14px evidence text, and monospace/tabular machine IDs and durations reproduce the concept's dense operational register. Sentence case is retained; machine codes alone use uppercase. |
 | Palette and statuses | Scoped cool canvas, white surfaces, cobalt selection/action, and distinct passed/failed/warning/stale/partial/disabled roles use the approved tokens. Every operational state includes a label and shape/icon; no verdict depends on color alone. Hard stale evidence remains visible. |
 | Icons | One code-native outline SVG family is used. Navigation retains text; icon-only refresh/copy controls have accessible names and tooltips. There is no emoji or rasterized UI text. |
 | Control geometry | Desktop controls remain compact; every representative portrait command, route, recipe, inspector, segmented, and Advanced compatibility target is at least 44×44px. Bottom-navigation targets have 8px separation. The optional URL feedback occupies its own 44px context row and cannot cover work content. |
-| Responsive transformation | 1440×900 desktop uses a 184px rail and 352/360px inspector. At 900×900 the 64px rail remains and the 360px inspector overlays without squeezing work. The 430×932 portrait uses one work scroller, the selection dock, bottom navigation, one modal-sheet inspector, and contained horizontal matrix scrolling. The 932×430 landscape uses a 48px command bar, 60px rail, 12px divider, bounded matrix scrolling, and zero document overflow on both axes. |
-| Keyboard and focus | Primary navigation has one roving tab stop; arrows/Home/End move focus and Enter/Space activate. Tune handles all four arrows without opening inspection. Live Monitor opens failure evidence and initiates armed Cancel without a pointer; overlay/sheet focus is trapped, Escape closes, and focus returns to the invoking failure or Cancel control. |
+| Responsive transformation | 1440×900 desktop uses a 184px rail and 352/360px inspector. At 900×900 the 64px rail remains and the 360px inspector overlays without squeezing work. The 430×932 portrait uses one work scroller, the selection dock, bottom navigation, one modal-sheet inspector, and contained horizontal evidence scrolling. The 932×430 Tune refresh uses a 48px command bar, 60px rail, compact source/decision/evidence regions, bounded pane scrolling, and zero document overflow on both axes. |
+| Keyboard and focus | Primary navigation has one roving tab stop; arrows/Home/End move focus and Enter/Space activate. Tune's source, comparison, metric, slow-agent, knob, candidate, copy, inspector, and legacy-handoff paths are keyboard-operable; the live comparison announcement is atomic. Live Monitor opens failure evidence and initiates armed Cancel without a pointer. Overlay/sheet focus is trapped, Escape closes, and focus returns to the invoking control. |
 | Motion | Interaction transitions stay bounded; reduced-motion emulation resolves inspector transition duration to `0s` and removes travel/repeated emphasis without hiding state. |
-| CSS isolation | Tokens/reset are scoped under `.recipe-console`; feature styles are CSS Modules. The reverse-load-order fixture proves representative Recipe Console and legacy controls, tables, forms, statuses, dialog geometry, and live Monitor styling are stable in both orders. No broad legacy selector is required by the new shell. |
+| CSS isolation | Tokens/reset are scoped under `.recipe-console`; feature styles are CSS Modules. The reverse-load-order fixture proves representative Recipe Console and legacy controls, tables, forms, statuses, dialog geometry, live Monitor, and real Tune styling are stable cold, legacy-first, and after a legacy round trip. No broad legacy selector is required by the new shell. |
 | Experience isolation | Recipe Console and Legacy Experience are mutually exclusive lazy subtrees. An explicit Recipe Console production entry requests its own hashed JS/CSS and no LegacyExperience chunk; a legacy entry does the inverse. The fixture is absent from both executable closures. |
 
 ## URL and operational proof
@@ -186,8 +217,8 @@ rewritten as current evidence.
 | Live Monitor tablet, 900×900 | Work remains stable before and after the 360px overlay; the overlay does not squeeze the work plane, and Escape restores focus. |
 | Live Monitor landscape, 932×430 | The keyboard-only failure-inspector and armed-Cancel paths restore focus. The matrix owns horizontal overflow while document overflow remains zero on both axes before and after the dialog path. |
 | Reduced motion | Live Monitor overlay transition duration is `0s`, animation is removed, and state remains visible. |
-| Tune landscape, 932×430 | Matrix/timing ratio was 0.520008; three agents/four rows, ArrowDown/Enter/close/focus restoration, and zero document overflow passed. |
-| CSS isolation | Both load orders and Recipe Console → legacy → Recipe Console retain stable computed styles. Iteration 5 adds live Monitor comparisons for both load orders; the historical Iteration 2 system-Chrome load-order PNGs remain byte-for-byte identical (`cmp=0`, SHA-256 `39259c08719440dd98ef60898466d8a5a7b722e81b6b5e637de2481d7dc528a6`). |
+| Tune landscape, 932×430 | The Iteration 7 refresh shows retained-artifact provenance, uncommitted baseline/candidate placeholders, decision-first hints, and command/stream evidence in bounded panes. Keyboard inspection/focus restoration, 44px actions, contained scrolling, and zero document overflow pass. |
+| CSS isolation | Both load orders and Recipe Console → legacy → Recipe Console retain stable computed styles. Iteration 7 adds real Tune source, comparison, candidate, and inspector comparisons; the historical Iteration 2 system-Chrome load-order PNGs remain byte-for-byte identical (`cmp=0`, SHA-256 `39259c08719440dd98ef60898466d8a5a7b722e81b6b5e637de2481d7dc528a6`). |
 | Console/document health | A focused RED exposed the missing icon. `index.html` now declares a local SVG icon; its response is HTTP 200 with `image/svg+xml`. A fresh canonical Execute run had `consoleDiagnostics: []` and `failedResponses: []`. |
 
 The Iteration 2 fallback screenshots remain historical temporary QA artifacts under
@@ -202,6 +233,13 @@ they are not counted as live-service passes.
 
 | Command | Result | Evidence |
 | --- | --- | --- |
+| Iteration 7 focused Vitest set | Passed | 20/20 files, 247/247 tests after shared, app/state, and browser review fixes. |
+| Iteration 7 complete `packages/tests/rallar-black-box` set | Qualified green | 93 files and 883 tests. The restricted sandbox passed 881; its only two failures were denied tsx IPC/loopback. The exact affected `headless-worker-script.test.ts` file then passed 9/9 with required permission. |
+| Iteration 7 complete shared/app/build exit | Passed | Shared-test TypeScript and all seven configured Deno entries, app TypeScript, `git diff --check`, a 580-module production build, and reciprocal experience-chunk proof passed. Tune emits separate 34.19 kB JS / 13.70 kB CSS lazy assets. |
+| Iteration 7 complete Recipe Console Playwright config | Qualified | 137 passed and one configured-live owner skipped. The exact Tune suite passed 12/12, the focused browser matrix 58/58, and the chunk suite 7/7 across desktop, tablet, portrait, landscape, keyboard, reduced motion, operational/adversarial states, overflow, and CSS isolation. |
+| Iteration 7 exact legacy navigation/ticket pair | Passed | 28/28 Chromium tests; old tabs, aliases, and exact legacy handoffs remain operational. |
+| Iteration 7 control-server check/tests | Passed | Control-server check and 57/57 Deno tests; public contracts remain compatible. |
+| Iteration 7 configured full-stack owner | Skipped; not passed | The configured-live owner was discovered in the complete Recipe Console configuration and skipped for the exact reason below. The forced live-stack script was not run because the required services were unavailable. |
 | Iteration 5 exact nine-file focused Vitest set | Passed | 9/9 files, 229/229 tests after all review fixes. |
 | Iteration 5 complete `packages/tests/rallar-black-box` set | Passed | 72/72 files, 708/708 tests. |
 | Iteration 5 shared/app checks and production build | Passed | Shared-test and app TypeScript checks, a 507-module production build, and the reciprocal Recipe Console/Legacy Experience closure assertion passed. |
@@ -239,6 +277,19 @@ the exact escalated rerun passed 460/460. These environmental failures are not
 represented as product passes. Other non-failing output was the known
 `NO_COLOR`/`FORCE_COLOR` message, Node experimental `localStorage` warning,
 and the expected unsafe-artifact-filename skip diagnostic.
+
+| Iteration 7 production asset | Raw decimal kB | zlib gzip kB |
+| --- | ---: | ---: |
+| Tune lazy CSS | 13.70 | 2.59 |
+| Tune lazy JS | 34.19 | 9.57 |
+| Recipe Console CSS | 66.38 | 10.76 |
+| Recipe Console JS | 205.52 | 55.51 |
+| LegacyExperience CSS | 109.84 | 17.18 |
+| LegacyExperience JS | 752.56 | 176.42 |
+
+The Tune entry is absent when Tune never opens and its UI unmounts when
+inactive. Only the preserved LegacyExperience JS retains the existing
+greater-than-500-kB advisory; Recipe Console does not absorb that closure.
 
 | Iteration 5 current production asset | Raw decimal kB | zlib gzip kB |
 | --- | ---: | ---: |
@@ -282,9 +333,11 @@ authenticated `browser-rallar` agents, a visible passed Execute → Monitor
 artifact export, and a distinct visible non-terminal Monitor cancellation with
 one cancel link per target plus dispatched/completed successful
 `recipe.cancel` commands. The current environment did not provide that stack,
-so the wrapper produced exactly one skip under the gate above. Deterministic
-live-control Monitor proof is qualified, but configured live Postgres proof is
-not: Ready-State #3 remains open.
+so the configured-live owner discovered by the complete Recipe Console run
+produced exactly one skip under the gate above. The forced live-stack script
+was not run without its required services. Deterministic live-control evidence
+is qualified, but configured live Postgres proof is not: Ready-State #3 remains
+open.
 
 ## Remaining risks and deferrals
 
@@ -296,11 +349,11 @@ not: Ready-State #3 remains open.
 - The preserved lazy LegacyExperience chunk remains larger than 500 kB. The
   new Recipe Console closure does not absorb it; legacy decomposition remains
   later strangler work.
-- Iteration 5 implements live control polling and deterministic live Monitor
-  truth, but the configured Postgres lifecycle remains skipped. Ready-State #3
-  therefore remains open; artifact import, comparison, tuning, fleet,
-  diagnostics cutovers, and the remaining acceptance evidence belong to
-  Iterations 6–12.
+- Iterations 6–7 implement distributed artifact analysis and bounded real-
+  evidence tuning/comparison, but the configured Postgres lifecycle remains
+  skipped. Ready-State #3 therefore remains open. History, saved filters,
+  retention, Ready-State #9, Fleet, diagnostics cutovers, and the remaining
+  acceptance evidence belong to Iterations 8–12.
 - Every migration-register row remains uncut and every old deep link remains a
   rollback path. No primary legacy surface is hidden, and the default experience
   is unchanged.
@@ -377,3 +430,21 @@ This qualifies Ready-State #6 and the bounded distributed-run Analyze
 capability. It does not qualify the skipped Postgres lifecycle, generic
 black-box-runner import, history/comparison, a navigation hide, or a default
 flip. Legacy Runs and Shared Test remain visible and deep-linkable.
+
+## Iteration 7 Tune review verdict
+
+Independent shared-contract review found and closed safety gaps around
+terminal-versus-progress RTC provenance, disconnect/barrier semantics, empty
+performance, candidate validation, and owner size. Independent app/state
+review closed malformed-recipe and source-authority drift, hidden blocked
+knobs, stale inspection, explicit comparison selection, quarantine semantics,
+and collision-free identity keys. Browser/cutover review closed compact-target,
+live-announcement, operational/desktop-matrix, and evidence-assertion gaps.
+Every Critical or Important finding received focused RED/GREEN proof; final
+re-reviews report no remaining Critical or Important issue.
+
+This qualifies Ready-State #7 and the bounded comparison plane for #8. It does
+not qualify Ready-State #9, the skipped configured-live lifecycle, server
+history, saved filters, retention, a legacy row cutover, or the default flip.
+Legacy Runs, Compare, Distributed Recipes, and Run Manager remain visible,
+deep-linkable, and governed by their unchanged mount policies.

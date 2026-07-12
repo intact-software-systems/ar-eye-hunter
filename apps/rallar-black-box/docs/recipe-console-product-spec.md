@@ -1,6 +1,6 @@
 # Recipe Console Product Spec
 
-Status: canonical product contract; Iteration 6 Ready-State #4, #5, and #6 code-backed
+Status: canonical product contract; Ready-State #4–#7 and the bounded comparison evidence for #8 are code-backed through Iteration 7
 Evidence date: 2026-07-12
 
 This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
@@ -189,3 +189,39 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
   controlled Playwright/System Chromium is the recorded fallback. No default,
   primary-navigation, legacy-row visibility, mount-policy, workflow cutover,
   public export, control-server contract, or rollback route changed.
+
+### Iteration 7 evidence checkpoint — `cc17169`, `382df72`
+
+- Ready-State #7 is satisfied by the passing exact acceptance
+  `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` —
+  `shows command percentiles cadence drift drops and backpressure for an RTC
+  stream`. It is driven by a retained real artifact and exposes command
+  min/P50/P95/P99/max, mean/spread/outliers, RTC frame disposition, cadence,
+  drift, late frames, backpressure/in-flight drops, and specific slow-agent
+  provenance without invented values.
+- The bounded comparison evidence for Ready-State #8 is satisfied by
+  `compares two runs across recipe participant failure timing and receive
+  deltas`. The explicit v1 baseline/candidate pair also shows selected
+  performance deltas and compatibility warnings. The migration proof
+  `compares two runs and emits explicit candidate timing changes without
+  mutation` verifies validated copyable JSON Patch/diff output, source
+  immutability, and zero Tune mutation requests.
+- The qualified exit passed 247/247 focused tests. The complete 883-test app
+  suite across 93 files is qualified green: 881 passed in the restricted
+  sandbox and the only two denied IPC/loopback cases then passed in their exact
+  nine-test file with required permission. Shared-test TypeScript and all seven
+  Deno entries, app TypeScript, a 580-module build, chunk proof, 137 available
+  Recipe Console browser tests, 28/28 legacy navigation/ticket tests, and 57/57
+  control-server tests passed. One configured-live browser owner was skipped.
+  Independent shared, app/state, browser/accessibility, and cutover re-reviews
+  report no remaining Critical or Important finding.
+- The in-app Browser was unavailable exactly as `No browser is available`;
+  controlled Playwright/System Chromium is the fallback. The configured
+  live/Postgres owner was skipped, not passed, because: `Set
+  RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+- Ready-State #9 remains open for Iteration 8 copied-URL history/filter/
+  comparison restoration. No default, primary-navigation, legacy visibility,
+  legacy mount policy, control-server contract, deep link, rollback route, or
+  workflow cutover changed. No existing public export was removed, renamed, or
+  broken; the shared tuning exports are additive.

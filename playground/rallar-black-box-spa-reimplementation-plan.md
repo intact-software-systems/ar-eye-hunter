@@ -401,8 +401,8 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 4 — Execute Workflow MVP | **Complete** | Shared catalog/manifest/target truth (`3fe2574`), the bounded credential-aware execution API (`76092f6`), guided Execute UI (`8d44a99`), and lifecycle acceptance (`bddde71`) pass the code-backed exit. Fresh validation, browser fallback QA, review fixes, and the unavailable configured-live qualification are recorded below. Ready-State #2 is satisfied; #3 remains open for live Monitor observation, distinct live cancellation, and configured Postgres proof. Both legacy workflow rows remain visible and uncut. |
 | 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
-| 7 — Timing And Recipe Tuning Lab | **In progress** | The tests-first implementation plan binds shared deterministic knob/candidate/hint ownership, retained-artifact/root-control authority, explicit URL-backed comparison, no-mutation proof, and Direction A/browser exit gates. The current seeded Tune remains until those proofs pass; no cutover is claimed. |
-| 8 — History, Compare, Saved Filters, Retention | Pending | No retention preview or history/compare cutover is represented as complete. |
+| 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
+| 8 — History, Compare, Saved Filters, Retention | **In progress** | The tests-first implementation plan is reviewed and ready after the green Iteration 7 exit. History, saved filters, authorization-first dry-run/confirm retention, stale-preview concurrency, URL restoration, and no-cutover gates remain open until their named proofs pass. |
 | 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
@@ -453,11 +453,76 @@ loosening; and Tune neither retains a second artifact nor imports a Control
 execution API. The 118/118 focused baseline and shared/app TypeScript checks
 pass at clean head `20e1df5`.
 
-This is an implementation-start checkpoint, not parity or cutover evidence.
-`runner.runs`, `runner.compare`, and `legacy.distributed-recipes` retain their
-current visibility, mounts, deep links, comparison/history responsibilities,
-and rollback URLs. Ready-State #7 and #8 remain open until the exact named
-browser acceptances and the full qualified exit pass.
+This was an implementation-start checkpoint, not parity or cutover evidence.
+The completed evidence is recorded immediately below.
+
+#### Iteration 7 timing/tuning exit — `cc17169`, `382df72`
+
+Shared-test now owns additive snapshot performance, exact recursive tuning-knob
+inventory, clone-only validated JSON Patch/diff output, readiness-first hints,
+and selected performance deltas. The lazy Tune workspace consumes those
+results from the retained Analyze artifact and root control query, has no seed,
+poller, mutation API, or second artifact store, and unmounts while inactive.
+Explicit comparison restores through existing v1 `compareLeft`, `compareRight`,
+and `timingMetric` state. Candidate state follows source identity/support/knob
+truth rather than routine snapshot timestamps.
+
+The canonical timing, comparison, and no-mutation acceptances pass. Fresh exit
+validation is 247/247 focused Vitest tests; a qualified-green 883-test app suite
+across 93 files, with the sandbox's two denied IPC/loopback cases passing 9/9
+under required permission; shared-test TypeScript plus all seven Deno entries;
+app TypeScript; a 580-module build; reciprocal experience-chunk proof; 137
+available Recipe Console Chromium tests with one exact configured-live skip;
+12/12 Tune, 58/58 focused browser-matrix, 7/7 chunk, 28/28 preserved legacy
+navigation/ticket, and 57/57 control-server tests. Four independent review
+tracks end with no Critical or Important finding. The approved Direction A
+short-landscape baseline was refreshed only after semantic and geometry gates
+passed.
+
+The in-app Browser was unavailable exactly as `No browser is available`;
+controlled Playwright/System Chromium is fallback evidence. The configured
+live/Postgres acceptance remains skipped, not passed, because: `Set
+RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+
+Ready-State #7 and the bounded comparison plane for #8 are code-backed.
+Ready-State #9 and Iteration 8 history/saved-filter/retention coverage remain
+open. `runner.runs`, `runner.compare`, and `legacy.distributed-recipes` remain
+visible, deep-linkable, and uncut. Exact rollback is
+`/?workspace=black-box-runner&tab=runs` for `runner.runs`/`runner.compare` and
+`/?workspace=black-box-runner&tab=distributed-recipes` for
+`legacy.distributed-recipes`.
+
+#### Iteration 8 history/retention implementation start — 2026-07-12
+
+The reviewed tests-first
+[implementation plan](../docs/superpowers/plans/2026-07-12-rallar-recipe-console-history-retention-implementation-plan.md)
+binds Iteration 8 to existing control-server contracts and shared deterministic
+history filtering. The new History UI is authorization-first and always
+previews before confirmation; the existing omitted-preview-query
+`POST /retention/cleanup` remains destructive and unchanged. A server-derived
+dry-run preview returns a short-lived consequence
+fingerprint bound to the server process and full secret-free deletion state,
+explicit confirmation must match that exact preview, any run-set, issued-token,
+process, expiry, or policy drift returns conflict and invalidates confirmation,
+and malformed or unauthorized requests reveal no retention consequence. A 409
+leaves the old preview visibly stale and requires a fresh preview before
+confirmation.
+
+History remains a bounded owner under `src/recipe-console/history/**` composed
+into the lazy Tune route. No local-storage artifact bytes, silent comparison
+selection, invented previous run, control-protocol break, or legacy cutover is
+permitted. Its additive `historyRecipeId` filter stays distinct from the
+cross-view operational `recipeId`, and retention client/validation code remains
+inside the lazy History boundary. Ready-State #9 stays open until copied-URL restoration passes with
+selected view, run, filters, comparison, and timing metric; all legacy Runs,
+Compare, Distributed Recipes, and Run Manager fallbacks remain operational.
+
+Task 0 baseline is green: 194/194 focused unit tests, control-server check and
+57/57 tests, shared TypeScript plus seven Deno entries, app TypeScript, a
+580-module build, reciprocal chunks, and 9/9 available History browser tests.
+The configured-live owner was discovered and skipped, not passed, for the
+unchanged required-service reason recorded below.
 
 #### Iteration 2 visual approval checkpoint — 2026-07-11
 
@@ -1223,7 +1288,7 @@ browser acceptances and the full qualified exit pass.
 | --- | --- | --- |
 | Hidden mounted effects, polling, subscriptions, and runtime ownership | 1, 11 | Extract ownership before unmounting and satisfy `packages/tests/rallar-black-box/app-structure.test.ts` — `legacy routes resolve through dynamic imports only` plus `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions`. |
 | Source, DOM, and CSS selector compatibility can regress during extraction | 1, 2, 11 | Preserve source/public boundaries and add the structure assertion plus `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `CSS isolation fixture preserves representative legacy and Recipe Console controls`. |
-| URL/default flip and runner-agent launch compatibility | 2, 12 | Prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL` and `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `runner-agent launch URL opens advanced workbench consumes and scrubs the session-ticket fragment`; stale stored legacy navigation must not win on a blank URL after cutover. |
+| URL/default flip and runner-agent launch compatibility | 2, 8, 12 | Prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL` and `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `runner-agent launch URL opens advanced workbench consumes and scrubs the session-ticket fragment`; stale stored legacy navigation must not win on a blank URL after cutover. |
 | Future artifact versions and new profile drift | 12 and future contract changes | Iteration 6 now proves profile/version-aware partial, malformed, future-schema, envelope, and generic-profile distinctions through the canonical Analyze acceptance and shared workspace tests. Preserve the additive compatibility inventory and rerun those gates whenever a producer changes. |
 | Retention preview safety | 8 | Add optional dry-run behavior without changing the destructive default, require explicit confirmation, and prove `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup`. |
 | Qualitative visual and performance gates lack executable thresholds | 9, 12 | Iteration 2 now has four approved screenshot baselines and a 1% executable drift budget in `recipe-console-concept-fidelity.spec.ts`; Iteration 9 still owns bounded-render/interaction budgets and Iteration 12 owns final viewport, keyboard, touch, reduced-motion, and non-hover gates. |
