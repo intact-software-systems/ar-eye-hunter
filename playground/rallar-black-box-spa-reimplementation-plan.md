@@ -399,7 +399,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 2 — New Recipe Console Shell | **Complete** | Direction A, Signal Ledger, is implemented as an explicit `v=1` seeded experience through code head `a397642`. The fidelity ledger records URL/history, responsive/accessibility, CSS/chunk isolation, concept, Browser-fallback, review, and fresh validation proof. No workflow is cut over and no legacy primary surface is hidden. |
 | 3 — Control Connection And Agent Board | **Complete** | The canonical bounded control adapter, serialized root query, explicit operational context, URL-backed run/agent selection, repository-derived board, credential-origin policy, and deep snapshot validation are implemented through `a7df46f`. Independent review, mocked lifecycle, actual local-control read, responsive/accessibility, legacy compatibility, server contracts, and qualified validation are recorded below; Ready-State #3 remains open for Iterations 4–5 and configured live/Postgres proof. |
 | 4 — Execute Workflow MVP | **Complete** | Shared catalog/manifest/target truth (`3fe2574`), the bounded credential-aware execution API (`76092f6`), guided Execute UI (`8d44a99`), and lifecycle acceptance (`bddde71`) pass the code-backed exit. Fresh validation, browser fallback QA, review fixes, and the unavailable configured-live qualification are recorded below. Ready-State #2 is satisfied; #3 remains open for live Monitor observation, distinct live cancellation, and configured Postgres proof. Both legacy workflow rows remain visible and uncut. |
-| 5 — Monitor MVP | **In progress** | Independent contract, UI/browser, and control/live audits plus the green 83-test/typecheck baseline are recorded in the tests-first [live Monitor implementation plan](../docs/superpowers/plans/2026-07-12-rallar-recipe-console-monitor-workflow-implementation-plan.md). Shared role-scoped progress, selected-failure correlation, coherent partial-refresh last-known evidence, live Monitor composition, visible Cancel/artifact operations, and configured full-stack discovery must pass before exit. No legacy row is hidden or cut over. |
+| 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
 | 6 — Artifact Analysis | Pending | No profile-aware Recipe Console importer cutover is represented as complete. |
 | 7 — Timing And Recipe Tuning Lab | Pending | No timing/tuning acceptance evidence is represented as complete. |
 | 8 — History, Compare, Saved Filters, Retention | Pending | No retention preview or history/compare cutover is represented as complete. |
@@ -633,6 +633,67 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
   `legacy.distributed-recipes` still owns Monitor, history, compare,
   diagnostics, and authoring. Both legacy rows remain visible, deep-linkable,
   mounted by their preserved policies, and uncut with unchanged rollback URLs.
+
+#### Iteration 5 Monitor exit checkpoint — `46ea153` through `42eedae`
+
+- The synthetic Monitor is replaced by a bounded live workspace that consumes
+  the root control query and shared deterministic recipe/run evidence. It keeps
+  role-scoped progress, selected-failure correlations, complete/partial/current
+  truth, and context-keyed last-known evidence coherent without introducing a
+  second poller, direct transport ownership, or React-side runner derivation.
+  The first region states outcome, affected identity, and next inspection;
+  failures precede bounded timeline/event/composite evidence.
+- Visible Refresh, exact-context armed Cancel, Load artifact, and Export
+  artifact actions use the existing credential-aware execution adapter. Cancel
+  is blocked for partial, stale, offline, authorization, credential-trust, and
+  terminal truth; successful mutations project immediately and queue the root
+  refresh. Artifact identity, same-run retention, late abort-resistant
+  responses, explicit run selection, URL restoration, and the exact legacy Runs
+  handoff have executable proof.
+- Fresh exit validation passed the exact 229/229 focused unit slice, 708/708
+  complete app tests across 72 files, shared-test and app TypeScript checks, the
+  507-module production build and reciprocal experience-chunk assertion, 100
+  Recipe Console Chromium tests with one configured-live skip, 28/28 preserved
+  legacy navigation/ticket tests, and control-server check plus 57/57 tests. A
+  no-environment run of the full-stack Monitor wrapper produced exactly one
+  skipped test with the required reason.
+- Desktop, tablet, 430×932 portrait, 932×430 landscape, keyboard-only paths,
+  44px targets, focus trap/restore, reduced motion, operational transitions and
+  announcements, contained scrolling, CSS isolation in both load orders, and
+  refreshed Direction A Monitor baselines pass through controlled
+  Playwright/System Chromium. The in-app Browser was unavailable exactly as
+  `No browser is available`; this is fallback evidence, not an in-app Browser
+  pass.
+- Seven Task 5 Important proof/safety findings—configured contract failures
+  misclassified as skips, possible memory-API reuse, mobile visual/DOM action
+  order, wrong-run legacy handoff, fixture-authored reconnect prose,
+  short-landscape Monitor overflow, and the missing keyboard-only Monitor
+  path—were closed with focused RED/GREEN coverage. Final independent
+  code/contract and browser/cutover review found no open Critical or Important
+  issue.
+- Ready-State #4 and #5 are code-backed and satisfied by the exact Monitor
+  acceptance owners. The configured Postgres-backed lifecycle in
+  `tests/playwright/rallar-black-box/full-stack-recipe-console-monitor.spec.ts`
+  is discovered by the canonical command and checks visible Monitor truth,
+  artifact export, distinct non-terminal cancellation, and per-target
+  dispatched/completed `recipe.cancel` commands, but the services were
+  unavailable. It is therefore **skipped, not passed**, for exactly:
+  `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+  Ready-State #3 remains open and unpassed.
+- There is no default, primary-navigation, hide, unmount, or cutover change.
+  `runner.runs` remains visible and owns history, offline import/analysis,
+  comparison, and local-run work; `legacy.distributed-recipes` remains visible
+  and owns history, comparison, diagnostics, and authoring. Iterations 6–12
+  retain artifact import, tuning/compare, scale, Fleet, Advanced, final
+  accessibility, configured-live, and default-flip risks.
+
+| Iteration 5 exit criterion | Code-backed evidence |
+| --- | --- |
+| A running or failed run is understandable from the first visible region | The live verdict exposes outcome, affected identity, next inspection, provenance, and bounded warning truth; failure-first ordering passes the exact Ready-State #4 acceptance. |
+| Available failure correlations are operable and last-known evidence remains honest | Agent, recipe, command, diagnostic, timeline/event, and artifact destinations pass the exact Ready-State #5 acceptance; refresh failure, recovery, deletion, context change, and copied-link restoration remain explicit. |
+| Monitor actions use current authoritative control truth | Policy/unit and browser proofs cover Refresh, armed Cancel, Load/Export, stale/partial/offline blocking, identity checks, mutation projection, queued refresh, and abort-resistant late responses. |
+| The strangler boundary remains reversible | Both legacy workflow rows, aliases, deep links, rollback URLs, and mount policies remain operational; the new legacy Runs link restores the exact selected two-run context. |
 
 #### Iteration 1 checkpoint — `63e7b2c`
 
@@ -1085,7 +1146,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | Preserved legacy Auth, Groups/Clients, and Rallar Server action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact parity extractions unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
 | Legacy tab arrow keys update selection without transferring DOM focus to the selected tab | 12 | Preserve Iteration 1 parity, then make roving focus follow keyboard selection and encode the behavior in `recipe-console-accessibility.spec.ts`. |
 | Local Node 26 differs from CI Node 24 | 1 and every code-changing iteration | Run the focused tests, typecheck, and build on CI Node 24; retain the local Node `26.5.0` result separately so version-specific differences remain visible. |
-| Live services and Postgres were unavailable or not exercised in Iteration 0 | 3-5, 8, 12 | Run the listed Deno control-server tests and configured Playwright/live distributed lifecycle, culminating in `npm run test:e2e:rallar-black-box:full-stack:real:distributed`; do not close live-service gates from mock or sandbox-only evidence. |
+| The configured live/Postgres lifecycle remains unexecuted after the Iteration 5 code-backed exit | 8, 12, or the next available configured-service checkpoint | Run `npm run test:e2e:rallar-black-box:full-stack:real:distributed`, including `full-stack-recipe-console-monitor.spec.ts`; do not close Ready-State #3 from mock, discovery, no-environment skip, or sandbox-only evidence. |
 
 ### Iteration 0: Product Cut And Evidence Map
 

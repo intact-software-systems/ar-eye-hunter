@@ -1,7 +1,7 @@
 # Recipe Console Product Spec
 
-Status: canonical Iteration 0 product contract
-Evidence date: 2026-07-10
+Status: canonical product contract; Iteration 5 Ready-State #4 and #5 code-backed
+Evidence date: 2026-07-12
 
 This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
@@ -108,13 +108,13 @@ The product must not present all eight files as universally required. Unknown ve
 
 ## Ready-State traceability
 
-The quoted test names below are the canonical future acceptance evidence. A row is not complete until its named artifact exists and passes; naming it here is not pass evidence.
+The quoted test names below are the canonical acceptance evidence. A row is not complete until its named artifact exists and passes; naming it here is not pass evidence. An unavailable configured-service test remains open even when its wrapper and discovery checks pass.
 
 | # | Ready-State condition | Owning iteration | Exact expected evidence |
 | --- | --- | --- | --- |
 | 1 | The default first screen is distributed recipe execution, not a general command center. | 12 | `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `blank URL opens Recipe Console Execute after the final ready-state flip` |
 | 2 | A simulated distributed ACK run can be completed from visible controls. | 4 | `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts` — `runs a simulated distributed ACK recipe through visible controls` |
-| 3 | A live distributed run can be staged, started, monitored, cancelled, and exported when services are configured. | 3-5 | `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts` — `completes the configured live distributed run lifecycle and exports its artifact` |
+| 3 | A live distributed run can be staged, started, monitored, cancelled, and exported when services are configured. | 3-5 | `tests/playwright/rallar-black-box/full-stack-recipe-console-monitor.spec.ts` — `completes the configured live distributed run lifecycle and exports its artifact` |
 | 4 | Failures are listed before raw event streams. | 5 | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `places the failure verdict and failure list before raw event evidence` |
 | 5 | Every failure row links to agent, command, recipe, diagnostic, timeline, and artifact evidence when available. | 5-6 | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `opens all available correlated evidence from a failure row` |
 | 6 | Artifact import works without a control server connection. | 6 | `tests/playwright/rallar-black-box/recipe-console-analyze.spec.ts` — `imports a partial bundle offline and focuses the first actionable failure` |
@@ -126,3 +126,27 @@ The quoted test names below are the canonical future acceptance evidence. A row 
 | 12 | Existing legacy UI elements remain reachable through advanced/contextual routes, even when hidden from the main flow. | 11 | `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `opens every registered legacy surface from its alias and contextual route` |
 | 13 | Hidden legacy routes are not mounted or loaded on the default path unless a documented state-preservation exception requires it. | 1, 11 | `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions`; `packages/tests/rallar-black-box/app-structure.test.ts` — `legacy routes resolve through dynamic imports only` |
 | 14 | Desktop and mobile views are usable without hidden hover-only evidence. | 12 | `tests/playwright/rallar-black-box/recipe-console-accessibility.spec.ts` — `exposes equivalent keyboard touch and persistent evidence at desktop portrait and landscape viewports` |
+
+### Iteration 5 evidence checkpoint — `42eedae`
+
+- Ready-State #4 is satisfied by the passing exact failure-first Monitor
+  acceptance, and Ready-State #5 is satisfied by the passing exact
+  selected-failure correlation acceptance. The code-backed Monitor also covers
+  current/partial/last-known/offline truth, running/pass/fail/timeout/cancelled
+  and reconnect transitions, bounded secondary evidence, visible armed Cancel,
+  artifact Load/Export, copied run/evidence URLs, and the selected legacy Runs
+  handoff.
+- The qualified exit passed 229/229 focused tests, 708/708 app tests across 72
+  files, shared/app typechecks, a 507-module build and chunk assertion, 100
+  Recipe Console browser tests plus one configured-live skip, 28/28 legacy
+  navigation/ticket tests, and 57/57 control-server tests. Seven recorded
+  Important UI/state review findings were closed with RED/GREEN coverage.
+- Ready-State #3 remains open and unpassed. Its canonical full-stack owner is
+  present and discovered, but Postgres-backed services were unavailable; the
+  no-environment wrapper produced exactly one skip for:
+  `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+- The in-app Browser was unavailable exactly as `No browser is available`;
+  controlled Playwright/System Chromium is the recorded fallback. No default,
+  primary-navigation, legacy-row visibility, mount-policy, or workflow cutover
+  changed, and both legacy workflow rows remain available.
