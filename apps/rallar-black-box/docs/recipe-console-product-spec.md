@@ -102,7 +102,7 @@ All new Recipe Console URLs use the typed, validated schema version `v=1`.
 
 ## Local storage rules
 
-Local storage may contain personal defaults only: collapsed panels, last control URL, preferred density, recent recipe profile, bounded saved History-filter presets, and a theme preference if one is introduced. URL state owns shareable operational context. Saved presets contain only the whitelisted History filters; explicit URL fields always win.
+Local storage may contain personal defaults only: collapsed panels, last control URL, preferred density, recent recipe profile, bounded saved History-filter presets, and a theme preference if one is introduced. URL state owns shareable operational context. Saved presets use the versioned `rallar-black-box.ui.recipe-console.history-filter-presets.v1` envelope and contain only `historyQuery`, `historyGroup`, `historyRecipeId`, `historyProfile`, `failureCategory`, `status`, `from`, and `to`. They are limited to 12 entries with bounded names and values; explicit URL fields always win until an operator applies a preset.
 
 Never persist secrets, raw credentials, session tickets, large artifact payloads, transient hover state, pointer positions, animation state, or equivalent ephemeral presentation state. Existing redacted draft persistence remains a temporary legacy responsibility until its migration-register owner proves an explicit replacement.
 

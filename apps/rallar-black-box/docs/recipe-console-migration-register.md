@@ -1,11 +1,28 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Iteration 8 retention/filter foundation code-backed through `48b2fd0`, all legacy workflow rows visible and uncut
+Status: canonical migration register; Iteration 8 retention/filter/preset foundation code-backed through `1e19dfb`, all legacy workflow rows visible and uncut
 Evidence/status date: 2026-07-12
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 8 bounded History presets — `1e19dfb`
+
+Task 4 adds one versioned, exact-whitelist History-filter store behind an
+injected adapter. It keeps at most 12 normalized presets and persists only the
+eight committed History URL filters with bounded names and values. Run and
+comparison selections, control URL/token state, credentials, artifacts,
+transient drafts, and active-preset state cannot enter the envelope. Future
+versions are preserved, malformed siblings are isolated, storage failures are
+nonfatal, and browser `localStorage` access belongs only to the focused hook.
+
+Fresh proof is 22/22 focused tests and app TypeScript. StrictMode replay and
+storage-port replacement regressions were first reproduced, then fixed;
+independent re-review reports no remaining Critical or Important issue. Loaded
+presets do not override explicit URL state without an operator Apply action.
+This foundation composes no History UI and changes no legacy row, visibility,
+mount policy, deep link, rollback, default, or control-server contract.
 
 ## Iteration 8 shareable History filters — `48b2fd0`
 

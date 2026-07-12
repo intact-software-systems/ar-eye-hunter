@@ -1,8 +1,8 @@
 # Rallar Recipe Console History, Compare, Saved Filters, And Retention Implementation Plan
 
 Status: in progress; Iteration 7 is green through `cc17169` and `382df72`;
-Tasks 0–2 are complete; Task 3 code is green with its cleanup-sequence proof
-deferred to Task 5, and Task 4 is in progress
+Tasks 0–4 are complete, with Task 3's cleanup-sequence proof deferred to Task
+5; Task 5 is in progress
 
 **Goal:** Complete parent Iteration 8 by making past distributed work
 findable, shareable, comparable, and safely cleanable without changing the
@@ -351,7 +351,7 @@ Files:
 - [ ] RED-test filter → Candidate selection → cleanup → copied URL/back-forward
   so `historyRecipeId` and other filters survive while operational `recipeId`
   follows the selected run and may be cleared independently.
-- [ ] Keep committed filters shareable and make explicit URL state override any
+- [x] Keep committed filters shareable and make explicit URL state override any
   locally saved preset.
 
 Task 3 filter/codec code is implemented in `48b2fd0`. Shared history filtering
@@ -367,8 +367,9 @@ Fresh proof is 78/78 focused shared/URL tests, shared-test TypeScript plus all
 seven Deno entries, app TypeScript, and diff checks. Independent review found no
 Critical or Important implementation defect. The required combined filter →
 Candidate → cleanup → copied URL/back-forward sequence remains explicitly open
-until Task 5 supplies cleanup reconciliation; explicit-URL-over-preset proof
-remains open until Task 4. Neither is counted as passed here.
+until Task 5 supplies cleanup reconciliation. Task 4 now proves that loaded
+presets remain inert until an explicit apply and that saves always capture the
+latest committed URL state.
 
 ## Task 4: Build Bounded Saved-Filter Persistence
 
@@ -379,19 +380,35 @@ Files:
 - Add `apps/rallar-black-box/src/recipe-console/history/use-history-filter-presets.ts`
 - Add `packages/tests/rallar-black-box/recipe-console-history-storage.test.ts`
 
-- [ ] RED-test storage-disabled, quota/read/write/remove exceptions as nonfatal.
-- [ ] RED-test schema version, exact whitelist, caps, deterministic normalized
+- [x] RED-test storage-disabled, quota/read/write/remove exceptions as nonfatal.
+- [x] RED-test schema version, exact whitelist, caps, deterministic normalized
   names/order, duplicate replacement, and oldest-entry eviction at 12.
-- [ ] RED-test that Save serializes committed URL filters rather than transient
+- [x] RED-test that Save serializes committed URL filters rather than transient
   draft text.
-- [ ] RED-test malformed JSON, future version, non-array values, unknown keys,
+- [x] RED-test malformed JSON, future version, non-array values, unknown keys,
   invalid enum/range values, oversize names/fields/count, and prototype-shaped
   objects are dropped without losing valid siblings.
-- [ ] RED-test that credentials, control URLs/tokens, run selection, compare
+- [x] RED-test that credentials, control URLs/tokens, run selection, compare
   IDs, artifacts, active preset, and transient drafts can never serialize.
-- [ ] Keep the adapter data-in/data-out with an injected storage port; browser
+- [x] Keep the adapter data-in/data-out with an injected storage port; browser
   localStorage access belongs only in `use-history-filter-presets.ts`, never
   `TuneWorkspace`, `HistoryWorkspace`, or a global provider.
+
+Task 4 is implemented in `1e19dfb`. The pure contract and injected storage
+adapter persist exactly the eight History filters in one versioned envelope,
+with 12/64/512/256 item/name/query/string caps, a 128 KiB serialized-input
+guard, a 1,024-entry direct-input guard, strict prototype/accessor/unknown-key
+rejection, deterministic newest-first replacement semantics, and future-version
+preservation. The hook is the sole browser `localStorage` owner and never
+persists selections, comparison, credentials, artifacts, drafts, or active
+preset state.
+
+Fresh proof is 22/22 focused tests and app TypeScript. RED tests demonstrated
+both React StrictMode replay of a storage write inside a functional updater and
+unsafe carry-over when the injected storage port changed; writes now occur once
+outside replayable updaters and a replaced port is re-read before interaction.
+Explicit URL filters remain authoritative over loaded presets until apply.
+Independent re-review reports no remaining Critical or Important issue.
 
 ## Task 5: Build Pure History Rows, URL Patches, And Cleanup Reconciliation
 

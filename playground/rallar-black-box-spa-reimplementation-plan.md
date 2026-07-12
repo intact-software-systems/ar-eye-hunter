@@ -407,7 +407,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 5 — Monitor MVP | **Complete** | Shared role-scoped progress and selected-failure correlation, context-keyed current/last-known truth, the bounded live Monitor, credential-aware Cancel/artifact actions, legacy Runs handoff, and canonical full-stack discovery are code-backed through `42eedae`. Ready-State #4 and #5 are satisfied. Ready-State #3 remains open because the configured Postgres lifecycle was unavailable and skipped, not passed. No default, navigation, legacy-row visibility, mount policy, or workflow cutover changed. |
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
-| 8 — History, Compare, Saved Filters, Retention | **In progress** | Retention server/client foundations and shareable semantic History filters are code-backed through `48b2fd0`. Authorization-first guarded cleanup, context-bound client safety, dynamic-only chunks, actual-failure classification, malformed-manifest resilience, and distinct v1 History URL fields pass focused validation/review. The combined cleanup URL sequence, presets, models/UI, browser matrix, and no-cutover exit remain open. |
+| 8 — History, Compare, Saved Filters, Retention | **In progress** | Retention server/client foundations, shareable semantic History filters, and bounded non-secret saved presets are code-backed through `1e19dfb`. Authorization-first guarded cleanup, context-bound client safety, dynamic-only chunks, actual-failure classification, malformed-manifest resilience, distinct v1 History URL fields, explicit URL precedence, StrictMode-safe writes, and storage-port version protection pass focused validation/review. The combined cleanup URL sequence, models/UI, browser matrix, and no-cutover exit remain open. |
 | 9 — Large-Run Scale And Virtualization | Pending | No executable scale threshold is represented as met. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
@@ -579,8 +579,23 @@ overloading operational `recipeId` or clearing comparison/timing/unknown state.
 Fresh proof is 78/78 focused tests, shared TypeScript plus all seven Deno entries,
 app TypeScript, and independent review with no implementation defect. The
 combined filter → Candidate → cleanup → copied URL/back-forward proof is still
-open for Task 5 reconciliation, and explicit URL precedence over saved presets
-is still open for Task 4; neither is claimed early.
+open for Task 5 reconciliation.
+
+Task 4 saved-filter persistence is green through `1e19dfb`. One injected,
+versioned adapter stores only the eight committed History filters, with exact
+whitelisting, deterministic duplicate/eviction behavior, 12/64/512/256 caps,
+defensive raw/direct input limits, strict malformed-object rejection, and
+future-version preservation. Browser `localStorage` is referenced only by the
+focused hook; selections, comparison, credentials, artifacts, transient drafts,
+and active-preset state cannot serialize. Loaded presets remain inert until an
+operator applies one, so explicit URL state stays authoritative.
+
+Fresh proof is 22/22 focused tests and app TypeScript. Review first exposed and
+tests reproduced React replayable-updater writes and stale model carry-over when
+the injected storage port changes. Writes are now outside functional updaters
+and replacement ports are read before interaction. Final independent re-review
+reports no Critical or Important issue. No UI, legacy visibility, mount policy,
+deep link, rollback, default, or control contract changed.
 
 #### Iteration 2 visual approval checkpoint — 2026-07-11
 
