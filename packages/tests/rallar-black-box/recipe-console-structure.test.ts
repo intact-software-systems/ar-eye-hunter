@@ -341,11 +341,13 @@ describe('Recipe Console experience boundary', () => {
             expect(existsSync(resolve(repositoryRoot, removed)), removed).toBe(false);
         }
         const app = source(recipeConsolePath);
-        const seedState = source(`${recipeConsoleRoot}/data/seeded-console-state.ts`);
-        const models = source(`${recipeConsoleRoot}/data/recipe-console-models.ts`);
         expect(app).not.toMatch(/key=\{revision\}|useState/);
-        expect(seedState).not.toMatch(/createExecutePreviewModel|\bexecute\s*:/);
-        expect(models).not.toMatch(/ExecutePreviewModel|\bexecute\s*:/);
+        for (const removed of [
+            `${recipeConsoleRoot}/data/seeded-console-state.ts`,
+            `${recipeConsoleRoot}/data/recipe-console-models.ts`,
+        ]) {
+            expect(existsSync(resolve(repositoryRoot, removed)), removed).toBe(false);
+        }
     });
 
     test('binds Monitor operations to the root credential-aware control boundary', () => {
@@ -545,7 +547,9 @@ describe('Recipe Console experience boundary', () => {
         expect(workspace).toContain('<MonitorWorkspace');
         expect(workspace).not.toMatch(/display\s*:\s*['"]none|(?:^|\s)hidden(?:=|\s|>)/m);
         expect(workspace).not.toMatch(/(?:registry|Registry|index\.ts)/);
-        expect(workspace).toContain('createRecipeConsoleSeedState');
+        expect(workspace).not.toMatch(
+            /createRecipeConsoleSeedState|seeded-console-state|\bseedState\b|\bseededRevision\b/,
+        );
 
         for (const path of filesBelow(recipeConsoleRoot).filter(path => path.endsWith('.tsx'))) {
             const file = source(path);
@@ -580,8 +584,10 @@ describe('Recipe Console experience boundary', () => {
         expect(`${hook}\n${draft}\n${operations}`).not.toMatch(
             /\bfetch\s*\(|seeded-console-state|seed-agent-/,
         );
-        expect(workspace).toContain('if (executeActive) return;');
-        expect(workspace).toContain('setSeededRevision');
+        expect(workspace).toContain(
+            'onRefresh={() => void control.connection.refresh()}',
+        );
+        expect(workspace).not.toMatch(/setSeededRevision|createRecipeConsoleSeedState/);
         expect(workspace).toContain('onSafeTargetLabelChange');
     });
 
@@ -669,17 +675,14 @@ describe('Recipe Console experience boundary', () => {
             expect(existsSync(resolve(repositoryRoot, removed)), removed).toBe(false);
         }
         const workspace = source(recipeConsoleWorkspacePath);
-        const seedState = source(`${recipeConsoleRoot}/data/seeded-console-state.ts`);
-        const models = source(`${recipeConsoleRoot}/data/recipe-console-models.ts`);
         expect(workspace).toContain(
             "import { MonitorWorkspace } from '../monitor/MonitorWorkspace.tsx';",
         );
         expect(workspace).not.toMatch(/MonitorPreview|FailureInspector|seedState\.monitor/);
         expect(workspace).toContain(
-            'const monitorInspectorAvailable = monitorActive && inspectorContent !== undefined;',
+            'const inspectableSelection = inspectorContent !== undefined &&',
         );
-        expect(seedState).not.toMatch(/createMonitorPreviewModel|\bmonitor\s*:/);
-        expect(models).not.toMatch(/MonitorPreviewModel|\bmonitor\s*:/);
+        expect(workspace).toContain('onSelectionLabelChange={setSelectionLabel}');
 
         const overlay = source(`${recipeConsoleRoot}/ui/OverlaySheet.tsx`);
         expect(overlay).toContain("event.key === 'Escape'");
@@ -778,7 +781,6 @@ describe('Recipe Console experience boundary', () => {
 
     test('routes focused Tune Fleet and Advanced modules through one switch', () => {
         const focusedModules = [
-            ['tune/TunePreview.tsx', "import { TunePreview } from '../tune/TunePreview.tsx';", '<TunePreview'],
             ['fleet/FleetPreview.tsx', "import { FleetPreview } from '../fleet/FleetPreview.tsx';", '<FleetPreview'],
             ['advanced/AdvancedPreview.tsx', "import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';", '<AdvancedPreview'],
         ] as const;
@@ -796,13 +798,25 @@ describe('Recipe Console experience boundary', () => {
                 /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/,
             );
         }
-        for (const path of [
+        expect(app).toContain(
+            "const TuneWorkspace = lazy(() => import('../tune/TuneWorkspace.tsx'));",
+        );
+        expect(app).toMatch(
+            /case 'tune':[\s\S]*<Suspense[\s\S]*<TuneWorkspace[\s\S]*<\/Suspense>/,
+        );
+        for (const removed of [
+            'tune/TunePreview.tsx',
             'tune/TimingDistribution.tsx',
             'tune/TunePreview.module.css',
-            'views/PreviewState.module.css',
         ]) {
-            expect(existsSync(resolve(repositoryRoot, recipeConsoleRoot, path)), path).toBe(true);
+            expect(existsSync(resolve(repositoryRoot, recipeConsoleRoot, removed)), removed)
+                .toBe(false);
         }
+        expect(existsSync(resolve(
+            repositoryRoot,
+            recipeConsoleRoot,
+            'views/PreviewState.module.css',
+        ))).toBe(true);
         expect(app.match(/switch\s*\(view\)/g)).toHaveLength(1);
         expect(app).not.toMatch(/(?:viewRegistry|VIEW_REGISTRY|Record<RecipeConsoleView)/);
         expect(app).not.toMatch(/from ['"][^'"]*(?:index|views)\.ts['"]/);

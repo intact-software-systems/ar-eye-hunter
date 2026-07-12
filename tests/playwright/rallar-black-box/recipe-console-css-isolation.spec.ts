@@ -3,6 +3,8 @@ import {
     installRecipeConsoleMonitorFixture,
     MONITOR_ROUTE,
 } from './recipe-console-monitor-fixture.ts';
+import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
+import { TUNE_COMPARE_ROUTE } from './recipe-console-tune-run-data.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 const RECIPE_URL =
@@ -207,6 +209,63 @@ async function captureRealMonitorStyles(page: Page) {
     };
 }
 
+async function captureRealTuneStyles(page: Page) {
+    const source = page.locator('[data-tune-source]');
+    const hints = page.locator('[data-tune-hints]');
+    const commandTiming = page.locator('[data-tune-command-timing]');
+    const streamHealth = page.locator('[data-tune-stream-health]');
+    const candidate = page.locator('[data-tune-candidate]');
+    const comparison = page.locator('[data-tune-comparison]');
+    const candidateInput = candidate.getByLabel('Candidate value');
+    const metric = source.getByRole('button', {
+        name: 'Send duration',
+        exact: true,
+    });
+    for (const owner of [
+        source,
+        hints,
+        commandTiming,
+        streamHealth,
+        candidate,
+        comparison,
+        candidateInput,
+        metric,
+    ]) {
+        await expect(owner).toBeVisible();
+    }
+    await expect(metric).toHaveAttribute('aria-pressed', 'true');
+
+    const style = async (
+        owner: ReturnType<Page['locator']>,
+        properties: readonly string[],
+    ) => owner.evaluate((node, names) => {
+        const computed = getComputedStyle(node);
+        return Object.fromEntries(names.map(name => [
+            name,
+            computed.getPropertyValue(name),
+        ]));
+    }, properties);
+    const panelProperties = [
+        'background-color', 'border-top-color', 'display', 'min-width', 'padding',
+    ] as const;
+    return {
+        source: await style(source, panelProperties),
+        hints: await style(hints, panelProperties),
+        commandTiming: await style(commandTiming, panelProperties),
+        streamHealth: await style(streamHealth, panelProperties),
+        candidate: await style(candidate, panelProperties),
+        comparison: await style(comparison, panelProperties),
+        candidateInput: await style(candidateInput, [
+            'background-color', 'border-radius', 'border-top-color', 'color',
+            'min-height',
+        ]),
+        metric: await style(metric, [
+            'background-color', 'border-radius', 'border-top-color', 'color',
+            'font-weight', 'min-height',
+        ]),
+    };
+}
+
 test('is independent of stylesheet load order', async ({ page }) => {
     const legacyFirstLegacy = await capture(page, 'both', legacySelectors);
     const legacyFirstRecipe = await capture(page, 'both', recipeSelectors);
@@ -296,6 +355,68 @@ test('matches cold Monitor styles when legacy components load first', async ({
 
     expect(await captureRealMonitorStyles(legacyFirst)).toEqual(coldMonitor);
     await legacyFirst.close();
+});
+
+test('preserves real Tune styles across a legacy round trip', async ({
+    context,
+    page,
+}) => {
+    await installRecipeConsoleTuneFixture(context);
+    await page.goto(TUNE_COMPARE_ROUTE);
+    const before = await captureRealTuneStyles(page);
+
+    await navigateInApp(page, '/?provider=simulated&experience=legacy&tab=auth');
+    await expect(page.locator('.app-shell')).toBeVisible();
+    await expect(page.locator('[data-tune-workspace]')).toHaveCount(0);
+    await navigateInApp(page, TUNE_COMPARE_ROUTE);
+    await expect(page.locator('.app-shell')).toHaveCount(0);
+
+    expect(await captureRealTuneStyles(page)).toEqual(before);
+});
+
+test('matches cold Tune styles when legacy components load first', async ({
+    context,
+    page,
+}) => {
+    await installRecipeConsoleTuneFixture(context);
+    await page.goto(TUNE_COMPARE_ROUTE);
+    const coldTune = await captureRealTuneStyles(page);
+
+    const legacyFirst = await context.newPage();
+    await legacyFirst.goto('/?provider=simulated&experience=legacy&tab=auth');
+    await expect(legacyFirst.locator('.app-shell')).toBeVisible();
+    await expect(legacyFirst.locator('[data-tune-workspace]')).toHaveCount(0);
+    await navigateInApp(legacyFirst, TUNE_COMPARE_ROUTE);
+    await expect(legacyFirst.locator('.app-shell')).toHaveCount(0);
+
+    expect(await captureRealTuneStyles(legacyFirst)).toEqual(coldTune);
+    await legacyFirst.close();
+});
+
+test('lazy-loads Tune only on demand and unmounts it when leaving', async ({
+    context,
+    page,
+}) => {
+    await installRecipeConsoleTuneFixture(context);
+    const tuneModuleRequests: string[] = [];
+    page.on('request', request => {
+        if (request.url().includes('/recipe-console/tune/')) {
+            tuneModuleRequests.push(request.url());
+        }
+    });
+
+    await page.goto(RECIPE_URL);
+    await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'execute');
+    await expect(page.locator('[data-tune-workspace]')).toHaveCount(0);
+    expect(tuneModuleRequests).toEqual([]);
+
+    await page.getByRole('button', { name: 'Tune', exact: true }).click();
+    await expect(page.locator('[data-tune-workspace]')).toBeVisible();
+    expect(tuneModuleRequests.some(url => url.includes('TuneWorkspace.tsx'))).toBe(true);
+
+    await page.getByRole('button', { name: 'Execute', exact: true }).click();
+    await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'execute');
+    await expect(page.locator('[data-tune-workspace]')).toHaveCount(0);
 });
 
 test('keeps complete target status evidence reachable across Execute viewports', async ({

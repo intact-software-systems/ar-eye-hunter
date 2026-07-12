@@ -1,0 +1,201 @@
+.candidate {
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+    padding: 16px 18px;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.candidate header {
+    display: flex;
+    min-width: 0;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.candidate header p,
+.candidate header h2,
+.candidate .status,
+.candidate .empty,
+.output p {
+    margin: 0;
+}
+
+.candidate header p {
+    color: var(--rc-primary);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+
+.candidate header > span,
+.status,
+.empty {
+    color: var(--rc-muted);
+}
+
+.candidate header > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.editor {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(220px, 1fr) minmax(220px, 1.2fr) minmax(150px, .5fr) auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.editor label {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+    color: var(--rc-muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.editor select,
+.editor input,
+.actions button,
+.output button {
+    min-height: 44px;
+    padding: 0 10px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    font: inherit;
+}
+
+.editor select,
+.editor input {
+    width: 100%;
+    min-width: 0;
+}
+
+.path {
+    display: grid;
+    min-width: 0;
+    min-height: 44px;
+    align-content: center;
+    gap: 2px;
+    padding: 6px 10px;
+    border-left: 3px solid var(--rc-selected-border);
+    background: var(--rc-selected-bg);
+}
+
+.path code {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.actions {
+    display: flex;
+    gap: 8px;
+}
+
+.actions button,
+.output button {
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.actions button:first-child,
+.output button {
+    border-color: var(--rc-primary);
+    color: #FFFFFF;
+    background: var(--rc-primary);
+}
+
+.actions button:disabled {
+    border-color: var(--rc-status-disabled-border);
+    color: var(--rc-status-disabled-text);
+    background: var(--rc-status-disabled-bg);
+    cursor: not-allowed;
+}
+
+.errors {
+    margin: 0;
+    padding: 10px 12px 10px 28px;
+    border-left: 3px solid var(--rc-status-failed-border);
+    color: var(--rc-status-failed-text);
+    background: var(--rc-status-failed-bg);
+}
+
+.output {
+    display: grid;
+    min-width: 0;
+    gap: 10px;
+    padding-top: 12px;
+    border-top: 1px solid var(--rc-border);
+}
+
+.output details {
+    min-width: 0;
+}
+
+.output summary {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    padding: 0 12px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    color: var(--rc-text);
+    background: var(--rc-rail);
+    cursor: pointer;
+    font-weight: 800;
+    list-style-position: inside;
+}
+
+.output details[open] summary {
+    border-color: var(--rc-selected-border);
+    color: var(--rc-selected-text);
+    background: var(--rc-selected-bg);
+}
+
+.output pre {
+    max-height: 260px;
+    margin: 0;
+    overflow: auto;
+    padding: 12px;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-canvas);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.output button {
+    justify-self: start;
+}
+
+@media (max-width: 1100px) {
+    .editor {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .candidate {
+        padding-inline: 12px;
+    }
+
+    .candidate header,
+    .editor {
+        align-items: flex-start;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .candidate header {
+        flex-direction: column;
+    }
+
+    .actions {
+        flex-wrap: wrap;
+    }
+}

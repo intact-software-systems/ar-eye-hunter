@@ -1,19 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
+import { chooseAnalyzeFiles } from './recipe-console-analyze-helpers.ts';
 import {
     installRecipeConsoleMonitorFixture,
     MONITOR_ROUTE,
 } from './recipe-console-monitor-fixture.ts';
+import { createTuneArtifactUpload } from './recipe-console-tune-artifacts.ts';
+import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
+import {
+    TUNE_ANALYZE_ROUTE,
+    TUNE_SLOW_AGENT_ID,
+} from './recipe-console-tune-run-data.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
-
-async function routeLiveEmptyControl(page: Page): Promise<void> {
-    await page.route(CONTROL_ROUTE, route => route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        headers: { 'access-control-allow-origin': '*' },
-        body: JSON.stringify({ runs: [], distributedRuns: [] }),
-    }));
-}
 
 function liveExecuteSnapshot() {
     const runId = 'execute-control-a';
@@ -181,14 +179,91 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
         viewport: { width: 932, height: 430 },
         view: 'tune',
         ready: async page => {
-            const matrix = page.locator('[data-landscape-matrix]');
-            const distribution = page.getByRole('img', { name: 'Command duration distribution' });
-            await expect(distribution).toBeVisible();
-            expect((await matrix.boundingBox())?.y).toBeLessThanOrEqual(64);
-            const distributionBounds = await distribution.boundingBox();
-            expect((distributionBounds?.y ?? 0) + (distributionBounds?.height ?? 0))
-                .toBeLessThanOrEqual(430);
+            const tune = page.locator('[data-tune-workspace]');
+            await expect(tune).toHaveAttribute('data-source-kind', 'artifact');
+            await expect(tune).toHaveAttribute('data-source-detail', 'detailed');
+            await expect(tune.locator('[data-tune-source]'))
+                .toContainText('artifact · detailed');
+            const command = tune.locator('[data-tune-command-timing]');
+            for (const percentile of [
+                'P50 400 ms',
+                'P95 1,200 ms',
+                'P99 1,200 ms',
+            ]) {
+                await expect(command).toContainText(percentile);
+            }
+            await expect(command.locator('[data-tune-slow-agents="command"]'))
+                .toContainText(TUNE_SLOW_AGENT_ID);
+            const stream = tune.locator('[data-tune-stream-health]');
+            for (const evidence of [
+                '30 planned',
+                '5 dropped',
+                '2 in-flight drops',
+                '28 ms max drift',
+                'P95 68 ms',
+                'P99 92 ms',
+            ]) {
+                await expect(stream).toContainText(evidence);
+            }
+            await expect(stream.locator('[data-tune-slow-agents="stream"]'))
+                .toContainText(TUNE_SLOW_AGENT_ID);
+            await expect(tune.locator('[data-tune-hints]'))
+                .toContainText('Lower cadence');
+
+            const sourceBounds = await tune.locator('[data-tune-source]')
+                .boundingBox();
+            const evidencePlane = command.locator('..');
+            const commandBounds = await command.boundingBox();
+            const streamBounds = await stream.boundingBox();
+            const workBounds = await page.locator('[data-work-surface]')
+                .boundingBox();
+            expect(sourceBounds).not.toBeNull();
+            expect(commandBounds).not.toBeNull();
+            expect(streamBounds).not.toBeNull();
+            expect(workBounds).not.toBeNull();
+            expect(commandBounds?.y).toBeGreaterThan(sourceBounds?.y ?? 0);
+            expect(Math.abs((commandBounds?.y ?? 0) - (streamBounds?.y ?? 0)))
+                .toBeLessThanOrEqual(1);
+            expect(commandBounds?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(430);
+            expect(streamBounds?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(430);
+            expect(commandBounds?.x ?? 0).toBeGreaterThanOrEqual(workBounds?.x ?? 0);
+            expect((streamBounds?.x ?? 0) + (streamBounds?.width ?? 0))
+                .toBeLessThanOrEqual(
+                    (workBounds?.x ?? 0) + (workBounds?.width ?? 0) + 1,
+                );
+            await expect(evidencePlane).toHaveCSS('column-gap', '12px');
+            expect(await evidencePlane.evaluate(element => {
+                const divider = getComputedStyle(element, '::after');
+                const firstPane = element.firstElementChild;
+                return {
+                    content: divider.content,
+                    matchesPaneBorder: firstPane
+                        ? divider.backgroundColor ===
+                            getComputedStyle(firstPane).borderTopColor
+                        : false,
+                    width: divider.width,
+                };
+            })).toEqual({
+                content: '""',
+                matchesPaneBorder: true,
+                width: '1px',
+            });
+            for (const pane of [command, stream]) {
+                await expect(pane).toHaveCSS('overflow-y', 'auto');
+                expect(await pane.evaluate(element =>
+                    element.scrollHeight > element.clientHeight
+                )).toBe(true);
+            }
+            expect(await page.evaluate(() => ({
+                x: document.documentElement.scrollWidth -
+                    document.documentElement.clientWidth,
+                y: document.documentElement.scrollHeight -
+                    document.documentElement.clientHeight,
+            }))).toEqual({ x: 0, y: 0 });
             await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
+            await page.locator('[data-work-surface]').evaluate(element => {
+                element.scrollTop = 0;
+            });
         },
     },
 ];
@@ -203,11 +278,18 @@ test.describe('approved Signal Ledger concept fidelity', () => {
             } else if (concept.view === 'monitor') {
                 await installRecipeConsoleMonitorFixture(context);
             } else {
-                await routeLiveEmptyControl(page);
+                await installRecipeConsoleTuneFixture(context);
             }
-            await page.goto(concept.view === 'monitor'
-                ? MONITOR_ROUTE
-                : `/?provider=simulated&v=1&experience=recipe-console&view=${concept.view}`);
+            if (concept.view === 'tune') {
+                await page.goto(TUNE_ANALYZE_ROUTE);
+                await chooseAnalyzeFiles(page, [createTuneArtifactUpload()]);
+                await page.getByRole('button', { name: 'Tune', exact: true })
+                    .click();
+            } else {
+                await page.goto(concept.view === 'monitor'
+                    ? MONITOR_ROUTE
+                    : `/?provider=simulated&v=1&experience=recipe-console&view=${concept.view}`);
+            }
             await expect(page.locator('.recipe-console')).toHaveAttribute(
                 'data-view',
                 concept.view,
@@ -224,7 +306,7 @@ test.describe('approved Signal Ledger concept fidelity', () => {
                 animations: 'disabled',
                 caret: 'hide',
                 fullPage: false,
-                maxDiffPixelRatio: 0.01,
+                maxDiffPixelRatio: concept.view === 'tune' ? 0 : 0.01,
                 scale: 'css',
             });
         });

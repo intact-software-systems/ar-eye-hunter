@@ -1,4 +1,17 @@
 import { expect, type Page, test } from '@playwright/test';
+import { installRecipeConsoleTuneFixture } from
+    './recipe-console-tune-fixture.ts';
+import {
+    TUNE_COMPARE_ROUTE,
+    TUNE_LEFT_CONTROL_RUN_ID,
+    TUNE_LEFT_RUN_ID,
+    TUNE_RIGHT_CONTROL_RUN_ID,
+    TUNE_RIGHT_RUN_ID,
+    TUNE_SHARED_AGENT_ID,
+    TUNE_SLOW_AGENT_ID,
+    TUNE_STREAM_COMMAND_ID,
+    TUNE_STREAM_RECIPE_ID,
+} from './recipe-console-tune-run-data.ts';
 
 const RECIPE_CONSOLE_VIEWS = [
     'execute',
@@ -45,8 +58,9 @@ async function expectVisibleView(page: Page, view: RecipeConsoleView): Promise<v
             await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
             break;
         case 'tune':
-            await expect(page.locator('[data-preview-view="tune"]'))
-                .toContainText('Command-duration only');
+            await expect(page.locator('[data-tune-workspace]')).toBeVisible();
+            await expect(page.getByLabel('Candidate run'))
+                .toContainText(TUNE_RIGHT_RUN_ID);
             break;
         case 'fleet':
             await expect(page.locator('[data-preview-view="fleet"]'))
@@ -78,7 +92,8 @@ async function readClipboardHref(page: Page): Promise<string> {
     return page.evaluate(() => navigator.clipboard.readText());
 }
 
-test('commits all six views and restores them with browser back and forward', async ({ page }) => {
+test('commits all six views and restores them with browser back and forward', async ({ context, page }) => {
+    await installRecipeConsoleTuneFixture(context);
     const initial = new URLSearchParams({
         provider: 'simulated',
         roomId: 'room-safe',
@@ -132,6 +147,7 @@ test('restores the required Execute details inspector through browser history', 
 });
 
 test('restores a complete copied v1 state without inventing reserved-field UI', async ({ context, page }) => {
+    await installRecipeConsoleTuneFixture(context);
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
         { origin: SPA_ORIGIN },
@@ -142,19 +158,19 @@ test('restores a complete copied v1 state without inventing reserved-field UI', 
         v: '1',
         experience: 'recipe-console',
         view: 'tune',
-        controlRunId: 'control-a',
-        distributedRunId: 'distributed-a',
-        agentId: 'agent-a',
-        recipeId: 'recipe-a',
-        commandId: 'command-a',
+        controlRunId: TUNE_RIGHT_CONTROL_RUN_ID,
+        distributedRunId: TUNE_RIGHT_RUN_ID,
+        agentId: TUNE_SHARED_AGENT_ID,
+        recipeId: TUNE_STREAM_RECIPE_ID,
+        commandId: TUNE_STREAM_COMMAND_ID,
         diagnosticSeverity: 'warning',
         transport: 'messages.rtc',
         historyQuery: 'failed ack',
         status: 'waiting-for-barrier',
         from: '100',
         to: '900',
-        compareLeft: 'baseline-a',
-        compareRight: 'candidate-a',
+        compareLeft: TUNE_LEFT_RUN_ID,
+        compareRight: TUNE_RIGHT_RUN_ID,
         timingMetric: 'stream-cadence',
         fleetRegion: 'eu-north',
         fleetMapLayers: 'observed-routes,failures,live-agents',
@@ -162,6 +178,12 @@ test('restores a complete copied v1 state without inventing reserved-field UI', 
     await page.goto(`/?${fullState.toString()}`);
 
     await expectVisibleView(page, 'tune');
+    await expect(page.locator('[data-tune-comparison]')).toContainText(
+        TUNE_LEFT_RUN_ID,
+    );
+    await expect(page.locator('[data-tune-comparison]')).toContainText(
+        TUNE_RIGHT_RUN_ID,
+    );
     await expect(page.getByRole('button', { name: 'Cadence', exact: true }))
         .toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Copy canonical link' }).click();
@@ -198,6 +220,125 @@ test('restores a complete copied v1 state without inventing reserved-field UI', 
     await page.goBack();
     await expectVisibleView(page, 'advanced');
     expect(currentUrl(page).searchParams.get('legacySurface')).toBe('rtc-diagnostics');
+});
+
+test('restores explicit Tune comparison and atomic focus through history', async ({
+    context,
+    page,
+}) => {
+    const fixture = await installRecipeConsoleTuneFixture(context);
+    await context.grantPermissions(
+        ['clipboard-read', 'clipboard-write'],
+        { origin: SPA_ORIGIN },
+    );
+    await page.goto(`${TUNE_COMPARE_ROUTE}` +
+        `&agentId=${TUNE_SHARED_AGENT_ID}` +
+        `&recipeId=${TUNE_STREAM_RECIPE_ID}` +
+        `&commandId=${TUNE_STREAM_COMMAND_ID}`);
+
+    const comparison = page.locator('[data-tune-comparison]');
+    await expect(comparison).toBeVisible();
+    for (const category of [
+        'recipe',
+        'participant',
+        'failure',
+        'timing',
+        'received-message',
+        'performance',
+    ]) {
+        await expect(comparison.locator(`[data-compare-category="${category}"]`))
+            .toBeVisible();
+    }
+    await page.reload();
+    await expect(comparison).toContainText(TUNE_LEFT_RUN_ID);
+    await expect(comparison).toContainText(TUNE_RIGHT_RUN_ID);
+
+    const drift = page.getByRole('button', { name: 'Drift', exact: true });
+    await drift.focus();
+    await drift.press('Enter');
+    await expect(drift).toHaveAttribute('aria-pressed', 'true');
+    await expect(page).toHaveURL(/timingMetric=stream-drift/);
+    await expect(comparison.locator('[data-compare-category="performance"]'))
+        .toContainText('stream-drift');
+
+    await page.getByRole('button', { name: 'Copy canonical link' }).click();
+    const copiedHref = await readClipboardHref(page);
+    const copied = new URL(copiedHref);
+    expect(copied.searchParams.get('compareLeft')).toBe(TUNE_LEFT_RUN_ID);
+    expect(copied.searchParams.get('compareRight')).toBe(TUNE_RIGHT_RUN_ID);
+    expect(copied.searchParams.get('timingMetric')).toBe('stream-drift');
+    await page.goto(copiedHref);
+    await expect(drift).toHaveAttribute('aria-pressed', 'true');
+
+    const rightAgent = page.locator('[data-tune-command-timing]')
+        .locator('[data-tune-slow-agents="command"] button')
+        .filter({ hasText: TUNE_SLOW_AGENT_ID });
+    await rightAgent.focus();
+    await rightAgent.press('Enter');
+    const inspector = page.getByRole('complementary', { name: 'Inspector' });
+    await expect(inspector.locator('[data-tune-inspector]'))
+        .toContainText(TUNE_SLOW_AGENT_ID);
+    const rightLegacyHref = new URL(
+        await inspector.getByRole('link', {
+            name: 'Open this run in legacy Runs',
+        }).getAttribute('href') ?? '',
+        page.url(),
+    );
+    expect(rightLegacyHref.searchParams.get('controlRunId'))
+        .toBe(TUNE_RIGHT_CONTROL_RUN_ID);
+    expect(rightLegacyHref.searchParams.get('distributedRunId'))
+        .toBe(TUNE_RIGHT_RUN_ID);
+
+    await page.getByLabel('Candidate run').selectOption(TUNE_LEFT_RUN_ID);
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
+    await expect(page.getByText(`Agent · ${TUNE_SLOW_AGENT_ID}`, { exact: true }))
+        .toHaveCount(0);
+    await expect.poll(() => {
+        const url = currentUrl(page);
+        return {
+            compareRight: url.searchParams.get('compareRight'),
+            distributedRunId: url.searchParams.get('distributedRunId'),
+            controlRunId: url.searchParams.get('controlRunId'),
+            agentId: url.searchParams.get('agentId'),
+            recipeId: url.searchParams.get('recipeId'),
+            commandId: url.searchParams.get('commandId'),
+        };
+    }).toEqual({
+        compareRight: TUNE_LEFT_RUN_ID,
+        distributedRunId: TUNE_LEFT_RUN_ID,
+        controlRunId: TUNE_LEFT_CONTROL_RUN_ID,
+        agentId: null,
+        recipeId: null,
+        commandId: null,
+    });
+    await expect(comparison).toContainText(
+        'Baseline and candidate must be different runs.',
+    );
+
+    await page.goBack();
+    await expect.poll(() => ({
+        compareRight: currentUrl(page).searchParams.get('compareRight'),
+        distributedRunId: currentUrl(page).searchParams.get('distributedRunId'),
+        controlRunId: currentUrl(page).searchParams.get('controlRunId'),
+    })).toEqual({
+        compareRight: TUNE_RIGHT_RUN_ID,
+        distributedRunId: TUNE_RIGHT_RUN_ID,
+        controlRunId: TUNE_RIGHT_CONTROL_RUN_ID,
+    });
+    await expect(comparison.locator('[data-compare-category="performance"]'))
+        .toContainText('stream-drift');
+    await page.goForward();
+    await expect.poll(() => ({
+        compareRight: currentUrl(page).searchParams.get('compareRight'),
+        distributedRunId: currentUrl(page).searchParams.get('distributedRunId'),
+        controlRunId: currentUrl(page).searchParams.get('controlRunId'),
+    })).toEqual({
+        compareRight: TUNE_LEFT_RUN_ID,
+        distributedRunId: TUNE_LEFT_RUN_ID,
+        controlRunId: TUNE_LEFT_CONTROL_RUN_ID,
+    });
+    expect(fixture.artifactRequestCount()).toBe(0);
+    expect(fixture.mutationRequestCount()).toBe(0);
 });
 
 test('scrubs sensitive state from copied and committed URLs while harmless fields survive', async ({ context, page }) => {

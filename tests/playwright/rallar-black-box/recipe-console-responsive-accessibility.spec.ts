@@ -1,10 +1,19 @@
 import { expect, test, type Locator } from '@playwright/test';
+import { chooseAnalyzeFiles } from './recipe-console-analyze-helpers.ts';
 import {
     installRecipeConsoleMonitorFixture,
     MONITOR_FAILURE_AGENT_ID,
     MONITOR_FAILURE_COMMAND_ID,
     MONITOR_ROUTE,
 } from './recipe-console-monitor-fixture.ts';
+import { createTuneArtifactUpload } from './recipe-console-tune-artifacts.ts';
+import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
+import {
+    TUNE_ANALYZE_ROUTE,
+    TUNE_COMPARE_ROUTE,
+    TUNE_RIGHT_RUN_ID,
+    TUNE_SLOW_AGENT_ID,
+} from './recipe-console-tune-run-data.ts';
 
 async function expectMinimumTargetHeight(locator: Locator, label: string): Promise<void> {
     await expect(locator.first(), `${label} should resolve a visible control`).toBeVisible();
@@ -22,7 +31,11 @@ async function expectMinimumTargetHeight(locator: Locator, label: string): Promi
     }
 }
 
-test('renders scoped shell geometry at every contract viewport', async ({ page }) => {
+test('renders scoped shell geometry at every contract viewport', async ({
+    context,
+    page,
+}) => {
+    await installRecipeConsoleTuneFixture(context);
     const route = '/?provider=simulated&v=1&experience=recipe-console&view=';
 
     for (const contract of [
@@ -32,13 +45,19 @@ test('renders scoped shell geometry at every contract viewport', async ({ page }
         { viewport: { width: 932, height: 430 }, nav: 'compact-rail', inspector: 'overlay', command: 48, navSize: 60, inspectorSize: 320 },
     ] as const) {
         await page.setViewportSize(contract.viewport);
-        await page.goto(`${route}${contract.viewport.height <= 520 ? 'tune' : 'execute'}`);
+        await page.goto(contract.viewport.height <= 520
+            ? TUNE_COMPARE_ROUTE
+            : `${route}execute`);
+        let tuneTrigger: Locator | undefined;
         if (contract.viewport.height <= 520) {
             await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
-            const firstAgent = page.getByRole('gridcell', { name: /seed-agent-a/ });
-            await firstAgent.focus();
+            tuneTrigger = page.locator('[data-tune-slow-agents] button')
+                .filter({ hasText: TUNE_SLOW_AGENT_ID })
+                .first();
+            await tuneTrigger.focus();
             await page.keyboard.press('Enter');
-            await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-a');
+            await expect(page.locator('[data-tune-inspector]'))
+                .toContainText(TUNE_SLOW_AGENT_ID);
         }
         const shell = page.locator('[data-recipe-console-shell]');
         await expect(shell).toHaveAttribute('data-navigation', contract.nav);
@@ -79,12 +98,25 @@ test('renders scoped shell geometry at every contract viewport', async ({ page }
         expect(overflow).toEqual({ x: 0, y: 0 });
 
         if (contract.viewport.height <= 520) {
-            const matrix = await page.locator('[data-landscape-matrix]').boundingBox();
-            const divider = await page.locator('[data-landscape-divider]').boundingBox();
-            const timing = await page.locator('[data-landscape-timing]').boundingBox();
-            expect(divider?.width).toBe(12);
-            expect((matrix?.width ?? 0) / ((matrix?.width ?? 0) + (timing?.width ?? 0)))
-                .toBeCloseTo(0.52, 1);
+            const source = await page.locator('[data-tune-source]').boundingBox();
+            const command = await page.locator('[data-tune-command-timing]').boundingBox();
+            const stream = await page.locator('[data-tune-stream-health]').boundingBox();
+            const work = await page.locator('[data-work-surface]').boundingBox();
+            expect(source).not.toBeNull();
+            expect(command).not.toBeNull();
+            expect(stream).not.toBeNull();
+            expect(work).not.toBeNull();
+            expect(command?.y).toBeGreaterThan(source?.y ?? 0);
+            expect(Math.abs((command?.y ?? 0) - (stream?.y ?? 0)))
+                .toBeLessThanOrEqual(1);
+            expect(command?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(430);
+            expect(stream?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(430);
+            expect(command?.x ?? 0).toBeGreaterThanOrEqual(work?.x ?? 0);
+            expect((stream?.x ?? 0) + (stream?.width ?? 0))
+                .toBeLessThanOrEqual((work?.x ?? 0) + (work?.width ?? 0) + 1);
+            await page.keyboard.press('Escape');
+            await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
+            await expect(tuneTrigger ?? page.locator('body')).toBeFocused();
         }
     }
 
@@ -182,29 +214,92 @@ test('keeps short-landscape Monitor contained through a keyboard-only evidence p
     }))).toEqual({ x: 0, y: 0 });
 });
 
-test('moves Tune matrix focus with every arrow without activating inspection', async ({ page }) => {
+test('supports Tune metric and evidence inspection from the keyboard', async ({
+    context,
+    page,
+}) => {
     await page.setViewportSize({ width: 900, height: 900 });
-    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=tune');
+    const fixture = await installRecipeConsoleTuneFixture(context);
+    await context.grantPermissions(
+        ['clipboard-read', 'clipboard-write'],
+        { origin: 'http://127.0.0.1:5176' },
+    );
+    await page.goto(TUNE_COMPARE_ROUTE);
 
-    const agentA = page.getByRole('gridcell', { name: /seed-agent-a/ });
-    const agentB = page.getByRole('gridcell', { name: /seed-agent-b/ });
-    const agentC = page.getByRole('gridcell', { name: /seed-agent-c/ });
-    await agentA.focus();
-    await page.keyboard.press('ArrowRight');
-    await expect(agentB).toBeFocused();
-    await page.keyboard.press('ArrowDown');
-    await expect(agentC).toBeFocused();
-    await page.keyboard.press('ArrowDown');
-    await expect(agentA).toBeFocused();
-    await page.keyboard.press('ArrowLeft');
-    await expect(agentC).toBeFocused();
-    await page.keyboard.press('ArrowUp');
-    await expect(agentB).toBeFocused();
+    const drift = page.getByRole('button', { name: 'Drift', exact: true });
+    await drift.focus();
+    await page.keyboard.press('Enter');
+    await expect(drift).toHaveAttribute('aria-pressed', 'true');
+    await expect(page).toHaveURL(/timingMetric=stream-drift/);
+    await expect(page.locator(
+        '[data-tune-comparison] [data-compare-category="performance"]',
+    )).toContainText('stream-drift');
     await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
 
+    const slowAgent = page.locator('[data-tune-command-timing]')
+        .locator('[data-tune-slow-agents] button')
+        .filter({ hasText: TUNE_SLOW_AGENT_ID });
+    await expect(slowAgent).toHaveCount(1);
+    await slowAgent.focus();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('dialog', { name: 'Inspector' })).toBeVisible();
-    await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-b');
+    const inspector = page.getByRole('dialog', { name: 'Inspector' });
+    await expect(inspector).toBeVisible();
+    await expect(inspector.locator('[data-tune-inspector]'))
+        .toContainText(TUNE_SLOW_AGENT_ID);
+    await expect(inspector.getByRole('button', { name: 'Close inspector' }))
+        .toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(slowAgent).toBeFocused();
+
+    const inspectKnob = page.getByRole('button', { name: 'Inspect knob' });
+    await inspectKnob.focus();
+    await page.keyboard.press('Space');
+    await expect(page.locator('[data-tune-inspector]'))
+        .toContainText('/recipes/0/recipe/commands/0/rateHz');
+    await page.keyboard.press('Escape');
+    await expect(inspectKnob).toBeFocused();
+
+    const candidate = page.locator('[data-tune-candidate]');
+    const input = candidate.getByLabel('Candidate value');
+    await input.focus();
+    await input.press('ControlOrMeta+A');
+    await input.pressSequentially('24');
+    await expect(input).toHaveValue('24');
+    const preview = candidate.getByRole('button', { name: 'Preview candidate' });
+    await preview.focus();
+    await page.keyboard.press('Enter');
+    await expect(candidate.locator('[data-candidate-patch]'))
+        .toContainText('"value": 24');
+    await expect(candidate).toContainText('Source remains 30');
+    const copy = candidate.getByRole('button', { name: 'Copy JSON patch' });
+    await copy.focus();
+    await page.keyboard.press('Space');
+    await expect(candidate.getByRole('status'))
+        .toContainText('Candidate patch copied');
+    expect(JSON.parse(await page.evaluate(() => navigator.clipboard.readText())))
+        .toEqual([{
+            op: 'replace',
+            path: '/recipes/0/recipe/commands/0/rateHz',
+            value: 24,
+        }]);
+
+    const baseline = page.getByLabel('Baseline run');
+    await baseline.focus();
+    await baseline.pressSequentially(TUNE_RIGHT_RUN_ID);
+    await page.keyboard.press('Tab');
+    await expect(page).toHaveURL(new RegExp(`compareLeft=${TUNE_RIGHT_RUN_ID}`));
+    await expect(page.locator('[data-tune-comparison]'))
+        .toContainText('Baseline and candidate must be different runs.');
+    const copyCanonical = page.getByRole('button', {
+        name: 'Copy canonical link',
+    });
+    await copyCanonical.focus();
+    await copyCanonical.press('Enter');
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toContain(`compareLeft=${TUNE_RIGHT_RUN_ID}`);
+    expect(fixture.artifactRequestCount()).toBe(0);
+    expect(fixture.mutationRequestCount()).toBe(0);
 });
 
 test('keeps representative portrait touch controls at least 44px high', async ({
@@ -272,16 +367,6 @@ test('keeps representative portrait touch controls at least 44px high', async ({
         'portrait selection-dock button',
     );
 
-    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=tune');
-    await expectMinimumTargetHeight(
-        page.locator('[data-tune-agent]'),
-        'Tune agent row',
-    );
-    await expectMinimumTargetHeight(
-        page.getByRole('group', { name: 'Timing metric' }).locator('button'),
-        'Tune timing segment',
-    );
-
     for (const view of ['analyze', 'fleet', 'advanced']) {
         await page.goto(
             `/?provider=simulated&v=1&experience=recipe-console&view=${view}`,
@@ -313,6 +398,50 @@ test('keeps representative portrait touch controls at least 44px high', async ({
             `portrait navigation gap ${index}`,
         ).toBeGreaterThanOrEqual(8);
     }
+});
+
+test('keeps real Tune portrait controls at least 44px', async ({
+    context,
+    page,
+}) => {
+    await page.setViewportSize({ width: 430, height: 932 });
+    const fixture = await installRecipeConsoleTuneFixture(context);
+    await page.goto(TUNE_ANALYZE_ROUTE);
+    await chooseAnalyzeFiles(page, [createTuneArtifactUpload()]);
+    await page.getByRole('button', { name: 'Tune', exact: true }).click();
+
+    await expectMinimumTargetHeight(
+        page.locator('[data-tune-source] select'),
+        'Tune run selector',
+    );
+    await expectMinimumTargetHeight(
+        page.getByRole('group', { name: 'Timing metric' }).locator('button'),
+        'Tune timing segment',
+    );
+    await expectMinimumTargetHeight(
+        page.locator('[data-tune-hints] button'),
+        'Tune decision inspection',
+    );
+    await expectMinimumTargetHeight(
+        page.locator('[data-tune-slow-agents] button'),
+        'Tune slow-agent inspection',
+    );
+    await expectMinimumTargetHeight(
+        page.locator('[data-tune-candidate] input'),
+        'Tune candidate value',
+    );
+    await expectMinimumTargetHeight(
+        page.locator('[data-tune-candidate] button'),
+        'Tune candidate action',
+    );
+    expect(await page.evaluate(() => ({
+        x: document.documentElement.scrollWidth -
+            document.documentElement.clientWidth,
+        y: document.documentElement.scrollHeight -
+            document.documentElement.clientHeight,
+    }))).toEqual({ x: 0, y: 0 });
+    expect(fixture.artifactRequestCount()).toBe(0);
+    expect(fixture.mutationRequestCount()).toBe(0);
 });
 
 test('reserves the portrait selection dock only for actionable evidence', async ({
@@ -355,6 +484,28 @@ test('disables Recipe Console motion when reduced motion is requested', async ({
     await expect(overlay).toHaveCSS('transition-duration', '0s');
     await expect(overlay).toHaveCSS('animation-name', 'none');
     await expect(page.getByRole('button', { name: 'Close inspector' }))
+        .toHaveCSS('transition-duration', '0s');
+});
+
+test('disables Tune motion when reduced motion is requested', async ({
+    context,
+    page,
+}) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 900, height: 900 });
+    await installRecipeConsoleTuneFixture(context);
+    await page.goto(TUNE_COMPARE_ROUTE);
+    const trigger = page.locator('[data-tune-command-timing]')
+        .locator('[data-tune-slow-agents] button')
+        .filter({ hasText: TUNE_SLOW_AGENT_ID });
+    await trigger.click();
+
+    const overlay = page.getByRole('dialog', { name: 'Inspector' });
+    await expect(overlay).toHaveCSS('transition-duration', '0s');
+    await expect(overlay).toHaveCSS('animation-name', 'none');
+    await expect(overlay.getByRole('button', { name: 'Close inspector' }))
+        .toHaveCSS('transition-duration', '0s');
+    await expect(page.getByRole('button', { name: 'Drift', exact: true }))
         .toHaveCSS('transition-duration', '0s');
 });
 

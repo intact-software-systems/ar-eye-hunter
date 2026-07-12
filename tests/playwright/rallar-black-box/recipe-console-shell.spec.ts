@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { chooseAnalyzeFiles } from './recipe-console-analyze-helpers.ts';
 import {
     installRecipeConsoleMonitorFixture,
     MONITOR_DIAGNOSTIC_ID,
@@ -10,17 +11,16 @@ import {
     MONITOR_FAILURE_RECIPE_ID,
     MONITOR_ROUTE,
 } from './recipe-console-monitor-fixture.ts';
+import { createTuneArtifactUpload } from './recipe-console-tune-artifacts.ts';
+import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
+import {
+    TUNE_ANALYZE_ROUTE,
+    TUNE_RIGHT_CONTROL_RUN_ID,
+    TUNE_RIGHT_RUN_ID,
+    TUNE_SLOW_AGENT_ID,
+} from './recipe-console-tune-run-data.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
-
-async function routeLiveEmptyControl(page: Page): Promise<void> {
-    await page.route(CONTROL_ROUTE, route => route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        headers: { 'access-control-allow-origin': '*' },
-        body: JSON.stringify({ runs: [], distributedRuns: [] }),
-    }));
-}
 
 async function routeOfflineControl(page: Page): Promise<void> {
     await page.route(CONTROL_ROUTE, route => route.abort('connectionfailed'));
@@ -84,10 +84,15 @@ async function routeLiveExecuteControl(page: Page): Promise<void> {
     }));
 }
 
-test('renders command-duration Tune without invented stream evidence', async ({ page }) => {
+test('renders real Tune evidence without invented values', async ({
+    context,
+    page,
+}) => {
     await page.setViewportSize({ width: 932, height: 430 });
-    await routeLiveEmptyControl(page);
-    await page.goto('/?provider=simulated&experience=recipe-console&view=tune');
+    const fixture = await installRecipeConsoleTuneFixture(context);
+    await page.goto(TUNE_ANALYZE_ROUTE);
+    await chooseAnalyzeFiles(page, [createTuneArtifactUpload()]);
+    await page.getByRole('button', { name: 'Tune', exact: true }).click();
 
     await expect(page.locator('[data-command-bar]')).toHaveCSS('height', '48px');
     expect((await page.locator('[data-primary-navigation]').boundingBox())?.width).toBe(60);
@@ -97,91 +102,84 @@ test('renders command-duration Tune without invented stream evidence', async ({ 
     await expect(commandBar).toContainText('Control server');
     await expect(commandBar).toContainText('http://localhost:5180');
     await expect(commandBar).toContainText(
-        'rallar-black-box/default/rallar-black-box-room',
+        'rallar-server/default/tune-ci',
     );
     await expect(commandBar).not.toContainText('Baseline');
     await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
 
-    const matrixPane = page.locator('[data-landscape-matrix]');
-    const timingPane = page.locator('[data-landscape-timing]');
-    const matrixBox = await matrixPane.boundingBox();
-    const timingBox = await timingPane.boundingBox();
-    expect((matrixBox?.width ?? 0) / ((matrixBox?.width ?? 0) + (timingBox?.width ?? 0)))
-        .toBeCloseTo(0.52, 1);
-    await expect(matrixPane.locator('[data-tune-agent]')).toHaveCount(3);
-    const timingGrid = matrixPane.getByRole('grid', { name: 'Tune agent timing matrix' });
-    await expect(timingGrid.getByRole('row')).toHaveCount(4);
-    for (const agentId of ['seed-agent-a', 'seed-agent-b', 'seed-agent-c']) {
-        const agentRow = timingGrid.getByRole('row').filter({
-            has: page.locator(`[data-tune-agent="${agentId}"]`),
-        });
-        await expect(agentRow).toHaveCount(1);
-        await expect(agentRow.getByRole('gridcell')).toHaveCount(8);
+    const tune = page.locator('[data-tune-workspace]');
+    await expect(tune).toHaveAttribute('data-source-kind', 'artifact');
+    await expect(tune).toHaveAttribute('data-source-detail', 'detailed');
+    const commandTiming = tune.locator('[data-tune-command-timing]');
+    for (const percentile of ['P50 400 ms', 'P95 1,200 ms', 'P99 1,200 ms']) {
+        await expect(commandTiming).toContainText(percentile);
     }
-    await expect(matrixPane.getByText('seed-agent-a', { exact: true })).toBeVisible();
-    await expect(matrixPane.getByText('seed-agent-b', { exact: true })).toBeVisible();
-    await expect(matrixPane.getByText('seed-agent-c', { exact: true })).toBeVisible();
+    const streamHealth = tune.locator('[data-tune-stream-health]');
+    for (const evidence of [
+        '30 planned', '28 scheduled', '23 attempted', '22 completed',
+        '1 failed', '5 dropped', '2 in-flight drops',
+        '30 Hz requested', '28 Hz scheduled', '22 Hz completed',
+        '28 ms max drift', '6 late', '4 backpressure',
+        'P95 68 ms', 'P99 92 ms', TUNE_SLOW_AGENT_ID,
+    ]) {
+        await expect(streamHealth).toContainText(evidence);
+    }
+    await expect(tune.locator('[data-tune-hints]')).toContainText('Lower cadence');
 
-    for (const [label, value] of [
-        ['P50', '1,010 ms'],
-        ['P95', '1,190 ms'],
-        ['P99', '1,190 ms'],
-        ['Max', '1,190 ms'],
-    ] as const) {
-        const metric = timingPane.locator('dl > div').filter({ hasText: label });
-        await expect(metric).toContainText(value);
-    }
-    const distribution = timingPane.getByRole('img', { name: 'Command duration distribution' });
-    await expect(distribution).toBeVisible();
-    await expect(distribution.locator('[data-histogram-bar]')).toHaveCount(4);
-    await expect(distribution.locator('[data-duration-point]')).toHaveCount(3);
-    await expect(distribution).toContainText('Duration (ms)');
-    const distributionBounds = await distribution.boundingBox();
-    expect(distributionBounds).not.toBeNull();
-    for (const label of await distribution.locator('[data-duration-point] text').all()) {
-        const labelBounds = await label.boundingBox();
-        expect(labelBounds).not.toBeNull();
-        expect((labelBounds?.x ?? 0) + (labelBounds?.width ?? 0))
-            .toBeLessThanOrEqual((distributionBounds?.x ?? 0) + (distributionBounds?.width ?? 0) + 1);
-    }
-
-    const agentA = matrixPane.getByRole('gridcell', { name: /seed-agent-a/ });
-    const agentB = matrixPane.getByRole('gridcell', { name: /seed-agent-b/ });
-    const agentC = matrixPane.getByRole('gridcell', { name: /seed-agent-c/ });
-    await agentA.focus();
-    await page.keyboard.press('ArrowDown');
-    await expect(agentB).toBeFocused();
-    await page.keyboard.press('ArrowDown');
-    await expect(agentC).toBeFocused();
-    await page.keyboard.press('Space');
-    await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-c');
-    await expect(page.getByRole('button', { name: 'Close inspector' })).toBeFocused();
-    await page.keyboard.press('Escape');
-    await expect(agentC).toBeFocused();
-    await page.keyboard.press('ArrowUp');
-    await expect(agentB).toBeFocused();
+    const drift = page.getByRole('button', { name: 'Drift', exact: true });
+    await drift.focus();
     await page.keyboard.press('Enter');
-    await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-b');
-    await expect(page.getByRole('button', { name: 'Close inspector' })).toBeFocused();
-    await page.keyboard.press('Escape');
-    await expect(agentB).toBeFocused();
+    await expect(drift).toHaveAttribute('aria-pressed', 'true');
+    await expect(page).toHaveURL(/timingMetric=stream-drift/);
 
-    for (const [metric, value] of [
-        ['Send duration', 'stream-send-duration'],
-        ['Drift', 'stream-drift'],
-        ['Cadence', 'stream-cadence'],
-    ] as const) {
-        await timingPane.getByRole('button', { name: metric, exact: true }).click();
-        await expect(page).toHaveURL(new RegExp(`timingMetric=${value}`));
-        const unavailable = timingPane.locator('[data-timing-unavailable]');
-        await expect(unavailable).toContainText('Unavailable in this command-duration seed');
-        await expect(unavailable).toContainText('RTC timeline evidence is not available.');
-        expect(await unavailable.textContent()).not.toMatch(/\b0(?:\.0+)?\s*(?:ms|frames|%)\b/);
-    }
+    const slowStream = streamHealth.locator('[data-tune-slow-agents="stream"] button')
+        .filter({ hasText: TUNE_SLOW_AGENT_ID });
+    await slowStream.focus();
+    await page.keyboard.press('Enter');
+    const inspector = page.getByRole('dialog', { name: 'Inspector' });
+    await expect(inspector.locator('[data-tune-inspector]'))
+        .toContainText(TUNE_SLOW_AGENT_ID);
+    const close = inspector.getByRole('button', { name: 'Close inspector' });
+    await expect(close).toBeFocused();
+    const legacyLink = inspector.getByRole('link', {
+        name: 'Open this run in legacy Runs',
+    });
+    const legacyUrl = new URL(await legacyLink.getAttribute('href') ?? '', page.url());
+    expect(legacyUrl.searchParams.get('experience')).toBe('legacy');
+    expect(legacyUrl.searchParams.get('workspace')).toBe('black-box-runner');
+    expect(legacyUrl.searchParams.get('tab')).toBe('runs');
+    expect(legacyUrl.searchParams.get('controlRunId')).toBe(TUNE_RIGHT_CONTROL_RUN_ID);
+    expect(legacyUrl.searchParams.get('distributedRunId')).toBe(TUNE_RIGHT_RUN_ID);
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(slowStream).toBeFocused();
     expect(await page.evaluate(() => ({
         x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         y: document.documentElement.scrollHeight - document.documentElement.clientHeight,
     }))).toEqual({ x: 0, y: 0 });
+    expect(fixture.artifactRequestCount()).toBe(0);
+    expect(fixture.mutationRequestCount()).toBe(0);
+
+    await slowStream.press('Enter');
+    const activeLegacyLink = page.getByRole('dialog', {
+        name: 'Inspector',
+    }).getByRole('link', {
+        name: 'Open this run in legacy Runs',
+    });
+    await activeLegacyLink.focus();
+    await activeLegacyLink.press('Enter');
+    await expect(page).toHaveURL(/experience=legacy/);
+    await expect(page).toHaveURL(/workspace=black-box-runner/);
+    await expect(page).toHaveURL(/tab=runs/);
+    const legacyRuns = page.locator('#panel-runs');
+    await expect(legacyRuns).toBeVisible();
+    await expect(legacyRuns.getByRole('combobox', { name: 'Distributed Run' }))
+        .toHaveValue(TUNE_RIGHT_RUN_ID);
+    await expect(legacyRuns.locator('.runner-distributed-freshness'))
+        .toContainText(TUNE_RIGHT_CONTROL_RUN_ID);
+    await expect(legacyRuns.locator('.distributed-run-summary'))
+        .toContainText('failed');
+    expect(fixture.mutationRequestCount()).toBe(0);
 });
 
 test('routes bounded Analyze Fleet and Advanced workspaces', async ({ page }) => {
