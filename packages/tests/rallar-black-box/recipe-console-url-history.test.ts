@@ -6,6 +6,9 @@ import {
     createRecipeConsoleUrlHistory,
     type RecipeConsoleHistoryPort,
 } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-history.ts';
+import {
+    recipeConsoleExecuteRecipeSelectionPatch,
+} from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-state.ts';
 
 class MemoryHistoryPort implements RecipeConsoleHistoryPort {
     currentSearch: string;
@@ -66,6 +69,28 @@ function expectNoSensitiveKeys(search: string): void {
 }
 
 describe('Recipe Console URL history', () => {
+    it('pushes recipe selection while removing dependent run and command keys', () => {
+        const port = new MemoryHistoryPort(
+            '?v=1&experience=recipe-console&view=execute&controlRunId=run-a' +
+            '&distributedRunId=distributed-a&commandId=command-a&recipeId=recipe-a',
+        );
+        const history = createRecipeConsoleUrlHistory(port);
+
+        const next = history.push(
+            recipeConsoleExecuteRecipeSelectionPatch('recipe-b'),
+        );
+
+        expect(next.state).toMatchObject({
+            controlRunId: 'run-a',
+            recipeId: 'recipe-b',
+        });
+        expect(next.state.distributedRunId).toBeUndefined();
+        expect(next.state.commandId).toBeUndefined();
+        const params = new URLSearchParams(port.pushed[0]);
+        expect(params.has('distributedRunId')).toBe(false);
+        expect(params.has('commandId')).toBe(false);
+    });
+
     it('pushes committed patches while preserving safe unknown state', () => {
         const port = new MemoryHistoryPort(
             '?provider=simulated&roomId=room-a&workspace=black-box-runner' +

@@ -25,6 +25,41 @@ agent setup, readiness, local launch, and compatibility flows;
 authoring. Both rollback URLs, primary visibility, mounts, and deep links remain
 unchanged until their complete named gates pass.
 
+### Iteration 4 implementation checkpoint — `3fe2574`, `76092f6`
+
+Shared-test now canonically owns repository recipe catalog projection,
+configured group-aware recipes, combined manifest validation,
+duplicate-session blocking, and exact selected-recipe CRDT transport truth.
+Legacy catalog imports delegate through their existing paths, and legacy
+target/agent-board flows now receive the selected recipes and synchronously
+exclude newly unsafe targets from manifests. The final reviewed target slice
+passed 95/95 focused tests plus shared-test and SPA typechecks.
+
+Recipe Console now also exposes a narrow root-owned execution API for Resolve,
+Create, Stage, Start, Cancel, and schema-v2 artifact export. It reuses the
+Iteration 3 credential-origin policy while keeping read, write, and artifact
+challenge state separate; no token, raw fetch, or control-run-manager
+ownership enters Execute React code. The reviewed API slice passed 79/79
+focused tests and SPA typecheck. The default shared-test Deno aggregate was
+not counted as passed because manual node-modules mode could not resolve
+`npm:@types/node`; the same seven entries passed with
+`--node-modules-dir=none`.
+
+These commits are foundations, not workflow parity or cutover evidence. The
+seeded Execute target/action plane remains until the pure workflow and visible
+lifecycle replacement pass, and both legacy rows retain their primary
+visibility, mounts, deep links, and rollback URLs.
+
+Pure Execute state now also owns canonical recipe/default selection without
+index fallback, URL dependency clearing, safe target-context reconciliation,
+deterministic manifests and full fingerprints, exact resolution evidence,
+explicit action arming/policy, mutation-response classification, and
+newer-only query reconciliation. The final slice passed 104/104 focused tests,
+SPA typecheck, bounded pure-module gates, and independent review. A review
+found and corrected equal-millisecond stale-query overwrite of mutation truth;
+terminal advancement remains the only equal-timestamp query exception. This
+still changes no visible owner, row status, mount, hide, or rollback route.
+
 ## Iteration 3 control connection and agent board exit — `a7df46f`
 
 The explicit Recipe Console experience now owns a view-independent bounded

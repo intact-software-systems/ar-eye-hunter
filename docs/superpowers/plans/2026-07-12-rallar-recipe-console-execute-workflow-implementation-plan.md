@@ -99,22 +99,30 @@ control-run manager/control-server REST contract, and deterministic helpers in
 - Test `packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts`
 - Test `packages/tests/shared-test/rallar-bb-test-schema.test.ts`
 
-- [ ] RED-test canonical shared catalog projection, configured group-aware
+- [x] RED-test canonical shared catalog projection, configured group-aware
   recipes, search/profile facts, recipe compatibility badges, and preflight
   service requirements. Schema badges must use
   `validateRallarBlackBoxRecipeCompatibility(...)`; include a recipe that is
   preflight-clean but fails shared JSON Schema.
-- [ ] RED-test duplicate fresh identities becoming non-targetable while stale,
+- [x] RED-test duplicate fresh identities becoming non-targetable while stale,
   offline, wrong-group, missing-identity, and CRDT capability behavior remains
   exact. Derive only explicitly requested CRDT transports; a CRDT command kind
   must not require every transport implementation.
-- [ ] Add a narrow combined manifest validation result beside shared manifest
+- [x] Add a narrow combined manifest validation result beside shared manifest
   contracts; do not import the legacy wrapper from Recipe Console.
-- [ ] Make legacy catalog exports delegate to the shared deterministic owner
+- [x] Make legacy catalog exports delegate to the shared deterministic owner
   without changing their import paths or current values.
-- [ ] Run the three focused tests, shared-test TypeScript check, and app
+- [x] Run the three focused tests, shared-test TypeScript check, and app
   typecheck.
-- [ ] Commit `feat: share recipe execution catalog and target truth`.
+- [x] Commit `feat: share recipe execution catalog and target truth`.
+
+**Actual evidence (2026-07-12):** commit `3fe2574`; 95/95 final focused
+distributed-recipe, control-agent-board, and structure tests; shared-test
+TypeScript check; SPA typecheck; `git diff --check`; and independent review
+after two target-safety correction passes. The unqualified shared-test Deno
+aggregate remains a tooling-resolution failure for `npm:@types/node` under
+manual node-modules mode; the same seven entry points pass with
+`--node-modules-dir=none` and are not recorded as an aggregate pass.
 
 ## Task 2: Credential-Aware Execution API
 
@@ -128,23 +136,29 @@ control-run manager/control-server REST contract, and deterministic helpers in
 - Test `packages/tests/rallar-black-box/recipe-console-control-api.test.ts`
 - Test `packages/tests/rallar-black-box/recipe-console-structure.test.ts`
 
-- [ ] Keep the complete Iteration 3 API suite green while extracting the token
+- [x] Keep the complete Iteration 3 API suite green while extracting the token
   cache, challenge state, broker retry, origin trust, response/protocol, and
   abort behavior from the 482-line adapter.
-- [ ] RED-test Resolve/Create/Stage/Start/Cancel/Export delegation through the
+- [x] RED-test Resolve/Create/Stage/Start/Cancel/Export delegation through the
   canonical control-run manager, including exact methods, paths, bodies,
   response states, and abort signals.
-- [ ] RED-test separate read/write authorization challenges, broker-token reuse
+- [x] RED-test separate read/write authorization challenges, broker-token reuse
   and refresh, manual precedence, URL-origin credential withholding, broker
   provenance, malformed successful responses, and artifact validation.
-- [ ] Validate schema-v2 artifact envelopes with the three required base files,
+- [x] Validate schema-v2 artifact envelopes with the three required base files,
   accept absent optional enriched files, and reject every malformed file that
   is present.
-- [ ] Expose only the narrow execution operations through the root connection;
+- [x] Expose only the narrow execution operations through the root connection;
   no token, raw fetch, or control-run-manager ownership enters Execute React
   code.
-- [ ] Run API/structure tests and app typecheck.
-- [ ] Commit `feat: add recipe console execution control API`.
+- [x] Run API/structure tests and app typecheck.
+- [x] Commit `feat: add recipe console execution control API`.
+
+**Actual evidence (2026-07-12):** commit `76092f6`; 79/79 focused API and
+structure tests; SPA typecheck; bounded modules at 246/320/162/191 lines; and
+independent approval covering provenance, separate read/write/artifact
+challenge state, broker reuse/refresh, aborts, canonical REST delegation, and
+protocol validation.
 
 ## Task 3: Pure Execute Workflow State And URL Selection
 
@@ -156,18 +170,25 @@ control-run manager/control-server REST contract, and deterministic helpers in
 - Test `packages/tests/rallar-black-box/recipe-console-execute-workflow.test.ts`
 - Modify/test `packages/tests/rallar-black-box/recipe-console-url-state.test.ts`
 
-- [ ] RED-test URL recipe selection/restoration, invalid explicit IDs, default
+- [x] RED-test URL recipe selection/restoration, invalid explicit IDs, default
   selection without index fallback, profile/search projection, and dependent
   distributed-run clearing.
-- [ ] RED-test deterministic run ID generation, manifest construction, combined
+- [x] RED-test deterministic run ID generation, manifest construction, combined
   validation, raw JSON, fingerprints, exact-resolution comparison, and
   invalidation on every input field.
-- [ ] RED-test every action availability/reason across connecting, live,
+- [x] RED-test every action availability/reason across connecting, live,
   partial, stale, offline, auth-required, invalid schema, zero/unsafe targets,
   draft, waiting ACK, waiting barrier, ready, running, terminal, and busy state.
-- [ ] RED-test response reconciliation and 2xx terminal-failed truth.
-- [ ] Run workflow/URL/shared distributed tests and app typecheck.
-- [ ] Commit `feat: derive guided recipe execution state`.
+- [x] RED-test response reconciliation and 2xx terminal-failed truth.
+- [x] Run workflow/URL/shared distributed tests and app typecheck.
+- [x] Commit `feat: derive guided recipe execution state`.
+
+**Actual evidence (2026-07-12):** 104/104 focused workflow, manifest,
+action-policy, URL/history, shared distributed-run, and structure tests; SPA
+typecheck; bounded pure modules at 212/295/266 lines; sparse-array fingerprint
+collision RED/GREEN; and independent review. Review caught and corrected an
+equal-millisecond reconciliation race so only a newer query snapshot or
+terminal advancement can replace mutation truth.
 
 ## Task 4: Bounded Execute Controller And Views
 

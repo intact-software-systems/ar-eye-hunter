@@ -224,6 +224,34 @@ describe('Recipe Console experience boundary', () => {
         );
     });
 
+    test('keeps pure Execute workflow truth bounded and independent of React or legacy UI', () => {
+        const paths = [
+            `${recipeConsoleRoot}/execute/execute-workflow-state.ts`,
+            `${recipeConsoleRoot}/execute/execute-manifest.ts`,
+            `${recipeConsoleRoot}/execute/execute-action-policy.ts`,
+        ];
+        for (const path of paths) {
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+        }
+        if (!paths.every(path => existsSync(resolve(repositoryRoot, path)))) {
+            return;
+        }
+
+        const files = paths.map(path => source(path));
+        for (const [index, file] of files.entries()) {
+            expect(file.trimEnd().split(/\r?\n/).length, paths[index])
+                .toBeLessThanOrEqual(300);
+        }
+        expect(files.join('\n')).not.toMatch(
+            /(?:from\s+|import\()['"][^'"]*(?:legacy\/|seeded-console-state|control-run-manager|registry|index\.ts)['"]|from ['"]react['"]|\bfetch\s*\(/,
+        );
+        expect(files[0]).toContain(
+            "export const DEFAULT_EXECUTE_RECIPE_ID = 'rtc-realtime-stability';",
+        );
+        expect(files[1]).toContain('validateDistributedRunManifest');
+        expect(files[2]).toContain('createExecuteActionArmContext');
+    });
+
     test('keeps control fetch and poll ownership out of shell composition', () => {
         const forbiddenOwnership =
             /\bfetch\s*\(|\bsetInterval\s*\(|\bsetTimeout\s*\(|createRecipeConsoleControlApi|createControlQueryService|from ['"][^'"]*control-(?:api|query)\.ts['"]/;

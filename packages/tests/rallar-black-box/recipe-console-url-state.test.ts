@@ -11,6 +11,9 @@ import {
     parseRecipeConsoleUrl,
     serializeRecipeConsoleUrl,
 } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-codec.ts';
+import {
+    recipeConsoleExecuteRecipeSelectionPatch,
+} from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-state.ts';
 
 const BASE_STATE: RecipeConsoleUrlState = {
     v: 1,
@@ -23,6 +26,32 @@ function lowerCaseKeys(search: string): string[] {
 }
 
 describe('Recipe Console URL state codec', () => {
+    it('round-trips an unknown explicit recipe identity without choosing a fallback', () => {
+        const parsed = parseRecipeConsoleUrl(
+            '?v=1&experience=recipe-console&view=execute&recipeId=unknown-explicit',
+        );
+
+        expect(parsed.state.recipeId).toBe('unknown-explicit');
+        expect(new URLSearchParams(parsed.canonicalSearch).get('recipeId'))
+            .toBe('unknown-explicit');
+    });
+
+    it('serializes a recipe selection after clearing dependent run identity', () => {
+        const serialized = serializeRecipeConsoleUrl({
+            ...BASE_STATE,
+            controlRunId: 'run-a',
+            distributedRunId: 'distributed-a',
+            commandId: 'command-a',
+            ...recipeConsoleExecuteRecipeSelectionPatch('recipe-next'),
+        });
+        const params = new URLSearchParams(serialized);
+
+        expect(params.get('recipeId')).toBe('recipe-next');
+        expect(params.get('controlRunId')).toBe('run-a');
+        expect(params.has('distributedRunId')).toBe(false);
+        expect(params.has('commandId')).toBe(false);
+    });
+
     it('parses and serializes the complete approved field set', () => {
         const params = new URLSearchParams({
             v: '1',
