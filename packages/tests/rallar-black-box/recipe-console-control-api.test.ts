@@ -318,7 +318,13 @@ describe('Recipe Console control API', () => {
         expect(result.authorization).toBe('manual');
     });
 
-    it('retries a 401 once with a brokered token and reuses that token within one API instance', async () => {
+    it.each([
+        [401, 'Unauthorized'],
+        [403, 'Forbidden'],
+    ] as const)('retries a %s once with a brokered token and reuses that token within one API instance', async (
+        challengeStatus,
+        challengeStatusText,
+    ) => {
         const controller = new AbortController();
         const controlAuthorizations: Array<string | null> = [];
         const requestSignals: Array<AbortSignal | null | undefined> = [];
@@ -347,7 +353,10 @@ describe('Recipe Console control API', () => {
                 ? Response.json(COMPLETE_SNAPSHOT)
                 : Response.json(
                     { error: 'Operator token required.' },
-                    { status: 401, statusText: 'Unauthorized' },
+                    {
+                        status: challengeStatus,
+                        statusText: challengeStatusText,
+                    },
                 );
         };
         const api = createRecipeConsoleControlApi({

@@ -5,13 +5,16 @@ import {
     createContext,
     useContext,
     useEffect,
+    useLayoutEffect,
     useMemo,
+    useRef,
     useSyncExternalStore,
     type ReactNode,
 } from 'react';
 import {
     createRecipeConsoleControlApi,
     type RecipeConsoleControlApi,
+    type RecipeConsoleControlRetentionCapability,
 } from './control-api.ts';
 import {
     createControlQueryService,
@@ -33,10 +36,16 @@ export type RecipeConsoleControlBootstrap = Readonly<{
     bootstrapGroup: RallarBlackBoxDistributedGroupRef;
 }>;
 
+export type RecipeConsoleControlContext = Readonly<Pick<
+    RecipeConsoleControlBootstrap,
+    'bootstrapRunId' | 'apiBaseUrl' | 'bootstrapGroup'
+>>;
+
 export type RecipeConsoleControlConnection = Readonly<{
-    bootstrap: RecipeConsoleControlBootstrap;
+    bootstrap: RecipeConsoleControlContext;
     baseUrl: string;
     execution: RecipeConsoleControlExecutionApi | undefined;
+    retention: RecipeConsoleControlRetentionCapability | undefined;
     query: ControlQuerySnapshot<ControlServerSnapshot>;
     refresh(): Promise<void>;
     refreshAfterCurrent(): Promise<void>;
@@ -89,6 +98,15 @@ export function ControlConnectionProvider({
         bootstrap.credentialPolicy,
         bootstrap.manualToken,
     ]);
+    const publicBootstrap = useMemo<RecipeConsoleControlContext>(() => ({
+        bootstrapRunId: bootstrap.bootstrapRunId,
+        apiBaseUrl: bootstrap.apiBaseUrl,
+        bootstrapGroup: bootstrap.bootstrapGroup,
+    }), [
+        bootstrap.apiBaseUrl,
+        bootstrap.bootstrapGroup,
+        bootstrap.bootstrapRunId,
+    ]);
     const service = useMemo(() => createControlQueryService({
         query: async ({ signal }) => {
             if (!apiSetup.api) {
@@ -112,6 +130,28 @@ export function ControlConnectionProvider({
         service.getSnapshot,
     );
 
+    const apiLifetime = useRef<Readonly<{
+        api: RecipeConsoleControlApi | undefined;
+        token: object;
+    }> | undefined>(undefined);
+    useLayoutEffect(() => {
+        const previous = apiLifetime.current;
+        if (previous?.api && previous.api !== apiSetup.api) {
+            previous.api.close();
+        }
+        const token = {};
+        const current = { api: apiSetup.api, token };
+        apiLifetime.current = current;
+        return () => queueMicrotask(() => {
+            const active = apiLifetime.current;
+            // React StrictMode replays effects with the same memoized API.
+            // Close only after a real replacement or unmount, never that replay.
+            if (active?.token === token || active?.api !== current.api) {
+                current.api?.close();
+            }
+        });
+    }, [apiSetup]);
+
     useEffect(() => {
         let cancelled = false;
         queueMicrotask(() => {
@@ -126,13 +166,14 @@ export function ControlConnectionProvider({
     }, [service]);
 
     const value = useMemo<RecipeConsoleControlConnection>(() => ({
-        bootstrap,
+        bootstrap: publicBootstrap,
         baseUrl: apiSetup.api?.baseUrl ?? 'Invalid control URL',
         execution: apiSetup.api?.execution,
+        retention: apiSetup.api?.retention,
         query,
         refresh: service.refresh,
         refreshAfterCurrent: service.refreshAfterCurrent,
-    }), [apiSetup, bootstrap, query, service.refresh]);
+    }), [apiSetup, publicBootstrap, query, service.refresh]);
 
     return (
         <ControlConnectionContext.Provider value={value}>

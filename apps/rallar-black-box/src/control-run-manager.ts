@@ -27,6 +27,9 @@ import type {
     RallarBlackBoxDistributedTargetResolution,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import { ControlRunManagerHttpError } from './control-http-error.ts';
+
+export { ControlRunManagerHttpError };
 
 export type {
     ControlAgentSnapshot,
@@ -98,18 +101,6 @@ export type EnqueueBulkControlCommandResult = Readonly<{
     accepted: true;
     commands: readonly ControlCommandEnvelope[];
 }>;
-
-export class ControlRunManagerHttpError extends Error {
-    readonly status: number;
-    readonly statusText: string;
-
-    constructor(message: string, status: number, statusText: string) {
-        super(message);
-        this.name = 'ControlRunManagerHttpError';
-        this.status = status;
-        this.statusText = statusText;
-    }
-}
 
 const DEFAULT_CONTROL_HTTP_BASE_URL = 'http://localhost:5180';
 const CONTROL_PATH_SUFFIX = '/control';

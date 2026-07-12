@@ -9,6 +9,17 @@ import {
     ControlRunManagerHttpError,
 } from '../../control-run-manager.ts';
 import type { RecipeConsoleControlCredentialPolicy } from './control-credential-policy.ts';
+import {
+    controlAuthorizationErrorMessage,
+    RecipeConsoleControlAuthorizationError,
+    RecipeConsoleControlCredentialTrustError,
+} from './control-authorization-errors.ts';
+import {
+    controlFetchWithAuthorization,
+    controlFetchWithSignal,
+    isControlAbortError,
+    throwIfControlAborted,
+} from './control-authorized-fetch.ts';
 
 export type RecipeConsoleControlAuthorization = 'anonymous' | 'manual' | 'brokered';
 export type AuthorizedControlResult<Value> = Readonly<{
@@ -21,8 +32,16 @@ export type ControlEndpointAuthorization = {
     challenge?: ControlRunManagerHttpError;
 };
 
+export type ControlAuthorizedEndpoint = Readonly<{
+    response<Value>(
+        operation: (fetchFn: ControlRunManagerFetch) => Promise<Value>,
+        signal?: AbortSignal,
+    ): Promise<AuthorizedControlResult<Value>>;
+}>;
+
 export type ControlAuthorizedTransport = Readonly<{
     createEndpointAuthorization(): ControlEndpointAuthorization;
+    createAuthorizedEndpoint(): ControlAuthorizedEndpoint;
     request<Value>(
         operation: (
             token: string | undefined,
@@ -51,43 +70,6 @@ export type ControlAuthorizedTransportConfig = Readonly<{
     isProtocolCandidate(error: unknown): boolean;
 }>;
 
-class RecipeConsoleControlAuthorizationError extends Error {
-    readonly reachable = true;
-    readonly authorizationRequired = true;
-    readonly controlStatus: number;
-    readonly controlStatusText: string;
-    readonly brokerStatus?: number;
-    readonly brokerStatusText?: string;
-    readonly brokerError: unknown;
-
-    constructor(
-        controlError: ControlRunManagerHttpError,
-        brokerError: unknown,
-    ) {
-        super(errorMessage(brokerError));
-        this.name = 'RecipeConsoleControlAuthorizationError';
-        this.controlStatus = controlError.status;
-        this.controlStatusText = controlError.statusText;
-        this.brokerStatus = httpStatus(brokerError);
-        this.brokerStatusText = httpStatusText(brokerError);
-        this.brokerError = brokerError;
-    }
-}
-
-class RecipeConsoleControlCredentialTrustError extends ControlRunManagerHttpError {
-    readonly reachable = true;
-    readonly authorizationRequired = true;
-    readonly credentialTrustRequired = true;
-
-    constructor(
-        controlError: ControlRunManagerHttpError,
-        message: string,
-    ) {
-        super(message, controlError.status, controlError.statusText);
-        this.name = 'RecipeConsoleControlCredentialTrustError';
-    }
-}
-
 export function createControlAuthorizedTransport(
     config: ControlAuthorizedTransportConfig,
 ): ControlAuthorizedTransport {
@@ -98,7 +80,8 @@ export function createControlAuthorizedTransport(
     let brokeredToken: BlackBoxControlTokenSession | undefined;
 
     async function resolveBrokeredToken(signal?: AbortSignal): Promise<string> {
-        const request = fetchWithSignal(config.fetchFn, signal);
+        throwIfControlAborted(signal);
+        const request = controlFetchWithSignal(config.fetchFn, signal);
         let brokerResponse: Response | undefined;
         let resolved: Awaited<ReturnType<typeof resolveBlackBoxControlToken>>;
         try {
@@ -112,14 +95,16 @@ export function createControlAuthorizedTransport(
                     return response;
                 },
             });
+            throwIfControlAborted(signal);
         } catch (error) {
+            throwIfControlAborted(signal);
             if (
                 brokerResponse &&
                 !brokerResponse.ok &&
                 !(error instanceof ControlRunManagerHttpError)
             ) {
                 throw new ControlRunManagerHttpError(
-                    errorMessage(error),
+                    controlAuthorizationErrorMessage(error),
                     brokerResponse.status,
                     brokerResponse.statusText,
                 );
@@ -141,7 +126,8 @@ export function createControlAuthorizedTransport(
         endpoint: ControlEndpointAuthorization,
         signal?: AbortSignal,
     ): Promise<AuthorizedControlResult<Value>> {
-        const fetchFn = fetchWithSignal(config.fetchFn, signal);
+        throwIfControlAborted(signal);
+        const fetchFn = controlFetchWithSignal(config.fetchFn, signal);
         let authorization: RecipeConsoleControlAuthorization = manualToken
             ? 'manual'
             : endpoint.requiresAuthorization && brokeredToken
@@ -159,8 +145,9 @@ export function createControlAuthorizedTransport(
         ) {
             try {
                 token = await resolveBrokeredToken(signal);
+                throwIfControlAborted(signal);
             } catch (brokerError) {
-                if (signal?.aborted || isAbortError(brokerError)) {
+                if (isControlAbortError(brokerError)) {
                     throw brokerError;
                 }
                 if (endpoint.challenge) {
@@ -175,11 +162,15 @@ export function createControlAuthorizedTransport(
         }
 
         try {
+            throwIfControlAborted(signal);
+            const value = await operation(token, fetchFn);
+            throwIfControlAborted(signal);
             return {
-                value: await operation(token, fetchFn),
+                value,
                 authorization,
             };
         } catch (error) {
+            throwIfControlAborted(signal);
             if (manualToken || !isAuthorizationError(error)) {
                 throw error;
             }
@@ -201,14 +192,17 @@ export function createControlAuthorizedTransport(
             endpoint.challenge = error;
             if (token === undefined && brokeredToken) {
                 try {
+                    throwIfControlAborted(signal);
+                    const value = await operation(brokeredToken.token, fetchFn);
+                    throwIfControlAborted(signal);
                     return {
-                        value: await operation(brokeredToken.token, fetchFn),
+                        value,
                         authorization: 'brokered',
                     };
                 } catch (cachedTokenError) {
+                    throwIfControlAborted(signal);
                     if (
-                        signal?.aborted ||
-                        isAbortError(cachedTokenError) ||
+                        isControlAbortError(cachedTokenError) ||
                         !isAuthorizationError(cachedTokenError)
                     ) {
                         throw cachedTokenError;
@@ -219,8 +213,9 @@ export function createControlAuthorizedTransport(
             brokeredToken = undefined;
             try {
                 token = await resolveBrokeredToken(signal);
+                throwIfControlAborted(signal);
             } catch (brokerError) {
-                if (signal?.aborted || isAbortError(brokerError)) {
+                if (isControlAbortError(brokerError)) {
                     throw brokerError;
                 }
                 throw new RecipeConsoleControlAuthorizationError(
@@ -228,8 +223,11 @@ export function createControlAuthorizedTransport(
                     brokerError,
                 );
             }
+            throwIfControlAborted(signal);
+            const value = await operation(token, fetchFn);
+            throwIfControlAborted(signal);
             return {
-                value: await operation(token, fetchFn),
+                value,
                 authorization: 'brokered',
             };
         }
@@ -245,7 +243,7 @@ export function createControlAuthorizedTransport(
     ): Promise<AuthorizedControlResult<Value>> {
         let receivedResponse = false;
         try {
-            return await request(
+            const result = await request(
                 (token, fetchFn) =>
                     operation(
                         token,
@@ -258,7 +256,10 @@ export function createControlAuthorizedTransport(
                 endpoint,
                 signal,
             );
+            throwIfControlAborted(signal);
+            return result;
         } catch (error) {
+            throwIfControlAborted(signal);
             if (receivedResponse && config.isProtocolCandidate(error)) {
                 throw config.protocolError(error);
             }
@@ -266,23 +267,25 @@ export function createControlAuthorizedTransport(
         }
     }
 
+    function createAuthorizedEndpoint(): ControlAuthorizedEndpoint {
+        const authorization = { requiresAuthorization: false };
+        return {
+            response: (operation, signal) => response(
+                (token, fetchFn) => operation(
+                    controlFetchWithAuthorization(fetchFn, token),
+                ),
+                authorization,
+                signal,
+            ),
+        };
+    }
+
     return {
         createEndpointAuthorization: () => ({ requiresAuthorization: false }),
+        createAuthorizedEndpoint,
         request,
         response,
     };
-}
-
-function fetchWithSignal(
-    fetchFn: ControlRunManagerFetch | undefined,
-    signal: AbortSignal | undefined,
-): ControlRunManagerFetch {
-    const request = fetchFn ?? fetch;
-    return (input, init) =>
-        request(input, {
-            ...init,
-            signal: signal ?? init?.signal,
-        });
 }
 
 function isAuthorizationError(
@@ -290,31 +293,4 @@ function isAuthorizationError(
 ): error is ControlRunManagerHttpError {
     return error instanceof ControlRunManagerHttpError &&
         (error.status === 401 || error.status === 403);
-}
-
-function isAbortError(error: unknown): boolean {
-    return Boolean(
-        error &&
-            typeof error === 'object' &&
-            'name' in error &&
-            error.name === 'AbortError',
-    );
-}
-
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
-function httpStatus(error: unknown): number | undefined {
-    return error && typeof error === 'object' &&
-            'status' in error && typeof error.status === 'number'
-        ? error.status
-        : undefined;
-}
-
-function httpStatusText(error: unknown): string | undefined {
-    return error && typeof error === 'object' &&
-            'statusText' in error && typeof error.statusText === 'string'
-        ? error.statusText
-        : undefined;
 }

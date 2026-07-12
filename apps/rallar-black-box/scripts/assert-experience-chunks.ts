@@ -21,6 +21,9 @@ export type ExperienceChunkGraph = Readonly<{
     mainDynamicExperienceEntries: ReadonlySet<string>;
     recipeConsoleStaticClosure: ReadonlySet<string>;
     legacyStaticClosure: ReadonlySet<string>;
+    retentionDynamicEntry: string;
+    retentionStaticClosure: ReadonlySet<string>;
+    tuneStaticClosure: ReadonlySet<string>;
     productionClosure: ReadonlySet<string>;
 }>;
 
@@ -29,6 +32,8 @@ type GraphMetadata = Readonly<{
     outputRoot: string;
     recipeConsole: string;
     legacy: string;
+    retention: string;
+    tune: string;
 }>;
 
 const graphMetadata = new WeakMap<ExperienceChunkGraph, GraphMetadata>();
@@ -113,6 +118,18 @@ export function readExperienceChunkGraph(
         chunk => chunk.src?.endsWith('/legacy/shell/LegacyExperience.tsx') === true,
         'Vite manifest must expose LegacyExperience as a dynamic entry.',
     );
+    const [retention] = findEntry(
+        manifest,
+        chunk => chunk.src?.endsWith(
+            '/recipe-console/control/control-retention-api.ts',
+        ) === true,
+        'Vite manifest must expose the retention client as a dynamic entry.',
+    );
+    const [tune] = findEntry(
+        manifest,
+        chunk => chunk.src?.endsWith('/recipe-console/tune/TuneWorkspace.tsx') === true,
+        'Vite manifest must expose TuneWorkspace as a dynamic entry.',
+    );
     const mainDynamicEntries = new Set(manifest[main]?.dynamicImports ?? []);
     const experienceEntries = new Set(
         [...mainDynamicEntries].filter(key => key === recipeConsole || key === legacy),
@@ -124,6 +141,9 @@ export function readExperienceChunkGraph(
         mainDynamicExperienceEntries: experienceEntries,
         recipeConsoleStaticClosure: closure(manifest, recipeConsole, false),
         legacyStaticClosure: closure(manifest, legacy, false),
+        retentionDynamicEntry: retention,
+        retentionStaticClosure: closure(manifest, retention, false),
+        tuneStaticClosure: closure(manifest, tune, false),
         productionClosure: closure(manifest, main, true),
     };
     graphMetadata.set(graph, {
@@ -131,6 +151,8 @@ export function readExperienceChunkGraph(
         outputRoot: resolve(dirname(manifestPath), '..'),
         recipeConsole,
         legacy,
+        retention,
+        tune,
     });
     return graph;
 }
@@ -138,7 +160,7 @@ export function readExperienceChunkGraph(
 export function assertExperienceChunkGraph(graph: ExperienceChunkGraph): void {
     const metadata = graphMetadata.get(graph);
     assert(metadata, 'Chunk graph must originate from readExperienceChunkGraph().');
-    const { manifest, outputRoot, recipeConsole, legacy } = metadata;
+    const { manifest, outputRoot, recipeConsole, legacy, retention, tune } = metadata;
 
     assert(recipeConsole !== legacy, 'The two experiences must use different entries.');
     assert(
@@ -180,6 +202,22 @@ export function assertExperienceChunkGraph(graph: ExperienceChunkGraph): void {
         'Recipe Console static closure includes LegacyExperience.',
     );
     assert(
+        manifest[recipeConsole]?.dynamicImports?.includes(retention),
+        'Recipe Console must dynamically import the retention client.',
+    );
+    assert(
+        manifest[recipeConsole]?.dynamicImports?.includes(tune),
+        'Recipe Console must dynamically import TuneWorkspace.',
+    );
+    assert(
+        !graph.recipeConsoleStaticClosure.has(retention),
+        'Recipe Console static closure includes the retention client.',
+    );
+    assert(
+        !graph.tuneStaticClosure.has(retention),
+        'Inactive Tune static closure includes the retention client.',
+    );
+    assert(
         graph.productionClosure.has(graph.main) &&
             graph.productionClosure.has(recipeConsole) &&
             graph.productionClosure.has(legacy),
@@ -208,6 +246,12 @@ export function assertExperienceChunkGraph(graph: ExperienceChunkGraph): void {
     const mainText = closureText(manifest, outputRoot, graph.mainStaticClosure);
     const recipeText = closureText(manifest, outputRoot, graph.recipeConsoleStaticClosure);
     const legacyText = closureText(manifest, outputRoot, graph.legacyStaticClosure);
+    const tuneText = closureText(manifest, outputRoot, graph.tuneStaticClosure);
+    const retentionText = closureText(
+        manifest,
+        outputRoot,
+        graph.retentionStaticClosure,
+    );
     assert(
         recipeText.includes('data-command-bar'),
         'Recipe Console static closure sentinel is missing.',
@@ -230,6 +274,22 @@ export function assertExperienceChunkGraph(graph: ExperienceChunkGraph): void {
     assert(legacyText.includes('panel-rallar-server'), 'Legacy static closure does not contain panel-rallar-server.');
     assert(legacyText.includes('panel-distributed-recipes'), 'Legacy static closure does not contain distributed recipes.');
     assert(legacyText.includes('legacy-panel-distributed-recipes'), 'Legacy compatibility recipe sentinel is missing.');
+    for (const [label, text] of [
+        ['main', mainText],
+        ['Recipe Console', recipeText],
+        ['Tune', tuneText],
+    ] as const) {
+        assert(
+            !text.includes('retention/cleanup') &&
+                !text.includes('preview.deletedRunIds'),
+            `${label} static closure contains lazy retention implementation.`,
+        );
+    }
+    assert(
+        retentionText.includes('retention/cleanup') &&
+            retentionText.includes('preview.deletedRunIds'),
+        'Retention dynamic closure sentinels are missing.',
+    );
 }
 
 function runCli(): void {

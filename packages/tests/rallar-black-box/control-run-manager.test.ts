@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    ControlRunManagerHttpError,
+    ControlRunManagerHttpError as ReexportedControlRunManagerHttpError,
     controlHttpBaseUrlFromWsUrl,
     controlRunAgentRows,
     controlRunCommandRows,
@@ -26,6 +26,9 @@ import {
     type ControlRunSnapshot,
     type ControlServerSnapshot,
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import {
+    ControlRunManagerHttpError as CanonicalControlRunManagerHttpError,
+} from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 
 const runSnapshot: ControlRunSnapshot = {
@@ -119,6 +122,27 @@ const runSnapshot: ControlRunSnapshot = {
 };
 
 describe('rallar-black-box control run manager', () => {
+    it('preserves the canonical HTTP error identity through the manager export', () => {
+        expect(ReexportedControlRunManagerHttpError).toBe(
+            CanonicalControlRunManagerHttpError,
+        );
+
+        const error = new CanonicalControlRunManagerHttpError(
+            'Operator token required.',
+            401,
+            'Unauthorized',
+        );
+
+        expect(error).toBeInstanceOf(CanonicalControlRunManagerHttpError);
+        expect(error).toBeInstanceOf(ReexportedControlRunManagerHttpError);
+        expect(error).toMatchObject({
+            name: 'ControlRunManagerHttpError',
+            message: 'Operator token required.',
+            status: 401,
+            statusText: 'Unauthorized',
+        });
+    });
+
     it('derives HTTP base URLs from control WebSocket URLs', () => {
         expect(controlHttpBaseUrlFromWsUrl('ws://localhost:5180/control')).toBe('http://localhost:5180');
         expect(controlHttpBaseUrlFromWsUrl('wss://example.test/control?token=secret')).toBe('https://example.test');
@@ -250,7 +274,12 @@ describe('rallar-black-box control run manager', () => {
             status: 401,
             statusText: 'Unauthorized',
         });
-        await expect(request).rejects.toBeInstanceOf(ControlRunManagerHttpError);
+        await expect(request).rejects.toBeInstanceOf(
+            ReexportedControlRunManagerHttpError,
+        );
+        await expect(request).rejects.toBeInstanceOf(
+            CanonicalControlRunManagerHttpError,
+        );
     });
 
     it('calls distributed-run lifecycle endpoints', async () => {

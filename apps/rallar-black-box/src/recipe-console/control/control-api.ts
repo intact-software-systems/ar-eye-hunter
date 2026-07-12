@@ -22,6 +22,11 @@ import type {
 import { createRecipeConsoleControlExecutionApi } from './control-execution-api.ts';
 import type { RecipeConsoleControlExecutionApi } from './control-execution-api.ts';
 import {
+    createControlLazyCapability,
+    type ControlLazyCapability,
+} from './control-lazy-capability.ts';
+import type { RecipeConsoleControlRetentionApi } from './control-retention-api.ts';
+import {
     validateControlDistributedRuns,
     validateControlServerCoreSnapshot,
     withoutDistributedRuns,
@@ -53,9 +58,14 @@ export type RecipeConsoleControlSnapshotResult = Readonly<{
     partialError?: unknown;
 }>;
 
+export type RecipeConsoleControlRetentionCapability =
+    ControlLazyCapability<RecipeConsoleControlRetentionApi>;
+
 export type RecipeConsoleControlApi = Readonly<{
     baseUrl: string;
     execution: RecipeConsoleControlExecutionApi;
+    retention: RecipeConsoleControlRetentionCapability;
+    close(): void;
     readSnapshot(
         input?: Readonly<{
             signal?: AbortSignal;
@@ -104,10 +114,24 @@ export function createRecipeConsoleControlApi(
         baseUrl,
         transport,
     });
+    const lifetime = new AbortController();
+    const retention = createControlLazyCapability({
+        signal: lifetime.signal,
+        load: async () => {
+            const feature = await import('./control-retention-api.ts');
+            return feature.createRecipeConsoleControlRetentionApi({
+                baseUrl,
+                endpoint: transport.createAuthorizedEndpoint(),
+                contextSignal: lifetime.signal,
+            });
+        },
+    });
 
     return {
         baseUrl,
         execution,
+        retention,
+        close: () => lifetime.abort(),
         async readSnapshot(input = {}) {
             const server = await transport.response(
                 (token, fetchFn) =>
@@ -206,7 +230,6 @@ function isProtocolCandidate(error: unknown): boolean {
             error && typeof error === 'object' &&
             'authorizationRequired' in error && error.authorizationRequired === true
         ) &&
-        !(error instanceof TypeError) &&
         !isAbortError(error);
 }
 

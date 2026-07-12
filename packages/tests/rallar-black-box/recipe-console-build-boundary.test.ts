@@ -86,6 +86,13 @@ describe('Recipe Console build boundary', () => {
         ]);
         expect(graph.recipeConsoleStaticClosure.size).toBeGreaterThan(1);
         expect(graph.legacyStaticClosure.size).toBeGreaterThan(1);
+        expect(graph.retentionDynamicEntry).toBe(
+            'src/recipe-console/control/control-retention-api.ts',
+        );
+        expect(graph.retentionStaticClosure.size).toBeGreaterThan(1);
+        expect(graph.tuneStaticClosure.has(graph.retentionDynamicEntry)).toBe(false);
+        expect(graph.recipeConsoleStaticClosure.has(graph.retentionDynamicEntry))
+            .toBe(false);
         expect(graph.productionClosure.size).toBeGreaterThan(
             graph.mainStaticClosure.size,
         );
