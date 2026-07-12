@@ -90,7 +90,10 @@ cut. No legacy surface is hidden or re-homed in Iteration 7.
    evidence, not an invented magic number.
 6. Never recommend raising `maxInFlight` merely because backpressure exists.
    Drops/backpressure prefer lower load or cadence; `maxInFlight` remains an
-   inspectable conditional knob.
+   inspectable conditional knob. When an RTC stream has `intervalMs`, its
+   shadowed `rateHz` row is visibly ineffective and blocked from hints and
+   candidate output; this iteration does not silently remove `intervalMs` as a
+   compound edit.
 7. Target/readiness blockers suppress timeout or threshold-loosening advice.
    Clean ACK/barrier timeout evidence may recommend a deliberate timeout
    candidate; isolated latency points to the specific agent.
@@ -141,8 +144,9 @@ cut. No legacy surface is hidden or re-homed in Iteration 7.
 - [x] Run the 118/118 focused baseline plus shared-test/app typechecks.
 - [x] Dispatch independent shared-contract and app/browser plan reviews; close
   every Critical or Important issue before implementation.
-- [ ] Commit this implementation plan and the parent/register in-progress
-  checkpoint before behavior code.
+- [x] Commit this implementation plan and the parent/register in-progress
+  checkpoint as `1f21d2d` before behavior code; retain final review corrections
+  in the next documentation milestone.
 
 ## Task 1: Lock Canonical Browser RED Before Implementation
 
@@ -176,7 +180,8 @@ Files:
 - [ ] RED-test deterministic knob inventory for manifest ACK/barrier values;
   inline root, loop, parallel-group, and embedded-recipe commands; JSON Pointer
   escaping; duplicate command IDs; optional/missing values; effective
-  `intervalMs` precedence over shadowed `rateHz`; and stable order.
+  `intervalMs` precedence over shadowed `rateHz`; explicit ineffective/blocked
+  metadata for that row; and stable order.
 - [ ] Inventory `rateHz`, `durationMs`, `intervalMs`, `maxInFlight`,
   `ackTimeoutMs`, `barrier.timeoutMs`, and every numeric RTC stream threshold.
   Each row carries recipe/command identity, kind, exact pointer, current value,
@@ -198,7 +203,7 @@ Files:
   deterministic operation/diff order, add versus replace, integer/finite/range
   rejection, unknown path rejection, stale expected values, duplicate changes,
   missing-threshold-parent materialization, disabled/missing-barrier blocking,
-  and multiple overlapping changes.
+  shadowed-rate rejection, and multiple overlapping changes.
 - [ ] RED-test recursive recipe compatibility plus manifest validation errors
   and prove a deeply frozen source manifest is unchanged on success and error.
 - [ ] Return a typed result containing cloned candidate manifest, copyable JSON
@@ -281,9 +286,10 @@ Files:
   percentiles, and slowest stream agents.
 - [ ] Render decision-first hints, exact knob current values/paths, deliberate
   candidate input, validation, copyable patch/diff, truthful clipboard status,
-  and unchanged-source evidence. Candidate state resets only when the resolved
-  source fingerprint (identity, generated/updated time, or current knob truth)
-  changes; root Refresh preserves it for an unchanged source. No action mutates
+  and unchanged-source evidence. Candidate state fingerprints resolved source
+  identity/support plus deterministic manifest knob truth, not routine control
+  timestamps. A newer `updatedAtEpochMs` with identical knobs preserves the
+  draft; changed identity, support, or knob truth resets it. No action mutates
   or calls Control.
 - [ ] Render explicit baseline/candidate selectors and all recipe, participant,
   failure, timing, and received-message deltas with compatibility warnings.
