@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import * as distributedRecipeCompatibility from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
     buildDistributedRunManifest,
     compareDistributedRuns,
     defaultDistributedRecipeTargetIds,
+    deriveDistributedRunFailureEvidenceDestinations,
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     deriveRunVerdictView,
@@ -40,6 +42,7 @@ import {
     DISTRIBUTED_RECIPE_CATALOG as SHARED_DISTRIBUTED_RECIPE_CATALOG,
     configuredDistributedRecipeCatalogItem as sharedConfiguredDistributedRecipeCatalogItem,
     createRallarBlackBoxTestRuntime,
+    deriveDistributedRunFailureEvidenceDestinations as deriveSharedDistributedRunFailureEvidenceDestinations,
     distributedRecipeMatches as sharedDistributedRecipeMatches,
     projectDistributedRecipeCatalog,
     selectRallarBlackBoxCommandHistory,
@@ -1856,6 +1859,361 @@ describe('distributed recipes helpers', () => {
         expect(monitor.timeline.map(item => item.label)).toContain('result failed');
     });
 
+    it('scopes recipe progress to the same resolved and manifest assignments used by the control service', () => {
+        const recipes = [
+            {
+                recipeId: 'sender-recipe',
+                role: 'sender',
+                recipe: { recipeId: 'sender-recipe', commands: [{ kind: 'health' }] },
+            },
+            {
+                recipeId: 'receiver-recipe',
+                role: 'receiver',
+                recipe: { recipeId: 'receiver-recipe', commands: [{ kind: 'health' }] },
+            },
+            {
+                recipeId: 'shared-recipe',
+                recipe: { recipeId: 'shared-recipe', commands: [{ kind: 'health' }] },
+            },
+        ] satisfies ControlDistributedRunSnapshot['manifest']['recipes'];
+        const resolvedAssignments = [
+            { agentId: 'agent-a', role: 'sender', recipeIds: ['sender-recipe'] },
+            { agentId: 'agent-b', role: 'receiver' },
+            { agentId: 'agent-c', role: 'observer', recipeIds: ['shared-recipe'] },
+        ] as const;
+        const commandLinks = [
+            { phase: 'stage', agentId: 'agent-a', commandId: 'sender-a', recipeId: 'sender-recipe', role: 'sender', queuedAtEpochMs: 1_100 },
+            { phase: 'stage', agentId: 'agent-b', commandId: 'receiver-b', recipeId: 'receiver-recipe', role: 'receiver', queuedAtEpochMs: 1_110 },
+            { phase: 'stage', agentId: 'agent-b', commandId: 'shared-b', recipeId: 'shared-recipe', queuedAtEpochMs: 1_120 },
+            { phase: 'stage', agentId: 'agent-c', commandId: 'shared-c', recipeId: 'shared-recipe', queuedAtEpochMs: 1_130 },
+        ] satisfies ControlDistributedRunSnapshot['commandLinks'];
+        const roleScopedRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            state: 'staging',
+            targetAgentIds: ['agent-a', 'agent-b', 'agent-c'],
+            manifest: {
+                ...distributedRun.manifest,
+                recipes,
+                targetPolicy: {
+                    mode: 'role-map',
+                    roles: {
+                        sender: ['agent-c'],
+                        receiver: ['agent-a'],
+                    },
+                },
+                roleAssignments: [
+                    { agentId: 'agent-a', role: 'receiver' },
+                    { agentId: 'agent-b', role: 'sender' },
+                ],
+            },
+            targetResolution: {
+                group: distributedRun.manifest.group,
+                resolvedAtEpochMs: 1_050,
+                staleAfterMs: 30_000,
+                targetPolicyMode: 'role-map',
+                targetAgentIds: ['agent-a', 'agent-b', 'agent-c'],
+                roleAssignments: resolvedAssignments,
+                blockers: [],
+                summary: {
+                    agents: 3,
+                    targetable: 3,
+                    selected: 3,
+                    expectedParticipantCount: 3,
+                    missingExpectedParticipants: 0,
+                    staleAgents: 0,
+                    offlineAgents: 0,
+                    wrongGroupAgents: 0,
+                    agentsWithoutIdentity: 0,
+                    roleCounts: { sender: 1, receiver: 1, observer: 1 },
+                    regions: {},
+                    providers: {},
+                },
+            },
+            commandLinks,
+        };
+
+        const resolvedProgress = deriveDistributedRunMonitor({
+            distributedRun: roleScopedRun,
+        }).recipeProgress;
+
+        expect(resolvedProgress.map(row => [row.recipeId, row.targetCount, row.missingCount])).toEqual([
+            ['sender-recipe', 1, 0],
+            ['receiver-recipe', 1, 0],
+            ['shared-recipe', 2, 0],
+        ]);
+
+        const manifestProgress = deriveDistributedRunMonitor({
+            distributedRun: {
+                ...roleScopedRun,
+                targetResolution: undefined,
+                manifest: {
+                    ...roleScopedRun.manifest,
+                    targetPolicy: {
+                        mode: 'selected-agents',
+                        agentIds: ['agent-a', 'agent-b', 'agent-c'],
+                    },
+                    roleAssignments: resolvedAssignments,
+                },
+            },
+        }).recipeProgress;
+
+        expect(manifestProgress.map(row => [row.recipeId, row.targetCount, row.missingCount])).toEqual([
+            ['sender-recipe', 1, 0],
+            ['receiver-recipe', 1, 0],
+            ['shared-recipe', 2, 0],
+        ]);
+    });
+
+    it('exports deterministic selected-failure evidence from the app compatibility barrel', () => {
+        expect(Reflect.get(
+            distributedRecipeCompatibility,
+            'deriveDistributedRunFailureEvidenceDestinations',
+        )).toBeTypeOf('function');
+        expect(deriveDistributedRunFailureEvidenceDestinations).toBe(
+            deriveSharedDistributedRunFailureEvidenceDestinations,
+        );
+    });
+
+    it('derives available evidence destinations for each selected failure instead of the first failure', () => {
+        const evidenceRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            error: {
+                code: 'RUN_FAILED',
+                message: 'Distributed orchestration failed.',
+            },
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [
+                    {
+                        kind: 'participant',
+                        key: 'agent-a',
+                        state: 'failed',
+                        required: true,
+                        error: {
+                            code: 'PARTICIPANT_FAILED',
+                            message: 'Sender disconnected.',
+                        },
+                    },
+                    {
+                        kind: 'participant',
+                        key: 'start-b',
+                        state: 'failed',
+                        required: true,
+                        error: {
+                            code: 'PARTICIPANT_ID_COLLISION',
+                            message: 'A participant ID collides with another failure key.',
+                        },
+                    },
+                    {
+                        kind: 'recipe',
+                        key: 'start-b',
+                        state: 'failed',
+                        required: true,
+                        error: {
+                            code: 'RECIPE_ID_COLLISION',
+                            message: 'A recipe ID collides with another failure key.',
+                        },
+                    },
+                    ...distributedRun.rollup.failures,
+                ],
+            },
+        };
+        const evidenceControlRun: ControlRunSnapshot = {
+            ...distributedControlRun,
+            events: [
+                ...distributedControlRun.events,
+                {
+                    kind: 'event',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    commandId: 'start-b',
+                    eventId: 'event-start-b',
+                    atEpochMs: 1_980,
+                    payload: {
+                        distributedRunId: 'dist-1',
+                        topic: 'recipe.failure',
+                        message: 'receiver evidence',
+                    },
+                },
+                {
+                    kind: 'diagnostic',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-a',
+                    commandId: 'start-a',
+                    eventId: 'diagnostic-agent-a',
+                    atEpochMs: 1_990,
+                    payload: {
+                        diagnosticSchemaVersion: 1,
+                        diagnosticTypeId: 'rallar.test.sender_failure',
+                        topic: 'rallar.test.sender_failure',
+                        severity: 'error',
+                        message: 'Sender disconnected.',
+                        commandId: 'start-a',
+                    },
+                },
+                {
+                    kind: 'diagnostic',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    commandId: 'start-b',
+                    eventId: 'diagnostic-start-b',
+                    atEpochMs: 1_990,
+                    payload: {
+                        diagnosticSchemaVersion: 1,
+                        diagnosticTypeId: 'rallar.test.receiver_failure',
+                        topic: 'rallar.test.receiver_failure',
+                        severity: 'error',
+                        message: 'Receiver did not observe payload.',
+                        transport: 'realtime',
+                        commandId: 'start-b',
+                    },
+                },
+            ],
+        };
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun: evidenceRun,
+            controlRun: evidenceControlRun,
+            artifactBundle: distributedArtifactBundle,
+        });
+        const failure = (kind: 'run' | 'participant' | 'recipe' | 'command', key: string) => {
+            const row = monitor.failures.find(candidate =>
+                candidate.kind === kind && candidate.key === key
+            );
+            expect(row, `${kind}:${key}`).toBeDefined();
+            if (!row) {
+                throw new Error(`Missing test failure ${kind}:${key}.`);
+            }
+            return row;
+        };
+        const destinations = (kind: 'run' | 'participant' | 'recipe' | 'command', key: string) =>
+            deriveDistributedRunFailureEvidenceDestinations({
+                failure: failure(kind, key),
+                monitor,
+            });
+
+        const runDestinations = destinations('run', 'dist-1');
+        expect(runDestinations.map(destination => destination.kind)).not.toEqual(
+            expect.arrayContaining(['agent', 'recipe', 'command', 'diagnostic']),
+        );
+        expect(runDestinations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'timeline' }),
+            expect.objectContaining({ kind: 'event', id: 'message-a' }),
+            expect.objectContaining({ kind: 'artifact', id: 'valid' }),
+        ]));
+
+        const participantDestinations = destinations('participant', 'agent-a');
+        expect(participantDestinations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'agent', id: 'agent-a' }),
+            expect.objectContaining({ kind: 'recipe', id: 'health-only' }),
+            expect.objectContaining({ kind: 'command', id: 'stage-a' }),
+            expect.objectContaining({ kind: 'command', id: 'start-a' }),
+            expect.objectContaining({ kind: 'diagnostic', id: 'diagnostic-agent-a' }),
+            expect.objectContaining({ kind: 'timeline', agentId: 'agent-a' }),
+            expect.objectContaining({ kind: 'event', id: 'message-a' }),
+            expect.objectContaining({ kind: 'artifact', id: 'valid' }),
+        ]));
+        expect(participantDestinations.some(destination => destination.id === 'agent-b')).toBe(false);
+
+        const recipeDestinations = destinations('recipe', 'health-only');
+        expect(recipeDestinations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'agent', id: 'agent-a' }),
+            expect.objectContaining({ kind: 'agent', id: 'agent-b' }),
+            expect.objectContaining({ kind: 'recipe', id: 'health-only' }),
+            expect.objectContaining({ kind: 'command', id: 'stage-a' }),
+            expect.objectContaining({ kind: 'command', id: 'stage-b' }),
+            expect.objectContaining({ kind: 'command', id: 'start-a' }),
+            expect.objectContaining({ kind: 'command', id: 'start-b' }),
+            expect.objectContaining({ kind: 'timeline', recipeId: 'health-only' }),
+            expect.objectContaining({ kind: 'event', id: 'event-start-b' }),
+            expect.objectContaining({ kind: 'artifact', id: 'valid' }),
+        ]));
+
+        const commandDestinations = destinations('command', 'start-b');
+        expect(commandDestinations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'agent', id: 'agent-b' }),
+            expect.objectContaining({ kind: 'recipe', id: 'health-only' }),
+            expect.objectContaining({ kind: 'command', id: 'start-b' }),
+            expect.objectContaining({ kind: 'diagnostic', id: 'diagnostic-start-b' }),
+            expect.objectContaining({ kind: 'timeline', commandId: 'start-b' }),
+            expect.objectContaining({ kind: 'event', id: 'event-start-b' }),
+            expect.objectContaining({ kind: 'artifact', id: 'valid' }),
+        ]));
+        const collidingParticipantDestinations = destinations('participant', 'start-b');
+        expect(collidingParticipantDestinations.some(destination =>
+            destination.kind === 'diagnostic' && destination.id === 'diagnostic-start-b'
+        )).toBe(false);
+        const collidingRecipeDestinations = destinations('recipe', 'start-b');
+        expect(collidingRecipeDestinations.some(destination =>
+            destination.kind === 'diagnostic' && destination.id === 'diagnostic-start-b'
+        )).toBe(false);
+        const receiverDiagnostic = monitor.runtimeDiagnostics.find(diagnostic =>
+            diagnostic.eventId === 'diagnostic-start-b'
+        );
+        expect(receiverDiagnostic).toBeDefined();
+        if (!receiverDiagnostic) {
+            throw new Error('Missing receiver diagnostic.');
+        }
+        const monitorWithDimensionalDiagnostics = {
+            ...monitor,
+            runtimeDiagnostics: [
+                ...monitor.runtimeDiagnostics,
+                {
+                    ...receiverDiagnostic,
+                    eventId: 'diagnostic-health-only',
+                    agentId: 'agent-a',
+                    commandId: 'start-a',
+                    correlatedFailureKeys: ['health-only'],
+                },
+                {
+                    ...receiverDiagnostic,
+                    eventId: 'diagnostic-start-b-wrong-agent',
+                    agentId: 'agent-a',
+                    correlatedFailureKeys: ['start-b'],
+                },
+            ],
+        };
+        expect(deriveDistributedRunFailureEvidenceDestinations({
+            failure: failure('recipe', 'health-only'),
+            monitor: monitorWithDimensionalDiagnostics,
+        })).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'diagnostic', id: 'diagnostic-health-only' }),
+        ]));
+        expect(deriveDistributedRunFailureEvidenceDestinations({
+            failure: failure('command', 'start-b'),
+            monitor: monitorWithDimensionalDiagnostics,
+        }).some(destination =>
+            destination.kind === 'diagnostic' &&
+            destination.id === 'diagnostic-start-b-wrong-agent'
+        )).toBe(false);
+
+        const monitorWithoutArtifact = deriveDistributedRunMonitor({
+            distributedRun: evidenceRun,
+            controlRun: evidenceControlRun,
+        });
+        expect(deriveDistributedRunFailureEvidenceDestinations({
+            failure: failure('command', 'start-b'),
+            monitor: monitorWithoutArtifact,
+        }).some(destination => destination.kind === 'artifact')).toBe(false);
+        const monitorWithInvalidArtifact = deriveDistributedRunMonitor({
+            distributedRun: evidenceRun,
+            controlRun: evidenceControlRun,
+            artifactBundle: {
+                ...distributedArtifactBundle,
+                files: {
+                    ...distributedArtifactBundle.files,
+                    'control-run.json': '{invalid',
+                },
+            },
+        });
+        expect(deriveDistributedRunFailureEvidenceDestinations({
+            failure: failure('command', 'start-b'),
+            monitor: monitorWithInvalidArtifact,
+        }).some(destination => destination.kind === 'artifact')).toBe(false);
+    });
+
     it('derives a human-readable analysis report with first failure and truncation warnings', () => {
         const report = deriveDistributedRunAnalysisReport({
             distributedRun,
@@ -2591,6 +2949,40 @@ describe('distributed recipes helpers', () => {
                     result: compositeResult,
                 }
                 : result),
+            events: [
+                ...distributedControlRun.events,
+                {
+                    kind: 'event',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    commandId: 'start-b',
+                    eventId: 'composite-event',
+                    atEpochMs: 3_090,
+                    payload: {
+                        distributedRunId: 'dist-1',
+                        topic: 'composite.failure',
+                        message: 'Composite child failed.',
+                    },
+                },
+                {
+                    kind: 'diagnostic',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    commandId: 'start-b',
+                    eventId: 'composite-diagnostic',
+                    atEpochMs: 3_100,
+                    payload: {
+                        diagnosticSchemaVersion: 1,
+                        diagnosticTypeId: 'rallar.test.composite_failure',
+                        topic: 'rallar.test.composite_failure',
+                        severity: 'error',
+                        message: 'Composite child failed.',
+                        commandId: 'start-b',
+                    },
+                },
+            ],
         };
 
         const monitor = deriveDistributedRunMonitor({
@@ -2645,6 +3037,28 @@ describe('distributed recipes helpers', () => {
                 message: expect.stringContaining('RALLAR_BLACK_BOX_ASSERT_FAILED'),
             }),
         ]));
+        const compositeFailure = monitor.failures.find(failure =>
+            failure.commandId === drilldown.firstFailure?.commandId &&
+            failure.key !== 'start-b'
+        );
+        expect(compositeFailure).toBeDefined();
+        if (!compositeFailure) {
+            throw new Error('Missing composite child failure.');
+        }
+        const evidenceDestinations = deriveDistributedRunFailureEvidenceDestinations({
+            failure: compositeFailure,
+            monitor,
+        });
+        expect(evidenceDestinations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'agent', id: 'agent-b' }),
+            expect.objectContaining({ kind: 'recipe', id: 'composite-evidence' }),
+            expect.objectContaining({ kind: 'command', id: drilldown.firstFailure?.commandId }),
+            expect.objectContaining({ kind: 'command', id: 'start-b' }),
+            expect.objectContaining({ kind: 'diagnostic', id: 'composite-diagnostic' }),
+            expect.objectContaining({ kind: 'timeline', commandId: 'start-b' }),
+            expect.objectContaining({ kind: 'event', id: 'composite-event' }),
+        ]));
+        expect(evidenceDestinations.some(destination => destination.kind === 'artifact')).toBe(false);
     });
 
     it('extracts WS and RTC runtime diagnostics for distributed run monitor filtering and failure correlation', () => {

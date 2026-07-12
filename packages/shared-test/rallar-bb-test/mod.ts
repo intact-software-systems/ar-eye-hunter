@@ -7,6 +7,7 @@ export * from './control-protocol.ts';
 export * from './control-client.ts';
 export * from './control-snapshots.ts';
 export * from './distributed-run-monitor.ts';
+export * from './distributed-run-evidence.ts';
 export * from './distributed-recipe-catalog.ts';
 export * from './distributed-artifact-analysis.ts';
 export * from './recipe-fixtures.ts';

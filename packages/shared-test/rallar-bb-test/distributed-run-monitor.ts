@@ -39,6 +39,10 @@ import type {
     ControlSnapshotBounds,
     ControlRunSnapshot,
 } from './control-snapshots.ts';
+import {
+    distributedRunExpectedAgentIdsForRecipe,
+    distributedRunRecipeSelectionKey,
+} from './distributed-run-evidence.ts';
 
 export type DistributedRecipeRolePattern =
     | 'all-agents'
@@ -3760,6 +3764,10 @@ function distributedRunRecipeProgress(input: Readonly<{
 }>): readonly DistributedRunRecipeProgressRow[] {
     return input.distributedRun.manifest.recipes.map((selection, index) => {
         const recipeId = recipeSelectionId(selection, index);
+        const expectedAgentIds = distributedRunExpectedAgentIdsForRecipe(
+            input.distributedRun,
+            selection,
+        );
         const links = input.distributedRun.commandLinks.filter(link =>
             link.recipeId === recipeId ||
             (link.recipeId === undefined && input.distributedRun.manifest.recipes.length === 1)
@@ -3777,7 +3785,7 @@ function distributedRunRecipeProgress(input: Readonly<{
             profile: selection.profile,
             role: selection.role,
             required: selection.required !== false,
-            targetCount: input.distributedRun.targetAgentIds.length,
+            targetCount: expectedAgentIds.length,
             queuedCount: progressLinks.filter(link =>
                 input.commands.get(link.commandId)?.dispatchedAtEpochMs === undefined &&
                 !input.resultsByCommandId.has(link.commandId)
@@ -3788,7 +3796,7 @@ function distributedRunRecipeProgress(input: Readonly<{
             ).length,
             passedCount: results.filter(result => result.ok).length,
             failedCount: results.filter(result => !result.ok).length,
-            missingCount: Math.max(0, input.distributedRun.targetAgentIds.length - targetAgentsWithLinks.size),
+            missingCount: expectedAgentIds.filter(agentId => !targetAgentsWithLinks.has(agentId)).length,
             averageLatencyMs: average(latencies),
         };
     });
@@ -3929,7 +3937,7 @@ function recipeSelectionId(
     selection: RallarBlackBoxDistributedRunRecipeSelection,
     index = 0,
 ): string {
-    return selection.recipeId ?? selection.recipe?.recipeId ?? `recipe-${index + 1}`;
+    return distributedRunRecipeSelectionKey(selection) ?? `recipe-${index + 1}`;
 }
 
 function agentRole(
