@@ -19,6 +19,8 @@ export type ExecuteConnectionTruth =
     | 'partial'
     | 'stale'
     | 'offline'
+    | 'error'
+    | 'credential-trust'
     | 'auth-required';
 
 export type ExecuteActionBlockCode =
@@ -121,6 +123,8 @@ export function deriveExecuteActionPolicy(
     if (
         input.connection === 'connecting' ||
         input.connection === 'offline' ||
+        input.connection === 'error' ||
+        input.connection === 'credential-trust' ||
         input.connection === 'auth-required'
     ) {
         return policy;

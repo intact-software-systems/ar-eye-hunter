@@ -515,6 +515,37 @@ describe('Recipe Console serialized control query service', () => {
         service.stop();
     });
 
+    it('queues an authoritative refresh after an existing read settles', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(60_000);
+        const beforeMutation = deferred<ReturnType<typeof complete>>();
+        const afterMutation = deferred<ReturnType<typeof complete>>();
+        const query = vi.fn()
+            .mockImplementationOnce(() => beforeMutation.promise)
+            .mockImplementationOnce(() => afterMutation.promise);
+        const service = createControlQueryService<TestSnapshot>({
+            query,
+            now: Date.now,
+            scheduler: fakeTimerScheduler(),
+            pollIntervalMs: 5_000,
+            requestTimeoutMs: 60_000,
+        });
+
+        service.start();
+        const refreshAfterCurrent = service.refreshAfterCurrent();
+        expect(query).toHaveBeenCalledTimes(1);
+
+        beforeMutation.resolve(complete());
+        await flushMicrotasks();
+        expect(query).toHaveBeenCalledTimes(2);
+
+        afterMutation.resolve(complete(RECOVERED_SNAPSHOT));
+        await refreshAfterCurrent;
+        expect(service.getSnapshot().snapshot).toBe(RECOVERED_SNAPSHOT);
+
+        service.stop();
+    });
+
     it('hard-times out a non-settling query and aborts its request signal', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(70_000);

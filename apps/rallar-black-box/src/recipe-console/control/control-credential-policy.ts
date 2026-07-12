@@ -3,6 +3,7 @@ import { resolveAppExperience } from '../../app/experience-route.ts';
 export type RecipeConsoleControlCredentialPolicy = Readonly<{
     allowManualToken: boolean;
     allowBrokeredToken: boolean;
+    allowBootstrapAgentTicket: boolean;
     controlUrlFromLocation: boolean;
     apiBaseUrlFromLocation: boolean;
     controlTokenFromLocation: boolean;
@@ -12,6 +13,7 @@ export type RecipeConsoleControlCredentialPolicy = Readonly<{
 export const TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY = {
     allowManualToken: true,
     allowBrokeredToken: true,
+    allowBootstrapAgentTicket: true,
     controlUrlFromLocation: false,
     apiBaseUrlFromLocation: false,
     controlTokenFromLocation: false,
@@ -20,16 +22,14 @@ export const TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY = {
 export function recipeConsoleControlCredentialPolicyFromSearch(
     search: string,
 ): RecipeConsoleControlCredentialPolicy {
-    if (resolveAppExperience(search) !== 'recipe-console') {
-        return TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY;
-    }
-
     const params = new URLSearchParams(search);
     const controlUrlFromLocation = hasNonemptyValue(params, 'controlUrl');
     const apiBaseUrlFromLocation = hasNonemptyValue(params, 'apiBaseUrl');
     const controlTokenFromLocation = hasNonemptyValue(params, 'controlToken');
     const allowManualToken = !controlUrlFromLocation || controlTokenFromLocation;
     const allowBrokeredToken = !controlUrlFromLocation && !apiBaseUrlFromLocation;
+    const allowBootstrapAgentTicket = resolveAppExperience(search) !== 'recipe-console' ||
+        !apiBaseUrlFromLocation;
     const blockedMessage = controlUrlFromLocation
         ? 'Automatic stored credentials are blocked for a URL-configured control endpoint. Use a configured endpoint or supply an explicit control token from the same trusted source.'
         : apiBaseUrlFromLocation
@@ -39,6 +39,7 @@ export function recipeConsoleControlCredentialPolicyFromSearch(
     return {
         allowManualToken,
         allowBrokeredToken,
+        allowBootstrapAgentTicket,
         controlUrlFromLocation,
         apiBaseUrlFromLocation,
         controlTokenFromLocation,

@@ -1,68 +1,21 @@
 import {
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
-    createRallarBlackBoxRtcRealtimeStabilityRecipe,
-} from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
-import {
-    defaultDistributedRecipeTargetIds,
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     deriveRunVerdictView,
-    distributedRecipeCommandKinds,
-    distributedRecipeCommandPreview,
-    distributedRecipePreflight,
-    distributedRecipeTargetRows,
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import { createSyntheticDistributedRunSeed } from '../../distributed-run-seeds.ts';
 import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../rtc-diagnostics.ts';
 import type {
-    ExecutePreviewModel,
     MonitorPreviewModel,
     RecipeConsoleSeedState,
     TunePreviewModel,
 } from './recipe-console-models.ts';
 
-const TARGET_SNAPSHOT_EPOCH_MS = 1_900_000_002_550;
-
 export function createRecipeConsoleSeedState(): RecipeConsoleSeedState {
     return {
-        execute: createExecutePreviewModel(),
         monitor: createMonitorPreviewModel(),
         tune: createTunePreviewModel(),
-    };
-}
-
-function createExecutePreviewModel(): ExecutePreviewModel {
-    const targetSeed = createSyntheticDistributedRunSeed('passed-clean');
-    const sharedFixture = RALLAR_BLACK_BOX_RECIPE_FIXTURES.find(
-        fixture => fixture.fixtureId === 'rtc-realtime-stability',
-    );
-    if (!sharedFixture) {
-        throw new Error('Shared RTC realtime stability fixture is unavailable.');
-    }
-    const selectedRecipe = createRallarBlackBoxRtcRealtimeStabilityRecipe({
-        group: targetSeed.distributedRun.manifest.group,
-    });
-    const selectedFixture = { ...sharedFixture, recipe: selectedRecipe };
-    const catalogRows = RALLAR_BLACK_BOX_RECIPE_FIXTURES.map(fixture =>
-        fixture.fixtureId === selectedFixture.fixtureId ? selectedFixture : fixture
-    );
-    const targetRows = distributedRecipeTargetRows({
-        run: targetSeed.controlRun,
-        group: targetSeed.distributedRun.manifest.group,
-        requiredCommandKinds: distributedRecipeCommandKinds(selectedRecipe),
-        nowEpochMs: TARGET_SNAPSHOT_EPOCH_MS,
-    });
-
-    return {
-        group: targetSeed.distributedRun.manifest.group,
-        selectedFixture,
-        catalogRows,
-        commandPreview: distributedRecipeCommandPreview(selectedRecipe),
-        preflight: distributedRecipePreflight(selectedRecipe),
-        targetRows,
-        defaultTargetIds: defaultDistributedRecipeTargetIds(targetRows),
-        controlConnectivity: 'required-not-checked',
     };
 }
 

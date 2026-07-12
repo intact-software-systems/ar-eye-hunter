@@ -27,6 +27,13 @@ describe('distributed artifact SPA reuse', () => {
             ),
             'utf8',
         );
+        const sharedDistributedRecipeCatalogSource = readFileSync(
+            path.join(
+                repoRoot,
+                'packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts',
+            ),
+            'utf8',
+        );
         const importedAnalysisPath = path.join(
             repoRoot,
             'apps/rallar-black-box/src/legacy/runner/runs/ImportedDistributedArtifactAnalysisPanel.tsx',
@@ -60,8 +67,11 @@ describe('distributed artifact SPA reuse', () => {
         expect(runsControllerSource).toContain('distributedArtifactBundleFromFiles');
         expect(importedAnalysisSource).toContain('Imported CI artifact analysis');
         expect(runsControllerSource).toContain('handleDistributedArtifactFiles');
-        expect(distributedRecipeCatalogSource).toContain('RTC Realtime Stability');
-        expect(distributedRecipeCatalogSource).toContain('rtc-realtime-stability');
+        expect(distributedRecipeCatalogSource).toContain(
+            '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts',
+        );
+        expect(sharedDistributedRecipeCatalogSource).toContain('RTC Realtime Stability');
+        expect(sharedDistributedRecipeCatalogSource).toContain('rtc-realtime-stability');
         expect(distributedAnalysisSource).toContain('type="file"');
         expect(distributedAnalysisSource).toContain(
             'accept=".json,.jsonl,application/json"',

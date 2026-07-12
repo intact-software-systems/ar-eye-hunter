@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';
 import { AnalyzePreview } from '../analyze/AnalyzePreview.tsx';
 import { createRecipeConsoleSeedState } from '../data/seeded-console-state.ts';
@@ -40,11 +40,7 @@ function activeWork(
     }
 }
 
-export function RecipeConsoleWorkspace({
-    onRefresh,
-}: Readonly<{
-    onRefresh(): void;
-}>) {
+export function RecipeConsoleWorkspace() {
     const urlState = useRecipeConsoleUrlState();
     const presentation = useRecipeConsolePresentation();
     const control = useRecipeConsoleControlWorkspace({
@@ -52,7 +48,8 @@ export function RecipeConsoleWorkspace({
         navigate: urlState.navigate,
         replace: urlState.replace,
     });
-    const [seedState] = useState(createRecipeConsoleSeedState);
+    const [seedState, setSeedState] = useState(createRecipeConsoleSeedState);
+    const [seededRevision, setSeededRevision] = useState(0);
     const [inspectorOpen, setInspectorOpen] = useState(
         () => urlState.state.view === 'execute' ||
             (urlState.state.view === 'monitor' && presentation.inspector === 'rail'),
@@ -63,7 +60,7 @@ export function RecipeConsoleWorkspace({
     );
     const [stale, setStale] = useState(false);
     const [tuneAgentId, setTuneAgentId] = useState<string>();
-    const [executeTargetPreviewAvailable, setExecuteTargetPreviewAvailable] = useState(true);
+    const [executeSafeTargetLabel, setExecuteSafeTargetLabel] = useState<string>();
     const [inspectorTrigger, setInspectorTrigger] = useState<HTMLButtonElement | null>(null);
     const restoreFocusRef = useRef<HTMLButtonElement>(null);
     const selectedFailure = seedState.monitor.failureLedger.find(
@@ -97,12 +94,13 @@ export function RecipeConsoleWorkspace({
     const executeWork = (
         <ExecuteWorkspace
             connection={control.connection}
-            model={seedState.execute}
+            navigate={urlState.navigate}
             onInspectorChange={setInspectorContent}
-            onSelectAgent={control.selectAgent}
             onSelectControlRun={control.selectControlRun}
-            onTargetAvailabilityChange={setExecuteTargetPreviewAvailable}
+            onSafeTargetLabelChange={setExecuteSafeTargetLabel}
+            replace={urlState.replace}
             selection={control.selection}
+            urlState={urlState.state}
         />
     );
     const work = activeWork(
@@ -143,6 +141,7 @@ export function RecipeConsoleWorkspace({
         <ControlCommandContext
             baseUrl={control.connection.baseUrl}
             query={control.connection.query}
+            safeTargetLabel={executeActive ? executeSafeTargetLabel : undefined}
             selection={control.selection}
         />
     );
@@ -162,6 +161,25 @@ export function RecipeConsoleWorkspace({
         }
         : undefined;
 
+    function refresh(): void {
+        void control.connection.refresh();
+        if (executeActive) return;
+        const next = createRecipeConsoleSeedState();
+        setSeedState(next);
+        setSelectedFailureKey(next.monitor.selectedCommandFailure.key);
+        setStale(false);
+        setTuneAgentId(undefined);
+        setInspectorContent(undefined);
+        setInspectorTrigger(null);
+        setInspectorOpen(
+            urlState.state.view === 'monitor' && presentation.inspector === 'rail',
+        );
+        setSeededRevision(value => value + 1);
+    }
+    const presentedWork = executeActive
+        ? work
+        : <Fragment key={`${urlState.state.view}-${seededRevision}`}>{work}</Fragment>;
+
     return (
         <div className="recipe-console" data-view={urlState.state.view}>
             <RecipeConsoleShell
@@ -175,10 +193,7 @@ export function RecipeConsoleWorkspace({
                 onCopyLink={copyLink}
                 onInspectorClose={() => setInspectorOpen(false)}
                 onNavigate={navigate}
-                onRefresh={() => {
-                    void control.connection.refresh();
-                    onRefresh();
-                }}
+                onRefresh={refresh}
                 onSelectionDockInspect={inspectSelection}
                 restoreFocusRef={restoreFocusRef}
                 selectionDockContent={selectionDockContent}
@@ -186,7 +201,7 @@ export function RecipeConsoleWorkspace({
                 workContent={(
                     <section aria-labelledby="recipe-console-view-heading">
                         <h1 id="recipe-console-view-heading">{urlState.state.view === 'execute' ? 'Execute recipe' : `${urlState.state.view[0].toUpperCase()}${urlState.state.view.slice(1)}`}</h1>
-                        {work}
+                        {presentedWork}
                     </section>
                 )}
             />

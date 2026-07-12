@@ -39,7 +39,7 @@ const LegacyExperience = lazy(() =>
 export default function App() {
     const runtime = useRallarBlackBoxRuntimeStore();
     const { bootstrap } = runtime;
-    const canConsumeBootstrapAgentTicket = !initialRecipeConsoleControlCredentialPolicy.apiBaseUrlFromLocation;
+    const canConsumeBootstrapAgentTicket = initialRecipeConsoleControlCredentialPolicy.allowBootstrapAgentTicket;
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(
         () =>
             bootstrap.rallarAgentSessionTicket

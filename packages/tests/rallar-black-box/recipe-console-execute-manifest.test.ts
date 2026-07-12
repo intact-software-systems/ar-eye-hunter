@@ -6,6 +6,7 @@ import {
     currentExecuteTargetResolutionEvidence,
     deriveExecuteManifest,
     executeManifestFingerprint,
+    projectExecuteManifest,
 } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-manifest.ts';
 import {
     projectDistributedRecipeCatalog,
@@ -129,6 +130,26 @@ describe('Recipe Console Execute manifest', () => {
         expect(JSON.parse(draft.rawJson)).toEqual(draft.manifest);
         expect(draft.rawJson).toContain('\n  "distributedRunId"');
         expect(draft.fingerprint).toBe(executeManifestFingerprint(draft.manifest));
+    });
+
+    it('projects an authoritative stored manifest without rebuilding its intent', () => {
+        const generated = manifestDraft();
+        const stored = {
+            ...generated.manifest,
+            displayName: 'Authoritative server draft',
+            targetPolicy: {
+                ...generated.manifest.targetPolicy,
+                agentIds: ['agent-b'],
+                expectedParticipantCount: 1,
+            },
+        };
+
+        const projected = projectExecuteManifest(stored);
+
+        expect(projected.manifest).toBe(stored);
+        expect(JSON.parse(projected.rawJson)).toEqual(stored);
+        expect(projected.validation.ok).toBe(true);
+        expect(projected.fingerprint).toBe(executeManifestFingerprint(stored));
     });
 
     it('fingerprints the complete recursive value without key-order or framing collisions', () => {

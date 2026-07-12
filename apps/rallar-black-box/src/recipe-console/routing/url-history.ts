@@ -30,15 +30,18 @@ export function createRecipeConsoleUrlHistory(
         method: 'push' | 'replace',
         patch: Partial<RecipeConsoleUrlState>,
     ): ParsedRecipeConsoleUrl => {
-        const current = read();
+        const currentSearch = port.readSearch();
+        const current = parseRecipeConsoleUrl(currentSearch);
         const state: RecipeConsoleUrlState = {
             ...current.state,
             ...patch,
             v: RECIPE_CONSOLE_URL_VERSION,
             experience: 'recipe-console',
         };
-        const search = serializeRecipeConsoleUrl(state, port.readSearch());
-        port[method](search);
+        const search = serializeRecipeConsoleUrl(state, currentSearch);
+        if (search !== currentSearch) {
+            port[method](search);
+        }
         return parseRecipeConsoleUrl(search);
     };
 

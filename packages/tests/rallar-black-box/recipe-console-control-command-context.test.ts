@@ -5,6 +5,7 @@ import type {
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import {
     controlCommandActiveRunLabel,
+    controlCommandSafeTargetLabel,
     controlCommandStatus,
 } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlCommandContext.tsx';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
@@ -29,6 +30,20 @@ function activeRun(
 }
 
 describe('Recipe Console control command context truth', () => {
+    it('uses one Execute-owned recipe-aware safe-target label when supplied', () => {
+        expect(controlCommandSafeTargetLabel({
+            queryStatus: 'live',
+            safeTargetableCount: 5,
+            lastKnownTargetableCount: 5,
+            override: '2 selected · 2 recipe-safe',
+        })).toBe('2 selected · 2 recipe-safe');
+        expect(controlCommandSafeTargetLabel({
+            queryStatus: 'stale',
+            safeTargetableCount: 5,
+            lastKnownTargetableCount: 4,
+        })).toBe('0 current · 4 last known');
+    });
+
     it('keeps reachability visible alongside offline and authorization state', () => {
         expect(controlCommandStatus(query({
             status: 'offline',

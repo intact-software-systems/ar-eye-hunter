@@ -135,7 +135,7 @@ describe('Recipe Console experience boundary', () => {
         expect(app).not.toMatch(/<RecipeConsoleApp\b[^>]*\bbootstrap=\{bootstrap\}/);
     });
 
-    test('owns one control query above keyed preview workspace remounts', () => {
+    test('owns one control query above the unkeyed live workspace', () => {
         expect(existsSync(resolve(repositoryRoot, controlConnectionProviderPath)))
             .toBe(true);
         if (!existsSync(resolve(repositoryRoot, controlConnectionProviderPath))) {
@@ -150,8 +150,9 @@ describe('Recipe Console experience boundary', () => {
             "import { ControlConnectionProvider } from '../control/ControlConnectionProvider.tsx';",
         );
         expect(recipeConsole).toMatch(
-            /<ControlConnectionProvider\b[\s\S]*<RecipeConsoleWorkspace\b[\s\S]*key=\{revision\}[\s\S]*<\/ControlConnectionProvider>/,
+            /<ControlConnectionProvider\b[\s\S]*<RecipeConsoleWorkspace\s*\/>[\s\S]*<\/ControlConnectionProvider>/,
         );
+        expect(recipeConsole).not.toMatch(/key=\{|\brevision\b|\buseState\b/);
         expect(recipeConsole).not.toMatch(
             /<ControlConnectionProvider\b[^>]*\bkey=/,
         );
@@ -252,6 +253,99 @@ describe('Recipe Console experience boundary', () => {
         expect(files[2]).toContain('createExecuteActionArmContext');
     });
 
+    test('replaces Execute preview with one bounded live workflow composition', () => {
+        const executeOwners = [
+            'use-execute-workflow.ts',
+            'ExecuteCatalog.tsx',
+            'ExecuteTargets.tsx',
+            'ExecutePreflight.tsx',
+            'ExecuteManifestDisclosure.tsx',
+            'ExecuteRunStatus.tsx',
+            'ExecuteActionBand.tsx',
+            'ExecuteCancelDialog.tsx',
+            'ExecuteRecipeInspector.tsx',
+            'ExecuteWorkspace.tsx',
+        ].map(file => `${recipeConsoleRoot}/execute/${file}`);
+        const executeStyles = [
+            'ExecuteWorkspace.module.css',
+            'ExecuteCatalog.module.css',
+            'ExecuteTargets.module.css',
+            'ExecutePreflight.module.css',
+            'ExecuteManifestDisclosure.module.css',
+            'ExecuteRunStatus.module.css',
+            'ExecuteActionBand.module.css',
+            'ExecuteCancelDialog.module.css',
+            'ExecuteRecipeInspector.module.css',
+        ].map(file => `${recipeConsoleRoot}/execute/${file}`);
+        const executeSupport = [
+            'use-execute-draft.ts',
+            'use-execute-operations.ts',
+            'execute-workflow-context.ts',
+            'execute-operation-error.ts',
+            'execute-artifact-export.ts',
+        ].map(file => `${recipeConsoleRoot}/execute/${file}`);
+        for (const path of [...executeOwners, ...executeStyles, ...executeSupport]) {
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+        }
+        if (!executeOwners.every(path => existsSync(resolve(repositoryRoot, path)))) {
+            return;
+        }
+
+        const ownerSources = executeOwners.map(path => source(path));
+        for (const [index, file] of ownerSources.entries()) {
+            if (executeOwners[index].endsWith('.tsx')) {
+                expect(file.trimEnd().split(/\r?\n/).length, executeOwners[index])
+                    .toBeLessThan(300);
+            }
+        }
+        const workspace = source(`${recipeConsoleRoot}/execute/ExecuteWorkspace.tsx`);
+        for (const path of [executeOwners[0], ...executeSupport]) {
+            expect(source(path).trimEnd().split(/\r?\n/).length, path)
+                .toBeLessThanOrEqual(300);
+        }
+        expect(executeSupport.map(path => source(path)).join('\n')).not.toMatch(
+            /(?:from\s+|import\()['"][^'"]*(?:legacy\/|seeded-console-state|control-run-manager|registry|index\.ts)['"]|\bfetch\s*\(/,
+        );
+        expect(workspace.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(150);
+        expect(workspace.match(/\buseExecuteWorkflow\b/g)).toHaveLength(2);
+        for (const owner of [
+            'ExecuteCatalog',
+            'ExecuteTargets',
+            'ExecutePreflight',
+            'ExecuteManifestDisclosure',
+            'ExecuteRunStatus',
+            'ExecuteActionBand',
+        ]) {
+            expect(workspace, owner).toContain(`import { ${owner} }`);
+            expect(workspace.match(new RegExp(`<${owner}\\b`, 'g')), owner)
+                .toHaveLength(1);
+        }
+        expect(ownerSources.join('\n')).not.toMatch(
+            /(?:from\s+|import\()['"][^'"]*(?:legacy\/|seeded-console-state|control-run-manager|registry|index\.ts)['"]|\bfetch\s*\(|ExecutePreviewModel|seed-agent|Preview action|Stage Preview|Start Preview/,
+        );
+        expect(workspace).not.toMatch(/ControlOverview|ControlAgentBoard/);
+        expect(source(`${recipeConsoleRoot}/execute/ExecuteManifestDisclosure.tsx`))
+            .not.toMatch(/textarea|contentEditable/);
+
+        for (const removed of [
+            `${recipeConsoleRoot}/execute/ExecutePreview.tsx`,
+            `${recipeConsoleRoot}/execute/ExecutePreview.module.css`,
+            `${recipeConsoleRoot}/execute/use-execute-preview.ts`,
+            `${recipeConsoleRoot}/execute/execute-preview-export.ts`,
+            `${recipeConsoleRoot}/control/ControlOverview.tsx`,
+            `${recipeConsoleRoot}/control/ControlAgentBoard.tsx`,
+            `${recipeConsoleRoot}/control/ControlOverview.module.css`,
+        ]) {
+            expect(existsSync(resolve(repositoryRoot, removed)), removed).toBe(false);
+        }
+        const app = source(recipeConsolePath);
+        const seedState = source(`${recipeConsoleRoot}/data/seeded-console-state.ts`);
+        const models = source(`${recipeConsoleRoot}/data/recipe-console-models.ts`);
+        expect(app).not.toMatch(/key=\{revision\}|useState/);
+        expect(seedState).not.toMatch(/createExecutePreviewModel|\bexecute\s*:/);
+        expect(models).not.toMatch(/ExecutePreviewModel|\bexecute\s*:/);
+    });
+
     test('keeps control fetch and poll ownership out of shell composition', () => {
         const forbiddenOwnership =
             /\bfetch\s*\(|\bsetInterval\s*\(|\bsetTimeout\s*\(|createRecipeConsoleControlApi|createControlQueryService|from ['"][^'"]*control-(?:api|query)\.ts['"]/;
@@ -334,54 +428,22 @@ describe('Recipe Console experience boundary', () => {
         }
     });
 
-    test('composes a focused repository-derived control overview and agent board', () => {
+    test('removes the generic control board after the recipe-aware target cutover', () => {
         for (const path of [controlOverviewPath, controlAgentBoardPath]) {
-            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(false);
         }
-        if (
-            !existsSync(resolve(repositoryRoot, controlOverviewPath)) ||
-            !existsSync(resolve(repositoryRoot, controlAgentBoardPath))
-        ) {
-            return;
-        }
-
-        const overview = source(controlOverviewPath);
-        const board = source(controlAgentBoardPath);
         const selection = source(controlSelectionPath);
-        const compositionOwners = filesBelow(recipeConsoleRoot)
-            .filter(path => path.endsWith('.tsx'))
-            .filter(path => path !== controlOverviewPath)
-            .filter(path => source(path).includes('<ControlOverview'));
-
-        expect(compositionOwners).toHaveLength(1);
-        expect(compositionOwners[0]).toMatch(
-            /apps\/rallar-black-box\/src\/recipe-console\/(?:app|execute)\//,
-        );
-        expect(overview).toContain(
-            "import { ControlAgentBoard } from './ControlAgentBoard.tsx';",
-        );
-        expect(overview).toContain('<ControlAgentBoard');
+        const hook = source(`${recipeConsoleRoot}/execute/use-execute-workflow.ts`);
+        const draft = source(`${recipeConsoleRoot}/execute/use-execute-draft.ts`);
+        const targets = source(`${recipeConsoleRoot}/execute/ExecuteTargets.tsx`);
         expect(selection).toMatch(
             /import\s*\{[^}]*deriveControlAgentBoardRows[^}]*summarizeControlAgentBoardRows[^}]*\}\s*from ['"]\.\.\/\.\.\/control-agent-board\.ts['"]/s,
         );
-        expect(`${overview}\n${board}`).not.toMatch(
-            /createRecipeConsoleSeedState|seeded-console-state|seed-agent-/,
+        expect(draft).toContain('distributedRecipeTargetRows');
+        expect(targets).toContain('DistributedRecipeTargetRow');
+        expect(`${hook}\n${draft}\n${targets}`).not.toMatch(
+            /createRecipeConsoleSeedState|seeded-console-state|seed-agent-|ControlOverview|ControlAgentBoard/,
         );
-        expect(`${overview}\n${board}`).not.toMatch(
-            /distributedRecipeTargetRows|\.filter\([^)]*targetable[^)]*\)\.length/,
-        );
-
-        for (const [path, file] of [
-            [controlOverviewPath, overview],
-            [controlAgentBoardPath, board],
-        ] as const) {
-            expect(file.trimEnd().split(/\r?\n/).length, path)
-                .toBeLessThanOrEqual(300);
-            expect(file, path).not.toMatch(
-                /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]|(?:registry|Registry|index\.ts)/,
-            );
-            expect(file, path).not.toMatch(/^\s{4,}function\s+[A-Z]\w*/m);
-        }
     });
 
     test('builds the scoped Signal Ledger shell from bounded modules', () => {
@@ -464,18 +526,21 @@ describe('Recipe Console experience boundary', () => {
         expect(inspector).not.toMatch(/hidden|display\s*:\s*none/);
     });
 
-    test('keeps Execute preview UI state and repository projections explicit', () => {
-        const hook = source(
-            `${recipeConsoleRoot}/execute/use-execute-preview.ts`,
+    test('keeps live Execute orchestration and refresh ownership explicit', () => {
+        const hook = source(`${recipeConsoleRoot}/execute/use-execute-workflow.ts`);
+        const draft = source(`${recipeConsoleRoot}/execute/use-execute-draft.ts`);
+        const operations = source(`${recipeConsoleRoot}/execute/use-execute-operations.ts`);
+        const workspace = source(recipeConsoleWorkspacePath);
+        expect(hook).toContain('projectDistributedRecipeCatalog');
+        expect(draft).toContain('distributedRecipeTargetRows');
+        expect(hook).toContain('deriveExecuteManifest');
+        expect(operations).toContain('requiredExecution(input.connection)');
+        expect(`${hook}\n${draft}\n${operations}`).not.toMatch(
+            /\bfetch\s*\(|seeded-console-state|seed-agent-/,
         );
-        const view = source(
-            `${recipeConsoleRoot}/execute/ExecutePreview.tsx`,
-        );
-        expect(hook).toContain('preflightExpanded');
-        expect(view).toContain('open={preview.preflightExpanded}');
-        expect(view).toContain('model.group.applicationId');
-        expect(view).not.toContain("'rallar-server/default/seed-room'");
-        expect(view).not.toMatch(/\bfetch\s*\(/);
+        expect(workspace).toContain('if (executeActive) return;');
+        expect(workspace).toContain('setSeededRevision');
+        expect(workspace).toContain('onSafeTargetLabelChange');
     });
 
     test('keeps failure-first Monitor and modal focus behavior bounded', () => {

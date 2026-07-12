@@ -126,6 +126,18 @@ describe('Recipe Console URL history', () => {
         expect(new URLSearchParams(port.replaced[0]).get('future')).toBe('value');
     });
 
+    it('does not write an idempotent replacement', () => {
+        const port = new MemoryHistoryPort(
+            '?v=1&experience=recipe-console&view=execute&recipeId=recipe-a',
+        );
+        const history = createRecipeConsoleUrlHistory(port);
+
+        const next = history.replace({ recipeId: 'recipe-a' });
+
+        expect(next.state.recipeId).toBe('recipe-a');
+        expect(port.replaced).toEqual([]);
+    });
+
     it('scrubs every sensitive query key during push and replace', () => {
         const port = new MemoryHistoryPort(sensitiveSearch());
         const history = createRecipeConsoleUrlHistory(port);

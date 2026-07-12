@@ -54,7 +54,7 @@ export function useRecipeConsoleUrlState() {
     const [value, setValue] = useState(history.read);
 
     useEffect(() => {
-        replaceNonCanonicalBrowserUrl(value);
+        replaceNonCanonicalBrowserUrl(history.read());
         return history.subscribe(next => {
             replaceNonCanonicalBrowserUrl(next);
             setValue(next);
@@ -65,7 +65,11 @@ export function useRecipeConsoleUrlState() {
         setValue(history.push(patch));
     }, [history]);
     const replace = useCallback((patch: Partial<RecipeConsoleUrlState>): void => {
-        setValue(history.replace(patch));
+        const next = history.replace(patch);
+        setValue(previous => ({
+            ...next,
+            issues: previous.issues,
+        }));
     }, [history]);
     const copyHref = createRecipeConsoleShareHref(window.location, value.state);
 

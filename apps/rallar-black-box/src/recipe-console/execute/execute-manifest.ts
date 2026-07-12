@@ -93,6 +93,11 @@ export function deriveExecuteManifest(input: Readonly<{
         startMode: 'manual',
         expectedParticipantCount: selectedAgentIds.length,
     });
+    return projectExecuteManifest(manifest);
+}
+export function projectExecuteManifest(
+    manifest: RallarBlackBoxDistributedRunManifest,
+): ExecuteManifestDraft {
     return {
         manifest,
         validation: validateDistributedRunManifest(manifest),

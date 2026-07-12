@@ -195,7 +195,7 @@ export function classifyExecuteMutationResponse(
         run,
         code: terminalFailure ? 'terminal-failure' : 'unexpected-state',
         reason: run.error?.message ??
-            `${actionLabel(action)} returned authoritative state ${run.state}; the action was not completed.`,
+            `${executeMutationActionLabel(action)} returned authoritative state ${run.state}; the action was not completed.`,
     };
 }
 
@@ -206,7 +206,7 @@ function matchingRun(
     return run?.distributedRunId === distributedRunId ? run : undefined;
 }
 
-function actionLabel(action: ExecuteMutationAction): string {
+function executeMutationActionLabel(action: ExecuteMutationAction): string {
     return action.charAt(0).toUpperCase() + action.slice(1);
 }
 

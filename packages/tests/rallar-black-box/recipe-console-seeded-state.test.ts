@@ -3,48 +3,6 @@ import { createRecipeConsoleSeedState } from '../../../apps/rallar-black-box/src
 import { runCausalTrailForFailure } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 
 describe('Recipe Console seeded state', () => {
-    it('builds Execute from the shared RTC stability fixture and canonical sample targets', () => {
-        const { execute } = createRecipeConsoleSeedState();
-
-        expect(execute.selectedFixture.fixtureId).toBe('rtc-realtime-stability');
-        expect(execute.catalogRows.map(row => row.fixtureId)).toContain('rtc-realtime-stability');
-        expect(execute.commandPreview.label).toBe('5 manifest commands - 25 stream frames');
-        expect(execute.targetRows.map(row => [row.agentId, row.status, row.targetable])).toEqual([
-            ['seed-agent-a', 'matched', true],
-            ['seed-agent-b', 'matched', true],
-        ]);
-        expect(execute.defaultTargetIds).toEqual(['seed-agent-a', 'seed-agent-b']);
-        expect(execute.controlConnectivity).toBe('required-not-checked');
-        expect(execute.group).toEqual({
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            groupId: 'seed-room',
-        });
-
-        const expectedGroup = {
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            groupId: 'seed-room',
-        };
-        const ensureGroup = execute.selectedFixture.recipe.commands.find(
-            command => command.commandId === 'rtc-realtime-ensure-group',
-        );
-        const ensureMember = execute.selectedFixture.recipe.commands.find(
-            command => command.commandId === 'rtc-realtime-ensure-member',
-        );
-        const connect = execute.selectedFixture.recipe.commands.find(
-            command => command.commandId === 'rtc-realtime-connect',
-        );
-        expect(ensureGroup?.metadata).toMatchObject({ group: expectedGroup });
-        expect(ensureMember?.metadata).toMatchObject({ group: expectedGroup });
-        expect(connect).toMatchObject({
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            roomId: 'seed-room',
-            roomRef: expectedGroup,
-        });
-    });
-
     it('builds Monitor from the canonical failed-command evidence in failure-first order', () => {
         const { monitor } = createRecipeConsoleSeedState();
 

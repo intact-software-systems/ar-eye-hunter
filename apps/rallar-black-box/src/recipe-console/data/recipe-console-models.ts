@@ -1,8 +1,4 @@
-import type { RallarBlackBoxRecipeFixture } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 import type {
-    DistributedRecipeCommandPreview,
-    DistributedRecipePreflightSummary,
-    DistributedRecipeTargetRow,
     DistributedRunAgentProgressRow,
     DistributedRunAnalysisReport,
     DistributedRunFailureRow,
@@ -10,23 +6,11 @@ import type {
     RunVerdictView,
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type { RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/types.ts';
-import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RtcPerformanceAgentLaneCell,
     RtcPerformanceHistogramBucket,
 } from '../../rtc-diagnostics.ts';
 import type { SyntheticDistributedRunSeed } from '../../distributed-run-seeds.ts';
-
-export type ExecutePreviewModel = Readonly<{
-    group: RallarBlackBoxDistributedGroupRef;
-    selectedFixture: RallarBlackBoxRecipeFixture;
-    catalogRows: readonly RallarBlackBoxRecipeFixture[];
-    commandPreview: DistributedRecipeCommandPreview;
-    preflight: DistributedRecipePreflightSummary;
-    targetRows: readonly DistributedRecipeTargetRow[];
-    defaultTargetIds: readonly string[];
-    controlConnectivity: 'required-not-checked';
-}>;
 
 export type MonitorPreviewModel = Readonly<{
     seed: SyntheticDistributedRunSeed;
@@ -73,7 +57,6 @@ export type TunePreviewModel = Readonly<{
 }>;
 
 export type RecipeConsoleSeedState = Readonly<{
-    execute: ExecutePreviewModel;
     monitor: MonitorPreviewModel;
     tune: TunePreviewModel;
 }>;

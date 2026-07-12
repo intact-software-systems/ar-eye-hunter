@@ -49,6 +49,8 @@ describe('Recipe Console Execute action policy', () => {
     it.each([
         ['connecting'],
         ['offline'],
+        ['error'],
+        ['credential-trust'],
         ['auth-required'],
     ] as const)('offers only Refresh while connection truth is %s', (connection) => {
         const policy = deriveExecuteActionPolicy(input({ connection }));

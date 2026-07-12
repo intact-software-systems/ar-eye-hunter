@@ -39,6 +39,7 @@ export type RecipeConsoleControlConnection = Readonly<{
     execution: RecipeConsoleControlExecutionApi | undefined;
     query: ControlQuerySnapshot<ControlServerSnapshot>;
     refresh(): Promise<void>;
+    refreshAfterCurrent(): Promise<void>;
 }>;
 
 const ControlConnectionContext = createContext<
@@ -130,6 +131,7 @@ export function ControlConnectionProvider({
         execution: apiSetup.api?.execution,
         query,
         refresh: service.refresh,
+        refreshAfterCurrent: service.refreshAfterCurrent,
     }), [apiSetup, bootstrap, query, service.refresh]);
 
     return (

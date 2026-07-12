@@ -11,6 +11,12 @@ import {
     reconcileExecuteTargetSelection,
 } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-state.ts';
 import {
+    executeConnectionTruth,
+} from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-context.ts';
+import type {
+    RecipeConsoleControlConnection,
+} from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
+import {
     projectDistributedRecipeCatalog,
     type DistributedRecipeCatalogEntryProjection,
 } from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
@@ -80,6 +86,35 @@ function distributedRun(
 }
 
 describe('Recipe Console Execute pure workflow state', () => {
+    it('keeps reachable protocol failures distinct from unreachable control', () => {
+        const connection = {
+            query: {
+                status: 'offline',
+                reachability: 'reachable',
+                authorization: 'ready',
+            },
+        } as RecipeConsoleControlConnection;
+
+        expect(executeConnectionTruth(connection)).toBe('error');
+    });
+
+    it('keeps credential trust blocking distinct from ordinary authorization', () => {
+        const connection = {
+            query: {
+                status: 'offline',
+                reachability: 'reachable',
+                authorization: 'required',
+                lastError: {
+                    kind: 'http',
+                    message: 'Automatic credentials were withheld.',
+                    credentialTrustRequired: true,
+                },
+            },
+        } as RecipeConsoleControlConnection;
+
+        expect(executeConnectionTruth(connection)).toBe('credential-trust');
+    });
+
     it('selects the approved canonical default independent of catalog order', () => {
         const selection = deriveExecuteRecipeSelection({
             entries: [...catalog].reverse(),

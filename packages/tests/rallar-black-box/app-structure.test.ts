@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const appSourcePath = 'apps/rallar-black-box/src/App.tsx';
 const expectedAppFunctionFingerprint =
-    'b101de0109eab3eb6e508195d04dbc2c898c71a2f0423fb5cb82df2c482f839d';
+    'f3528e1553eedcfde71ef5425f0f443647d421af97bdc422d372ff287a481126';
 const legacyAppShellSourcePath =
     'apps/rallar-black-box/src/legacy/shell/LegacyAppShell.tsx';
 const legacyDiagnosticDrawerSourcePath =

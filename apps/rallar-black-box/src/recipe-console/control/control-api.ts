@@ -13,7 +13,6 @@ import {
 } from '../../control-run-manager.ts';
 import {
     type RecipeConsoleControlCredentialPolicy,
-    TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
 } from './control-credential-policy.ts';
 import { createControlAuthorizedTransport } from './control-authorized-transport.ts';
 import type {
@@ -36,6 +35,16 @@ export const RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS = {
     reports: 40,
     heartbeats: 80,
 } as const satisfies ControlSnapshotBounds;
+
+const MISSING_CONTROL_CREDENTIAL_POLICY = {
+    allowManualToken: false,
+    allowBrokeredToken: false,
+    allowBootstrapAgentTicket: false,
+    controlUrlFromLocation: false,
+    apiBaseUrlFromLocation: false,
+    controlTokenFromLocation: false,
+    blockedMessage: 'Automatic control credentials are blocked because endpoint credential provenance was not provided.',
+} as const satisfies RecipeConsoleControlCredentialPolicy;
 
 export type RecipeConsoleControlSnapshotResult = Readonly<{
     snapshot: ControlServerSnapshot;
@@ -61,7 +70,7 @@ export type RecipeConsoleControlApiConfig = Readonly<{
     authSession?: AuthSession;
     bounds?: ControlSnapshotBounds;
     fetchFn?: ControlRunManagerFetch;
-    credentialPolicy?: RecipeConsoleControlCredentialPolicy;
+    credentialPolicy: RecipeConsoleControlCredentialPolicy;
 }>;
 
 export class RecipeConsoleControlProtocolError extends Error {
@@ -79,7 +88,7 @@ export function createRecipeConsoleControlApi(
     const baseUrl = recipeConsoleControlBaseUrl(config.controlUrl);
     const bounds = config.bounds ?? RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS;
     const credentialPolicy = config.credentialPolicy ??
-        TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY;
+        MISSING_CONTROL_CREDENTIAL_POLICY;
     const transport = createControlAuthorizedTransport({
         apiBaseUrl: config.apiBaseUrl,
         authSession: config.authSession,

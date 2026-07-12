@@ -1,20 +1,45 @@
 .workspace {
     display: grid;
     min-width: 0;
+    min-height: 0;
+    grid-template-columns: minmax(260px, .72fr) minmax(0, 1.9fr);
     gap: 12px;
+}
+
+.catalogColumn,
+.workflowColumn {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 12px;
+}
+
+.workspace > [data-execute-action-band] {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+    .workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .workspace > [data-execute-action-band] {
+        grid-column: 1;
+    }
 }
 
 @media (min-width: 720px) and (max-height: 520px) {
     .workspace {
-        min-height: 0;
+        max-height: calc(100dvh - 158px);
         overflow-y: auto;
         overscroll-behavior: contain;
     }
 }
 
-@media (min-width: 1200px) {
-    .workspace {
-        min-height: 100%;
-        grid-template-rows: auto minmax(520px, 1fr);
+@media (prefers-reduced-motion: reduce) {
+    .workspace,
+    .catalogColumn,
+    .workflowColumn {
+        scroll-behavior: auto;
     }
 }

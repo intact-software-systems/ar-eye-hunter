@@ -153,6 +153,7 @@ export type ControlQueryService<Snapshot> = Readonly<{
     start(): void;
     stop(): void;
     refresh(): Promise<void>;
+    refreshAfterCurrent(): Promise<void>;
     getSnapshot(): ControlQuerySnapshot<Snapshot>;
     subscribe(listener: () => void): () => void;
 }>;
@@ -286,6 +287,16 @@ export function createControlQueryService<Snapshot>(
         return request;
     }
 
+    function refreshAfterCurrent(): Promise<void> {
+        const current = inFlight;
+        if (!current) return refresh();
+        const currentGeneration = generation;
+        return current.then(() => {
+            if (!running || generation !== currentGeneration) return;
+            return refresh();
+        });
+    }
+
     function start(): void {
         if (running) {
             return;
@@ -322,6 +333,7 @@ export function createControlQueryService<Snapshot>(
         start,
         stop,
         refresh,
+        refreshAfterCurrent,
         getSnapshot: () => state,
         subscribe(listener) {
             listeners.add(listener);

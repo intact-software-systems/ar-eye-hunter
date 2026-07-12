@@ -4,12 +4,26 @@ import {
     ControlRunManagerHttpError,
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import {
-    createRecipeConsoleControlApi,
+    createRecipeConsoleControlApi as createRecipeConsoleControlApiWithPolicy,
     RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS,
+    type RecipeConsoleControlApiConfig,
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
 import {
     recipeConsoleControlCredentialPolicyFromSearch,
+    TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
+
+type TestControlApiConfig =
+    & Omit<RecipeConsoleControlApiConfig, 'credentialPolicy'>
+    & Partial<Pick<RecipeConsoleControlApiConfig, 'credentialPolicy'>>;
+
+function createRecipeConsoleControlApi(config: TestControlApiConfig) {
+    return createRecipeConsoleControlApiWithPolicy({
+        ...config,
+        credentialPolicy: config.credentialPolicy ??
+            TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
+    });
+}
 
 const COMPLETE_SNAPSHOT = {
     runs: [],
@@ -166,14 +180,56 @@ describe('Recipe Console control API', () => {
         )).toMatchObject({
             allowManualToken: true,
             allowBrokeredToken: false,
+            allowBootstrapAgentTicket: false,
             apiBaseUrlFromLocation: true,
         });
         expect(recipeConsoleControlCredentialPolicyFromSearch(
             '?mode=control&controlUrl=https%3A%2F%2Flegacy-control.test',
         )).toMatchObject({
-            allowManualToken: true,
-            allowBrokeredToken: true,
+            allowManualToken: false,
+            allowBrokeredToken: false,
+            allowBootstrapAgentTicket: true,
+            controlUrlFromLocation: true,
+            controlTokenFromLocation: false,
         });
+    });
+
+    it('fails closed when a caller omits credential provenance', async () => {
+        const requests: Array<{
+            url: string;
+            authorization: string | null;
+        }> = [];
+        const configWithoutPolicy: Omit<
+            RecipeConsoleControlApiConfig,
+            'credentialPolicy'
+        > = {
+            controlUrl: 'https://untrusted-control.test/control',
+            manualToken: 'ambient-control-secret',
+            apiBaseUrl: 'https://untrusted-api.test',
+            authSession: authSession('victim-client', 'victim-session'),
+            fetchFn: async (input, init) => {
+                requests.push({
+                    url: String(input),
+                    authorization: authorization(init),
+                });
+                return Response.json(
+                    { error: 'Operator token required.' },
+                    { status: 401, statusText: 'Unauthorized' },
+                );
+            },
+        };
+        const api = createRecipeConsoleControlApiWithPolicy(
+            configWithoutPolicy as RecipeConsoleControlApiConfig,
+        );
+
+        await expect(api.readSnapshot({})).rejects.toMatchObject({
+            name: 'RecipeConsoleControlCredentialTrustError',
+            credentialTrustRequired: true,
+        });
+        expect(requests).toEqual([{
+            url: expect.stringContaining('https://untrusted-control.test/runs?'),
+            authorization: null,
+        }]);
     });
 
     it('owns the bounded Recipe Console snapshot defaults', () => {
