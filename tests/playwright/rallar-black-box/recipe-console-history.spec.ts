@@ -36,8 +36,13 @@ async function expectVisibleView(page: Page, view: RecipeConsoleView): Promise<v
             await expect(page.locator('[data-monitor-workspace]')).toBeVisible();
             break;
         case 'analyze':
-            await expect(page.locator('[data-preview-view="analyze"]'))
-                .toContainText('Seeded artifact readiness');
+            await expect(page.locator('[data-analyze-workspace]')).toBeVisible();
+            await expect(page.locator('[data-analyze-source]')).toBeVisible();
+            await expect(page.getByText('Choose files', { exact: true })).toBeVisible();
+            await expect(page.getByRole('heading', {
+                name: 'Import distributed-run evidence',
+            })).toBeVisible();
+            await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
             break;
         case 'tune':
             await expect(page.locator('[data-preview-view="tune"]'))

@@ -19,6 +19,7 @@ export const RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES = [
 export const RECIPE_CONSOLE_TRANSPORTS = [
     'realtime',
     'messages.rtc',
+    'rtc',
     'ws',
     'http',
     'runtime',

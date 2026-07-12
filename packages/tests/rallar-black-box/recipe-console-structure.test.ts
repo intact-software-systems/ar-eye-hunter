@@ -12,6 +12,8 @@ const recipeConsolePath =
     'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleApp.tsx';
 const recipeConsoleWorkspacePath =
     'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleWorkspace.tsx';
+const recipeConsoleActiveWorkPath =
+    'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleActiveWork.tsx';
 const recipeConsoleRoot = 'apps/rallar-black-box/src/recipe-console';
 const controlConnectionProviderPath =
     `${recipeConsoleRoot}/control/ControlConnectionProvider.tsx`;
@@ -537,7 +539,9 @@ describe('Recipe Console experience boundary', () => {
         expect(shell.trimEnd().split(/\r?\n/).length).toBeLessThan(300);
 
         const workspace = source(recipeConsoleWorkspacePath);
-        expect(workspace).toMatch(/switch\s*\(view\)/);
+        const activeWork = source(recipeConsoleActiveWorkPath);
+        expect(activeWork).toMatch(/switch\s*\(view\)/);
+        expect(workspace).toContain('<RecipeConsoleActiveWork');
         expect(workspace).toContain('<MonitorWorkspace');
         expect(workspace).not.toMatch(/display\s*:\s*['"]none|(?:^|\s)hidden(?:=|\s|>)/m);
         expect(workspace).not.toMatch(/(?:registry|Registry|index\.ts)/);
@@ -684,14 +688,104 @@ describe('Recipe Console experience boundary', () => {
         expect(overlay).toContain('querySelectorAll<HTMLElement>(FOCUSABLE)');
     });
 
-    test('routes focused Tune Analyze Fleet and Advanced modules through one switch', () => {
+    test('replaces Analyze preview with one bounded artifact workflow composition', () => {
+        const analyzeOwners = [
+            'AnalyzeWorkspace.tsx',
+            'AnalyzeSourcePanel.tsx',
+            'AnalyzeVerdict.tsx',
+            'AnalyzeEvidenceQuality.tsx',
+            'AnalyzePerformance.tsx',
+            'AnalyzeEvidenceSearch.tsx',
+            'AnalyzeMarkdown.tsx',
+            'AnalyzeInspector.tsx',
+        ].map(file => `${recipeConsoleRoot}/analyze/${file}`);
+        const analyzeSupport = [
+            'use-analyze-workspace.ts',
+            'use-analyze-workspace-controller.ts',
+            'analyze-artifact-model.ts',
+            'analyze-file-boundary.ts',
+            'analyze-identity-policy.ts',
+            'analyze-legacy-links.ts',
+            'analyze-selection.ts',
+            'analyze-workspace-policy.ts',
+            'analyze-workspace-state.ts',
+        ].map(file => `${recipeConsoleRoot}/analyze/${file}`);
+        const analyzeStyles = [
+            'AnalyzeWorkspace.module.css',
+            'AnalyzeSource.module.css',
+            'AnalyzeSearch.module.css',
+            'AnalyzeVerdict.module.css',
+            'AnalyzeEvidence.module.css',
+            'AnalyzeInspector.module.css',
+        ].map(file => `${recipeConsoleRoot}/analyze/${file}`);
+
+        for (const path of [...analyzeOwners, ...analyzeSupport, ...analyzeStyles]) {
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+        }
+        if (!analyzeOwners.every(path => existsSync(resolve(repositoryRoot, path)))) {
+            return;
+        }
+
+        const composition = source(`${recipeConsoleRoot}/analyze/AnalyzeWorkspace.tsx`);
+        expect(composition.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(180);
+        for (const path of [...analyzeOwners, ...analyzeSupport]) {
+            expect(source(path).trimEnd().split(/\r?\n/).length, path)
+                .toBeLessThanOrEqual(300);
+        }
+        for (const path of analyzeStyles) {
+            expect(source(path).trimEnd().split(/\r?\n/).length, path)
+                .toBeLessThanOrEqual(300);
+        }
+        for (const owner of [
+            'AnalyzeSourcePanel',
+            'AnalyzeVerdict',
+            'AnalyzeEvidenceQuality',
+            'AnalyzePerformance',
+            'AnalyzeEvidenceSearch',
+            'AnalyzeMarkdown',
+        ]) {
+            expect(composition, owner).toContain(`<${owner}`);
+        }
+        const allSources = [...analyzeOwners, ...analyzeSupport]
+            .map(path => source(path))
+            .join('\n');
+        expect(allSources).not.toMatch(
+            /(?:from\s+|import\()['"][^'"]*(?:legacy\/|seeded-console-state|control-run-manager|registry|index\.ts)['"]|\bfetch\s*\(|\bsetInterval\s*\(|\blocalStorage\b|dangerouslySetInnerHTML/,
+        );
+        const hook = source(`${recipeConsoleRoot}/analyze/use-analyze-workspace.ts`);
+        expect(hook).toContain('connection.execution');
+        expect(hook).toContain('.exportRunArtifact');
+        expect(hook).toMatch(/AbortController|\.abort\(\)/);
+        expect(hook).toContain('readAnalyzeArtifactFiles');
+        expect(source(`${recipeConsoleRoot}/analyze/analyze-artifact-model.ts`))
+            .toContain('createDistributedArtifactWorkspace');
+        expect(source(`${recipeConsoleRoot}/analyze/AnalyzeSourcePanel.tsx`))
+            .toContain('Open generic export in legacy Shared Test');
+
+        const workspace = source(recipeConsoleWorkspacePath);
+        expect(workspace).toContain(
+            "import { AnalyzeWorkspace } from '../analyze/AnalyzeWorkspace.tsx';",
+        );
+        expect(workspace).toContain(
+            "import { useAnalyzeWorkspace } from '../analyze/use-analyze-workspace.ts';",
+        );
+        expect(workspace).not.toMatch(/AnalyzePreview|data-preview-view=["']analyze/);
+        expect(existsSync(resolve(
+            repositoryRoot,
+            `${recipeConsoleRoot}/analyze/AnalyzePreview.tsx`,
+        ))).toBe(false);
+    });
+
+    test('routes focused Tune Fleet and Advanced modules through one switch', () => {
         const focusedModules = [
             ['tune/TunePreview.tsx', "import { TunePreview } from '../tune/TunePreview.tsx';", '<TunePreview'],
-            ['analyze/AnalyzePreview.tsx', "import { AnalyzePreview } from '../analyze/AnalyzePreview.tsx';", '<AnalyzePreview'],
             ['fleet/FleetPreview.tsx', "import { FleetPreview } from '../fleet/FleetPreview.tsx';", '<FleetPreview'],
             ['advanced/AdvancedPreview.tsx', "import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';", '<AdvancedPreview'],
         ] as const;
-        const app = source(recipeConsoleWorkspacePath);
+        const app = source(recipeConsoleActiveWorkPath);
+
+        expect(existsSync(resolve(repositoryRoot, recipeConsoleActiveWorkPath))).toBe(true);
+        expect(app.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(100);
 
         for (const [path, directImport, render] of focusedModules) {
             const absolutePath = resolve(repositoryRoot, recipeConsoleRoot, path);

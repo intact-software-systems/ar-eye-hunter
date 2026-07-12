@@ -6,51 +6,31 @@ import {
     useState,
     type ReactNode,
 } from 'react';
-import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';
-import { AnalyzePreview } from '../analyze/AnalyzePreview.tsx';
+import { AnalyzeWorkspace } from '../analyze/AnalyzeWorkspace.tsx';
+import { useAnalyzeWorkspace } from '../analyze/use-analyze-workspace.ts';
 import { createRecipeConsoleSeedState } from '../data/seeded-console-state.ts';
-import type { RecipeConsoleSeedState } from '../data/recipe-console-models.ts';
 import { ExecuteWorkspace } from '../execute/ExecuteWorkspace.tsx';
-import { FleetPreview } from '../fleet/FleetPreview.tsx';
 import { MonitorWorkspace } from '../monitor/MonitorWorkspace.tsx';
 import { recipeConsoleMonitorControlRunSelectionPatch } from '../monitor/monitor-selection.ts';
-import type { RecipeConsoleTimingMetric, RecipeConsoleView } from '../routing/url-state-contract.ts';
+import type { RecipeConsoleView } from '../routing/url-state-contract.ts';
 import { useRecipeConsoleUrlState } from '../routing/use-recipe-console-url-state.ts';
 import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
 import { useRecipeConsolePresentation } from '../shell/use-responsive-presentation.ts';
-import { TunePreview } from '../tune/TunePreview.tsx';
 import { ControlCommandContext } from '../control/ControlCommandContext.tsx';
 import { useRecipeConsoleControlWorkspace } from '../control/use-control-workspace.ts';
-
-function activeWork(
-    view: RecipeConsoleView,
-    seedState: RecipeConsoleSeedState,
-    monitorWork: ReactNode,
-    timingMetric: RecipeConsoleTimingMetric,
-    onTimingMetricChange: (metric: RecipeConsoleTimingMetric) => void,
-    onInspectAgent: (agentId: string) => void,
-    executeWork: ReactNode,
-) {
-    switch (view) {
-        case 'execute':
-            return executeWork;
-        case 'monitor':
-            return monitorWork;
-        case 'analyze':
-            return <AnalyzePreview />;
-        case 'tune':
-            return <TunePreview model={seedState.tune} metric={timingMetric} onInspectAgent={onInspectAgent} onMetricChange={onTimingMetricChange} />;
-        case 'fleet':
-            return <FleetPreview />;
-        case 'advanced':
-            return <AdvancedPreview />;
-    }
-}
+import { RecipeConsoleActiveWork } from './RecipeConsoleActiveWork.tsx';
 
 export function RecipeConsoleWorkspace() {
     const urlState = useRecipeConsoleUrlState();
     const presentation = useRecipeConsolePresentation();
     const control = useRecipeConsoleControlWorkspace({
+        urlState: urlState.state,
+        navigate: urlState.navigate,
+        replace: urlState.replace,
+    });
+    const analyze = useAnalyzeWorkspace({
+        connection: control.connection,
+        selection: control.selection,
         urlState: urlState.state,
         navigate: urlState.navigate,
         replace: urlState.replace,
@@ -63,12 +43,13 @@ export function RecipeConsoleWorkspace() {
     );
     const [inspectorContent, setInspectorContent] = useState<ReactNode>();
     const [monitorSelectionLabel, setMonitorSelectionLabel] = useState<string>();
+    const [analyzeSelectionLabel, setAnalyzeSelectionLabel] = useState<string>();
     const [tuneAgentId, setTuneAgentId] = useState<string>();
     const [executeSafeTargetLabel, setExecuteSafeTargetLabel] = useState<string>();
     const [inspectorTrigger, setInspectorTrigger] = useState<HTMLButtonElement | null>(null);
     const restoreFocusRef = useRef<HTMLButtonElement>(null);
 
-    const inspectMonitorEvidence = useCallback((trigger: HTMLButtonElement) => {
+    const inspectEvidence = useCallback((trigger: HTMLButtonElement) => {
         setInspectorTrigger(trigger);
         setInspectorOpen(true);
     }, []);
@@ -92,7 +73,7 @@ export function RecipeConsoleWorkspace() {
         <MonitorWorkspace
             connection={control.connection}
             navigate={urlState.navigate}
-            onInspect={inspectMonitorEvidence}
+            onInspect={inspectEvidence}
             onInspectorChange={setInspectorContent}
             onSelectControlRun={selectMonitorControlRun}
             onSelectionLabelChange={setMonitorSelectionLabel}
@@ -113,13 +94,26 @@ export function RecipeConsoleWorkspace() {
             urlState={urlState.state}
         />
     );
-    const work = activeWork(
-        urlState.state.view,
-        seedState,
-        monitorWork,
-        urlState.state.timingMetric ?? 'command-duration',
-        metric => urlState.navigate({ timingMetric: metric }),
-        inspectTuneAgent, executeWork,
+    const analyzeWork = (
+        <AnalyzeWorkspace
+            controller={analyze}
+            onInspect={inspectEvidence}
+            onInspectorChange={setInspectorContent}
+            onSelectionLabelChange={setAnalyzeSelectionLabel}
+            urlState={urlState.state}
+        />
+    );
+    const work = (
+        <RecipeConsoleActiveWork
+            analyzeWork={analyzeWork}
+            executeWork={executeWork}
+            monitorWork={monitorWork}
+            onInspectTuneAgent={inspectTuneAgent}
+            onTimingMetricChange={metric => urlState.navigate({ timingMetric: metric })}
+            seedState={seedState}
+            timingMetric={urlState.state.timingMetric ?? 'command-duration'}
+            view={urlState.state.view}
+        />
     );
 
     useEffect(() => setInspectorOpen(
@@ -131,6 +125,7 @@ export function RecipeConsoleWorkspace() {
         urlState.navigate({ view });
         setInspectorContent(undefined);
         setMonitorSelectionLabel(undefined);
+        setAnalyzeSelectionLabel(undefined);
         setInspectorTrigger(null);
         setTuneAgentId(undefined);
         setInspectorOpen(view === 'execute' ||
@@ -143,7 +138,9 @@ export function RecipeConsoleWorkspace() {
 
     const monitorActive = urlState.state.view === 'monitor';
     const executeActive = urlState.state.view === 'execute';
+    const analyzeActive = urlState.state.view === 'analyze';
     const monitorInspectorAvailable = monitorActive && inspectorContent !== undefined;
+    const analyzeInspectorAvailable = analyzeActive && inspectorContent !== undefined;
     const resolvedInspectorContent = urlState.state.view === 'tune' && tuneAgentId
         ? <section><h2>Agent timing</h2><p data-selected-agent>{tuneAgentId}</p><p>Repository-derived command-duration evidence.</p></section>
         : inspectorContent;
@@ -157,13 +154,17 @@ export function RecipeConsoleWorkspace() {
     );
     const selectionDockContent = monitorActive
         ? monitorInspectorAvailable ? monitorSelectionLabel : undefined
+        : analyzeActive
+        ? analyzeInspectorAvailable ? analyzeSelectionLabel : undefined
         : executeActive
         ? 'Recipe details selected'
         : tuneAgentId
         ? `Agent · ${tuneAgentId}`
         : undefined;
     const inspectSelection = monitorInspectorAvailable && monitorSelectionLabel
-        ? inspectMonitorEvidence
+        ? inspectEvidence
+        : analyzeInspectorAvailable && analyzeSelectionLabel
+        ? inspectEvidence
         : executeActive || tuneAgentId
         ? (trigger: HTMLButtonElement) => {
             setInspectorTrigger(trigger);
@@ -175,6 +176,7 @@ export function RecipeConsoleWorkspace() {
         void control.connection.refresh();
         if (executeActive) return;
         if (monitorActive) return;
+        if (analyzeActive) return;
         const next = createRecipeConsoleSeedState();
         setSeedState(next);
         setTuneAgentId(undefined);
@@ -183,7 +185,7 @@ export function RecipeConsoleWorkspace() {
         setInspectorOpen(false);
         setSeededRevision(value => value + 1);
     }
-    const presentedWork = executeActive || monitorActive
+    const presentedWork = executeActive || monitorActive || analyzeActive
         ? work
         : <Fragment key={`${urlState.state.view}-${seededRevision}`}>{work}</Fragment>;
 

@@ -38,15 +38,21 @@ test('keeps empty stale and error states explicit without discarding evidence', 
 }) => {
     const monitorFixture = await installRecipeConsoleMonitorFixture(context);
     await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=analyze');
+    const analyze = page.locator('[data-analyze-workspace]');
+    const source = analyze.locator('[data-analyze-source]');
+    await expect(analyze).toBeVisible();
+    await expect(source).toBeVisible();
+    await expect(source.getByText('Choose files', { exact: true })).toBeVisible();
+    await expect(source.locator('[data-analyze-file-input]')).toBeAttached();
     const empty = page.locator('[data-state="empty"]');
     await expect(empty).toHaveAttribute('aria-live', 'polite');
-    await expect(empty.getByRole('heading', { name: 'Seeded artifact readiness' }))
-        .toBeVisible();
-    await expect(page.getByText('Core bundle', { exact: true })).toBeVisible();
-    await expect(page.getByText('Evidence bundle', { exact: true })).toBeVisible();
-    await expect(page.getByText('Partial bundle', { exact: true })).toBeVisible();
+    await expect(empty.getByRole('heading', {
+        name: 'Import distributed-run evidence',
+    })).toBeVisible();
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
 
     await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=fleet');
+    await expect(page.locator('[data-analyze-workspace]')).toHaveCount(0);
     const error = page.locator('[data-state="error"]');
     await expect(error).toHaveAttribute('aria-live', 'assertive');
     await expect(error.getByRole('heading', {

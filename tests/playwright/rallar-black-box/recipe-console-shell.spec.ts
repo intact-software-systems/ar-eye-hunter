@@ -155,12 +155,14 @@ test('renders command-duration Tune without invented stream evidence', async ({ 
     await expect(agentC).toBeFocused();
     await page.keyboard.press('Space');
     await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-c');
+    await expect(page.getByRole('button', { name: 'Close inspector' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(agentC).toBeFocused();
     await page.keyboard.press('ArrowUp');
     await expect(agentB).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.locator('[data-selected-agent]')).toHaveText('seed-agent-b');
+    await expect(page.getByRole('button', { name: 'Close inspector' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(agentB).toBeFocused();
 
@@ -182,26 +184,28 @@ test('renders command-duration Tune without invented stream evidence', async ({ 
     }))).toEqual({ x: 0, y: 0 });
 });
 
-test('routes bounded Analyze Fleet and Advanced previews', async ({ page }) => {
+test('routes bounded Analyze Fleet and Advanced workspaces', async ({ page }) => {
     await page.setViewportSize({ width: 1200, height: 800 });
     await page.goto('/?provider=simulated&experience=recipe-console&view=analyze');
     const initialHistoryLength = await page.evaluate(() => history.length);
 
-    const analyze = page.locator('[data-preview-view="analyze"]');
-    await expect(analyze.getByRole('heading', { name: 'Seeded artifact readiness' })).toBeVisible();
-    await expect(analyze.getByText('Core bundle', { exact: true })).toBeVisible();
-    await expect(analyze.getByText('Evidence bundle', { exact: true })).toBeVisible();
-    await expect(analyze.getByText('Partial bundle', { exact: true })).toBeVisible();
-    const coreBundle = analyze.locator('li').filter({ hasText: 'Core bundle' });
-    await expect(coreBundle).toContainText('distributed-run.json, manifest.json, and control-run.json');
-    await expect(coreBundle).not.toContainText('report.json');
-    const evidenceBundle = analyze.locator('li').filter({ hasText: 'Evidence bundle' });
-    await expect(evidenceBundle).toContainText('report.json');
-    await expect(evidenceBundle).toContainText('results.jsonl');
-    await expect(analyze.locator('input[type="file"]')).toHaveCount(0);
+    const analyze = page.locator('[data-analyze-workspace]');
+    const analyzeSource = analyze.locator('[data-analyze-source]');
+    await expect(analyze).toBeVisible();
+    await expect(analyzeSource).toBeVisible();
+    await expect(analyzeSource.getByRole('heading', {
+        name: 'Import offline or load from Control',
+    })).toBeVisible();
+    await expect(analyzeSource.getByText('Choose files', { exact: true })).toBeVisible();
+    await expect(analyzeSource.locator('[data-analyze-file-input]')).toBeAttached();
+    await expect(analyze.getByRole('heading', {
+        name: 'Import distributed-run evidence',
+    })).toBeVisible();
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Fleet', exact: true }).click();
     await expect(page).toHaveURL(/view=fleet/);
+    await expect(page.locator('[data-analyze-workspace]')).toHaveCount(0);
     await expect(page.locator('[data-preview-view="fleet"]')
         .getByText('Fleet live data unavailable in offline preview', { exact: true }))
         .toBeVisible();
@@ -211,6 +215,7 @@ test('routes bounded Analyze Fleet and Advanced previews', async ({ page }) => {
 
     await page.getByRole('button', { name: 'Advanced', exact: true }).click();
     await expect(page).toHaveURL(/view=advanced/);
+    await expect(page.locator('[data-analyze-workspace]')).toHaveCount(0);
     const advanced = page.locator('[data-preview-view="advanced"]');
     await expect(advanced.getByRole('heading', { name: 'Legacy compatibility bridge' }))
         .toBeVisible();
@@ -239,7 +244,11 @@ test('routes bounded Analyze Fleet and Advanced previews', async ({ page }) => {
     await expect(page.locator('[data-preview-view="fleet"]')).toBeVisible();
     await page.goBack();
     await expect(page).toHaveURL(/view=analyze/);
-    await expect(page.locator('[data-preview-view="analyze"]')).toBeVisible();
+    await expect(page.locator('[data-analyze-workspace]')).toBeVisible();
+    await expect(page.getByRole('heading', {
+        name: 'Import distributed-run evidence',
+    })).toBeVisible();
+    await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
 });
 
 test('renders failure-first Monitor from canonical evidence', async ({ context, page }) => {

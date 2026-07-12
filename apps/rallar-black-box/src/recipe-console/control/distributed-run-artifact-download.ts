@@ -9,10 +9,34 @@ export function createDistributedRunArtifactDownload(
     distributedRunId: string,
 ): DistributedRunArtifactDownload {
     return {
-        filename: `${distributedRunId}-artifact.json`,
+        filename: `${safeFilenameSegment(distributedRunId)}-artifact.json`,
         content: `${JSON.stringify(value, null, 2)}\n`,
         mediaType: 'application/json',
     };
+}
+
+const MAX_FILENAME_SEGMENT_LENGTH = 120;
+const UNSAFE_FILENAME_CHARACTERS = /[\u0000-\u001f\u007f-\u009f/\\<>:"|?*\u2028-\u202e\u2066-\u2069]/gu;
+
+function safeFilenameSegment(value: string): string {
+    const normalized = replaceLoneSurrogates(value)
+        .replace(UNSAFE_FILENAME_CHARACTERS, '-')
+        .replace(/\.{2,}/g, '-')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^[.\s-]+|[.\s-]+$/g, '')
+        .slice(0, MAX_FILENAME_SEGMENT_LENGTH)
+        .replace(/[.\s-]+$/g, '');
+    return normalized || 'distributed-run';
+}
+
+function replaceLoneSurrogates(value: string): string {
+    return Array.from(value, character => {
+        const codePoint = character.codePointAt(0) ?? 0;
+        return codePoint >= 0xd800 && codePoint <= 0xdfff
+            ? '-'
+            : character;
+    }).join('');
 }
 
 export function downloadDistributedRunArtifact(

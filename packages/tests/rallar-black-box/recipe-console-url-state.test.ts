@@ -173,6 +173,17 @@ describe('Recipe Console URL state codec', () => {
         ]));
     });
 
+    it('round-trips raw RTC artifact transport evidence for Analyze filters', () => {
+        const parsed = parseRecipeConsoleUrl(
+            '?v=1&experience=recipe-console&view=analyze&transport=rtc',
+        );
+
+        expect(parsed.state.transport).toBe('rtc');
+        expect(new URLSearchParams(parsed.canonicalSearch).get('transport'))
+            .toBe('rtc');
+        expect(parsed.issues.some(issue => issue.field === 'transport')).toBe(false);
+    });
+
     it('accepts only safe nonnegative integer epoch milliseconds', () => {
         const valid = parseRecipeConsoleUrl(
             '?v=1&experience=recipe-console&view=analyze&from=0&to=9007199254740991',
