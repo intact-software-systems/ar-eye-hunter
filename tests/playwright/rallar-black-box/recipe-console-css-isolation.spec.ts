@@ -221,6 +221,17 @@ async function captureRealTuneStyles(page: Page) {
         name: 'Send duration',
         exact: true,
     });
+    const history = page.locator('[data-history-workspace]');
+    const filters = history.locator('[data-history-filters]');
+    const savedFilters = history.locator('[data-history-saved-filters]');
+    const historyTable = history.getByRole('region', {
+        name: 'Recipe run history',
+    });
+    const retention = history.locator('[data-retention-panel]');
+    const retentionPreview = retention.getByRole('button', {
+        name: 'Preview cleanup',
+        exact: true,
+    });
     for (const owner of [
         source,
         hints,
@@ -230,6 +241,12 @@ async function captureRealTuneStyles(page: Page) {
         comparison,
         candidateInput,
         metric,
+        history,
+        filters,
+        savedFilters,
+        historyTable,
+        retention,
+        retentionPreview,
     ]) {
         await expect(owner).toBeVisible();
     }
@@ -248,7 +265,33 @@ async function captureRealTuneStyles(page: Page) {
     const panelProperties = [
         'background-color', 'border-top-color', 'display', 'min-width', 'padding',
     ] as const;
-    return {
+    await retentionPreview.evaluate(button => {
+        button.setAttribute('disabled', '');
+    });
+    const disabledRetentionAction = await style(retentionPreview, [
+        'cursor', 'opacity',
+    ]);
+    await retentionPreview.evaluate(button => {
+        button.removeAttribute('disabled');
+    });
+    if (await history.getByRole('button', {
+        name: 'Review cleanup',
+        exact: true,
+    }).count() === 0) {
+        await history.getByRole('button', {
+            name: 'Preview cleanup',
+            exact: true,
+        }).click();
+    }
+    await history.getByRole('button', {
+        name: 'Review cleanup',
+        exact: true,
+    }).click();
+    const dialog = page.getByRole('alertdialog', {
+        name: 'Delete previewed runs?',
+    });
+    await expect(dialog).toBeVisible();
+    const result = {
         source: await style(source, panelProperties),
         hints: await style(hints, panelProperties),
         commandTiming: await style(commandTiming, panelProperties),
@@ -263,7 +306,22 @@ async function captureRealTuneStyles(page: Page) {
             'background-color', 'border-radius', 'border-top-color', 'color',
             'font-weight', 'min-height',
         ]),
+        history: await style(history, panelProperties),
+        filters: await style(filters, panelProperties),
+        savedFilters: await style(savedFilters, panelProperties),
+        historyTable: await style(historyTable, [
+            'border-top-color', 'display', 'max-width', 'overflow-x',
+        ]),
+        retention: await style(retention, panelProperties),
+        disabledRetentionAction,
+        dialog: await style(dialog, [
+            'background-color', 'border-top-color', 'display', 'max-height',
+            'overflow', 'padding',
+        ]),
     };
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    return result;
 }
 
 test('is independent of stylesheet load order', async ({ page }) => {
@@ -361,7 +419,7 @@ test('preserves real Tune styles across a legacy round trip', async ({
     context,
     page,
 }) => {
-    await installRecipeConsoleTuneFixture(context);
+    await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
     await page.goto(TUNE_COMPARE_ROUTE);
     const before = await captureRealTuneStyles(page);
 
@@ -378,7 +436,7 @@ test('matches cold Tune styles when legacy components load first', async ({
     context,
     page,
 }) => {
-    await installRecipeConsoleTuneFixture(context);
+    await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
     await page.goto(TUNE_COMPARE_ROUTE);
     const coldTune = await captureRealTuneStyles(page);
 
@@ -397,26 +455,62 @@ test('lazy-loads Tune only on demand and unmounts it when leaving', async ({
     context,
     page,
 }) => {
-    await installRecipeConsoleTuneFixture(context);
+    await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
     const tuneModuleRequests: string[] = [];
+    const historyModuleRequests: string[] = [];
+    const retentionModuleRequests: string[] = [];
     page.on('request', request => {
         if (request.url().includes('/recipe-console/tune/')) {
             tuneModuleRequests.push(request.url());
+        }
+        if (request.url().includes('/recipe-console/history/')) {
+            historyModuleRequests.push(request.url());
+        }
+        if (/control-retention-(?:api|request|validation)/.test(request.url())) {
+            retentionModuleRequests.push(request.url());
         }
     });
 
     await page.goto(RECIPE_URL);
     await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'execute');
     await expect(page.locator('[data-tune-workspace]')).toHaveCount(0);
+    await expect(page.locator('[data-history-workspace]')).toHaveCount(0);
+    await expect(page.locator('[data-retention-panel]')).toHaveCount(0);
     expect(tuneModuleRequests).toEqual([]);
+    expect(historyModuleRequests).toEqual([]);
+    expect(retentionModuleRequests).toEqual([]);
 
     await page.getByRole('button', { name: 'Tune', exact: true }).click();
     await expect(page.locator('[data-tune-workspace]')).toBeVisible();
+    await expect(page.locator('[data-history-workspace]')).toBeVisible();
+    await expect(page.locator('[data-retention-panel]')).toBeVisible();
     expect(tuneModuleRequests.some(url => url.includes('TuneWorkspace.tsx'))).toBe(true);
+    expect(historyModuleRequests.some(url => url.includes('HistoryWorkspace.tsx')))
+        .toBe(true);
+    expect(retentionModuleRequests).toEqual([]);
 
-    await page.getByRole('button', { name: 'Execute', exact: true }).click();
+    await page.getByRole('button', {
+        name: 'Preview cleanup',
+        exact: true,
+    }).click();
+    await expect.poll(() => retentionModuleRequests.length).toBeGreaterThan(0);
+    expect(retentionModuleRequests.some(url =>
+        url.includes('control-retention-api.ts')
+    )).toBe(true);
+    await page.getByRole('button', {
+        name: 'Review cleanup',
+        exact: true,
+    }).click();
+    await expect(page.getByRole('alertdialog', {
+        name: 'Delete previewed runs?',
+    })).toBeVisible();
+
+    await navigateInApp(page, RECIPE_URL);
     await expect(page.locator('.recipe-console')).toHaveAttribute('data-view', 'execute');
     await expect(page.locator('[data-tune-workspace]')).toHaveCount(0);
+    await expect(page.locator('[data-history-workspace]')).toHaveCount(0);
+    await expect(page.locator('[data-retention-panel]')).toHaveCount(0);
+    await expect(page.locator('[data-retention-confirm-dialog]')).toHaveCount(0);
 });
 
 test('keeps complete target status evidence reachable across Execute viewports', async ({

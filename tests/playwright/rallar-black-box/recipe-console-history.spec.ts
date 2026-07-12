@@ -3,6 +3,7 @@ import { installRecipeConsoleTuneFixture } from
     './recipe-console-tune-fixture.ts';
 import {
     TUNE_COMPARE_ROUTE,
+    TUNE_BASE_EPOCH_MS,
     TUNE_LEFT_CONTROL_RUN_ID,
     TUNE_LEFT_RUN_ID,
     TUNE_RIGHT_CONTROL_RUN_ID,
@@ -11,6 +12,7 @@ import {
     TUNE_SLOW_AGENT_ID,
     TUNE_STREAM_COMMAND_ID,
     TUNE_STREAM_RECIPE_ID,
+    TUNE_ROUTE,
 } from './recipe-console-tune-run-data.ts';
 
 const RECIPE_CONSOLE_VIEWS = [
@@ -23,6 +25,22 @@ const RECIPE_CONSOLE_VIEWS = [
 ] as const;
 
 const SPA_ORIGIN = 'http://127.0.0.1:5176';
+const RETENTION_PREVIEW_REQUEST = {
+    kind: 'preview',
+    method: 'POST',
+    dryRun: true,
+    hasPlanToken: false,
+    body: null,
+    authorization: null,
+} as const;
+const RETENTION_CONFIRM_REQUEST = {
+    kind: 'confirm',
+    method: 'POST',
+    dryRun: false,
+    hasPlanToken: true,
+    body: null,
+    authorization: null,
+} as const;
 
 type RecipeConsoleView = typeof RECIPE_CONSOLE_VIEWS[number];
 
@@ -146,7 +164,7 @@ test('restores the required Execute details inspector through browser history', 
     await expect(page.getByText('Recipe details', { exact: true })).toBeVisible();
 });
 
-test('restores a complete copied v1 state without inventing reserved-field UI', async ({ context, page }) => {
+test('restores versioned view selection filters comparison and timing metric from a copied URL', async ({ context, page }) => {
     await installRecipeConsoleTuneFixture(context);
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
@@ -165,10 +183,14 @@ test('restores a complete copied v1 state without inventing reserved-field UI', 
         commandId: TUNE_STREAM_COMMAND_ID,
         diagnosticSeverity: 'warning',
         transport: 'messages.rtc',
-        historyQuery: 'failed ack',
-        status: 'waiting-for-barrier',
-        from: '100',
-        to: '900',
+        historyQuery: 'candidate',
+        historyGroup: 'tune-ci',
+        historyRecipeId: TUNE_STREAM_RECIPE_ID,
+        historyProfile: 'candidate',
+        failureCategory: 'rtc-stream-performance',
+        status: 'failed',
+        from: String(TUNE_BASE_EPOCH_MS),
+        to: String(TUNE_BASE_EPOCH_MS + 10_000),
         compareLeft: TUNE_LEFT_RUN_ID,
         compareRight: TUNE_RIGHT_RUN_ID,
         timingMetric: 'stream-cadence',
@@ -186,6 +208,27 @@ test('restores a complete copied v1 state without inventing reserved-field UI', 
     );
     await expect(page.getByRole('button', { name: 'Cadence', exact: true }))
         .toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByLabel('Query', { exact: true })).toHaveValue('candidate');
+    await expect(page.getByLabel('Group', { exact: true })).toHaveValue('tune-ci');
+    await expect(page.getByLabel('Recipe', { exact: true }))
+        .toHaveValue(TUNE_STREAM_RECIPE_ID);
+    await expect(page.getByLabel('Profile', { exact: true })).toHaveValue('candidate');
+    await expect(page.getByLabel('Failure category')).toHaveValue(
+        'rtc-stream-performance',
+    );
+    await expect(page.getByLabel('Run status')).toHaveValue('failed');
+    await expect(page.getByLabel('From (UTC)')).toHaveValue(
+        utcInput(TUNE_BASE_EPOCH_MS),
+    );
+    await expect(page.getByLabel('To (UTC)')).toHaveValue(
+        utcInput(TUNE_BASE_EPOCH_MS + 10_000),
+    );
+    const history = page.getByRole('region', { name: 'Recipe run history' });
+    await expect(history).toContainText(TUNE_RIGHT_RUN_ID);
+    await expect(history).not.toContainText(TUNE_LEFT_RUN_ID);
+    await expect(page.locator('[data-history-workspace]')).toContainText(
+        '1 filtered · 1 rendered · 0 omitted',
+    );
     await page.getByRole('button', { name: 'Copy canonical link' }).click();
     const copiedHref = await readClipboardHref(page);
     const copied = new URL(copiedHref);
@@ -203,6 +246,10 @@ test('restores a complete copied v1 state without inventing reserved-field UI', 
     await expectVisibleView(page, 'tune');
     await expect(page.getByRole('button', { name: 'Cadence', exact: true }))
         .toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByLabel('Failure category')).toHaveValue(
+        'rtc-stream-performance',
+    );
+    await expect(history).toContainText(TUNE_RIGHT_RUN_ID);
 
     const advancedHref = new URL(copiedHref);
     advancedHref.searchParams.set('view', 'advanced');
@@ -221,6 +268,10 @@ test('restores a complete copied v1 state without inventing reserved-field UI', 
     await expectVisibleView(page, 'advanced');
     expect(currentUrl(page).searchParams.get('legacySurface')).toBe('rtc-diagnostics');
 });
+
+function utcInput(epochMs: number): string {
+    return new Date(epochMs).toISOString().slice(0, 19);
+}
 
 test('restores explicit Tune comparison and atomic focus through history', async ({
     context,
@@ -624,3 +675,487 @@ test('preserves runner-agent launch ticket semantics in legacy', async ({ contex
     expect(finalUrl.hash).toBe('#trace=keep');
     expect(consumedTickets).toEqual(['runner-ticket']);
 });
+
+test('previews retention impact before confirmed destructive cleanup', async ({
+    context,
+    page,
+}) => {
+    const fixture = await installRecipeConsoleTuneFixture(context, {
+        retention: 'ready',
+    });
+    await context.grantPermissions(
+        ['clipboard-read', 'clipboard-write'],
+        { origin: SPA_ORIGIN },
+    );
+    const filterFrom = Date.UTC(2039, 0, 1);
+    const filterTo = Date.UTC(2040, 0, 1);
+    await page.goto(`${TUNE_COMPARE_ROUTE.replace(
+        'timingMetric=stream-send-duration',
+        'timingMetric=stream-drift',
+    )}` +
+        '&historyQuery=tune&historyGroup=tune-ci' +
+        '&historyRecipeId=tune-rtc-stream&historyProfile=candidate' +
+        '&failureCategory=rtc-stream-performance&status=failed' +
+        `&from=${filterFrom}&to=${filterTo}`);
+
+    await page.getByRole('button', { name: 'Preview cleanup' }).click();
+    const retention = page.locator('[data-retention-panel]');
+    await expect(retention).toContainText('2 current');
+    await expect(retention).toContainText('1 projected');
+    await expect(retention).toContainText('Cap 1');
+    await expect(retention).toContainText(TUNE_RIGHT_CONTROL_RUN_ID);
+    await expect(retention).toContainText(TUNE_RIGHT_RUN_ID);
+    await expect(retention).toContainText(
+        'Existing connected sockets and stored artifact files remain.',
+    );
+    expect(fixture.retentionRequests()).toEqual([RETENTION_PREVIEW_REQUEST]);
+    expect(fixture.snapshotIds()).toEqual({
+        controlRunIds: [TUNE_LEFT_CONTROL_RUN_ID, TUNE_RIGHT_CONTROL_RUN_ID],
+        distributedRunIds: [TUNE_LEFT_RUN_ID, TUNE_RIGHT_RUN_ID],
+    });
+    expect(page.url()).not.toContain('history-plan-');
+    expect(await page.locator('body').innerHTML()).not.toContain('history-plan-');
+
+    await page.getByRole('button', {
+        name: 'Review cleanup',
+        exact: true,
+    }).click();
+    const dialog = page.getByRole('alertdialog', {
+        name: 'Delete previewed runs?',
+    });
+    await expect(dialog.getByRole('button', { name: 'Keep history' }))
+        .toBeFocused();
+    const confirm = dialog.getByRole('button', {
+        name: 'Delete previewed runs',
+    });
+    await page.keyboard.press('Tab');
+    await expect(confirm).toBeFocused();
+    await confirm.press('Enter');
+
+    await expect(retention).toContainText('Cleanup completed');
+    await expect(retention.getByRole('status')).toContainText(
+        'Retention cleanup succeeded.',
+    );
+    const cleanupResult = retention.getByRole('heading', {
+        name: 'Cleanup completed',
+    }).locator('..');
+    const deletedIds = cleanupResult.getByText(
+        'Deleted control run IDs (1)',
+        { exact: true },
+    );
+    await deletedIds.click();
+    await expect(cleanupResult).toContainText(TUNE_RIGHT_CONTROL_RUN_ID);
+    expect(fixture.retentionRequests()).toEqual([
+        RETENTION_PREVIEW_REQUEST,
+        RETENTION_CONFIRM_REQUEST,
+    ]);
+    await expect.poll(() => {
+        const url = currentUrl(page);
+        return {
+            controlRunId: url.searchParams.get('controlRunId'),
+            distributedRunId: url.searchParams.get('distributedRunId'),
+            compareLeft: url.searchParams.get('compareLeft'),
+            compareRight: url.searchParams.get('compareRight'),
+            historyQuery: url.searchParams.get('historyQuery'),
+            historyGroup: url.searchParams.get('historyGroup'),
+            historyRecipeId: url.searchParams.get('historyRecipeId'),
+            historyProfile: url.searchParams.get('historyProfile'),
+            failureCategory: url.searchParams.get('failureCategory'),
+            status: url.searchParams.get('status'),
+            from: url.searchParams.get('from'),
+            to: url.searchParams.get('to'),
+            timingMetric: url.searchParams.get('timingMetric'),
+        };
+    }).toEqual({
+        controlRunId: TUNE_LEFT_CONTROL_RUN_ID,
+        distributedRunId: null,
+        compareLeft: TUNE_LEFT_RUN_ID,
+        compareRight: null,
+        historyQuery: 'tune',
+        historyGroup: 'tune-ci',
+        historyRecipeId: 'tune-rtc-stream',
+        historyProfile: 'candidate',
+        failureCategory: 'rtc-stream-performance',
+        status: 'failed',
+        from: String(filterFrom),
+        to: String(filterTo),
+        timingMetric: 'stream-drift',
+    });
+    expect(page.url()).not.toContain('history-plan-');
+    expect(await page.locator('body').innerHTML()).not.toContain('history-plan-');
+    expect(await page.evaluate(() => JSON.stringify({
+        local: Object.entries(localStorage),
+        session: Object.entries(sessionStorage),
+    }))).not.toContain('history-plan-');
+
+    const copy = page.getByRole('button', { name: 'Copy filtered link' });
+    await copy.focus();
+    await copy.press('Enter');
+    const copiedHref = await readClipboardHref(page);
+    const copied = new URL(copiedHref);
+    expect(historyFilterParams(copied)).toEqual({
+        historyQuery: 'tune',
+        historyGroup: 'tune-ci',
+        historyRecipeId: 'tune-rtc-stream',
+        historyProfile: 'candidate',
+        failureCategory: 'rtc-stream-performance',
+        status: 'failed',
+        from: String(filterFrom),
+        to: String(filterTo),
+    });
+    expect(copiedHref).not.toContain('history-plan-');
+
+    await page.getByRole('button', { name: 'Reset', exact: true }).click();
+    await expect.poll(() => historyFilterParams(currentUrl(page))).toEqual(
+        EMPTY_HISTORY_FILTER_PARAMS,
+    );
+    await page.goBack();
+    await expect.poll(() => historyFilterParams(currentUrl(page))).toEqual(
+        historyFilterParams(copied),
+    );
+    await page.goForward();
+    await expect.poll(() => historyFilterParams(currentUrl(page))).toEqual(
+        EMPTY_HISTORY_FILTER_PARAMS,
+    );
+    const order = fixture.requestOrder();
+    const confirmIndex = order.lastIndexOf('confirm');
+    expect(confirmIndex).toBeGreaterThan(-1);
+    expect(order.slice(confirmIndex + 1)).toEqual(
+        expect.arrayContaining(['runs', 'distributed-runs']),
+    );
+    expect(fixture.snapshotIds()).toEqual({
+        controlRunIds: [TUNE_LEFT_CONTROL_RUN_ID],
+        distributedRunIds: [TUNE_LEFT_RUN_ID],
+    });
+    await expect(page.getByRole('region', { name: 'Recipe run history' }))
+        .not.toContainText(TUNE_RIGHT_RUN_ID);
+});
+
+test('cancels cleanup without issuing a destructive request', async ({
+    context,
+    page,
+}) => {
+    const fixture = await installRecipeConsoleTuneFixture(context, {
+        retention: 'ready',
+    });
+    await page.goto(TUNE_ROUTE);
+    const preview = page.getByRole('button', {
+        name: 'Preview cleanup',
+        exact: true,
+    });
+    await preview.focus();
+    await preview.press('Enter');
+    const review = page.getByRole('button', {
+        name: 'Review cleanup',
+        exact: true,
+    });
+    await review.focus();
+    await review.press('Enter');
+
+    const dialog = page.getByRole('alertdialog', {
+        name: 'Delete previewed runs?',
+    });
+    await expect(dialog.getByRole('button', { name: 'Keep history' }))
+        .toBeFocused();
+    await page.keyboard.press('Escape');
+
+    await expect(dialog).toHaveCount(0);
+    await expect(preview).toBeFocused();
+    expect(fixture.retentionRequests()).toEqual([RETENTION_PREVIEW_REQUEST]);
+    expect(fixture.snapshotIds().distributedRunIds).toEqual([
+        TUNE_LEFT_RUN_ID,
+        TUNE_RIGHT_RUN_ID,
+    ]);
+});
+
+test('requires a fresh preview after retention drift', async ({
+    context,
+    page,
+}) => {
+    const fixture = await installRecipeConsoleTuneFixture(context, {
+        retention: 'drift-once',
+    });
+    await page.goto(TUNE_ROUTE);
+    const preview = page.getByRole('button', {
+        name: 'Preview cleanup',
+        exact: true,
+    });
+    await preview.click();
+    await page.getByRole('button', {
+        name: 'Review cleanup',
+        exact: true,
+    }).click();
+    await page.getByRole('button', { name: 'Delete previewed runs' }).click();
+
+    const retention = page.locator('[data-retention-panel]');
+    await expect(retention).toContainText('Retention preview drifted.');
+    await expect(retention).toContainText('Stale preview · not current');
+    await expect(page.getByRole('button', {
+        name: 'Review cleanup',
+        exact: true,
+    })).toHaveCount(0);
+    expect(fixture.snapshotIds().distributedRunIds).toEqual([
+        TUNE_LEFT_RUN_ID,
+        TUNE_RIGHT_RUN_ID,
+    ]);
+    expect(fixture.retentionRequests().map(request => request.kind)).toEqual([
+        'preview',
+        'confirm',
+    ]);
+
+    await preview.click();
+    await expect(page.getByRole('button', {
+        name: 'Review cleanup',
+        exact: true,
+    })).toBeVisible();
+    expect(fixture.retentionRequests().map(request => request.kind)).toEqual([
+        'preview',
+        'confirm',
+        'preview',
+    ]);
+});
+
+test('shows retention authorization failure without consequence disclosure', async ({
+    context,
+    page,
+}) => {
+    const fixture = await installRecipeConsoleTuneFixture(context, {
+        retention: 'authorization-required',
+    });
+    await page.goto(TUNE_ROUTE);
+    await page.getByRole('button', {
+        name: 'Preview cleanup',
+        exact: true,
+    }).click();
+
+    const retention = page.locator('[data-retention-panel]');
+    await expect(retention.getByRole('status')).toContainText(
+        'Operator authorization required.',
+    );
+    await expect(retention).not.toContainText(TUNE_RIGHT_CONTROL_RUN_ID);
+    await expect(retention).not.toContainText(TUNE_RIGHT_RUN_ID);
+    await expect(page.getByRole('button', {
+        name: 'Review cleanup',
+        exact: true,
+    })).toHaveCount(0);
+    expect(fixture.retentionRequests()).toEqual([RETENTION_PREVIEW_REQUEST]);
+    expect(fixture.snapshotIds().distributedRunIds).toEqual([
+        TUNE_LEFT_RUN_ID,
+        TUNE_RIGHT_RUN_ID,
+    ]);
+});
+
+test('finds a past failure, compares it, and manages saved filters', async ({
+    context,
+    page,
+}) => {
+    const fixture = await installRecipeConsoleTuneFixture(context);
+    await context.grantPermissions(
+        ['clipboard-read', 'clipboard-write'],
+        { origin: SPA_ORIGIN },
+    );
+    await page.goto(TUNE_ROUTE);
+
+    const history = page.getByRole('region', { name: 'Recipe run history' });
+    await expect(history.locator('tbody tr')).toHaveCount(2);
+    const baseline = page.getByRole('button', {
+        name: `Set ${TUNE_LEFT_RUN_ID} as comparison baseline`,
+    });
+    await baseline.focus();
+    await baseline.press('Enter');
+    const candidate = page.getByRole('button', {
+        name: `Set ${TUNE_RIGHT_RUN_ID} as comparison candidate`,
+    });
+    await candidate.focus();
+    await candidate.press('Enter');
+    await expect(page.locator('[data-tune-comparison]'))
+        .toContainText(TUNE_LEFT_RUN_ID);
+    await expect(page.locator('[data-tune-comparison]'))
+        .toContainText(TUNE_RIGHT_RUN_ID);
+
+    const query = page.getByLabel('Query', { exact: true });
+    const group = page.getByLabel('Group', { exact: true });
+    const recipe = page.getByLabel('Recipe', { exact: true });
+    const profile = page.getByLabel('Profile', { exact: true });
+    const failureCategory = page.getByLabel('Failure category');
+    const status = page.getByLabel('Run status');
+    const from = page.getByLabel('From (UTC)');
+    const to = page.getByLabel('To (UTC)');
+    const apply = page.getByRole('button', { name: 'Apply filters' });
+    const reset = page.getByRole('button', { name: 'Reset', exact: true });
+    await query.focus();
+    await query.pressSequentially('candidate');
+    await page.keyboard.press('Tab');
+    await expect(group).toBeFocused();
+    await group.pressSequentially('tune-ci');
+    await page.keyboard.press('Tab');
+    await expect(recipe).toBeFocused();
+    await recipe.pressSequentially(TUNE_STREAM_RECIPE_ID);
+    await page.keyboard.press('Tab');
+    await expect(profile).toBeFocused();
+    await profile.pressSequentially('candidate');
+    await page.keyboard.press('Tab');
+    await expect(failureCategory).toBeFocused();
+    await failureCategory.pressSequentially('rtc');
+    await expect(failureCategory).toHaveValue('rtc-stream-performance');
+    await page.keyboard.press('Tab');
+    await expect(status).toBeFocused();
+    await status.press('f');
+    await expect(status).toHaveValue('failed');
+    await page.keyboard.press('Tab');
+    await expect(from).toBeFocused();
+    await keyboardDateTimeUntil(page, from, to, 2039);
+    await keyboardDateTimeUntil(page, to, reset, 2040);
+    await page.keyboard.press('Tab');
+    await expect(apply).toBeFocused();
+    await apply.press('Enter');
+
+    await expect(history.locator('tbody tr')).toHaveCount(1);
+    await expect(history).toContainText(TUNE_RIGHT_RUN_ID);
+    await expect(history).toContainText('RTC stream exceeded pacing');
+    await expect(page.locator('[data-history-workspace]')).toContainText(
+        '1 filtered · 1 rendered · 0 omitted',
+    );
+
+    const presetName = page.getByLabel('Preset name');
+    await keyboardFill(presetName, 'Failed RTC candidate');
+    const save = page.getByRole('button', { name: 'Save current filters' });
+    await save.focus();
+    await save.press('Enter');
+    await expect(page.getByRole('button', {
+        name: 'Apply Failed RTC candidate',
+    })).toBeVisible();
+
+    const copy = page.getByRole('button', { name: 'Copy filtered link' });
+    await copy.focus();
+    await copy.press('Enter');
+    const copied = new URL(await readClipboardHref(page));
+    const savedFilterParams = {
+        historyQuery: 'candidate',
+        historyGroup: 'tune-ci',
+        historyRecipeId: TUNE_STREAM_RECIPE_ID,
+        historyProfile: 'candidate',
+        failureCategory: 'rtc-stream-performance',
+        status: 'failed',
+        from: String(Date.UTC(2039, 0, 1)),
+        to: String(Date.UTC(2040, 0, 1)),
+    };
+    expect(historyFilterParams(copied)).toEqual(savedFilterParams);
+
+    await reset.focus();
+    await reset.press('Enter');
+    await expect(history.locator('tbody tr')).toHaveCount(2);
+    await expect.poll(() => historyFilterParams(currentUrl(page))).toEqual(
+        EMPTY_HISTORY_FILTER_PARAMS,
+    );
+
+    const applyPreset = page.getByRole('button', {
+        name: 'Apply Failed RTC candidate',
+    });
+    await applyPreset.focus();
+    await applyPreset.press('Enter');
+    await expect(history.locator('tbody tr')).toHaveCount(1);
+    await expect.poll(() => historyFilterParams(currentUrl(page)))
+        .toEqual(savedFilterParams);
+    await expectHistoryFilterControls(page, savedFilterParams);
+    await page.goBack();
+    await expect(history.locator('tbody tr')).toHaveCount(2);
+    await expect.poll(() => historyFilterParams(currentUrl(page))).toEqual(
+        EMPTY_HISTORY_FILTER_PARAMS,
+    );
+    await expectHistoryFilterControls(page, EMPTY_HISTORY_FILTER_PARAMS);
+    await page.goForward();
+    await expect(history.locator('tbody tr')).toHaveCount(1);
+    await expect.poll(() => historyFilterParams(currentUrl(page)))
+        .toEqual(savedFilterParams);
+    await expectHistoryFilterControls(page, savedFilterParams);
+
+    const deletePreset = page.getByRole('button', {
+        name: 'Delete Failed RTC candidate',
+    });
+    await deletePreset.focus();
+    await deletePreset.press('Enter');
+    await expect(page.getByText('No saved filters yet.', { exact: true }))
+        .toBeVisible();
+    expect(fixture.retentionRequests()).toEqual([]);
+});
+
+async function keyboardFill(
+    locator: ReturnType<Page['locator']>,
+    value: string,
+): Promise<void> {
+    await locator.focus();
+    await locator.press('ControlOrMeta+A');
+    await locator.pressSequentially(value);
+}
+
+const EMPTY_HISTORY_FILTER_PARAMS = {
+    historyQuery: null,
+    historyGroup: null,
+    historyRecipeId: null,
+    historyProfile: null,
+    failureCategory: null,
+    status: null,
+    from: null,
+    to: null,
+} as const;
+
+function historyFilterParams(url: URL) {
+    return {
+        historyQuery: url.searchParams.get('historyQuery'),
+        historyGroup: url.searchParams.get('historyGroup'),
+        historyRecipeId: url.searchParams.get('historyRecipeId'),
+        historyProfile: url.searchParams.get('historyProfile'),
+        failureCategory: url.searchParams.get('failureCategory'),
+        status: url.searchParams.get('status'),
+        from: url.searchParams.get('from'),
+        to: url.searchParams.get('to'),
+    };
+}
+
+async function keyboardDateTimeUntil(
+    page: Page,
+    locator: ReturnType<Page['locator']>,
+    next: ReturnType<Page['locator']>,
+    year: number,
+): Promise<void> {
+    await expect(locator).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Tab');
+    await page.keyboard.type(String(year));
+    for (let step = 0; step < 8; step += 1) {
+        await page.keyboard.press('Tab');
+        if (await next.evaluate(element => document.activeElement === element)) {
+            return;
+        }
+        await page.keyboard.press('ArrowUp');
+    }
+    throw new Error(`Keyboard traversal did not reach the control after ${year}`);
+}
+
+async function expectHistoryFilterControls(
+    page: Page,
+    expected: ReturnType<typeof historyFilterParams>,
+): Promise<void> {
+    const values = {
+        historyQuery: await page.getByLabel('Query', { exact: true }).inputValue(),
+        historyGroup: await page.getByLabel('Group', { exact: true }).inputValue(),
+        historyRecipeId: await page.getByLabel('Recipe', { exact: true })
+            .inputValue(),
+        historyProfile: await page.getByLabel('Profile', { exact: true })
+            .inputValue(),
+        failureCategory: await page.getByLabel('Failure category').inputValue(),
+        status: await page.getByLabel('Run status').inputValue(),
+        from: historyControlEpoch(await page.getByLabel('From (UTC)').inputValue()),
+        to: historyControlEpoch(await page.getByLabel('To (UTC)').inputValue()),
+    };
+    expect(values).toEqual(Object.fromEntries(Object.entries(expected).map(
+        ([key, value]) => [key, value ?? ''],
+    )));
+}
+
+function historyControlEpoch(value: string): string {
+    return value === '' ? '' : String(Date.parse(`${value}Z`));
+}

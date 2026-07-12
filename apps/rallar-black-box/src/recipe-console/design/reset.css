@@ -15,6 +15,10 @@
     margin: 0;
 }
 
+.recipe-console button:disabled {
+    opacity: 1;
+}
+
 .recipe-console h1,
 .recipe-console h2,
 .recipe-console h3,

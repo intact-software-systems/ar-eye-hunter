@@ -83,10 +83,14 @@ describe('RetentionConfirmDialog', () => {
     it('opens an exact token-free alertdialog with non-destructive initial focus', async () => {
         await render();
         const dialog = container.querySelector<HTMLElement>('[role="alertdialog"]');
+        const candidates = container.querySelector<HTMLElement>(
+            '[role="region"][aria-label="Previewed runs to delete"]',
+        );
         const keep = button('Keep history');
         const confirm = button('Delete previewed runs');
 
         expect(dialog?.getAttribute('aria-modal')).toBe('true');
+        expect(candidates?.tabIndex).toBe(0);
         expect(document.activeElement).toBe(keep);
         expect(dialog?.textContent).toContain('control-delete-exact');
         expect(dialog?.textContent).toContain('4 current runs');
@@ -98,13 +102,16 @@ describe('RetentionConfirmDialog', () => {
 
     it('wraps Tab and Shift+Tab inside the dialog', async () => {
         await render();
-        const keep = button('Keep history');
+        const candidates = container.querySelector<HTMLElement>(
+            '[role="region"][aria-label="Previewed runs to delete"]',
+        )!;
         const confirm = button('Delete previewed runs');
 
-        await key(keep, 'Tab', true);
+        candidates.focus();
+        await key(candidates, 'Tab', true);
         expect(document.activeElement).toBe(confirm);
         await key(confirm, 'Tab');
-        expect(document.activeElement).toBe(keep);
+        expect(document.activeElement).toBe(candidates);
     });
 
     it('cancels with Escape or backdrop and restores focus when closed', async () => {
@@ -168,7 +175,11 @@ describe('RetentionConfirmDialog', () => {
         expect(css).toContain('@media (prefers-reduced-motion: reduce)');
         expect(css).toMatch(/animation:\s*none/);
         expect(css).toMatch(/max-height:\s*calc\(100dvh/);
-        expect(css).toContain('overflow: auto');
+        expect(css).toMatch(/\.dialog\s*\{[\s\S]*overflow:\s*hidden/);
+        expect(css).toMatch(
+            /\.candidateScroller\s*\{[\s\S]*max-height:[\s\S]*overflow:\s*auto/,
+        );
+        expect(css).toMatch(/\.candidateScroller:focus-visible/);
         expect(css).toContain('min-height: 44px');
     });
 

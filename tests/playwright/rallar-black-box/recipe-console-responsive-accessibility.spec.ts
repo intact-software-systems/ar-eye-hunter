@@ -11,6 +11,7 @@ import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.t
 import {
     TUNE_ANALYZE_ROUTE,
     TUNE_COMPARE_ROUTE,
+    TUNE_ROUTE,
     TUNE_RIGHT_RUN_ID,
     TUNE_SLOW_AGENT_ID,
 } from './recipe-console-tune-run-data.ts';
@@ -300,6 +301,189 @@ test('supports Tune metric and evidence inspection from the keyboard', async ({
         .toContain(`compareLeft=${TUNE_RIGHT_RUN_ID}`);
     expect(fixture.artifactRequestCount()).toBe(0);
     expect(fixture.mutationRequestCount()).toBe(0);
+});
+
+test('keeps long retention scope and the safe action visible in short landscape',
+    async ({ context, page }) => {
+        await page.setViewportSize({ width: 932, height: 430 });
+        await installRecipeConsoleTuneFixture(context, {
+            retention: 'ready',
+            retentionCandidateCount: 40,
+        });
+        await page.goto(TUNE_ROUTE);
+        await page.getByRole('button', {
+            name: 'Preview cleanup',
+            exact: true,
+        }).click();
+        await page.getByRole('button', {
+            name: 'Review cleanup',
+            exact: true,
+        }).click();
+
+        const dialog = page.getByRole('alertdialog', {
+            name: 'Delete previewed runs?',
+        });
+        const keep = dialog.getByRole('button', { name: 'Keep history' });
+        await expect(dialog.getByRole('heading', {
+            name: 'Delete previewed runs?',
+        })).toBeVisible();
+        await expect(keep).toBeVisible();
+        await expect(keep).toBeFocused();
+        const candidateList = dialog.getByRole('region', {
+            name: 'Previewed runs to delete',
+        });
+        expect(await candidateList.evaluate(element =>
+            element.scrollHeight > element.clientHeight
+        )).toBe(true);
+        expect(await dialog.evaluate(element => element.scrollTop)).toBe(0);
+        await page.keyboard.press('Shift+Tab');
+        await expect(candidateList).toBeFocused();
+        const initialScrollTop = await candidateList.evaluate(
+            element => element.scrollTop,
+        );
+        await page.keyboard.press('PageDown');
+        await expect.poll(() => candidateList.evaluate(
+            element => element.scrollTop,
+        )).toBeGreaterThan(initialScrollTop);
+        await expect(dialog).toContainText('history-overflow-control-39');
+    });
+
+test('contains real History at every contract viewport', async ({
+    context,
+    page,
+}) => {
+    await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
+    for (const contract of [
+        { viewport: { width: 1440, height: 900 }, columns: 4, tableOverflow: false },
+        { viewport: { width: 900, height: 900 }, columns: 2, tableOverflow: true },
+        { viewport: { width: 430, height: 932 }, columns: 1, tableOverflow: true },
+        { viewport: { width: 932, height: 430 }, columns: 4, tableOverflow: true },
+    ] as const) {
+        await page.setViewportSize(contract.viewport);
+        await page.goto(TUNE_ROUTE);
+        const history = page.locator('[data-history-workspace]');
+        const filterGrid = history.locator('[data-history-filters] form > div')
+            .first();
+        const table = history.getByRole('region', { name: 'Recipe run history' });
+        await expect(history).toBeVisible();
+        expect(await filterGrid.evaluate(element =>
+            getComputedStyle(element).gridTemplateColumns.split(' ').length
+        )).toBe(contract.columns);
+        expect(await table.evaluate(element =>
+            element.scrollWidth > element.clientWidth
+        )).toBe(contract.tableOverflow);
+        expect(await page.evaluate(() => ({
+            x: document.documentElement.scrollWidth -
+                document.documentElement.clientWidth,
+            y: document.documentElement.scrollHeight -
+                document.documentElement.clientHeight,
+        }))).toEqual({ x: 0, y: 0 });
+        if (contract.viewport.height <= 520) {
+            const tune = page.locator('[data-tune-workspace]');
+            expect(await tune.evaluate(element =>
+                element.scrollHeight > element.clientHeight
+            )).toBe(true);
+            await history.getByRole('button', {
+                name: 'Preview cleanup',
+                exact: true,
+            }).scrollIntoViewIfNeeded();
+            await expect(history.getByRole('button', {
+                name: 'Preview cleanup',
+                exact: true,
+            })).toBeVisible();
+        }
+    }
+});
+
+test('keeps History retention motionless and focus-contained under reduced motion',
+    async ({ context, page }) => {
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await page.setViewportSize({ width: 900, height: 900 });
+        await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
+        await page.goto(TUNE_ROUTE);
+        const preview = page.getByRole('button', {
+            name: 'Preview cleanup',
+            exact: true,
+        });
+        await preview.click();
+        await expect(page.locator('[data-retention-panel]').getByRole('status'))
+            .toContainText('Retention preview is current.');
+        await page.getByRole('button', {
+            name: 'Review cleanup',
+            exact: true,
+        }).click();
+
+        const backdrop = page.locator('[data-retention-confirm-dialog]');
+        const dialog = page.getByRole('alertdialog', {
+            name: 'Delete previewed runs?',
+        });
+        const keep = dialog.getByRole('button', { name: 'Keep history' });
+        const confirm = dialog.getByRole('button', {
+            name: 'Delete previewed runs',
+        });
+        const candidates = dialog.getByRole('region', {
+            name: 'Previewed runs to delete',
+        });
+        await expect(backdrop).toHaveCSS('animation-name', 'none');
+        await expect(dialog).toHaveCSS('animation-name', 'none');
+        await expect(dialog).toHaveCSS('transition-duration', '0s');
+        await expect(keep).toBeFocused();
+        await page.keyboard.press('Shift+Tab');
+        await expect(candidates).toBeFocused();
+        await page.keyboard.press('Shift+Tab');
+        await expect(confirm).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(candidates).toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(dialog).toHaveCount(0);
+        await expect(preview).toBeFocused();
+    });
+
+test('keeps real History and retention coarse targets at least 44px', async ({
+    browser,
+}) => {
+    const context = await browser.newContext({
+        baseURL: 'http://127.0.0.1:5176',
+        hasTouch: true,
+        viewport: { width: 430, height: 932 },
+    });
+    await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
+    const page = await context.newPage();
+    await page.goto(TUNE_ROUTE);
+    const history = page.locator('[data-history-workspace]');
+    await expectMinimumTargetHeight(
+        history.locator('[data-history-filters] :is(input, select, button)'),
+        'History filter control',
+    );
+    await expectMinimumTargetHeight(
+        history.locator('[data-history-saved-filters] :is(input, button, summary)'),
+        'History preset control',
+    );
+    await expectMinimumTargetHeight(
+        history.getByRole('region', { name: 'Recipe run history' }).locator('button'),
+        'History comparison action',
+    );
+    const preview = history.getByRole('button', {
+        name: 'Preview cleanup',
+        exact: true,
+    });
+    await expectMinimumTargetHeight(preview, 'Retention preview');
+    await preview.click();
+    await expectMinimumTargetHeight(
+        history.locator('[data-retention-panel] :is(button, summary)'),
+        'Retention evidence control',
+    );
+    await history.getByRole('button', {
+        name: 'Review cleanup',
+        exact: true,
+    }).click();
+    await expectMinimumTargetHeight(
+        page.getByRole('alertdialog', {
+            name: 'Delete previewed runs?',
+        }).locator('button'),
+        'Retention dialog action',
+    );
+    await context.close();
 });
 
 test('keeps representative portrait touch controls at least 44px high', async ({

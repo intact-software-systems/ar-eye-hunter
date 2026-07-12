@@ -1,4 +1,6 @@
 import { expect, test, type Browser } from '@playwright/test';
+import { installRecipeConsoleTuneFixture } from
+    './recipe-console-tune-fixture.ts';
 
 async function coldEntry(
     browser: Browser,
@@ -193,6 +195,45 @@ test('proves each production experience static closure without fixture or peer r
     expect(legacyResources.some(url => /\/assets\/LegacyExperience-[^/]+\.css$/.test(url))).toBe(true);
     expect(legacyResources.some(url => url.includes('RecipeConsoleApp'))).toBe(false);
     expect(legacyResources.some(url => url.includes('recipe-console-css-isolation'))).toBe(false);
+});
+
+test('loads production History with Tune and retention only after Preview', async ({
+    browser,
+}) => {
+    const context = await browser.newContext({
+        baseURL: 'http://127.0.0.1:4176',
+    });
+    await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
+    const page = await context.newPage();
+    const resources: string[] = [];
+    page.on('request', request => {
+        if (['script', 'stylesheet'].includes(request.resourceType())) {
+            resources.push(request.url());
+        }
+    });
+    await page.goto(
+        '/?provider=simulated&v=1&experience=recipe-console&view=execute',
+    );
+    await expect(page.locator('.recipe-console')).toBeVisible();
+    expect(resources.some(url => /TuneWorkspace-[^/]+\.(?:js|css)$/.test(url)))
+        .toBe(false);
+    expect(resources.some(url => /control-retention-api-[^/]+\.js$/.test(url)))
+        .toBe(false);
+
+    await page.getByRole('button', { name: 'Tune', exact: true }).click();
+    await expect(page.locator('[data-history-workspace]')).toBeVisible();
+    expect(resources.some(url => /TuneWorkspace-[^/]+\.js$/.test(url))).toBe(true);
+    expect(resources.some(url => /control-retention-api-[^/]+\.js$/.test(url)))
+        .toBe(false);
+
+    await page.getByRole('button', {
+        name: 'Preview cleanup',
+        exact: true,
+    }).click();
+    await expect.poll(() => resources.some(url =>
+        /control-retention-api-[^/]+\.js$/.test(url)
+    )).toBe(true);
+    await context.close();
 });
 
 for (const baseUrl of [

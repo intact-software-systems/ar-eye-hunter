@@ -165,6 +165,32 @@ describe('HistoryTable', () => {
             expect(region?.textContent).toContain('2 of 3 agents connected');
         });
 
+    it('preserves and bidi-isolates exact quarantined run identities', async () => {
+        const distributedRunId = '  distributed/unsafe\u202e  ';
+        const controlRunId = '  control/unsafe\u202d  ';
+        await render(historyModel([historyRow({
+            distributedRunId,
+            controlRunId,
+            quarantined: true,
+            quarantineCodes: ['unsafe-identity'],
+            actions: {
+                eligible: false,
+                reason: 'quarantined',
+                baselinePatch: {},
+                candidatePatch: {},
+            },
+        })]));
+
+        const identifiers = [...container.querySelectorAll<HTMLElement>(
+            'bdi[data-exact-identifier]',
+        )];
+        expect(identifiers.map(identifier => identifier.textContent)).toEqual([
+            distributedRunId,
+            controlRunId,
+        ]);
+        expect(identifiers.every(identifier => identifier.dir === 'ltr')).toBe(true);
+    });
+
     it('passes each safe row precomputed baseline and candidate patch exactly', async () => {
         const onBaseline = vi.fn();
         const onCandidate = vi.fn();

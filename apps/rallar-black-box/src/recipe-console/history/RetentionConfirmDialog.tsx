@@ -68,8 +68,8 @@ export function RetentionConfirmDialog({
         }
         if (event.key !== 'Tab') return;
         const focusable = Array.from(
-            dialogRef.current?.querySelectorAll<HTMLButtonElement>(
-                'button:not(:disabled)',
+            dialogRef.current?.querySelectorAll<HTMLElement>(
+                '[tabindex="0"], button:not(:disabled)',
             ) ?? [],
         );
         if (focusable.length === 0) {
@@ -85,7 +85,7 @@ export function RetentionConfirmDialog({
         } else if (!event.shiftKey && document.activeElement === last) {
             event.preventDefault();
             first?.focus();
-        } else if (!focusable.includes(document.activeElement as HTMLButtonElement)) {
+        } else if (!focusable.includes(document.activeElement as HTMLElement)) {
             event.preventDefault();
             (event.shiftKey ? last : first)?.focus();
         }
@@ -118,13 +118,20 @@ export function RetentionConfirmDialog({
                     from {preview.retainedRuns} current runs to{' '}
                     {preview.projectedRetainedRuns} projected runs.
                 </p>
-                <ul className={styles.candidates}>
-                    {preview.candidates.map(candidate => (
-                        <li key={candidate.key}>
-                            <ExactIdentifier value={candidate.runId} />
-                        </li>
-                    ))}
-                </ul>
+                <div
+                    aria-label="Previewed runs to delete"
+                    className={styles.candidateScroller}
+                    role="region"
+                    tabIndex={0}
+                >
+                    <ul className={styles.candidates}>
+                        {preview.candidates.map(candidate => (
+                            <li key={candidate.key}>
+                                <ExactIdentifier value={candidate.runId} />
+                            </li>
+                        ))}
+                    </ul>
+                </div>
                 <p className={styles.preservation}>
                     Existing connected sockets and stored artifact files remain.
                 </p>

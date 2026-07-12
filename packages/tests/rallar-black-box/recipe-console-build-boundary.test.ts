@@ -120,5 +120,26 @@ describe('Recipe Console build boundary', () => {
         );
         expect(() => assertExperienceChunkGraph(corruptedGraph))
             .toThrow(/Recipe Console static closure sentinel is missing/);
+        await writeFile(recipeChunkPath, recipeChunkText);
+
+        const tuneChunk = Object.values(manifest).find(entry =>
+            entry.src?.endsWith('/recipe-console/tune/TuneWorkspace.tsx')
+        );
+        expect(tuneChunk).toBeDefined();
+        const tuneChunkPath = join(outputRoot, tuneChunk?.file ?? 'missing');
+        const tuneChunkText = await readFile(tuneChunkPath, 'utf8');
+        expect(tuneChunkText).toContain('data-history-workspace');
+        await writeFile(
+            tuneChunkPath,
+            tuneChunkText.replaceAll(
+                'data-history-workspace',
+                'corrupted-history-workspace',
+            ),
+        );
+        const corruptedTuneGraph = readExperienceChunkGraph(
+            join(outputRoot, '.vite/manifest.json'),
+        );
+        expect(() => assertExperienceChunkGraph(corruptedTuneGraph))
+            .toThrow(/Tune static closure History sentinels are missing/);
     });
 });

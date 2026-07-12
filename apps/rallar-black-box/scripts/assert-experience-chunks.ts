@@ -274,6 +274,22 @@ export function assertExperienceChunkGraph(graph: ExperienceChunkGraph): void {
     assert(legacyText.includes('panel-rallar-server'), 'Legacy static closure does not contain panel-rallar-server.');
     assert(legacyText.includes('panel-distributed-recipes'), 'Legacy static closure does not contain distributed recipes.');
     assert(legacyText.includes('legacy-panel-distributed-recipes'), 'Legacy compatibility recipe sentinel is missing.');
+    assert(
+        tuneText.includes('data-history-workspace') &&
+            tuneText.includes('data-retention-panel'),
+        'Tune static closure History sentinels are missing.',
+    );
+    for (const [label, text] of [
+        ['main', mainText],
+        ['Recipe Console', recipeText],
+        ['Legacy', legacyText],
+    ] as const) {
+        assert(
+            !text.includes('data-history-workspace') &&
+                !text.includes('data-retention-panel'),
+            `${label} static closure contains inactive History UI.`,
+        );
+    }
     for (const [label, text] of [
         ['main', mainText],
         ['Recipe Console', recipeText],

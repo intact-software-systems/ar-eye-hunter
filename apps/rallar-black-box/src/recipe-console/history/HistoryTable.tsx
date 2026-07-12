@@ -8,6 +8,7 @@ import {
     historyUtcDisplay,
     historyUtcIso,
 } from './history-utc.ts';
+import { ExactIdentifier } from './ExactIdentifier.tsx';
 import styles from './HistoryTable.module.css';
 
 export type HistoryTableProps = Readonly<{
@@ -89,11 +90,11 @@ function HistoryTableRow({
                 ) : null}
                 <span>
                     <small>Distributed</small>
-                    <code>{row.distributedRunId}</code>
+                    <ExactIdentifier value={row.distributedRunId} />
                 </span>
                 <span>
                     <small>Control</small>
-                    <code>{row.controlRunId}</code>
+                    <ExactIdentifier value={row.controlRunId} />
                 </span>
             </td>
             <td>

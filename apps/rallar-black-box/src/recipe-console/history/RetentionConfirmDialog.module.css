@@ -15,7 +15,7 @@
     max-height: calc(100dvh - 40px);
     gap: 14px;
     padding: 20px;
-    overflow: auto;
+    overflow: hidden;
     overscroll-behavior: contain;
     border: 1px solid var(--rc-status-failed-border);
     border-radius: 6px;
@@ -43,12 +43,24 @@
     text-transform: uppercase;
 }
 
+.candidateScroller {
+    min-height: 0;
+    max-height: min(240px, 28dvh);
+    overflow: auto;
+    overscroll-behavior: contain;
+    border-block: 1px solid var(--rc-border);
+    background: var(--rc-canvas);
+}
+
+.candidateScroller:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: -3px;
+}
+
 .candidates {
     display: grid;
     gap: 6px;
     padding: 10px 10px 10px 28px;
-    border-block: 1px solid var(--rc-border);
-    background: var(--rc-canvas);
 }
 
 .preservation {
@@ -125,6 +137,22 @@
     .actions button {
         min-width: 0;
         flex: 1;
+    }
+}
+
+@media (max-height: 520px) and (min-width: 561px) {
+    .backdrop {
+        padding: 8px;
+    }
+
+    .dialog {
+        max-height: calc(100dvh - 16px);
+        gap: 8px;
+        padding: 12px;
+    }
+
+    .candidateScroller {
+        max-height: 96px;
     }
 }
 

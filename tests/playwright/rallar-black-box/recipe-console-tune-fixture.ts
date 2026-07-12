@@ -3,6 +3,7 @@ import type { ControlDistributedRunSnapshot } from
     '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import { createTuneArtifactEnvelope } from './recipe-console-tune-artifacts.ts';
 import {
+    TUNE_BASE_EPOCH_MS,
     TUNE_LEFT_CONTROL_RUN_ID,
     TUNE_LEFT_RUN_ID,
     TUNE_RIGHT_CONTROL_RUN_ID,
@@ -16,13 +17,32 @@ const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 export type RecipeConsoleTuneFixture = Readonly<{
     artifactRequestCount(): number;
     mutationRequestCount(): number;
+    requestOrder(): readonly string[];
+    retentionRequests(): readonly RetentionRequestObservation[];
     setReachability(value: 'live' | 'offline'): void;
+    snapshotIds(): Readonly<{
+        controlRunIds: readonly string[];
+        distributedRunIds: readonly string[];
+    }>;
+}>;
+
+export type RetentionMode = 'ready' | 'drift-once' | 'authorization-required';
+
+export type RetentionRequestObservation = Readonly<{
+    kind: 'preview' | 'confirm' | 'legacy';
+    method: string;
+    dryRun: boolean;
+    hasPlanToken: boolean;
+    body: string | null;
+    authorization: string | null;
 }>;
 
 export type RecipeConsoleTuneFixtureOptions = Readonly<{
     compatibility?: 'aligned' | 'advisory';
     initialControlState?: 'live' | 'partial';
     initialReachability?: 'live' | 'offline';
+    retention?: RetentionMode;
+    retentionCandidateCount?: number;
     rightRecipe?: 'inline' | 'reference-only';
     shadowedRateHz?: boolean;
 }>;
@@ -31,7 +51,7 @@ export async function installRecipeConsoleTuneFixture(
     context: BrowserContext,
     options: RecipeConsoleTuneFixtureOptions = {},
 ): Promise<RecipeConsoleTuneFixture> {
-    const controlRuns = [
+    let controlRuns = [
         createTuneControlRun('left'),
         createTuneControlRun('right'),
     ];
@@ -45,13 +65,33 @@ export async function installRecipeConsoleTuneFixture(
     if (options.compatibility === 'advisory') {
         rightDistributedRun = incompatibleTuneRun(rightDistributedRun);
     }
-    const distributedRuns = [
+    let distributedRuns = [
         createTuneDistributedRun('left'),
         rightDistributedRun,
     ];
+    for (
+        let index = 1;
+        index < (options.retentionCandidateCount ?? 1);
+        index += 1
+    ) {
+        const runId = `history-overflow-control-${index}`;
+        const distributedRunId = `history-overflow-distributed-${index}`;
+        controlRuns.push(historyOverflowControlRun(runId, index));
+        distributedRuns.push(historyOverflowDistributedRun(
+            distributedRunId,
+            runId,
+            index,
+        ));
+    }
     let artifactReads = 0;
     let mutationRequests = 0;
     let reachability = options.initialReachability ?? 'live';
+    const retentionMode = options.retention ?? 'ready';
+    let retentionSequence = 0;
+    let currentPlan: ReturnType<typeof retentionPreview> | undefined;
+    let driftConsumed = false;
+    const retentionObservations: RetentionRequestObservation[] = [];
+    const order: string[] = [];
 
     await context.route(CONTROL_ROUTE, async route => {
         const request = route.request();
@@ -76,11 +116,75 @@ export async function installRecipeConsoleTuneFixture(
             artifactReads += 1;
         }
         if (request.method() === 'GET' && url.pathname === '/runs') {
+            order.push('runs');
             await fulfillJson(route, { runs: controlRuns });
             return;
         }
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
+            order.push('distributed-runs');
             await fulfillJson(route, { distributedRuns });
+            return;
+        }
+        if (request.method() === 'POST' && url.pathname === '/retention/cleanup') {
+            const dryRun = url.searchParams.get('dryRun');
+            const planToken = url.searchParams.get('planToken');
+            const kind = dryRun === 'true'
+                ? 'preview'
+                : planToken !== null ? 'confirm' : 'legacy';
+            retentionObservations.push({
+                kind,
+                method: request.method(),
+                dryRun: dryRun === 'true',
+                hasPlanToken: planToken !== null,
+                body: request.postData(),
+                authorization: request.headers().authorization ?? null,
+            });
+            order.push(kind);
+            if (!options.retention) {
+                await fulfillJson(route, { error: 'Retention fixture disabled.' }, 404);
+                return;
+            }
+            if (kind === 'legacy') {
+                await fulfillJson(route, { error: 'Bare cleanup is forbidden.' }, 400);
+                return;
+            }
+            if (kind === 'preview') {
+                if (retentionMode === 'authorization-required') {
+                    await fulfillJson(route, { error: 'Operator authorization required.' }, 403);
+                    return;
+                }
+                currentPlan = retentionPreview(
+                    ++retentionSequence,
+                    options.retentionCandidateCount ?? 1,
+                );
+                await fulfillJson(route, currentPlan);
+                return;
+            }
+            if (!currentPlan || planToken !== currentPlan.planToken) {
+                await fulfillJson(route, { error: 'Retention preview is stale.' }, 409);
+                return;
+            }
+            if (retentionMode === 'drift-once' && !driftConsumed) {
+                driftConsumed = true;
+                currentPlan = undefined;
+                await fulfillJson(route, { error: 'Retention preview drifted.' }, 409);
+                return;
+            }
+            const deletedRunIds = [...currentPlan.wouldDeleteRunIds];
+            const deletedDistributedRunIds = new Set(
+                currentPlan.wouldDeleteDistributedRunIds,
+            );
+            controlRuns = controlRuns.filter(run => !deletedRunIds.includes(run.runId));
+            distributedRuns = distributedRuns.filter(run =>
+                !deletedDistributedRunIds.has(run.distributedRunId)
+            );
+            const confirmation = {
+                deletedRunIds,
+                retainedRuns: currentPlan.projectedRetainedRuns,
+                maxRuns: currentPlan.maxRuns,
+            };
+            currentPlan = undefined;
+            await fulfillJson(route, confirmation);
             return;
         }
         const runId = detailId(url.pathname, '/runs/');
@@ -118,8 +222,96 @@ export async function installRecipeConsoleTuneFixture(
     return {
         artifactRequestCount: () => artifactReads,
         mutationRequestCount: () => mutationRequests,
+        requestOrder: () => [...order],
+        retentionRequests: () => retentionObservations.map(value => ({ ...value })),
         setReachability: value => {
             reachability = value;
+        },
+        snapshotIds: () => ({
+            controlRunIds: controlRuns.map(run => run.runId),
+            distributedRunIds: distributedRuns.map(run => run.distributedRunId),
+        }),
+    };
+}
+
+function retentionPreview(sequence: number, candidateCount: number) {
+    const candidates = Array.from({ length: candidateCount }, (_, index) => {
+        const primary = index === 0;
+        const runId = primary
+            ? TUNE_RIGHT_CONTROL_RUN_ID
+            : `history-overflow-control-${index}`;
+        const distributedRunId = primary
+            ? TUNE_RIGHT_RUN_ID
+            : `history-overflow-distributed-${index}`;
+        return {
+            runId,
+            createdAtEpochMs: TUNE_BASE_EPOCH_MS + index,
+            updatedAtEpochMs: TUNE_BASE_EPOCH_MS + 4_800 + index,
+            connectedAgentCount: primary ? 2 : 0,
+            issuedRunTokenCount: primary ? 1 : 0,
+            distributedRuns: [{
+                distributedRunId,
+                state: primary ? 'failed' : 'passed',
+            }],
+            fleetReportIds: [distributedRunId],
+        };
+    });
+    return {
+        deletedRunIds: [],
+        retainedRuns: candidateCount + 1,
+        maxRuns: 1,
+        dryRun: true,
+        wouldDeleteRuns: candidates,
+        wouldDeleteRunIds: candidates.map(candidate => candidate.runId),
+        wouldDeleteDistributedRunIds: candidates.map(candidate =>
+            candidate.distributedRuns[0].distributedRunId
+        ),
+        wouldDeleteFleetReportIds: candidates.flatMap(candidate =>
+            candidate.fleetReportIds
+        ),
+        projectedRetainedRuns: 1,
+        preserves: {
+            connectedAgentSockets: true,
+            storedArtifactFiles: true,
+        },
+        planToken: `history-plan-${sequence}`,
+    } as const;
+}
+
+function historyOverflowControlRun(runId: string, index: number) {
+    const source = createTuneControlRun('right');
+    return {
+        ...source,
+        runId,
+        createdAtEpochMs: TUNE_BASE_EPOCH_MS + index,
+        updatedAtEpochMs: TUNE_BASE_EPOCH_MS + 4_800 + index,
+        agents: [],
+        commands: [],
+        results: [],
+        events: [],
+        stats: [],
+        reports: [],
+        heartbeats: [],
+    };
+}
+
+function historyOverflowDistributedRun(
+    distributedRunId: string,
+    controlRunId: string,
+    index: number,
+): ControlDistributedRunSnapshot {
+    const source = createTuneDistributedRun('left');
+    return {
+        ...source,
+        distributedRunId,
+        controlRunId,
+        createdAtEpochMs: TUNE_BASE_EPOCH_MS + index,
+        updatedAtEpochMs: TUNE_BASE_EPOCH_MS + 4_800 + index,
+        manifest: {
+            ...source.manifest,
+            distributedRunId,
+            controlRunId,
+            displayName: `History overflow run ${index}`,
         },
     };
 }
