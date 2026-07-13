@@ -31,6 +31,9 @@ import {
     validateControlServerCoreSnapshot,
     withoutDistributedRuns,
 } from './control-snapshot-validation.ts';
+import {
+    createControlSnapshotRevisionSession,
+} from './control-snapshot-revision.ts';
 
 export const RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS = {
     commands: 120,
@@ -136,6 +139,7 @@ export function createRecipeConsoleControlApi(
             });
         },
     });
+    const snapshotRevisionSession = createControlSnapshotRevisionSession();
 
     return {
         baseUrl,
@@ -165,14 +169,23 @@ export function createRecipeConsoleControlApi(
                         server.value.distributedRuns,
                     );
                 } catch (error) {
+                    const snapshot = withoutDistributedRuns(server.value);
+                    snapshotRevisionSession.associate(snapshot, {
+                        source: 'unavailable',
+                        rootDocument: server.value,
+                    });
                     return {
-                        snapshot: withoutDistributedRuns(server.value),
+                        snapshot,
                         completeness: 'partial',
                         distributedRunsSource: 'unavailable',
                         authorization: server.authorization,
                         partialError: controlProtocolError(error),
                     };
                 }
+                snapshotRevisionSession.associate(server.value, {
+                    source: 'root-snapshot',
+                    rootDocument: server.value,
+                });
                 return {
                     snapshot: server.value,
                     completeness: 'complete',
@@ -209,6 +222,10 @@ export function createRecipeConsoleControlApi(
                 const normalizedPartialError = isProtocolCandidate(partialError)
                     ? controlProtocolError(partialError)
                     : partialError;
+                snapshotRevisionSession.associate(server.value, {
+                    source: 'unavailable',
+                    rootDocument: server.value,
+                });
                 return {
                     snapshot: server.value,
                     completeness: 'partial',
@@ -217,6 +234,11 @@ export function createRecipeConsoleControlApi(
                     partialError: normalizedPartialError,
                 };
             }
+            snapshotRevisionSession.associate(snapshot, {
+                source: 'canonical-fallback',
+                rootDocument: server.value,
+                fallbackDocument: distributed.value,
+            });
             return {
                 snapshot,
                 completeness: 'complete',

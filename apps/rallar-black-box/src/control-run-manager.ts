@@ -28,6 +28,10 @@ import type {
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import { ControlRunManagerHttpError } from './control-http-error.ts';
+import {
+    inheritControlResponseDocument,
+    rememberControlResponseDocument,
+} from './control-response-document.ts';
 
 export { ControlRunManagerHttpError };
 
@@ -96,6 +100,24 @@ export type ControlRunManagerFetch = (
     input: RequestInfo | URL,
     init?: RequestInit,
 ) => Promise<Response>;
+
+type ControlResponseDocument<T> = Readonly<{
+    value: T;
+    text: string;
+}>;
+
+type FetchControlServerSnapshotInput = Readonly<{
+    baseUrl: string;
+    token?: string;
+    bounds?: ControlSnapshotBounds;
+    fetchFn?: ControlRunManagerFetch;
+}>;
+
+type FetchDistributedRunsInput = Readonly<{
+    baseUrl: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>;
 
 export type EnqueueBulkControlCommandResult = Readonly<{
     accepted: true;
@@ -240,12 +262,17 @@ export function controlRunSnapshotUrl(
     return url.toString();
 }
 
-export async function fetchControlServerSnapshot(input: Readonly<{
-    baseUrl: string;
-    token?: string;
-    bounds?: ControlSnapshotBounds;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<ControlServerSnapshot> {
+export async function fetchControlServerSnapshot(
+    input: FetchControlServerSnapshotInput,
+): Promise<ControlServerSnapshot> {
+    const document = await fetchControlServerSnapshotDocument(input);
+    rememberControlResponseDocument(document.value, document.text);
+    return document.value;
+}
+
+async function fetchControlServerSnapshotDocument(
+    input: FetchControlServerSnapshotInput,
+): Promise<ControlResponseDocument<ControlServerSnapshot>> {
     const response = await (input.fetchFn ?? fetch)(controlRunSnapshotUrl(
         input.baseUrl,
         undefined,
@@ -253,7 +280,7 @@ export async function fetchControlServerSnapshot(input: Readonly<{
     ), {
         headers: authorizationHeaders(input.token),
     });
-    return readJsonResponse<ControlServerSnapshot>(response);
+    return readJsonResponseDocument<ControlServerSnapshot>(response);
 }
 
 export async function fetchControlRunSnapshot(input: Readonly<{
@@ -382,19 +409,30 @@ export async function fetchControlRunFailureBundle(input: Readonly<{
     return readJsonResponse<unknown>(response);
 }
 
-export async function fetchDistributedRuns(input: Readonly<{
-    baseUrl: string;
-    token?: string;
-    fetchFn?: ControlRunManagerFetch;
-}>): Promise<readonly ControlDistributedRunSnapshot[]> {
+export async function fetchDistributedRuns(
+    input: FetchDistributedRunsInput,
+): Promise<readonly ControlDistributedRunSnapshot[]> {
+    const document = await fetchDistributedRunsDocument(input);
+    rememberControlResponseDocument(document.value, document.text);
+    inheritControlResponseDocument(
+        document.value,
+        document.value.distributedRuns,
+    );
+    return document.value.distributedRuns;
+}
+
+async function fetchDistributedRunsDocument(
+    input: FetchDistributedRunsInput,
+): Promise<ControlResponseDocument<ControlDistributedRunListResponse>> {
     const response = await (input.fetchFn ?? fetch)(
         new URL('/distributed-runs', normalizedBaseUrl(input.baseUrl)),
         {
             headers: authorizationHeaders(input.token),
         },
     );
-    const body = await readJsonResponse<ControlDistributedRunListResponse>(response);
-    return body.distributedRuns;
+    return readJsonResponseDocument<ControlDistributedRunListResponse>(
+        response,
+    );
 }
 
 export async function fetchDistributedRun(input: Readonly<{
@@ -913,6 +951,13 @@ function applyFleetReportFilter(url: URL, filter: ControlFleetReportFilter): voi
 }
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
+    const document = await readJsonResponseDocument<T>(response);
+    return document.value;
+}
+
+async function readJsonResponseDocument<T>(
+    response: Response,
+): Promise<ControlResponseDocument<T>> {
     const text = await response.text();
     let value: unknown = {};
     let parseError: unknown;
@@ -936,7 +981,10 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
     if (parseError) {
         throw parseError;
     }
-    return value as T;
+    return {
+        value: value as T,
+        text,
+    };
 }
 
 async function readTextResponse(response: Response): Promise<string> {

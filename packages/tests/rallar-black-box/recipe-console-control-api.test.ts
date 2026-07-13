@@ -9,6 +9,9 @@ import {
     type RecipeConsoleControlApiConfig,
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
 import {
+    controlSnapshotRevisionOf,
+} from '../../../apps/rallar-black-box/src/recipe-console/control/control-snapshot-revision.ts';
+import {
     recipeConsoleControlCredentialPolicyFromSearch,
     TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
@@ -271,6 +274,106 @@ describe('Recipe Console control API', () => {
             distributedRunsSource: 'root-snapshot',
             authorization: 'anonymous',
         });
+    });
+
+    it('associates an opaque root revision by exact raw document without changing public shapes', async () => {
+        const documents = [
+            '{"runs":[],"distributedRuns":[],"epoch":1}',
+            '{"runs":[],"distributedRuns":[],"epoch":1}',
+            ' {"runs":[],"distributedRuns":[],"epoch":1}',
+            '{"distributedRuns":[],"runs":[],"epoch":1}',
+            '{"runs":[],"distributedRuns":[],"epoch":1.0}',
+            '{"runs":[],"distributedRuns":[],"epoch":0,"epoch":1}',
+            '{"runs":[],"distributedRuns":[],"epoch":1}',
+        ];
+        let documentIndex = 0;
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => new Response(documents[documentIndex++], {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+            }),
+        });
+
+        const results = [];
+        for (let index = 0; index < documents.length; index += 1) {
+            results.push(await api.readSnapshot({}));
+        }
+        const revisions = results.map(result =>
+            controlSnapshotRevisionOf(result.snapshot)
+        );
+
+        expect(revisions[0]).toBeDefined();
+        expect(revisions[1]).toBe(revisions[0]);
+        for (let index = 2; index < revisions.length; index += 1) {
+            expect(revisions[index]).not.toBe(revisions[index - 1]);
+        }
+        expect(revisions.at(-1)).not.toBe(revisions[0]);
+        expect(Object.getPrototypeOf(revisions[0])).toBeNull();
+        expect(Object.isFrozen(revisions[0])).toBe(true);
+        expect(Reflect.ownKeys(revisions[0] as object)).toEqual([]);
+        expect(Object.keys(revisions[0] as object)).toEqual([]);
+
+        const first = results[0];
+        expect(Reflect.ownKeys(first)).toEqual([
+            'snapshot',
+            'completeness',
+            'distributedRunsSource',
+            'authorization',
+        ]);
+        expect(Object.keys(first)).toEqual([
+            'snapshot',
+            'completeness',
+            'distributedRunsSource',
+            'authorization',
+        ]);
+        expect(Reflect.ownKeys(first.snapshot)).toEqual([
+            'runs',
+            'distributedRuns',
+            'epoch',
+        ]);
+        expect(Object.keys(first.snapshot)).toEqual([
+            'runs',
+            'distributedRuns',
+            'epoch',
+        ]);
+        expect(JSON.stringify(first.snapshot)).toBe(documents[0]);
+    });
+
+    it('keeps revision reuse local to one control API session', async () => {
+        const exactText = '{"runs":[],"distributedRuns":[]}';
+        const config = {
+            controlUrl: 'https://control.test',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => new Response(exactText),
+        } as const;
+        const firstApi = createRecipeConsoleControlApi(config);
+        const secondApi = createRecipeConsoleControlApi(config);
+
+        const first = await firstApi.readSnapshot({});
+        const second = await secondApi.readSnapshot({});
+
+        expect(controlSnapshotRevisionOf(first.snapshot)).toBeDefined();
+        expect(controlSnapshotRevisionOf(second.snapshot)).not.toBe(
+            controlSnapshotRevisionOf(first.snapshot),
+        );
+    });
+
+    it('does not expose a revision for values that were not returned as validated snapshots', async () => {
+        const ordinarySnapshot = { runs: [] };
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => new Response('{"distributedRuns":[]}'),
+        });
+
+        await expect(api.readSnapshot({})).rejects.toMatchObject({
+            name: 'RecipeConsoleControlProtocolError',
+        });
+        expect(controlSnapshotRevisionOf(undefined)).toBeUndefined();
+        expect(controlSnapshotRevisionOf(null)).toBeUndefined();
+        expect(controlSnapshotRevisionOf(ordinarySnapshot)).toBeUndefined();
     });
 
     it('passes a caller snapshot-bound override exactly instead of merging defaults', async () => {
@@ -738,6 +841,66 @@ describe('Recipe Console control API', () => {
             distributedRunsSource: 'canonical-fallback',
             authorization: 'anonymous',
         });
+    });
+
+    it('derives fallback and unavailable revisions from the exact successful source documents only', async () => {
+        const rootDocument = '{"runs":[]}';
+        const fallbackDocuments = [
+            { text: '{"distributedRuns":[]}', status: 200 },
+            { text: '{"distributedRuns":[]}', status: 200 },
+            { text: '{ "distributedRuns":[]}', status: 200 },
+            { text: '{"error":"first failure"}', status: 503 },
+            { text: '{"error":"different failure body"}', status: 503 },
+        ] as const;
+        let pollIndex = -1;
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async input => {
+                if (new URL(String(input)).pathname === '/runs') {
+                    pollIndex += 1;
+                    return new Response(rootDocument);
+                }
+                const fallback = fallbackDocuments[pollIndex];
+                return new Response(fallback.text, {
+                    status: fallback.status,
+                    statusText: fallback.status === 200
+                        ? 'OK'
+                        : 'Service Unavailable',
+                });
+            },
+        });
+
+        const results = [];
+        for (let index = 0; index < fallbackDocuments.length; index += 1) {
+            results.push(await api.readSnapshot({}));
+        }
+        const revisions = results.map(result =>
+            controlSnapshotRevisionOf(result.snapshot)
+        );
+
+        expect(results.map(result => result.distributedRunsSource)).toEqual([
+            'canonical-fallback',
+            'canonical-fallback',
+            'canonical-fallback',
+            'unavailable',
+            'unavailable',
+        ]);
+        expect(revisions[1]).toBe(revisions[0]);
+        expect(revisions[2]).not.toBe(revisions[1]);
+        expect(revisions[3]).not.toBe(revisions[2]);
+        expect(revisions[4]).toBe(revisions[3]);
+        expect(Reflect.ownKeys(results[0].snapshot)).toEqual([
+            'runs',
+            'distributedRuns',
+        ]);
+        expect(Object.keys(results[0].snapshot)).toEqual([
+            'runs',
+            'distributedRuns',
+        ]);
+        expect(JSON.stringify(results[0].snapshot)).toBe(
+            '{"runs":[],"distributedRuns":[]}',
+        );
     });
 
     it('preserves the strongest authorization provenance across combined reads', async () => {

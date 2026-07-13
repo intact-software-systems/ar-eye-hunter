@@ -30,6 +30,9 @@ import {
 import {
     ControlRunManagerHttpError as CanonicalControlRunManagerHttpError,
 } from '../../../apps/rallar-black-box/src/control-http-error.ts';
+import {
+    controlResponseDocumentText,
+} from '../../../apps/rallar-black-box/src/control-response-document.ts';
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 
 const runSnapshot: ControlRunSnapshot = {
@@ -256,8 +259,55 @@ describe('rallar-black-box control run manager', () => {
             command: { kind: 'health' },
         });
         expect(artifact.files['report.json']).toBe('{}');
+        expect(controlResponseDocumentText(artifact)).toBeUndefined();
         expect(eventsJsonl).toContain('step-result');
         expect(failureBundle).toEqual({ failures: [] });
+    });
+
+    it('reads the control snapshot response text once and remembers its exact document without changing the parsed shape', async () => {
+        const exactText = ' { "runs": [] }\n';
+        const response = new Response(exactText, { status: 200 });
+        const readText = response.text.bind(response);
+        let textReadCount = 0;
+        Object.defineProperty(response, 'text', {
+            value: async () => {
+                textReadCount += 1;
+                return readText();
+            },
+        });
+
+        const snapshot = await fetchControlServerSnapshot({
+            baseUrl: 'http://control.test',
+            fetchFn: async () => response,
+        });
+
+        expect(textReadCount).toBe(1);
+        expect(controlResponseDocumentText(snapshot)).toBe(exactText);
+        expect(Reflect.ownKeys(snapshot)).toEqual(['runs']);
+        expect(JSON.stringify(snapshot)).toBe('{"runs":[]}');
+    });
+
+    it('propagates the exact distributed-run wrapper document to the returned array after one text read', async () => {
+        const exactText = '{ "distributedRuns" : [], "ignored" : true }';
+        const response = new Response(exactText, { status: 200 });
+        const readText = response.text.bind(response);
+        let textReadCount = 0;
+        Object.defineProperty(response, 'text', {
+            value: async () => {
+                textReadCount += 1;
+                return readText();
+            },
+        });
+
+        const distributedRuns = await fetchDistributedRuns({
+            baseUrl: 'http://control.test',
+            fetchFn: async () => response,
+        });
+
+        expect(textReadCount).toBe(1);
+        expect(controlResponseDocumentText(distributedRuns)).toBe(exactText);
+        expect(Reflect.ownKeys(distributedRuns)).toEqual(['length']);
+        expect(JSON.stringify(distributedRuns)).toBe('[]');
     });
 
     it('preserves response status on HTTP errors without changing the server message', async () => {
