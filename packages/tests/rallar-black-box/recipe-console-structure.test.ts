@@ -634,6 +634,41 @@ describe('Recipe Console experience boundary', () => {
         expect(inspector).not.toMatch(/hidden|display\s*:\s*none/);
     });
 
+    test('owns one bounded searchable listbox foundation without a registry or native select', () => {
+        const budgets = [
+            ['ui/explicit-window-model.ts', 110],
+            ['ui/use-explicit-window.ts', 135],
+            ['ui/ExplicitWindowControls.tsx', 100],
+            ['ui/searchable-listbox-model.ts', 180],
+            ['ui/use-searchable-listbox.ts', 220],
+            ['ui/SearchableWindowedListbox.tsx', 220],
+            ['ui/SearchableWindowedListbox.module.css', 220],
+        ] as const;
+        for (const [relative, budget] of budgets) {
+            const path = `${recipeConsoleRoot}/${relative}`;
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+            if (!existsSync(resolve(repositoryRoot, path))) continue;
+            const file = source(path);
+            expect(file.trimEnd().split(/\r?\n/).length, path)
+                .toBeLessThanOrEqual(budget);
+            expect(file, path).not.toMatch(/(?:registry|Registry|index\.ts|legacy\/)/);
+        }
+
+        const model = source(`${recipeConsoleRoot}/ui/searchable-listbox-model.ts`);
+        const hook = source(`${recipeConsoleRoot}/ui/use-searchable-listbox.ts`);
+        const component = source(`${recipeConsoleRoot}/ui/SearchableWindowedListbox.tsx`);
+        expect(model).toContain('SEARCHABLE_LISTBOX_WINDOW_SIZE = 100');
+        expect(hook).toContain('useDeferredValue');
+        expect(hook).toContain('revealIndex');
+        expect(component).toContain('role="combobox"');
+        expect(component).toContain('role="listbox"');
+        expect(component).toContain('role="option"');
+        expect(component).toContain('<ExactIdentifier');
+        expect(component).toContain('<ExplicitWindowControls');
+        expect(component).not.toMatch(/<select\b|\.slice\(\s*0\s*,\s*100\s*\)/);
+        expect(component).not.toMatch(/(?:\shidden(?:=|\s|>)|display\s*:\s*none)/);
+    });
+
     test('keeps live Execute orchestration and refresh ownership explicit', () => {
         const hook = source(`${recipeConsoleRoot}/execute/use-execute-workflow.ts`);
         const draft = source(`${recipeConsoleRoot}/execute/use-execute-draft.ts`);

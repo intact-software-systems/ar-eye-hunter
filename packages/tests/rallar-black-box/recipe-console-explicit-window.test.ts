@@ -8,6 +8,7 @@ import {
     createExplicitWindowState,
     deriveExplicitWindowModel,
     moveExplicitWindow,
+    revealExplicitWindowIndex,
 } from '../../../apps/rallar-black-box/src/recipe-console/ui/explicit-window-model.ts';
 import {
     useExplicitWindow,
@@ -96,6 +97,72 @@ describe('Recipe Console explicit window model', () => {
             canNext: false,
         });
     });
+
+    it('reveals a high ordinal on its exact containing page and clamps shrink', () => {
+        const revision = {};
+        const model = deriveExplicitWindowModel({
+            fingerprint: 'selector:runs',
+            revision,
+            total: 250,
+            windowSize: 100,
+        }, createExplicitWindowState('selector:runs', revision));
+
+        const revealed = revealExplicitWindowIndex(model, 217);
+        expect(revealed).toEqual({
+            fingerprint: 'selector:runs',
+            revision,
+            startIndex: 200,
+        });
+        expect(deriveExplicitWindowModel({
+            fingerprint: 'selector:runs',
+            revision,
+            total: 250,
+            windowSize: 100,
+        }, revealed)).toMatchObject({
+            startIndex: 200,
+            endIndexExclusive: 250,
+            displayStart: 201,
+            displayEnd: 250,
+        });
+        expect(deriveExplicitWindowModel({
+            fingerprint: 'selector:runs',
+            revision,
+            total: 140,
+            windowSize: 100,
+        }, revealed)).toMatchObject({
+            startIndex: 100,
+            endIndexExclusive: 140,
+        });
+        expect(revealExplicitWindowIndex(deriveExplicitWindowModel({
+            fingerprint: 'selector:empty',
+            revision,
+            total: 0,
+            windowSize: 100,
+        }, createExplicitWindowState('selector:empty', revision)), 217))
+            .toMatchObject({ startIndex: 0 });
+    });
+
+    it('resets the range when an exact source revision changes', () => {
+        const firstRevision = {};
+        const nextRevision = {};
+        const previous = revealExplicitWindowIndex(deriveExplicitWindowModel({
+            fingerprint: 'selector:runs',
+            revision: firstRevision,
+            total: 250,
+            windowSize: 100,
+        }, createExplicitWindowState('selector:runs', firstRevision)), 217);
+
+        expect(deriveExplicitWindowModel({
+            fingerprint: 'selector:runs',
+            revision: nextRevision,
+            total: 250,
+            windowSize: 100,
+        }, previous)).toMatchObject({
+            revision: nextRevision,
+            startIndex: 0,
+            endIndexExclusive: 100,
+        });
+    });
 });
 
 describe('useExplicitWindow', () => {
@@ -115,9 +182,21 @@ describe('useExplicitWindow', () => {
 
     function Harness({
         fingerprint,
+        revealIndex,
+        revision,
         total,
-    }: Readonly<{ fingerprint: string; total: number }>) {
-        const window = useExplicitWindow({ fingerprint, total, windowSize: 64 });
+    }: Readonly<{
+        fingerprint: string;
+        revealIndex?: number;
+        revision?: object;
+        total: number;
+    }>) {
+        const window = useExplicitWindow({
+            fingerprint,
+            revision,
+            total,
+            windowSize: 64,
+        });
         return createElement('div', {},
             createElement('output', {
                 'data-start': window.model.startIndex,
@@ -127,6 +206,10 @@ describe('useExplicitWindow', () => {
                 onClick: window.next,
                 type: 'button',
             }, 'Next'),
+            createElement('button', {
+                onClick: () => window.revealIndex(revealIndex ?? 0),
+                type: 'button',
+            }, 'Reveal'),
         );
     }
 
@@ -173,6 +256,36 @@ describe('useExplicitWindow', () => {
                 end: '64',
             });
         });
+
+    it('reveals by index and resets synchronously for an exact revision', async () => {
+        const firstRevision = {};
+        const nextRevision = {};
+        if (!root) root = createRoot(container);
+        await act(async () => root?.render(createElement(Harness, {
+            fingerprint: 'selector:a',
+            revealIndex: 149,
+            revision: firstRevision,
+            total: 250,
+        })));
+        const reveal = [...container.querySelectorAll<HTMLButtonElement>('button')]
+            .find(button => button.textContent === 'Reveal');
+        await act(async () => reveal?.click());
+        expect(container.querySelector('output')?.dataset).toMatchObject({
+            start: '128',
+            end: '192',
+        });
+
+        await act(async () => root?.render(createElement(Harness, {
+            fingerprint: 'selector:a',
+            revealIndex: 149,
+            revision: nextRevision,
+            total: 250,
+        })));
+        expect(container.querySelector('output')?.dataset).toMatchObject({
+            start: '0',
+            end: '64',
+        });
+    });
 });
 
 describe('ExplicitWindowControls', () => {
