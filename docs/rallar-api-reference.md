@@ -485,15 +485,50 @@ await chat.sendWs({ text: 'hello' }, { scope: 'room', roomRef: room.group });
 ```
 
 Room channels add room defaults and default `send(...)` to the existing
-`rtc-with-ws-fallback` strategy:
+`rtc-with-ws-fallback` strategy. This scopes sends; `onWs(...)` and
+`onRtc(...)` still subscribe by topic/type. Their callbacks receive the full
+`RallarMessage<T>`, and room sends that use a `roomRef` carry the target
+`GroupRef` in `message.raw.targets`. Validate that reference with
+`isSameGroupRef` before accepting an inbound payload:
 
 ```ts
-const roomSession = await rallar.rooms.enter('lobby');
-const roomChat = roomSession.message<ChatMessage>('chat');
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { RallarMessageSendStatus } from '@shared-web/browser/rallar.ts';
 
-roomChat.onWs((payload) => console.log(payload.text));
-await roomChat.send({ text: 'hello' });
+type RoomChatMessage = { text: string };
+
+const acceptedMessageStatuses: ReadonlySet<RallarMessageSendStatus> = new Set([
+    'enqueued',
+    'sent-immediate',
+    'duplicate',
+    'superseded',
+    'skipped',
+]);
+
+const roomSession = await rallar.rooms.enter('lobby');
+const roomChat = roomSession.message<RoomChatMessage>('chat');
+
+roomChat.onWs((payload, message) => {
+    const targets = message.raw.targets;
+    const targetRoomRef = targets?.mode === 'multicast'
+        ? targets.groupRef
+        : targets?.mode === 'broadcast' && targets.scope === 'room'
+        ? targets.groupRef
+        : undefined;
+    if (targetRoomRef && isSameGroupRef(targetRoomRef, roomSession.roomRef)) {
+        console.info(payload.text);
+    }
+});
+
+const sendResult = await roomChat.send({ text: 'hello' });
+if (!acceptedMessageStatuses.has(sendResult.status)) {
+    console.warn('Chat delivery degraded', sendResult.status, sendResult.reason);
+}
 ```
+
+The accepted message send statuses are `enqueued`, `sent-immediate`,
+`duplicate`, `superseded`, and `skipped`. Surface every other status to the
+product as degraded or failed delivery.
 
 ### RTC Status And Readiness
 
@@ -560,8 +595,11 @@ The `realtime` facade sends directly over RTC data channels. It is for
 low-latency peer traffic after room membership and RTC readiness exist. For
 room-scoped app/game traffic, prefer `realtime.room<T>(defaults)`: it checks
 room transport status, waits for readiness by default, sends only to ready room
-peers, and returns diagnostics. Use lower-level `sendJson`/`json` when the
-caller intentionally owns peer selection and readiness handling.
+peers, and returns diagnostics. Its `on(...)` callback still delegates to the
+global lane listener, and `RallarRealtimeMessage<T>` has no room identity. Put
+the full `roomRef` in the typed payload and validate it, or use a room-unique
+lane. Use lower-level `sendJson`/`json` when the caller intentionally owns peer
+selection and readiness handling.
 
 `realtime.sendJson(input)` sends JSON to selected peer IDs, a room, or the default/current room.
 
@@ -579,21 +617,37 @@ caller intentionally owns peer selection and readiness handling.
 `realtime.health(options?)` returns RTC data channel health records.
 
 ```ts
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+
+type MotionUpdate = Readonly<{ roomRef: GroupRef; x: number; y: number }>;
+
 const room = await rallar.rooms.enter('lobby');
-const lane = room.realtime<{ x: number; y: number }>({
+const lane = room.realtime<MotionUpdate>({
     laneId: 'motion',
     waitTimeoutMs: 1000,
 });
 
 lane.on((message) => {
-    updateRemotePlayer(message.peerId, message.data);
+    if (isSameGroupRef(message.data.roomRef, room.roomRef)) {
+        console.info('remote motion', message.peerId, message.data);
+    }
 });
 
-const result = await lane.send({ x: 10, y: 5 });
-if (result.status === 'not-ready') {
-    console.warn(result.reason, result.transportStatus);
+const sendResult = await lane.send({ roomRef: room.roomRef, x: 10, y: 5 });
+if (sendResult.status !== 'sent') {
+    console.warn(
+        'Realtime delivery degraded',
+        sendResult.status,
+        sendResult.reason,
+        sendResult.transportStatus,
+    );
 }
 ```
+
+Room realtime send statuses are `sent`, `partial`, `not-ready`, `no-targets`,
+and `failed`. Only `sent` is fully delivered; surface every other status as
+degraded.
 
 ### Rallar Motion
 

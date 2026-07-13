@@ -33,6 +33,13 @@ initial `rallar.setup(...)` versus post-login `rallar.start(...)` distinction.
 6. Add one end-to-end vertical slice and focused tests before expanding the
    capability set.
 
+Room handles scope sends, peer selection, and readiness. Current receive
+listeners are still topic/type listeners for messages and lane listeners for
+realtime data; they are not automatically room-filtered. Validate a message
+callback's target `GroupRef` from `message.raw.targets` with `isSameGroupRef`.
+Put the full `roomRef` in every shared realtime payload and validate it on
+receive, or allocate a room-unique realtime lane.
+
 ## Product Boundaries
 
 - Rallar Data is browser-local latest-value state.

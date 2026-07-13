@@ -40,6 +40,11 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   bounded number or exact set of active sessions/peers.
 - Prefer `rallar.realtime.room<T>(...)` for app/game room traffic before wiring `rtc.waitForRoomLane`, `readyPeerIds`, and `realtime.sendJson` manually.
 - Prefer `rallar.messages.room<T>(...)` when important room-scoped messages need typed RTC/WS fallback behavior.
+- Room handles scope sends, peer selection, and readiness; their receive
+  callbacks remain topic/type or lane listeners and are not automatically
+  room-filtered. Validate message targets from `message.raw.targets` with
+  `isSameGroupRef`. A realtime payload must carry the full `roomRef` and the
+  receiver must validate it, unless the lane is unique to that room.
 - For RTC tests, distinguish signaling readiness from actual data-channel readiness.
 - For inbound RTC peer creation, group state is eventually consistent. Prefer
   optimistic/tentative admission under caps and attempt budgets; keep hard

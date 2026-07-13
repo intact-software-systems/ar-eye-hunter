@@ -20,7 +20,7 @@ const setup = {
 let started = await rallar.setup(setup);
 if (!started.session) {
     await rallar.auth.login({ username: 'alice', password: 'secret' });
-    started = await rallar.setup(setup);
+    started = await rallar.start(setup.start);
 }
 
 const room = await rallar.rooms.enter('lobby');
@@ -258,15 +258,21 @@ if (readiness.readyPeerIds.length > 0) {
 
 ## Rallar Motion Smoothing
 
-Use a dedicated RTC lane for high-rate pose traffic, and configure it before
-`connect()` or `start()`.
+This is a standalone initial setup for Motion. Run it instead of the browser
+quickstart above, not after another recipe has connected. The shared start
+options configure the dedicated lane before the first possible connection and
+are reused by post-login `start(...)`.
 
 ```ts
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { createRallarMotionBuffer } from '@shared/rallar-motion/mod.ts';
+import { rallar, type RallarStartOptions } from '@shared-web/browser/rallar.ts';
 import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 
 type PoseUpdate = {
+    roomRef: GroupRef;
     position: readonly [number, number, number];
     velocity?: readonly [number, number, number];
     seq: number;
@@ -282,11 +288,24 @@ const motionLaneConfig = {
     },
 } satisfies RtcDataChannelLaneConfig;
 
-const started = await rallar.start({
+const motionStartOptions = {
     connect: true,
     refreshRooms: true,
     dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, motionLaneConfig],
-});
+} satisfies RallarStartOptions;
+
+const motionSetup = {
+    apiBaseUrl: 'http://localhost:8080',
+    applicationId: 'game',
+    workspaceId: 'default',
+    start: motionStartOptions,
+} as const;
+
+let started = await rallar.setup(motionSetup);
+if (!started.session) {
+    await rallar.auth.login({ username: 'alice', password: 'secret' });
+    started = await rallar.start(motionStartOptions);
+}
 if (!started.session) {
     throw new Error('Login required before entering a room');
 }
@@ -305,6 +324,7 @@ const motionUpdates = room.realtime<PoseUpdate>({
 });
 
 motionUpdates.on((message) => {
+    if (!isSameGroupRef(message.data.roomRef, room.roomRef)) return;
     motion.push({
         entityId: message.peerId,
         observedAtEpochMs: message.receivedAtEpochMs,
@@ -343,6 +363,7 @@ const motion = createRallarMotionBuffer({
 });
 
 rallar.realtime.onJson<PoseUpdate>('motion', (message) => {
+    if (!isSameGroupRef(message.data.roomRef, room.roomRef)) return;
     delay.pushObservedAt(message.receivedAtEpochMs);
     motion.push({
         entityId: message.peerId,
@@ -371,6 +392,7 @@ const poseGate = createRallarMotionSendGate({
 });
 
 const nextPose: PoseUpdate = {
+    roomRef: room.roomRef,
     position: [1, 0, 0],
     velocity: [0.5, 0, 0],
     seq: 1,
@@ -379,7 +401,14 @@ const nextPose: PoseUpdate = {
 const decision = poseGate.check(nextPose, Date.now());
 if (decision.shouldSend) {
     poseGate.recordSent(nextPose, Date.now());
-    await motionUpdates.send(nextPose);
+    const motionSendResult = await motionUpdates.send(nextPose);
+    if (motionSendResult.status !== 'sent') {
+        console.warn(
+            'Motion delivery degraded',
+            motionSendResult.status,
+            motionSendResult.reason,
+        );
+    }
 }
 ```
 

@@ -493,6 +493,11 @@ Create `references/app-scaffolding.md` with these sections:
 - `# Rallar App Scaffolding`
 - `## Decisions Before Files`: authority, durable/shared/local state, latency/reliability, 3D renderer.
 - `## Recommended Repository Shape`: use `apps/example-rallar-app`, optional `packages/example-rallar-app`, `src/rallar`, `src/runtime`, `src/ui`, `src/renderer`, and tests as concrete illustrative names.
+- `## Workspace, Vite, And TypeScript Wiring`: explain the existing `apps/*`
+  workspace, app-local renderer dependencies, matching `vite.config.ts` aliases
+  and TypeScript `paths`, strict `"moduleResolution": "Bundler"`, an unused
+  strict port, and the `/api` proxy with `ws: true`; do not add a root
+  TypeScript project reference.
 - `## Initial Boot`: a complete `rallar.setup({ apiBaseUrl, applicationId, workspaceId, start: { refreshPeople: true } })` example followed by login and configured `rallar.start(...)`.
 - `## Room-Bound Vertical Slice`: `rooms.createAndSwitch`, `rooms.enter`, `rooms.session`, `room.message`, and `room.realtime` with `roomRef` retained.
 - `## Runtime Adapter`: an injected `RallarAppRuntimeDeps` example with `start`, `enterRoom`, `subscriptions`, and idempotent `dispose`; cite `apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts`.

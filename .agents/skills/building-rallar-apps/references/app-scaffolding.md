@@ -38,12 +38,78 @@ Keep reusable domain rules and transport-neutral contracts in
 justifies that package. Keep React, browser globals, renderer types, and Rallar
 facades in the app.
 
+## Workspace, Vite, And TypeScript Wiring
+
+The root `package.json` already discovers `apps/*`, so creating
+`apps/example-rallar-app/package.json` makes the app a workspace. Do not add a
+root TypeScript project reference. The app package owns React and its
+app-local renderer dependencies (`three`, `@react-three/fiber`, or `@babylonjs/core`) as
+well as its Vite/TypeScript tooling; do not move renderer dependencies to the
+root merely to make resolution work. Use
+`apps/ar-eye-hunter-v1/{package.json,vite.config.ts,tsconfig.json}` and the
+matching files in `apps/relic-hunters-v1` as the current configuration evidence.
+
+Keep Vite aliases and TypeScript `paths` identical. Choose a port that is unique
+among current apps; this example uses `5180`. The `/api` proxy must support both
+HTTP and WebSocket traffic:
+
+```ts
+// apps/example-rallar-app/vite.config.ts
+import react from '@vitejs/plugin-react';
+import path from 'node:path';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+    plugins: [react()],
+    resolve: {
+        alias: {
+            '@shared-web': path.resolve(__dirname, '../../packages/shared-web'),
+            '@shared': path.resolve(__dirname, '../../packages/shared'),
+        },
+    },
+    server: {
+        port: 5180,
+        strictPort: true,
+        proxy: {
+            '/api': {
+                target: 'http://localhost:8080',
+                changeOrigin: true,
+                ws: true,
+            },
+        },
+    },
+    build: { target: 'es2023' },
+});
+```
+
+```json
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "lib": ["ES2023", "DOM"],
+    "paths": {
+      "@shared-web/*": ["../../packages/shared-web/*"],
+      "@shared/*": ["../../packages/shared/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"]
+}
+```
+
 ## Initial Boot
 
 Configure and start the facade once at the application boundary:
 
 ```ts
 import { rallar } from '@shared-web/browser/rallar.ts';
+
+const credentials = { username: 'alice', password: 'secret' } as const;
 
 const started = await rallar.setup({
     apiBaseUrl: 'http://localhost:8080',
@@ -75,38 +141,110 @@ facade, use `rallar.start(...)` to connect and refresh. Use
 
 Do not replace initial `rallar.setup(...)` with a `configure`/`start` sequence.
 Keep application and workspace defaults configured before connecting.
+Custom `dataChannelLanes` are start options, not `rtc` defaults. When an app
+needs them, define one shared start-options value before initial setup, pass it
+as `setup({ ..., start: startOptions })`, and reuse it for post-login
+`rallar.start(startOptions)`. No connection may predate that configuration.
 
 ## Room-Bound Vertical Slice
 
 Retain the scoped `roomRef` and derive traffic from the room session:
 
 ```ts
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import {
+    rallar,
+    type RallarMessage,
+    type RallarMessageSendResult,
+    type RallarMessageSendStatus,
+    type RallarRoomRealtimeSendResult,
+} from '@shared-web/browser/rallar.ts';
+
 type ReadyMessage = Readonly<{ ready: boolean }>;
 type PoseUpdate = Readonly<{
+    roomRef: GroupRef;
     seq: number;
     position: readonly [number, number, number];
 }>;
 
-const room = existingRoomRef
-    ? await rallar.rooms.enter(existingRoomRef)
-    : rallar.rooms.session((await rallar.rooms.createAndSwitch({
-        displayName: 'Example Arena',
-    })).group);
-const roomRef = room.roomRef;
+const acceptedMessageStatuses: ReadonlySet<RallarMessageSendStatus> = new Set([
+    'enqueued',
+    'sent-immediate',
+    'duplicate',
+    'superseded',
+    'skipped',
+]);
 
-const ready = room.message<ReadyMessage>('ready');
-const poses = room.realtime<PoseUpdate>({
-    laneId: 'poses',
-    maxAgeMs: 120,
-});
+function isMessageForRoom<T>(
+    roomRef: GroupRef,
+    message: RallarMessage<T>,
+): boolean {
+    const targets = message.raw.targets;
+    const targetRoomRef = targets?.mode === 'multicast'
+        ? targets.groupRef
+        : targets?.mode === 'broadcast' && targets.scope === 'room'
+        ? targets.groupRef
+        : undefined;
+    return targetRoomRef !== undefined && isSameGroupRef(targetRoomRef, roomRef);
+}
 
-const subscriptions = rallar.subscriptions();
-subscriptions.add(ready.onWs((payload) => acceptReady(roomRef, payload)));
-subscriptions.add(ready.onRtc((payload) => acceptReady(roomRef, payload)));
-subscriptions.add(poses.on((message) => acceptPose(roomRef, message)));
+function surfaceMessageDelivery(
+    label: string,
+    result: RallarMessageSendResult,
+): void {
+    if (!acceptedMessageStatuses.has(result.status)) {
+        console.warn(`${label} delivery degraded`, result.status, result.reason);
+    }
+}
 
-await ready.send({ ready: true });
-await poses.send({ seq: nextPoseSeq(), position: localPose() });
+function surfaceRealtimeDelivery(
+    label: string,
+    result: RallarRoomRealtimeSendResult,
+): void {
+    if (result.status !== 'sent') {
+        console.warn(`${label} delivery degraded`, result.status, result.reason);
+    }
+}
+
+async function openArena(existingRoomRef?: GroupRef): Promise<void> {
+    const room = existingRoomRef
+        ? await rallar.rooms.enter(existingRoomRef)
+        : rallar.rooms.session((await rallar.rooms.createAndSwitch({
+            displayName: 'Example Arena',
+        })).group);
+    const roomRef = room.roomRef;
+    const ready = room.message<ReadyMessage>('ready');
+    const poses = room.realtime<PoseUpdate>({
+        laneId: 'poses',
+        maxAgeMs: 120,
+    });
+
+    const subscriptions = rallar.subscriptions();
+    subscriptions.add(ready.onWs((payload, message) => {
+        if (isMessageForRoom(roomRef, message)) console.info('ready', payload.ready);
+    }));
+    subscriptions.add(ready.onRtc((payload, message) => {
+        if (isMessageForRoom(roomRef, message)) console.info('ready', payload.ready);
+    }));
+    subscriptions.add(poses.on((message) => {
+        if (isSameGroupRef(message.data.roomRef, roomRef)) {
+            console.info('pose', message.peerId, message.data.position);
+        }
+    }));
+
+    const readyResult = await ready.send({ ready: true });
+    surfaceMessageDelivery('ready', readyResult);
+
+    const poseResult = await poses.send({
+        roomRef,
+        seq: 1,
+        position: [0, 0, 0],
+    });
+    if (poseResult.status !== 'sent') surfaceRealtimeDelivery('pose', poseResult);
+}
+
+await openArena();
 ```
 
 Use `rooms.createAndSwitch(...)` for the new-room branch, then bind its current
@@ -115,6 +253,14 @@ existing-room branch; it joins and returns the bound session. Keep that session
 and its `roomRef` together across application/workspace scope; do not reduce
 identity to a bare room ID. Force `sendWs(...)` when an operation specifically
 requires reliable server-routed coordination.
+
+Room binding scopes sends, peer selection, and readiness. Message callbacks
+still subscribe by topic/type, so validate their target from
+`message.raw.targets`; realtime callbacks still subscribe by lane, so include
+and validate the full `roomRef` in the typed payload (or use a room-unique
+lane). Treat message statuses other than `enqueued`, `sent-immediate`,
+`duplicate`, `superseded`, or `skipped` as degraded. Treat every room realtime
+status other than `sent` as degraded, including `partial`.
 
 ## Runtime Adapter
 

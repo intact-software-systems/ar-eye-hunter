@@ -29,6 +29,10 @@ rg -n "createRoom|rooms.create|createAndSwitch|waitForPresence|joinRoom|roomId|R
   `rallar.rooms.createAndSwitch(...)`, then a room-bound handle from
   `rooms.session(...)`.
 - For room-scoped game/motion traffic, prefer `rallar.realtime.room<T>(...)` and `rallar.messages.room<T>(...)`; drop to raw RTC readiness/send APIs only for low-level transport tests or custom peer targeting.
+- Room handles scope sends, peer selection, and readiness, not receive-side
+  filtering. Game message callbacks must validate the `GroupRef` in
+  `message.raw.targets` with `isSameGroupRef`; each shared realtime payload
+  must carry and validate a full `roomRef`, or use a room-unique realtime lane.
 - Use Rallar Game diagnostics for `directorAuthority`, `egress`, ready peers,
   and appointment issues before adding app-local transport heuristics.
 - Rallar Game's default browser-director appointment policy allows elected active

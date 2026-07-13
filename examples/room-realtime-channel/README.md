@@ -2,12 +2,17 @@
 
 Use `room.realtime<T>(...)` for room-scoped, low-latency RTC data after
 entering a room. The helper checks room transport status, waits for readiness by
-default, sends only to ready room peers, and returns diagnostics.
+default, sends only to ready room peers, and returns diagnostics. Its receive
+callback remains a lane listener, so a shared lane payload must carry and
+validate the full room identity.
 
 ```ts
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 
 type PlayerInput = {
+    roomRef: GroupRef;
     seq: number;
     moveX: number;
     moveY: number;
@@ -15,6 +20,7 @@ type PlayerInput = {
 };
 
 const room = await rallar.rooms.enter('lobby');
+const localPlayerId = 'player-1';
 const inputLane = room.realtime<PlayerInput>({
     laneId: 'game-input',
     waitTimeoutMs: 500,
@@ -23,22 +29,25 @@ const inputLane = room.realtime<PlayerInput>({
 });
 
 inputLane.on((message) => {
-    if (isDirector()) {
-        applyInput(message.peerId, message.data);
+    if (isSameGroupRef(message.data.roomRef, room.roomRef)) {
+        console.info('player input', message.peerId, message.data);
     }
 });
 
-const result = await inputLane.send({
-    seq: nextInputSeq(),
-    moveX: input.x,
-    moveY: input.y,
-    sprint: input.sprint,
+const sendResult = await inputLane.send({
+    roomRef: room.roomRef,
+    seq: 1,
+    moveX: 0,
+    moveY: 1,
+    sprint: false,
 });
 
-if (result.status === 'sent' || result.status === 'partial') {
-    recordRealtimeDelivery(result.peerIds);
-} else {
-    showDegradedNetworkState(result.reason ?? result.status);
+if (sendResult.status !== 'sent') {
+    console.warn(
+        'Realtime input delivery degraded',
+        sendResult.status,
+        sendResult.reason,
+    );
 }
 ```
 

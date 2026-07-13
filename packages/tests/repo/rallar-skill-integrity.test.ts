@@ -62,6 +62,9 @@ describe('Rallar repo skill and documentation integrity', () => {
         const exampleMap = readRepo(
             '.agents/skills/building-rallar-apps/references/example-map.md',
         );
+        const messageExample = readRepo('examples/room-message-channel/README.md');
+        const realtimeExample = readRepo('examples/room-realtime-channel/README.md');
+        const examplesIndex = readRepo('examples/README.md');
 
         expectAll(skill, [
             '`references/app-scaffolding.md`',
@@ -92,6 +95,63 @@ describe('Rallar repo skill and documentation integrity', () => {
             'apps/relic-hunters-v1',
             'projects/cash-chase-arena',
         ]);
+        expect.soft({
+            scaffoldingMessageTargets: scaffolding.includes('message.raw.targets'),
+            scaffoldingMessageGroupRefCheck: scaffolding.includes('isSameGroupRef'),
+            scaffoldingRealtimePayloadRoomRef: scaffolding.includes('roomRef: GroupRef'),
+            scaffoldingRealtimeGroupRefCheck: scaffolding.includes(
+                'message.data.roomRef',
+            ),
+            messageExampleTargets: messageExample.includes('message.raw.targets'),
+            messageExampleGroupRefCheck: messageExample.includes('isSameGroupRef'),
+            realtimeExamplePayloadRoomRef: realtimeExample.includes(
+                'message.data.roomRef',
+            ),
+            realtimeExampleGroupRefCheck: realtimeExample.includes('isSameGroupRef'),
+            examplesIndexReceiveBoundary: examplesIndex.includes(
+                'not automatically room-filtered',
+            ),
+        }).toEqual({
+            scaffoldingMessageTargets: true,
+            scaffoldingMessageGroupRefCheck: true,
+            scaffoldingRealtimePayloadRoomRef: true,
+            scaffoldingRealtimeGroupRefCheck: true,
+            messageExampleTargets: true,
+            messageExampleGroupRefCheck: true,
+            realtimeExamplePayloadRoomRef: true,
+            realtimeExampleGroupRefCheck: true,
+            examplesIndexReceiveBoundary: true,
+        });
+        expect.soft({
+            readyResult: scaffolding.includes('const readyResult = await ready.send'),
+            poseResult: scaffolding.includes('const poseResult = await poses.send'),
+            acceptedMessageStatuses: scaffolding.includes("'sent-immediate'"),
+            degradedRealtimeResult: scaffolding.includes("poseResult.status !== 'sent'"),
+            messageExampleResult: messageExample.includes('sendResult.status'),
+            realtimeExampleResult: realtimeExample.includes("sendResult.status !== 'sent'"),
+        }).toEqual({
+            readyResult: true,
+            poseResult: true,
+            acceptedMessageStatuses: true,
+            degradedRealtimeResult: true,
+            messageExampleResult: true,
+            realtimeExampleResult: true,
+        });
+        expect.soft({
+            viteConfig: scaffolding.includes('vite.config.ts'),
+            sharedWebAlias: scaffolding.includes("'@shared-web'"),
+            bundlerResolution: scaffolding.includes('"moduleResolution": "Bundler"'),
+            strictPort: scaffolding.includes('strictPort: true'),
+            websocketProxy: scaffolding.includes('ws: true'),
+            appLocalRenderer: scaffolding.includes('app-local renderer dependencies'),
+        }).toEqual({
+            viteConfig: true,
+            sharedWebAlias: true,
+            bundlerResolution: true,
+            strictPort: true,
+            websocketProxy: true,
+            appLocalRenderer: true,
+        });
     });
 
     it('routes composition and validation from the specialist skills', () => {
@@ -107,6 +167,8 @@ describe('Rallar repo skill and documentation integrity', () => {
         expect(games).toContain('building-rallar-apps');
         expect(games).toContain('Use the `rallar-testing` skill');
         expect(realtime).toContain('building-rallar-apps');
+        expectAll(games, ['message.raw.targets', 'realtime payload', 'roomRef']);
+        expectAll(realtime, ['message.raw.targets', 'realtime payload', 'roomRef']);
         expect(testing).toContain('rallar-skill-integrity.test.ts');
         expect(testCommands).toContain(
             'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts',
@@ -138,6 +200,28 @@ describe('Rallar repo skill and documentation integrity', () => {
         expectAll(aiSkill, ['initial app boot', '`rallar.setup(...)`', '`rallar.start(...)`']);
         expectAll(prompting, ['rallar.setup({', 'After login, call rallar.start']);
         expect(troubleshooting).toContain('`rallar.setup(...)`');
+        expect.soft({
+            oneQuickstartSetup: quickstart.match(/rallar\.setup\(setup\)/g)?.length === 1,
+            postLoginStart: quickstart.includes('started = await rallar.start(setup.start)'),
+        }).toEqual({
+            oneQuickstartSetup: true,
+            postLoginStart: true,
+        });
+        expect.soft({
+            standaloneMotionSetup: quickstart.includes('standalone initial setup'),
+            sharedMotionStartOptions: quickstart.includes('const motionStartOptions'),
+            setupUsesMotionStartOptions: quickstart.includes('start: motionStartOptions'),
+            loginUsesMotionStartOptions: quickstart.includes(
+                'rallar.start(motionStartOptions)',
+            ),
+            lanesConfiguredBeforeConnection: quickstart.includes('dataChannelLanes'),
+        }).toEqual({
+            standaloneMotionSetup: true,
+            sharedMotionStartOptions: true,
+            setupUsesMotionStartOptions: true,
+            loginUsesMotionStartOptions: true,
+            lanesConfiguredBeforeConnection: true,
+        });
         expect(quickstart).not.toContain('motionLane.send(');
         expectAll(quickstart, [
             "const motionUpdates = room.realtime<PoseUpdate>",

@@ -49,6 +49,14 @@ For browser apps, prefer the golden path: `rallar.setup(...)`, then
 `apps/ar-eye-hunter-v1` and the runtime adapter shape in
 `apps/relic-hunters-v1`.
 
+Room handles scope sends, peer selection, and readiness. Their receive
+listeners are topic/type or lane listeners and are not automatically room-filtered.
+Validate message targets from `message.raw.targets` with
+`isSameGroupRef`; put the full `roomRef` in shared realtime payloads and
+validate it on receipt (or use a room-unique lane). Always inspect send results:
+only the documented accepted message statuses and fully `sent` room realtime
+status avoid a degraded-delivery state.
+
 When creating a new room should replace the browser's current arena, use
 `rallar.rooms.createAndSwitch(...)` and then `rallar.rooms.session(...)` for the
 room-bound handle. Use `rooms.create(...)` only when staying in the previous
