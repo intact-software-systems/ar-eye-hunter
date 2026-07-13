@@ -87,13 +87,11 @@ type PoseUpdate = Readonly<{
     position: readonly [number, number, number];
 }>;
 
-const created = await rallar.rooms.createAndSwitch({
-    displayName: 'Example Arena',
-});
-const createdRoom = rallar.rooms.session(created.group);
-
-const enteredRoom = await rallar.rooms.enter(createdRoom.roomRef);
-const room = rallar.rooms.session(enteredRoom.roomRef);
+const room = existingRoomRef
+    ? await rallar.rooms.enter(existingRoomRef)
+    : rallar.rooms.session((await rallar.rooms.createAndSwitch({
+        displayName: 'Example Arena',
+    })).group);
 const roomRef = room.roomRef;
 
 const ready = room.message<ReadyMessage>('ready');
@@ -111,12 +109,12 @@ await ready.send({ ready: true });
 await poses.send({ seq: nextPoseSeq(), position: localPose() });
 ```
 
-`rooms.createAndSwitch(...)` creates, joins, and makes the room current.
-`rooms.enter(...)` joins and returns a bound session. `rooms.session(...)` binds
-an already current/known room without joining it. Keep the session and its
-`roomRef` together across application/workspace scope; do not reduce identity
-to a bare room ID. Force `sendWs(...)` when an operation specifically requires
-reliable server-routed coordination.
+Use `rooms.createAndSwitch(...)` for the new-room branch, then bind its current
+room once with `rooms.session(...)`. Use `rooms.enter(...)` as the alternative
+existing-room branch; it joins and returns the bound session. Keep that session
+and its `roomRef` together across application/workspace scope; do not reduce
+identity to a bare room ID. Force `sendWs(...)` when an operation specifically
+requires reliable server-routed coordination.
 
 ## Runtime Adapter
 
@@ -133,46 +131,89 @@ import type {
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 export type RallarAppRuntimeDeps = Readonly<{
-    start(): Promise<RallarStartResult>;
-    enterRoom(room: string | GroupRef): Promise<RallarRoomSession>;
+    start(signal: AbortSignal): Promise<RallarStartResult>;
+    enterRoom(
+        room: string | GroupRef,
+        signal: AbortSignal,
+    ): Promise<RallarRoomSession>;
     subscriptions(): RallarSubscriptionScope;
 }>;
 
 export class RallarAppRuntime {
     private subscriptions?: RallarSubscriptionScope;
+    private controller?: AbortController;
+    private generation = 0;
     private disposed = false;
 
     constructor(private readonly deps: RallarAppRuntimeDeps) {}
 
     async start(room: string | GroupRef): Promise<RallarRoomSession> {
         if (this.disposed) throw new Error('Runtime is disposed.');
-        const started = await this.deps.start();
-        if (!started.session || !started.connected) {
-            throw new Error('Rallar session is not connected.');
-        }
 
-        const roomSession = await this.deps.enterRoom(room);
-        this.subscriptions = this.deps.subscriptions();
-        const status = roomSession.message<{ ready: boolean }>('ready');
-        this.subscriptions.add(status.onWs((payload) => {
-            if (!this.disposed) publishRuntimeState(payload);
-        }));
-        return roomSession;
+        const generation = ++this.generation;
+        this.controller?.abort();
+        this.subscriptions?.unsubscribe();
+        this.subscriptions = undefined;
+        const controller = new AbortController();
+        this.controller = controller;
+
+        try {
+            const started = await this.deps.start(controller.signal);
+            this.assertActive(generation, controller.signal);
+            if (!started.session || !started.connected) {
+                throw new Error('Rallar session is not connected.');
+            }
+
+            const roomSession = await this.deps.enterRoom(
+                room,
+                controller.signal,
+            );
+            this.assertActive(generation, controller.signal);
+
+            const subscriptions = this.deps.subscriptions();
+            const status = roomSession.message<{ ready: boolean }>('ready');
+            this.assertActive(generation, controller.signal);
+            subscriptions.add(status.onWs((payload) => {
+                if (this.isActive(generation, controller.signal)) {
+                    publishRuntimeState(payload);
+                }
+            }));
+            this.subscriptions = subscriptions;
+            return roomSession;
+        } catch (error) {
+            if (!this.isActive(generation, controller.signal)) {
+                throw new DOMException('Runtime lifecycle ended.', 'AbortError');
+            }
+            throw error;
+        }
     }
 
     dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
+        this.generation += 1;
+        this.controller?.abort();
+        this.controller = undefined;
         this.subscriptions?.unsubscribe();
         this.subscriptions = undefined;
+    }
+
+    private isActive(generation: number, signal: AbortSignal): boolean {
+        return !this.disposed && !signal.aborted && generation === this.generation;
+    }
+
+    private assertActive(generation: number, signal: AbortSignal): void {
+        if (!this.isActive(generation, signal)) {
+            throw new DOMException('Runtime lifecycle ended.', 'AbortError');
+        }
     }
 }
 ```
 
 Use `apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts` and its focused
 tests as the current evidence for an injected runtime boundary with scoped
-subscriptions. Extend the example above with cancellation/generation checks
-before using it for overlapping async lifecycles.
+subscriptions. The concrete dependency adapter passes the supplied signal to
+`rallar.start({ signal, ... })` and `rallar.rooms.enter(room, { signal })`.
 
 ## React Adapter
 
@@ -185,7 +226,11 @@ runtime.
 useEffect(() => {
     const runtime = createRallarAppRuntime();
     const unsubscribe = runtime.onState(setRuntimeViewState);
-    void runtime.start(initialRoomRef).catch(showRuntimeError);
+    void runtime.start(initialRoomRef).catch((error) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+            showRuntimeError(error);
+        }
+    });
 
     return () => {
         unsubscribe();
