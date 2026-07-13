@@ -4,12 +4,18 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HistoryWorkspace } from
     '../../../apps/rallar-black-box/src/recipe-console/history/HistoryWorkspace.tsx';
+import { rememberControlResponseDocument } from
+    '../../../apps/rallar-black-box/src/control-response-document.ts';
+import { createControlSnapshotRevisionSession } from
+    '../../../apps/rallar-black-box/src/recipe-console/control/control-snapshot-revision.ts';
 import type { RecipeConsoleControlQueryProvenance } from
     '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
 import type { ControlQuerySnapshot } from
     '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import type { ControlServerSnapshot } from
     '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { createRecipeConsoleControlScaleFixture } from
+    '../../../packages/shared-test/rallar-bb-test/recipe-console-control-scale-fixture.ts';
 import type { RecipeConsoleUrlState } from
     '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 
@@ -214,4 +220,193 @@ describe('HistoryWorkspace', () => {
             'input[type="datetime-local"]',
         ) as HTMLInputElement | null)?.value).toBe('');
     });
+
+    it('traverses all 5,000 runs through controls outside the bounded table scroll',
+        async () => {
+            const fixture = createRecipeConsoleControlScaleFixture();
+            await act(async () => root?.render(createElement(HistoryWorkspace, {
+                ...retentionProps(),
+                navigate: vi.fn(),
+                onCopyLink: vi.fn(),
+                query: query({
+                    status: 'live',
+                    snapshot: fixture.snapshot,
+                    source: 'root-snapshot',
+                    completeness: 'complete',
+                }),
+                urlState: { v: 1, experience: 'recipe-console', view: 'tune' },
+            })));
+
+            const controls = container.querySelector<HTMLElement>(
+                '[data-history-window-controls]',
+            );
+            const scroll = container.querySelector<HTMLElement>(
+                '[role="region"][aria-label="Recipe run history"]',
+            );
+            expect(controls).toBeTruthy();
+            expect(scroll?.contains(controls)).toBe(false);
+            expect(container.querySelectorAll('[data-history-row-key]')).toHaveLength(80);
+            expect(container.querySelector('[data-history-window-outside]')?.textContent)
+                .toBe('4,920 runs outside this render window and browseable.');
+            const telemetry = container.querySelector<HTMLElement>(
+                '[data-history-projected-rows]',
+            );
+            expect(telemetry?.dataset).toMatchObject({
+                historyControlRunVisits: '5000',
+                historyDistributedRunVisits: '5000',
+                historyProjectedRows: '80',
+                historyLabelProjections: '80',
+                historyCatalogRunProjections: '80',
+                historyActionProjections: '80',
+                historyControlAgentVisits: '80',
+            });
+
+            const visited: string[] = [];
+            while (true) {
+                visited.push(...[...container.querySelectorAll<HTMLElement>(
+                    '[data-history-row-key]',
+                )].map(row => row.dataset.historyRowKey ?? ''));
+                const next = [...container.querySelectorAll<HTMLButtonElement>('button')]
+                    .find(button => button.textContent === 'Next');
+                if (!next || next.disabled) break;
+                await act(async () => next.click());
+            }
+
+            expect(visited).toEqual(
+                Array.from({ length: 5_000 }, (_, index) => `history-row:${index}`),
+            );
+            expect(new Set(visited).size).toBe(5_000);
+            expect(container.querySelector(
+                '[data-history-window-controls] [role="status"]',
+            )?.textContent)
+                .toBe('Showing 4,961–5,000 of 5,000 runs.');
+            expect(container.querySelector('[data-history-window-outside]')?.textContent)
+                .toBe('4,960 runs outside this render window and browseable.');
+        });
+
+    it('preserves an equal poll page, resets filters and source, and recovers focus',
+        async () => {
+            const fixture = createRecipeConsoleControlScaleFixture({ pairCount: 161 });
+            const baseState: RecipeConsoleUrlState = {
+                v: 1, experience: 'recipe-console', view: 'tune',
+            };
+            const renderHistory = async (
+                snapshot: ControlServerSnapshot,
+                state: RecipeConsoleUrlState,
+                source: RecipeConsoleControlQueryProvenance['distributedRunsSource'] =
+                    'root-snapshot',
+            ) => act(async () => root?.render(createElement(HistoryWorkspace, {
+                ...retentionProps(),
+                navigate: vi.fn(),
+                onCopyLink: vi.fn(),
+                query: query({
+                    status: 'live', snapshot, source, completeness: 'complete',
+                }),
+                urlState: state,
+            })));
+            const range = () => container.querySelector(
+                '[data-history-window-controls] [role="status"]',
+            )?.textContent;
+            const next = () => [...container.querySelectorAll<HTMLButtonElement>(
+                '[data-history-window-controls] button',
+            )].find(button => button.textContent === 'Next');
+
+            await renderHistory(fixture.snapshot, baseState);
+            await act(async () => next()?.click());
+            expect(range()).toBe('Showing 81–160 of 161 runs.');
+            const retainedFocus = container.querySelector<HTMLButtonElement>(
+                '[data-history-row-key="history-row:80"] button',
+            );
+            retainedFocus?.focus();
+
+            await renderHistory(structuredClone(fixture.snapshot), {
+                ...baseState,
+                compareLeft: fixture.needles.distributedRunIds.first,
+            });
+            expect(range()).toBe('Showing 81–160 of 161 runs.');
+            expect(document.activeElement).toBe(retainedFocus);
+
+            const filteredState = { ...baseState, historyQuery: 'scale' };
+            await renderHistory(fixture.snapshot, filteredState);
+            expect(range()).toBe('Showing 1–80 of 161 runs.');
+            expect(document.activeElement).toBe(container.querySelector(
+                '[data-history-window-focus-anchor]',
+            ));
+
+            await act(async () => next()?.click());
+            expect(range()).toBe('Showing 81–160 of 161 runs.');
+            await renderHistory(
+                fixture.snapshot,
+                filteredState,
+                'canonical-fallback',
+            );
+            expect(range()).toBe('Showing 1–80 of 161 runs.');
+
+            await act(async () => next()?.click());
+            const removedFocus = container.querySelector<HTMLButtonElement>(
+                '[data-history-row-key="history-row:80"] button',
+            );
+            removedFocus?.focus();
+            const belowBudget = createRecipeConsoleControlScaleFixture({
+                pairCount: 50,
+            });
+            await renderHistory(
+                belowBudget.snapshot,
+                filteredState,
+                'canonical-fallback',
+            );
+            expect(container.querySelector('[data-history-window-controls]')).toBeNull();
+            expect(container.querySelectorAll('[data-history-row-key]')).toHaveLength(50);
+            expect(document.activeElement).toBe(container.querySelector(
+                '[data-history-window-focus-anchor]',
+            ));
+        });
+
+    it('preserves an exact response revision and resets a changed document revision',
+        async () => {
+            const fixture = createRecipeConsoleControlScaleFixture({ pairCount: 161 });
+            const same = structuredClone(fixture.snapshot);
+            const changed = structuredClone(fixture.snapshot);
+            const session = createControlSnapshotRevisionSession();
+            for (const [snapshot, exactText] of [
+                [fixture.snapshot, '{"revision":"same"}'],
+                [same, '{"revision":"same"}'],
+                [changed, '{"revision":"changed"}'],
+            ] as const) {
+                const document = {};
+                rememberControlResponseDocument(document, exactText);
+                session.associate(snapshot, {
+                    source: 'root-snapshot',
+                    rootDocument: document,
+                });
+            }
+            const state: RecipeConsoleUrlState = {
+                v: 1, experience: 'recipe-console', view: 'tune',
+            };
+            const renderSnapshot = async (snapshot: ControlServerSnapshot) =>
+                act(async () => root?.render(createElement(HistoryWorkspace, {
+                    ...retentionProps(),
+                    navigate: vi.fn(),
+                    onCopyLink: vi.fn(),
+                    query: query({
+                        status: 'live', snapshot, source: 'root-snapshot',
+                        completeness: 'complete',
+                    }),
+                    urlState: state,
+                })));
+            const range = () => container.querySelector(
+                '[data-history-window-controls] [role="status"]',
+            )?.textContent;
+
+            await renderSnapshot(fixture.snapshot);
+            const next = [...container.querySelectorAll<HTMLButtonElement>(
+                '[data-history-window-controls] button',
+            )].find(button => button.textContent === 'Next');
+            await act(async () => next?.click());
+            expect(range()).toBe('Showing 81–160 of 161 runs.');
+            await renderSnapshot(same);
+            expect(range()).toBe('Showing 81–160 of 161 runs.');
+            await renderSnapshot(changed);
+            expect(range()).toBe('Showing 1–80 of 161 runs.');
+        });
 });

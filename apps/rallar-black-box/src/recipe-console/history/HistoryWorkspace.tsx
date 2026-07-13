@@ -19,9 +19,11 @@ import {
     type HistoryFilterPreset,
 } from './history-filter-contract.ts';
 import {
-    deriveRecipeConsoleHistoryModel,
+    createRecipeConsoleHistoryCollection,
+    deriveRecipeConsoleHistoryWindow,
 } from './history-model.ts';
 import { useHistoryFilterPresets } from './use-history-filter-presets.ts';
+import { useHistoryWindow } from './use-history-window.ts';
 import styles from './HistoryWorkspace.module.css';
 
 export type HistoryWorkspaceProps = Readonly<{
@@ -46,10 +48,15 @@ export function HistoryWorkspace({
     replace,
     refreshAfterCurrent,
 }: HistoryWorkspaceProps) {
-    const model = useMemo(() => deriveRecipeConsoleHistoryModel({
+    const collection = useMemo(() => createRecipeConsoleHistoryCollection({
         query,
         urlState,
     }), [query, urlState]);
+    const historyWindow = useHistoryWindow(collection);
+    const model = useMemo(() => deriveRecipeConsoleHistoryWindow(
+        collection,
+        historyWindow.model.startIndex,
+    ), [collection, historyWindow.model.startIndex]);
     const presets = useHistoryFilterPresets({ committedUrlState: urlState });
     const [resetRevision, setResetRevision] = useState(0);
     const historyAvailable = model.provenance.distributedRunsSource !== 'unavailable' &&
@@ -102,9 +109,11 @@ export function HistoryWorkspace({
                         </StatePanel>
                     ) : null}
                     <HistoryTable
+                        collectionWork={collection.work}
                         model={model}
                         onBaseline={navigate}
                         onCandidate={navigate}
+                        window={historyWindow}
                     />
                 </>
             )}

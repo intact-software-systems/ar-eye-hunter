@@ -1,29 +1,51 @@
 import React from 'react';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import type {
+    RecipeConsoleHistoryCollection,
     RecipeConsoleHistoryModel,
     RecipeConsoleHistoryRow,
 } from './history-model.ts';
+import { ExplicitWindowControls } from '../ui/ExplicitWindowControls.tsx';
 import {
     historyUtcDisplay,
     historyUtcIso,
 } from './history-utc.ts';
 import { ExactIdentifier } from './ExactIdentifier.tsx';
+import { HistoryWindowTruth } from './HistoryWindowTruth.tsx';
+import type { HistoryWindowController } from './use-history-window.ts';
 import styles from './HistoryTable.module.css';
 
 export type HistoryTableProps = Readonly<{
+    collectionWork?: RecipeConsoleHistoryCollection['work'];
     model: RecipeConsoleHistoryModel;
     onBaseline(patch: Partial<RecipeConsoleUrlState>): void;
     onCandidate(patch: Partial<RecipeConsoleUrlState>): void;
+    window?: HistoryWindowController;
 }>;
 
 export function HistoryTable({
+    collectionWork,
     model,
     onBaseline,
     onCandidate,
+    window,
 }: HistoryTableProps) {
     return (
-        <section className={styles.ledger} aria-labelledby="history-ledger-title">
+        <section
+            aria-labelledby="history-ledger-title"
+            className={styles.ledger}
+            data-history-action-projections={model.work?.actionProjections ?? 0}
+            data-history-catalog-run-projections={
+                model.work?.catalogRunProjections ?? 0
+            }
+            data-history-control-agent-visits={model.work?.controlAgentVisits ?? 0}
+            data-history-control-run-visits={collectionWork?.controlRunVisits ?? 0}
+            data-history-distributed-run-visits={
+                collectionWork?.distributedRunVisits ?? 0
+            }
+            data-history-label-projections={model.work?.labelProjections ?? 0}
+            data-history-projected-rows={model.work?.projectedRows ?? 0}
+        >
             <header className={styles.heading}>
                 <div>
                     <p className={styles.eyebrow}>Signal ledger</p>
@@ -35,13 +57,32 @@ export function HistoryTable({
                 </p>
             </header>
 
+            {window && window.model.total > window.model.windowSize ? (
+                <div
+                    className={styles.windowControls}
+                    data-history-window-controls
+                    {...window.controlsFocusProps}
+                >
+                    <ExplicitWindowControls
+                        contentId="history-ledger-table"
+                        itemLabel="runs"
+                        label="History runs"
+                        model={window.model}
+                        onNext={window.next}
+                        onPrevious={window.previous}
+                    />
+                </div>
+            ) : null}
+            {window ? <HistoryWindowTruth window={window} /> : null}
+
             <div
                 aria-label="Recipe run history"
                 className={styles.scrollRegion}
                 role="region"
                 tabIndex={0}
+                {...window?.contentFocusProps}
             >
-                <table className={styles.table}>
+                <table className={styles.table} id="history-ledger-table">
                     <caption className={styles.visuallyHidden}>
                         Recipe run history evidence and comparison actions
                     </caption>

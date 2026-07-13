@@ -15,6 +15,12 @@ const retentionDialog = `${historyRoot}/RetentionConfirmDialog.tsx`;
 const tuneWorkspace = `${recipeRoot}/tune/TuneWorkspace.tsx`;
 const workspace = `${recipeRoot}/app/RecipeConsoleWorkspace.tsx`;
 const activeWork = `${recipeRoot}/app/RecipeConsoleActiveWork.tsx`;
+const historyModel = `${historyRoot}/history-model.ts`;
+const historyCollection = `${historyRoot}/history-window-collection.ts`;
+const historyWindowModel = `${historyRoot}/history-window-model.ts`;
+const historyWindowHook = `${historyRoot}/use-history-window.ts`;
+const historyWindowTruth = `${historyRoot}/HistoryWindowTruth.tsx`;
+const historyTable = `${historyRoot}/HistoryTable.tsx`;
 
 function source(path: string): string {
     return readFileSync(resolve(root, path), 'utf8');
@@ -65,6 +71,48 @@ describe('Recipe Console History composition boundary', () => {
         expect(history.match(/<HistoryHeader\b/g)).toHaveLength(1);
         expect(history).not.toMatch(
             /function (?:provenanceLabel|provenanceTone|historyNotice|filterSummary)\b/,
+        );
+    });
+
+    test('owns one focused 80-row History window without a replacement monolith', () => {
+        for (const [path, budget] of [
+            [historyModel, 80],
+            [historyCollection, 220],
+            [historyWindowModel, 220],
+            [historyWindowHook, 60],
+            [historyWindowTruth, 70],
+            [historyWorkspace, 180],
+            [historyTable, 270],
+            [`${historyRoot}/HistoryTable.module.css`, 290],
+        ] as const) {
+            expect(existsSync(resolve(root, path)), path).toBe(true);
+            expect(lines(path), path).toBeLessThanOrEqual(budget);
+        }
+
+        const facade = source(historyModel);
+        const collection = source(historyCollection);
+        const projection = source(historyWindowModel);
+        const history = source(historyWorkspace);
+        const table = source(historyTable);
+        expect(facade).toContain('deriveRecipeConsoleHistoryModel');
+        expect(facade).toContain('RECIPE_CONSOLE_HISTORY_ROW_LIMIT');
+        expect(projection).toContain('RECIPE_CONSOLE_HISTORY_WINDOW_SIZE = 80');
+        expect(collection).not.toMatch(
+            /buildTuneRunCatalog|projectDistributedRunHistoryLabels|\.agents\b|historyRowSelectionActions/,
+        );
+        expect(projection).toMatch(
+            /buildTuneRunCatalog[\s\S]*projectDistributedRunHistoryLabels[\s\S]*historyRowSelectionActions/,
+        );
+        expect(history).toMatch(
+            /createRecipeConsoleHistoryCollection[\s\S]*useHistoryWindow[\s\S]*deriveRecipeConsoleHistoryWindow/,
+        );
+        expect(table.match(/<ExplicitWindowControls\b/g)).toHaveLength(1);
+        expect(table.indexOf('data-history-window-controls')).toBeLessThan(
+            table.indexOf('className={styles.scrollRegion}'),
+        );
+        expect(table).not.toMatch(/<select\b|\.slice\(\s*0\s*,\s*(?:80|100)\s*\)/);
+        expect(`${collection}\n${projection}\n${history}\n${table}`).not.toMatch(
+            /registry|Registry|\/legacy\//,
         );
     });
 

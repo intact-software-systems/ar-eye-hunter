@@ -246,7 +246,7 @@ describe('Recipe Console History model', () => {
         });
         expect(model.rows).toHaveLength(1);
         expect(model.rows[0]).toMatchObject({
-            key: 'history-row:0',
+            key: 'history-row:1',
             distributedRunId: 'candidate',
             controlRunId: 'control-candidate',
             state: 'failed',
@@ -281,7 +281,7 @@ describe('Recipe Console History model', () => {
         });
     });
 
-    it('uses shared filtering order, preserves stable ties, and renders at most 100 rows', () => {
+    it('uses shared filtering order, preserves stable ties, and renders the first 80 rows', () => {
         const runs = Array.from({ length: 105 }, (_, index) => distributedRun({
             id: `distributed-${index}`,
             control: `control-${index}`,
@@ -296,15 +296,15 @@ describe('Recipe Console History model', () => {
             }),
         });
 
-        expect(RECIPE_CONSOLE_HISTORY_ROW_LIMIT).toBe(100);
+        expect(RECIPE_CONSOLE_HISTORY_ROW_LIMIT).toBe(80);
         expect(model.counts).toEqual({
-            available: 105, total: 105, rendered: 100, omitted: 5,
+            available: 105, total: 105, rendered: 80, omitted: 25,
         });
         expect(model.rows.slice(0, 3).map(row => row.distributedRunId)).toEqual([
             'distributed-0', 'distributed-1', 'distributed-2',
         ]);
-        expect(model.rows.at(-1)?.distributedRunId).toBe('distributed-99');
-        expect(new Set(model.rows.map(row => row.key)).size).toBe(100);
+        expect(model.rows.at(-1)?.distributedRunId).toBe('distributed-79');
+        expect(new Set(model.rows.map(row => row.key)).size).toBe(80);
         expect(model.rows.every((row, index) => row.key === `history-row:${index}`)).toBe(true);
     });
 
