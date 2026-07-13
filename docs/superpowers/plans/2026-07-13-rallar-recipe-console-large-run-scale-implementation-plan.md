@@ -4,8 +4,10 @@ Status: in progress; Iteration 8 is qualified through `fd9055e`, `f762749`,
 and `37c7a32`; the reviewed Task 0 artifact baseline is committed at
 `166b40b`; two instrumentation-dependent Task 0 proofs remain open; Task 1 is
 green through `56d4a43`; Task 2 is green through `4e89a17`; Task 3 is green
-through `77b0922`; Tasks 4–5 are green through `6d90061`; and Tasks 6–9
-remain open
+through `77b0922`; Tasks 4–5 are green through `6d90061`; Task 6 has reviewed
+Monitor indexing, exact snapshot revisions, ordinal topology, and inactive-
+Analyze foundations through `0b260ec`, `a258a9e`, `bbb2548`, and `ef78e75`;
+Task 6 consumer/window composition and Tasks 7–9 remain open
 
 **Goal:** Complete parent Iteration 9 so large distributed artifacts and run
 collections stay searchable and operable without blocking the browser or
@@ -408,12 +410,12 @@ link, rollback URL, default, or cutover changed.
 
 ## Task 6: Replace Monitor Prefix Caps With Browseable Windows
 
-- [ ] Reuse one indexed Monitor/report/verdict derivation per snapshot and avoid
+- [x] Reuse one indexed Monitor/report/verdict derivation per snapshot and avoid
   repeated per-agent/per-recipe scans where proven by counters.
 - [ ] Add reusable run-by-control/agent/command indexes for the always-on root
   control selection path; unchanged five-second polls must not repeat expensive
   global board/options work.
-- [ ] Retain Analyze artifacts across views without sorting/filtering all run
+- [x] Retain Analyze artifacts across views without sorting/filtering all run
   selector options while Analyze is inactive.
 - [ ] Window events, timeline, composite results, diagnostics, failures,
   participant matrix, and recipe/readiness tables only where collections can
@@ -424,6 +426,41 @@ link, rollback URL, default, or cutover changed.
   the correct window, no section mounts beyond its budget, and polling does not
   repeat unchanged expensive derivation. Include exact global-selection and
   inactive-Analyze work counters under 5,000 run pairs.
+
+Task 6 foundations are green through `0b260ec`, `a258a9e`, `bbb2548`, and
+`ef78e75`. Monitor/report/verdict now share one linear index per source
+snapshot, retain only numeric work plus first command phases for report reuse,
+and preserve the pre-index 5,000-row Monitor, report, and verdict hashes.
+Resolved/manifest membership precedence, duplicate targets/selections,
+delimiter/bidi identities, first-link action semantics, diagnostic ordering,
+and exact ±15-second correlation bounds remain differential-tested. Both
+2,000×2,000 all-unroled and same-role matrices avoid an agent×recipe relation;
+the measured focused cases complete in 6–8 ms with only 2,000 target descriptors
+and 2,000 numeric recipe counts. Independent review also forced lazy,
+report-local fallback/link counters: a no-failure cross-run report reads zero
+of 5,000 links, while one failure performs one exact pass and one lookup.
+
+Control polling now associates invisible, session-local revision tokens from
+the exact `/runs` and `/distributed-runs` response documents without changing
+public fetch or snapshot shapes. Raw text capture is scoped to those two
+snapshot endpoints; generic artifacts and other control responses are not
+tagged. The internal shared ordinal topology retains primitives and ordinals,
+not source objects, and distinguishes global-first, first ID/control pair,
+all-compatible source order, and board last-winner/first-insertion policies.
+Its selected-run overlay matched legacy object identity/order across 20,000
+randomized projections after review fixed duplicate override and nullish role
+fallback traps. Exact cloned 5,000-pair polls reuse the one-entry topology with
+zero rebuild/global visits and rebind only current-poll objects.
+
+Inactive Analyze now returns one frozen empty option set before traversing
+either 5,000-row collection and sends no search request in Execute, Monitor,
+History, or Tune. Artifact, blob/export, Tune facade, worker lifetime, and
+off-view context invalidation remain active; entering Analyze emits one latest
+search and preserves prior option order/current-object identity. Consumer
+wiring, main/inspector Monitor windows, Task 0 browser-mounted/heartbeat
+measurements, and the Task 6 composed exit remain open. No navigation,
+legacy visibility, mount policy, deep link, rollback URL, default, or cutover
+changed in these foundation commits.
 
 ## Task 7: Window History, Retention Consequences, And Proven Pressure Lists
 

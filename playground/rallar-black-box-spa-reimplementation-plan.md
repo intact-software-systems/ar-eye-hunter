@@ -408,7 +408,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
 | 8 — History, Compare, Saved Filters, Retention | **Complete** | Preview-first retention, shareable filters/presets, bounded History, comparison reuse, cleanup reconciliation, and exact copied-link/retention acceptance are qualified through `fd9055e` and `f762749`. Fresh focused/complete/server/browser/legacy gates and independent re-reviews are green; the configured live/Postgres lifecycle is explicitly skipped, not passed. Ready-State #8 and #9 are code-backed. No legacy surface is hidden or cut over. |
-| 9 — Large-Run Scale And Virtualization | **In progress** | The reviewed child plan binds Ready-State #10 to a 15,000-row artifact, 5,000 History pairs, accessible deterministic windows, a single parsed shared pipeline, off-main Analyze derivation, numeric session-only telemetry, production-browser DOM/cardinality gates, and before/after profiling. Parsed pipeline/cursor contracts are green through `4e89a17`; lazy workerized Analyze and its bounded Tune facade are green through `77b0922`; reusable native controls and full-catalog Analyze composition are green through `6d90061`. Tasks 6–9, final profiling, and the iteration-wide exit remain open; no parity or cutover is claimed. |
+| 9 — Large-Run Scale And Virtualization | **In progress** | The reviewed child plan binds Ready-State #10 to a 15,000-row artifact, 5,000 History pairs, accessible deterministic windows, a single parsed shared pipeline, off-main Analyze derivation, numeric session-only telemetry, production-browser DOM/cardinality gates, and before/after profiling. Parsed pipeline/cursor contracts are green through `4e89a17`; lazy workerized Analyze and its bounded Tune facade are green through `77b0922`; reusable native controls and full-catalog Analyze composition are green through `6d90061`; reviewed Monitor indexing, exact poll revisions, ordinal topology, and inactive-Analyze zero-work foundations are green through `0b260ec`, `a258a9e`, `bbb2548`, and `ef78e75`. Task 6 consumer/window composition, Tasks 7–9, final profiling, and the iteration-wide exit remain open; no parity or cutover is claimed. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
 | 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
@@ -444,6 +444,42 @@ fixtures and make no live-service claim; the configured-live skip remains
 unchanged. Parent Iteration 9 stays in progress because Tasks 6–9 and final
 profiling/exit proof remain open. No legacy visibility, mount policy, deep
 link, rollback URL, navigation default, or cutover changed.
+
+#### Iteration 9 Task 6 foundation checkpoint — `0b260ec`, `a258a9e`, `bbb2548`, `ef78e75`
+
+The shared Monitor/report path now performs one indexed derivation per source
+snapshot with preserved 5,000-row observable hashes and compressed role/recipe
+membership. Independent review added exact source/run authority, narrow weak
+retention, lazy cross-snapshot fallback work, and report-local counters. Both
+2,000×2,000 all-unroled and same-role adversarial matrices retain only linear
+descriptors/counts; focused timings were 6–8 ms. Fresh focused Monitor/index and
+structure validation passed 183/183 before the milestone commit, plus shared
+TypeScript/Deno, app TypeScript, and the production build.
+
+Exact root/fallback response documents now receive invisible session-local
+revision tokens without changing public control-manager signatures, server
+contracts, snapshot own keys, or JSON. Review narrowed raw-text association to
+the two polling endpoints, leaving artifact/fleet/command responses untagged.
+The one-entry internal ordinal topology retains only primitives/ordinals,
+rebinds current-poll objects, and keeps global-first, ID/control-pair-first,
+compatible-source, and board duplicate policies separate. Its selected overlay
+passed 20,000 randomized legacy-parity projections after duplicate override
+and nullish role-fallback fixes; the 5,000-pair exact-clone hit performs zero
+index/global rebuild work.
+
+Analyze remains mounted as the artifact/worker/Tune lifetime owner, but outside
+the Analyze view it returns one frozen empty option set before collection
+traversal and sends no search request. A retained artifact and Tune facade
+survive Execute, Monitor, History, and Tune; entering Analyze sends one latest
+search and restores stable current-object options. Direct proof is 14/14,
+broader Analyze regression proof is 115/115, and app TypeScript is green.
+
+This is a foundation checkpoint, not the Task 6 or Iteration 9 exit. Indexed
+Control/board/Monitor consumer composition, browseable Monitor windows,
+browser-mounted counts/heartbeat, Task 7 pressure lists, final profiling, and
+the complete Ready-State #10 production-browser gate remain open. No legacy
+surface, primary navigation row, route, lazy-mount policy, rollback URL,
+default, or cutover changed.
 
 #### Iteration 0 baseline and validation evidence
 
