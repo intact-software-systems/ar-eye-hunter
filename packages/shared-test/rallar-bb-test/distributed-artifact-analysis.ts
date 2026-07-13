@@ -130,12 +130,28 @@ export type DistributedRunPerformanceAnalysis = Readonly<{
     }>[];
 }>;
 
+export type StreamSampleIndexTelemetry = Readonly<{
+    candidateCount: number;
+    baseKeyLookupCount: number;
+    fingerprintComputationCount: number;
+    indexLookupCount: number;
+    equivalenceCheckCount: number;
+    indexMaintenanceCount: number;
+    groupCount: number;
+    replacementCount: number;
+    outputGroupOrder: readonly Readonly<{
+        insertionIndex: number;
+        winnerIndex: number;
+    }>[];
+}>;
+
 export type DistributedRunSnapshotPerformanceInput = Readonly<{
     distributedRun: ControlDistributedRunSnapshot;
     controlRun: ControlRunSnapshot;
     fleetReport?: unknown;
     artifactResults?: readonly unknown[];
     artifactEvents?: readonly unknown[];
+    onStreamSampleIndexTelemetry?: (telemetry: StreamSampleIndexTelemetry) => void;
 }>;
 
 export type DistributedRunTargetResolutionAnalysis = Readonly<{
@@ -650,6 +666,7 @@ export function deriveDistributedRunSnapshotPerformance(
         input.artifactEvents === undefined
             ? arrayRecords(input.controlRun.events)
             : arrayRecords(input.artifactEvents),
+        input.onStreamSampleIndexTelemetry,
     );
 }
 
@@ -659,6 +676,7 @@ function derivePerformance(
     fleetReport: Record<string, unknown>,
     results: readonly Record<string, unknown>[],
     events: readonly Record<string, unknown>[],
+    onStreamSampleIndexTelemetry?: (telemetry: StreamSampleIndexTelemetry) => void,
 ): DistributedRunPerformanceAnalysis {
     const agents = arrayRecords(controlRun.agents);
     const commandTimingSamples = timingSamplesFromControlRun(distributedRun, controlRun);
@@ -668,6 +686,7 @@ function derivePerformance(
         arrayRecords(controlRun.results),
         results,
         events,
+        onStreamSampleIndexTelemetry,
     );
     const streamTiming = streamTimingFromSamples(streamSamples);
     const receiverDelivery = receiverDeliveryFromSamples(
@@ -1187,21 +1206,75 @@ type StreamTimingSampleCandidate = Readonly<{
     index: number;
 }>;
 
+type PreparedStreamTimingSampleCandidate = Readonly<{
+    candidate: StreamTimingSampleCandidate;
+    baseKey: string;
+    fingerprint: string;
+}>;
+
+type IndexedStreamSampleGroup = {
+    readonly canonicalKey: string;
+    readonly insertionIndex: number;
+    version: number;
+    prepared: PreparedStreamTimingSampleCandidate;
+};
+
+type StreamSampleGroupHeapEntry = Readonly<{
+    group: IndexedStreamSampleGroup;
+    version: number;
+}>;
+
+type StreamSampleGroupHeap = {
+    entries: StreamSampleGroupHeapEntry[];
+};
+
+type StreamSampleFingerprintIndexes = {
+    readonly identityless: StreamSampleGroupHeap;
+    readonly identityBearing: StreamSampleGroupHeap;
+    readonly nestedIdentity: StreamSampleGroupHeap;
+    readonly nonNestedIdentity: StreamSampleGroupHeap;
+    readonly nonNestedIdentityBySource: Map<number, StreamSampleGroupHeap>;
+};
+
+type StreamSampleBaseBucket = {
+    readonly identityless: StreamSampleGroupHeap;
+    readonly identities: Map<string, StreamSampleGroupHeap>;
+    readonly fingerprints: Map<string, StreamSampleFingerprintIndexes>;
+};
+
+type MutableStreamSampleIndexTelemetry = {
+    candidateCount: number;
+    baseKeyLookupCount: number;
+    fingerprintComputationCount: number;
+    indexLookupCount: number;
+    equivalenceCheckCount: number;
+    indexMaintenanceCount: number;
+    replacementCount: number;
+};
+
+type StreamSampleIndex = {
+    readonly buckets: Map<string, StreamSampleBaseBucket>;
+    readonly groups: IndexedStreamSampleGroup[];
+    readonly groupsByCanonicalKey: Map<string, IndexedStreamSampleGroup>;
+    readonly telemetry: MutableStreamSampleIndexTelemetry;
+};
+
 function streamSamplesFromResultsAndEvents(
     controlResults: readonly Record<string, unknown>[],
     jsonlResults: readonly Record<string, unknown>[],
     events: readonly Record<string, unknown>[],
+    onTelemetry?: (telemetry: StreamSampleIndexTelemetry) => void,
 ): readonly StreamTimingSample[] {
-    const samples = new Map<string, StreamTimingSampleCandidate>();
+    const sampleIndex = createStreamSampleIndex();
     let index = 0;
     for (const result of controlResults) {
         for (const sample of streamSamplesFromResult(result)) {
-            upsertBestStreamSample(samples, { sample, sourcePriority: 40, index: index++ });
+            upsertBestStreamSample(sampleIndex, { sample, sourcePriority: 40, index: index++ });
         }
     }
     for (const result of jsonlResults) {
         for (const sample of streamSamplesFromResult(result)) {
-            upsertBestStreamSample(samples, { sample, sourcePriority: 50, index: index++ });
+            upsertBestStreamSample(sampleIndex, { sample, sourcePriority: 50, index: index++ });
         }
     }
     events.forEach((event) => {
@@ -1209,15 +1282,23 @@ function streamSamplesFromResultsAndEvents(
         if (!sample) {
             return;
         }
-        upsertBestStreamSample(samples, {
+        upsertBestStreamSample(sampleIndex, {
             sample,
             sourcePriority: streamEventPriority(event) * 10,
             index: index++,
         });
     });
-    return [...samples.values()]
-        .sort((left, right) => left.index - right.index)
-        .map(candidate => candidate.sample);
+    const outputGroups = [...sampleIndex.groups]
+        .sort((left, right) => left.prepared.candidate.index - right.prepared.candidate.index);
+    onTelemetry?.({
+        ...sampleIndex.telemetry,
+        groupCount: sampleIndex.groups.length,
+        outputGroupOrder: outputGroups.map(group => ({
+            insertionIndex: group.insertionIndex,
+            winnerIndex: group.prepared.candidate.index,
+        })),
+    });
+    return outputGroups.map(group => group.prepared.candidate.sample);
 }
 
 function streamSamplesFromResult(
@@ -1303,14 +1384,252 @@ function nestedRecipeResultRecords(result: Record<string, unknown>): readonly Re
 }
 
 function upsertBestStreamSample(
-    samples: Map<string, StreamTimingSampleCandidate>,
+    index: StreamSampleIndex,
     candidate: StreamTimingSampleCandidate,
 ): void {
-    const key = equivalentStreamSampleKey(samples, candidate) ?? streamSampleKey(candidate.sample);
-    const current = samples.get(key);
-    if (!current || compareStreamSampleCandidates(candidate, current) > 0) {
-        samples.set(key, candidate);
+    const prepared = prepareStreamSampleCandidate(candidate, index.telemetry);
+    let bucket = index.buckets.get(prepared.baseKey);
+    if (!bucket) {
+        bucket = createStreamSampleBaseBucket();
+        index.buckets.set(prepared.baseKey, bucket);
     }
+    let currentGroup = equivalentStreamSampleGroup(bucket, prepared, index.telemetry);
+    const canonicalKey = currentGroup ? undefined : streamSampleKey(candidate.sample);
+    if (!currentGroup && canonicalKey) {
+        index.telemetry.indexLookupCount += 1;
+        currentGroup = index.groupsByCanonicalKey.get(canonicalKey);
+    }
+    if (!currentGroup) {
+        const group: IndexedStreamSampleGroup = {
+            canonicalKey: canonicalKey ?? streamSampleKey(candidate.sample),
+            insertionIndex: candidate.index,
+            version: 0,
+            prepared,
+        };
+        index.groups.push(group);
+        index.groupsByCanonicalKey.set(group.canonicalKey, group);
+        registerStreamSampleGroup(bucket, group, index.telemetry);
+        return;
+    }
+    if (compareStreamSampleCandidates(candidate, currentGroup.prepared.candidate) > 0) {
+        currentGroup.version += 1;
+        currentGroup.prepared = prepared;
+        index.telemetry.replacementCount += 1;
+        registerStreamSampleGroup(bucket, currentGroup, index.telemetry);
+    }
+}
+
+function createStreamSampleIndex(): StreamSampleIndex {
+    return {
+        buckets: new Map(),
+        groups: [],
+        groupsByCanonicalKey: new Map(),
+        telemetry: {
+            candidateCount: 0,
+            baseKeyLookupCount: 0,
+            fingerprintComputationCount: 0,
+            indexLookupCount: 0,
+            equivalenceCheckCount: 0,
+            indexMaintenanceCount: 0,
+            replacementCount: 0,
+        },
+    };
+}
+
+function createStreamSampleBaseBucket(): StreamSampleBaseBucket {
+    return {
+        identityless: createStreamSampleGroupHeap(),
+        identities: new Map(),
+        fingerprints: new Map(),
+    };
+}
+
+function createStreamSampleFingerprintIndexes(): StreamSampleFingerprintIndexes {
+    return {
+        identityless: createStreamSampleGroupHeap(),
+        identityBearing: createStreamSampleGroupHeap(),
+        nestedIdentity: createStreamSampleGroupHeap(),
+        nonNestedIdentity: createStreamSampleGroupHeap(),
+        nonNestedIdentityBySource: new Map(),
+    };
+}
+
+function createStreamSampleGroupHeap(): StreamSampleGroupHeap {
+    return { entries: [] };
+}
+
+function prepareStreamSampleCandidate(
+    candidate: StreamTimingSampleCandidate,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): PreparedStreamTimingSampleCandidate {
+    telemetry.candidateCount += 1;
+    telemetry.baseKeyLookupCount += 1;
+    telemetry.fingerprintComputationCount += 1;
+    return {
+        candidate,
+        baseKey: streamSampleBaseKey(candidate.sample),
+        fingerprint: streamSampleFingerprint(candidate.sample),
+    };
+}
+
+function registerStreamSampleGroup(
+    bucket: StreamSampleBaseBucket,
+    group: IndexedStreamSampleGroup,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): void {
+    const { sample, sourcePriority } = group.prepared.candidate;
+    let fingerprintIndexes = bucket.fingerprints.get(group.prepared.fingerprint);
+    if (!fingerprintIndexes) {
+        fingerprintIndexes = createStreamSampleFingerprintIndexes();
+        bucket.fingerprints.set(group.prepared.fingerprint, fingerprintIndexes);
+    }
+    if (!sample.identityKey) {
+        pushStreamSampleGroup(bucket.identityless, group, telemetry);
+        pushStreamSampleGroup(fingerprintIndexes.identityless, group, telemetry);
+        return;
+    }
+
+    let identityHeap = bucket.identities.get(sample.identityKey);
+    if (!identityHeap) {
+        identityHeap = createStreamSampleGroupHeap();
+        bucket.identities.set(sample.identityKey, identityHeap);
+    }
+    pushStreamSampleGroup(identityHeap, group, telemetry);
+    pushStreamSampleGroup(fingerprintIndexes.identityBearing, group, telemetry);
+    if (sample.nested === true) {
+        pushStreamSampleGroup(fingerprintIndexes.nestedIdentity, group, telemetry);
+        return;
+    }
+
+    pushStreamSampleGroup(fingerprintIndexes.nonNestedIdentity, group, telemetry);
+    let sourceHeap = fingerprintIndexes.nonNestedIdentityBySource.get(sourcePriority);
+    if (!sourceHeap) {
+        sourceHeap = createStreamSampleGroupHeap();
+        fingerprintIndexes.nonNestedIdentityBySource.set(sourcePriority, sourceHeap);
+    }
+    pushStreamSampleGroup(sourceHeap, group, telemetry);
+}
+
+function equivalentStreamSampleGroup(
+    bucket: StreamSampleBaseBucket,
+    prepared: PreparedStreamTimingSampleCandidate,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): IndexedStreamSampleGroup | undefined {
+    const possibleGroups = new Set<IndexedStreamSampleGroup>();
+    const { sample, sourcePriority } = prepared.candidate;
+    const fingerprintIndexes = bucket.fingerprints.get(prepared.fingerprint);
+
+    if (!sample.identityKey) {
+        addOldestStreamSampleGroup(possibleGroups, bucket.identityless, telemetry);
+        addOldestStreamSampleGroup(possibleGroups, fingerprintIndexes?.identityBearing, telemetry);
+    } else {
+        addOldestStreamSampleGroup(possibleGroups, bucket.identities.get(sample.identityKey), telemetry);
+        addOldestStreamSampleGroup(possibleGroups, fingerprintIndexes?.identityless, telemetry);
+        if (sample.nested === true) {
+            addOldestStreamSampleGroup(possibleGroups, fingerprintIndexes?.nonNestedIdentity, telemetry);
+        } else {
+            addOldestStreamSampleGroup(possibleGroups, fingerprintIndexes?.nestedIdentity, telemetry);
+            // This internal index has six fixed producer priorities: four event tiers,
+            // the control snapshot, and JSONL. Only one heap minimum is read per tier.
+            for (const [indexedSourcePriority, sourceHeap] of
+                fingerprintIndexes?.nonNestedIdentityBySource ?? []) {
+                if (indexedSourcePriority !== sourcePriority) {
+                    addOldestStreamSampleGroup(possibleGroups, sourceHeap, telemetry);
+                }
+            }
+        }
+    }
+
+    let earliest: IndexedStreamSampleGroup | undefined;
+    for (const group of possibleGroups) {
+        telemetry.equivalenceCheckCount += 1;
+        if (
+            streamSamplesRepresentSameExecution(
+                group.prepared.candidate.sample,
+                sample,
+                group.prepared.candidate.sourcePriority !== sourcePriority,
+            ) &&
+            (!earliest || group.insertionIndex < earliest.insertionIndex)
+        ) {
+            earliest = group;
+        }
+    }
+    return earliest;
+}
+
+function addOldestStreamSampleGroup(
+    groups: Set<IndexedStreamSampleGroup>,
+    heap: StreamSampleGroupHeap | undefined,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): void {
+    telemetry.indexLookupCount += 1;
+    const group = heap ? oldestStreamSampleGroup(heap, telemetry) : undefined;
+    if (group) {
+        groups.add(group);
+    }
+}
+
+function pushStreamSampleGroup(
+    heap: StreamSampleGroupHeap,
+    group: IndexedStreamSampleGroup,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): void {
+    const entry = { group, version: group.version };
+    heap.entries.push(entry);
+    telemetry.indexMaintenanceCount += 1;
+    let position = heap.entries.length - 1;
+    while (position > 0) {
+        const parent = Math.floor((position - 1) / 2);
+        if (compareStreamSampleGroupHeapEntries(heap.entries[parent], entry) <= 0) {
+            break;
+        }
+        heap.entries[position] = heap.entries[parent];
+        position = parent;
+    }
+    heap.entries[position] = entry;
+}
+
+function oldestStreamSampleGroup(
+    heap: StreamSampleGroupHeap,
+    telemetry: MutableStreamSampleIndexTelemetry,
+): IndexedStreamSampleGroup | undefined {
+    while (heap.entries[0] && heap.entries[0].version !== heap.entries[0].group.version) {
+        removeOldestStreamSampleGroupHeapEntry(heap);
+        telemetry.indexMaintenanceCount += 1;
+    }
+    return heap.entries[0]?.group;
+}
+
+function removeOldestStreamSampleGroupHeapEntry(heap: StreamSampleGroupHeap): void {
+    const replacement = heap.entries.pop();
+    if (!replacement || heap.entries.length === 0) {
+        return;
+    }
+    let position = 0;
+    while (true) {
+        const left = position * 2 + 1;
+        const right = left + 1;
+        if (left >= heap.entries.length) {
+            break;
+        }
+        const child = right < heap.entries.length &&
+                compareStreamSampleGroupHeapEntries(heap.entries[right], heap.entries[left]) < 0
+            ? right
+            : left;
+        if (compareStreamSampleGroupHeapEntries(replacement, heap.entries[child]) <= 0) {
+            break;
+        }
+        heap.entries[position] = heap.entries[child];
+        position = child;
+    }
+    heap.entries[position] = replacement;
+}
+
+function compareStreamSampleGroupHeapEntries(
+    left: StreamSampleGroupHeapEntry,
+    right: StreamSampleGroupHeapEntry,
+): number {
+    return left.group.insertionIndex - right.group.insertionIndex;
 }
 
 function compareStreamSampleCandidates(
@@ -1359,22 +1678,6 @@ function streamSampleFromEvent(event: Record<string, unknown>): StreamTimingSamp
 function streamSampleKey(sample: StreamTimingSample): string {
     const baseKey = streamSampleBaseKey(sample);
     return sample.identityKey ? `${baseKey}:${sample.identityKey}` : baseKey;
-}
-
-function equivalentStreamSampleKey(
-    samples: Map<string, StreamTimingSampleCandidate>,
-    candidate: StreamTimingSampleCandidate,
-): string | undefined {
-    for (const [key, current] of samples) {
-        if (streamSamplesRepresentSameExecution(
-            current.sample,
-            candidate.sample,
-            current.sourcePriority !== candidate.sourcePriority,
-        )) {
-            return key;
-        }
-    }
-    return undefined;
 }
 
 function streamSamplesRepresentSameExecution(
