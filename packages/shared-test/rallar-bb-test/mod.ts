@@ -14,6 +14,7 @@ export * from './distributed-run-tuning-decisions.ts';
 export * from './distributed-run-evidence.ts';
 export * from './distributed-recipe-catalog.ts';
 export * from './distributed-artifact-analysis.ts';
+export * from './distributed-artifact-pipeline.ts';
 export * from './distributed-artifact-workspace.ts';
 export * from './distributed-artifact-evidence.ts';
 export * from './recipe-fixtures.ts';
