@@ -7,6 +7,8 @@ import type {
     DistributedRunPerformanceAnalysis,
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
+import type { AnalyzeTuneArtifactFacade } from
+    '../analyze/analyze-worker-contract.ts';
 import { deriveDistributedRunSnapshotPerformance } from
     '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { validateDistributedRunManifest } from
@@ -16,6 +18,7 @@ import {
     type TuneIdentitySurfaces,
 } from './tune-identity.ts';
 import { retainedTuneArtifactIdentityMatches } from './tune-artifact-identity.ts';
+import { projectTuneFacadeCatalog } from './tune-facade-catalog.ts';
 
 export type TuneRunOption = Readonly<{
     key: string;
@@ -28,6 +31,8 @@ export type TuneRunOption = Readonly<{
     performance?: DistributedRunPerformanceAnalysis;
     identity: TuneIdentitySurfaces;
     pairStatus: 'paired' | 'missing' | 'ambiguous';
+    manifestAuthority?: 'authoritative' | 'summary-projection';
+    recipeIdentityComplete?: boolean;
     controlEvidence?: TuneRunEvidence;
     artifactEvidence?: TuneRunEvidence & Readonly<{ analysis: DistributedRunAnalysis }>;
 }>;
@@ -62,6 +67,7 @@ export function buildTuneRunCatalog(_input: Readonly<{
     retainedArtifact?: AnalyzeArtifactModel;
     retainedArtifactStatus?: 'idle' | 'pending' | 'ready' | 'error';
     retainedArtifactFocusRunId?: string;
+    retainedFacade?: AnalyzeTuneArtifactFacade;
 }>): TuneRunCatalog {
     const input = _input;
     const controlGroups = groupBy(input.controlRuns, run => run.runId);
@@ -220,6 +226,26 @@ export function buildTuneRunCatalog(_input: Readonly<{
                     });
                 }
             }
+        }
+    }
+
+    if (input.retainedFacade) {
+        const facade = input.retainedFacade;
+        const projection = projectTuneFacadeCatalog({
+            facade,
+            current: options.get(facade.identity.distributedRunId),
+            distributedIdentityIsAmbiguous:
+                ambiguousDistributedIds.has(facade.identity.distributedRunId),
+        });
+        if (projection.kind === 'quarantine') {
+            quarantine(
+                projection.distributedRunId,
+                projection.controlRunId,
+                projection.codes,
+                projection.issues,
+            );
+        } else {
+            options.set(projection.option.distributedRunId, projection.option);
         }
     }
 

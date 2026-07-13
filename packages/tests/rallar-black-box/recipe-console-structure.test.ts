@@ -705,8 +705,25 @@ describe('Recipe Console experience boundary', () => {
         const analyzeSupport = [
             'use-analyze-workspace.ts',
             'use-analyze-workspace-controller.ts',
+            'use-analyze-operations.ts',
+            'analyze-local-offer.ts',
+            'analyze-worker-workspace-adapter.ts',
+            'analyze-worker-error.ts',
             'analyze-artifact-model.ts',
+            'analyze-artifact-search.ts',
+            'analyze-artifact-projection.ts',
+            'analyze-artifact-display-projection.ts',
+            'analyze-analysis-projection.ts',
+            'analyze-performance-projection.ts',
+            'analyze-verdict-projection.ts',
+            'analyze-evidence-projection.ts',
+            'analyze-projection-bounds.ts',
+            'analyze-tune-projection.ts',
+            'analyze-tune-projection-rows.ts',
+            'analyze-tune-fallback.ts',
             'analyze-file-boundary.ts',
+            'analyze-file-contract.ts',
+            'analyze-file-intake-policy.ts',
             'analyze-identity-policy.ts',
             'analyze-legacy-links.ts',
             'analyze-selection.ts',
@@ -735,6 +752,15 @@ describe('Recipe Console experience boundary', () => {
             expect(source(path).trimEnd().split(/\r?\n/).length, path)
                 .toBeLessThanOrEqual(300);
         }
+        const analyzeModules = filesBelow(`${recipeConsoleRoot}/analyze`)
+            .filter(path => /\.(?:ts|tsx)$/u.test(path));
+        expect(analyzeModules.length).toBeGreaterThanOrEqual(
+            analyzeOwners.length + analyzeSupport.length,
+        );
+        for (const path of analyzeModules) {
+            expect(source(path).trimEnd().split(/\r?\n/).length, path)
+                .toBeLessThanOrEqual(300);
+        }
         for (const path of analyzeStyles) {
             expect(source(path).trimEnd().split(/\r?\n/).length, path)
                 .toBeLessThanOrEqual(300);
@@ -756,12 +782,35 @@ describe('Recipe Console experience boundary', () => {
             /(?:from\s+|import\()['"][^'"]*(?:legacy\/|seeded-console-state|control-run-manager|registry|index\.ts)['"]|\bfetch\s*\(|\bsetInterval\s*\(|\blocalStorage\b|dangerouslySetInnerHTML/,
         );
         const hook = source(`${recipeConsoleRoot}/analyze/use-analyze-workspace.ts`);
-        expect(hook).toContain('connection.execution');
-        expect(hook).toContain('.exportRunArtifact');
-        expect(hook).toMatch(/AbortController|\.abort\(\)/);
-        expect(hook).toContain('readAnalyzeArtifactFiles');
+        const operations = source(
+            `${recipeConsoleRoot}/analyze/use-analyze-operations.ts`,
+        );
+        const localOffer = source(
+            `${recipeConsoleRoot}/analyze/analyze-local-offer.ts`,
+        );
+        const workerAdapter = source(
+            `${recipeConsoleRoot}/analyze/analyze-worker-workspace-adapter.ts`,
+        );
+        expect(hook).toContain('useAnalyzeOperations');
+        expect(hook).not.toMatch(
+            /from ['"]\.\/analyze-worker-(?:client|factory)\.ts['"]/,
+        );
+        expect(hook).not.toContain('state.artifactStatus');
+        expect(operations).toContain('connection.execution');
+        expect(operations).toContain('.exportRunArtifactBytes');
+        expect(`${operations}\n${workerAdapter}`)
+            .toContain('analyzeOperationOwnsCurrentBoundary');
+        expect(operations).toMatch(/AbortController|\.abort\(\)/);
+        expect(localOffer).toContain('readAnalyzeArtifactFiles');
+        expect(localOffer).toContain('readAnalyzeArtifactTransferFiles');
+        expect(workerAdapter).toContain("import('./analyze-worker-client.ts')");
+        expect(workerAdapter).toContain("import('./analyze-worker-factory.ts')");
+        expect(workerAdapter).toContain('lifetimeRef.current');
+        expect(workerAdapter).toMatch(
+            /if \(lifetime !== lifetimeRef\.current\) \{\s*client\.dispose\(\);\s*throw/,
+        );
         expect(source(`${recipeConsoleRoot}/analyze/analyze-artifact-model.ts`))
-            .toContain('createDistributedArtifactWorkspace');
+            .toContain('deriveDistributedArtifactWorkspace');
         expect(source(`${recipeConsoleRoot}/analyze/AnalyzeSourcePanel.tsx`))
             .toContain('Open generic export in legacy Shared Test');
 

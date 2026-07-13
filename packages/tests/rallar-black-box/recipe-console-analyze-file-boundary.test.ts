@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     ANALYZE_ARTIFACT_AUTHORITATIVE_BASENAMES,
     ANALYZE_ARTIFACT_MAX_FILE_BYTES,
@@ -6,7 +6,9 @@ import {
     ANALYZE_ARTIFACT_MAX_TOTAL_BYTES,
     AnalyzeFileIntakeError,
     readAnalyzeArtifactFiles,
+    readAnalyzeArtifactTransferFiles,
     type AnalyzeFileLike,
+    type AnalyzeTransferFileLike,
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-file-boundary.ts';
 
 const utf8 = new TextEncoder();
@@ -29,6 +31,36 @@ function file(
             ? {}
             : { webkitRelativePath: options.webkitRelativePath }),
         text: options.read ?? (async () => contents),
+    };
+}
+
+function bufferFromText(contents: string): ArrayBuffer {
+    const bytes = utf8.encode(contents);
+    return bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+    ) as ArrayBuffer;
+}
+
+function transferFile(
+    name: string,
+    contents = '{}',
+    options: Readonly<{
+        size?: number;
+        type?: string;
+        webkitRelativePath?: string;
+        read?: () => Promise<ArrayBuffer>;
+    }> = {},
+): AnalyzeTransferFileLike {
+    const bytes = bufferFromText(contents);
+    return {
+        name,
+        size: options.size ?? bytes.byteLength,
+        ...(options.type === undefined ? {} : { type: options.type }),
+        ...(options.webkitRelativePath === undefined
+            ? {}
+            : { webkitRelativePath: options.webkitRelativePath }),
+        arrayBuffer: options.read ?? (async () => bytes),
     };
 }
 
@@ -123,6 +155,162 @@ describe('Recipe Console Analyze file boundary', () => {
         ]);
         expect(intake.ignoredFiles).toEqual([]);
         expect(intake.totalSelectedBytes).toBe(64);
+    });
+
+    it('reads sorted transfer-safe buffers without decoding artifact text on the main thread', async () => {
+        vi.stubGlobal('TextDecoder', class ForbiddenTextDecoder {
+            constructor() {
+                throw new Error('artifact bytes must be decoded in the worker');
+            }
+        });
+
+        try {
+            const intake = await readAnalyzeArtifactTransferFiles([
+                transferFile('manifest.json', '{"distributedRunId":"dist-42"}', {
+                    type: 'application/json',
+                    webkitRelativePath: 'ci/manifest.json',
+                }),
+                transferFile('dist-42-artifact.json', '{"files":{}}', {
+                    type: 'application/octet-stream',
+                    webkitRelativePath: 'downloads/dist-42-artifact.json',
+                }),
+            ]);
+
+            expect(intake.files.map(file => file.name)).toEqual([
+                'dist-42-artifact.json',
+                'manifest.json',
+            ]);
+            expect([...new Uint8Array(intake.files[0].bytes)]).toEqual([
+                ...utf8.encode('{"files":{}}'),
+            ]);
+            expect(intake.acceptedFiles).toEqual([
+                {
+                    basename: 'dist-42-artifact.json',
+                    sourcePath: 'downloads/dist-42-artifact.json',
+                    sizeBytes: 12,
+                    type: 'application/octet-stream',
+                    kind: 'envelope-candidate',
+                },
+                {
+                    basename: 'manifest.json',
+                    sourcePath: 'ci/manifest.json',
+                    sizeBytes: 30,
+                    type: 'application/json',
+                    kind: 'authoritative',
+                },
+            ]);
+            expect(intake.ignoredFiles).toEqual([]);
+            expect(intake.totalSelectedBytes).toBe(42);
+            expect(intake.transferList).toEqual(intake.files.map(file => file.bytes));
+
+            const cloned = structuredClone(intake.files, {
+                transfer: [...intake.transferList],
+            });
+            expect(cloned.map(file => [file.name, file.bytes.byteLength])).toEqual([
+                ['dist-42-artifact.json', 12],
+                ['manifest.json', 30],
+            ]);
+            expect(intake.transferList.map(bytes => bytes.byteLength)).toEqual([0, 0]);
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it('rejects declared and actual byte mismatches without returning partial buffers', async () => {
+        await expectIntakeError(
+            readAnalyzeArtifactTransferFiles([
+                transferFile('manifest.json', '{}', {
+                    size: 2,
+                    read: async () => bufferFromText('{}\n'),
+                }),
+            ]),
+            'file-size-mismatch',
+            'File "manifest.json" reported 2 bytes but returned 3 bytes. No files were imported.',
+        );
+    });
+
+    it('enforces the per-file limit against actual transferable bytes', async () => {
+        const oversized = new ArrayBuffer(ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1);
+
+        await expectIntakeError(
+            readAnalyzeArtifactTransferFiles([
+                transferFile('events.jsonl', '', {
+                    size: 0,
+                    read: async () => oversized,
+                }),
+            ]),
+            'file-too-large',
+            `File "events.jsonl" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1} bytes).`,
+        );
+    });
+
+    it('enforces the aggregate limit against actual transferable bytes', async () => {
+        const quarter = ANALYZE_ARTIFACT_MAX_TOTAL_BYTES / 4;
+        const exactQuarters = Array.from({ length: 3 }, () => new ArrayBuffer(quarter));
+        const oversizedQuarter = new ArrayBuffer(quarter + 1);
+
+        await expectIntakeError(
+            readAnalyzeArtifactTransferFiles([
+                transferFile('artifact-a.json', '', { size: quarter, read: async () => exactQuarters[0] }),
+                transferFile('artifact-b.json', '', { size: quarter, read: async () => exactQuarters[1] }),
+                transferFile('artifact-c.json', '', { size: quarter, read: async () => exactQuarters[2] }),
+                transferFile('artifact-d.json', '', { size: quarter, read: async () => oversizedQuarter }),
+            ]),
+            'total-too-large',
+            `Selected files exceed the ${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES}-byte total limit (${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES + 1} bytes).`,
+        );
+    });
+
+    it('uses the same count, declared-byte, duplicate, and hostile-name rejections for transfer intake', async () => {
+        let readCount = 0;
+        const read = async () => {
+            readCount += 1;
+            return bufferFromText('{}');
+        };
+        const cases = [
+            {
+                files: Array.from({ length: ANALYZE_ARTIFACT_MAX_FILE_COUNT + 1 }, (_, index) =>
+                    transferFile(`artifact-${index}.json`, '{}', { read })),
+                code: 'too-many-files' as const,
+                message: 'Select at most 24 files; received 25.',
+            },
+            {
+                files: [transferFile('manifest.json', '{}', {
+                    size: ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1,
+                    read,
+                })],
+                code: 'file-too-large' as const,
+                message: `File "manifest.json" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1} bytes).`,
+            },
+            {
+                files: [
+                    transferFile('manifest.json', '{}', {
+                        webkitRelativePath: 'first/manifest.json',
+                        read,
+                    }),
+                    transferFile('manifest.json', '{}', {
+                        webkitRelativePath: 'second/manifest.json',
+                        read,
+                    }),
+                ],
+                code: 'duplicate-basename' as const,
+                message: 'Duplicate artifact basename "manifest.json" was selected from "first/manifest.json" and "second/manifest.json". Remove one; files are never overwritten.',
+            },
+            {
+                files: [transferFile('../manifest.json', '{}', { read })],
+                code: 'unsafe-path' as const,
+                message: 'File path "../manifest.json" is unsafe: traversal segments are not allowed.',
+            },
+        ];
+
+        for (const intakeCase of cases) {
+            await expectIntakeError(
+                readAnalyzeArtifactTransferFiles(intakeCase.files),
+                intakeCase.code,
+                intakeCase.message,
+            );
+        }
+        expect(readCount).toBe(0);
     });
 
     it('retains deterministic ignored-filename diagnostics and never reads ignored content', async () => {

@@ -45,6 +45,9 @@ test('retains prior analysis after malformed and duplicate replacement selection
     await installRecipeConsoleAnalyzeFixture(context);
     await page.goto(ANALYZE_ROUTE);
     await chooseAnalyzeFiles(page, createAnalyzeLooseFiles());
+    await expect(artifactStatus(page)).toHaveText('Artifact ready');
+    await expect(analyzeSearch(page).locator('[data-evidence-result]'))
+        .not.toHaveCount(0);
     const evidenceCount = await analyzeSearch(page).locator('[data-evidence-result]').count();
     await chooseAnalyzeFiles(page, createMalformedAnalyzeFiles());
     await expect(operationError(page)).toContainText('Previous analysis retained.');
@@ -99,6 +102,33 @@ test('keeps future-schema evidence usable and rejects an over-limit replacement 
     await expect(analyzeVerdict(page)).toHaveAttribute('data-artifact-support', 'unsupported');
     await expect(analyzeVerdict(page)).toContainText(ANALYZE_FAILURE_MESSAGE);
     await expect(unknownVersion).toContainText('Artifact schema version 99 is not supported.');
+});
+
+test('rejects a multibyte search over the URL byte budget without stale filter authority', async ({
+    context,
+    page,
+}) => {
+    await installRecipeConsoleAnalyzeFixture(context);
+    await page.goto(ANALYZE_ROUTE);
+    await chooseAnalyzeFiles(page, createAnalyzeLooseFiles());
+    await expect(artifactStatus(page)).toHaveText('Artifact ready');
+    const search = analyzeSearch(page);
+    const priorEvidenceCount = await search.locator('[data-evidence-result]').count();
+    const oversized = '界'.repeat(2_000);
+
+    await search.getByLabel('Search evidence').fill(oversized);
+    await search.getByRole('button', { name: 'Apply search' }).click();
+
+    await expect(search.locator('[data-analyze-search-error]')).toContainText(
+        'Search evidence exceeds the 4096-byte limit',
+    );
+    expect(new URL(page.url()).searchParams.get('historyQuery')).toBeNull();
+    await expect(search.locator('[data-evidence-result]')).toHaveCount(priorEvidenceCount);
+    await expect(search.getByLabel('Search evidence')).toHaveValue(oversized);
+
+    await search.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(search.locator('[data-analyze-search-error]')).toHaveCount(0);
+    await expect(search.getByLabel('Search evidence')).toHaveValue('');
 });
 
 test('announces Control artifact loading and ready completion', async ({ context, page }) => {
@@ -206,14 +236,18 @@ test('rejects internally consistent Control files from the wrong control run wit
     }));
     await page.goto(ANALYZE_ROUTE);
     await chooseAnalyzeFiles(page, createAnalyzeLooseFiles());
+    await expect(artifactStatus(page)).toHaveText('Artifact ready');
+    await expect.poll(() => new URL(page.url()).searchParams.get('distributedRunId'))
+        .toBe(ANALYZE_DISTRIBUTED_RUN_ID);
     await pushAnalyzeContext(page, { controlRunId: 'control-a', distributedRunId: 'distributed-x' });
     const expectedUrl = page.url();
     await page.locator('[data-analyze-load-artifact]').click();
     await expect.poll(fixture.artifactRequestCount).toBe(1);
     await expect(artifactStatus(page)).toHaveText('Needs attention');
     await expect(operationError(page)).toContainText(
-        'Artifact response belongs to control run control-b, not control-a.',
+        'The artifact identity does not match the active control selection.',
     );
+    await expect(operationError(page)).not.toContainText('control-b');
     await expect(analyzeVerdict(page)).toContainText(ANALYZE_FAILURE_MESSAGE);
     expect(page.url()).toBe(expectedUrl);
 });

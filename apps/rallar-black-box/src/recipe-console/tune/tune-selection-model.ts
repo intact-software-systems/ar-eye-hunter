@@ -8,6 +8,8 @@ import {
 } from '@shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
+import type { AnalyzeTuneArtifactFacade } from
+    '../analyze/analyze-worker-contract.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import {
@@ -53,6 +55,7 @@ export function deriveTuneSelectionModel(input: Readonly<{
     query: ControlQuerySnapshot<ControlServerSnapshot>;
     retainedArtifact?: AnalyzeArtifactModel;
     retainedArtifactStatus?: 'idle' | 'pending' | 'ready' | 'error';
+    retainedFacade?: AnalyzeTuneArtifactFacade;
     catalog?: TuneRunCatalog;
 }>): TuneSelectionModel {
     const focusRunId = input.urlState.compareRight ?? input.urlState.distributedRunId;
@@ -62,6 +65,7 @@ export function deriveTuneSelectionModel(input: Readonly<{
         retainedArtifact: input.retainedArtifact,
         retainedArtifactStatus: input.retainedArtifactStatus,
         retainedArtifactFocusRunId: focusRunId,
+        retainedFacade: input.retainedFacade,
     });
     const issues: TuneComparisonIssue[] = [];
     const left = resolveSelection(
@@ -213,7 +217,12 @@ function compatibilityWarnings(
         });
     }
     const leftRecipes = new Set(recipeIds(left));
-    if (!recipeIds(right).some(recipeId => leftRecipes.has(recipeId))) {
+    const recipeIdentitiesComplete = left.recipeIdentityComplete !== false &&
+        right.recipeIdentityComplete !== false;
+    if (
+        recipeIdentitiesComplete &&
+        !recipeIds(right).some(recipeId => leftRecipes.has(recipeId))
+    ) {
         warnings.push({
             code: 'no-shared-recipe',
             message: 'The selected runs have no shared recipe identity.',

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { StatePanel } from '../ui/StatePanel.tsx';
 import { AnalyzeEvidenceQuality } from './AnalyzeEvidenceQuality.tsx';
@@ -29,6 +29,8 @@ export function AnalyzeWorkspace({
     onInspectorChange(content: ReactNode | undefined): void;
     onSelectionLabelChange(label: string | undefined): void;
 }>) {
+    const renderCountRef = useRef(0);
+    renderCountRef.current += 1;
     const inspector = useMemo(() => (
         controller.model && controller.selectedEvidence
             ? <AnalyzeInspector entry={controller.selectedEvidence} model={controller.model} />
@@ -61,7 +63,24 @@ export function AnalyzeWorkspace({
     }, [onInspectorChange, onSelectionLabelChange]);
 
     return (
-        <div className={styles.workspace} data-analyze-workspace>
+        <div
+            className={styles.workspace}
+            data-analyze-index-count={controller.telemetry?.retainedEntryCount}
+            data-analyze-index-omitted-count={controller.telemetry?.indexOmittedEntryCount}
+            data-analyze-match-count={controller.telemetry?.matchedEntryCount}
+            data-analyze-mounted-count={controller.evidenceWindow?.entries.length ?? 0}
+            data-analyze-operation-generation={controller.operationGeneration}
+            data-analyze-pending-painted={
+                controller.status === 'pending' &&
+                controller.pendingPaintGeneration === controller.operationGeneration
+                    ? 'true'
+                    : undefined
+            }
+            data-analyze-render-count={renderCountRef.current}
+            data-analyze-source-count={controller.telemetry?.sourceFileCount}
+            data-analyze-total-entry-count={controller.telemetry?.totalEntryCount}
+            data-analyze-workspace
+        >
             <AnalyzeSourcePanel
                 controller={controller}
                 legacyRunsHref={createAnalyzeLegacyRunsHref(legacyState, sourceSearch)}

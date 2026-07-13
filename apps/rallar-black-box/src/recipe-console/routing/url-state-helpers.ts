@@ -2,6 +2,7 @@ import {
     RECIPE_CONSOLE_FLEET_MAP_LAYERS,
     RECIPE_CONSOLE_NON_SHAREABLE_URL_KEYS,
     RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
+    RECIPE_CONSOLE_URL_STRING_MAX_BYTES,
     type RecipeConsoleFleetMapLayer,
     type RecipeConsoleUrlIssue,
     type RecipeConsoleUrlState,
@@ -94,6 +95,15 @@ export function readString(
 ): string | undefined {
     const value = firstValue(params, field, issues);
     if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecipeConsoleUrlString(value)) {
+        addIssue(
+            issues,
+            field,
+            'invalid',
+            `${field} exceeds the ${RECIPE_CONSOLE_URL_STRING_MAX_BYTES}-byte URL limit.`,
+        );
         return undefined;
     }
     const normalized = value.trim();
@@ -208,8 +218,11 @@ export function setOptionalString(
     field: typeof OPTIONAL_STRING_FIELDS[number] | 'legacySurface',
     value: unknown,
 ): void {
-    if (typeof value === 'string' && value.trim()) {
-        params.set(field, value.trim());
+    if (typeof value === 'string') {
+        const normalized = value.trim();
+        if (normalized && isRecipeConsoleUrlString(normalized)) {
+            params.set(field, normalized);
+        }
     }
 }
 
@@ -217,4 +230,10 @@ export function safeEpoch(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
         ? value
         : undefined;
+}
+
+export function isRecipeConsoleUrlString(value: string): boolean {
+    return value.length <= RECIPE_CONSOLE_URL_STRING_MAX_BYTES &&
+        new TextEncoder().encode(value).byteLength <=
+            RECIPE_CONSOLE_URL_STRING_MAX_BYTES;
 }

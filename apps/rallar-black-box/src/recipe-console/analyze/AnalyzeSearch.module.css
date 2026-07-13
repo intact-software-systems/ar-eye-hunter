@@ -24,6 +24,7 @@
 .heading h2,
 .heading p,
 .incomplete,
+.searchError,
 .empty { margin: 0; }
 
 .heading h2 { font-size: 17px; }
@@ -114,6 +115,13 @@
     border-left: 3px solid var(--rc-status-warning-border);
     color: var(--rc-status-warning-text);
     background: var(--rc-status-warning-bg);
+}
+
+.searchError {
+    padding: 9px 11px;
+    border-left: 3px solid var(--rc-status-failed-border);
+    color: var(--rc-status-failed-text);
+    background: var(--rc-status-failed-bg);
 }
 
 .results {

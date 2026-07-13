@@ -9,6 +9,7 @@ import {
     enqueueBulkControlCommand,
     fetchDistributedRun,
     fetchDistributedRunArtifactBundle,
+    fetchDistributedRunArtifactBundleBytes,
     fetchDistributedRuns,
     fetchFleetReport,
     fetchFleetReportBundle,
@@ -461,6 +462,224 @@ describe('rallar-black-box control run manager', () => {
         expect(targetResolution.summary.roleCounts).toEqual({ sender: 1 });
         expect(artifact.files['manifest.json']).toBe('{}');
     });
+
+    it('cancels a chunked artifact response as soon as its byte budget is exceeded', async () => {
+        let canceled = false;
+        const chunks = [
+            new Uint8Array([1, 2, 3]),
+            new Uint8Array([4, 5, 6]),
+        ];
+        const body = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                const chunk = chunks.shift();
+                if (chunk) controller.enqueue(chunk);
+                else controller.close();
+            },
+            cancel() {
+                canceled = true;
+            },
+        }, { highWaterMark: 0 });
+
+        await expect(fetchDistributedRunArtifactBundleBytes({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            maxBytes: 4,
+            fetchFn: async () => new Response(body),
+        })).rejects.toThrow('4-byte transfer limit');
+
+        expect(canceled).toBe(true);
+    });
+
+    it('bounds non-success artifact bodies while preserving HTTP provenance', async () => {
+        let canceled = false;
+        const chunks = [
+            new TextEncoder().encode('{"error":"'),
+            new TextEncoder().encode('unbounded"}'),
+        ];
+        const body = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                const chunk = chunks.shift();
+                if (chunk) controller.enqueue(chunk);
+                else controller.close();
+            },
+            cancel() {
+                canceled = true;
+            },
+        }, { highWaterMark: 0 });
+
+        await expect(fetchDistributedRunArtifactBundleBytes({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            maxBytes: 12,
+            fetchFn: async () => new Response(body, {
+                status: 500,
+                headers: { 'content-type': 'application/json' },
+            }),
+        })).rejects.toMatchObject({
+            name: 'ControlRunManagerHttpError',
+            status: 500,
+        });
+
+        expect(canceled).toBe(true);
+    });
+
+    it.each([
+        { status: 401, statusText: 'Unauthorized', mode: 'declared' },
+        { status: 403, statusText: 'Forbidden', mode: 'streamed' },
+    ])(
+        'preserves bounded $status authorization challenges for $mode bodies',
+        async ({ status, statusText, mode }) => {
+            let canceled = false;
+            const body = new ReadableStream<Uint8Array>({
+                pull(controller) {
+                    controller.enqueue(new Uint8Array(8));
+                },
+                cancel() {
+                    canceled = true;
+                },
+            }, { highWaterMark: 0 });
+
+            await expect(fetchDistributedRunArtifactBundleBytes({
+                baseUrl: 'http://control.test',
+                distributedRunId: 'dist-1',
+                maxBytes: 4,
+                fetchFn: async () => new Response(body, {
+                    status,
+                    statusText,
+                    headers: mode === 'declared'
+                        ? { 'content-length': '8' }
+                        : undefined,
+                }),
+            })).rejects.toMatchObject({
+                name: 'ControlRunManagerHttpError',
+                status,
+                statusText,
+            });
+
+            expect(canceled).toBe(true);
+        },
+    );
+
+    it('preserves bounded Control HTTP errors for non-success artifact responses', async () => {
+        await expect(fetchDistributedRunArtifactBundleBytes({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            maxBytes: 64,
+            fetchFn: async () => new Response('{"error":"artifact unavailable"}', {
+                status: 503,
+                statusText: 'Service Unavailable',
+                headers: { 'content-type': 'application/json' },
+            }),
+        })).rejects.toMatchObject({
+            name: 'ControlRunManagerHttpError',
+            message: 'artifact unavailable',
+            status: 503,
+            statusText: 'Service Unavailable',
+        });
+    });
+
+    it('cancels a declared-oversize artifact body before rejecting it', async () => {
+        let canceled = false;
+        const body = new ReadableStream<Uint8Array>({
+            cancel() {
+                canceled = true;
+            },
+        }, { highWaterMark: 0 });
+
+        await expect(fetchDistributedRunArtifactBundleBytes({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            maxBytes: 4,
+            fetchFn: async () => new Response(body, {
+                headers: { 'content-length': '5' },
+            }),
+        })).rejects.toThrow('4-byte transfer limit');
+
+        expect(canceled).toBe(true);
+    });
+
+    it('copies declared-length chunks as they arrive and returns their exact bytes', async () => {
+        const firstChunk = new Uint8Array([1, 2]);
+        let phase = 0;
+        const body = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                if (phase === 0) {
+                    phase += 1;
+                    controller.enqueue(firstChunk);
+                    return;
+                }
+                if (phase === 1) {
+                    phase += 1;
+                    firstChunk.fill(9);
+                    controller.enqueue(new Uint8Array([3, 4]));
+                    return;
+                }
+                controller.close();
+            },
+        }, { highWaterMark: 0 });
+
+        const bytes = await fetchDistributedRunArtifactBundleBytes({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            maxBytes: 4,
+            fetchFn: async () => new Response(body, {
+                headers: { 'content-length': '4' },
+            }),
+        });
+
+        expect([...new Uint8Array(bytes)]).toEqual([1, 2, 3, 4]);
+    });
+
+    it.each([undefined, 'invalid'])(
+        'keeps missing or invalid declared lengths bounded while preserving exact bytes (%s)',
+        async contentLength => {
+            const chunks = [
+                new Uint8Array([1, 2]),
+                new Uint8Array([3, 4]),
+            ];
+            const body = new ReadableStream<Uint8Array>({
+                pull(controller) {
+                    const chunk = chunks.shift();
+                    if (chunk) controller.enqueue(chunk);
+                    else controller.close();
+                },
+            }, { highWaterMark: 0 });
+            const headers = contentLength === undefined
+                ? undefined
+                : { 'content-length': contentLength };
+
+            const bytes = await fetchDistributedRunArtifactBundleBytes({
+                baseUrl: 'http://control.test',
+                distributedRunId: 'dist-1',
+                maxBytes: 4,
+                fetchFn: async () => new Response(body, { headers }),
+            });
+
+            expect([...new Uint8Array(bytes)]).toEqual([1, 2, 3, 4]);
+            expect((bytes as ArrayBuffer & { resizable?: boolean }).resizable).toBe(false);
+        },
+    );
+
+    it.each([
+        { declaredBytes: 4, bodyBytes: [1, 2] },
+        { declaredBytes: 1, bodyBytes: [1, 2] },
+    ])(
+        'returns exact body bytes when declared length $declaredBytes does not match the stream',
+        async ({ declaredBytes, bodyBytes }) => {
+            const bytes = await fetchDistributedRunArtifactBundleBytes({
+                baseUrl: 'http://control.test',
+                distributedRunId: 'dist-1',
+                maxBytes: 4,
+                fetchFn: async () => new Response(
+                    new Uint8Array(bodyBytes),
+                    { headers: { 'content-length': String(declaredBytes) } },
+                ),
+            });
+
+            expect([...new Uint8Array(bytes)]).toEqual(bodyBytes);
+            expect((bytes as ArrayBuffer & { resizable?: boolean }).resizable).toBe(false);
+        },
+    );
 
     it('calls fleet report endpoints with filters and export helpers', async () => {
         const requests: Array<{ url: string; init?: RequestInit }> = [];

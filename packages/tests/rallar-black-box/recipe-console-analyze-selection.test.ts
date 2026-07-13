@@ -176,6 +176,22 @@ describe('Recipe Console Analyze selection', () => {
         ]);
     });
 
+    it('never treats bounded display handles as exact URL authority', () => {
+        const identity = {
+            distributedRunId: 'opaque-id:1800:0123456789abcdef0123456789abcdef',
+            distributedRunIdExact: false,
+            controlRunId: 'control-a',
+        };
+
+        expect(analyzeImportedIdentityPatch(identity)).toMatchObject({
+            distributedRunId: undefined,
+            controlRunId: undefined,
+        });
+        expect(analyzeArtifactIdentityIssues(identity)).toEqual([
+            expect.stringMatching(/distributed run ID.*bounded display handle/i),
+        ]);
+    });
+
     it('rejects malformed Unicode identities while preserving valid paired Unicode', () => {
         const loneHigh = JSON.parse('"distributed-\\ud800"') as string;
         const loneLow = JSON.parse('"control-\\udfff"') as string;

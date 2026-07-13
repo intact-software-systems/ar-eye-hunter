@@ -1,10 +1,10 @@
-import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
 import { analyzeArtifactIdentityIssues } from './analyze-identity-policy.ts';
 import styles from './AnalyzeEvidence.module.css';
 
 export function AnalyzeEvidenceQuality({
     model,
-}: Readonly<{ model: AnalyzeArtifactModel }>) {
+}: Readonly<{ model: AnalyzeArtifactProjection }>) {
     const trail = model.analysis.spa?.verdict.causalTrail.slice(0, 6) ?? [];
     const identityIssues = analyzeArtifactIdentityIssues(model.identity);
     const issueCount = model.workspace.issues.length +

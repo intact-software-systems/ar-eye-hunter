@@ -114,7 +114,7 @@ export function RecipeConsoleWorkspace() {
                 replace: urlState.replace,
                 retained: {
                     error: analyze.error,
-                    model: analyze.model,
+                    model: analyze.tuneFacade,
                     status: analyze.status,
                 },
                 retention: control.connection.retention,

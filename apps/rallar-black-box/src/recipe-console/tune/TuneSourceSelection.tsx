@@ -2,6 +2,7 @@ import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { SegmentedControl } from '../ui/SegmentedControl.tsx';
 import type { TuneSelectionModel } from './tune-selection-model.ts';
 import type { TuneSourceModel } from './tune-source-model.ts';
+import { tuneSourceIssueKey } from './tune-source-issue.ts';
 import {
     tuneLeftSelectionPatch,
     tuneRightSelectionPatch,
@@ -91,7 +92,7 @@ export function TuneSourceSelection({
             {source.issues.length > 0 ? (
                 <ul className={styles.issues}>
                     {source.issues.map(issue => (
-                        <li key={issue.code}>{issue.message}</li>
+                        <li key={tuneSourceIssueKey(issue)}>{issue.message}</li>
                     ))}
                 </ul>
             ) : (

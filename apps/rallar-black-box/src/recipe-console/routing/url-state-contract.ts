@@ -2,6 +2,7 @@ import type { DistributedFailureExplanation } from
     '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 
 export const RECIPE_CONSOLE_URL_VERSION = 1 as const;
+export const RECIPE_CONSOLE_URL_STRING_MAX_BYTES = 4_096;
 
 export const RECIPE_CONSOLE_VIEWS = [
     'execute',

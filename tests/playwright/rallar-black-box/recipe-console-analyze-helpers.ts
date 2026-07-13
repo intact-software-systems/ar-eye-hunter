@@ -54,12 +54,12 @@ export async function dropAnalyzeFilesWithReadProbe(
         const trackedWindow = window as typeof window & {
             __analyzeDroppedFileReadCount?: number;
         };
-        const originalText = File.prototype.text;
+        const originalArrayBuffer = File.prototype.arrayBuffer;
         trackedWindow.__analyzeDroppedFileReadCount = 0;
-        File.prototype.text = function trackedText(): Promise<string> {
+        File.prototype.arrayBuffer = function trackedArrayBuffer(): Promise<ArrayBuffer> {
             trackedWindow.__analyzeDroppedFileReadCount =
                 (trackedWindow.__analyzeDroppedFileReadCount ?? 0) + 1;
-            return originalText.call(this);
+            return originalArrayBuffer.call(this);
         };
     });
     await dropAnalyzeFiles(page, files);
@@ -105,7 +105,7 @@ export async function installDeferredAnalyzeFileRead(page: Page): Promise<void> 
                 release(): void;
             };
         };
-        const originalText = File.prototype.text;
+        const originalArrayBuffer = File.prototype.arrayBuffer;
         let release = (): void => {};
         const gate = new Promise<void>(resolve => { release = resolve; });
         tracked.__analyzeDeferredRead = {
@@ -113,7 +113,7 @@ export async function installDeferredAnalyzeFileRead(page: Page): Promise<void> 
             readCount: 0,
             release,
         };
-        File.prototype.text = async function deferredText(): Promise<string> {
+        File.prototype.arrayBuffer = async function deferredArrayBuffer(): Promise<ArrayBuffer> {
             const state = tracked.__analyzeDeferredRead;
             if (state) {
                 state.readCount += 1;
@@ -122,7 +122,7 @@ export async function installDeferredAnalyzeFileRead(page: Page): Promise<void> 
                     await gate;
                 }
             }
-            return originalText.call(this);
+            return originalArrayBuffer.call(this);
         };
     });
 }

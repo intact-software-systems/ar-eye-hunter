@@ -1,11 +1,11 @@
-import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
 import styles from './AnalyzeVerdict.module.css';
 
 export function AnalyzeVerdict({
     model,
     onInspect,
 }: Readonly<{
-    model: AnalyzeArtifactModel;
+    model: AnalyzeArtifactProjection;
     onInspect?(trigger: HTMLButtonElement): void;
 }>) {
     const { analysis } = model;

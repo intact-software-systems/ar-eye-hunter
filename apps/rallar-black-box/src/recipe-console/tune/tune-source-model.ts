@@ -15,6 +15,8 @@ import type {
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
+import type { AnalyzeArtifactProjection } from
+    '../analyze/analyze-worker-contract.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { retainedTuneArtifactIdentityMatches } from './tune-artifact-identity.ts';
@@ -22,7 +24,10 @@ import {
     projectTuneIdentitySurfaces,
     type TuneIdentitySurfaces,
 } from './tune-identity.ts';
+import { hasTunePerformanceEvidence } from './tune-performance-evidence.ts';
 import { buildTuneRunCatalog, type TuneQuarantineCode, type TuneRunCatalog } from './tune-run-catalog.ts';
+
+export { deriveTuneSourceModelFromFacade } from './tune-facade-source-model.ts';
 
 export type TuneSourceIssueCode =
     | 'missing-focus' | 'focus-unavailable' | 'retained-mismatch'
@@ -48,12 +53,13 @@ export type TuneSourceModel = Readonly<{
     retained: Readonly<{
         relation: 'none' | 'matching' | 'mismatched' | 'context-error';
         support?: AnalyzeArtifactModel['workspace']['support'];
-        inspection?: AnalyzeArtifactModel['analysis'];
+        inspection?: AnalyzeArtifactModel['analysis'] |
+            AnalyzeArtifactProjection['analysis'];
     }>;
     distributedRun?: ControlDistributedRunSnapshot;
     controlRun?: ControlRunSnapshot;
     manifest?: RallarBlackBoxDistributedRunManifest;
-    analysis?: DistributedRunAnalysis;
+    analysis?: DistributedRunAnalysis | AnalyzeArtifactProjection['analysis'];
     performance?: DistributedRunPerformanceAnalysis;
     inventory?: DistributedRunTuningInventory;
     decisions?: DistributedRunTuningDecisionResult;
@@ -240,7 +246,7 @@ function sourceIssues(input: SourceIssueInput): TuneSourceIssue[] {
     if (input.inventory?.limitations.some(row => row.code === 'reference-only-recipe')) {
         addIssue(issues, 'reference-only', 'A selected recipe is reference-only and has no authoritative inline knobs.');
     }
-    if (input.hasCurrent && !hasPerformanceEvidence(input.performance)) {
+    if (input.hasCurrent && !hasTunePerformanceEvidence(input.performance)) {
         addIssue(issues, 'missing-performance', 'No command or RTC stream performance samples are available.');
     }
     if (input.identity.quarantined) {
@@ -263,7 +269,7 @@ function candidateBlockReasons(input: Readonly<{
     if (!input.distributedRun || !input.selectedControlRun) {
         reasons.push('A paired distributed and control run is required.');
     }
-    if (!hasPerformanceEvidence(input.performance)) {
+    if (!hasTunePerformanceEvidence(input.performance)) {
         reasons.push('Performance evidence is required before creating a candidate.');
     }
     if (input.identity.quarantined) reasons.push('The run identity is unsafe.');
@@ -277,18 +283,6 @@ function candidateBlockReasons(input: Readonly<{
         reasons.push('Current live or partial control truth is required.');
     }
     return [...new Set(reasons)];
-}
-
-function hasPerformanceEvidence(
-    performance: DistributedRunPerformanceAnalysis | undefined,
-): boolean {
-    return Boolean(
-        performance && (
-            performance.commandTiming.count > 0 ||
-            (performance.streamTiming?.streamCount ?? 0) > 0 ||
-            (performance.receiverDelivery?.sampleCount ?? 0) > 0
-        )
-    );
 }
 
 function addIssue(

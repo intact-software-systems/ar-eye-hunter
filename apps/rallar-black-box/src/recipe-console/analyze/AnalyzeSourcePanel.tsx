@@ -242,7 +242,7 @@ export function AnalyzeSourcePanel({
                     <span>
                         {controller.model.provenance.artifactFileCount} artifact files ·
                         {' '}{controller.model.workspace.support} · schema v
-                        {controller.model.portableEnvelope.artifactSchemaVersion}
+                        {controller.model.workspace.artifactSchemaVersion ?? 'unknown'}
                     </span>
                 </p>
             ) : null}

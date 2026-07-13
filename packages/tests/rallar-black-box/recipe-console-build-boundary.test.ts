@@ -1,4 +1,4 @@
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -108,6 +108,23 @@ describe('Recipe Console build boundary', () => {
             entry.src?.endsWith('/recipe-console/app/RecipeConsoleApp.tsx')
         );
         expect(recipeChunk).toBeDefined();
+        const workerClientEntry = Object.entries(manifest).find(([, entry]) =>
+            entry.src?.endsWith('/recipe-console/analyze/analyze-worker-client.ts')
+        );
+        const workerFactoryEntry = Object.entries(manifest).find(([, entry]) =>
+            entry.src?.endsWith('/recipe-console/analyze/analyze-worker-factory.ts')
+        );
+        expect(workerClientEntry).toBeDefined();
+        expect(workerFactoryEntry).toBeDefined();
+        expect(graph.recipeConsoleStaticClosure.has(workerClientEntry?.[0] ?? 'missing'))
+            .toBe(false);
+        expect(graph.recipeConsoleStaticClosure.has(workerFactoryEntry?.[0] ?? 'missing'))
+            .toBe(false);
+        expect(await readdir(join(outputRoot, 'assets'))).toEqual(
+            expect.arrayContaining([
+                expect.stringMatching(/^analyze-artifact\.worker-[^.]+\.js$/),
+            ]),
+        );
         const recipeChunkPath = join(outputRoot, recipeChunk?.file ?? 'missing');
         const recipeChunkText = await readFile(recipeChunkPath, 'utf8');
         expect(recipeChunkText).toContain('data-command-bar');

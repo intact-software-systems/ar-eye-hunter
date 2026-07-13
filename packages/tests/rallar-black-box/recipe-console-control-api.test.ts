@@ -1578,6 +1578,55 @@ describe('Recipe Console control API', () => {
         })).resolves.toEqual(protocolDistributedArtifact());
     });
 
+    it('returns bounded artifact response bytes without parsing the success body on the main thread', async () => {
+        const body = JSON.stringify(protocolDistributedArtifact());
+        const text = vi.fn(async () => {
+            throw new Error('success response text parsing is forbidden');
+        });
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => {
+                const response = new Response(new TextEncoder().encode(body), {
+                    headers: { 'content-length': String(body.length) },
+                });
+                Object.defineProperty(response, 'text', { value: text });
+                return response;
+            },
+        });
+
+        const raw = await api.execution.exportRunArtifactBytes({
+            distributedRunId: 'distributed-execute-a',
+        });
+
+        expect(raw.distributedRunId).toBe('distributed-execute-a');
+        expect(new TextDecoder().decode(raw.bytes)).toBe(body);
+        expect(text).not.toHaveBeenCalled();
+    });
+
+    it('rejects an oversized declared raw artifact response before reading its body', async () => {
+        const arrayBuffer = vi.fn(async () => new ArrayBuffer(0));
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test/control',
+            apiBaseUrl: 'https://api.test',
+            fetchFn: async () => {
+                const response = new Response(null, {
+                    headers: { 'content-length': String(65 * 1024 * 1024) },
+                });
+                Object.defineProperty(response, 'arrayBuffer', { value: arrayBuffer });
+                return response;
+            },
+        });
+
+        await expect(api.execution.exportRunArtifactBytes({
+            distributedRunId: 'distributed-execute-a',
+        })).rejects.toMatchObject({
+            name: 'RecipeConsoleControlProtocolError',
+            message: expect.stringContaining('transfer limit'),
+        });
+        expect(arrayBuffer).not.toHaveBeenCalled();
+    });
+
     it.each(
         [
             ['artifactSchemaVersion', { artifactSchemaVersion: 1 }],

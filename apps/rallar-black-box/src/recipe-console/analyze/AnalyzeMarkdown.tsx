@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
 import styles from './AnalyzeEvidence.module.css';
 
 type MarkdownDocument = Readonly<{
@@ -10,7 +10,7 @@ type MarkdownDocument = Readonly<{
 
 export function AnalyzeMarkdown({
     model,
-}: Readonly<{ model: AnalyzeArtifactModel }>) {
+}: Readonly<{ model: AnalyzeArtifactProjection }>) {
     const [feedback, setFeedback] = useState<string>();
     const documents = markdownDocuments(model);
 
@@ -51,7 +51,7 @@ export function AnalyzeMarkdown({
     );
 }
 
-function markdownDocuments(model: AnalyzeArtifactModel): readonly MarkdownDocument[] {
+function markdownDocuments(model: AnalyzeArtifactProjection): readonly MarkdownDocument[] {
     return [
         { id: 'issue', label: 'Issue Markdown', value: model.issueMarkdown },
         { id: 'summary', label: 'Summary', value: model.analysis.summaryMarkdown },

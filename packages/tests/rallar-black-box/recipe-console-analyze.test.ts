@@ -78,5 +78,9 @@ describe('Recipe Console Analyze binding policy', () => {
             distributedRunId: 'distributed-a',
             controlRunId: 'control-a',
         }, context)).not.toThrow();
+        expect(() => validateAnalyzeControlArtifactIdentity({
+            distributedRunId: 'distributed-b',
+            controlRunId: 'control-b',
+        }, context)).toThrow('control run control-b, not control-a');
     });
 });

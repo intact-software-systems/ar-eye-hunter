@@ -3,16 +3,17 @@ import {
     deriveDistributedArtifactWorkspace,
     deriveDistributedArtifactEvidenceIndex,
     distributedArtifactPipelineJsonRecord,
-    searchDistributedArtifactEvidence,
     type DistributedArtifactEvidenceIndex,
-    type DistributedArtifactEvidenceSearchResult,
+    type DistributedArtifactPipelineTelemetry,
     type DistributedArtifactWorkspace,
+    type DeriveDistributedArtifactEvidenceIndexInput,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles,
     type DistributedRunArtifactSnapshots,
     type ParsedDistributedArtifactPipeline,
 } from '@shared-test/rallar-bb-test/mod.ts';
-import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+
+export { deriveAnalyzeArtifactSearchResult } from './analyze-artifact-search.ts';
 
 export type AnalyzeArtifactSource = 'local-files' | 'control';
 
@@ -68,6 +69,23 @@ export type AnalyzeArtifactModel = Readonly<{
     firstActionableEvidenceId?: string;
 }>;
 
+export type DerivedAnalyzeArtifactModel = Readonly<{
+    model: AnalyzeArtifactModel;
+    pipelineTelemetry: DistributedArtifactPipelineTelemetry;
+}>;
+
+export type PreparedAnalyzeArtifactModel = Readonly<{
+    input: AnalyzeArtifactModelInput;
+    workspace: DistributedArtifactWorkspace;
+    analysis: DistributedRunAnalysis;
+    snapshots: DistributedRunArtifactSnapshots;
+    portableFiles: Readonly<Record<string, string>>;
+    ignoredFiles: readonly AnalyzeArtifactIgnoredFile[];
+    selectedArtifactFileCount: number;
+    evidenceInput: DeriveDistributedArtifactEvidenceIndexInput;
+    pipelineTelemetry: DistributedArtifactPipelineTelemetry;
+}>;
+
 export type AnalyzeArtifactModelErrorCode =
     | 'generic-artifact-unsupported'
     | 'unknown-artifact-family'
@@ -92,6 +110,25 @@ export class AnalyzeArtifactModelError extends Error {
 export function createAnalyzeArtifactModel(
     input: AnalyzeArtifactModelInput,
 ): AnalyzeArtifactModel {
+    return deriveAnalyzeArtifactModel(input).model;
+}
+
+export function deriveAnalyzeArtifactModel(
+    input: AnalyzeArtifactModelInput,
+): DerivedAnalyzeArtifactModel {
+    const prepared = prepareAnalyzeArtifactModel(input);
+    const evidenceIndex = deriveDistributedArtifactEvidenceIndex(
+        prepared.evidenceInput,
+    );
+    return {
+        model: finalizeAnalyzeArtifactModel(prepared, evidenceIndex),
+        pipelineTelemetry: prepared.pipelineTelemetry,
+    };
+}
+
+export function prepareAnalyzeArtifactModel(
+    input: AnalyzeArtifactModelInput,
+): PreparedAnalyzeArtifactModel {
     const derived = deriveDistributedArtifactWorkspace({
         files: input.files,
         generatedAtEpochMs: input.generatedAtEpochMs,
@@ -111,7 +148,7 @@ export function createAnalyzeArtifactModel(
     }
 
     const portableFiles = normalizedPortableFiles(derived.parsed.projectedFiles);
-    const evidenceIndex = deriveDistributedArtifactEvidenceIndex({
+    const evidenceInput: DeriveDistributedArtifactEvidenceIndexInput = {
         analysis,
         snapshots,
         monitor: derived.monitor,
@@ -121,14 +158,35 @@ export function createAnalyzeArtifactModel(
         ),
         sourceFileNames: Object.keys(portableFiles),
         sourceFiles: derived.parsed.projectedFiles,
-    });
+    };
     const ignoredFiles = normalizedIgnoredFiles(input.ignoredFiles ?? []);
     const selectedArtifactFileCount = selectedInputFileCount(derived.parsed);
+    return {
+        input,
+        workspace,
+        analysis,
+        snapshots,
+        portableFiles,
+        ignoredFiles,
+        selectedArtifactFileCount,
+        evidenceInput,
+        pipelineTelemetry: derived.parsed.telemetry,
+    };
+}
+
+export function finalizeAnalyzeArtifactModel(
+    prepared: PreparedAnalyzeArtifactModel,
+    evidenceIndex: DistributedArtifactEvidenceIndex,
+): AnalyzeArtifactModel {
+    const {
+        input, workspace, analysis, snapshots, portableFiles, ignoredFiles,
+        selectedArtifactFileCount,
+    } = prepared;
     const firstActionableEvidenceId = evidenceIndex.entries.find(
         entry => entry.kind === 'failure',
     )?.id;
 
-    return {
+    const model: AnalyzeArtifactModel = {
         distributedRunId: analysis.distributedRunId,
         ...(analysis.controlRunId
             ? { controlRunId: analysis.controlRunId }
@@ -174,6 +232,7 @@ export function createAnalyzeArtifactModel(
             ? { firstActionableEvidenceId }
             : {}),
     };
+    return model;
 }
 
 function selectedInputFileCount(
@@ -185,23 +244,6 @@ function selectedInputFileCount(
     return Object.values(parsed.projectedFiles).filter(
         value => typeof value === 'string',
     ).length;
-}
-
-export function deriveAnalyzeArtifactSearchResult(
-    model: AnalyzeArtifactModel,
-    urlState: RecipeConsoleUrlState,
-): DistributedArtifactEvidenceSearchResult {
-    return searchDistributedArtifactEvidence(model.evidenceIndex, {
-        query: urlState.historyQuery,
-        agentId: urlState.agentId,
-        recipeId: urlState.recipeId,
-        commandId: urlState.commandId,
-        status: urlState.status,
-        severity: urlState.diagnosticSeverity,
-        transport: urlState.transport,
-        fromEpochMs: urlState.from,
-        toEpochMs: urlState.to,
-    });
 }
 
 function rejectUnsupportedFamily(

@@ -1,9 +1,9 @@
-import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
 import styles from './AnalyzeEvidence.module.css';
 
 export function AnalyzePerformance({
     model,
-}: Readonly<{ model: AnalyzeArtifactModel }>) {
+}: Readonly<{ model: AnalyzeArtifactProjection }>) {
     const performance = model.analysis.performance;
     const timing = performance?.commandTiming;
     const stream = performance?.streamTiming;

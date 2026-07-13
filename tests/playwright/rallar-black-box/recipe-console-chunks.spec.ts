@@ -1,6 +1,12 @@
 import { expect, test, type Browser } from '@playwright/test';
 import { installRecipeConsoleTuneFixture } from
     './recipe-console-tune-fixture.ts';
+import { createAnalyzeLooseFiles } from
+    './recipe-console-analyze-artifacts.ts';
+import { installRecipeConsoleAnalyzeFixture } from
+    './recipe-console-analyze-fixture.ts';
+import { chooseAnalyzeFiles } from './recipe-console-analyze-helpers.ts';
+import { ANALYZE_ROUTE } from './recipe-console-analyze-run-data.ts';
 
 async function coldEntry(
     browser: Browser,
@@ -195,6 +201,91 @@ test('proves each production experience static closure without fixture or peer r
     expect(legacyResources.some(url => /\/assets\/LegacyExperience-[^/]+\.css$/.test(url))).toBe(true);
     expect(legacyResources.some(url => url.includes('RecipeConsoleApp'))).toBe(false);
     expect(legacyResources.some(url => url.includes('recipe-console-css-isolation'))).toBe(false);
+});
+
+test('loads the real production Analyze worker only on import and paints pending before start', async ({
+    browser,
+}) => {
+    const context = await browser.newContext({
+        baseURL: 'http://127.0.0.1:4176',
+    });
+    await installRecipeConsoleAnalyzeFixture(context);
+    await context.addInitScript(() => {
+        const tracked = window as typeof window & {
+            __analyzeWorkerProtocol?: string[];
+        };
+        tracked.__analyzeWorkerProtocol = [];
+        const NativeWorker = Worker;
+        class TrackedWorker extends NativeWorker {
+            constructor(url: string | URL, options?: WorkerOptions) {
+                super(url, options);
+                this.addEventListener('message', event => {
+                    const type = (event.data as { type?: unknown } | undefined)?.type;
+                    if (typeof type === 'string') {
+                        tracked.__analyzeWorkerProtocol?.push(`response:${type}`);
+                    }
+                });
+            }
+
+            override postMessage(message: unknown, transfer?: Transferable[]): void;
+            override postMessage(message: unknown, options?: StructuredSerializeOptions): void;
+            override postMessage(
+                message: unknown,
+                transferOrOptions?: Transferable[] | StructuredSerializeOptions,
+            ): void {
+                const type = (message as { type?: unknown } | undefined)?.type;
+                if (type === 'start') {
+                    const pending = document.querySelector<HTMLElement>(
+                        '[data-analyze-workspace]',
+                    )?.dataset.analyzePendingPainted;
+                    tracked.__analyzeWorkerProtocol?.push(`request:start:pending=${pending}`);
+                }
+                if (Array.isArray(transferOrOptions)) {
+                    super.postMessage(message, transferOrOptions);
+                } else {
+                    super.postMessage(message, transferOrOptions);
+                }
+            }
+        }
+        Object.defineProperty(window, 'Worker', {
+            configurable: true,
+            value: TrackedWorker,
+        });
+    });
+    const page = await context.newPage();
+    const workerUrls: string[] = [];
+    const resources: string[] = [];
+    page.on('worker', worker => workerUrls.push(worker.url()));
+    page.on('request', request => resources.push(request.url()));
+
+    await page.goto(ANALYZE_ROUTE);
+    await expect(page.locator('[data-analyze-workspace]')).toBeVisible();
+    expect(workerUrls).toEqual([]);
+    expect(resources.some(url => /analyze-artifact\.worker-[^/]+\.js$/.test(url)))
+        .toBe(false);
+
+    await chooseAnalyzeFiles(page, createAnalyzeLooseFiles());
+    await expect(page.locator('[data-artifact-status]')).toHaveText('Artifact ready');
+    await expect.poll(() => workerUrls.some(url =>
+        /\/assets\/analyze-artifact\.worker-[^/]+\.js$/.test(url)
+    )).toBe(true);
+    expect(resources.some(url => /analyze-worker-client-[^/]+\.js$/.test(url)))
+        .toBe(true);
+    const protocol = await page.evaluate(() => (
+        window as typeof window & { __analyzeWorkerProtocol?: string[] }
+    ).__analyzeWorkerProtocol ?? []);
+    expect(protocol).toEqual(expect.arrayContaining([
+        'response:accepted',
+        'request:start:pending=true',
+        'response:complete',
+    ]));
+    expect(protocol.indexOf('response:accepted')).toBeLessThan(
+        protocol.indexOf('request:start:pending=true'),
+    );
+    expect(protocol.indexOf('request:start:pending=true')).toBeLessThan(
+        protocol.indexOf('response:complete'),
+    );
+    await context.close();
 });
 
 test('loads production History with Tune and retention only after Preview', async ({

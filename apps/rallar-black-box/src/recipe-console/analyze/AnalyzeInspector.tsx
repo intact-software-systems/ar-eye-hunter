@@ -1,5 +1,5 @@
 import type { DistributedArtifactEvidenceEntry } from '@shared-test/rallar-bb-test/mod.ts';
-import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
 import styles from './AnalyzeInspector.module.css';
 
 export function AnalyzeInspector({
@@ -7,7 +7,7 @@ export function AnalyzeInspector({
     model,
 }: Readonly<{
     entry: DistributedArtifactEvidenceEntry;
-    model: AnalyzeArtifactModel;
+    model: AnalyzeArtifactProjection;
 }>) {
     const selectors: readonly (readonly [string, string | undefined])[] = [
         ['Source file', entry.sourceFile],

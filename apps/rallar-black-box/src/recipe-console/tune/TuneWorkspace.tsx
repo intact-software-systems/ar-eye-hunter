@@ -2,7 +2,7 @@ import {
     useMemo,
     type ReactNode,
 } from 'react';
-import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
 import {
     HistoryWorkspace,
     type HistoryWorkspaceProps,
@@ -20,7 +20,7 @@ import { TuneSourceSelection } from './TuneSourceSelection.tsx';
 import { TuneStreamHealth } from './TuneStreamHealth.tsx';
 import { buildTuneRunCatalog } from './tune-run-catalog.ts';
 import { deriveTuneSelectionModel } from './tune-selection-model.ts';
-import { deriveTuneSourceModel } from './tune-source-model.ts';
+import { deriveTuneWorkspaceSourceModel } from './tune-workspace-source-model.ts';
 import { useTuneInspectionHost } from './use-tune-inspection-host.tsx';
 import styles from './TuneWorkspace.module.css';
 
@@ -28,7 +28,7 @@ export type TuneWorkspaceProps = Readonly<{
     query: HistoryWorkspaceProps['query'];
     retained: Readonly<{
         status: 'idle' | 'pending' | 'ready' | 'error';
-        model?: AnalyzeArtifactModel;
+        model?: AnalyzeTuneArtifactFacade;
         error?: string;
     }>;
     urlState: RecipeConsoleUrlState;
@@ -55,31 +55,22 @@ export default function TuneWorkspace({
     replace,
     refreshAfterCurrent,
 }: TuneWorkspaceProps) {
-    const focusRunId = urlState.compareRight ?? urlState.distributedRunId;
     const catalog = useMemo(() => buildTuneRunCatalog({
         distributedRuns: query.snapshot?.distributedRuns ?? [],
         controlRuns: query.snapshot?.runs ?? [],
-        retainedArtifact: retained.model,
-        retainedArtifactStatus: retained.status,
-        retainedArtifactFocusRunId: focusRunId,
+        retainedFacade: retained.model,
     }), [
-        focusRunId,
         query.snapshot?.distributedRuns,
         query.snapshot?.runs,
         retained.model,
-        retained.status,
     ]);
     const sourceSearch = typeof window === 'undefined'
         ? ''
         : window.location.search;
-    const source = useMemo(() => deriveTuneSourceModel({
+    const source = useMemo(() => deriveTuneWorkspaceSourceModel({
         catalog,
         query,
-        retained: {
-            status: retained.status,
-            model: retained.model,
-            error: retained.error,
-        },
+        retained,
         sourceSearch,
         urlState,
     }), [
@@ -94,9 +85,8 @@ export default function TuneWorkspace({
     const selection = useMemo(() => deriveTuneSelectionModel({
         catalog,
         query,
-        retainedArtifact: retained.model,
         urlState,
-    }), [catalog, query, retained.model, urlState]);
+    }), [catalog, query, urlState]);
     const inspect = useTuneInspectionHost({
         source,
         onInspect,

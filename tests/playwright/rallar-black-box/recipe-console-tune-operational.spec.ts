@@ -49,6 +49,11 @@ const OPERATIONAL_CASES: readonly OperationalCase[] = [
         prepare: async page => {
             await page.goto(absolute(TUNE_ANALYZE_ROUTE));
             await chooseAnalyzeFiles(page, [createTuneArtifactUpload()]);
+            await expect(page.locator('[data-artifact-status]'))
+                .toHaveText('Artifact ready');
+            await expect.poll(() => new URL(page.url()).searchParams.get(
+                'distributedRunId',
+            )).toBe(TUNE_RIGHT_RUN_ID);
             await page.getByRole('button', { name: 'Tune', exact: true }).click();
             await page.getByLabel('Candidate run').selectOption(TUNE_LEFT_RUN_ID);
         },

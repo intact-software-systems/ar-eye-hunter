@@ -121,10 +121,14 @@ export function completeAnalyzeWorkspaceOperation<
     completion: Readonly<{
         artifact: Artifact;
         selectedEvidenceId?: string;
+        controlIdentityValidated?: boolean;
     }>,
 ): AnalyzeWorkspaceState<Artifact> {
     if (!hasAnalyzeWorkspaceAuthority(state, authority)) return state;
+    const exactControlIdentityValidated = authority.action === 'load-control' &&
+        completion.controlIdentityValidated === true;
     if (
+        !exactControlIdentityValidated &&
         authority.expectedDistributedRunId &&
         completion.artifact.distributedRunId !==
             authority.expectedDistributedRunId
@@ -137,6 +141,7 @@ export function completeAnalyzeWorkspaceOperation<
         );
     }
     if (
+        !exactControlIdentityValidated &&
         authority.expectedControlRunId &&
         completion.artifact.controlRunId !== authority.expectedControlRunId
     ) {
@@ -218,10 +223,12 @@ function retainedArtifactContextError<Artifact extends AnalyzeArtifactIdentity>(
             `Loaded artifact ${artifact.distributedRunId} is retained, but no distributed run is selected.`,
         );
     }
-    if (state.artifactContextKey && state.artifactContextKey !== context.key) {
-        return new AnalyzeArtifactContextError(
-            `Loaded control artifact ${artifact.distributedRunId} is retained from another control context; load ${context.distributedRunId} to replace it.`,
-        );
+    if (state.artifactContextKey) {
+        return state.artifactContextKey === context.key
+            ? undefined
+            : new AnalyzeArtifactContextError(
+                `Loaded control artifact ${artifact.distributedRunId} is retained from another control context; load ${context.distributedRunId} to replace it.`,
+            );
     }
     if (artifact.distributedRunId !== context.distributedRunId) {
         return new AnalyzeArtifactContextError(

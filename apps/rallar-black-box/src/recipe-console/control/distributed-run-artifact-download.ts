@@ -9,10 +9,16 @@ export function createDistributedRunArtifactDownload(
     distributedRunId: string,
 ): DistributedRunArtifactDownload {
     return {
-        filename: `${safeFilenameSegment(distributedRunId)}-artifact.json`,
+        filename: createDistributedRunArtifactFilename(distributedRunId),
         content: `${JSON.stringify(value, null, 2)}\n`,
         mediaType: 'application/json',
     };
+}
+
+export function createDistributedRunArtifactFilename(
+    distributedRunId: string,
+): string {
+    return `${safeFilenameSegment(distributedRunId)}-artifact.json`;
 }
 
 const MAX_FILENAME_SEGMENT_LENGTH = 120;

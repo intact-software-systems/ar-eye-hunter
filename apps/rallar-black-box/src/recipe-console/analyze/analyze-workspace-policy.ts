@@ -43,17 +43,17 @@ export function validateAnalyzeControlArtifactIdentity(
     }>,
     context: AnalyzeWorkspaceContext,
 ): void {
-    if (artifact.distributedRunId !== context.distributedRunId) {
-        throw new Error(
-            `Artifact response belongs to ${artifact.distributedRunId}, not ${context.distributedRunId}.`,
-        );
-    }
     if (
         context.controlRunId &&
         artifact.controlRunId !== context.controlRunId
     ) {
         throw new Error(
             `Artifact response belongs to control run ${artifact.controlRunId ?? 'unknown'}, not ${context.controlRunId}.`,
+        );
+    }
+    if (artifact.distributedRunId !== context.distributedRunId) {
+        throw new Error(
+            `Artifact response belongs to ${artifact.distributedRunId}, not ${context.distributedRunId}.`,
         );
     }
 }

@@ -3,6 +3,7 @@ import { resolveAppExperience } from '../../../apps/rallar-black-box/src/app/exp
 import { scrubRecipeConsoleHrefBeforeLoad } from '../../../apps/rallar-black-box/src/app/recipe-console-url-guard.ts';
 import { createRunnerAgentLaunchUrl } from '../../../apps/rallar-black-box/src/runner-agent-launch.ts';
 import {
+    RECIPE_CONSOLE_URL_STRING_MAX_BYTES,
     RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
     type RecipeConsoleUrlState,
 } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
@@ -26,6 +27,28 @@ function lowerCaseKeys(search: string): string[] {
 }
 
 describe('Recipe Console URL state codec', () => {
+    it('drops over-budget string filters before they can become stale worker authority', () => {
+        const overBudget = '界'.repeat(
+            Math.floor(RECIPE_CONSOLE_URL_STRING_MAX_BYTES / 3) + 1,
+        );
+        const parsed = parseRecipeConsoleUrl(
+            `?v=1&experience=recipe-console&view=analyze&historyQuery=${encodeURIComponent(overBudget)}`,
+        );
+
+        expect(parsed.state.historyQuery).toBeUndefined();
+        expect(parsed.issues).toContainEqual(expect.objectContaining({
+            field: 'historyQuery',
+            code: 'invalid',
+        }));
+        expect(new URLSearchParams(parsed.canonicalSearch).has('historyQuery'))
+            .toBe(false);
+        expect(new URLSearchParams(serializeRecipeConsoleUrl({
+            ...BASE_STATE,
+            view: 'analyze',
+            historyQuery: overBudget,
+        })).has('historyQuery')).toBe(false);
+    });
+
     it('round-trips an unknown explicit recipe identity without choosing a fallback', () => {
         const parsed = parseRecipeConsoleUrl(
             '?v=1&experience=recipe-console&view=execute&recipeId=unknown-explicit',

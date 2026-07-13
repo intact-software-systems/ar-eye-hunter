@@ -10,6 +10,7 @@ import {
     cancelDistributedRun,
     createDistributedRun,
     fetchDistributedRunArtifactBundle,
+    fetchDistributedRunArtifactBundleBytes,
     resolveDistributedTargets,
     stageDistributedRun,
     startDistributedRun,
@@ -34,6 +35,13 @@ type RunExecutionInput =
     }>;
 type CancelExecutionInput = RunExecutionInput & Readonly<{ reason?: string }>;
 
+export const RECIPE_CONSOLE_CONTROL_ARTIFACT_TRANSFER_MAX_BYTES = 64 * 1024 * 1024;
+
+export type RecipeConsoleControlArtifactBytes = Readonly<{
+    distributedRunId: string;
+    bytes: ArrayBuffer;
+}>;
+
 export type RecipeConsoleControlExecutionApi = Readonly<{
     resolveTargets(
         input: ManifestExecutionInput,
@@ -47,6 +55,9 @@ export type RecipeConsoleControlExecutionApi = Readonly<{
     exportRunArtifact(
         input: RunExecutionInput,
     ): Promise<ControlDistributedRunArtifactBundle>;
+    exportRunArtifactBytes(
+        input: RunExecutionInput,
+    ): Promise<RecipeConsoleControlArtifactBytes>;
 }>;
 
 export function createRecipeConsoleControlExecutionApi(
@@ -141,6 +152,23 @@ export function createRecipeConsoleControlExecutionApi(
                 request.signal,
             );
             return result.value;
+        },
+        async exportRunArtifactBytes(request) {
+            const result = await input.transport.response(
+                (token, fetchFn) => fetchDistributedRunArtifactBundleBytes({
+                    baseUrl: input.baseUrl,
+                    distributedRunId: request.distributedRunId,
+                    token,
+                    fetchFn,
+                    maxBytes: RECIPE_CONSOLE_CONTROL_ARTIFACT_TRANSFER_MAX_BYTES,
+                }),
+                artifactAuthorization,
+                request.signal,
+            );
+            return {
+                distributedRunId: request.distributedRunId,
+                bytes: result.value,
+            };
         },
     };
 

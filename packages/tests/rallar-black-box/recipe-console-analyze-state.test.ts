@@ -9,6 +9,8 @@ import {
     reconcileAnalyzeWorkspaceContext,
     selectAnalyzeWorkspaceEvidence,
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-workspace-state.ts';
+import { analyzeOperationOwnsCurrentBoundary } from
+    '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-operation-boundary.ts';
 
 type TestArtifact = Readonly<{
     distributedRunId: string;
@@ -36,6 +38,37 @@ function artifact(
 }
 
 describe('Recipe Console Analyze workspace state', () => {
+    it('rechecks Control context and execution identity synchronously at promotion', () => {
+        const execution = {};
+        const authority = {
+            action: 'load-control' as const,
+            contextKey: contextA.key,
+            generation: 1,
+        };
+        expect(analyzeOperationOwnsCurrentBoundary({
+            authority,
+            operationExecution: execution,
+            currentContextKey: contextA.key,
+            currentExecution: execution,
+        })).toBe(true);
+        expect(analyzeOperationOwnsCurrentBoundary({
+            authority,
+            operationExecution: execution,
+            currentContextKey: contextB.key,
+            currentExecution: execution,
+        })).toBe(false);
+        expect(analyzeOperationOwnsCurrentBoundary({
+            authority,
+            operationExecution: execution,
+            currentContextKey: contextA.key,
+            currentExecution: {},
+        })).toBe(false);
+        expect(analyzeOperationOwnsCurrentBoundary({
+            authority: { ...authority, action: 'import-local' },
+            currentContextKey: contextB.key,
+        })).toBe(true);
+    });
+
     it('normalizes control context and completes a local import atomically', () => {
         const initial = reconcileAnalyzeWorkspaceContext(
             createInitialAnalyzeWorkspaceState<TestArtifact>(),
@@ -219,6 +252,38 @@ describe('Recipe Console Analyze workspace state', () => {
         expect(completed.operationError).toMatchObject({
             message: 'Artifact response belongs to control run control-b, not control-a.',
         });
+    });
+
+    it('promotes a digest-validated Control artifact independently of bounded display identity', () => {
+        const initial = reconcileAnalyzeWorkspaceContext(
+            createInitialAnalyzeWorkspaceState<TestArtifact>(),
+            contextA,
+        );
+        const started = beginAnalyzeWorkspaceOperation(initial, {
+            action: 'load-control',
+            contextKey: contextA.key,
+            expectedControlRunId: contextA.controlRunId,
+            expectedDistributedRunId: contextA.distributedRunId,
+        });
+        const projected = artifact(
+            'opaque-id:1800:0123456789abcdef0123456789abcdef',
+            'Bounded display',
+            'opaque-id:1200:fedcba9876543210fedcba9876543210',
+        );
+
+        const completed = completeAnalyzeWorkspaceOperation(
+            started.state,
+            started.authority,
+            { artifact: projected, controlIdentityValidated: true },
+        );
+        const reconciled = reconcileAnalyzeWorkspaceContext(completed, contextA);
+
+        expect(completed).toMatchObject({
+            artifact: projected,
+            artifactStatus: 'ready',
+            artifactContextKey: contextA.key,
+        });
+        expect(reconciled).toBe(completed);
     });
 
     it('uses monotonic authority and lets clear invalidate pending work', () => {

@@ -1,17 +1,17 @@
-import {
-    useMemo,
-    type Dispatch,
-    type SetStateAction,
-} from 'react';
+import { useMemo } from 'react';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
-import { downloadDistributedRunArtifact } from '../control/distributed-run-artifact-download.ts';
 import type { RecipeConsoleControlSelection } from '../control/control-selection.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
-import {
-    deriveAnalyzeArtifactSearchResult,
-    type AnalyzeArtifactModel,
-} from './analyze-artifact-model.ts';
-import type { AnalyzeFileLike } from './analyze-file-boundary.ts';
+import type {
+    AnalyzeFileLike,
+    AnalyzeTransferFileLike,
+} from './analyze-file-boundary.ts';
+import type {
+    AnalyzeArtifactProjection,
+    AnalyzeEvidenceWindowProjection,
+    AnalyzeTuneArtifactFacade,
+    AnalyzeWorkerTelemetry,
+} from './analyze-worker-contract.ts';
 import {
     deriveAnalyzeControlRunOptions,
     deriveAnalyzeDistributedRunOptions,
@@ -25,7 +25,6 @@ import {
     projectAnalyzeWorkspaceLoadReason,
 } from './analyze-workspace-policy.ts';
 import {
-    selectAnalyzeWorkspaceEvidence,
     type AnalyzeWorkspaceContext,
     type AnalyzeWorkspaceState,
 } from './analyze-workspace-state.ts';
@@ -36,24 +35,34 @@ export function useAnalyzeWorkspaceController(input: Readonly<{
     urlState: RecipeConsoleUrlState;
     context?: AnalyzeWorkspaceContext;
     requestedDistributedRunId?: string;
-    state: AnalyzeWorkspaceState<AnalyzeArtifactModel>;
-    setState: Dispatch<SetStateAction<AnalyzeWorkspaceState<AnalyzeArtifactModel>>>;
-    importFiles(files: readonly AnalyzeFileLike[]): Promise<boolean>;
+    state: AnalyzeWorkspaceState<AnalyzeArtifactProjection>;
+    evidenceWindow?: AnalyzeEvidenceWindowProjection;
+    selectedEvidence?: AnalyzeEvidenceWindowProjection['entries'][number];
+    tuneFacade?: AnalyzeTuneArtifactFacade;
+    telemetry?: AnalyzeWorkerTelemetry;
+    workerUnavailable?: string;
+    pendingPaintGeneration?: number;
+    importFiles(files: readonly (AnalyzeFileLike & Partial<AnalyzeTransferFileLike>)[]): Promise<boolean>;
     loadControlArtifact(): Promise<boolean>;
+    exportArtifact(): void;
+    requestWindow(cursor: string): number | undefined;
+    selectEvidence(id: string | undefined): void;
     clearArtifact(): void;
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
     replace(patch: Partial<RecipeConsoleUrlState>): void;
 }>) {
     const model = input.state.artifact;
-    const searchResult = useMemo(
-        () => model
-            ? deriveAnalyzeArtifactSearchResult(model, input.urlState)
-            : undefined,
-        [input.urlState, model],
-    );
-    const selectedEvidence = model?.evidenceIndex.entries.find(
-        entry => entry.id === input.state.selectedEvidenceId,
-    );
+    const searchResult = useMemo(() => input.evidenceWindow
+        ? {
+            entries: input.evidenceWindow.entries,
+            totalMatches: input.evidenceWindow.counts.retainedMatches,
+            omittedMatchCount: input.evidenceWindow.counts.renderOmittedMatches,
+            upstreamOmittedEntryCount:
+                input.evidenceWindow.counts.indexOmittedEntries,
+            totalMatchesIsComplete: input.evidenceWindow.totalMatchesIsComplete,
+            limit: input.evidenceWindow.windowSize,
+        }
+        : undefined, [input.evidenceWindow]);
     const controlRunOptions = useMemo(
         () => deriveAnalyzeControlRunOptions(
             input.connection.query.snapshot?.runs ?? [],
@@ -75,13 +84,19 @@ export function useAnalyzeWorkspaceController(input: Readonly<{
     return {
         model,
         searchResult,
-        selectedEvidence,
+        selectedEvidence: input.selectedEvidence,
+        evidenceWindow: input.evidenceWindow,
+        tuneFacade: input.tuneFacade,
+        telemetry: input.telemetry,
+        operationGeneration: input.state.operationGeneration,
+        pendingPaintGeneration: input.pendingPaintGeneration,
         controlRunOptions,
         distributedRunOptions,
         controlRunId: input.selection.controlRunId,
         distributedRunId: input.requestedDistributedRunId,
         status: input.state.artifactStatus,
-        error: projectAnalyzeWorkspaceError(input.state.operationError),
+        error: projectAnalyzeWorkspaceError(input.state.operationError) ??
+            input.workerUnavailable,
         busyAction: input.state.activeOperation?.action,
         canLoad: Boolean(
             input.context && input.connection.execution &&
@@ -94,18 +109,10 @@ export function useAnalyzeWorkspaceController(input: Readonly<{
         ),
         importFiles: input.importFiles,
         loadControlArtifact: input.loadControlArtifact,
-        exportArtifact: () => {
-            if (model) {
-                downloadDistributedRunArtifact(
-                    model.portableEnvelope,
-                    model.distributedRunId,
-                );
-            }
-        },
+        exportArtifact: input.exportArtifact,
         clearArtifact: input.clearArtifact,
-        selectEvidence: (id: string | undefined) => input.setState(
-            previous => selectAnalyzeWorkspaceEvidence(previous, id),
-        ),
+        selectEvidence: input.selectEvidence,
+        requestWindow: input.requestWindow,
         selectControlRun: (controlRunId: string) => input.navigate(
             controlRunId
                 ? recipeConsoleAnalyzeControlRunSelectionPatch({

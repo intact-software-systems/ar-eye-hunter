@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     AnalyzeArtifactModelError,
     createAnalyzeArtifactModel,
+    deriveAnalyzeArtifactModel,
     deriveAnalyzeArtifactSearchResult,
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
@@ -165,6 +166,26 @@ function urlState(
 }
 
 describe('Recipe Console Analyze artifact model', () => {
+    it('keeps the compatibility model exact while exposing one parsed-pipeline telemetry snapshot', () => {
+        const input = {
+            files: coreFiles(),
+            source: 'local-files' as const,
+            label: 'Telemetry-compatible artifact',
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+        };
+        const derived = deriveAnalyzeArtifactModel(input);
+
+        expect(derived.model).toEqual(createAnalyzeArtifactModel(input));
+        expect(derived.pipelineTelemetry).toMatchObject({
+            pipelinePassCount: 1,
+            sourceCollectionPassCount: 1,
+            sourceFileVisitCount: Object.keys(input.files).length,
+            jsonDocumentParseCount: 3,
+        });
+        expect(derived.pipelineTelemetry.jsonlFilePassCount).toBeGreaterThanOrEqual(0);
+        expect(derived.pipelineTelemetry.jsonlRowParseCount).toBeGreaterThanOrEqual(0);
+    });
+
     it('parses one source pipeline and reuses its monitor and control provenance', () => {
         const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
         const jsonDocuments = new Set(Object.entries(fixture.files)
