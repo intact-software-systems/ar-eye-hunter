@@ -1,7 +1,9 @@
 # Rallar Recipe Console Large-Run Scale And Windowing Implementation Plan
 
 Status: in progress; Iteration 8 is qualified through `fd9055e`, `f762749`,
-and `37c7a32`; Task 0 is in progress
+and `37c7a32`; the reviewed Task 0 artifact baseline is committed at
+`166b40b`; two instrumentation-dependent Task 0 proofs remain open; Task 1 is
+green through `523333f`; and Task 2 is in progress
 
 **Goal:** Complete parent Iteration 9 so large distributed artifacts and run
 collections stay searchable and operable without blocking the browser or
@@ -75,45 +77,143 @@ justifies that accessibility cost.
 
 ## Task 0: Freeze Baseline, Harness, Budgets, And Ownership
 
-- [ ] Add a deterministic synthetic large distributed-artifact fixture and a
+- [x] Add a deterministic synthetic large distributed-artifact fixture and a
   read-only root `scripts/perf/rallar-recipe-console-scale-bench.ts` harness.
-- [ ] Assert fixture byte size explicitly: every file <=16 MiB and aggregate
+- [x] Assert fixture byte size explicitly: every file <=16 MiB and aggregate
   <=48 MiB under the existing intake contract.
-- [ ] Record warm-up plus five-run 500/2,000/15,000-row baseline measurements:
+- [x] Record warm-up plus five-run 500/2,000/15,000-row baseline measurements:
   model/search duration, pipeline/file/row parse counters, heap delta, and
   source/index/match counts.
-- [ ] Persist commit, runtime, fixture bytes, flags, warm-up/run count, per-run
+- [x] Persist commit, runtime, fixture bytes, flags, warm-up/run count, per-run
   samples, median, and approximate p95/max under `tmp/perf/results/**`. Invoke
   Node with `--expose-gc --import tsx` whenever heap delta is recorded.
-- [ ] After the harness-only commit and before algorithm changes, run the fenced
+- [x] After the harness-only commit and before algorithm changes, run the fenced
   benchmark command with `--out=tmp/perf/results/iteration-9-base.json`; run the
   identical flags at Task 8 with `iteration-9-candidate.json`.
 - [ ] Record 5,000 run-pair and 2,000-command Tune baselines, including global
   selection work, projected rows/options, mounted DOM, and heartbeat progress.
-- [ ] RED-prove safe extrema with a portable 200,000-value correctness case,
+- [x] RED-prove safe extrema with a portable 200,000-value correctness case,
   late evidence beyond the retained index is unsearchable, and current Monitor
   and History prefixes are not browseable.
-- [ ] Capture the existing focused unit/app/browser/build/chunk baseline and
+- [x] Capture the existing focused unit/app/browser/build/chunk baseline and
   exact configured-live skip/pass state.
+
+### Task 0 checkpoint — `166b40b`
+
+The deterministic fixture is a schema-valid distributed-run artifact with
+12,000 events and 3,000 results, unique first/middle/last needles, actionable
+failure/diagnostic evidence, and exact UTF-8 intake size 4,753,103 bytes. A
+40,000-row pre-allocation ceiling plus runtime 16 MiB/file and 48 MiB/aggregate
+checks keep configurable probes inside the existing browser contract. The
+fixture and harness passed an independent re-review with no Critical or
+Important finding after correcting the initial invalid manifest, retained-only
+search probe, unbounded size input, and incomplete measurement metadata.
+
+The canonical clean-commit command wrote
+`tmp/perf/results/iteration-9-base.json` at `166b40b` with Node 26.5.0 on
+Darwin arm64, `--expose-gc --import tsx`, one warm-up, five measured samples,
+and `dirty: false`. At 15,000 rows the median model duration was 114.584 ms,
+the approximate p95/max was 115.246 ms, median retained heap delta was
+10,678,856 bytes, the 500-entry index reported 15,003 total entries and 14,503
+omissions, and the pipeline parsed 45,000 nonempty JSONL rows across three
+passes of each JSONL file. First/middle/last event needles, the first result,
+and the middle result were unsearchable; the final result and actionable
+controls remained retained. These wall-time and heap values are advisory only;
+the exact cardinality, omission, and parse counters are the acceptance truth.
+
+A read-only one-shot Node probe established the remaining UI cardinality
+baseline. Five thousand paired runs produced History counts
+`available=5000,total=5000,rendered=100,omitted=4900` in 15.350 ms while
+touching distributed manifests 5,400 times. The unbounded Tune catalog produced
+5,000 options in 69.303 ms and current source selects imply 10,002 option nodes.
+A valid 2,000-command `rtc.stream` recipe produced 24,002 unique/editable Tune
+knobs in 15.184 ms, all currently mapped into one candidate select. Formal
+global/inactive-work counters, browser-mounted counts for these synthetic
+collections, and a deterministic heartbeat do not exist yet, so those portions
+remain open and are not represented as passed.
+
+Fresh baseline validation is 214/214 focused unit tests; shared TypeScript and
+all seven Deno entries; app TypeScript; a 616-module production build; reciprocal
+experience-chunk proof; and 78/78 focused Chromium tests spanning Analyze,
+Monitor, History, Tune, responsive/accessibility, CSS isolation, and chunks.
+The configured live lifecycle was discovered and skipped, not passed, for
+exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+
+The remaining RED baseline is also explicit: the current 500-entry artifact
+index loses the canonical late needles, Monitor reports an omitted prefix
+without traversal, and History renders only its first 100 filtered rows. The
+initial 200,000-value public performance case failed with `RangeError: Maximum
+call stack size exceeded`; review then exposed the same failure in
+200,000-command recipe preflight. Both cases are green through `31a7779` after
+one-pass extrema/first-positive reducers, and the two per-agent array-copy
+accumulators are now linear. Independent re-review found no Critical or
+Important issue.
 
 ## Task 1: Add One Parsed Artifact Pipeline And Safe Linear Primitives
 
-- [ ] Add an additive parsed distributed-artifact representation under
+- [x] Add an additive parsed distributed-artifact representation under
   `packages/shared-test/rallar-bb-test/**`; reuse it for compatibility,
   snapshots, analysis, monitor/report, and evidence derivation.
-- [ ] Preserve existing public functions as delegating compatibility surfaces.
-- [ ] Replace externally sized spread extrema with single-pass reducers.
-- [ ] Replace quadratic stream-sample equivalence scans with deterministic
+- [x] Preserve existing public functions as delegating compatibility surfaces.
+- [x] Replace externally sized spread extrema with single-pass reducers.
+- [x] Replace quadratic stream-sample equivalence scans with deterministic
   keyed buckets while preserving precedence and collision behavior.
-- [ ] Reuse one derived Monitor/report where current pipelines recompute it.
-- [ ] GREEN shared tests for exact old behavior, one source-file pass and at
+- [x] Reuse one derived Monitor/report where current pipelines recompute it.
+- [x] GREEN shared tests for exact old behavior, one source-file pass and at
   most one `JSON.parse` per JSON document/nonempty JSONL record in the new
   pipeline, 200k-value safety, stable output, and linear-work counters.
-- [ ] Telemetry distinguishes `pipelinePassCount`, JSON document parses, JSONL
+- [x] Telemetry distinguishes `pipelinePassCount`, JSON document parses, JSONL
   file passes, and nonempty JSONL row parses; no aggregate "parse count" may
   conceal repeated source scans.
-- [ ] Measure the same harness before/after; accept only with correctness green
+- [x] Measure the same harness before/after; accept only with correctness green
   and no material regression in the target large workload.
+
+Task 1 safe primitives are green through `31a7779` and `a357e27`. The public
+200,000-value artifact performance case and 200,000-command preflight case are
+portable and exact; all artifact-sized extrema/first-positive rest spreads and
+the two per-agent array-copy accumulators are bounded. Stream equivalence now
+uses deterministic base/fingerprint/identity indexes and lazy minimum-ordinal
+heaps while preserving exact identity, identityless, nested, cross-source,
+replacement, canonical-key fallback, and winner-index ordering semantics. A
+1,500-candidate same-base/same-fingerprint adversarial case records exactly
+6,000 index lookups, zero equivalence comparisons, and 6,000 maintenance
+inserts instead of the legacy approximately 1,124,250 pair probes. Telemetry is
+optional, numeric/index-only, session-local, and secret-free. Independent
+re-review found no Critical or Important issue.
+
+The dependency-leaf parsed representation is green through `b76bf08`. It owns
+deterministic loose/envelope projection, canonical source text, missing/empty/
+parsed/malformed states, JSONL source lines, extensionless Control failure
+responses, null-prototype hostile-name-safe maps, and per-file/aggregate pass
+and parse telemetry. Differential tests cover escaped envelope keys and
+pretty multi-line envelopes under `.jsonl` while ordinary multi-record JSONL
+still parses each nonempty row once. All six review-discovered integration and
+parity defects were RED/GREEN fixed; final re-review is clean. At that leaf
+checkpoint the higher-level workspace/analysis/evidence integration remained
+open; the completed proof is recorded immediately below.
+
+Task 1 integration is green through `eb1e745` and `523333f`. Workspace,
+compatibility, identity, analysis, snapshots, bundle, Monitor/report,
+evidence provenance/indexing, and the Analyze compatibility model now reuse one
+parsed representation. Raw public file helpers retain literal loose-file
+semantics while workspace alone projects envelopes. SPA derivation failures
+remain isolated as `spa-analysis` warnings; v1 synthesized manifests, malformed
+optional evidence, runner-summary fallback, dynamic Control responses, and
+repeated parsed analysis retain exact behavior. Optional precomputed Monitor
+and parsed-control inputs are additive; no existing export or server contract
+changed.
+
+The final same-command five-run evidence/app measurement observes exactly one
+source enumeration and read per source file, six JSON-document parses, one
+pass per JSONL file, one parse per nonempty source row, and zero unclassified
+parses at 500, 2,000, and 15,000 rows. Root medians were 5.257, 18.265, and
+96.999 ms versus baseline 5.502, 18.686, and 114.584 ms; none crosses the
+1.25× advisory threshold. A separate same-machine sample was faster still,
+confirming timing noise while the structural counters remained identical.
+Independent API/parity and performance re-reviews found no Critical or
+Important issue. The ignored canonical Task 8 candidate remains reserved for
+the final fully composed implementation rather than this intermediate slice.
 
 ## Task 2: Add Deterministic Cursor/Window And Compaction Contracts
 
@@ -170,16 +270,26 @@ justifies that accessibility cost.
 
 ## Task 4: Add Reusable Accessible Window Controls
 
-- [ ] Add bounded UI/model owners under `src/recipe-console/ui/**`; do not grow
+- [x] Add bounded UI/model owners under `src/recipe-console/ui/**`; do not grow
   a global registry or stylesheet.
 - [ ] Render native list/table children for one explicit range with
   Previous/Next, range/total, disabled boundaries, aria-live announcements,
   and deterministic reset on fingerprint change.
-- [ ] Preserve focus when the active row stays in range; return focus to the
+- [x] Preserve focus when the active row stays in range; return focus to the
   range control when a row leaves the mounted window.
 - [ ] Meet 44px touch targets, reduced motion, RTL/bidi-safe exact identifiers,
   short-landscape containment, and keyboard operation.
-- [ ] GREEN focused model/component tests before composing feature UI.
+- [x] GREEN focused model/component tests before composing feature UI.
+
+The behavior-neutral reusable primitive is green through `bbf2385`: a pure
+fingerprint-bound range model, thin local-state/focus owner, controlled native
+Previous/Next controls, live exact range, local logical-property CSS, 44px
+targets, short-landscape containment, and reduced-motion behavior. Eleven
+focused model/hook/component/focus tests, app TypeScript, and a 616-module
+production build pass. Independent review found and RED/GREEN fixed a
+null-related-target stale-focus edge; final re-review is clean. Native feature
+list/table composition and long-ID/bidi proof remain open in Tasks 5–7 and are
+not represented as passed here.
 
 ## Task 5: Window Analyze Search Without Losing Late Evidence
 
