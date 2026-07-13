@@ -3,7 +3,7 @@
 Status: in progress; Iteration 8 is qualified through `fd9055e`, `f762749`,
 and `37c7a32`; the reviewed Task 0 artifact baseline is committed at
 `166b40b`; two instrumentation-dependent Task 0 proofs remain open; Task 1 is
-green through `523333f`; and Task 2 is in progress
+green through `56d4a43`; Task 2 is green through `4e89a17`; and Task 3 is next
 
 **Goal:** Complete parent Iteration 9 so large distributed artifacts and run
 collections stay searchable and operable without blocking the browser or
@@ -215,17 +215,52 @@ Independent API/parity and performance re-reviews found no Critical or
 Important issue. The ignored canonical Task 8 candidate remains reserved for
 the final fully composed implementation rather than this intermediate slice.
 
+The stream-index telemetry follow-up is green through `56d4a43`. Prepared
+base keys and fingerprints are reused during positive equivalence and
+replacement checks, so the reported fingerprint count now equals the actual
+serialization count under replacement-heavy stale-heap invalidation. The
+focused 28-test analysis suite and shared TypeScript/Deno checks pass.
+
 ## Task 2: Add Deterministic Cursor/Window And Compaction Contracts
 
-- [ ] Add opaque artifact/model/query-bound cursor and explicit window types in
+- [x] Add opaque artifact/model/query-bound cursor and explicit window types in
   shared-test. Reject stale, foreign, malformed, and tampered cursors.
-- [ ] Traverse retained evidence in stable source/order semantics with no gaps
+- [x] Traverse retained evidence in stable source/order semantics with no gaps
   or duplicates; filter changes reset the cursor.
-- [ ] Keep current search API unchanged and add a full retained-catalog search
+- [x] Keep current search API unchanged and add a full retained-catalog search
   window API with an explicit hard bound and exact upstream omission truth.
-- [ ] GREEN shared tests for first/middle/last needles, exact totals, all cursor
+- [x] GREEN shared tests for first/middle/last needles, exact totals, all cursor
   boundaries, the 20,000-entry ceiling/retention policy, three distinct
   omission classes, and standalone generic handoff.
+
+Task 2 is green through `4e89a17`. The additive catalog retains at most 20,000
+entries with primary-failure/latest-diagnostic anchors and stable newest-row
+selection; the legacy 500-entry index/search API remains unchanged in
+differential tests. Opaque per-session HMAC cursors bind artifact, model
+instance, normalized query, window size, and offset. Cursor integrity and
+bindings are checked before catalog matching. One bounded `Uint32Array` query
+index serves complete forward/backward traversal, with a default 64-row and
+hard 100-row window.
+
+Structural counters prove one 15,003-entry match evaluation across the full
+round trip: 468 verified cursors, 468 cache hits, 15,003 match writes, and
+29,979 window reads. A tampered cursor performs one verification and zero
+catalog work. Catalog derivation hashes fixed canonical identities in bounded
+128-row batches, retains at most 20,002 candidate references including the two
+anchors, and only sorts/projects 20,000 rows. Bounded raw search evidence is
+part of the canonical identity, so true repeats collapse while raw-distinct
+bounded-identical collisions remain independently searchable. The high-
+collision fixture performs exactly one association and digest per 2,008 source
+rows. Producer compaction remains explicitly unavailable and separate from
+index/query/render omissions; generic `artifact-index.json` compaction remains
+owned by the standalone legacy reader.
+
+Fresh root validation passed 69 focused tests, shared TypeScript and Deno,
+app TypeScript, and diff checks. The latest advisory benchmark medians were
+5.329/12.683/75.497 ms for 500/2,000/15,000 rows versus the frozen
+5.502/18.686/114.584 ms baseline; 15k retained heap was 10,198,392 bytes versus
+10,678,856. Independent API/security and performance reviews found and drove
+four Important RED/GREEN fixes; final re-review is clean.
 
 ## Task 3: Move Analyze Derivation And Search Off The Blocking Main Thread
 
