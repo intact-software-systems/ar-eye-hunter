@@ -4,7 +4,8 @@ Status: in progress; Iteration 8 is qualified through `fd9055e`, `f762749`,
 and `37c7a32`; the reviewed Task 0 artifact baseline is committed at
 `166b40b`; two instrumentation-dependent Task 0 proofs remain open; Task 1 is
 green through `56d4a43`; Task 2 is green through `4e89a17`; Task 3 is green
-through `77b0922`; and Tasks 4–5 are next
+through `77b0922`; Tasks 4–5 are green through `6d90061`; and Tasks 6–9
+remain open
 
 **Goal:** Complete parent Iteration 9 so large distributed artifacts and run
 collections stay searchable and operable without blocking the browser or
@@ -334,12 +335,12 @@ or cutover status changed.
 
 - [x] Add bounded UI/model owners under `src/recipe-console/ui/**`; do not grow
   a global registry or stylesheet.
-- [ ] Render native list/table children for one explicit range with
+- [x] Render native list/table children for one explicit range with
   Previous/Next, range/total, disabled boundaries, aria-live announcements,
   and deterministic reset on fingerprint change.
 - [x] Preserve focus when the active row stays in range; return focus to the
   range control when a row leaves the mounted window.
-- [ ] Meet 44px touch targets, reduced motion, RTL/bidi-safe exact identifiers,
+- [x] Meet 44px touch targets, reduced motion, RTL/bidi-safe exact identifiers,
   short-landscape containment, and keyboard operation.
 - [x] GREEN focused model/component tests before composing feature UI.
 
@@ -349,23 +350,61 @@ Previous/Next controls, live exact range, local logical-property CSS, 44px
 targets, short-landscape containment, and reduced-motion behavior. Eleven
 focused model/hook/component/focus tests, app TypeScript, and a 616-module
 production build pass. Independent review found and RED/GREEN fixed a
-null-related-target stale-focus edge; final re-review is clean. Native feature
-list/table composition and long-ID/bidi proof remain open in Tasks 5–7 and are
-not represented as passed here.
+null-related-target stale-focus edge; final re-review is clean. Native Analyze
+list composition and long-ID/bidi proof are green with Task 5. Monitor and
+History composition remain open in Tasks 6–7 and are not represented as passed
+here.
 
 ## Task 5: Window Analyze Search Without Losing Late Evidence
 
-- [ ] Compose shared full-catalog search windows in Analyze while preserving
+- [x] Compose shared full-catalog search windows in Analyze while preserving
   v1 URL filters and existing inspector selection semantics.
-- [ ] Find exact last-event and last-result needles beyond the former 500-entry
+- [x] Find exact last-event and last-result needles beyond the former 500-entry
   cap and browse every retained match with at most 64 mounted rows.
-- [ ] Display producer-compacted, index-omitted, matching, and render-window
+- [x] Display producer-compacted, index-omitted, matching, and render-window
   states separately. Analyze says producer compaction is unavailable; never
   synthesize it from the 20,000-entry catalog cap or label omissions searchable.
-- [ ] Keep result selection, inspector focus, local/control import, export/
+- [x] Keep result selection, inspector focus, local/control import, export/
   reimport, and legacy Shared Test handoff operational.
-- [ ] GREEN unit plus real-browser tests for search, cursor reset, focus,
+- [x] GREEN unit plus real-browser tests for search, cursor reset, focus,
   telemetry, offline/error/partial/future-schema states, and CSS isolation.
+
+Tasks 4–5 are green through `6d90061`. Analyze composes the shared full-catalog
+cursor contract into one native `<ol>` with at most 64 mounted rows, exact
+one-based range truth, Previous/Next boundaries, fingerprint reset, stale and
+request-scoped authority, retry, keyboard operation, and stable inspector
+focus recovery. Exact identifiers use the shared bidi-isolated rendering in
+both result rows and the inspector. Producer compaction unavailable, index
+omission, matching, and browseable render-window omission remain separate.
+Initial, pending, unavailable, and completed-zero search states no longer
+publish invented `0 matches` or no-match truth.
+
+The Task 5 exit validation passed 129/129 focused Analyze tests and 132/132
+structure/History/retention tests, app TypeScript, a 631-module production
+build with its emitted Analyze worker, and the reciprocal experience-chunk
+assertion. The expanded Analyze Chromium matrix passed 22/22. Its canonical
+production case collected 15,003 unique evidence IDs across all 235 cursor
+windows without a gap or duplicate, kept every window at 64 rows or fewer,
+ended at exact range `Showing 14,977–15,003 of 15,003 retained matches.`, moved
+backward from the final window, and found the exact last event and result. The
+canonical case took 15.4 seconds inside its 120-second test budget; that wall
+time is recorded evidence, not an absolute CI gate. After the final truth-label
+re-review fix, the directly affected focused unit slice passed 22/22 and the
+directly affected browser slice passed 15/15.
+
+The in-app Browser attempt returned exactly `No browser is available`, and
+`agent.browsers.list()` returned `[]`; the recorded browser evidence is the
+documented Playwright/System Chromium fallback, not an in-app Browser pass.
+This slice used deterministic/simulated fixtures and made no live-service
+claim; the existing configured-live skip remains unchanged. Independent
+review drove request-timeout/retry, stale/pending/failure truth, stable focus,
+exact-identifier, complete-traversal, and pre-search/no-match RED/GREEN fixes;
+final re-review reports no open Critical or Important finding.
+
+Parent Iteration 9 remains in progress. Tasks 6–9, including Monitor, History,
+retention/Tune pressure lists, final profiling, and the iteration-wide exit,
+remain open. No legacy surface, primary navigation row, mount policy, deep
+link, rollback URL, default, or cutover changed.
 
 ## Task 6: Replace Monitor Prefix Caps With Browseable Windows
 

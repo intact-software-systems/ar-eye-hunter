@@ -408,10 +408,42 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
 | 8 — History, Compare, Saved Filters, Retention | **Complete** | Preview-first retention, shareable filters/presets, bounded History, comparison reuse, cleanup reconciliation, and exact copied-link/retention acceptance are qualified through `fd9055e` and `f762749`. Fresh focused/complete/server/browser/legacy gates and independent re-reviews are green; the configured live/Postgres lifecycle is explicitly skipped, not passed. Ready-State #8 and #9 are code-backed. No legacy surface is hidden or cut over. |
-| 9 — Large-Run Scale And Virtualization | **In progress** | The reviewed child plan binds Ready-State #10 to a 15,000-row artifact, 5,000 History pairs, accessible deterministic windows, a single parsed shared pipeline, off-main Analyze derivation, numeric session-only telemetry, production-browser DOM/cardinality gates, and before/after profiling. The parsed pipeline/cursor contracts are green through `4e89a17`; lazy workerized Analyze and its bounded Tune facade are green through `77b0922`. Feature window composition and the canonical scale acceptance remain open, so existing prefix caps are not represented as parity. |
+| 9 — Large-Run Scale And Virtualization | **In progress** | The reviewed child plan binds Ready-State #10 to a 15,000-row artifact, 5,000 History pairs, accessible deterministic windows, a single parsed shared pipeline, off-main Analyze derivation, numeric session-only telemetry, production-browser DOM/cardinality gates, and before/after profiling. Parsed pipeline/cursor contracts are green through `4e89a17`; lazy workerized Analyze and its bounded Tune facade are green through `77b0922`; reusable native controls and full-catalog Analyze composition are green through `6d90061`. Tasks 6–9, final profiling, and the iteration-wide exit remain open; no parity or cutover is claimed. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
 | 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
+
+#### Iteration 9 Tasks 4–5 Analyze window checkpoint — `6d90061`
+
+Analyze now composes the shared retained-catalog cursor into one native,
+fingerprint-authoritative evidence list with exact Previous/Next range truth
+and at most 64 mounted rows. URL filters, local/Control import, selection,
+inspector focus recovery, export/reimport, and legacy Runs/Shared Test handoffs
+remain operational. Producer compaction unavailable, index omission, matching,
+and browseable render-window omission are reported separately. Initial,
+pending, unavailable, and completed-zero searches no longer publish invented
+counts or no-match truth, and exact identifiers are bidi-isolated in rows and
+the inspector.
+
+The recorded Task 5 exit is 129/129 focused Analyze tests, 132/132
+structure/History/retention tests, app TypeScript, a 631-module production
+build with its Analyze worker, the reciprocal experience-chunk assertion, and
+22/22 expanded Analyze Chromium cases. The canonical production case traversed
+all 235 windows, collected 15,003 unique IDs with no gap or duplicate, mounted
+no more than 64 rows, reached exact final range
+`Showing 14,977–15,003 of 15,003 retained matches.`, traversed backward, and
+found the exact final event/result needles in 15.4 seconds. After the final
+truth-label review fix, the directly affected unit and browser slices passed
+22/22 and 15/15 respectively. Independent re-review closed every Critical and
+Important finding.
+
+The in-app Browser returned exactly `No browser is available`, while
+`agent.browsers.list()` returned `[]`; Playwright/System Chromium is fallback
+evidence, not an in-app Browser pass. These tests use deterministic/simulated
+fixtures and make no live-service claim; the configured-live skip remains
+unchanged. Parent Iteration 9 stays in progress because Tasks 6–9 and final
+profiling/exit proof remain open. No legacy visibility, mount policy, deep
+link, rollback URL, navigation default, or cutover changed.
 
 #### Iteration 0 baseline and validation evidence
 
