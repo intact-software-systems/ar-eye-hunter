@@ -62,6 +62,81 @@ export type DistributedArtifactEvidenceSearchResult = Readonly<{
     limit: number;
 }>;
 
+declare const DISTRIBUTED_ARTIFACT_EVIDENCE_CURSOR: unique symbol;
+
+export type DistributedArtifactEvidenceCursor = string & Readonly<{
+    [DISTRIBUTED_ARTIFACT_EVIDENCE_CURSOR]: true;
+}>;
+
+export type DistributedArtifactEvidenceCatalog = Readonly<{
+    entries: readonly DistributedArtifactEvidenceEntry[];
+    totalEntries: number;
+    retainedEntryCount: number;
+    indexOmittedEntryCount: number;
+    limit: number;
+    primaryFailureId?: string;
+    latestDiagnosticId?: string;
+    producerCompaction: Readonly<{
+        status: 'unavailable';
+        reason: 'no-distributed-producer-compaction-contract';
+    }>;
+}>;
+
+export type DistributedArtifactEvidenceCollections = Readonly<{
+    index: DistributedArtifactEvidenceIndex;
+    catalog: DistributedArtifactEvidenceCatalog;
+}>;
+
+export type DistributedArtifactEvidenceWindowQuery = Omit<
+    DistributedArtifactEvidenceSearchQuery,
+    'limit'
+>;
+
+export type DistributedArtifactEvidenceWindowRequest = Readonly<{
+    query?: DistributedArtifactEvidenceWindowQuery;
+    cursor?: string;
+    windowSize?: number;
+}>;
+
+export type DistributedArtifactEvidenceWindowCounts = Readonly<{
+    totalEntries: number;
+    indexedEntries: number;
+    indexOmittedEntries: number;
+    retainedMatches: number;
+    queryExcludedEntries: number;
+    renderedMatches: number;
+    renderOmittedMatches: number;
+}>;
+
+export type DistributedArtifactEvidenceWindow = Readonly<{
+    entries: readonly DistributedArtifactEvidenceEntry[];
+    rangeStart: number;
+    rangeEnd: number;
+    previousCursor?: DistributedArtifactEvidenceCursor;
+    nextCursor?: DistributedArtifactEvidenceCursor;
+    counts: DistributedArtifactEvidenceWindowCounts;
+    totalMatchesIsComplete: boolean;
+    windowSize: number;
+}>;
+
+export type DistributedArtifactEvidenceCursorRejectionCode =
+    | 'cursor-malformed'
+    | 'cursor-tampered'
+    | 'cursor-foreign-artifact'
+    | 'cursor-stale-model'
+    | 'cursor-query-mismatch'
+    | 'cursor-out-of-range';
+
+export type DistributedArtifactEvidenceWindowResult =
+    | Readonly<{ ok: true; window: DistributedArtifactEvidenceWindow }>
+    | Readonly<{
+        ok: false;
+        rejection: Readonly<{
+            code: DistributedArtifactEvidenceCursorRejectionCode;
+            message: string;
+        }>;
+    }>;
+
 export type DeriveDistributedArtifactEvidenceInput = Readonly<{
     files: DistributedRunArtifactFiles;
     generatedAtEpochMs?: number;
@@ -97,3 +172,6 @@ export const MAX_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT = 500;
 export const DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT = 240;
 export const DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT = 600;
 export const MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT = 2_000;
+export const MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_CATALOG_ENTRIES = 20_000;
+export const DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE = 64;
+export const MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE = 100;

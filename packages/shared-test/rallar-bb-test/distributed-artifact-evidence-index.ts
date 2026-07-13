@@ -16,12 +16,14 @@ import {
     type DeriveDistributedArtifactEvidenceIndexInput,
     type DeriveDistributedArtifactEvidenceInput,
     type DistributedArtifactEvidenceIndex,
+    type DistributedArtifactEvidenceEntry,
 } from './distributed-artifact-evidence-contracts.ts';
 import { distributedArtifactEvidenceRows } from './distributed-artifact-evidence-rows.ts';
 import {
     boundedEvidenceLimit,
     boundedEvidenceTextLimit,
     compareEvidenceEntries,
+    deduplicateArtifactEvidenceEntries,
 } from './distributed-artifact-evidence-utils.ts';
 import { deriveDistributedRunMonitor } from './distributed-run-monitor.ts';
 
@@ -66,12 +68,25 @@ export function deriveDistributedArtifactEvidence(
 export function deriveDistributedArtifactEvidenceIndex(
     input: DeriveDistributedArtifactEvidenceIndexInput,
 ): DistributedArtifactEvidenceIndex {
+    const source = deriveDistributedArtifactEvidenceSource(input);
+    return projectDistributedArtifactEvidenceIndex(input, source);
+}
+
+export type DistributedArtifactEvidenceSource = Readonly<{
+    monitor: DistributedArtifactEvidenceIndex['monitor'];
+    entries: readonly DistributedArtifactEvidenceEntry[];
+    rawEntries: readonly DistributedArtifactEvidenceEntry[];
+}>;
+
+export function deriveDistributedArtifactEvidenceSource(
+    input: DeriveDistributedArtifactEvidenceIndexInput,
+): DistributedArtifactEvidenceSource {
     const monitor = input.monitor ?? deriveDistributedRunMonitor({
         distributedRun: input.snapshots.distributedRun,
         controlRun: input.snapshots.controlRun,
         artifactBundle: input.snapshots.artifactBundle,
     });
-    const entries = distributedArtifactEvidenceRows({
+    const rowInput = {
         analysis: input.analysis,
         snapshots: input.snapshots,
         monitor,
@@ -88,20 +103,33 @@ export function deriveDistributedArtifactEvidenceIndex(
             DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
             MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT,
         ),
-    }).sort(compareEvidenceEntries);
+    };
+    const rawEntries = distributedArtifactEvidenceRows({
+        ...rowInput,
+        deduplicate: false,
+    });
+    const entries = deduplicateArtifactEvidenceEntries(rawEntries)
+        .sort(compareEvidenceEntries);
+    return { monitor, entries, rawEntries };
+}
+
+export function projectDistributedArtifactEvidenceIndex(
+    input: DeriveDistributedArtifactEvidenceIndexInput,
+    source: DistributedArtifactEvidenceSource,
+): DistributedArtifactEvidenceIndex {
     const limit = boundedEvidenceLimit(
         input.indexLimit,
         DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
         MAX_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
     );
-    const bounded = retainActionableEvidence(entries, limit)
+    const bounded = retainActionableEvidence(source.entries, limit)
         .sort(compareEvidenceEntries);
     return {
         analysis: input.analysis,
-        monitor,
+        monitor: source.monitor,
         entries: bounded,
-        totalEntries: entries.length,
-        omittedEntryCount: entries.length - bounded.length,
+        totalEntries: source.entries.length,
+        omittedEntryCount: source.entries.length - bounded.length,
         limit,
     };
 }

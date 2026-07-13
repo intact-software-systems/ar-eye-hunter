@@ -32,6 +32,7 @@ export function distributedArtifactEvidenceRows(input: Readonly<{
     parsedControlRun?: Readonly<Record<string, unknown>>;
     summaryLimit: number;
     payloadSummaryLimit: number;
+    deduplicate?: boolean;
 }>): DistributedArtifactEvidenceEntry[] {
     const rows: DistributedArtifactEvidenceEntry[] = [];
     const recipeByCommandId = new Map(
@@ -48,7 +49,9 @@ export function distributedArtifactEvidenceRows(input: Readonly<{
     addResults(rows, input, recipeByCommandId, linkedCommandIds);
     addMonitorEvents(rows, input, recipeByCommandId);
     addRawFallbackEvents(rows, input, recipeByCommandId, linkedCommandIds);
-    return deduplicateArtifactEvidenceEntries(rows);
+    return input.deduplicate === false
+        ? rows
+        : deduplicateArtifactEvidenceEntries(rows);
 }
 
 function addAnalysisFailure(
