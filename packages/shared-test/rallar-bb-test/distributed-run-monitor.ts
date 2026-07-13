@@ -39,14 +39,31 @@ import type {
     ControlSnapshotBounds,
     ControlRunSnapshot,
 } from './control-snapshots.ts';
-import {
-    distributedRunExpectedAgentIdsForRecipe,
-    distributedRunRecipeSelectionKey,
-} from './distributed-run-evidence.ts';
+import { distributedRunRecipeSelectionKey } from './distributed-run-evidence.ts';
 import {
     distributedArtifactPipelineFile,
     type ParsedDistributedArtifactPipeline,
 } from './distributed-artifact-pipeline.ts';
+import {
+    createDistributedRunMonitorFailureIndex,
+    createDistributedRunMonitorIndex,
+    distributedRunMonitorAgentEventsForProgress,
+    distributedRunMonitorAgentLinksForProgress,
+    distributedRunCorrelatedFailureKeys,
+    distributedRunMonitorAnalysisReuseFor,
+    distributedRunMonitorFirstPhaseForCommand,
+    distributedRunMonitorReadinessStageLinks,
+    distributedRunMonitorRecipeLinks,
+    recordDistributedRunAnalysisReportDerivation,
+    recordDistributedRunMonitorDerivation,
+    type DistributedRunMonitorFailureIndex,
+    type DistributedRunMonitorIndex,
+} from './distributed-run-monitor-index.ts';
+import {
+    distributedRunMonitorAgentRole,
+    distributedRunMonitorExpectedTargetMultiplicity,
+    distributedRunMonitorRecipeTargetCount,
+} from './distributed-run-monitor-membership-index.ts';
 
 export type DistributedRecipeRolePattern =
     | 'all-agents'
@@ -1764,80 +1781,66 @@ export function deriveDistributedRunMonitor(input: Readonly<{
     artifactBundle?: ControlDistributedRunArtifactBundle;
     artifactValidation?: DistributedRunArtifactValidation;
 }>): DistributedRunMonitor {
-    const linkedCommandIds = new Set(input.distributedRun.commandLinks.map(link => link.commandId));
-    const commands = new Map((input.controlRun?.commands ?? [])
-        .map(command => [command.envelope.commandId, command]));
-    const linkedResults = (input.controlRun?.results ?? [])
-        .filter(result => linkedCommandIds.has(result.commandId));
-    const resultsByCommandId = new Map(linkedResults.map(result => [result.commandId, result]));
-    const linkedEvents = distributedRunEvents(input.distributedRun, input.controlRun);
+    const index = createDistributedRunMonitorIndex(input);
+    const linkedEvents = distributedRunEvents(index.linkedControlEvents);
+    const eventsByAgentId = distributedRunEventsByAgent(linkedEvents, index);
     const compositeDrilldowns = distributedRunCompositeDrilldowns(
-        input.distributedRun,
-        linkedResults,
-        commands,
+        index.linkedResults,
+        index.commandsById,
+        index.linksByCommandId,
     );
     const failures = [
-        ...distributedRunFailures(input.distributedRun, linkedResults, commands),
+        ...distributedRunFailures(
+            input.distributedRun,
+            index.linkedResults,
+            index.commandsById,
+        ),
         ...distributedRunCompositeFailures(compositeDrilldowns),
     ].sort((left, right) => (right.atEpochMs ?? 0) - (left.atEpochMs ?? 0));
+    const failureIndex = createDistributedRunMonitorFailureIndex(failures, index);
     const runtimeDiagnostics = correlateDistributedRunRuntimeDiagnostics(
-        distributedRunRuntimeDiagnostics(input.distributedRun, input.controlRun),
-        failures,
+        distributedRunRuntimeDiagnostics(index.linkedControlEvents),
+        failureIndex,
     );
-    const commandCounts = distributedRunCommandCounts(
-        input.distributedRun.commandLinks,
-        commands,
-        resultsByCommandId,
-    );
-    const latencies = linkedResults
-        .map(result => result.result?.durationMs)
-        .filter(isFiniteNumber);
     const artifact = input.artifactValidation ??
         validateDistributedRunArtifact(input.artifactBundle);
 
-    return {
+    const monitor: DistributedRunMonitor = {
         distributedRunId: input.distributedRun.distributedRunId,
         state: input.distributedRun.state,
-        commandCounts,
-        resultCounts: {
-            total: linkedResults.length,
-            ok: linkedResults.filter(result => result.ok).length,
-            failed: linkedResults.filter(result => !result.ok).length,
-        },
+        commandCounts: index.commandCounts,
+        resultCounts: index.resultCounts,
         compositeCounts: distributedRunCompositeCounts(compositeDrilldowns),
         diagnosticCounts: distributedRunRuntimeDiagnosticCounts(runtimeDiagnostics),
-        latency: summarizeLatencies(latencies),
+        latency: summarizeLatencies(index.latencies),
         artifact,
         timeline: distributedRunTimeline({
             distributedRun: input.distributedRun,
-            commands,
-            results: linkedResults,
+            index,
+            commands: index.commandsById,
+            results: index.linkedResults,
             events: linkedEvents,
             runtimeDiagnostics,
             failures,
             artifact,
         }),
         agentProgress: distributedRunAgentProgress({
-            distributedRun: input.distributedRun,
-            commands,
-            resultsByCommandId,
-            events: linkedEvents,
+            index,
+            eventsByAgentId,
         }),
         recipeProgress: distributedRunRecipeProgress({
-            distributedRun: input.distributedRun,
-            commands,
-            resultsByCommandId,
+            index,
         }),
         readiness: distributedRunReadiness({
-            distributedRun: input.distributedRun,
-            commands,
-            resultsByCommandId,
+            index,
         }),
         failures,
         events: linkedEvents,
         runtimeDiagnostics,
         compositeDrilldowns,
     };
+    recordDistributedRunMonitorDerivation(monitor, index, input.distributedRun);
+    return monitor;
 }
 
 export function deriveDistributedRunAnalysisReport(input: Readonly<{
@@ -1848,8 +1851,43 @@ export function deriveDistributedRunAnalysisReport(input: Readonly<{
     monitor?: DistributedRunMonitor;
 }>): DistributedRunAnalysisReport {
     const monitor = input.monitor ?? deriveDistributedRunMonitor(input);
+    const analysisReuse = distributedRunMonitorAnalysisReuseFor(
+        monitor,
+        input.distributedRun,
+    );
+    const reportWork = {
+        reportCommandLinkLookupCount: 0,
+        reportFallbackCommandLinkIndexPassCount: 0,
+        reportFallbackCommandLinkVisitCount: 0,
+        reportFallbackCommandPhaseLookupCount: 0,
+    };
+    let fallbackFirstPhasesByCommandId:
+        ReadonlyMap<string, ControlDistributedRunCommandLink['phase']> | undefined;
+    const firstPhaseForCommand = (commandId: string | undefined) => {
+        if (analysisReuse !== undefined) {
+            if (commandId !== undefined) {
+                reportWork.reportCommandLinkLookupCount += 1;
+            }
+            return distributedRunMonitorFirstPhaseForCommand(analysisReuse, commandId);
+        }
+        if (commandId === undefined) return undefined;
+        reportWork.reportFallbackCommandPhaseLookupCount += 1;
+        if (fallbackFirstPhasesByCommandId === undefined) {
+            reportWork.reportFallbackCommandLinkIndexPassCount += 1;
+            fallbackFirstPhasesByCommandId = firstDistributedRunPhasesByCommandId(
+                input.distributedRun.commandLinks,
+                reportWork,
+            );
+        }
+        return fallbackFirstPhasesByCommandId.get(commandId);
+    };
     const firstFailure = firstDistributedFailure(monitor.failures);
-    const explanations = distributedFailureExplanations(input.distributedRun, monitor, firstFailure);
+    const explanations = distributedFailureExplanations(
+        input.distributedRun,
+        monitor,
+        firstFailure,
+        firstPhaseForCommand,
+    );
     const controlAgents = new Map((input.controlRun?.agents ?? []).map(agent => [agent.agentId, agent]));
     const snapshotWarnings = distributedSnapshotWarnings(input.controlRun, input.snapshotBounds);
     const correlatedDiagnostics = monitor.runtimeDiagnostics
@@ -1859,7 +1897,7 @@ export function deriveDistributedRunAnalysisReport(input: Readonly<{
             explanations[0]
         : undefined;
 
-    return {
+    const report: DistributedRunAnalysisReport = {
         distributedRunId: input.distributedRun.distributedRunId,
         summary: {
             state: input.distributedRun.state,
@@ -1919,6 +1957,8 @@ export function deriveDistributedRunAnalysisReport(input: Readonly<{
             artifactMessage: monitor.artifact.message,
         },
     };
+    recordDistributedRunAnalysisReportDerivation(report, monitor, reportWork);
+    return report;
 }
 
 export function deriveRunVerdictView(input: Readonly<{
@@ -1946,6 +1986,7 @@ export function deriveRunVerdictView(input: Readonly<{
         };
     }
 
+    const monitorWasDerivedForVerdict = input.monitor === undefined;
     const monitor = input.monitor ?? deriveDistributedRunMonitor({
         distributedRun: input.distributedRun,
         artifactBundle: input.artifactBundle,
@@ -1953,6 +1994,7 @@ export function deriveRunVerdictView(input: Readonly<{
     const report = input.report ?? deriveDistributedRunAnalysisReport({
         distributedRun: input.distributedRun,
         artifactBundle: input.artifactBundle,
+        ...(monitorWasDerivedForVerdict ? { monitor } : {}),
     });
     const selectedRecipe = input.distributedRun.manifest.recipes[0];
     const recipeLabel = selectedRecipe
@@ -2360,7 +2402,7 @@ export function projectDistributedRunHistoryLabels(
     const failures = distributedRunRecordedFailures(run).map(failure => {
         const code = optionalHistoryLabel(failure.code);
         const message = optionalHistoryLabel(failure.message) ?? 'Recorded failure';
-        const category = explanationForFailure(run, {
+        const category = explanationForFailure({
             ...failure,
             code,
             message,
@@ -2739,35 +2781,11 @@ type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 type ControlEventSnapshot = ControlRunSnapshot['events'][number];
 
-function distributedRunCommandCounts(
-    links: readonly ControlDistributedRunCommandLink[],
-    commands: ReadonlyMap<string, ControlCommandSnapshot>,
-    resultsByCommandId: ReadonlyMap<string, ControlResultSnapshot>,
-): DistributedRunMonitor['commandCounts'] {
-    const completed = links.filter(link =>
-        resultsByCommandId.has(link.commandId) ||
-        commands.get(link.commandId)?.completedAtEpochMs !== undefined
-    ).length;
-    const failed = links.filter(link => resultsByCommandId.get(link.commandId)?.ok === false).length;
-
-    return {
-        total: links.length,
-        stage: links.filter(link => link.phase === 'stage').length,
-        barrier: links.filter(link => link.phase === 'barrier').length,
-        start: links.filter(link => link.phase === 'start').length,
-        cancel: links.filter(link => link.phase === 'cancel').length,
-        completed,
-        failed,
-        pending: Math.max(0, links.length - completed),
-    };
-}
-
 function distributedRunCompositeDrilldowns(
-    distributedRun: ControlDistributedRunSnapshot,
     results: readonly ControlResultSnapshot[],
     commands: ReadonlyMap<string, ControlCommandSnapshot>,
+    linksByCommandId: ReadonlyMap<string, ControlDistributedRunCommandLink>,
 ): readonly DistributedRunCompositeDrilldown[] {
-    const linksByCommandId = new Map(distributedRun.commandLinks.map(link => [link.commandId, link]));
     return results.flatMap(result => {
         const roots = distributedRunCompositeRoots(result.result);
         if (roots.length === 0) {
@@ -3147,18 +3165,9 @@ function commandRecipeId(command: ControlCommandSnapshot | undefined): string | 
 }
 
 function distributedRunEvents(
-    distributedRun: ControlDistributedRunSnapshot,
-    controlRun: ControlRunSnapshot | undefined,
+    events: readonly ControlEventSnapshot[],
 ): readonly DistributedRunEventRow[] {
-    if (!controlRun) {
-        return [];
-    }
-    const linkedCommandIds = new Set(distributedRun.commandLinks.map(link => link.commandId));
-    return controlRun.events
-        .filter(event =>
-            (event.commandId !== undefined && linkedCommandIds.has(event.commandId)) ||
-            payloadReferencesDistributedRun(event.payload, distributedRun.distributedRunId)
-        )
+    return [...events]
         .sort((left, right) => left.atEpochMs - right.atEpochMs)
         .map((event, index) => ({
             eventId: event.eventId ?? `${event.agentId}-${event.commandId ?? 'event'}-${index}`,
@@ -3172,19 +3181,26 @@ function distributedRunEvents(
         }));
 }
 
+function distributedRunEventsByAgent(
+    events: readonly DistributedRunEventRow[],
+    index: DistributedRunMonitorIndex,
+): ReadonlyMap<string, readonly DistributedRunEventRow[]> {
+    const eventsByAgentId = new Map<string, DistributedRunEventRow[]>();
+    events.forEach(event => {
+        index.work.linkedEventAgentIndexVisitCount += 1;
+        const agentEvents = eventsByAgentId.get(event.agentId) ?? [];
+        if (!eventsByAgentId.has(event.agentId)) {
+            eventsByAgentId.set(event.agentId, agentEvents);
+        }
+        agentEvents.push(event);
+    });
+    return eventsByAgentId;
+}
+
 function distributedRunRuntimeDiagnostics(
-    distributedRun: ControlDistributedRunSnapshot,
-    controlRun: ControlRunSnapshot | undefined,
+    events: readonly ControlEventSnapshot[],
 ): readonly Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>[] {
-    if (!controlRun) {
-        return [];
-    }
-    const linkedCommandIds = new Set(distributedRun.commandLinks.map(link => link.commandId));
-    return controlRun.events
-        .filter(event =>
-            (event.commandId !== undefined && linkedCommandIds.has(event.commandId)) ||
-            payloadReferencesDistributedRun(event.payload, distributedRun.distributedRunId)
-        )
+    return events
         .map((event, index) => distributedRunRuntimeDiagnostic(event, index))
         .filter((row): row is Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> =>
             row !== undefined
@@ -3291,30 +3307,15 @@ function distributedRunRuntimeDiagnostic(
 
 function correlateDistributedRunRuntimeDiagnostics(
     diagnostics: readonly Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>[],
-    failures: readonly DistributedRunFailureRow[],
+    failureIndex: DistributedRunMonitorFailureIndex,
 ): readonly DistributedRunRuntimeDiagnosticRow[] {
     return diagnostics.map(diagnostic => ({
         ...diagnostic,
-        correlatedFailureKeys: failures
-            .filter(failure => diagnosticCorrelatesWithFailure(diagnostic, failure))
-            .map(failure => failure.key),
+        correlatedFailureKeys: distributedRunCorrelatedFailureKeys(
+            diagnostic,
+            failureIndex,
+        ),
     }));
-}
-
-function diagnosticCorrelatesWithFailure(
-    diagnostic: Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>,
-    failure: DistributedRunFailureRow,
-): boolean {
-    if (diagnostic.commandId && failure.commandId === diagnostic.commandId) {
-        return true;
-    }
-    if (diagnostic.commandId && failure.key === diagnostic.commandId) {
-        return true;
-    }
-    if (!diagnostic.agentId || failure.agentId !== diagnostic.agentId || failure.atEpochMs === undefined) {
-        return false;
-    }
-    return Math.abs(failure.atEpochMs - diagnostic.atEpochMs) <= 15_000;
 }
 
 function distributedRunRuntimeDiagnosticCounts(
@@ -3395,13 +3396,35 @@ function firstDistributedFailure(
             (left.atEpochMs ?? Number.MAX_SAFE_INTEGER) -
                 (right.atEpochMs ?? Number.MAX_SAFE_INTEGER) ||
             left.key.localeCompare(right.key)
-        )[0] ?? failures[0];
+    )[0] ?? failures[0];
+}
+
+type FirstDistributedRunPhaseForCommand = (
+    commandId: string | undefined,
+) => ControlDistributedRunCommandLink['phase'] | undefined;
+
+function firstDistributedRunPhasesByCommandId(
+    links: readonly ControlDistributedRunCommandLink[],
+    work: { reportFallbackCommandLinkVisitCount: number },
+): ReadonlyMap<string, ControlDistributedRunCommandLink['phase']> {
+    const firstPhasesByCommandId = new Map<
+        string,
+        ControlDistributedRunCommandLink['phase']
+    >();
+    for (const link of links) {
+        work.reportFallbackCommandLinkVisitCount += 1;
+        if (!firstPhasesByCommandId.has(link.commandId)) {
+            firstPhasesByCommandId.set(link.commandId, link.phase);
+        }
+    }
+    return firstPhasesByCommandId;
 }
 
 function distributedFailureExplanations(
     distributedRun: ControlDistributedRunSnapshot,
     monitor: DistributedRunMonitor,
     firstFailure: DistributedRunFailureRow | undefined,
+    firstPhaseForCommand: FirstDistributedRunPhaseForCommand,
 ): readonly DistributedFailureExplanation[] {
     const explanations: DistributedFailureExplanation[] = [];
     const orderedFailures = firstFailure
@@ -3412,7 +3435,10 @@ function distributedFailureExplanations(
         : monitor.failures;
 
     orderedFailures.slice(0, 6).forEach(failure => {
-        explanations.push(explanationForFailure(distributedRun, failure));
+        explanations.push(explanationForFailure(
+            failure,
+            firstPhaseForCommand,
+        ));
     });
 
     const highSignalDiagnostics = monitor.runtimeDiagnostics
@@ -3465,8 +3491,8 @@ function distributedFailureExplanations(
 }
 
 function explanationForFailure(
-    distributedRun: ControlDistributedRunSnapshot,
     failure: DistributedRunFailureRow,
+    firstPhaseForCommand: FirstDistributedRunPhaseForCommand = () => undefined,
 ): DistributedFailureExplanation {
     const code = failure.code ?? '';
     const text = `${code} ${failure.message}`.toLowerCase();
@@ -3537,7 +3563,7 @@ function explanationForFailure(
             category: 'command',
             title: 'Distributed command failed',
             likelyCause: failure.message || 'The browser agent returned a failed command result.',
-            nextAction: commandFailureNextAction(distributedRun, failure),
+            nextAction: commandFailureNextAction(failure, firstPhaseForCommand),
             evidence,
         };
     }
@@ -3551,17 +3577,17 @@ function explanationForFailure(
 }
 
 function commandFailureNextAction(
-    distributedRun: ControlDistributedRunSnapshot,
     failure: DistributedRunFailureRow,
+    firstPhaseForCommand: FirstDistributedRunPhaseForCommand,
 ): string {
-    const link = distributedRun.commandLinks.find(candidate => candidate.commandId === failure.commandId);
-    if (link?.phase === 'stage') {
+    const phase = firstPhaseForCommand(failure.commandId);
+    if (phase === 'stage') {
         return 'Open the agent progress and recipe-load output; staging failures usually mean invalid recipe JSON, missing auth, or a blocked browser runtime.';
     }
-    if (link?.phase === 'barrier') {
+    if (phase === 'barrier') {
         return 'Inspect barrier readiness for every target and confirm all agents stayed connected until the synchronized start.';
     }
-    if (link?.phase === 'start') {
+    if (phase === 'start') {
         return 'Open the composite drilldown and runtime diagnostics for the failing agent, then compare expected vs observed payload evidence.';
     }
     return 'Inspect the command result, runtime diagnostics, and raw evidence for this command ID.';
@@ -3652,6 +3678,7 @@ function uniqueExplanations(
 
 function distributedRunTimeline(input: Readonly<{
     distributedRun: ControlDistributedRunSnapshot;
+    index: DistributedRunMonitorIndex;
     commands: ReadonlyMap<string, ControlCommandSnapshot>;
     results: readonly ControlResultSnapshot[];
     events: readonly DistributedRunEventRow[];
@@ -3710,7 +3737,8 @@ function distributedRunTimeline(input: Readonly<{
         tone: distributedRecipeStateTone(input.distributedRun.state),
     });
 
-    input.distributedRun.commandLinks.forEach(link => {
+    input.index.commandLinks.forEach(link => {
+        input.index.work.timelineCommandLinkProjectionVisitCount += 1;
         const command = input.commands.get(link.commandId);
         addTimeline(items, {
             id: `queued-${link.commandId}`,
@@ -3817,50 +3845,90 @@ function addTimeline(
 }
 
 function distributedRunAgentProgress(input: Readonly<{
-    distributedRun: ControlDistributedRunSnapshot;
-    commands: ReadonlyMap<string, ControlCommandSnapshot>;
-    resultsByCommandId: ReadonlyMap<string, ControlResultSnapshot>;
-    events: readonly DistributedRunEventRow[];
+    index: DistributedRunMonitorIndex;
+    eventsByAgentId: ReadonlyMap<string, readonly DistributedRunEventRow[]>;
 }>): readonly DistributedRunAgentProgressRow[] {
-    const agentIds = new Set([
-        ...input.distributedRun.targetAgentIds,
-        ...input.distributedRun.commandLinks.map(link => link.agentId),
-    ]);
-    return [...agentIds].sort().map(agentId => {
-        const links = input.distributedRun.commandLinks.filter(link => link.agentId === agentId);
-        const stageLinks = links.filter(link => link.phase === 'stage');
-        const barrierLinks = links.filter(link => link.phase === 'barrier');
-        const startLinks = links.filter(link => link.phase === 'start');
-        const linkedResults = links
-            .map(link => input.resultsByCommandId.get(link.commandId))
-            .filter((result): result is ControlResultSnapshot => result !== undefined);
-        const linkedEvents = input.events.filter(event => event.agentId === agentId);
-        const latencies = linkedResults
-            .map(result => result.result?.durationMs)
-            .filter(isFiniteNumber);
-        const lastActivityAtEpochMs = maxNumber([
-            ...links.map(link => link.queuedAtEpochMs),
-            ...links.map(link => input.commands.get(link.commandId)?.dispatchedAtEpochMs),
-            ...links.map(link => input.commands.get(link.commandId)?.completedAtEpochMs),
-            ...linkedResults.map(result => result.result?.endedAtEpochMs),
-            ...linkedEvents.map(event => event.atEpochMs),
-        ]);
+    return input.index.agentIds.map(agentId => {
+        const links = distributedRunMonitorAgentLinksForProgress(input.index, agentId);
+        const linkedEvents = distributedRunMonitorAgentEventsForProgress(
+            input.index,
+            input.eventsByAgentId,
+            agentId,
+        );
+        const phaseProgress = {
+            stage: emptyLinkProgressSummary(),
+            barrier: emptyLinkProgressSummary(),
+            start: emptyLinkProgressSummary(),
+        };
+        const latencies: number[] = [];
+        let resultCount = 0;
+        let failedCommandCount = 0;
+        let completedCommandCount = 0;
+        let lastActivityAtEpochMs: number | undefined;
+        for (const link of links.all) {
+            input.index.work.agentLinkProjectionVisitCount += 1;
+            const command = input.index.commandsById.get(link.commandId);
+            const result = input.index.resultsByCommandId.get(link.commandId);
+            lastActivityAtEpochMs = maxNumber([
+                lastActivityAtEpochMs,
+                link.queuedAtEpochMs,
+                command?.dispatchedAtEpochMs,
+                command?.completedAtEpochMs,
+                result?.result?.endedAtEpochMs,
+            ]);
+            if (result !== undefined) {
+                resultCount += 1;
+                if (!result.ok) failedCommandCount += 1;
+                const durationMs = result.result?.durationMs;
+                if (isFiniteNumber(durationMs)) latencies.push(durationMs);
+            }
+            if (
+                result !== undefined ||
+                command?.completedAtEpochMs !== undefined
+            ) {
+                completedCommandCount += 1;
+            }
+            if (link.phase !== 'cancel') {
+                updateLinkProgressSummary(
+                    phaseProgress[link.phase],
+                    command,
+                    result,
+                );
+            }
+        }
+        for (const event of linkedEvents) {
+            input.index.work.agentEventProjectionVisitCount += 1;
+            lastActivityAtEpochMs = maxNumber([
+                lastActivityAtEpochMs,
+                event.atEpochMs,
+            ]);
+        }
 
         return {
             agentId,
-            role: agentRole(input.distributedRun, agentId),
-            readiness: linkProgressStatus(stageLinks, input.commands, input.resultsByCommandId, 'ready'),
-            barrier: linkProgressStatus(barrierLinks, input.commands, input.resultsByCommandId, 'ready'),
-            execution: linkProgressStatus(startLinks, input.commands, input.resultsByCommandId, 'passed'),
-            stageCommandCount: stageLinks.length,
-            barrierCommandCount: barrierLinks.length,
-            startCommandCount: startLinks.length,
-            completedCommandCount: links.filter(link =>
-                input.resultsByCommandId.has(link.commandId) ||
-                input.commands.get(link.commandId)?.completedAtEpochMs !== undefined
-            ).length,
-            failedCommandCount: linkedResults.filter(result => !result.ok).length,
-            resultCount: linkedResults.length,
+            role: distributedRunMonitorAgentRole(
+                input.index.membership,
+                agentId,
+                input.index.work,
+            ),
+            readiness: linkProgressStatusFromSummary(
+                phaseProgress.stage,
+                'ready',
+            ),
+            barrier: linkProgressStatusFromSummary(
+                phaseProgress.barrier,
+                'ready',
+            ),
+            execution: linkProgressStatusFromSummary(
+                phaseProgress.start,
+                'passed',
+            ),
+            stageCommandCount: links.stage.length,
+            barrierCommandCount: links.barrier.length,
+            startCommandCount: links.start.length,
+            completedCommandCount,
+            failedCommandCount,
+            resultCount,
             eventCount: linkedEvents.length,
             averageLatencyMs: average(latencies),
             lastActivityAtEpochMs,
@@ -3869,77 +3937,101 @@ function distributedRunAgentProgress(input: Readonly<{
 }
 
 function distributedRunRecipeProgress(input: Readonly<{
-    distributedRun: ControlDistributedRunSnapshot;
-    commands: ReadonlyMap<string, ControlCommandSnapshot>;
-    resultsByCommandId: ReadonlyMap<string, ControlResultSnapshot>;
+    index: DistributedRunMonitorIndex;
 }>): readonly DistributedRunRecipeProgressRow[] {
-    return input.distributedRun.manifest.recipes.map((selection, index) => {
-        const recipeId = recipeSelectionId(selection, index);
-        const expectedAgentIds = distributedRunExpectedAgentIdsForRecipe(
-            input.distributedRun,
-            selection,
+    return input.index.membership.recipeSelections.map((selection, recipeIndex) => {
+        const recipeId = input.index.membership.recipeIds[recipeIndex]!;
+        const targetCount = distributedRunMonitorRecipeTargetCount(
+            input.index.membership,
+            recipeIndex,
+            input.index.work,
         );
-        const links = input.distributedRun.commandLinks.filter(link =>
-            link.recipeId === recipeId ||
-            (link.recipeId === undefined && input.distributedRun.manifest.recipes.length === 1)
-        );
-        const startLinks = links.filter(link => link.phase === 'start');
-        const progressLinks = startLinks.length > 0 ? startLinks : links.filter(link => link.phase === 'stage');
-        const results = progressLinks
-            .map(link => input.resultsByCommandId.get(link.commandId))
-            .filter((result): result is ControlResultSnapshot => result !== undefined);
-        const targetAgentsWithLinks = new Set(progressLinks.map(link => link.agentId));
-        const latencies = results.map(result => result.result?.durationMs).filter(isFiniteNumber);
+        const progressLinks = distributedRunMonitorRecipeLinks(input.index, recipeId);
+        const targetAgentsWithLinks = new Set<string>();
+        const latencies: number[] = [];
+        let queuedCount = 0;
+        let runningCount = 0;
+        let passedCount = 0;
+        let failedCount = 0;
+        for (const link of progressLinks) {
+            input.index.work.recipeLinkProjectionVisitCount += 1;
+            targetAgentsWithLinks.add(link.agentId);
+            const command = input.index.commandsById.get(link.commandId);
+            const result = input.index.resultsByCommandId.get(link.commandId);
+            if (result === undefined) {
+                if (command?.dispatchedAtEpochMs === undefined) queuedCount += 1;
+                else runningCount += 1;
+                continue;
+            }
+            if (result.ok) passedCount += 1;
+            else failedCount += 1;
+            const durationMs = result.result?.durationMs;
+            if (isFiniteNumber(durationMs)) latencies.push(durationMs);
+        }
+        let missingCount = targetCount;
+        for (const agentId of targetAgentsWithLinks) {
+            missingCount -= distributedRunMonitorExpectedTargetMultiplicity(
+                input.index.membership,
+                recipeIndex,
+                agentId,
+                input.index.work,
+            );
+        }
 
         return {
             recipeId,
             profile: selection.profile,
             role: selection.role,
             required: selection.required !== false,
-            targetCount: expectedAgentIds.length,
-            queuedCount: progressLinks.filter(link =>
-                input.commands.get(link.commandId)?.dispatchedAtEpochMs === undefined &&
-                !input.resultsByCommandId.has(link.commandId)
-            ).length,
-            runningCount: progressLinks.filter(link =>
-                input.commands.get(link.commandId)?.dispatchedAtEpochMs !== undefined &&
-                !input.resultsByCommandId.has(link.commandId)
-            ).length,
-            passedCount: results.filter(result => result.ok).length,
-            failedCount: results.filter(result => !result.ok).length,
-            missingCount: expectedAgentIds.filter(agentId => !targetAgentsWithLinks.has(agentId)).length,
+            targetCount,
+            queuedCount,
+            runningCount,
+            passedCount,
+            failedCount,
+            missingCount,
             averageLatencyMs: average(latencies),
         };
     });
 }
 
 function distributedRunReadiness(input: Readonly<{
-    distributedRun: ControlDistributedRunSnapshot;
-    commands: ReadonlyMap<string, ControlCommandSnapshot>;
-    resultsByCommandId: ReadonlyMap<string, ControlResultSnapshot>;
+    index: DistributedRunMonitorIndex;
 }>): readonly DistributedRunReadinessRow[] {
-    return input.distributedRun.targetAgentIds.map(agentId => {
-        const stageLinks = input.distributedRun.commandLinks
-            .filter(link => link.phase === 'stage' && link.agentId === agentId);
+    return input.index.membership.targetAgentIds.map(agentId => {
+        const stageLinks = distributedRunMonitorReadinessStageLinks(
+            input.index,
+            agentId,
+        );
+        const role = distributedRunMonitorAgentRole(
+            input.index.membership,
+            agentId,
+            input.index.work,
+        );
         if (stageLinks.length === 0) {
             return {
                 agentId,
-                role: agentRole(input.distributedRun, agentId),
+                role,
                 status: 'missing',
                 error: 'No stage command was queued for this target.',
             };
         }
-        const failedLink = stageLinks.find(link => input.resultsByCommandId.get(link.commandId)?.ok === false);
-        const pendingLink = stageLinks.find(link => !input.resultsByCommandId.has(link.commandId));
+        let failedLink: ControlDistributedRunCommandLink | undefined;
+        let pendingLink: ControlDistributedRunCommandLink | undefined;
+        for (const link of stageLinks) {
+            input.index.work.readinessStageLinkProjectionVisitCount += 1;
+            const result = input.index.resultsByCommandId.get(link.commandId);
+            if (failedLink === undefined && result?.ok === false) failedLink = link;
+            if (pendingLink === undefined && result === undefined) pendingLink = link;
+        }
         const representative = failedLink ?? pendingLink ?? stageLinks[stageLinks.length - 1];
-        const result = input.resultsByCommandId.get(representative.commandId);
-        const command = input.commands.get(representative.commandId);
+        const result = input.index.resultsByCommandId.get(representative.commandId);
+        const command = input.index.commandsById.get(representative.commandId);
         const latencyMs = result?.result?.durationMs ??
             durationBetween(representative.queuedAtEpochMs, command?.completedAtEpochMs);
 
         return {
             agentId,
-            role: agentRole(input.distributedRun, agentId),
+            role,
             status: failedLink
                 ? 'failed'
                 : pendingLink
@@ -3954,22 +4046,42 @@ function distributedRunReadiness(input: Readonly<{
     });
 }
 
-function linkProgressStatus(
-    links: readonly ControlDistributedRunCommandLink[],
-    commands: ReadonlyMap<string, ControlCommandSnapshot>,
-    resultsByCommandId: ReadonlyMap<string, ControlResultSnapshot>,
+type LinkProgressSummary = {
+    count: number;
+    failed: boolean;
+    allPassed: boolean;
+    dispatched: boolean;
+};
+
+function emptyLinkProgressSummary(): LinkProgressSummary {
+    return { count: 0, failed: false, allPassed: true, dispatched: false };
+}
+
+function updateLinkProgressSummary(
+    summary: LinkProgressSummary,
+    command: ControlCommandSnapshot | undefined,
+    result: ControlResultSnapshot | undefined,
+): void {
+    summary.count += 1;
+    summary.failed ||= result?.ok === false;
+    summary.allPassed &&= result?.ok === true;
+    summary.dispatched ||= command?.dispatchedAtEpochMs !== undefined;
+}
+
+function linkProgressStatusFromSummary(
+    summary: LinkProgressSummary,
     successStatus: DistributedRunProgressStatus,
 ): DistributedRunProgressStatus {
-    if (links.length === 0) {
+    if (summary.count === 0) {
         return 'missing';
     }
-    if (links.some(link => resultsByCommandId.get(link.commandId)?.ok === false)) {
+    if (summary.failed) {
         return 'failed';
     }
-    if (links.every(link => resultsByCommandId.get(link.commandId)?.ok === true)) {
+    if (summary.allPassed) {
         return successStatus;
     }
-    if (links.some(link => commands.get(link.commandId)?.dispatchedAtEpochMs !== undefined)) {
+    if (summary.dispatched) {
         return 'running';
     }
     return 'queued';
@@ -4110,16 +4222,6 @@ function recipeSelectionId(
     return distributedRunRecipeSelectionKey(selection) ?? `recipe-${index + 1}`;
 }
 
-function agentRole(
-    run: ControlDistributedRunSnapshot,
-    agentId: string,
-): string | undefined {
-    const roles = (run.targetResolution?.roleAssignments ?? run.manifest.roleAssignments)
-        ?.filter(assignment => assignment.agentId === agentId)
-        .map(assignment => assignment.role) ?? [];
-    return roles.length > 0 ? roles.join(', ') : undefined;
-}
-
 function recipeCompareMap(run: ControlDistributedRunSnapshot): ReadonlyMap<string, string> {
     return new Map(run.manifest.recipes.map((selection, index) => [
         recipeSelectionId(selection, index),
@@ -4141,7 +4243,14 @@ function distributedRunReceivedMessageSignatures(
     distributedRun: ControlDistributedRunSnapshot,
     controlRun: ControlRunSnapshot | undefined,
 ): readonly string[] {
-    return distributedRunEvents(distributedRun, controlRun)
+    const linkedCommandIds = new Set(
+        distributedRun.commandLinks.map(link => link.commandId),
+    );
+    const events = (controlRun?.events ?? []).filter(event =>
+        (event.commandId !== undefined && linkedCommandIds.has(event.commandId)) ||
+        payloadReferencesDistributedRun(event.payload, distributedRun.distributedRunId)
+    );
+    return distributedRunEvents(events)
         .filter(event => {
             const text = `${event.kind} ${event.topic ?? ''} ${event.summary}`.toLowerCase();
             return text.includes('message') || text.includes('received') || text.includes('payload');
@@ -4257,7 +4366,7 @@ function distributedRunMatchesFailureCategory(
         return failures.length > 0;
     }
     return failures.some(failure =>
-        explanationForFailure(run, failure).category === category
+        explanationForFailure(failure).category === category
     );
 }
 

@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as distributedRecipes from
+    '../../../apps/rallar-black-box/src/distributed-recipes.ts';
+import { distributedRunMonitorDerivationWorkForTest } from
+    '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot,
@@ -38,6 +42,8 @@ const context = createMonitorWorkspaceContext({
     controlRunId: 'run-a',
     distributedRunId: 'distributed-a',
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 function controlRun(
     runId = 'run-a',
@@ -359,6 +365,14 @@ describe('Recipe Console Monitor selection', () => {
 
 describe('Recipe Console Monitor coherent state', () => {
     it('projects complete current truth and derives bounded monitor/report/verdict once', () => {
+        const monitorDerivation = vi.spyOn(
+            distributedRecipes,
+            'deriveDistributedRunMonitor',
+        );
+        const reportDerivation = vi.spyOn(
+            distributedRecipes,
+            'deriveDistributedRunAnalysisReport',
+        );
         const commands = Array.from({ length: 120 }, (_, index) => ({
             envelope: {
                 kind: 'command' as const,
@@ -396,6 +410,17 @@ describe('Recipe Console Monitor coherent state', () => {
         expect(model?.report.summary.snapshotWarnings).toContain(
             'Loaded 120 commands; evidence may be truncated by the current snapshot bound.',
         );
+        expect(monitorDerivation).toHaveBeenCalledOnce();
+        expect(reportDerivation).toHaveBeenCalledOnce();
+        expect(reportDerivation.mock.calls[0]?.[0].monitor).toBe(model?.monitor);
+        expect(distributedRunMonitorDerivationWorkForTest(model!.report)).toMatchObject({
+            monitorDerivationCount: 1,
+            reportDerivationCount: 1,
+            commandLinkVisitCount: 0,
+            controlCommandVisitCount: 120,
+            controlResultVisitCount: 0,
+            controlEventVisitCount: 0,
+        });
     });
 
     it.each(['stale', 'offline'] as const)(

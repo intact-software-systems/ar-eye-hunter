@@ -185,9 +185,10 @@ export function useRunnerRunsController({
                     controlRun: distributedControlRun,
                     artifactBundle,
                     snapshotBounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
+                    monitor: selectedMonitor,
                 })
                 : undefined,
-        [artifactBundle, distributedControlRun, selectedDistributedRun],
+        [artifactBundle, distributedControlRun, selectedDistributedRun, selectedMonitor],
     );
     const runVerdict = useMemo(
         () =>

@@ -33,6 +33,7 @@ export function deriveMonitorWorkspaceModel(
     const report = deriveDistributedRunAnalysisReport({
         ...input,
         snapshotBounds: RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS,
+        monitor,
     });
     const verdict = deriveRunVerdictView({
         distributedRun: source.distributedRun,

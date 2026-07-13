@@ -6575,7 +6575,7 @@ describe('rallar-black-box app source ownership', () => {
             ),
             'Runs exact token-complete pre-return controller AST',
         ).toBe(
-            '58f49db225ab78525d9f0c2b25a7396417c588d8219b56151e699ff5410a9b49',
+            '72d281a733c7ee8091887b51f99acfb0c10dbcaa5ea096667144d649abc6b78d',
         );
         const effectCalls = controller.body!.statements.flatMap((statement) =>
             ts.isExpressionStatement(statement) &&
@@ -7146,7 +7146,7 @@ describe('rallar-black-box app source ownership', () => {
             task9aAstFingerprint(preReturnStatements),
             'controller exact token-complete pre-return AST',
         ).toBe(
-            '58f49db225ab78525d9f0c2b25a7396417c588d8219b56151e699ff5410a9b49',
+            '72d281a733c7ee8091887b51f99acfb0c10dbcaa5ea096667144d649abc6b78d',
         );
 
         const statementsByName = new Map<string, ts.VariableStatement>();
@@ -7161,6 +7161,56 @@ describe('rallar-black-box app source ownership', () => {
                 );
             }
         }
+        const analysisReportStatement = statementsByName.get('analysisReport');
+        const analysisReportDeclaration =
+            analysisReportStatement?.declarationList.declarations[0];
+        const analysisReportMemo =
+            analysisReportDeclaration?.initializer &&
+                ts.isCallExpression(analysisReportDeclaration.initializer) &&
+                ts.isIdentifier(analysisReportDeclaration.initializer.expression) &&
+                analysisReportDeclaration.initializer.expression.text === 'useMemo'
+                ? analysisReportDeclaration.initializer
+                : undefined;
+        const analysisReportCalls: ts.CallExpression[] = [];
+        if (analysisReportMemo) {
+            const visit = (node: ts.Node): void => {
+                if (
+                    ts.isCallExpression(node) &&
+                    ts.isIdentifier(node.expression) &&
+                    node.expression.text === 'deriveDistributedRunAnalysisReport'
+                ) {
+                    analysisReportCalls.push(node);
+                }
+                ts.forEachChild(node, visit);
+            };
+            visit(analysisReportMemo.arguments[0]!);
+        }
+        const analysisReportInput = analysisReportCalls[0]?.arguments[0];
+        const monitorProperty = analysisReportInput &&
+                ts.isObjectLiteralExpression(analysisReportInput)
+            ? analysisReportInput.properties.find((property) =>
+                ts.isPropertyAssignment(property) &&
+                property.name.getText() === 'monitor'
+            )
+            : undefined;
+        expect.soft(
+            monitorProperty && ts.isPropertyAssignment(monitorProperty)
+                ? monitorProperty.initializer.getText()
+                : undefined,
+            'analysis report reuses selected monitor',
+        ).toBe('selectedMonitor');
+        expect.soft(
+            analysisReportMemo?.arguments[1] &&
+                    ts.isArrayLiteralExpression(analysisReportMemo.arguments[1])
+                ? analysisReportMemo.arguments[1].elements.map(element => element.getText())
+                : [],
+            'analysis report memo exact coherent dependencies',
+        ).toEqual([
+            'artifactBundle',
+            'distributedControlRun',
+            'selectedDistributedRun',
+            'selectedMonitor',
+        ]);
         for (const [name, expectedFingerprint] of [
             ['refreshDistributedAnalysis', 'ffe05eac2e48e40936cae086cc72f77ce0fc58ac2f5a0b34d2264031db212f8d'],
             ['applySyntheticDistributedRunSeed', '14842da64af7f6f7bc3f7f2fff90ee126cc38bc94b51c8e7dc1f7d440f38482e'],
