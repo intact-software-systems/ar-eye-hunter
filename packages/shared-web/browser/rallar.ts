@@ -9647,7 +9647,12 @@ function isGroupRefInput(value: unknown): value is GroupRef {
 function isStateScope(
     input: StateScope | RallarRefreshOptions,
 ): input is StateScope {
-    return 'applicationId' in input;
+    return (
+        typeof input === 'object' &&
+        input !== null &&
+        !Array.isArray(input) &&
+        typeof (input as { applicationId?: unknown }).applicationId === 'string'
+    );
 }
 
 function readRallarCacheOrDefault<T>(

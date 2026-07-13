@@ -1249,6 +1249,16 @@ describe('Rallar workflow options compatibility', () => {
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(scope, {});
     });
 
+    it('ignores primitive refresh input for state scope parsing', async () => {
+        const { createRallarFacade } = await import(
+            '@shared-web/browser/rallar.ts'
+            );
+
+        await createRallarFacade().rooms.refresh(123 as unknown as never);
+
+        expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(undefined, {});
+    });
+
     it('applies timeout options when waiting on an in-flight connect', async () => {
         vi.useFakeTimers();
         const { createRallarFacade } = await import(
