@@ -21,7 +21,7 @@ Updated: July 13, 2026
 ```text
 You are working on Cash Chase Arena (CCA), an original-IP, fast-loading, unranked 2–8 player browser chase-survival game inside the existing Rallar monorepo.
 
-Before changing code, read AGENTS.md, Cash_Chase_Arena_Engineering_Standards.md, and the relevant repo skills under skills/**. Inspect current public Rallar APIs and existing game consumers; repository code and tests are authoritative because planning docs can lag.
+Before changing code, read AGENTS.md, Cash_Chase_Arena_Engineering_Standards.md, and the relevant repo skills under .agents/skills/**. Inspect current public Rallar APIs and existing game consumers; repository code and tests are authoritative because planning docs can lag.
 
 Product and architecture rules:
 - Rallar is the only application communication platform.

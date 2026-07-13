@@ -19,6 +19,17 @@
 - `apps/rallar-black-box`: browser black-box workbench and runner UI.
 - `apps/rallar-black-box-control-server`: Deno control server for distributed black-box runs.
 
+## Consumer App Evidence
+
+- `examples/**`: smallest copyable capability recipes; start here for one
+  Rallar surface.
+- `apps/relic-hunters-v1`: preferred runtime-adapter and authority/presentation
+  boundary example.
+- `apps/ar-eye-hunter-v1`: broad Rallar Game, director, diagnostics, Motion,
+  presence, and AI composition example.
+- `projects/cash-chase-arena`: renderer-neutral Rallar/React/3D planning;
+  product decisions are not universal defaults.
+
 ## High-Signal Docs
 
 - `docs/rallar-api-reference.md`: browser facade, room transport helpers, Rallar Motion, CRDT, data, middleware.

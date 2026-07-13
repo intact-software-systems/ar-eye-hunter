@@ -5,6 +5,10 @@ description: Use when changing Rallar rooms, GroupRef/scoped identity, group/cli
 
 # Rallar Realtime
 
+Use `building-rallar-apps` when deciding how realtime fits into a whole new
+app. `rallar-realtime` remains authoritative for rooms, scope, messages,
+WS/RTC, identity, routing, and readiness.
+
 ## First Pass
 
 Inspect both runtime sides before editing:

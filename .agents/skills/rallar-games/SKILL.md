@@ -1,9 +1,13 @@
 ---
 name: rallar-games
-description: Use when changing AR Eye Hunter, Relic Hunters, Rallar Game authority, Rallar Motion consumers, game room creation, game UI flows, or browser game realtime behavior.
+description: Use when changing AR Eye Hunter, Relic Hunters, Rallar Game authority, Rallar Motion consumers, game room creation, game UI flows, browser game realtime behavior, or greenfield browser game architecture.
 ---
 
 # Rallar Games
+
+**REQUIRED SUB-SKILL:** Use `building-rallar-apps` when creating a new browser
+game. Keep `rallar-games` focused on existing games and Rallar Game or Rallar
+Motion behavior.
 
 ## Start Here
 
@@ -39,4 +43,5 @@ rg -n "createRoom|rooms.create|createAndSwitch|waitForPresence|joinRoom|roomId|R
 
 ## Validation
 
-Use `references/test-commands.md` from the rallar-testing skill. Build both game apps after shared game/realtime changes.
+Use the `rallar-testing` skill to select validation commands. Build both game
+apps after shared game/realtime changes.
