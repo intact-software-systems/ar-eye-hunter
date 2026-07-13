@@ -3,7 +3,8 @@ import type {
     ControlRunSnapshot,
     ControlServerSnapshot,
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { ControlSnapshotSelectionIndex } from
+    '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
 import type {
     ControlQuerySnapshot,
     ControlQueryStatus,
@@ -13,6 +14,16 @@ import {
     createInitialMonitorOperationState,
     type MonitorOperationState,
 } from './monitor-operation-state.ts';
+import {
+    monitorReconciliationWork,
+    publishMonitorReconciliationWork,
+    resolveMonitorContextRuns,
+    type MonitorWorkspaceReconciliationWork,
+} from './monitor-workspace-index-reconciliation.ts';
+import {
+    compatibleMonitorMutation,
+    preferMonitorMutationTruth,
+} from './monitor-workspace-mutation-truth.ts';
 
 export {
     beginMonitorOperation,
@@ -51,6 +62,9 @@ export type MonitorWorkspaceState = Readonly<{
     cancelArmKey?: string;
 }> & MonitorOperationState;
 
+export type { MonitorWorkspaceReconciliationWork } from
+    './monitor-workspace-index-reconciliation.ts';
+
 export function createMonitorWorkspaceContext(input: Readonly<{
     baseUrl: string;
     controlRunId: string;
@@ -80,26 +94,42 @@ export function reconcileMonitorWorkspaceState(
     input: Readonly<{
         context?: MonitorWorkspaceContext;
         query: ControlQuerySnapshot<ControlServerSnapshot>;
+        selectionIndex?: ControlSnapshotSelectionIndex;
     }>,
 ): MonitorWorkspaceState {
     const state = previous.contextKey === input.context?.key
         ? previous
         : resetForContext(previous, input.context?.key);
-    if (!input.context) return state;
+    if (!input.context) {
+        return publishMonitorReconciliationWork(state, false, false);
+    }
 
     const { query } = input;
     if (query.status === 'live' || query.status === 'partial') {
-        return reconcileCurrentQuery(state, input.context, query);
+        return reconcileCurrentQuery(
+            state,
+            input.context,
+            query,
+            input.selectionIndex,
+        );
     }
-    if (!state.source) return state;
-    return {
+    if (!state.source) {
+        return publishMonitorReconciliationWork(state, false, false);
+    }
+    return publishMonitorReconciliationWork({
         ...state,
         source: {
             ...state.source,
             freshness: 'last-known',
             queryStatus: query.status,
         },
-    };
+    }, false, false);
+}
+
+export function monitorWorkspaceReconciliationWorkForTest(
+    state: MonitorWorkspaceState,
+): MonitorWorkspaceReconciliationWork | undefined {
+    return monitorReconciliationWork(state);
 }
 
 export function projectMonitorMutation(
@@ -157,21 +187,22 @@ function reconcileCurrentQuery(
     state: MonitorWorkspaceState,
     context: MonitorWorkspaceContext,
     query: ControlQuerySnapshot<ControlServerSnapshot>,
+    selectionIndex: ControlSnapshotSelectionIndex | undefined,
 ): MonitorWorkspaceState {
-    const controlRun = query.snapshot?.runs.find(run =>
-        run.runId === context.controlRunId
+    const snapshot = query.snapshot;
+    const resolved = resolveMonitorContextRuns(
+        snapshot,
+        context,
+        selectionIndex,
     );
-    const distributedRun = query.snapshot?.distributedRuns?.find(run =>
-        run.distributedRunId === context.distributedRunId &&
-        run.controlRunId === context.controlRunId
-    );
+    const { controlRun, distributedRun } = resolved;
     if (controlRun && distributedRun) {
-        const mutation = compatibleMutation(state.mutationRun, context);
+        const mutation = compatibleMonitorMutation(state.mutationRun, context);
         const selectedRun = mutation
             ? preferMonitorMutationTruth(mutation, distributedRun)
             : distributedRun;
         const keepMutation = selectedRun === mutation;
-        return {
+        return publishMonitorReconciliationWork({
             ...state,
             mutationRun: keepMutation ? mutation : undefined,
             source: {
@@ -184,7 +215,7 @@ function reconcileCurrentQuery(
                 origin: keepMutation ? 'mutation' : 'query',
                 receivedAtEpochMs: query.receivedAtEpochMs,
             },
-        };
+        }, resolved.indexed, resolved.fallback);
     }
     if (
         query.status === 'partial' &&
@@ -192,7 +223,7 @@ function reconcileCurrentQuery(
         controlRun &&
         state.source
     ) {
-        return {
+        return publishMonitorReconciliationWork({
             ...state,
             source: {
                 ...state.source,
@@ -200,9 +231,13 @@ function reconcileCurrentQuery(
                 completeness: 'partial',
                 queryStatus: 'partial',
             },
-        };
+        }, resolved.indexed, resolved.fallback);
     }
-    return { ...state, source: undefined, mutationRun: undefined };
+    return publishMonitorReconciliationWork(
+        { ...state, source: undefined, mutationRun: undefined },
+        resolved.indexed,
+        resolved.fallback,
+    );
 }
 
 function resetForContext(
@@ -214,40 +249,6 @@ function resetForContext(
         contextKey,
         operationGeneration: state.operationGeneration + 1,
     };
-}
-
-function compatibleMutation(
-    run: ControlDistributedRunSnapshot | undefined,
-    context: MonitorWorkspaceContext,
-): ControlDistributedRunSnapshot | undefined {
-    return run?.distributedRunId === context.distributedRunId &&
-            run.controlRunId === context.controlRunId
-        ? run
-        : undefined;
-}
-
-function preferMonitorMutationTruth(
-    mutation: ControlDistributedRunSnapshot,
-    query: ControlDistributedRunSnapshot,
-): ControlDistributedRunSnapshot {
-    if (mutation.updatedAtEpochMs !== query.updatedAtEpochMs) {
-        return mutation.updatedAtEpochMs > query.updatedAtEpochMs
-            ? mutation
-            : query;
-    }
-    const mutationTerminal = isDistributedRunTerminalState(mutation.state);
-    const queryTerminal = isDistributedRunTerminalState(query.state);
-    if (mutationTerminal !== queryTerminal) {
-        return mutationTerminal ? mutation : query;
-    }
-    if (
-        mutationTerminal &&
-        queryTerminal &&
-        Boolean(mutation.error) !== Boolean(query.error)
-    ) {
-        return mutation.error ? mutation : query;
-    }
-    return mutation;
 }
 
 function isMatchingContextRun(

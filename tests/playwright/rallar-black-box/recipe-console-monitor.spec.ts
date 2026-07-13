@@ -400,7 +400,7 @@ test('confirms a visible armed Monitor cancellation and projects cancelled truth
         .toBeDisabled();
 });
 
-test('bounds rendered secondary Monitor events and reports the exact omission count', async ({
+test('browses secondary Monitor events with exact window truth', async ({
     context,
     page,
 }) => {
@@ -412,10 +412,31 @@ test('bounds rendered secondary Monitor events and reports the exact omission co
         .filter({ has: page.locator('summary', { hasText: 'Events (' }) });
     await expect(eventEvidence.locator('summary')).toHaveText('Events (47)');
     await eventEvidence.locator('summary').click();
+    const window = eventEvidence.getByRole('group', { name: 'Events window' });
     await expect(eventEvidence.locator('li')).toHaveCount(40);
-    await expect(eventEvidence.getByText('7 events omitted by view bound.', {
+    await expect(window.getByRole('status')).toHaveText(
+        'Showing 1–40 of 47 events.',
+    );
+    await expect(eventEvidence.getByText(
+        '7 events outside this render window and browseable.', {
         exact: true,
     })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Previous' })).toBeDisabled();
+    await expect(window.getByRole('button', { name: 'Next' })).toBeEnabled();
+
+    const url = page.url();
+    await window.getByRole('button', { name: 'Next' }).click();
+    await expect(page).toHaveURL(url);
+    await expect(eventEvidence.locator('li')).toHaveCount(7);
+    await expect(window.getByRole('status')).toHaveText(
+        'Showing 41–47 of 47 events.',
+    );
+    await expect(eventEvidence.getByText(
+        '40 events outside this render window and browseable.', {
+        exact: true,
+    })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Previous' })).toBeEnabled();
+    await expect(window.getByRole('button', { name: 'Next' })).toBeDisabled();
 });
 
 test('renders operational and control-truth transitions from live Monitor evidence', async ({

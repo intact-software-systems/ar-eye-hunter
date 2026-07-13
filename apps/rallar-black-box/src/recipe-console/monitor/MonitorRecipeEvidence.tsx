@@ -2,12 +2,14 @@ import type {
     DistributedRunRecipeProgressRow,
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import {
     createMonitorRecipeEvidenceSelectionId,
     parseMonitorRecipeEvidenceSelectionId,
     type MonitorEvidenceSelection,
     type MonitorRecipeEvidenceIdentity,
 } from './monitor-selection.ts';
+import { MonitorInspectorWindow } from './MonitorInspectorWindow.tsx';
 import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
 import styles from './MonitorInspector.module.css';
 
@@ -36,34 +38,12 @@ export function MonitorRecipeEvidence({
         );
     }
     if (!identity && rows.length > 1) {
-        return (
-            <section className={styles.section}>
-                <h3>Choose role-scoped recipe evidence</h3>
-                <p>This recipe has separate progress truth for multiple assignments.</p>
-                <div className={styles.destinations}>
-                    {rows.map(row => {
-                        const rowId = recipeEvidenceId(row);
-                        return (
-                            <button
-                                key={rowId}
-                                onClick={() => onSelectEvidence(
-                                    { kind: 'recipe', id: rowId },
-                                    {
-                                        agentId: undefined,
-                                        recipeId: row.recipeId,
-                                        commandId: undefined,
-                                    },
-                                )}
-                                type="button"
-                            >
-                                <span>{row.profile ?? 'Default profile'}</span>
-                                <strong>{row.role ?? 'All assigned roles'}</strong>
-                            </button>
-                        );
-                    })}
-                </div>
-            </section>
-        );
+        return <RoleRecipeChoices
+            model={model}
+            onSelectEvidence={onSelectEvidence}
+            recipeId={recipeId}
+            rows={rows}
+        />;
     }
     const recipe = identity
         ? rows.find(row => sameRecipeEvidence(row, identity))
@@ -98,6 +78,49 @@ export function MonitorRecipeEvidence({
             </dl>
         </section>
     );
+}
+
+function RoleRecipeChoices({ model, onSelectEvidence, recipeId, rows }: Readonly<{
+    model: MonitorWorkspaceModel;
+    onSelectEvidence(
+        selection: MonitorEvidenceSelection,
+        patch?: Partial<RecipeConsoleUrlState>,
+    ): void;
+    recipeId: string;
+    rows: readonly DistributedRunRecipeProgressRow[];
+}>) {
+    return <section className={styles.section}>
+        <h3>Choose role-scoped recipe evidence</h3>
+        <p>This recipe has separate progress truth for multiple assignments.</p>
+        <MonitorInspectorWindow
+            contentClassName={styles.destinations}
+            contentId="monitor-inspector-role-recipe-choices"
+            contextKey={model.source.contextKey}
+            itemKey={(row, index) => `${recipeEvidenceId(row)}:${index}`}
+            itemLabel="role choices"
+            items={rows}
+            label="Role recipe choices"
+            renderItem={row => {
+                const rowId = recipeEvidenceId(row);
+                return <button
+                    onClick={() => onSelectEvidence(
+                        { kind: 'recipe', id: rowId },
+                        {
+                            agentId: undefined,
+                            recipeId: row.recipeId,
+                            commandId: undefined,
+                        },
+                    )}
+                    type="button"
+                >
+                    <span><ExactIdentifier value={row.profile ?? 'Default profile'} /></span>
+                    <strong><ExactIdentifier value={row.role ?? 'All assigned roles'} /></strong>
+                </button>;
+            }}
+            scope={{ kind: 'recipe', id: recipeId }}
+            section="recipes"
+        />
+    </section>;
 }
 
 function recipeEvidenceId(row: DistributedRunRecipeProgressRow): string {

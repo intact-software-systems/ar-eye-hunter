@@ -15,6 +15,7 @@ import {
 } from './monitor-action-policy.ts';
 import {
     deriveMonitorDistributedRunSelection,
+    deriveMonitorRunOptions,
     deriveMonitorUrlEvidenceSelection,
     monitorUrlEvidenceKey,
     recipeConsoleMonitorDistributedRunSelectionPatch,
@@ -51,9 +52,12 @@ export function useMonitorWorkspace(input: Readonly<{
             requestedDistributedRunId: input.urlState.distributedRunId,
             distributedRuns,
             distributedRunsAuthoritative,
+            snapshot: input.connection.query.snapshot,
+            selectionIndex: input.connection.selectionIndex,
         }), [
-            distributedRuns,
             distributedRunsAuthoritative,
+            input.connection.query.snapshot,
+            input.connection.selectionIndex,
             input.selection.controlRunId,
             input.urlState.distributedRunId,
         ],
@@ -83,8 +87,15 @@ export function useMonitorWorkspace(input: Readonly<{
         setState(previous => reconcileMonitorWorkspaceState(previous, {
             context,
             query: input.connection.query,
+            selectionIndex: input.connection.selectionIndex,
         }));
-    }, [context?.key, input.connection.query]);
+    }, [
+        context?.key,
+        input.connection.query.receivedAtEpochMs,
+        input.connection.query.snapshot,
+        input.connection.query.status,
+        input.connection.selectionIndex,
+    ]);
     useEffect(() => {
         if (!context) return;
         if (authoredEvidenceKeyRef.current === urlEvidenceKey) {
@@ -133,21 +144,20 @@ export function useMonitorWorkspace(input: Readonly<{
         setState,
     });
     const runOptions = useMemo(() => {
-        const selectedControlRunId = input.selection.controlRunId;
-        const options = distributedRuns.filter(run =>
-            run.controlRunId === selectedControlRunId
-        );
-        const lastKnown = model?.source.distributedRun;
-        const withLastKnown = lastKnown && !options.some(run =>
-            run.distributedRunId === lastKnown.distributedRunId
-        )
-            ? [...options, lastKnown]
-            : options;
-        return [...withLastKnown].sort((left, right) =>
-            right.updatedAtEpochMs - left.updatedAtEpochMs ||
-            left.distributedRunId.localeCompare(right.distributedRunId)
-        );
-    }, [distributedRuns, input.selection.controlRunId, model?.source.distributedRun]);
+        return deriveMonitorRunOptions({
+            controlRunId: input.selection.controlRunId,
+            distributedRuns,
+            lastKnown: model?.source.distributedRun,
+            snapshot: input.connection.query.snapshot,
+            selectionIndex: input.connection.selectionIndex,
+        });
+    }, [
+        distributedRuns,
+        input.connection.query.snapshot,
+        input.connection.selectionIndex,
+        input.selection.controlRunId,
+        model?.source.distributedRun,
+    ]);
 
     const selectEvidence = useCallback((
         selection: MonitorEvidenceSelection | undefined,

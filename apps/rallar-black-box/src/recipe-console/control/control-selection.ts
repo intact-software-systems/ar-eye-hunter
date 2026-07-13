@@ -2,11 +2,11 @@ import {
     isDistributedRunTerminalState,
     type RallarBlackBoxDistributedGroupRef,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { ControlSnapshotSelectionIndex } from
+    '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
 import {
     deriveControlAgentBoardRows,
     summarizeControlAgentBoardRows,
-    type ControlAgentBoardRow,
-    type ControlAgentBoardSummary,
 } from '../../control-agent-board.ts';
 import type {
     ControlAgentSnapshot,
@@ -16,41 +16,31 @@ import type {
 } from '../../control-run-manager.ts';
 import type { ControlQueryStatus } from './control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import {
+    createControlSelectionIndexProjection,
+    type IndexedRecipeConsoleControlSelectionWork,
+} from './control-selection-index-projection.ts';
+import { deriveControlSelectionContexts } from './control-selection-context.ts';
+import { deriveControlRunSelectionPatch } from './control-run-selection-patch.ts';
+import type {
+    RecipeConsoleControlSelection,
+    RecipeConsoleControlSelectionIssue,
+} from './control-selection-contract.ts';
 
-export type RecipeConsoleControlSelectionIssue = Readonly<{
-    field: 'controlRunId' | 'distributedRunId' | 'agentId' | 'distributedRuns';
-    code: 'unavailable' | 'ambiguous' | 'incompatible';
-    message: string;
-    value?: string;
-}>;
+export type {
+    RecipeConsoleActiveRunContext,
+    RecipeConsoleControlGroupContext,
+    RecipeConsoleControlSelection,
+    RecipeConsoleControlSelectionIssue,
+} from './control-selection-contract.ts';
 
-export type RecipeConsoleActiveRunContext = Readonly<{
-    kind: 'none' | 'sole' | 'ambiguous';
-    runs: readonly ControlDistributedRunSnapshot[];
-}>;
-
-export type RecipeConsoleControlGroupContext = Readonly<{
-    source: 'selected-distributed-run' | 'sole-active-distributed-run' | 'bootstrap';
-    group: RallarBlackBoxDistributedGroupRef;
-}>;
-
-export type RecipeConsoleControlSelection = Readonly<{
-    controlRunId?: string;
-    controlRun?: ControlRunSnapshot;
-    controlRunSource?: 'url' | 'bootstrap' | 'sole-run';
-    distributedRunId?: string;
-    distributedRun?: ControlDistributedRunSnapshot;
-    agentId?: string;
-    agent?: ControlAgentSnapshot;
-    issues: readonly RecipeConsoleControlSelectionIssue[];
-    urlReplacePatch?: Partial<RecipeConsoleUrlState>;
-    activeRunContext: RecipeConsoleActiveRunContext;
-    groupContext: RecipeConsoleControlGroupContext;
-    boardRows: readonly ControlAgentBoardRow[];
-    boardSummary: ControlAgentBoardSummary;
-    safeTargetableCount: number;
-    lastKnownTargetableCount: number;
-}>;
+export type RecipeConsoleControlSelectionWork =
+    | IndexedRecipeConsoleControlSelectionWork
+    | Readonly<{
+        indexed: false;
+        fallback: boolean;
+    }>;
+const workBySelection = new WeakMap<object, RecipeConsoleControlSelectionWork>();
 
 export function deriveRecipeConsoleControlSelection(input: Readonly<{
     urlState: RecipeConsoleUrlState;
@@ -59,9 +49,46 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
     bootstrapGroup: RallarBlackBoxDistributedGroupRef;
     queryStatus: ControlQueryStatus;
     nowEpochMs?: number;
+    selectionIndex?: ControlSnapshotSelectionIndex;
 }>): RecipeConsoleControlSelection {
     const runs = input.snapshot?.runs ?? [];
     const distributedRuns = input.snapshot?.distributedRuns ?? [];
+    const fallbackToLegacy = (): RecipeConsoleControlSelection => {
+        const fallback = deriveRecipeConsoleControlSelection({
+            ...input,
+            selectionIndex: undefined,
+        });
+        workBySelection.set(fallback, Object.freeze({
+            indexed: false,
+            fallback: true,
+        }));
+        return fallback;
+    };
+    const requestedProjection = input.snapshot && input.selectionIndex
+        ? createControlSelectionIndexProjection({
+            snapshot: input.snapshot,
+            index: input.selectionIndex,
+        })
+        : undefined;
+    if (requestedProjection?.kind === 'fallback') return fallbackToLegacy();
+    const indexProjection = requestedProjection?.kind === 'indexed'
+        ? requestedProjection
+        : undefined;
+    const selectionIndex = indexProjection?.index;
+    const findControlRun = (runId: string): ControlRunSnapshot | undefined => {
+        return indexProjection
+            ? indexProjection.findControlRun(runId)
+            : runs.find(run => run.runId === runId);
+    };
+    const findDistributedRun = (
+        distributedRunId: string,
+    ): ControlDistributedRunSnapshot | undefined => {
+        return indexProjection
+            ? indexProjection.findDistributedRun(distributedRunId)
+            : distributedRuns.find(run =>
+                run.distributedRunId === distributedRunId
+            );
+    };
     const hasSnapshot = input.snapshot !== undefined;
     const hasDistributedRunCollection = input.snapshot?.distributedRuns !== undefined;
     const snapshotEvidence = input.queryStatus === 'stale'
@@ -77,7 +104,7 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
     const explicitControlRunId = input.urlState.controlRunId;
     let controlRunId = explicitControlRunId;
     let controlRun = explicitControlRunId
-        ? runs.find(run => run.runId === explicitControlRunId)
+        ? findControlRun(explicitControlRunId)
         : undefined;
     let controlRunSource: RecipeConsoleControlSelection['controlRunSource'];
     let urlReplacePatch: Partial<RecipeConsoleUrlState> | undefined;
@@ -94,7 +121,7 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
         }
     } else {
         const bootstrapRun = input.bootstrapRunId
-            ? runs.find(run => run.runId === input.bootstrapRunId)
+            ? findControlRun(input.bootstrapRunId)
             : undefined;
         if (bootstrapRun) {
             controlRun = bootstrapRun;
@@ -114,11 +141,13 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
             ));
         }
     }
+    if (indexProjection && !indexProjection.valid()) return fallbackToLegacy();
 
     const distributedRunId = input.urlState.distributedRunId;
     const distributedCandidate = distributedRunId
-        ? distributedRuns.find(run => run.distributedRunId === distributedRunId)
+        ? findDistributedRun(distributedRunId)
         : undefined;
+    if (indexProjection && !indexProjection.valid()) return fallbackToLegacy();
     const distributedRun = distributedCandidate && controlRun &&
             distributedCandidate.controlRunId === controlRun.runId
         ? distributedCandidate
@@ -152,9 +181,13 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
     }
 
     const agentId = input.urlState.agentId;
-    const agent = agentId
-        ? controlRun?.agents.find(candidate => candidate.agentId === agentId)
-        : undefined;
+    let agent: ControlAgentSnapshot | undefined;
+    if (agentId && controlRun) {
+        agent = indexProjection
+            ? indexProjection.findAgent(controlRun.runId, agentId)
+            : controlRun.agents.find(candidate => candidate.agentId === agentId);
+    }
+    if (indexProjection && !indexProjection.valid()) return fallbackToLegacy();
     if (agentId && controlRun && !agent) {
         issues.push(issue(
             'agentId',
@@ -164,44 +197,37 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
         ));
     }
 
-    const activeRuns = controlRun
-        ? distributedRuns
-            .filter(run => run.controlRunId === controlRun.runId)
-            .filter(run => !isDistributedRunTerminalState(run.state))
-            .sort((left, right) =>
-                right.updatedAtEpochMs - left.updatedAtEpochMs ||
-                left.distributedRunId.localeCompare(right.distributedRunId)
-            )
-        : [];
-    const activeRunContext: RecipeConsoleActiveRunContext = {
-        kind: activeRuns.length === 0 ? 'none' : activeRuns.length === 1 ? 'sole' : 'ambiguous',
-        runs: activeRuns,
-    };
-    const groupContext: RecipeConsoleControlGroupContext = distributedRun
-        ? {
-            source: 'selected-distributed-run',
-            group: distributedRun.manifest.group,
-        }
-        : activeRuns.length === 1
-        ? {
-            source: 'sole-active-distributed-run',
-            group: activeRuns[0].manifest.group,
-        }
-        : {
-            source: 'bootstrap',
-            group: input.bootstrapGroup,
-        };
+    let activeRuns: readonly ControlDistributedRunSnapshot[] = [];
+    if (controlRun) {
+        activeRuns = indexProjection
+            ? indexProjection.activeRuns(controlRun.runId)
+            : distributedRuns
+                .filter(run => run.controlRunId === controlRun.runId)
+                .filter(run => !isDistributedRunTerminalState(run.state))
+                .sort((left, right) =>
+                    right.updatedAtEpochMs - left.updatedAtEpochMs ||
+                    left.distributedRunId.localeCompare(right.distributedRunId)
+                );
+    }
+    if (indexProjection && !indexProjection.valid()) return fallbackToLegacy();
+    const { activeRunContext, groupContext } = deriveControlSelectionContexts({
+        activeRuns,
+        distributedRun,
+        bootstrapGroup: input.bootstrapGroup,
+    });
     const boardRows = deriveControlAgentBoardRows({
         run: controlRun,
         group: groupContext.group,
         distributedRuns,
         selectedDistributedRun: distributedRun,
         nowEpochMs: input.nowEpochMs,
+        snapshot: input.snapshot,
+        selectionIndex,
     });
     const boardSummary = summarizeControlAgentBoardRows(boardRows);
     const safe = input.queryStatus === 'live' || input.queryStatus === 'partial';
 
-    return {
+    const selection: RecipeConsoleControlSelection = {
         controlRunId,
         controlRun,
         controlRunSource,
@@ -218,6 +244,16 @@ export function deriveRecipeConsoleControlSelection(input: Readonly<{
         safeTargetableCount: safe ? boardSummary.targetable : 0,
         lastKnownTargetableCount: boardSummary.targetable,
     };
+    workBySelection.set(selection, indexProjection
+        ? Object.freeze({ ...indexProjection.work })
+        : Object.freeze({ indexed: false, fallback: false }));
+    return selection;
+}
+
+export function recipeConsoleControlSelectionWorkForTest(
+    selection: RecipeConsoleControlSelection,
+): RecipeConsoleControlSelectionWork | undefined {
+    return workBySelection.get(selection);
 }
 
 export function recipeConsoleControlRunSelectionPatch(input: Readonly<{
@@ -225,18 +261,7 @@ export function recipeConsoleControlRunSelectionPatch(input: Readonly<{
     controlRunId: string;
     distributedRuns: readonly ControlDistributedRunSnapshot[];
 }>): Partial<RecipeConsoleUrlState> {
-    const distributedRunId = input.state.distributedRunId &&
-            input.distributedRuns.some(run =>
-                run.distributedRunId === input.state.distributedRunId &&
-                run.controlRunId === input.controlRunId
-            )
-        ? input.state.distributedRunId
-        : undefined;
-    return {
-        controlRunId: input.controlRunId,
-        distributedRunId,
-        agentId: undefined,
-    };
+    return deriveControlRunSelectionPatch(input);
 }
 
 function issue(

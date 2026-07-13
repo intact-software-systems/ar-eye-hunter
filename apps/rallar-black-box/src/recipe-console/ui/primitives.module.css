@@ -40,12 +40,17 @@
     min-width: 0;
     gap: 1px;
     padding: 0 10px;
+    overflow: hidden;
     border-left: 1px solid var(--rc-border);
 }
 
 .commandBarLabel {
+    min-width: 0;
+    overflow: hidden;
     color: var(--rc-muted);
     font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .commandBarValue,
@@ -55,6 +60,16 @@
     font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+@media (min-width: 768px) and (max-width: 1100px) and (max-height: 520px) {
+    .commandBarItem {
+        padding-inline: 4px;
+    }
+
+    .commandBarItem:nth-child(4) {
+        flex: 0 0 64px;
+    }
 }
 
 .statusMark {

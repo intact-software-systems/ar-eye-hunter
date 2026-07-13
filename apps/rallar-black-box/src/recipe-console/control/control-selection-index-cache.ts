@@ -10,6 +10,10 @@ import {
     controlSnapshotRevisionOf,
     type ControlSnapshotRevision,
 } from './control-snapshot-revision.ts';
+import { bindControlSelectionIndexToSnapshot } from
+    '../../control-selection-index-binding.ts';
+
+export type { ControlSnapshotSelectionIndex };
 
 export type ControlSelectionIndexCache = Readonly<{
     get(snapshot: ControlServerSnapshot): ControlSnapshotSelectionIndex;
@@ -74,10 +78,13 @@ export function createControlSelectionIndexCache(): ControlSelectionIndexCache {
                 work.hitCount += 1;
                 work.lastLookup = emptyLookupWork(true);
                 publishWork(cache, work);
-                return entry.index;
+                return bindControlSelectionIndexToSnapshot(snapshot, entry.index);
             }
 
-            const index = createControlSnapshotSelectionIndex(snapshot);
+            const index = bindControlSelectionIndexToSnapshot(
+                snapshot,
+                createControlSnapshotSelectionIndex(snapshot),
+            );
             const indexWork = controlSnapshotSelectionIndexWorkForTest(index);
             work.missCount += 1;
             work.indexBuildCount += 1;
@@ -105,6 +112,12 @@ export function controlSelectionIndexCacheWorkForTest(
     cache: ControlSelectionIndexCache,
 ): ControlSelectionIndexCacheWork | undefined {
     return workByCache.get(cache);
+}
+
+export function controlSelectionIndexCacheLastLookup(
+    cache: ControlSelectionIndexCache,
+): ControlSelectionIndexCacheLookupWork | undefined {
+    return workByCache.get(cache)?.lastLookup;
 }
 
 function selectionIndexLoopVisitCount(

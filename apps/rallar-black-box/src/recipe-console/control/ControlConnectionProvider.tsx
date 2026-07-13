@@ -24,6 +24,12 @@ import {
 } from './control-query.ts';
 import type { RecipeConsoleControlCredentialPolicy } from './control-credential-policy.ts';
 import type { RecipeConsoleControlExecutionApi } from './control-execution-api.ts';
+import {
+    controlSelectionIndexCacheLastLookup,
+    createControlSelectionIndexCache,
+    type ControlSnapshotSelectionIndex,
+    type ControlSelectionIndexCacheLookupWork,
+} from './control-selection-index-cache.ts';
 
 export const CONTROL_QUERY_POLL_INTERVAL_MS = 5_000;
 export const CONTROL_QUERY_REQUEST_TIMEOUT_MS = 4_000;
@@ -51,6 +57,8 @@ export type RecipeConsoleControlConnection = Readonly<{
         ControlServerSnapshot,
         RecipeConsoleControlQueryProvenance
     >;
+    selectionIndex?: ControlSnapshotSelectionIndex;
+    selectionIndexWork?: ControlSelectionIndexCacheLookupWork;
     refresh(): Promise<void>;
     refreshAfterCurrent(): Promise<void>;
 }>;
@@ -136,6 +144,20 @@ export function ControlConnectionProvider({
         service.getSnapshot,
         service.getSnapshot,
     );
+    const selectionIndexCache = useMemo(
+        () => createControlSelectionIndexCache(),
+        [apiSetup],
+    );
+    const selectionProjection = useMemo(() => {
+        const snapshot = query.snapshot;
+        if (!snapshot) return undefined;
+        const selectionIndex = selectionIndexCache.get(snapshot);
+        return Object.freeze({
+            selectionIndex,
+            selectionIndexWork:
+                controlSelectionIndexCacheLastLookup(selectionIndexCache),
+        });
+    }, [query.snapshot, selectionIndexCache]);
 
     const apiLifetime = useRef<Readonly<{
         api: RecipeConsoleControlApi | undefined;
@@ -178,9 +200,17 @@ export function ControlConnectionProvider({
         execution: apiSetup.api?.execution,
         retention: apiSetup.api?.retention,
         query,
+        selectionIndex: selectionProjection?.selectionIndex,
+        selectionIndexWork: selectionProjection?.selectionIndexWork,
         refresh: service.refresh,
         refreshAfterCurrent: service.refreshAfterCurrent,
-    }), [apiSetup, publicBootstrap, query, service.refresh]);
+    }), [
+        apiSetup,
+        publicBootstrap,
+        query,
+        selectionProjection,
+        service.refresh,
+    ]);
 
     return (
         <ControlConnectionContext.Provider value={value}>

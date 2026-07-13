@@ -85,7 +85,12 @@ export function useExplicitWindowFocusRecovery(
         if (!previous || previous.isConnected) return;
         fallbackFocusRef.current?.focus();
         focusedContentElementRef.current = undefined;
-    }, [model.fingerprint, model.startIndex, model.endIndexExclusive]);
+    }, [
+        model.fingerprint,
+        model.startIndex,
+        model.endIndexExclusive,
+        model.total,
+    ]);
 
     const contentFocusProps = useMemo(() => ({
         onFocusCapture,

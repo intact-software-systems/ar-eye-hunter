@@ -6,9 +6,13 @@ import type {
 } from '../routing/url-state-contract.ts';
 import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
 import type { MonitorEvidenceSelection } from './monitor-selection.ts';
+import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
+import { ExplicitWindowControls } from '../ui/ExplicitWindowControls.tsx';
+import { MonitorWindowTruth } from './MonitorWindowTruth.tsx';
+import { useMonitorWindow } from './use-monitor-window.ts';
 import styles from './MonitorEvidence.module.css';
 
-const DIAGNOSTIC_LIMIT = 50;
+const CONTENT_ID = 'monitor-diagnostics-window';
 
 export function MonitorDiagnostics({
     model,
@@ -29,11 +33,27 @@ export function MonitorDiagnostics({
         trigger: HTMLButtonElement,
     ): void;
 }>) {
-    const filtered = model.monitor.runtimeDiagnostics.filter(row =>
-        (!severity || row.severity === severity) &&
-        matchesTransport(row, transport)
+    const filtered: Array<Readonly<{
+        row: DistributedRunRuntimeDiagnosticRow;
+        sourceOrdinal: number;
+    }>> = [];
+    model.monitor.runtimeDiagnostics.forEach((row, sourceOrdinal) => {
+        if (
+            (!severity || row.severity === severity) &&
+            matchesTransport(row, transport)
+        ) filtered.push({ row, sourceOrdinal });
+    });
+    const window = useMonitorWindow({
+        contextKey: model.source.contextKey,
+        section: 'diagnostics',
+        total: filtered.length,
+        diagnosticSeverity: severity,
+        transport,
+    });
+    const visible = filtered.slice(
+        window.model.startIndex,
+        window.model.endIndexExclusive,
     );
-    const visible = filtered.slice(0, DIAGNOSTIC_LIMIT);
     const counts = model.monitor.diagnosticCounts;
     return (
         <section className={styles.diagnostics} data-monitor-diagnostics>
@@ -52,26 +72,48 @@ export function MonitorDiagnostics({
                     <option value="">All transports</option><option value="realtime">Realtime</option><option value="messages.rtc">Messages RTC</option><option value="ws">WS</option><option value="http">HTTP</option><option value="runtime">Runtime</option>
                 </select></label>
             </div>
+            {window.model.total > window.model.windowSize ? (
+                <div data-monitor-window-controls {...window.controlsFocusProps}>
+                    <ExplicitWindowControls
+                        contentId={CONTENT_ID}
+                        itemLabel="diagnostics"
+                        label="Diagnostics"
+                        model={window.model}
+                        onNext={window.next}
+                        onPrevious={window.previous}
+                    />
+                </div>
+            ) : null}
+            <MonitorWindowTruth
+                itemLabel="diagnostics"
+                label="Diagnostics"
+                window={window}
+            />
             {visible.length === 0 ? <p className={styles.empty}>No diagnostics match these filters.</p> : (
-                <ul className={styles.diagnosticList}>
-                    {visible.map(row => (
+                <ul
+                    className={styles.diagnosticList}
+                    id={CONTENT_ID}
+                    {...window.contentFocusProps}
+                >
+                    {visible.map(({ row, sourceOrdinal }) => (
                         <DiagnosticRow
                             active={selected?.kind === 'diagnostic' && selected.id === row.eventId}
-                            key={row.eventId}
+                            key={sourceOrdinal}
                             onInspect={onInspect}
                             row={row}
+                            sourceOrdinal={sourceOrdinal}
                         />
                     ))}
                 </ul>
             )}
-            {filtered.length > DIAGNOSTIC_LIMIT ? <p>{filtered.length - DIAGNOSTIC_LIMIT} diagnostics omitted by view bound.</p> : null}
         </section>
     );
 }
 
-function DiagnosticRow({ row, active, onInspect }: Readonly<{
+function DiagnosticRow({ row, active, onInspect, sourceOrdinal }: Readonly<{
     row: DistributedRunRuntimeDiagnosticRow;
     active: boolean;
+    sourceOrdinal: number;
     onInspect(
         selection: MonitorEvidenceSelection,
         patch: Partial<RecipeConsoleUrlState>,
@@ -79,7 +121,11 @@ function DiagnosticRow({ row, active, onInspect }: Readonly<{
     ): void;
 }>) {
     return (
-        <li data-severity={row.severity}>
+        <li
+            data-monitor-diagnostic-row
+            data-monitor-source-ordinal={sourceOrdinal}
+            data-severity={row.severity}
+        >
             <button
                 aria-pressed={active}
                 onClick={event => onInspect(
@@ -94,7 +140,7 @@ function DiagnosticRow({ row, active, onInspect }: Readonly<{
                 type="button"
             >
                 <span><strong>{row.diagnosticTypeId}</strong><small>{row.transport ?? 'runtime'} · {row.severity}</small></span>
-                <span>{row.summary || row.message}</span><code>{row.agentId}</code>
+                <span>{row.summary || row.message}</span><ExactIdentifier value={row.agentId} />
             </button>
         </li>
     );

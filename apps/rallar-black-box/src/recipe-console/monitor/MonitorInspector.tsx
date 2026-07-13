@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
-import type { DistributedRunFailureEvidenceDestination } from '@shared-test/rallar-bb-test/distributed-run-evidence.ts';
 import type { DistributedRunProgressStatus } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import { deriveDistributedRunFailureEvidenceDestinations } from '../../distributed-recipes.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import { StatusMark, type OperationalStatus } from '../ui/StatusMark.tsx';
 import {
     MONITOR_ARTIFACT_EVIDENCE_ID,
@@ -10,6 +10,10 @@ import {
     monitorEvidenceSelectionIdentifier,
     type MonitorEvidenceSelection,
 } from './monitor-selection.ts';
+import {
+    MonitorEvidenceLinksWindow,
+    MonitorFailureDestinationsWindow,
+} from './MonitorInspectorWindow.tsx';
 import { MonitorRecipeEvidence } from './MonitorRecipeEvidence.tsx';
 import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
 import styles from './MonitorInspector.module.css';
@@ -29,7 +33,7 @@ export function MonitorInspector({ model, selection, legacyHref, onSelectEvidenc
             <header className={styles.header}>
                 <p className={styles.eyebrow}>Evidence inspector</p>
                 <h2>{heading}</h2>
-                <code>{monitorEvidenceSelectionIdentifier(active) ?? model.monitor.distributedRunId}</code>
+                <ExactIdentifier value={monitorEvidenceSelectionIdentifier(active) ?? model.monitor.distributedRunId} />
                 <StatusMark label={statusLabel(model, active)} status={selectionStatus(model, active)} />
             </header>
             {active ? selectedEvidence(model, active, onSelectEvidence) : (
@@ -43,23 +47,26 @@ export function MonitorInspector({ model, selection, legacyHref, onSelectEvidenc
 function selectedEvidence(model: MonitorWorkspaceModel, selection: MonitorEvidenceSelection,
     onSelect: MonitorInspectorProps['onSelectEvidence']): ReactNode {
     switch (selection.kind) {
-        case 'failure': return failureView(model, selection.id, onSelect);
+        case 'failure': return <FailureView model={model} failureKey={selection.id} onSelect={onSelect} />;
         case 'agent': return agentView(model, selection.id);
         case 'recipe': return <MonitorRecipeEvidence
             model={model}
             onSelectEvidence={onSelect}
             selectionId={selection.id}
         />;
-        case 'command': return commandView(model, selection.id, onSelect);
-        case 'diagnostic': return diagnosticView(model, selection.id, onSelect);
+        case 'command': return <CommandView model={model} commandId={selection.id} onSelect={onSelect} />;
+        case 'diagnostic': return <DiagnosticView model={model} eventId={selection.id} onSelect={onSelect} />;
         case 'timeline': return timelineView(model, selection.id);
         case 'event': return eventView(model, selection.id);
         case 'artifact': return artifactView(model);
     }
 }
 
-function failureView(model: MonitorWorkspaceModel, failureKey: string,
-    onSelect: MonitorInspectorProps['onSelectEvidence']): ReactNode {
+function FailureView({ model, failureKey, onSelect }: Readonly<{
+    model: MonitorWorkspaceModel;
+    failureKey: string;
+    onSelect: MonitorInspectorProps['onSelectEvidence'];
+}>) {
     const failure = model.monitor.failures.find(row => row.key === failureKey);
     if (!failure) return <MissingEvidence kind="failure" id={failureKey} />;
     const explanation = model.report.nextActions.find(action => action.evidence.includes(failure.key));
@@ -85,13 +92,13 @@ function failureView(model: MonitorWorkspaceModel, failureKey: string,
         <section className={styles.section}>
             <h3>Correlated destinations <span>{destinations.length}</span></h3>
             {destinations.length > 0 ? (
-                <div className={styles.destinations}>
-                    {destinations.map(destination => <EvidenceDestination
-                        destination={destination}
-                        key={`${destination.kind}:${destination.id}`}
-                        onSelect={onSelect}
-                    />)}
-                </div>
+                <MonitorFailureDestinationsWindow
+                    contentClassName={styles.destinations}
+                    contextKey={model.source.contextKey}
+                    destinations={destinations}
+                    onSelect={onSelect}
+                    scopeId={failureKey}
+                />
             ) : <p className={styles.empty}>No directly correlated destination is available.</p>}
         </section>
     </>;
@@ -114,8 +121,11 @@ function agentView(model: MonitorWorkspaceModel, agentId: string): ReactNode {
     </EvidenceSection>;
 }
 
-function commandView(model: MonitorWorkspaceModel, commandId: string,
-    onSelect: MonitorInspectorProps['onSelectEvidence']): ReactNode {
+function CommandView({ model, commandId, onSelect }: Readonly<{
+    model: MonitorWorkspaceModel;
+    commandId: string;
+    onSelect: MonitorInspectorProps['onSelectEvidence'];
+}>) {
     const timelines = model.monitor.timeline.filter(row => row.commandId === commandId);
     const diagnostics = model.monitor.runtimeDiagnostics.filter(row => row.commandId === commandId);
     const events = model.monitor.events.filter(row => row.commandId === commandId);
@@ -128,18 +138,31 @@ function commandView(model: MonitorWorkspaceModel, commandId: string,
         ...diagnostics.map(row => ({ kind: 'diagnostic' as const, id: row.eventId })),
         ...timelines.map(row => ({ kind: 'timeline' as const, id: row.id })),
         ...events.map(row => ({ kind: 'event' as const, id: row.eventId })),
-    ].slice(0, 16);
+    ];
     return <EvidenceSection title="Command evidence" description="Linked outcomes, diagnostics, timeline items, and events.">
         <Facts values={[
             ['Failures', String(failures.length)], ['Diagnostics', String(diagnostics.length)],
             ['Timeline items', String(timelines.length)], ['Events', String(events.length)],
         ]} />
-        <EvidenceLinks links={links} onSelect={onSelect} />
+        <MonitorEvidenceLinksWindow
+            contentClassName={styles.destinations}
+            contentId="monitor-inspector-command-evidence"
+            contextKey={model.source.contextKey}
+            itemLabel="linked items"
+            label="Command evidence"
+            links={links}
+            onSelect={onSelect}
+            scope={{ kind: 'command', id: commandId }}
+            section="commandEvidence"
+        />
     </EvidenceSection>;
 }
 
-function diagnosticView(model: MonitorWorkspaceModel, eventId: string,
-    onSelect: MonitorInspectorProps['onSelectEvidence']): ReactNode {
+function DiagnosticView({ model, eventId, onSelect }: Readonly<{
+    model: MonitorWorkspaceModel;
+    eventId: string;
+    onSelect: MonitorInspectorProps['onSelectEvidence'];
+}>) {
     const row = model.monitor.runtimeDiagnostics.find(item => item.eventId === eventId);
     if (!row) return <MissingEvidence kind="diagnostic" id={eventId} />;
     return <EvidenceSection title={row.summary || row.message} description={row.message}>
@@ -149,7 +172,17 @@ function diagnosticView(model: MonitorWorkspaceModel, eventId: string,
             ['Type', row.diagnosticTypeId], ['Topic', row.topic],
             ['Observed', formatEpoch(row.atEpochMs)], ['Payload', row.payloadSummary],
         ]} />
-        <EvidenceLinks links={row.correlatedFailureKeys.map(id => ({ kind: 'failure', id }))} onSelect={onSelect} />
+        <MonitorEvidenceLinksWindow
+            contentClassName={styles.destinations}
+            contentId="monitor-inspector-diagnostic-failure-links"
+            contextKey={model.source.contextKey}
+            itemLabel="failure links"
+            label="Diagnostic failure links"
+            links={row.correlatedFailureKeys.map(id => ({ kind: 'failure' as const, id }))}
+            onSelect={onSelect}
+            scope={{ kind: 'diagnostic', id: eventId }}
+            section="diagnosticFailureLinks"
+        />
     </EvidenceSection>;
 }
 
@@ -187,31 +220,6 @@ function artifactView(model: MonitorWorkspaceModel): ReactNode {
     </EvidenceSection>;
 }
 
-function EvidenceDestination({ destination, onSelect }: Readonly<{ destination: DistributedRunFailureEvidenceDestination;
-    onSelect: MonitorInspectorProps['onSelectEvidence'] }>) {
-    return <button
-        data-evidence-destination={destination.kind}
-        data-evidence-id={destination.id}
-        onClick={() => onSelect(
-            { kind: destination.kind, id: destination.id }, destinationPatch(destination),
-        )}
-        type="button"
-    >
-        <span>{labelKind(destination.kind)}</span>
-        <strong>{destination.label}</strong>
-    </button>;
-}
-
-function EvidenceLinks({ links, onSelect }: Readonly<{ links: readonly MonitorEvidenceSelection[];
-    onSelect: MonitorInspectorProps['onSelectEvidence'] }>) {
-    if (links.length === 0) return null;
-    return <div className={styles.destinations}>{links.map(link => (
-        <button key={`${link.kind}:${link.id}`} onClick={() => onSelect(link)} type="button">
-            <span>{labelKind(link.kind)}</span><strong>{link.id}</strong>
-        </button>
-    ))}</div>;
-}
-
 function EvidenceSection({ title, description, children }: Readonly<{
     title: string; description: string; children: ReactNode;
 }>) {
@@ -240,10 +248,6 @@ function defaultSelection(model: MonitorWorkspaceModel): MonitorEvidenceSelectio
     const recipe = model.monitor.recipeProgress[0];
     if (recipe) return { kind: 'recipe', id: recipe.recipeId };
     return { kind: 'artifact', id: MONITOR_ARTIFACT_EVIDENCE_ID };
-}
-
-function destinationPatch(destination: DistributedRunFailureEvidenceDestination): Partial<RecipeConsoleUrlState> {
-    return { agentId: destination.agentId, recipeId: destination.recipeId, commandId: destination.commandId };
 }
 
 function selectionStatus(model: MonitorWorkspaceModel,

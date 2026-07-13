@@ -2,6 +2,14 @@ import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/
 import type { DistributedRunRecipeProgressRow } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import { recipeConsoleControlRunSelectionPatch } from '../control/control-selection.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import {
+    deriveMonitorDistributedRunSelectionProjection,
+    deriveMonitorRunOptionsProjection,
+    monitorDistributedSelectionWork,
+    monitorOptionsWork,
+    type MonitorDistributedRunSelectionInput,
+    type MonitorRunOptionsInput,
+} from './monitor-selection-projection.ts';
 
 export type MonitorSelectionIssue = Readonly<{
     code: 'unavailable' | 'incompatible' | 'ambiguous';
@@ -14,6 +22,11 @@ export type MonitorDistributedRunSelection = Readonly<{
     source: 'explicit' | 'sole-compatible' | 'none';
     issue?: MonitorSelectionIssue;
     urlReplacePatch?: Partial<RecipeConsoleUrlState>;
+}>;
+
+export type MonitorSelectionIndexWork = Readonly<{
+    indexed: boolean;
+    fallback: boolean;
 }>;
 
 export type MonitorEvidenceSelection = Readonly<{
@@ -117,71 +130,28 @@ export function monitorUrlEvidenceKey(state: RecipeConsoleUrlState): string {
     ]);
 }
 
-export function deriveMonitorDistributedRunSelection(input: Readonly<{
-    controlRunId?: string;
-    requestedDistributedRunId?: string;
-    distributedRuns: readonly ControlDistributedRunSnapshot[];
-    distributedRunsAuthoritative: boolean;
-}>): MonitorDistributedRunSelection {
-    const compatible = input.controlRunId
-        ? input.distributedRuns.filter(run =>
-            run.controlRunId === input.controlRunId
-        )
-        : [];
+export function deriveMonitorDistributedRunSelection(
+    input: MonitorDistributedRunSelectionInput,
+): MonitorDistributedRunSelection {
+    return deriveMonitorDistributedRunSelectionProjection(input);
+}
 
-    if (input.requestedDistributedRunId) {
-        const candidate = input.distributedRuns.find(run =>
-            run.distributedRunId === input.requestedDistributedRunId
-        );
-        const run = candidate?.controlRunId === input.controlRunId
-            ? candidate
-            : undefined;
-        if (run) {
-            return {
-                distributedRunId: input.requestedDistributedRunId,
-                run,
-                source: 'explicit',
-            };
-        }
-        return {
-            distributedRunId: input.requestedDistributedRunId,
-            run: undefined,
-            source: 'explicit',
-            issue: !input.distributedRunsAuthoritative
-                ? undefined
-                : candidate
-                ? {
-                    code: 'incompatible',
-                    message: `Distributed run ${input.requestedDistributedRunId} belongs to another control run.`,
-                }
-                : {
-                    code: 'unavailable',
-                    message: `Distributed run ${input.requestedDistributedRunId} is not available in the selected control run.`,
-                },
-        };
-    }
+export function deriveMonitorRunOptions(
+    input: MonitorRunOptionsInput,
+): readonly ControlDistributedRunSnapshot[] {
+    return deriveMonitorRunOptionsProjection(input);
+}
 
-    if (input.distributedRunsAuthoritative && compatible.length === 1) {
-        const run = compatible[0];
-        return {
-            distributedRunId: run.distributedRunId,
-            run,
-            source: 'sole-compatible',
-            urlReplacePatch: { distributedRunId: run.distributedRunId },
-        };
-    }
-    if (compatible.length > 1) {
-        return {
-            distributedRunId: undefined,
-            run: undefined,
-            source: 'none',
-            issue: {
-                code: 'ambiguous',
-                message: 'Multiple compatible distributed runs are available; select one explicitly.',
-            },
-        };
-    }
-    return { distributedRunId: undefined, run: undefined, source: 'none' };
+export function monitorDistributedRunSelectionWorkForTest(
+    selection: MonitorDistributedRunSelection,
+): MonitorSelectionIndexWork | undefined {
+    return monitorDistributedSelectionWork(selection);
+}
+
+export function monitorRunOptionsWorkForTest(
+    options: readonly ControlDistributedRunSnapshot[],
+): MonitorSelectionIndexWork | undefined {
+    return monitorOptionsWork(options);
 }
 
 export function recipeConsoleMonitorDistributedRunSelectionPatch(

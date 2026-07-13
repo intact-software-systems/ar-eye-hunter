@@ -16,6 +16,8 @@ import {
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
 import { createControlSnapshotRevisionSession } from
     '../../../apps/rallar-black-box/src/recipe-console/control/control-snapshot-revision.ts';
+import { isControlSelectionIndexBoundToSnapshot } from
+    '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 
 const SCALE = 5_000;
 
@@ -38,6 +40,7 @@ describe('Recipe Console control selection index cache', () => {
         const cache = createControlSelectionIndexCache();
 
         const firstIndex = cache.get(first);
+        expect(isControlSelectionIndexBoundToSnapshot(first, firstIndex)).toBe(true);
         expect(controlSelectionIndexCacheWorkForTest(cache)).toMatchObject({
             lookupCount: 1,
             hitCount: 0,
@@ -54,6 +57,7 @@ describe('Recipe Console control selection index cache', () => {
 
         const secondIndex = cache.get(second);
         expect(secondIndex).toBe(firstIndex);
+        expect(isControlSelectionIndexBoundToSnapshot(second, secondIndex)).toBe(true);
         expect(controlSelectionIndexCacheWorkForTest(cache)).toEqual({
             lookupCount: 2,
             hitCount: 1,

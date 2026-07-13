@@ -15,6 +15,7 @@ const recipeConsoleWorkspacePath =
 const recipeConsoleActiveWorkPath =
     'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleActiveWork.tsx';
 const recipeConsoleRoot = 'apps/rallar-black-box/src/recipe-console';
+const rallarBlackBoxSourceRoot = 'apps/rallar-black-box/src';
 const controlConnectionProviderPath =
     `${recipeConsoleRoot}/control/ControlConnectionProvider.tsx`;
 const controlCommandContextPath =
@@ -28,6 +29,8 @@ const controlSelectionPath =
 
 const controlAuthorizedTransportPath =
     `${recipeConsoleRoot}/control/control-authorized-transport.ts`;
+const controlSnapshotReaderPath =
+    `${recipeConsoleRoot}/control/control-snapshot-reader.ts`;
 const controlExecutionApiPath = `${recipeConsoleRoot}/control/control-execution-api.ts`;
 const controlExecutionValidationPath =
     `${recipeConsoleRoot}/control/control-execution-validation.ts`;
@@ -110,6 +113,24 @@ describe('Recipe Console experience boundary', () => {
         expect(workspace.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(220);
     });
 
+    test('keeps root domain and legacy modules independent of Recipe Console internals', () => {
+        const rootDomainModules = readdirSync(
+            resolve(repositoryRoot, rallarBlackBoxSourceRoot),
+            { encoding: 'utf8' },
+        )
+            .filter(entry => /\.[cm]?[jt]sx?$/.test(entry))
+            .filter(entry => entry !== 'App.tsx')
+            .map(entry => `${rallarBlackBoxSourceRoot}/${entry}`);
+        const legacyModules = filesBelow(`${rallarBlackBoxSourceRoot}/legacy`)
+            .filter(path => /\.[cm]?[jt]sx?$/.test(path));
+        const recipeConsoleImport =
+            /(?:from\s+|import\()\s*['"][^'"]*recipe-console\/[^'"]*['"]/;
+
+        for (const path of [...rootDomainModules, ...legacyModules]) {
+            expect(source(path), path).not.toMatch(recipeConsoleImport);
+        }
+    });
+
     test('passes only the narrow control bootstrap into the lazy Recipe Console', () => {
         const app = source(appPath);
         const recipeConsole = source(recipeConsolePath);
@@ -183,6 +204,7 @@ describe('Recipe Console experience boundary', () => {
         for (
             const path of [
                 controlAuthorizedTransportPath,
+                controlSnapshotReaderPath,
                 controlExecutionApiPath,
                 controlExecutionValidationPath,
             ]
@@ -192,6 +214,7 @@ describe('Recipe Console experience boundary', () => {
         if (
             ![
                 controlAuthorizedTransportPath,
+                controlSnapshotReaderPath,
                 controlExecutionApiPath,
                 controlExecutionValidationPath,
             ].every((path) => existsSync(resolve(repositoryRoot, path)))
@@ -201,6 +224,7 @@ describe('Recipe Console experience boundary', () => {
 
         const controlApi = source(`${recipeConsoleRoot}/control/control-api.ts`);
         const transport = source(controlAuthorizedTransportPath);
+        const snapshotReader = source(controlSnapshotReaderPath);
         const execution = source(controlExecutionApiPath);
         const validation = source(controlExecutionValidationPath);
         const provider = source(controlConnectionProviderPath);
@@ -209,10 +233,16 @@ describe('Recipe Console experience boundary', () => {
             "import { createControlAuthorizedTransport } from './control-authorized-transport.ts';",
         );
         expect(controlApi).toContain(
+            "import { createControlSnapshotReader } from './control-snapshot-reader.ts';",
+        );
+        expect(controlApi).toContain(
             "import { createRecipeConsoleControlExecutionApi } from './control-execution-api.ts';",
         );
         expect(provider).toContain('execution: apiSetup.api?.execution');
         expect(transport).toContain('resolveBlackBoxControlToken');
+        expect(snapshotReader).toContain('fetchControlServerSnapshot');
+        expect(snapshotReader).toContain('fetchDistributedRuns');
+        expect(snapshotReader).toContain('createControlSnapshotRevisionSession');
         expect(execution).toContain('createDistributedRun');
         expect(execution).toContain('resolveDistributedTargets');
         expect(execution).toContain('fetchDistributedRunArtifactBundle');
@@ -220,9 +250,10 @@ describe('Recipe Console experience boundary', () => {
 
         expect(controlApi.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(300);
         expect(transport.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(320);
+        expect(snapshotReader.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(240);
         expect(execution.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(220);
         expect(validation.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(220);
-        expect(`${transport}\n${execution}\n${validation}`).not.toMatch(
+        expect(`${transport}\n${snapshotReader}\n${execution}\n${validation}`).not.toMatch(
             /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]|(?:registry|Registry|index\.ts)/,
         );
     });
@@ -490,6 +521,37 @@ describe('Recipe Console experience boundary', () => {
         );
     });
 
+    test('keeps indexed selection ownership in bounded facades and focused helpers', () => {
+        const modules = [
+            [controlSelectionPath, 285],
+            [`${recipeConsoleRoot}/control/control-selection-contract.ts`, 100],
+            [`${recipeConsoleRoot}/control/control-selection-context.ts`, 80],
+            [`${recipeConsoleRoot}/control/control-run-selection-patch.ts`, 60],
+            [`${recipeConsoleRoot}/control/control-selection-index-projection.ts`, 180],
+            [`${rallarBlackBoxSourceRoot}/control-selection-index-binding.ts`, 60],
+            [`${recipeConsoleRoot}/monitor/monitor-selection.ts`, 220],
+            [`${recipeConsoleRoot}/monitor/monitor-selection-projection.ts`, 260],
+            [`${recipeConsoleRoot}/monitor/monitor-selection-legacy.ts`, 140],
+            [`${recipeConsoleRoot}/monitor/monitor-workspace-state.ts`, 285],
+            [`${recipeConsoleRoot}/monitor/monitor-workspace-index-reconciliation.ts`, 140],
+            [`${recipeConsoleRoot}/monitor/monitor-workspace-mutation-truth.ts`, 70],
+            ['apps/rallar-black-box/src/control-agent-board-index.ts', 270],
+            ['apps/rallar-black-box/src/control-agent-board-run-projection.ts', 90],
+        ] as const;
+
+        for (const [path, budget] of modules) {
+            expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
+            if (!existsSync(resolve(repositoryRoot, path))) continue;
+            const file = source(path);
+            expect(file.trimEnd().split(/\r?\n/).length, path)
+                .toBeLessThanOrEqual(budget);
+            expect(file, path).not.toMatch(/(?:registry|Registry)/);
+            expect(file, path).not.toMatch(
+                /(?:from\s+|import\()['"][^'"]*\/index\.ts['"]/,
+            );
+        }
+    });
+
     test('builds the scoped Signal Ledger shell from bounded modules', () => {
         const requiredFiles = [
             'design/tokens.css',
@@ -601,8 +663,10 @@ describe('Recipe Console experience boundary', () => {
             'MonitorProgressEvidence.tsx',
             'MonitorDiagnostics.tsx',
             'MonitorEvidenceDisclosure.tsx',
+            'MonitorWindowTruth.tsx',
             'MonitorActionBand.tsx',
             'MonitorInspector.tsx',
+            'MonitorInspectorWindow.tsx',
             'MonitorRecipeEvidence.tsx',
         ].map(file => `${recipeConsoleRoot}/monitor/${file}`);
         const styles = [
@@ -613,9 +677,14 @@ describe('Recipe Console experience boundary', () => {
             'MonitorEvidence.module.css',
             'MonitorActions.module.css',
             'MonitorInspector.module.css',
+            'MonitorWindowTruth.module.css',
         ].map(file => `${recipeConsoleRoot}/monitor/${file}`);
         const support = `${recipeConsoleRoot}/monitor/legacy-monitor-link.ts`;
-        for (const path of [...owners, ...styles, support]) {
+        const windowSupport = [
+            'monitor-window-contract.ts',
+            'use-monitor-window.ts',
+        ].map(file => `${recipeConsoleRoot}/monitor/${file}`);
+        for (const path of [...owners, ...styles, support, ...windowSupport]) {
             expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
         }
         if (!owners.every(path => existsSync(resolve(repositoryRoot, path)))) {
@@ -631,7 +700,12 @@ describe('Recipe Console experience boundary', () => {
             expect(source(path).trimEnd().split(/\r?\n/).length, path)
                 .toBeLessThan(300);
         }
-        expect(sources.join('\n')).not.toMatch(
+        const windowSupportSource = windowSupport.map(path => source(path));
+        for (const [index, file] of windowSupportSource.entries()) {
+            expect(file.trimEnd().split(/\r?\n/).length, windowSupport[index])
+                .toBeLessThan(180);
+        }
+        expect([...sources, ...windowSupportSource].join('\n')).not.toMatch(
             /(?:from\s+|import\()['"][^'"]*(?:legacy\/|seeded-console-state|control-run-manager|registry|index\.ts)['"]|\bfetch\s*\(|\bsetInterval\s*\(/,
         );
         const composition = sources[0];
@@ -656,10 +730,59 @@ describe('Recipe Console experience boundary', () => {
         expect(source(`${recipeConsoleRoot}/monitor/MonitorInspector.tsx`))
             .toContain('deriveDistributedRunFailureEvidenceDestinations');
         expect(composition).toContain('MONITOR_ARTIFACT_EVIDENCE_ID');
+        expect(composition.match(/contextKey=\{monitor\.model\.source\.contextKey\}/g))
+            .toHaveLength(3);
         const ledger = source(`${recipeConsoleRoot}/monitor/MonitorFailureLedger.tsx`);
         expect(ledger).toContain('<ul');
         expect(ledger).toContain('aria-pressed={active}');
         expect(ledger).not.toMatch(/role="(?:listbox|option)"|aria-selected/);
+        const boundedOwners = [
+            'MonitorFailureLedger.tsx',
+            'MonitorAgentPhaseMatrix.tsx',
+            'MonitorProgressEvidence.tsx',
+            'MonitorDiagnostics.tsx',
+            'MonitorEvidenceDisclosure.tsx',
+            'MonitorInspectorWindow.tsx',
+        ].map(file => source(`${recipeConsoleRoot}/monitor/${file}`));
+        expect(boundedOwners.join('\n')).not.toMatch(/\.slice\(\s*0\s*,|\b[A-Z_]+_LIMIT\b/);
+        expect(boundedOwners.every(file => file.includes('useMonitorWindow'))).toBe(true);
+        const matrix = boundedOwners[1];
+        expect(matrix.indexOf('<ExplicitWindowControls'))
+            .toBeLessThan(matrix.indexOf('data-monitor-matrix-scroller'));
+        const disclosure = boundedOwners[4];
+        expect(disclosure).toContain('timelineOpen ?');
+        expect(disclosure).toContain('eventsOpen ?');
+        expect(disclosure).toContain('compositesOpen ?');
+        expect(disclosure).not.toMatch(/\bhidden\b|display\s*:\s*none/);
+        const inspectorWindow = boundedOwners[5];
+        expect(inspectorWindow.trimEnd().split(/\r?\n/).length)
+            .toBeLessThan(220);
+        expect(inspectorWindow).toContain('section: MonitorWindowSection;');
+        expect(inspectorWindow).toContain('items.slice(');
+        expect(inspectorWindow).toContain('window.controlsFocusProps');
+        expect(inspectorWindow).toContain('<MonitorWindowTruth');
+        const contract = windowSupportSource[0];
+        for (const [section, budget] of [
+            ['failures', 60], ['agents', 80], ['recipes', 60],
+            ['readiness', 60], ['diagnostics', 50], ['timeline', 40],
+            ['events', 40], ['composites', 40],
+        ] as const) {
+            expect(contract).toContain(`${section}: ${budget}`);
+        }
+        expect(contract).toContain("input.section === 'diagnostics'");
+        expect(contract).toContain('JSON.stringify([');
+        expect(windowSupportSource[1]).toContain(
+            'controlsFocusProps: focus.contentFocusProps',
+        );
+        const windowTruth = source(
+            `${recipeConsoleRoot}/monitor/MonitorWindowTruth.tsx`,
+        );
+        expect(windowTruth).toContain('data-monitor-window-focus-anchor={label}');
+        expect(windowTruth).toContain('ref={window.focusFallbackRef}');
+        expect(windowTruth).toContain(
+            'window.model.total > window.model.windowSize',
+        );
+        expect(windowTruth).not.toMatch(/aria-live|role="status"/);
         const monitorHook = source(`${recipeConsoleRoot}/monitor/use-monitor-workspace.ts`);
         expect(monitorHook).toContain('if (nextEvidenceKey === urlEvidenceKey) return;');
         expect(monitorHook).not.toMatch(

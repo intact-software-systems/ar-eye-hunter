@@ -20,7 +20,17 @@ export function useRecipeConsoleControlWorkspace(input: Readonly<{
         bootstrapGroup: connection.bootstrap.bootstrapGroup,
         queryStatus: connection.query.status,
         nowEpochMs: Date.now(),
-    }), [connection.bootstrap, connection.query, input.urlState]);
+        selectionIndex: connection.selectionIndex,
+    }), [
+        connection.bootstrap.bootstrapGroup,
+        connection.bootstrap.bootstrapRunId,
+        connection.query.snapshot,
+        connection.query.status,
+        connection.selectionIndex,
+        input.urlState.agentId,
+        input.urlState.controlRunId,
+        input.urlState.distributedRunId,
+    ]);
     const status = controlCommandStatus(connection.query);
 
     useEffect(() => {

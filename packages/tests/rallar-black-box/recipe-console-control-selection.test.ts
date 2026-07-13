@@ -7,8 +7,18 @@ import type {
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import {
     deriveRecipeConsoleControlSelection,
+    recipeConsoleControlSelectionWorkForTest,
     recipeConsoleControlRunSelectionPatch,
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection.ts';
+import { controlAgentBoardWorkForTest } from
+    '../../../apps/rallar-black-box/src/control-agent-board.ts';
+import {
+    createControlSnapshotSelectionIndex,
+} from '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import { createControlSelectionIndexCache } from
+    '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
+import { bindControlSelectionIndexToSnapshot } from
+    '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
@@ -132,7 +142,288 @@ function derive(input: Readonly<{
     });
 }
 
+function forbidGlobalTraversal<Value>(values: readonly Value[]): readonly Value[] {
+    return new Proxy(values, {
+        get(target, property, receiver) {
+            if (
+                property === Symbol.iterator || property === 'find' ||
+                property === 'filter' || property === 'map' || property === 'some' ||
+                property === 'forEach'
+            ) {
+                throw new Error('global collection traversal is forbidden');
+            }
+            return Reflect.get(target, property, receiver);
+        },
+    });
+}
+
 describe('Recipe Console control selection', () => {
+    it('reuses indexed topology while rebinding every selected value to the current poll', () => {
+        const first: ControlServerSnapshot = {
+            runs: [
+                controlRun('run-other'),
+                controlRun('run-selected', [
+                    controlAgent('run-selected', 'agent-selected'),
+                ]),
+            ],
+            distributedRuns: [
+                distributedRun('distributed-other', 'run-other'),
+                distributedRun('distributed-selected', 'run-selected'),
+                distributedRun('distributed-active', 'run-selected', 'ready'),
+            ],
+        };
+        const current = structuredClone(first);
+        const selectionIndex = bindControlSelectionIndexToSnapshot(
+            current,
+            createControlSnapshotSelectionIndex(first),
+        );
+        const urlState = {
+            ...baseUrlState,
+            controlRunId: 'run-selected',
+            distributedRunId: 'distributed-selected',
+            agentId: 'agent-selected',
+        };
+
+        const legacy = derive({ urlState, snapshot: current });
+        const indexed = deriveRecipeConsoleControlSelection({
+            urlState,
+            snapshot: current,
+            selectionIndex,
+            bootstrapGroup,
+            queryStatus: 'live',
+            nowEpochMs: 10_000,
+        });
+
+        expect(JSON.stringify(indexed)).toBe(JSON.stringify(legacy));
+        expect(indexed.controlRun).toBe(current.runs[1]);
+        expect(indexed.distributedRun).toBe(current.distributedRuns![1]);
+        expect(indexed.agent).toBe(current.runs[1]!.agents[0]);
+        expect(indexed.activeRunContext.runs).toEqual([
+            current.distributedRuns![2],
+            current.distributedRuns![1],
+        ]);
+        expect(indexed.boardRows[0]!.identity)
+            .toBe(current.runs[1]!.agents[0]!.identity);
+        expect(recipeConsoleControlSelectionWorkForTest(indexed)).toEqual({
+            indexed: true,
+            fallback: false,
+            controlRunLookupCount: 1,
+            distributedRunLookupCount: 1,
+            agentLookupCount: 1,
+            activeRunProjectionCount: 2,
+        });
+    });
+
+    it('reaches the selected tail of 5,000 current-poll pairs without global traversal', () => {
+        const scale = 5_000;
+        const runs = Array.from({ length: scale }, (_, ordinal) => {
+            const runId = `control-${ordinal}`;
+            return controlRun(runId, [controlAgent(runId, `agent-${ordinal}`)]);
+        });
+        const distributedRuns = runs.map((run, ordinal) =>
+            distributedRun(`distributed-${ordinal}`, run.runId)
+        );
+        const first: ControlServerSnapshot = { runs, distributedRuns };
+        const clone = structuredClone(first);
+        const current: ControlServerSnapshot = {
+            ...clone,
+            runs: forbidGlobalTraversal(clone.runs),
+            distributedRuns: forbidGlobalTraversal(clone.distributedRuns!),
+        };
+        const tail = scale - 1;
+        const indexed = deriveRecipeConsoleControlSelection({
+            urlState: {
+                ...baseUrlState,
+                controlRunId: `control-${tail}`,
+                distributedRunId: `distributed-${tail}`,
+                agentId: `agent-${tail}`,
+            },
+            snapshot: current,
+            selectionIndex: bindControlSelectionIndexToSnapshot(
+                current,
+                createControlSnapshotSelectionIndex(first),
+            ),
+            bootstrapGroup,
+            queryStatus: 'live',
+            nowEpochMs: 10_000,
+        });
+
+        expect(indexed.controlRun).toBe(current.runs[tail]);
+        expect(indexed.distributedRun).toBe(current.distributedRuns![tail]);
+        expect(indexed.agent).toBe(current.runs[tail]!.agents[0]);
+        expect(recipeConsoleControlSelectionWorkForTest(indexed)).toEqual({
+            indexed: true,
+            fallback: false,
+            controlRunLookupCount: 1,
+            distributedRunLookupCount: 1,
+            agentLookupCount: 1,
+            activeRunProjectionCount: 1,
+        });
+    });
+
+    it('keeps a trusted absent ID O(1) without scanning either current collection', () => {
+        const snapshot: ControlServerSnapshot = {
+            runs: [controlRun('run-a')],
+            distributedRuns: [distributedRun('distributed-a', 'run-a')],
+        };
+        const selectionIndex = createControlSelectionIndexCache().get(snapshot);
+        Object.defineProperties(snapshot, {
+            runs: { value: forbidGlobalTraversal(snapshot.runs) },
+            distributedRuns: {
+                value: forbidGlobalTraversal(snapshot.distributedRuns!),
+            },
+        });
+
+        const selection = deriveRecipeConsoleControlSelection({
+            urlState: { ...baseUrlState, controlRunId: 'missing-run' },
+            snapshot,
+            selectionIndex,
+            bootstrapGroup,
+            queryStatus: 'live',
+            nowEpochMs: 10_000,
+        });
+
+        expect(selection.controlRun).toBeUndefined();
+        expect(recipeConsoleControlSelectionWorkForTest(selection)).toMatchObject({
+            indexed: true,
+            fallback: false,
+            controlRunLookupCount: 1,
+        });
+    });
+
+    it('projects zero active or board runs for 5,000 terminal runs', () => {
+        const control = controlRun('run-a', [controlAgent('run-a', 'agent-a')]);
+        const terminalRuns = Array.from({ length: 5_000 }, (_, ordinal) =>
+            distributedRun(`terminal-${ordinal}`, 'run-a', 'passed')
+        );
+        const snapshot: ControlServerSnapshot = {
+            runs: [control],
+            distributedRuns: terminalRuns,
+        };
+        const selectionIndex = createControlSelectionIndexCache().get(snapshot);
+
+        const selection = deriveRecipeConsoleControlSelection({
+            urlState: { ...baseUrlState, controlRunId: 'run-a' },
+            snapshot,
+            selectionIndex,
+            bootstrapGroup,
+            queryStatus: 'live',
+            nowEpochMs: 10_000,
+        });
+
+        expect(selection.activeRunContext).toEqual({ kind: 'none', runs: [] });
+        expect(recipeConsoleControlSelectionWorkForTest(selection)).toMatchObject({
+            indexed: true,
+            fallback: false,
+            activeRunProjectionCount: 0,
+        });
+        expect(controlAgentBoardWorkForTest(selection.boardRows)).toMatchObject({
+            indexed: true,
+            fallback: false,
+            distributedRunProjectionCount: 0,
+        });
+    });
+
+    it('keeps the indexed control board when partial truth omits distributed runs', () => {
+        const first: ControlServerSnapshot = {
+            runs: [controlRun('run-a', [controlAgent('run-a', 'agent-a')])],
+        };
+        const current = structuredClone(first);
+
+        const selected = deriveRecipeConsoleControlSelection({
+            urlState: { ...baseUrlState, controlRunId: 'run-a' },
+            snapshot: current,
+            selectionIndex: bindControlSelectionIndexToSnapshot(
+                current,
+                createControlSnapshotSelectionIndex(first),
+            ),
+            bootstrapGroup,
+            queryStatus: 'partial',
+            nowEpochMs: 10_000,
+        });
+
+        expect(controlAgentBoardWorkForTest(selected.boardRows)).toMatchObject({
+            indexed: true,
+            fallback: false,
+        });
+        expect(selected.issues).toContainEqual(expect.objectContaining({
+            field: 'distributedRuns',
+            code: 'unavailable',
+        }));
+    });
+
+    it.each([
+        {
+            label: 'empty topology',
+            stale: { runs: [], distributedRuns: [] } satisfies ControlServerSnapshot,
+        },
+        {
+            label: 'same-length replacement topology',
+            stale: {
+                runs: [controlRun('old-run')],
+                distributedRuns: [distributedRun('old-distributed', 'old-run')],
+            } satisfies ControlServerSnapshot,
+        },
+    ])('falls back from $label to current present truth', ({ stale }) => {
+        const current: ControlServerSnapshot = {
+            runs: [controlRun('run-a', [controlAgent('run-a', 'agent-a')])],
+            distributedRuns: [distributedRun('distributed-a', 'run-a')],
+        };
+        const urlState = {
+            ...baseUrlState,
+            controlRunId: 'run-a',
+            distributedRunId: 'distributed-a',
+            agentId: 'agent-a',
+        };
+        const legacy = derive({ urlState, snapshot: current });
+
+        const indexed = deriveRecipeConsoleControlSelection({
+            urlState,
+            snapshot: current,
+            selectionIndex: createControlSnapshotSelectionIndex(stale),
+            bootstrapGroup,
+            queryStatus: 'live',
+            nowEpochMs: 10_000,
+        });
+
+        expect(JSON.stringify(indexed)).toBe(JSON.stringify(legacy));
+        expect(indexed.controlRun).toBe(current.runs[0]);
+        expect(indexed.distributedRun).toBe(current.distributedRuns![0]);
+        expect(indexed.agent).toBe(current.runs[0]!.agents[0]);
+        expect(recipeConsoleControlSelectionWorkForTest(indexed)).toEqual({
+            indexed: false,
+            fallback: true,
+        });
+    });
+
+    it('keeps a genuinely absent ID unavailable with a valid index', () => {
+        const snapshot: ControlServerSnapshot = {
+            runs: [controlRun('run-a')],
+            distributedRuns: [],
+        };
+        const urlState = { ...baseUrlState, controlRunId: 'missing-run' };
+        const legacy = derive({ urlState, snapshot });
+
+        const indexed = deriveRecipeConsoleControlSelection({
+            urlState,
+            snapshot,
+            selectionIndex: bindControlSelectionIndexToSnapshot(
+                snapshot,
+                createControlSnapshotSelectionIndex(snapshot),
+            ),
+            bootstrapGroup,
+            queryStatus: 'live',
+            nowEpochMs: 10_000,
+        });
+
+        expect(JSON.stringify(indexed)).toBe(JSON.stringify(legacy));
+        expect(indexed.controlRun).toBeUndefined();
+        expect(recipeConsoleControlSelectionWorkForTest(indexed)).toMatchObject({
+            indexed: true,
+            fallback: false,
+        });
+    });
+
     it('gives an explicit URL control run precedence over bootstrap and collection order', () => {
         const selected = derive({
             urlState: { ...baseUrlState, controlRunId: 'run-url' },

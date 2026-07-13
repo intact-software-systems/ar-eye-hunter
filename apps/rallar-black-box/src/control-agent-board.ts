@@ -3,16 +3,20 @@ import type {
     RallarBlackBoxTestRecipe,
 } from '@shared-test/rallar-bb-test/types.ts';
 import {
-    isDistributedRunTerminalState,
     type RallarBlackBoxDistributedGroupRef,
     type RallarBlackBoxDistributedRunState,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { ControlSnapshotSelectionIndex } from
+    '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import { isControlSelectionIndexBoundToSnapshot } from
+    './control-selection-index-binding.ts';
 import {
     controlRunAgentRows,
     type ControlDistributedRunCommandPhase,
     type ControlDistributedRunSnapshot,
     type ControlRunAgentRow,
     type ControlRunSnapshot,
+    type ControlServerSnapshot,
 } from './control-run-manager.ts';
 import {
     distributedRecipeTargetRows,
@@ -20,6 +24,16 @@ import {
     type DistributedRunAgentProgressRow,
     type DistributedRunProgressStatus,
 } from './distributed-recipes.ts';
+import {
+    deriveIndexedControlAgentBoardRows,
+    type IndexedControlAgentBoardWork,
+} from './control-agent-board-index.ts';
+import {
+    controlAgentBoardRowFromParticipations,
+    controlAgentBoardRowSort,
+    controlAgentRunParticipation,
+    syntheticControlAgentRow,
+} from './control-agent-board-model.ts';
 
 export type ControlAgentBoardTargetStatus =
     | DistributedRecipeTargetRow['status']
@@ -114,9 +128,55 @@ export type DeriveControlAgentBoardRowsInput = Readonly<{
     monitorAgentProgress?: readonly DistributedRunAgentProgressRow[];
     nowEpochMs?: number;
     staleAfterMs?: number;
+    snapshot?: ControlServerSnapshot;
+    selectionIndex?: ControlSnapshotSelectionIndex;
 }>;
 
+export type ControlAgentBoardWork =
+    | IndexedControlAgentBoardWork
+    | Readonly<{
+        indexed: false;
+        fallback: boolean;
+    }>;
+
+const workByRows = new WeakMap<object, ControlAgentBoardWork>();
+
 export function deriveControlAgentBoardRows(
+    input: DeriveControlAgentBoardRowsInput,
+): readonly ControlAgentBoardRow[] {
+    if (input.selectionIndex && input.snapshot) {
+        if (!isControlSelectionIndexBoundToSnapshot(
+            input.snapshot,
+            input.selectionIndex,
+        )) {
+            const fallback = deriveLegacyControlAgentBoardRows(input);
+            workByRows.set(fallback, Object.freeze({
+                indexed: false,
+                fallback: true,
+            }));
+            return fallback;
+        }
+        const indexed = deriveIndexedControlAgentBoardRows(input);
+        if (indexed) {
+            workByRows.set(indexed.rows, indexed.work);
+            return indexed.rows;
+        }
+        const fallback = deriveLegacyControlAgentBoardRows(input);
+        workByRows.set(fallback, Object.freeze({ indexed: false, fallback: true }));
+        return fallback;
+    }
+    const rows = deriveLegacyControlAgentBoardRows(input);
+    workByRows.set(rows, Object.freeze({ indexed: false, fallback: false }));
+    return rows;
+}
+
+export function controlAgentBoardWorkForTest(
+    rows: readonly ControlAgentBoardRow[],
+): ControlAgentBoardWork | undefined {
+    return workByRows.get(rows);
+}
+
+function deriveLegacyControlAgentBoardRows(
     input: DeriveControlAgentBoardRowsInput,
 ): readonly ControlAgentBoardRow[] {
     const nowEpochMs = input.nowEpochMs ?? Date.now();
@@ -171,7 +231,7 @@ export function deriveControlAgentBoardRows(
         .filter((agentId) => !knownAgentIds.has(agentId))
         .map((agentId) =>
             controlAgentBoardRow({
-                agentRow: syntheticAgentRow(agentId),
+                agentRow: syntheticControlAgentRow(agentId),
                 targetRow: undefined,
                 nowEpochMs,
                 runs: distributedRuns,
@@ -229,8 +289,6 @@ function controlAgentBoardRow(input: Readonly<{
     progressByAgentId: ReadonlyMap<string, DistributedRunAgentProgressRow>;
     synthetic: boolean;
 }>): ControlAgentBoardRow {
-    const identity = input.agentRow.identity;
-    const crdt = identity?.capabilities?.crdt;
     const participations = input.runs
         .filter((run) => run.targetAgentIds.includes(input.agentRow.agentId))
         .map((run) =>
@@ -242,117 +300,13 @@ function controlAgentBoardRow(input: Readonly<{
                 progress: input.progressByAgentId.get(input.agentRow.agentId),
             })
         );
-    const selectedRun = participations.find((item) => item.selected);
-    const targetStatus = input.targetRow?.status ??
-        (input.synthetic ? 'missing-agent' : 'not-scoped');
-
-    return {
-        agentId: input.agentRow.agentId,
+    return controlAgentBoardRowFromParticipations({
+        agentRow: input.agentRow,
+        targetRow: input.targetRow,
+        nowEpochMs: input.nowEpochMs,
+        participations,
         synthetic: input.synthetic,
-        connected: input.agentRow.connected,
-        connectionStatus: input.agentRow.status,
-        lastSeenAtEpochMs: input.agentRow.lastSeenAtEpochMs,
-        lastHeartbeatAtEpochMs: input.agentRow.lastHeartbeatAtEpochMs,
-        heartbeatAgeMs: input.agentRow.lastHeartbeatAtEpochMs !== undefined
-            ? Math.max(0, input.nowEpochMs - input.agentRow.lastHeartbeatAtEpochMs)
-            : undefined,
-        identity,
-        identitySummary: input.agentRow.identitySummary,
-        principalId: identity?.principalId,
-        username: identity?.username,
-        sessionId: identity?.sessionId,
-        applicationId: identity?.applicationId,
-        workspaceId: identity?.workspaceId,
-        groupId: identity?.groupId,
-        providerMode: identity?.providerMode,
-        browserLabel: identity?.browserLabel,
-        sessionLabel: identity?.sessionLabel,
-        region: identity?.region,
-        provider: identity?.provider,
-        datacenter: identity?.datacenter,
-        hostId: identity?.hostId,
-        browserName: identity?.browserName,
-        browserVersion: identity?.browserVersion,
-        os: identity?.os,
-        tags: identity?.tags ?? [],
-        crdtSupported: crdt?.supported,
-        crdtTransports: crdt?.transports ?? [],
-        targetStatus,
-        targetable: input.targetRow?.targetable ?? false,
-        targetReason: input.targetRow?.reason ??
-            (input.synthetic
-                ? 'Target agent is part of the selected distributed run but missing from the control run snapshot.'
-                : 'No target scope selected.'),
-        queuedCommandCount: input.agentRow.queuedCommandCount,
-        completedCommandCount: input.agentRow.completedCommandCount,
-        receivedResultCount: input.agentRow.receivedResultCount,
-        receivedEventCount: input.agentRow.receivedEventCount,
-        reconnectCount: input.agentRow.reconnectCount,
-        activeRuns: participations.filter((item) => item.active),
-        selectedRun,
-    };
-}
-
-function controlAgentRunParticipation(input: Readonly<{
-    run: ControlDistributedRunSnapshot;
-    agentId: string;
-    selected: boolean;
-    progress?: DistributedRunAgentProgressRow;
-}>): ControlAgentRunParticipation {
-    const links = input.run.commandLinks.filter((link) =>
-        link.agentId === input.agentId
-    );
-    const progress = input.progress;
-
-    return {
-        distributedRunId: input.run.distributedRunId,
-        controlRunId: input.run.controlRunId,
-        state: input.run.state,
-        active: !isDistributedRunTerminalState(input.run.state),
-        selected: input.selected,
-        role: progress?.role ?? roleForAgent(input.run, input.agentId),
-        commandPhases: uniqueValues(links.map((link) => link.phase)),
-        commandCount: links.length,
-        blockingFailures: input.run.rollup.summary.blockingFailures,
-        updatedAtEpochMs: input.run.updatedAtEpochMs,
-        readiness: progress?.readiness,
-        barrier: progress?.barrier,
-        execution: progress?.execution,
-        completedCommandCount: progress?.completedCommandCount,
-        failedCommandCount: progress?.failedCommandCount,
-        resultCount: progress?.resultCount,
-        eventCount: progress?.eventCount,
-        averageLatencyMs: progress?.averageLatencyMs,
-        lastActivityAtEpochMs: progress?.lastActivityAtEpochMs,
-    };
-}
-
-function roleForAgent(
-    run: ControlDistributedRunSnapshot,
-    agentId: string,
-): string | undefined {
-    return run.targetResolution?.roleAssignments.find((assignment) =>
-        assignment.agentId === agentId
-    )?.role ??
-        run.manifest.roleAssignments?.find((assignment) =>
-        assignment.agentId === agentId
-    )?.role ??
-        run.commandLinks.find((link) => link.agentId === agentId)?.role;
-}
-
-function syntheticAgentRow(agentId: string): ControlRunAgentRow {
-    return {
-        agentId,
-        connected: false,
-        status: 'missing',
-        identity: undefined,
-        identitySummary: undefined,
-        queuedCommandCount: 0,
-        completedCommandCount: 0,
-        receivedResultCount: 0,
-        receivedEventCount: 0,
-        reconnectCount: 0,
-    };
+    });
 }
 
 function uniqueRuns(
@@ -363,18 +317,4 @@ function uniqueRuns(
         byId.set(run.distributedRunId, run);
     });
     return [...byId.values()];
-}
-
-function uniqueValues<T>(values: readonly T[]): readonly T[] {
-    return values.filter((value, index) => values.indexOf(value) === index);
-}
-
-function controlAgentBoardRowSort(
-    left: ControlAgentBoardRow,
-    right: ControlAgentBoardRow,
-): number {
-    if (left.synthetic !== right.synthetic) {
-        return left.synthetic ? 1 : -1;
-    }
-    return left.agentId.localeCompare(right.agentId);
 }

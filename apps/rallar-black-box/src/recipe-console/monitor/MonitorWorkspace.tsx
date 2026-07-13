@@ -147,16 +147,19 @@ export function MonitorWorkspace({
                         run={monitor.model.source.distributedRun}
                     />
                     <MonitorFailureLedger
+                        contextKey={monitor.model.source.contextKey}
                         failures={monitor.model.monitor.failures}
                         onInspect={inspectEvidence}
                         selected={evidenceSelection}
                     />
                     <MonitorAgentPhaseMatrix
+                        contextKey={monitor.model.source.contextKey}
                         onInspect={inspectEvidence}
                         rows={monitor.model.monitor.agentProgress}
                         selected={evidenceSelection}
                     />
                     <MonitorProgressEvidence
+                        contextKey={monitor.model.source.contextKey}
                         onInspect={inspectEvidence}
                         readiness={monitor.model.monitor.readiness}
                         recipes={monitor.model.monitor.recipeProgress}

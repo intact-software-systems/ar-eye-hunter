@@ -1,24 +1,16 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type {
-    ControlDistributedRunSnapshot,
-    ControlServerSnapshot,
-    ControlSnapshotBounds,
-} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlSnapshotBounds } from
+    '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
     type ControlRunManagerFetch,
     ControlRunManagerHttpError,
-    fetchControlServerSnapshot,
-    fetchDistributedRuns,
 } from '../../control-run-manager.ts';
 import {
     type RecipeConsoleControlCredentialPolicy,
 } from './control-credential-policy.ts';
 import { createControlAuthorizedTransport } from './control-authorized-transport.ts';
-import type {
-    AuthorizedControlResult,
-    RecipeConsoleControlAuthorization,
-} from './control-authorized-transport.ts';
+import { isControlAbortError } from './control-authorized-fetch.ts';
 import { createRecipeConsoleControlExecutionApi } from './control-execution-api.ts';
 import type { RecipeConsoleControlExecutionApi } from './control-execution-api.ts';
 import {
@@ -26,14 +18,9 @@ import {
     type ControlLazyCapability,
 } from './control-lazy-capability.ts';
 import type { RecipeConsoleControlRetentionApi } from './control-retention-api.ts';
-import {
-    validateControlDistributedRuns,
-    validateControlServerCoreSnapshot,
-    withoutDistributedRuns,
-} from './control-snapshot-validation.ts';
-import {
-    createControlSnapshotRevisionSession,
-} from './control-snapshot-revision.ts';
+import { createControlSnapshotReader } from './control-snapshot-reader.ts';
+import type { RecipeConsoleControlSnapshotResult } from
+    './control-snapshot-reader.ts';
 
 export const RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS = {
     commands: 120,
@@ -53,23 +40,6 @@ const MISSING_CONTROL_CREDENTIAL_POLICY = {
     controlTokenFromLocation: false,
     blockedMessage: 'Automatic control credentials are blocked because endpoint credential provenance was not provided.',
 } as const satisfies RecipeConsoleControlCredentialPolicy;
-
-export type RecipeConsoleControlSnapshotResult = Readonly<{
-    snapshot: ControlServerSnapshot;
-    completeness: 'complete' | 'partial';
-    distributedRunsSource: RecipeConsoleControlDistributedRunsSource;
-    authorization: RecipeConsoleControlAuthorization;
-    partialError?: unknown;
-}>;
-
-export type RecipeConsoleControlDistributedRunsSource =
-    | 'root-snapshot'
-    | 'canonical-fallback'
-    | 'unavailable';
-
-export type RecipeConsoleControlQueryProvenance = Readonly<{
-    distributedRunsSource: RecipeConsoleControlDistributedRunsSource;
-}>;
 
 export type RecipeConsoleControlRetentionCapability =
     ControlLazyCapability<RecipeConsoleControlRetentionApi>;
@@ -121,8 +91,6 @@ export function createRecipeConsoleControlApi(
         protocolError: controlProtocolError,
         isProtocolCandidate,
     });
-    const runsAuthorization = transport.createEndpointAuthorization();
-    const distributedRunsAuthorization = transport.createEndpointAuthorization();
     const execution = createRecipeConsoleControlExecutionApi({
         baseUrl,
         transport,
@@ -139,116 +107,20 @@ export function createRecipeConsoleControlApi(
             });
         },
     });
-    const snapshotRevisionSession = createControlSnapshotRevisionSession();
+    const readSnapshot = createControlSnapshotReader({
+        baseUrl,
+        bounds,
+        transport,
+        protocolError: controlProtocolError,
+        isProtocolCandidate,
+    });
 
     return {
         baseUrl,
         execution,
         retention,
         close: () => lifetime.abort(),
-        async readSnapshot(input = {}) {
-            const server = await transport.response(
-                (token, fetchFn) =>
-                    fetchControlServerSnapshot({
-                        baseUrl,
-                        token,
-                        bounds,
-                        fetchFn,
-                    }),
-                runsAuthorization,
-                input.signal,
-            );
-            try {
-                validateControlServerCoreSnapshot(server.value);
-            } catch (error) {
-                throw controlProtocolError(error);
-            }
-            if (server.value.distributedRuns !== undefined) {
-                try {
-                    validateControlDistributedRuns(
-                        server.value.distributedRuns,
-                    );
-                } catch (error) {
-                    const snapshot = withoutDistributedRuns(server.value);
-                    snapshotRevisionSession.associate(snapshot, {
-                        source: 'unavailable',
-                        rootDocument: server.value,
-                    });
-                    return {
-                        snapshot,
-                        completeness: 'partial',
-                        distributedRunsSource: 'unavailable',
-                        authorization: server.authorization,
-                        partialError: controlProtocolError(error),
-                    };
-                }
-                snapshotRevisionSession.associate(server.value, {
-                    source: 'root-snapshot',
-                    rootDocument: server.value,
-                });
-                return {
-                    snapshot: server.value,
-                    completeness: 'complete',
-                    distributedRunsSource: 'root-snapshot',
-                    authorization: server.authorization,
-                };
-            }
-
-            let distributed: AuthorizedControlResult<
-                readonly ControlDistributedRunSnapshot[]
-            >;
-            let snapshot: ControlServerSnapshot;
-            try {
-                distributed = await transport.response(
-                    (token, fetchFn) =>
-                        fetchDistributedRuns({
-                            baseUrl,
-                            token,
-                            fetchFn,
-                        }),
-                    distributedRunsAuthorization,
-                    input.signal,
-                );
-                validateControlDistributedRuns(distributed.value);
-                snapshot = {
-                    ...server.value,
-                    distributedRuns: distributed.value,
-                };
-                validateControlServerCoreSnapshot(snapshot);
-            } catch (partialError) {
-                if (input.signal?.aborted || isAbortError(partialError)) {
-                    throw partialError;
-                }
-                const normalizedPartialError = isProtocolCandidate(partialError)
-                    ? controlProtocolError(partialError)
-                    : partialError;
-                snapshotRevisionSession.associate(server.value, {
-                    source: 'unavailable',
-                    rootDocument: server.value,
-                });
-                return {
-                    snapshot: server.value,
-                    completeness: 'partial',
-                    distributedRunsSource: 'unavailable',
-                    authorization: server.authorization,
-                    partialError: normalizedPartialError,
-                };
-            }
-            snapshotRevisionSession.associate(snapshot, {
-                source: 'canonical-fallback',
-                rootDocument: server.value,
-                fallbackDocument: distributed.value,
-            });
-            return {
-                snapshot,
-                completeness: 'complete',
-                distributedRunsSource: 'canonical-fallback',
-                authorization: combinedAuthorization(
-                    server.authorization,
-                    distributed.authorization,
-                ),
-            };
-        },
+        readSnapshot,
     };
 }
 
@@ -266,7 +138,7 @@ function isProtocolCandidate(error: unknown): boolean {
             error && typeof error === 'object' &&
             'authorizationRequired' in error && error.authorizationRequired === true
         ) &&
-        !isAbortError(error);
+        !isControlAbortError(error);
 }
 
 function recipeConsoleControlBaseUrl(controlUrl: string | undefined): string {
@@ -288,27 +160,15 @@ function recipeConsoleControlBaseUrl(controlUrl: string | undefined): string {
     return controlHttpBaseUrlFromWsUrl(configured);
 }
 
-function isAbortError(error: unknown): boolean {
-    return Boolean(
-        error &&
-            typeof error === 'object' &&
-            'name' in error &&
-            error.name === 'AbortError',
-    );
-}
-
-function combinedAuthorization(
-    left: RecipeConsoleControlAuthorization,
-    right: RecipeConsoleControlAuthorization,
-): RecipeConsoleControlAuthorization {
-    if (left === 'manual' || right === 'manual') return 'manual';
-    if (left === 'brokered' || right === 'brokered') return 'brokered';
-    return 'anonymous';
-}
-
 export type {
     ControlDistributedRunSnapshot,
     ControlServerSnapshot,
     ControlSnapshotBounds,
-    RecipeConsoleControlAuthorization,
-};
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+export type { RecipeConsoleControlAuthorization } from
+    './control-authorized-transport.ts';
+export type {
+    RecipeConsoleControlDistributedRunsSource,
+    RecipeConsoleControlQueryProvenance,
+    RecipeConsoleControlSnapshotResult,
+} from './control-snapshot-reader.ts';

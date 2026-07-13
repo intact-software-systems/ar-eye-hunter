@@ -3,6 +3,12 @@ import * as distributedRecipes from
     '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { distributedRunMonitorDerivationWorkForTest } from
     '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
+import { createControlSnapshotSelectionIndex } from
+    '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import { createControlSelectionIndexCache } from
+    '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
+import { bindControlSelectionIndexToSnapshot } from
+    '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot,
@@ -20,6 +26,7 @@ import {
     createMonitorWorkspaceContext,
     projectMonitorMutation,
     reconcileMonitorWorkspaceState,
+    monitorWorkspaceReconciliationWorkForTest,
     setMonitorCancelArm,
     setMonitorEvidenceSelection,
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-state.ts';
@@ -28,6 +35,9 @@ import {
     createMonitorRecipeEvidenceSelectionId,
     deriveMonitorRecipeEvidenceStatus,
     deriveMonitorDistributedRunSelection,
+    deriveMonitorRunOptions,
+    monitorDistributedRunSelectionWorkForTest,
+    monitorRunOptionsWorkForTest,
     deriveMonitorUrlEvidenceSelection,
     MONITOR_ARTIFACT_EVIDENCE_ID,
     monitorEvidenceSelectionIdentifier,
@@ -131,6 +141,23 @@ function query(
     };
 }
 
+function forbidGlobalTraversal<Value>(
+    values: readonly Value[],
+): readonly Value[] {
+    return new Proxy(values, {
+        get(target, property, receiver) {
+            if (
+                property === Symbol.iterator || property === 'find' ||
+                property === 'filter' || property === 'map' || property === 'some' ||
+                property === 'forEach'
+            ) {
+                throw new Error('global collection traversal is forbidden');
+            }
+            return Reflect.get(target, property, receiver);
+        },
+    });
+}
+
 function reconcile(
     state: ReturnType<typeof createInitialMonitorWorkspaceState>,
     value: ControlQuerySnapshot<ControlServerSnapshot>,
@@ -156,6 +183,234 @@ function artifact(
 }
 
 describe('Recipe Console Monitor selection', () => {
+    it('does not traverse run options without a control selection and preserves last-known truth', () => {
+        const distributedRuns = forbidGlobalTraversal([
+            distributedRun('distributed-a', 'run-a'),
+        ]);
+        const lastKnown = distributedRun('last-known', 'run-last', 'passed', 40);
+
+        expect(deriveMonitorRunOptions({
+            controlRunId: undefined,
+            distributedRuns,
+        })).toEqual([]);
+        expect(deriveMonitorRunOptions({
+            controlRunId: undefined,
+            distributedRuns,
+            lastKnown,
+        })).toEqual([lastKnown]);
+    });
+
+    it.each([
+        {
+            label: 'empty topology',
+            stale: { runs: [], distributedRuns: [] } satisfies ControlServerSnapshot,
+        },
+        {
+            label: 'same-length replacement topology',
+            stale: {
+                runs: [controlRun('old-run')],
+                distributedRuns: [distributedRun('old-distributed', 'old-run')],
+            } satisfies ControlServerSnapshot,
+        },
+    ])('falls back from $label for selection, options, and coherent state', ({ stale }) => {
+        const current: ControlServerSnapshot = {
+            runs: [controlRun('run-a')],
+            distributedRuns: [distributedRun('distributed-a', 'run-a')],
+        };
+        const selectionIndex = createControlSnapshotSelectionIndex(stale);
+        const selectionInput = {
+            controlRunId: 'run-a',
+            requestedDistributedRunId: 'distributed-a',
+            distributedRuns: current.distributedRuns!,
+            distributedRunsAuthoritative: true,
+        } as const;
+        const legacySelection = deriveMonitorDistributedRunSelection(selectionInput);
+        const indexedSelection = deriveMonitorDistributedRunSelection({
+            ...selectionInput,
+            snapshot: current,
+            selectionIndex,
+        });
+        const legacyOptions = deriveMonitorRunOptions({
+            controlRunId: 'run-a',
+            distributedRuns: current.distributedRuns!,
+        });
+        const indexedOptions = deriveMonitorRunOptions({
+            controlRunId: 'run-a',
+            distributedRuns: current.distributedRuns!,
+            snapshot: current,
+            selectionIndex,
+        });
+        const legacyState = reconcileMonitorWorkspaceState(
+            createInitialMonitorWorkspaceState(),
+            { context, query: query('live', current) },
+        );
+        const indexedState = reconcileMonitorWorkspaceState(
+            createInitialMonitorWorkspaceState(),
+            { context, query: query('live', current), selectionIndex },
+        );
+
+        expect(indexedSelection).toEqual(legacySelection);
+        expect(indexedSelection.run).toBe(current.distributedRuns![0]);
+        expect(monitorDistributedRunSelectionWorkForTest(indexedSelection))
+            .toEqual({ indexed: false, fallback: true });
+        expect(indexedOptions).toEqual(legacyOptions);
+        expect(indexedOptions[0]).toBe(current.distributedRuns![0]);
+        expect(monitorRunOptionsWorkForTest(indexedOptions))
+            .toEqual({ indexed: false, fallback: true });
+        expect(indexedState).toEqual(legacyState);
+        expect(indexedState.source?.controlRun).toBe(current.runs[0]);
+        expect(indexedState.source?.distributedRun).toBe(current.distributedRuns![0]);
+        expect(monitorWorkspaceReconciliationWorkForTest(indexedState))
+            .toEqual({ indexed: false, fallback: true });
+    });
+
+    it('keeps genuinely absent Monitor IDs unavailable without defensive fallback', () => {
+        const current: ControlServerSnapshot = {
+            runs: [controlRun('run-a')],
+            distributedRuns: [distributedRun('distributed-a', 'run-a')],
+        };
+        const selectionIndex = bindControlSelectionIndexToSnapshot(
+            current,
+            createControlSnapshotSelectionIndex(current),
+        );
+        const selection = deriveMonitorDistributedRunSelection({
+            controlRunId: 'run-a',
+            requestedDistributedRunId: 'missing-distributed',
+            distributedRuns: current.distributedRuns!,
+            distributedRunsAuthoritative: true,
+            snapshot: current,
+            selectionIndex,
+        });
+
+        expect(selection.run).toBeUndefined();
+        expect(selection.issue?.code).toBe('unavailable');
+        expect(monitorDistributedRunSelectionWorkForTest(selection))
+            .toEqual({ indexed: true, fallback: false });
+    });
+
+    it('keeps trusted absent Monitor selection, options, and reconciliation O(1)', () => {
+        const current: ControlServerSnapshot = {
+            runs: [controlRun('run-a')],
+            distributedRuns: [distributedRun('distributed-a', 'run-a')],
+        };
+        const selectionIndex = createControlSelectionIndexCache().get(current);
+        Object.defineProperties(current, {
+            runs: { value: forbidGlobalTraversal(current.runs) },
+            distributedRuns: {
+                value: forbidGlobalTraversal(current.distributedRuns!),
+            },
+        });
+
+        const selection = deriveMonitorDistributedRunSelection({
+            controlRunId: 'run-a',
+            requestedDistributedRunId: 'missing-distributed',
+            distributedRuns: current.distributedRuns!,
+            distributedRunsAuthoritative: true,
+            snapshot: current,
+            selectionIndex,
+        });
+        const options = deriveMonitorRunOptions({
+            controlRunId: 'missing-run',
+            distributedRuns: current.distributedRuns!,
+            snapshot: current,
+            selectionIndex,
+        });
+        const missingContext = createMonitorWorkspaceContext({
+            baseUrl: 'https://control.test',
+            controlRunId: 'missing-run',
+            distributedRunId: 'missing-distributed',
+        });
+        const state = reconcileMonitorWorkspaceState(
+            createInitialMonitorWorkspaceState(),
+            {
+                context: missingContext,
+                query: query('live', current),
+                selectionIndex,
+            },
+        );
+
+        expect(selection.issue?.code).toBe('unavailable');
+        expect(monitorDistributedRunSelectionWorkForTest(selection))
+            .toEqual({ indexed: true, fallback: false });
+        expect(options).toEqual([]);
+        expect(monitorRunOptionsWorkForTest(options))
+            .toEqual({ indexed: true, fallback: false });
+        expect(state.source).toBeUndefined();
+        expect(monitorWorkspaceReconciliationWorkForTest(state))
+            .toEqual({ indexed: true, fallback: false });
+    });
+
+    it('uses indexed global-first explicit selection and rebinds the current poll object', () => {
+        const first: ControlServerSnapshot = {
+            runs: [controlRun('run-a'), controlRun('run-b')],
+            distributedRuns: [
+                distributedRun('duplicate\0\u202e', 'run-b'),
+                distributedRun('duplicate\0\u202e', 'run-a'),
+            ],
+        };
+        const clone = structuredClone(first);
+        const current: ControlServerSnapshot = {
+            ...clone,
+            distributedRuns: forbidGlobalTraversal(clone.distributedRuns!),
+        };
+        const selectionIndex = bindControlSelectionIndexToSnapshot(
+            current,
+            createControlSnapshotSelectionIndex(first),
+        );
+
+        const indexed = deriveMonitorDistributedRunSelection({
+            controlRunId: 'run-a',
+            requestedDistributedRunId: 'duplicate\0\u202e',
+            distributedRuns: current.distributedRuns!,
+            distributedRunsAuthoritative: true,
+            snapshot: current,
+            selectionIndex,
+        });
+
+        expect(indexed).toEqual({
+            distributedRunId: 'duplicate\0\u202e',
+            run: undefined,
+            source: 'explicit',
+            issue: {
+                code: 'incompatible',
+                message: 'Distributed run duplicate\0\u202e belongs to another control run.',
+            },
+        });
+    });
+
+    it('projects indexed compatible run options in legacy order with current objects', () => {
+        const first: ControlServerSnapshot = {
+            runs: [controlRun('run-a')],
+            distributedRuns: [
+                distributedRun('older', 'run-a', 'running', 10),
+                distributedRun('other', 'run-b', 'running', 30),
+                distributedRun('newer', 'run-a', 'running', 20),
+            ],
+        };
+        const clone = structuredClone(first);
+        const current: ControlServerSnapshot = {
+            ...clone,
+            distributedRuns: forbidGlobalTraversal(clone.distributedRuns!),
+        };
+        const selectionIndex = bindControlSelectionIndexToSnapshot(
+            current,
+            createControlSnapshotSelectionIndex(first),
+        );
+
+        const options = deriveMonitorRunOptions({
+            controlRunId: 'run-a',
+            distributedRuns: current.distributedRuns!,
+            snapshot: current,
+            selectionIndex,
+        });
+
+        expect(options).toEqual([
+            current.distributedRuns![2],
+            current.distributedRuns![0],
+        ]);
+        expect(options[0]).toBe(current.distributedRuns![2]);
+    });
+
     it('canonicalizes only a sole compatible run and never chooses by collection order', () => {
         const sole = deriveMonitorDistributedRunSelection({
             controlRunId: 'run-a',
@@ -364,6 +619,39 @@ describe('Recipe Console Monitor selection', () => {
 });
 
 describe('Recipe Console Monitor coherent state', () => {
+    it('reconciles indexed query truth by first compatible pair and keeps current identities', () => {
+        const first: ControlServerSnapshot = {
+            runs: [controlRun('run-a'), controlRun('run-a')],
+            distributedRuns: [
+                distributedRun('distributed-a', 'run-b', 'failed', 30),
+                distributedRun('distributed-a', 'run-a', 'running', 20),
+                distributedRun('distributed-a', 'run-a', 'passed', 40),
+            ],
+        };
+        const clone = structuredClone(first);
+        const current: ControlServerSnapshot = {
+            ...clone,
+            runs: forbidGlobalTraversal(clone.runs),
+            distributedRuns: forbidGlobalTraversal(clone.distributedRuns!),
+        };
+        const selectionIndex = bindControlSelectionIndexToSnapshot(
+            current,
+            createControlSnapshotSelectionIndex(first),
+        );
+
+        const state = reconcileMonitorWorkspaceState(
+            createInitialMonitorWorkspaceState(),
+            {
+                context,
+                query: query('live', current),
+                selectionIndex,
+            },
+        );
+
+        expect(state.source?.controlRun).toBe(current.runs[0]);
+        expect(state.source?.distributedRun).toBe(current.distributedRuns![1]);
+    });
+
     it('projects complete current truth and derives bounded monitor/report/verdict once', () => {
         const monitorDerivation = vi.spyOn(
             distributedRecipes,
