@@ -408,7 +408,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
 | 8 — History, Compare, Saved Filters, Retention | **Complete** | Preview-first retention, shareable filters/presets, bounded History, comparison reuse, cleanup reconciliation, and exact copied-link/retention acceptance are qualified through `fd9055e` and `f762749`. Fresh focused/complete/server/browser/legacy gates and independent re-reviews are green; the configured live/Postgres lifecycle is explicitly skipped, not passed. Ready-State #8 and #9 are code-backed. No legacy surface is hidden or cut over. |
-| 9 — Large-Run Scale And Virtualization | **In progress** | The reviewed child plan binds Ready-State #10 to a 15,000-row artifact, 5,000 History pairs, accessible deterministic windows, a single parsed shared pipeline, off-main Analyze derivation, numeric session-only telemetry, production-browser DOM/cardinality gates, and before/after profiling. Parsed pipeline/cursor contracts are green through `4e89a17`; lazy workerized Analyze and its bounded Tune facade are green through `77b0922`; reusable native controls and full-catalog Analyze composition are green through `6d90061`; reviewed Monitor indexing, exact poll revisions, ordinal topology, and inactive-Analyze zero-work foundations are green through `0b260ec`, `a258a9e`, `bbb2548`, and `ef78e75`. Task 6 consumer/window composition, Tasks 7–9, final profiling, and the iteration-wide exit remain open; no parity or cutover is claimed. |
+| 9 — Large-Run Scale And Virtualization | **In progress** | The reviewed child plan binds Ready-State #10 to a 15,000-row artifact, 5,000 History pairs, accessible deterministic windows, a single parsed shared pipeline, off-main Analyze derivation, numeric session-only telemetry, production-browser DOM/cardinality gates, and before/after profiling. Parsed pipeline/cursor contracts are green through `4e89a17`; lazy workerized Analyze and its bounded Tune facade are green through `77b0922`; reusable native controls and full-catalog Analyze composition are green through `6d90061`; reviewed Monitor indexing, indexed Control/board consumers, exact poll revisions, inactive-Analyze zero-work, and main/inspector Monitor windows are green through `8c630fc`. Tasks 7–9, the canonical scale owner, final profiling, and the iteration-wide exit remain open; Ready-State #10 and parity/cutover are not claimed. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
 | 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
@@ -441,9 +441,10 @@ The in-app Browser returned exactly `No browser is available`, while
 `agent.browsers.list()` returned `[]`; Playwright/System Chromium is fallback
 evidence, not an in-app Browser pass. These tests use deterministic/simulated
 fixtures and make no live-service claim; the configured-live skip remains
-unchanged. Parent Iteration 9 stays in progress because Tasks 6–9 and final
-profiling/exit proof remain open. No legacy visibility, mount policy, deep
-link, rollback URL, navigation default, or cutover changed.
+unchanged. At this checkpoint Tasks 6–9 were open; Task 6 is now green below,
+while parent Iteration 9 stays in progress for Tasks 7–9 and final profiling/
+exit proof. No legacy visibility, mount policy, deep link, rollback URL,
+navigation default, or cutover changed.
 
 #### Iteration 9 Task 6 foundation checkpoint — `0b260ec`, `a258a9e`, `bbb2548`, `ef78e75`
 
@@ -480,6 +481,60 @@ browser-mounted counts/heartbeat, Task 7 pressure lists, final profiling, and
 the complete Ready-State #10 production-browser gate remain open. No legacy
 surface, primary navigation row, route, lazy-mount policy, rollback URL,
 default, or cutover changed.
+
+#### Iteration 9 Task 6 Monitor scale checkpoint — `8c630fc`
+
+The foundation topology is now composed into the always-on Control selection
+and agent-board consumers without changing public snapshots or server
+contracts. Exact-revision clone polls reuse indexed topology with zero global
+rebuild visits; trusted absence is constant-time, active control selection
+projects only the active ordinal, and selected overlays preserve legacy
+duplicate, ordering, object-identity, cross-control, and synthetic behavior.
+Inactive Analyze still performs zero run-option traversal or search work.
+
+Monitor now replaces its former prefixes with explicit accessible windows in
+the main ledger and inspector. Failures, agents, recipes, readiness,
+diagnostics, timeline, events, composites, command evidence, failure
+destinations, and diagnostic links expose exact range/outside-window truth and
+browse every retained source identity without gaps or duplicates. Closed
+disclosures mount no retained rows. Filter/fingerprint changes reset only the
+owning cursor, while polling and above/below-budget changes preserve or recover
+focus through a persistent range control. Failure-first ordering,
+current/last-known truth, operations, correlations, v1 URL state, and exact
+bidi identifiers remain authoritative.
+
+Settled validation passed 226/226 focused Vitest tests across 11 files
+(28 query, 24 structure, 10 shared topology, 3 cache, 69 API, 27 Monitor state,
+17 board, 26 selection, 1 provider, 13 main-window, and 8 inspector-window),
+app TypeScript, a 655-module production build, reciprocal
+`RecipeConsoleApp-D4wdYE2J.js` / `LegacyExperience-DzD-0gim.js` chunk proof,
+and `git diff --check`. Only the existing greater-than-500-kB build advisory
+remained. Stable-source browser proof passed 11/11 combined new/existing
+Monitor cases plus 6/6 responsive/accessibility and CSS-isolation cases; the
+large fixture's 4/4 cases cover desktop 1440×900, genuine-touch portrait
+430×932, genuine-touch short landscape 932×430, keyboard/focus, reduced
+motion, operational states, URL-stable reverse traversal, bounded mounts, and
+clean Direction A containment.
+
+Two earlier browser attempts overlapped live source edits and were unavailable
+as product verdicts: one ran during consumer composition, and one during a
+neutral binding-file move. Both affected sets reran fully green on stable
+source. A direct `tsx --test` UI attempt was unavailable because Node cannot
+load CSS modules; Vitest is the authoritative passing owner. The in-app Browser
+returned exactly `No browser is available`; Playwright/System Chromium is the
+fallback, not an in-app Browser pass. The configured-live lifecycle remains
+skipped, not passed, for exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with
+Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
+apps/rallar-black-box available.` Indexed-consumer, browser, and final exit
+re-reviews are clean after three Important exit-review findings received
+focused RED/GREEN fixes.
+
+Task 6 is complete, but Ready-State #10 and parent Iteration 9 remain open for
+Tasks 7–9: History/retention/Execute/Tune pressure-list composition, canonical
+scale acceptance, the remaining heartbeat measurement, and final candidate
+profiling. This checkpoint changed no primary/default navigation, legacy row
+visibility or mount, deep link, rollback URL, public/control contract, or
+cutover, and it hid no legacy row.
 
 #### Iteration 0 baseline and validation evidence
 

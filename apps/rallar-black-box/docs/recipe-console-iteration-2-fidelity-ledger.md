@@ -1,22 +1,24 @@
 # Recipe Console Iteration 2 Fidelity Ledger
 
 Status: Iteration 2 visual direction preserved; Execute, live Monitor, offline
-Analyze, real-evidence Tune, and bounded History/retention are qualified through
-Iteration 8
+Analyze, real-evidence Tune, bounded History/retention, and Task 6 large-Monitor
+window composition are qualified through `8c630fc`; Ready-State #10 remains
+open
 
 Evidence date: 2026-07-13
 Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
 (Iteration 4 Execute), `42eedae` (Iteration 5 live Monitor fidelity proof),
 `f96b5b4`, `abe257e`, `9b07330`, `47c332d` (Iteration 6 Analyze),
 `cc17169`, `382df72` (Iteration 7 Tune), `fd9055e`, `f762749`
-(Iteration 8 History/retention)
+(Iteration 8 History/retention), `8c630fc` (Iteration 9 Task 6 Monitor scale)
 Approved direction: Signal Ledger (Direction A)
 
 This ledger preserves the approved Iteration 2 visual contract and its
 historical seeded Monitor/Tune evidence, then records the Iteration 4 Execute,
 Iteration 5 live Monitor, Iteration 6 Analyze, Iteration 7 Tune, and Iteration 8
-History/retention baseline advances. It does not claim the unavailable
-configured live/Postgres acceptance, a legacy navigation hide, or the
+History/retention baseline advances, then records the Iteration 9 Task 6
+browseable Monitor extension. It does not claim the unavailable configured
+live/Postgres acceptance, Ready-State #10, a legacy navigation hide, or the
 Iteration 12 default flip.
 
 ## Iteration 4 Execute fidelity addendum
@@ -135,6 +137,47 @@ The refreshed 932×430 baseline was inspected at original detail after semantic
 and geometry gates passed. The in-app Browser remained unavailable exactly as
 `No browser is available`; this is Playwright/System Chromium fallback proof.
 
+## Iteration 9 Task 6 large-Monitor fidelity addendum
+
+Direction A remains unchanged. The Signal Ledger keeps failure verdict and
+failure list first, followed by the agent/recipe/readiness evidence plane and
+secondary timeline/event/composite/diagnostic disclosures. Task 6 replaces
+fixed prefixes with local Previous/Next controls and exact range/outside-
+window truth; it does not add a global registry, broad stylesheet, alternate
+visual direction, or hidden mounted evidence. Closed disclosures mount no
+retained rows, while reopening restores their local cursor.
+
+The settled large fixture verifies exact stable-ID traversal across every main
+and inspector pressure path without gaps or duplicates, bounded main and
+inspector mounts, filter-owned resets, polling/threshold focus recovery,
+URL-stable reverse traversal, exact long bidi identifiers, current/last-known
+operational truth, and unchanged failure correlations/actions. The command bar
+uses locally contained ellipsis at 932×430 so Connected, Safe targets, and
+Active run cells do not overlap; operational metric values remain legible.
+
+Controlled Playwright/System Chromium proof passed 17/17 affected cases:
+11/11 combined new/existing Monitor flows plus 6/6 Monitor responsive,
+accessibility, and CSS-isolation slices. The new large fixture passed 4/4 at
+1440×900 desktop, genuine-touch 430×932 portrait, and genuine-touch
+932×430 landscape, with keyboard focus, touch taps, 44px targets, reduced
+motion, contained internal scrolling, zero document overflow, and stable
+Direction A hierarchy. The desktop, portrait, and landscape screenshots were
+visually inspected and clean. The in-app Browser was unavailable exactly as
+`No browser is available`; this is Playwright/System Chromium fallback proof,
+not an in-app Browser pass.
+
+Two early browser attempts overlapped live consumer composition or a neutral
+binding-file move and were unavailable as product verdicts; both affected sets
+reran fully green on stable source. A direct `tsx --test` UI attempt was
+unavailable because Node cannot load CSS modules; authoritative Vitest passed.
+The configured-live lifecycle remains skipped, not passed, for exactly: `Set
+RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+Ready-State #10 and parent Iteration 9 remain open for Tasks 7–9, canonical
+scale acceptance, remaining heartbeat proof, and final profiling. No default
+or primary navigation, legacy visibility/mount, deep link, rollback URL, or
+cutover changed, and no legacy row was hidden.
+
 ## Controlled environment
 
 | Item | Value |
@@ -201,7 +244,7 @@ visual contract.
 
 ## Exploratory Browser QA
 
-The in-app Browser was attempted first for the current Iteration 5 pass. It was
+The in-app Browser was attempted first for the latest Task 6 pass. It was
 unavailable exactly as `No browser is available`. This is recorded as
 unavailable, not passed; controlled Playwright/System Chromium is the fallback.
 The earlier Iteration 2 attempt returned `Browser is not available: iab` and an
@@ -219,6 +262,7 @@ rewritten as current evidence.
 | Live Monitor tablet, 900×900 | Work remains stable before and after the 360px overlay; the overlay does not squeeze the work plane, and Escape restores focus. |
 | Live Monitor landscape, 932×430 | The keyboard-only failure-inspector and armed-Cancel paths restore focus. The matrix owns horizontal overflow while document overflow remains zero on both axes before and after the dialog path. |
 | Reduced motion | Live Monitor overlay transition duration is `0s`, animation is removed, and state remains visible. |
+| Large Monitor Task 6, desktop and true-touch portrait/landscape | Main and inspector windows traverse every stable identity without gaps/duplicates, preserve exact omission and operational truth, recover focus, keep Previous navigation URL-stable, expose 44px tap targets, disable new-control motion, and contain long bidi evidence and the short-landscape command bar without overlap or document overflow. |
 | Tune landscape, 932×430 | The Iteration 7 refresh shows retained-artifact provenance, uncommitted baseline/candidate placeholders, decision-first hints, and command/stream evidence in bounded panes. Keyboard inspection/focus restoration, 44px actions, contained scrolling, and zero document overflow pass. |
 | CSS isolation | Both load orders and Recipe Console → legacy → Recipe Console retain stable computed styles. Iteration 7 adds real Tune source, comparison, candidate, and inspector comparisons; the historical Iteration 2 system-Chrome load-order PNGs remain byte-for-byte identical (`cmp=0`, SHA-256 `39259c08719440dd98ef60898466d8a5a7b722e81b6b5e637de2481d7dc528a6`). |
 | Console/document health | A focused RED exposed the missing icon. `index.html` now declares a local SVG icon; its response is HTTP 200 with `image/svg+xml`. A fresh canonical Execute run had `consoleDiagnostics: []` and `failedResponses: []`. |
@@ -235,6 +279,10 @@ they are not counted as live-service passes.
 
 | Command | Result | Evidence |
 | --- | --- | --- |
+| Iteration 9 Task 6 composed Vitest gate | Passed | 11 files and 226/226 tests: 28 query, 24 structure, 10 shared topology, 3 cache, 69 API, 27 Monitor state, 17 board, 26 control selection, 1 provider, 13 main-window, and 8 inspector-window. |
+| Iteration 9 Task 6 app/build/chunk gate | Passed | App TypeScript, `git diff --check`, a 655-module production build, and reciprocal `RecipeConsoleApp-D4wdYE2J.js` / `LegacyExperience-DzD-0gim.js` closure proof passed. Only the preserved greater-than-500-kB advisory remained. |
+| Iteration 9 Task 6 stable-source Chromium gate | Passed | 11/11 combined new/existing Monitor cases plus 6/6 responsive/accessibility and CSS-isolation Monitor cases. The large fixture itself passed 4/4 across desktop and genuine-touch portrait/landscape, keyboard/focus, reduced motion, operational states, exact traversal, URL stability, bounded mounts, and Direction A containment. |
+| Iteration 9 Task 6 unavailable attempts | Unavailable; not product failures or passes | One existing-Monitor attempt overlapped live consumer edits and one six-slice attempt overlapped the neutral binding-file move; both reran fully green on stable source. Direct `tsx --test` UI execution could not load CSS modules; authoritative Vitest passed. |
 | Iteration 7 focused Vitest set | Passed | 20/20 files, 247/247 tests after shared, app/state, and browser review fixes. |
 | Iteration 7 complete `packages/tests/rallar-black-box` set | Qualified green | 93 files and 883 tests. The restricted sandbox passed 881; its only two failures were denied tsx IPC/loopback. The exact affected `headless-worker-script.test.ts` file then passed 9/9 with required permission. |
 | Iteration 7 complete shared/app/build exit | Passed | Shared-test TypeScript and all seven configured Deno entries, app TypeScript, `git diff --check`, a 580-module production build, and reciprocal experience-chunk proof passed. Tune emits separate 34.19 kB JS / 13.70 kB CSS lazy assets. |
@@ -475,3 +523,23 @@ portrait, and landscape with no warning/error logs. This qualifies Ready-State
 #8 and #9 plus the bounded History/retention plane. It does not qualify
 configured-live #3, a legacy row cutover, large-run scale, the default flip, or
 Iterations 9–12. Every legacy fallback remains visible and deep-linkable.
+
+## Iteration 9 Task 6 Monitor scale review verdict
+
+Independent indexed-consumer review confirmed exact-revision trust binding,
+constant-time trusted absence, active-only projection, selected-overlay legacy
+parity, bounded owner structure, and randomized 5,000-pair behavior. Browser
+review drove stable expected-ID traversal for every main and inspector window,
+inspector outside-window truth, genuine touch/tap contexts, reduced-motion
+coverage for the new controls, and URL-stable Previous navigation. Final exit
+review then closed three Important findings with focused RED/GREEN coverage;
+the indexed-consumer, browser, and exit re-reviews report no remaining Critical
+or Important issue.
+
+This qualifies only the Task 6 Monitor/index/window slice. Ready-State #10 and
+parent Iteration 9 remain open for Tasks 7–9, canonical History/retention/
+Execute/Tune pressure-list scale, the exact scale owner, remaining heartbeat
+proof, and final profiling. Direction A remains the sole approved visual
+baseline. No existing legacy row is hidden: all legacy surfaces retain their
+visibility, active mount policy, old deep links, rollback URLs, and operational
+fallback role, and no default/navigation/cutover changed.

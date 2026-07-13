@@ -1,6 +1,6 @@
 # Recipe Console Product Spec
 
-Status: canonical product contract; Ready-State #4–#9 are code-backed through Iteration 8 while configured-live #3 remains open
+Status: canonical product contract; Ready-State #4–#9 are code-backed, Iteration 9 Task 6 Monitor scale is green through `8c630fc`, and Ready-State #3 and #10 remain open
 Evidence date: 2026-07-13
 
 This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
@@ -308,3 +308,46 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
   apps/rallar-black-box available.`
 - No default, primary-navigation, legacy visibility/mount, deep link, rollback,
   public export, existing control-server contract, or workflow cutover changed.
+
+### Iteration 9 Task 6 Monitor scale checkpoint — `8c630fc`
+
+- Monitor's former fixed prefixes are now explicit accessible Previous/Next
+  windows for main failures, agents, recipes, readiness, diagnostics,
+  timeline, events, and composites plus inspector command evidence, failure
+  destinations, and diagnostic links. Exact ranges and outside-window totals
+  remain visible, stable source identities traverse without gaps or duplicates,
+  closed disclosures mount no hidden retained rows, and fingerprint/polling
+  changes reset or recover focus without changing v1 URL state.
+- Indexed Control selection and agent-board consumers reuse exact-revision
+  topology on unchanged polls, avoid repeated global traversal, and preserve
+  duplicate/order/object-identity/cross-control/synthetic behavior. Inactive
+  Analyze still performs zero run-option traversal or search work. Failure-
+  first order, current/last-known authority, existing operations, selected-
+  evidence correlations, exact identifiers, public exports, and control-server
+  contracts remain unchanged.
+- The settled focused gate passed 226/226 tests across 11 files: 28 query,
+  24 structure, 10 shared topology, 3 cache, 69 API, 27 Monitor state, 17 board,
+  26 selection, 1 provider, 13 main-window, and 8 inspector-window. App
+  TypeScript, the 655-module production build, reciprocal experience-chunk
+  assertion, and `git diff --check` passed; only the existing greater-than-
+  500-kB advisory remained. Indexed-consumer, browser, and final exit
+  re-reviews report no open Critical or Important finding.
+- Stable-source browser proof passed 11/11 combined new/existing Monitor cases
+  and 6/6 responsive/accessibility and CSS-isolation cases. The new large-
+  fixture owner passed 4/4 across 1440×900 desktop, genuine-touch 430×932
+  portrait, genuine-touch 932×430 landscape, keyboard/focus, reduced motion,
+  operational states, bounded DOM, exact forward/back traversal, URL stability,
+  and Direction A containment.
+- Two earlier browser attempts overlapped live consumer or neutral binding-file
+  edits and were unavailable as product verdicts; both reran fully green on
+  stable source. A direct `tsx --test` UI attempt was unavailable because Node
+  cannot load CSS modules; authoritative Vitest passed. The in-app Browser was
+  unavailable exactly as `No browser is available`; Playwright/System Chromium
+  is fallback evidence, not an in-app Browser pass.
+- The configured-live owner remains skipped, not passed, for exactly: `Set
+  RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+  Ready-State #10 and parent Iteration 9 remain open for Tasks 7–9, canonical
+  scale acceptance, remaining heartbeat proof, and final profiling. No
+  primary/default navigation, legacy visibility/mount, deep link, rollback,
+  public/control contract, or cutover changed, and no legacy row was hidden.

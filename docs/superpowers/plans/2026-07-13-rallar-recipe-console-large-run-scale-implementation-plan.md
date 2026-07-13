@@ -2,12 +2,12 @@
 
 Status: in progress; Iteration 8 is qualified through `fd9055e`, `f762749`,
 and `37c7a32`; the reviewed Task 0 artifact baseline is committed at
-`166b40b`; two instrumentation-dependent Task 0 proofs remain open; Task 1 is
-green through `56d4a43`; Task 2 is green through `4e89a17`; Task 3 is green
-through `77b0922`; Tasks 4–5 are green through `6d90061`; Task 6 has reviewed
-Monitor indexing, exact snapshot revisions, ordinal topology, and inactive-
-Analyze foundations through `0b260ec`, `a258a9e`, `bbb2548`, and `ef78e75`;
-Task 6 consumer/window composition and Tasks 7–9 remain open
+`166b40b`, while its remaining Tune/History pressure measurements stay open;
+Task 1 is green through `56d4a43`; Task 2 is green through `4e89a17`; Task 3
+is green through `77b0922`; Tasks 4–5 are green through `6d90061`; Task 6
+Monitor indexing, indexed consumers, and main/inspector window composition are
+green through `8c630fc`; Tasks 7–9, canonical scale acceptance, and final
+profiling remain open
 
 **Goal:** Complete parent Iteration 9 so large distributed artifacts and run
 collections stay searchable and operable without blocking the browser or
@@ -403,34 +403,35 @@ review drove request-timeout/retry, stale/pending/failure truth, stable focus,
 exact-identifier, complete-traversal, and pre-search/no-match RED/GREEN fixes;
 final re-review reports no open Critical or Important finding.
 
-Parent Iteration 9 remains in progress. Tasks 6–9, including Monitor, History,
-retention/Tune pressure lists, final profiling, and the iteration-wide exit,
-remain open. No legacy surface, primary navigation row, mount policy, deep
-link, rollback URL, default, or cutover changed.
+At this Task 5 checkpoint, Tasks 6–9 were open. Task 6 is now green at the
+checkpoint below; parent Iteration 9 remains in progress for Tasks 7–9, final
+profiling, and the iteration-wide exit. No legacy surface, primary navigation
+row, mount policy, deep link, rollback URL, default, or cutover changed.
 
 ## Task 6: Replace Monitor Prefix Caps With Browseable Windows
 
 - [x] Reuse one indexed Monitor/report/verdict derivation per snapshot and avoid
   repeated per-agent/per-recipe scans where proven by counters.
-- [ ] Add reusable run-by-control/agent/command indexes for the always-on root
+- [x] Add reusable run-by-control/agent/command indexes for the always-on root
   control selection path; unchanged five-second polls must not repeat expensive
   global board/options work.
 - [x] Retain Analyze artifacts across views without sorting/filtering all run
   selector options while Analyze is inactive.
-- [ ] Window events, timeline, composite results, diagnostics, failures,
+- [x] Window events, timeline, composite results, diagnostics, failures,
   participant matrix, and recipe/readiness tables only where collections can
   exceed their existing visible bounds.
-- [ ] Preserve failure-first order, selected evidence/inspector links,
+- [x] Preserve failure-first order, selected evidence/inspector links,
   current/last-known truth, polling/action authority, and exact omission truth.
-- [ ] GREEN tests that late events/results/agents are reachable, filters reset
+- [x] GREEN tests that late events/results/agents are reachable, filters reset
   the correct window, no section mounts beyond its budget, and polling does not
   repeat unchanged expensive derivation. Include exact global-selection and
   inactive-Analyze work counters under 5,000 run pairs.
 
-Task 6 foundations are green through `0b260ec`, `a258a9e`, `bbb2548`, and
-`ef78e75`. Monitor/report/verdict now share one linear index per source
-snapshot, retain only numeric work plus first command phases for report reuse,
-and preserve the pre-index 5,000-row Monitor, report, and verdict hashes.
+Task 6 is green through `0b260ec`, `a258a9e`, `bbb2548`, `ef78e75`, and the
+composed code milestone `8c630fc`. Monitor/report/verdict share one linear
+index per source snapshot, retain only numeric work plus first command phases
+for report reuse, and preserve the pre-index 5,000-row Monitor, report, and
+verdict hashes.
 Resolved/manifest membership precedence, duplicate targets/selections,
 delimiter/bidi identities, first-link action semantics, diagnostic ordering,
 and exact ±15-second correlation bounds remain differential-tested. Both
@@ -456,11 +457,57 @@ Inactive Analyze now returns one frozen empty option set before traversing
 either 5,000-row collection and sends no search request in Execute, Monitor,
 History, or Tune. Artifact, blob/export, Tune facade, worker lifetime, and
 off-view context invalidation remain active; entering Analyze emits one latest
-search and preserves prior option order/current-object identity. Consumer
-wiring, main/inspector Monitor windows, Task 0 browser-mounted/heartbeat
-measurements, and the Task 6 composed exit remain open. No navigation,
-legacy visibility, mount policy, deep link, rollback URL, default, or cutover
-changed in these foundation commits.
+search and preserves prior option order/current-object identity. The indexed
+Control selection and agent-board consumers now reuse exact-revision topology,
+perform O(1) trusted absence checks, project only the active ordinal plus the
+selected overlay, and retain duplicate/order/cross-control/synthetic legacy
+parity. The 5,000-pair exact-clone case performs no repeated global traversal.
+
+Main Monitor and inspector evidence now use explicit accessible Previous/Next
+windows with exact one-based ranges and outside-window truth. Main budgets are
+60 failures, 80 agents, 60 recipes, 60 readiness rows, 50 diagnostics, and 40
+timeline/events/composites; inspector budgets are 16 command-evidence rows and
+40 failure-destination or diagnostic-link rows. Stable source ordinals preserve
+duplicates and exact identifiers, disclosures mount no hidden rows while
+closed, filter/fingerprint changes reset the correct cursor, and focus returns
+to the persistent range control when polling or a threshold change removes its
+row. Failure-first order, current/last-known authority, existing actions, URL
+state, and inspector correlations remain unchanged.
+
+The settled Task 6 exit passed 226/226 focused Vitest tests across 11 files:
+28 query, 24 structure, 10 shared topology, 3 cache, 69 API, 27 Monitor state,
+17 board, 26 control selection, 1 provider, 13 main-window, and 8 inspector-
+window cases. App TypeScript, the 655-module production build, reciprocal
+experience-chunk proof (`RecipeConsoleApp-D4wdYE2J.js` and
+`LegacyExperience-DzD-0gim.js`), and `git diff --check` passed; only the
+existing greater-than-500-kB advisory remained. Browser proof passed 11/11
+combined large/existing Monitor cases and 6/6 responsive/accessibility and CSS-
+isolation Monitor cases. The new large fixture alone passed 4/4 and verified
+1440×900 desktop, genuine-touch 430×932 portrait, genuine-touch 932×430
+landscape, exact traversal without repeated/skipped IDs, URL-stable reverse
+navigation, reduced motion, operational truth, contained scrolling, and clean
+Direction A composition. The desktop, portrait, and landscape screenshots were
+visually inspected and clean.
+
+Two early Playwright attempts overlapped live source edits—first consumer
+composition, then a neutral binding-file move—and were unavailable as product
+verdicts; both affected sets reran fully green on stable source. A direct
+`tsx --test` UI attempt was also unavailable because Node cannot load CSS
+modules; authoritative Vitest passed. The in-app Browser returned exactly
+`No browser is available`, so Playwright/System Chromium is fallback evidence,
+not an in-app Browser pass. The configured-live owner remains skipped, not
+passed, for exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed
+apps/api-v1, apps/rallar-black-box-control-server, and
+apps/rallar-black-box available.` Indexed-consumer, browser, and final Task 6
+exit re-reviews are clean after three Important exit-review findings were
+resolved with focused proof; no Critical finding remained.
+
+Task 6 does not satisfy Ready-State #10 by itself. Parent Iteration 9 remains
+open for Tasks 7–9, including History/retention/Execute/Tune pressure lists,
+the canonical scale owner, remaining Tune heartbeat measurement, and final
+profiling. No primary/default navigation, legacy visibility, mount policy,
+deep link, rollback URL, control contract, or cutover changed, and no legacy
+row was hidden.
 
 ## Task 7: Window History, Retention Consequences, And Proven Pressure Lists
 
