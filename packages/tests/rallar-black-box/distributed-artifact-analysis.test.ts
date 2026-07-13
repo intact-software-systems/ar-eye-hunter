@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     analyzeDistributedRunArtifactFiles,
     deriveDistributedRunSnapshotPerformance,
@@ -979,6 +979,70 @@ describe('Hetzner distributed run artifact analysis', () => {
             { insertionIndex: 1, winnerIndex: 2 },
             { insertionIndex: 0, winnerIndex: 3 },
         ]);
+    });
+
+    it('accounts exactly for replacement-heavy fingerprint work while lazily invalidating stale groups', () => {
+        const lowA = completeStreamSummary(1, 'low-a');
+        const lowB = completeStreamSummary(2, 'low-b');
+        const highA = completeStreamSummary(4, 'high-a');
+        const highB = completeStreamSummary(5, 'high-b');
+        let telemetry: StreamSampleIndexTelemetry | undefined;
+        const stringify = vi.spyOn(JSON, 'stringify');
+
+        const performance = deriveStreamCandidatePerformance({
+            controlResults: [
+                streamResult('identity-a', lowA),
+                streamResult('identity-b', lowB),
+            ],
+            artifactResults: [
+                streamResult('identity-a', highA),
+                streamResult('identity-b', highB),
+                streamResult(undefined, lowA),
+                streamResult(undefined, highA),
+                streamResult('identity-c', highA),
+                nestedStreamResult('outer', 'leaf', highA),
+                streamResult(undefined, highA),
+            ],
+            onStreamSampleIndexTelemetry: value => {
+                telemetry = value;
+            },
+        });
+
+        const fingerprintStringifyCount = stringify.mock.calls.filter(([value]) => {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                return false;
+            }
+            const record = value as Record<string, unknown>;
+            return Object.hasOwn(record, 'plannedFrames') &&
+                Object.hasOwn(record, 'pacing') &&
+                Object.hasOwn(record, 'thresholdFailures') &&
+                Object.hasOwn(record, 'observations');
+        }).length;
+        stringify.mockRestore();
+
+        expect(performance.streamTiming).toMatchObject({
+            streamCount: 3,
+            plannedFrames: 10,
+        });
+        expect(telemetry).toEqual({
+            candidateCount: 9,
+            baseKeyLookupCount: 9,
+            fingerprintComputationCount: 9,
+            indexLookupCount: 27,
+            equivalenceCheckCount: 8,
+            indexMaintenanceCount: 34,
+            groupCount: 3,
+            replacementCount: 6,
+            outputGroupOrder: [
+                { insertionIndex: 1, winnerIndex: 3 },
+                { insertionIndex: 4, winnerIndex: 4 },
+                { insertionIndex: 0, winnerIndex: 8 },
+            ],
+        });
+        expect(
+            fingerprintStringifyCount,
+            `telemetry: ${JSON.stringify(telemetry)}`,
+        ).toBe(telemetry?.fingerprintComputationCount);
     });
 
     it('reuses the canonical first identity after a cross-source winner changes identity', () => {

@@ -1686,9 +1686,9 @@ function equivalentStreamSampleGroup(
     for (const group of possibleGroups) {
         telemetry.equivalenceCheckCount += 1;
         if (
-            streamSamplesRepresentSameExecution(
-                group.prepared.candidate.sample,
-                sample,
+            preparedStreamSamplesRepresentSameExecution(
+                group.prepared,
+                prepared,
                 group.prepared.candidate.sourcePriority !== sourcePriority,
             ) &&
             (!earliest || group.insertionIndex < earliest.insertionIndex)
@@ -1822,30 +1822,32 @@ function streamSampleKey(sample: StreamTimingSample): string {
     return sample.identityKey ? `${baseKey}:${sample.identityKey}` : baseKey;
 }
 
-function streamSamplesRepresentSameExecution(
-    left: StreamTimingSample,
-    right: StreamTimingSample,
+function preparedStreamSamplesRepresentSameExecution(
+    left: PreparedStreamTimingSampleCandidate,
+    right: PreparedStreamTimingSampleCandidate,
     crossSource: boolean,
 ): boolean {
-    if (streamSampleBaseKey(left) !== streamSampleBaseKey(right)) {
+    if (left.baseKey !== right.baseKey) {
         return false;
     }
-    if (left.identityKey && right.identityKey) {
-        if (left.identityKey === right.identityKey) {
+    const leftSample = left.candidate.sample;
+    const rightSample = right.candidate.sample;
+    if (leftSample.identityKey && rightSample.identityKey) {
+        if (leftSample.identityKey === rightSample.identityKey) {
             return true;
         }
-        if (left.nested === true && right.nested === true) {
+        if (leftSample.nested === true && rightSample.nested === true) {
             return false;
         }
-        if (left.nested !== true && right.nested !== true) {
-            return crossSource && streamSampleFingerprint(left) === streamSampleFingerprint(right);
+        if (leftSample.nested !== true && rightSample.nested !== true) {
+            return crossSource && left.fingerprint === right.fingerprint;
         }
-        return streamSampleFingerprint(left) === streamSampleFingerprint(right);
+        return left.fingerprint === right.fingerprint;
     }
-    if (!left.identityKey && !right.identityKey) {
+    if (!leftSample.identityKey && !rightSample.identityKey) {
         return true;
     }
-    return streamSampleFingerprint(left) === streamSampleFingerprint(right);
+    return left.fingerprint === right.fingerprint;
 }
 
 function streamSampleBaseKey(sample: StreamTimingSample): string {
