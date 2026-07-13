@@ -272,7 +272,7 @@ type PoseUpdate = {
     seq: number;
 };
 
-const motionLane = {
+const motionLaneConfig = {
     id: 'motion',
     label: 'rtc-motion',
     init: { ordered: false, maxRetransmits: 0 },
@@ -282,18 +282,29 @@ const motionLane = {
     },
 } satisfies RtcDataChannelLaneConfig;
 
-await rallar.start({
+const started = await rallar.start({
     connect: true,
     refreshRooms: true,
-    dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, motionLane],
+    dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, motionLaneConfig],
 });
+if (!started.session) {
+    throw new Error('Login required before entering a room');
+}
+const sessionId = started.session.sessionId;
 
 const motion = createRallarMotionBuffer({
     interpolationDelayMs: 100,
     maxExtrapolationMs: 150,
 });
 
-rallar.realtime.onJson<PoseUpdate>('motion', (message) => {
+const room = await rallar.rooms.enter('lobby');
+const motionUpdates = room.realtime<PoseUpdate>({
+    laneId: 'motion',
+    waitTimeoutMs: 1000,
+    key: `pose:${sessionId}`,
+});
+
+motionUpdates.on((message) => {
     motion.push({
         entityId: message.peerId,
         observedAtEpochMs: message.receivedAtEpochMs,
@@ -362,7 +373,7 @@ const poseGate = createRallarMotionSendGate({
 const decision = poseGate.check(nextPose, Date.now());
 if (decision.shouldSend) {
     poseGate.recordSent(nextPose, Date.now());
-    await motionLane.send(nextPose, { key: `pose:${sessionId}` });
+    await motionUpdates.send(nextPose);
 }
 ```
 

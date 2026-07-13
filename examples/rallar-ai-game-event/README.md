@@ -9,6 +9,7 @@ import {
   createRallarAiMockProvider,
   transitionRallarAiResultLifecycle,
 } from '@shared/rallar-ai/mod.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
 
 const gameEventSchema = {

@@ -45,22 +45,21 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
 ## Repo Codex Skills
 
 Use the root `AGENTS.md` for lightweight agent orientation.
-The repo-local Codex plugin is declared in `.codex-plugin/plugin.json` and
-exposes `./skills/`. When that plugin is enabled, Codex can select the relevant
-Rallar skills from each `SKILL.md` frontmatter description. Do not expect Codex
-to read every file under `skills/**` on every prompt; keep skill descriptions
-specific, and explicitly name a skill in the prompt when you want guaranteed
-use, for example: "Use the `rallar-realtime` and `rallar-testing` skills."
+The repo skills under `.agents/skills/**` are directly discoverable in this
+checkout. The repo-local Codex plugin declared in `.codex-plugin/plugin.json`
+packages that same canonical tree. For a new consumer application, start with
+the `building-rallar-apps` skill and inspect the relevant `examples/**`. Codex
+can select specialist skills from each `SKILL.md` frontmatter description;
+explicitly name a skill in the prompt when you want to guarantee its use, for
+example: "Use the `rallar-realtime` and `rallar-testing` skills."
 
 ## Implementation Notes
 
-- [API-v1 In-Memory SQL Performance Mode](../iterations/rallar-api-v1-in-memory-sql-performance-mode.md)
-  Work-in-progress iteration plan for running API-v1 performance tests with a
-  single server process and an embedded PGlite SQL backend. The current slice
-  has backend config, an idempotent ephemeral schema, and a PGlite SQL adapter
-  that passes shared-server repository smoke tests. API-v1 also has configurable
-  queue pub/sub with a local single-process bridge for PGlite mode plus
-  black-box validation scripts for API-v1 memory mode.
+- [API-v1 In-Memory SQL Performance Mode](../iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md)
+  Completed implementation context for running API-v1 performance tests with a
+  single server process and an embedded PGlite SQL backend, including backend
+  configuration, the PGlite SQL adapter, local queue pub/sub, and black-box
+  validation scripts for API-v1 memory mode.
 
 ## Source Files
 

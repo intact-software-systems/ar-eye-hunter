@@ -52,8 +52,11 @@ Use Rallar Server middleware/facade when the task involves:
 3. Login before state mutation.
    Room create/join/leave and most state APIs require an authenticated session.
 
-4. Use `start()` for app boot.
-   Prefer `rallar.start({ restoreSession: true, connect: true, refreshRooms: true, refreshPeople: true })` over manually calling many boot APIs.
+4. Use `setup()` for initial app boot and `start()` for configured lifecycle continuation.
+   Prefer `rallar.setup({ apiBaseUrl, applicationId, workspaceId, start })`
+   when the app first configures the facade. After login or when configuration
+   already exists, use `rallar.start({ connect: true, refreshRooms: true,
+   refreshPeople: true })`.
 
 5. Prefer room helpers for room-scoped low-latency sends.
    Use `rallar.realtime.room<T>({ roomId, laneId: 'realtime', waitTimeoutMs }).send(payload)` for app/game room traffic. It waits for RTC readiness by default and returns transport diagnostics.
@@ -87,28 +90,23 @@ Use Rallar Server middleware/facade when the task involves:
 1. Identify the feature surface:
    auth, rooms, people, messages, rtc, ws, realtime, media, or data.
 
-2. Add or confirm defaults:
+2. For initial app boot, call `rallar.setup(...)`:
 
 ```ts
-rallar.setDefaults({
+await rallar.setup({
+  apiBaseUrl,
   applicationId: 'app',
   workspaceId: 'default',
-  room: { roomId: 'lobby' },
+  start: {
+    refreshPeople: true,
+  },
 });
 ```
 
-3. Start the facade:
+   After login or for configured lifecycle continuation, call
+   `rallar.start(...)`.
 
-```ts
-await rallar.start({
-  restoreSession: true,
-  connect: true,
-  refreshRooms: true,
-  refreshPeople: true,
-});
-```
-
-4. Subscribe with cleanup:
+3. Subscribe with cleanup:
 
 ```ts
 const subs = rallar.subscriptions();
@@ -118,7 +116,7 @@ subs.add(rallar.people.onChange(renderPeople));
 return () => subs.unsubscribe();
 ```
 
-5. For room-scoped realtime sends, use the room helper:
+4. For room-scoped realtime sends, use the room helper:
 
 ```ts
 const roomLane = rallar.realtime.room<{ type: 'move'; x: number; y: number }>({
