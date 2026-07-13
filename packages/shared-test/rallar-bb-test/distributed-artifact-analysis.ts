@@ -1106,13 +1106,14 @@ function timingFromFleetOrValues(
         const p50Ms = percentile(values, 0.5);
         const p95Ms = percentile(values, 0.95);
         const p99Ms = percentile(values, 0.99);
+        const extrema = numberExtrema(values);
         return {
             count: values.length,
-            minMs: Math.min(...values),
+            minMs: extrema?.min,
             p50Ms,
             p95Ms,
             p99Ms,
-            maxMs: Math.max(...values),
+            maxMs: extrema?.max,
             averageMs: average(values),
             spreadRatio: p50Ms !== undefined && p95Ms !== undefined
                 ? roundMetric(p95Ms / Math.max(1, p50Ms))
@@ -1585,17 +1586,18 @@ function receiverDeliveryFromSamples(
             ? roundMetric(sample.receivedMessages / sample.expectedInboundMessages)
             : undefined)
         .filter((value): value is number => value !== undefined);
+    const receivedMessageExtrema = numberExtrema(receivedMessages);
 
     return {
         sampleCount: samples.length,
         expectedInboundMessages,
         minExpectedInboundMessages,
         minReceiveRatio,
-        minReceivedMessages: Math.min(...receivedMessages),
+        minReceivedMessages: receivedMessageExtrema?.min,
         medianReceivedMessages: percentile(receivedMessages, 0.5),
         p95ReceivedMessages: percentile(receivedMessages, 0.95),
-        maxReceivedMessages: Math.max(...receivedMessages),
-        minDeliveryRatio: deliveryRatios.length > 0 ? Math.min(...deliveryRatios) : undefined,
+        maxReceivedMessages: receivedMessageExtrema?.max,
+        minDeliveryRatio: numberExtrema(deliveryRatios)?.min,
         medianDeliveryRatio: percentile(deliveryRatios, 0.5),
         p95DeliveryRatio: percentile(deliveryRatios, 0.95),
         lowestAgents: samples
@@ -1734,7 +1736,12 @@ function slowestStreamAgentRows(
         if (!sample.agentId) {
             continue;
         }
-        byAgent.set(sample.agentId, [...(byAgent.get(sample.agentId) ?? []), sample]);
+        const agentSamples = byAgent.get(sample.agentId);
+        if (agentSamples) {
+            agentSamples.push(sample);
+        } else {
+            byAgent.set(sample.agentId, [sample]);
+        }
     }
     return [...byAgent.entries()]
         .map(([agentId, agentSamples]) => {
@@ -1750,7 +1757,7 @@ function slowestStreamAgentRows(
                 averageMs: average(durations),
                 p95Ms: percentile(durations, 0.95),
                 p99Ms: percentile(durations, 0.99),
-                maxMs: durations.length > 0 ? Math.max(...durations) : undefined,
+                maxMs: maxNumber(durations),
             };
         })
         .sort((left, right) =>
@@ -1854,8 +1861,7 @@ function averageDefined(values: readonly (number | undefined)[]): number | undef
 }
 
 function maxDefined(values: readonly (number | undefined)[]): number | undefined {
-    const defined = values.filter((value): value is number => value !== undefined);
-    return defined.length > 0 ? Math.max(...defined) : undefined;
+    return maxNumber(values);
 }
 
 type CommandTimingSample = Readonly<{
@@ -1939,14 +1945,19 @@ function slowestAgentRows(
         if (!sample.agentId) {
             continue;
         }
-        byAgent.set(sample.agentId, [...(byAgent.get(sample.agentId) ?? []), sample.durationMs]);
+        const durations = byAgent.get(sample.agentId);
+        if (durations) {
+            durations.push(sample.durationMs);
+        } else {
+            byAgent.set(sample.agentId, [sample.durationMs]);
+        }
     }
     return [...byAgent.entries()]
         .map(([agentId, durations]) => ({
             agentId,
             commandCount: durations.length,
             averageMs: average(durations),
-            maxMs: Math.max(...durations),
+            maxMs: maxNumber(durations),
         }))
         .sort((left, right) =>
             (right.maxMs ?? 0) - (left.maxMs ?? 0) ||
@@ -2000,6 +2011,36 @@ function average(values: readonly number[]): number | undefined {
         return undefined;
     }
     return roundMetric(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function numberExtrema(
+    values: readonly number[],
+): Readonly<{ min: number; max: number }> | undefined {
+    if (values.length === 0) {
+        return undefined;
+    }
+    let min = values[0];
+    let max = values[0];
+    for (let index = 1; index < values.length; index += 1) {
+        const value = values[index];
+        if (value < min) {
+            min = value;
+        }
+        if (value > max) {
+            max = value;
+        }
+    }
+    return { min, max };
+}
+
+function maxNumber(values: readonly (number | undefined)[]): number | undefined {
+    let max: number | undefined;
+    for (const value of values) {
+        if (value !== undefined && (max === undefined || value > max)) {
+            max = value;
+        }
+    }
+    return max;
 }
 
 function roundMetric(value: number): number {

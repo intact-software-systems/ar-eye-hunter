@@ -4,16 +4,130 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
     analyzeDistributedRunArtifactFiles,
+    deriveDistributedRunSnapshotPerformance,
     distributedArtifactBundleFromFiles,
     distributedArtifactSnapshotsFromFiles,
     type DistributedRunArtifactFiles,
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type {
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+} from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     analyzeDistributedRunArtifactDirectory,
 } from '../../../apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts';
 import { deriveDistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 
 describe('Hetzner distributed run artifact analysis', () => {
+    it('keeps 200,000 timing and receiver-delivery values within exact extrema', () => {
+        const sampleCount = 200_000;
+        const results = Array.from({ length: sampleCount }, (_, index) => ({
+            kind: 'result' as const,
+            protocolVersion: 1 as const,
+            runId: 'run-large-performance',
+            agentId: 'agent-large',
+            commandId: `command-${index}`,
+            ok: true,
+            result: {
+                commandId: `command-${index}`,
+                kind: 'stats' as const,
+                status: 'ok' as const,
+                ok: true,
+                startedAtEpochMs: 0,
+                endedAtEpochMs: index + 1,
+                durationMs: index + 1,
+                value: {
+                    counters: { messages: index },
+                    metadata: {
+                        receiverDelivery: {
+                            expectedInboundMessages: index + 1,
+                            minExpectedInboundMessages: 0,
+                            minReceiveRatio: 0,
+                        },
+                    },
+                },
+            },
+        }));
+        const performance = deriveDistributedRunSnapshotPerformance({
+            distributedRun: {
+                distributedRunId: 'dist-large-performance',
+                controlRunId: 'run-large-performance',
+                manifest: {
+                    distributedRunId: 'dist-large-performance',
+                    controlRunId: 'run-large-performance',
+                    group: { groupId: 'bb-group' },
+                    recipes: [],
+                    targetPolicy: { mode: 'agent-ids', agentIds: ['agent-large'] },
+                },
+                state: 'passed',
+                createdAtEpochMs: 0,
+                updatedAtEpochMs: 1,
+                targetAgentIds: ['agent-large'],
+                commandLinks: [],
+                rollup: {
+                    state: 'passed',
+                    ok: true,
+                    summary: {
+                        participants: 1,
+                        requiredParticipants: 1,
+                        readyParticipants: 1,
+                        passedParticipants: 1,
+                        failedParticipants: 0,
+                        recipes: 0,
+                        requiredRecipes: 0,
+                        passedRecipes: 0,
+                        failedRecipes: 0,
+                        blockingFailures: 0,
+                    },
+                    failures: [],
+                },
+            } satisfies ControlDistributedRunSnapshot,
+            controlRun: {
+                runId: 'run-large-performance',
+                createdAtEpochMs: 0,
+                updatedAtEpochMs: 1,
+                agents: [],
+                commands: [],
+                results,
+                events: [],
+                stats: [],
+                reports: [],
+                heartbeats: [],
+            } satisfies ControlRunSnapshot,
+            artifactResults: [],
+            artifactEvents: [],
+        });
+
+        expect(performance.commandTiming).toMatchObject({
+            count: sampleCount,
+            minMs: 1,
+            p50Ms: 100_000,
+            p95Ms: 190_000,
+            p99Ms: 198_000,
+            maxMs: sampleCount,
+            averageMs: 100_000.5,
+        });
+        expect(performance.slowestAgents).toEqual([{
+            agentId: 'agent-large',
+            commandCount: sampleCount,
+            averageMs: 100_000.5,
+            maxMs: sampleCount,
+        }]);
+        expect(performance.receiverDelivery).toMatchObject({
+            sampleCount,
+            expectedInboundMessages: 1,
+            minExpectedInboundMessages: 0,
+            minReceiveRatio: 0,
+            minReceivedMessages: 0,
+            medianReceivedMessages: 99_999,
+            p95ReceivedMessages: 189_999,
+            maxReceivedMessages: sampleCount - 1,
+            minDeliveryRatio: 0,
+            medianDeliveryRatio: 1,
+            p95DeliveryRatio: 1,
+        });
+    }, 60_000);
+
     it('includes target-resolution evidence in analysis summaries', () => {
         const files: DistributedRunArtifactFiles = {
             'distributed-run.json': JSON.stringify({

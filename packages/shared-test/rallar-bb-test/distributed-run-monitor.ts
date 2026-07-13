@@ -909,8 +909,7 @@ export function distributedRecipeCommandPreview(
     const effectiveFrameCount = firstPositiveInteger(
         asRecord(asRecord(recipe.metadata).realtime).frameCount,
         asRecord(recipe.metadata).frameCount,
-        ...recipe.commands.map(effectiveFrameCountForCommand),
-    );
+    ) ?? firstPositiveIntegerFrom(recipe.commands, effectiveFrameCountForCommand);
     const labelParts = [
         `${manifestCommandCount} manifest command${manifestCommandCount === 1 ? '' : 's'}`,
     ];
@@ -963,9 +962,11 @@ export function distributedRecipePreflight(
         effectiveFrameCount: firstPositiveInteger(
             asRecord(asRecord(recipe.metadata).realtime).frameCount,
             asRecord(recipe.metadata).frameCount,
-            ...analyses.map(analysis => analysis.effectiveFrameCount),
+        ) ?? firstPositiveIntegerFrom(analyses, analysis => analysis.effectiveFrameCount),
+        maxDepth: analyses.reduce(
+            (maxDepth, analysis) => Math.max(maxDepth, analysis.maxDepth),
+            0,
         ),
-        maxDepth: Math.max(0, ...analyses.map(analysis => analysis.maxDepth)),
         commandKinds,
         providerModes: uniqueValues(capabilities.flatMap(capability => capability.supportedProviderModes)),
         runtimeSurfaces: uniqueValues(capabilities.flatMap(capability => capability.runtimeSurfaces)),
@@ -1250,11 +1251,12 @@ function analyzeDistributedRecipeCommand(
 
     return {
         effectiveCommandCount,
-        effectiveFrameCount: firstPositiveInteger(
-            effectiveFrameCountForCommand(command),
-            ...childAnalyses.map(analysis => analysis.effectiveFrameCount),
+        effectiveFrameCount: effectiveFrameCountForCommand(command) ??
+            firstPositiveIntegerFrom(childAnalyses, analysis => analysis.effectiveFrameCount),
+        maxDepth: childAnalyses.reduce(
+            (maxDepth, analysis) => Math.max(maxDepth, analysis.maxDepth),
+            depth + 1,
         ),
-        maxDepth: Math.max(depth + 1, ...childAnalyses.map(analysis => analysis.maxDepth)),
         commandKinds,
         liveServiceRequirements,
         loops: [
@@ -1627,8 +1629,7 @@ function effectiveFrameCountForCommand(command: RallarBlackBoxTestCommand): numb
     }
 
     if (command.kind === 'loop') {
-        const childFrameCount = firstPositiveInteger(...command.commands.map(effectiveFrameCountForCommand));
-        return childFrameCount;
+        return firstPositiveIntegerFrom(command.commands, effectiveFrameCountForCommand);
     }
 
     return undefined;
@@ -1662,6 +1663,19 @@ function firstPositiveInteger(...values: readonly unknown[]): number | undefined
     return values.find((value): value is number =>
         typeof value === 'number' && Number.isInteger(value) && value > 0
     );
+}
+
+function firstPositiveIntegerFrom<T>(
+    values: Iterable<T>,
+    select: (value: T) => unknown,
+): number | undefined {
+    for (const value of values) {
+        const candidate = select(value);
+        if (typeof candidate === 'number' && Number.isInteger(candidate) && candidate > 0) {
+            return candidate;
+        }
+    }
+    return undefined;
 }
 
 function uniqueValues<T extends string>(values: readonly T[]): readonly T[] {
@@ -4443,8 +4457,13 @@ function percentile(sortedValues: readonly number[], quantile: number): number |
 }
 
 function maxNumber(values: readonly (number | undefined)[]): number | undefined {
-    const finite = values.filter(isFiniteNumber);
-    return finite.length > 0 ? Math.max(...finite) : undefined;
+    let max: number | undefined;
+    for (const value of values) {
+        if (isFiniteNumber(value) && (max === undefined || value > max)) {
+            max = value;
+        }
+    }
+    return max;
 }
 
 function durationBetween(start: number | undefined, end: number | undefined): number | undefined {

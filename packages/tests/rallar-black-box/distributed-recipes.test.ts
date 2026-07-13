@@ -380,6 +380,29 @@ const distributedArtifactBundle: ControlDistributedRunArtifactBundle = {
 };
 
 describe('distributed recipes helpers', () => {
+    it('preflights 200,000 commands while preserving first frame-count priority', () => {
+        const commandCount = 200_000;
+        const largeRecipe: RallarBlackBoxTestRecipe = {
+            recipeId: 'large-preflight',
+            commands: Array.from({ length: commandCount }, (_, index) => index === 0
+                ? { kind: 'rtc.stream' as const, count: 7, send: {} }
+                : { kind: 'health' as const }),
+        };
+
+        const preflight = distributedRecipePreflight(largeRecipe);
+
+        expect(preflight).toMatchObject({
+            recipeId: 'large-preflight',
+            manifestCommandCount: commandCount,
+            effectiveCommandCount: commandCount,
+            effectiveFrameCount: 7,
+            maxDepth: 1,
+            commandKinds: ['health', 'rtc.stream'],
+            errors: [],
+        });
+        expect(preflight.tree).toHaveLength(commandCount);
+    }, 60_000);
+
     it('builds the configurable RTC realtime recipe with a compact looped 20 Hz command cadence', () => {
         const recipe = createRallarBlackBoxRtcRealtimeRecipe({
             durationSeconds: 2,
