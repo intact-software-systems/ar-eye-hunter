@@ -1,4 +1,5 @@
 import type { DistributedArtifactEvidenceEntry } from '@shared-test/rallar-bb-test/mod.ts';
+import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
 import styles from './AnalyzeInspector.module.css';
 
@@ -9,11 +10,15 @@ export function AnalyzeInspector({
     entry: DistributedArtifactEvidenceEntry;
     model: AnalyzeArtifactProjection;
 }>) {
+    const exactSelectors: readonly (readonly [string, readonly string[]])[] = [
+        ['Agent', entry.agentIds?.length
+            ? entry.agentIds
+            : entry.agentId ? [entry.agentId] : []],
+        ['Recipe', entry.recipeId ? [entry.recipeId] : []],
+        ['Command', entry.commandId ? [entry.commandId] : []],
+    ];
     const selectors: readonly (readonly [string, string | undefined])[] = [
         ['Source file', entry.sourceFile],
-        ['Agent', entry.agentIds?.join(', ') ?? entry.agentId],
-        ['Recipe', entry.recipeId],
-        ['Command', entry.commandId],
         ['Topic', entry.topic],
         ['Diagnostic type', entry.diagnosticType],
         ['Severity', entry.severity],
@@ -33,9 +38,20 @@ export function AnalyzeInspector({
             <header>
                 <p>{entry.kind} evidence</p>
                 <h2>{entry.summary}</h2>
-                <code>{entry.id}</code>
+                <ExactIdentifier value={entry.id} />
             </header>
             <dl>
+                {exactSelectors.filter(([, values]) => values.length > 0)
+                    .map(([label, values]) => (
+                        <div key={label}>
+                            <dt>{label}</dt>
+                            <dd className={styles.exactIdentifiers}>
+                                {values.map(value => (
+                                    <ExactIdentifier key={value} value={value} />
+                                ))}
+                            </dd>
+                        </div>
+                    ))}
                 {selectors.filter((row): row is readonly [string, string] =>
                     row[1] !== undefined && row[1].length > 0
                 ).map(([label, value]) => (

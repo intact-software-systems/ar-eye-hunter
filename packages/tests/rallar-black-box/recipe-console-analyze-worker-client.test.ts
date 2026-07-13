@@ -168,7 +168,9 @@ describe('Recipe Console Analyze worker client boundaries', () => {
                 onWindowComplete: response => windows.push(response.requestId),
                 onSelectionComplete: response => selections.push(response.requestId),
                 onTuneComplete: response => tunes.push(response.requestId),
-                onFailure: error => failures.push(error.stage),
+                onFailure: (error, _operationGeneration, request) => failures.push(
+                    `${error.stage}:${request?.kind}:${request?.requestId}`,
+                ),
             },
         });
         accept(client, worker, frames, 5);
@@ -201,10 +203,16 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         });
         worker.emitMessage(searchResponse(currentSearch!, 5, 3));
 
+        const failedCurrent = client.search({ query: 'current-error' });
+        worker.emitMessage({
+            type: 'failed', requestId: failedCurrent,
+            error: { code: 'invalid-request', stage: 'search', recoverable: true },
+        });
+
         expect(windows).toEqual([secondWindow]);
         expect(selections).toEqual([secondSelection]);
         expect(tunes).toEqual([secondTune]);
-        expect(failures).toEqual([]);
+        expect(failures).toEqual([`search:search:${failedCurrent}`]);
         client.dispose();
     });
 
@@ -330,7 +338,9 @@ describe('Recipe Console Analyze worker client boundaries', () => {
             setTimeout: timers.set,
             clearTimeout: timers.clear,
             callbacks: {
-                onUnavailable: (reason, scope) => unavailable.push(`${scope}:${reason}`),
+                onUnavailable: (reason, scope, request) => unavailable.push(
+                    `${scope}:${reason}:${request?.kind ?? 'none'}:${request?.requestId ?? 'none'}`,
+                ),
                 onSearchComplete: response => searches.push(response.requestId),
             },
         });
@@ -350,8 +360,8 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         expect(acceptedWorker.terminate).not.toHaveBeenCalled();
         expect(client.currentExport()).toBe(retained);
         expect(unavailable).toEqual([
-            'accepted-request:timeout',
-            'candidate:timeout',
+            `accepted-request:timeout:search:${request}`,
+            'candidate:timeout:none:none',
         ]);
         client.dispose();
     });

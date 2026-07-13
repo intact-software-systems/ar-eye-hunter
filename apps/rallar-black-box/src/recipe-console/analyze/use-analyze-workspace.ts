@@ -10,6 +10,8 @@ import { createAnalyzeWorkspaceContext } from './analyze-workspace-state.ts';
 import { useAnalyzeOperations } from './use-analyze-operations.ts';
 import { useAnalyzeWorkspaceController } from
     './use-analyze-workspace-controller.ts';
+import { analyzeEvidenceQueryFingerprint } from
+    './analyze-evidence-query-fingerprint.ts';
 
 export function useAnalyzeWorkspace(input: Readonly<{
     connection: RecipeConsoleControlConnection;
@@ -59,11 +61,15 @@ export function useAnalyzeWorkspace(input: Readonly<{
         input.urlState.to,
         input.urlState.transport,
     ]);
+    const queryFingerprint = useMemo(() => analyzeEvidenceQueryFingerprint(
+        operations.state.operationGeneration,
+        query,
+    ), [operations.state.operationGeneration, query]);
 
     useEffect(() => {
         if (!operations.state.artifact) return;
-        operations.search(query);
-    }, [operations.search, operations.state.artifact, query]);
+        operations.search(query, queryFingerprint);
+    }, [operations.search, operations.state.artifact, query, queryFingerprint]);
 
     useEffect(() => {
         if (input.urlState.view !== 'tune' || !operations.state.artifact) return;
@@ -90,6 +96,10 @@ export function useAnalyzeWorkspace(input: Readonly<{
         requestedDistributedRunId,
         state: operations.state,
         evidenceWindow: operations.evidenceWindow,
+        evidenceWindowFingerprint: operations.evidenceWindowFingerprint,
+        evidenceWindowPending: operations.evidenceWindowPending,
+        evidenceWindowError: operations.evidenceWindowError,
+        queryFingerprint,
         selectedEvidence: operations.selectedEvidence,
         tuneFacade: operations.tuneFacade,
         telemetry: operations.telemetry,
@@ -98,7 +108,12 @@ export function useAnalyzeWorkspace(input: Readonly<{
         importFiles: operations.importFiles,
         loadControlArtifact: operations.loadControlArtifact,
         exportArtifact: operations.exportArtifact,
-        requestWindow: cursor => operations.requestWindow(query, cursor),
+        requestWindow: cursor => operations.requestWindow(
+            query,
+            cursor,
+            queryFingerprint,
+        ),
+        retryEvidenceSearch: () => operations.search(query, queryFingerprint),
         selectEvidence: operations.selectEvidence,
         clearArtifact: operations.clearArtifact,
     });

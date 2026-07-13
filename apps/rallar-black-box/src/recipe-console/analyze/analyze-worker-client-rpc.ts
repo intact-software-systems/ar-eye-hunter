@@ -12,6 +12,7 @@ import { recordAnalyzeWorkerClientTelemetry } from
 import type {
     AnalyzeWorkerClientCallbacks,
     AnalyzeWorkerClientOptions,
+    AnalyzeWorkerRequestAuthority,
     AnalyzeWorkerTimerHandle,
 } from './analyze-worker-client-contract.ts';
 
@@ -20,9 +21,7 @@ type RpcResponse = Extract<
     { type: 'search-complete' | 'window-complete' | 'selection-complete' | 'tune-complete' }
 >;
 type FailedResponse = Extract<AnalyzeWorkerResponse, { type: 'failed' }>;
-type PendingRequest = Readonly<{
-    requestId: number;
-    kind: 'search' | 'window' | 'selection' | 'tune';
+type PendingRequest = AnalyzeWorkerRequestAuthority & Readonly<{
     watchdog: AnalyzeWorkerTimerHandle;
 }>;
 
@@ -148,9 +147,14 @@ export function createAnalyzeWorkerRpcClient(input: Readonly<{
         const id = 'requestId' in message ? message.requestId : -1;
         if (!owner || input.isDisposed() || id < 0) return undefined;
         cancelPendingKind(kind);
+        const authority: AnalyzeWorkerRequestAuthority = { requestId: id, kind };
         const watchdog = input.setTimer(() => {
             if (!pendingRequests.delete(id)) return;
-            input.callbacks.onUnavailable?.('timeout', 'accepted-request');
+            input.callbacks.onUnavailable?.(
+                'timeout',
+                'accepted-request',
+                authority,
+            );
         }, input.watchdogMs);
         pendingRequests.set(id, { requestId: id, kind, watchdog });
         try {
@@ -186,8 +190,13 @@ export function createAnalyzeWorkerRpcClient(input: Readonly<{
     }
 
     function finishFailure(response: FailedResponse): void {
-        if (!finishRequest(response.requestId)) return;
-        input.callbacks.onFailure?.(response.error, response.operationGeneration);
+        const pending = finishRequest(response.requestId);
+        if (!pending) return;
+        input.callbacks.onFailure?.(
+            response.error,
+            response.operationGeneration,
+            { requestId: pending.requestId, kind: pending.kind },
+        );
     }
 
     function finishRequest(id: number | undefined): PendingRequest | undefined {

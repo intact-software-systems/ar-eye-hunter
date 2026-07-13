@@ -338,6 +338,142 @@ describe('Recipe Console rendered Analyze worker lifetime', () => {
         expect(JSON.stringify(navigateEvents)).not.toContain(displayHandle);
     });
 
+    it('binds cursor pending authority, recovers from failure, and suppresses stale window replies',
+        async () => {
+            const props = harnessProps({
+                connection: createConnection(createExecution()),
+                navigate: vi.fn(),
+                urlState: urlState('analyze', 'dist-a'),
+                capture: value => {
+                    controller = value;
+                },
+            });
+            await render(props);
+            const { completion } = await beginControlLoad(1);
+            const worker = ControllableWorker.instances[0]!;
+            const generation = worker.request('offer').operationGeneration;
+            await acceptAndStart(worker, generation);
+            await emit(worker, completeResponse(generation, 401, 'dist-a'));
+            await expect(completion).resolves.toBe(true);
+
+            const search = worker.request('search');
+            expect(controller?.evidenceWindowPending).toBe(true);
+            await emit(worker, searchResponse(search, {
+                ...emptyWindow(),
+                entries: [evidenceEntry('query-a-row')],
+                rangeStart: 1,
+                rangeEnd: 1,
+                nextCursor: 'query-a-next',
+                counts: {
+                    ...emptyWindow().counts,
+                    totalEntries: 2,
+                    indexedEntries: 2,
+                    retainedMatches: 2,
+                    renderedMatches: 1,
+                    renderOmittedMatches: 1,
+                },
+            }));
+            expect(controller?.evidenceWindowPending).toBe(false);
+            expect(controller?.evidenceWindow?.entries[0]?.id).toBe('query-a-row');
+
+            let failedRequestId: number | undefined;
+            let blockedRepeatId: number | undefined;
+            await act(async () => {
+                failedRequestId = controller?.requestWindow('query-a-next');
+                blockedRepeatId = controller?.requestWindow('query-a-next');
+            });
+            expect(failedRequestId).toBeDefined();
+            expect(blockedRepeatId).toBeUndefined();
+            expect(controller?.evidenceWindowPending).toBe(true);
+            await emit(worker, {
+                type: 'failed',
+                requestId: failedRequestId,
+                error: { code: 'invalid-request', stage: 'window', recoverable: true },
+            });
+            expect(controller?.evidenceWindowPending).toBe(false);
+            expect(controller?.evidenceWindowError)
+                .toBe('The evidence window request failed. Try again.');
+            expect(controller?.evidenceWindow?.entries[0]?.id).toBe('query-a-row');
+
+            let retryRequestId: number | undefined;
+            await act(async () => {
+                retryRequestId = controller?.retryEvidenceSearch();
+            });
+            const retrySearch = worker.request('search');
+            expect(retryRequestId).toBeDefined();
+            expect(retrySearch.requestId).toBe(retryRequestId);
+            expect(retrySearch.requestId).not.toBe(search.requestId);
+            expect(retrySearch.query).toEqual(search.query);
+            expect(controller?.evidenceWindowPending).toBe(true);
+            expect(controller?.evidenceWindowError).toBeUndefined();
+            expect(controller?.evidenceWindow?.entries[0]?.id).toBe('query-a-row');
+            await emit(worker, searchResponse(retrySearch, {
+                ...emptyWindow(),
+                entries: [evidenceEntry('query-a-row')],
+                rangeStart: 1,
+                rangeEnd: 1,
+                nextCursor: 'query-a-next',
+                counts: {
+                    ...emptyWindow().counts,
+                    totalEntries: 2,
+                    indexedEntries: 2,
+                    retainedMatches: 2,
+                    renderedMatches: 1,
+                    renderOmittedMatches: 1,
+                },
+            }));
+            expect(controller?.evidenceWindowPending).toBe(false);
+
+            let staleWindowId: number | undefined;
+            await act(async () => {
+                staleWindowId = controller?.requestWindow('query-a-next');
+            });
+            const staleWindow = worker.request('window');
+            expect(staleWindow.requestId).toBe(staleWindowId);
+            await render({
+                ...props,
+                urlState: { ...props.urlState, historyQuery: 'query-b' },
+            });
+            const currentSearch = worker.request('search');
+            expect(currentSearch.query.query).toBe('query-b');
+            expect(controller?.evidenceWindowPending).toBe(true);
+
+            await emit(worker, {
+                type: 'failed',
+                requestId: staleWindow.requestId,
+                error: { code: 'invalid-request', stage: 'window', recoverable: true },
+            });
+            expect(controller?.evidenceWindowPending).toBe(true);
+            expect(controller?.evidenceWindowError).toBeUndefined();
+            await emit(worker, windowResponse(staleWindow, {
+                ...emptyWindow(),
+                entries: [evidenceEntry('stale-window-row')],
+                rangeStart: 2,
+                rangeEnd: 2,
+            }));
+            expect(controller?.evidenceWindowPending).toBe(true);
+            expect(controller?.evidenceWindow?.entries[0]?.id).toBe('query-a-row');
+
+            await emit(worker, searchResponse(currentSearch, {
+                ...emptyWindow(),
+                entries: [evidenceEntry('query-b-row')],
+                rangeStart: 1,
+                rangeEnd: 1,
+                counts: {
+                    ...emptyWindow().counts,
+                    totalEntries: 1,
+                    indexedEntries: 1,
+                    retainedMatches: 1,
+                    renderedMatches: 1,
+                },
+            }));
+            expect(controller?.evidenceWindowPending).toBe(false);
+            expect(controller?.evidenceWindowError).toBeUndefined();
+            expect(controller?.evidenceWindow?.entries[0]?.id).toBe('query-b-row');
+            expect(controller?.evidenceWindowFingerprint)
+                .toBe(controller?.queryFingerprint);
+        });
+
     async function render(props: HarnessProps): Promise<void> {
         await act(async () => root.render(createElement(AnalyzeHookHarness, props)));
     }
@@ -673,6 +809,33 @@ function searchResponse(
         requestId: request.requestId,
         window,
         telemetry: telemetry(),
+    };
+}
+
+function windowResponse(
+    request: Extract<AnalyzeWorkerRequest, { type: 'window' }>,
+    window: ReturnType<typeof emptyWindow> & Readonly<{
+        entries?: readonly ReturnType<typeof evidenceEntry>[];
+    }>,
+): Extract<AnalyzeWorkerResponse, { type: 'window-complete' }> {
+    return {
+        type: 'window-complete',
+        modelGeneration: request.modelGeneration,
+        queryGeneration: request.queryGeneration,
+        windowGeneration: request.windowGeneration,
+        requestId: request.requestId,
+        window,
+        telemetry: telemetry(),
+    };
+}
+
+function evidenceEntry(id: string) {
+    return {
+        id,
+        kind: 'event' as const,
+        sourceFile: 'events.jsonl',
+        summary: id,
+        payloadSummary: '{}',
     };
 }
 

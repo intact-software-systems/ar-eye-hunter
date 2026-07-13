@@ -25,7 +25,7 @@ export function AnalyzeWorkspace({
 }: Readonly<{
     controller: AnalyzeWorkspaceController;
     urlState: RecipeConsoleUrlState;
-    onInspect(trigger: HTMLButtonElement): void;
+    onInspect(trigger: HTMLElement): void;
     onInspectorChange(content: ReactNode | undefined): void;
     onSelectionLabelChange(label: string | undefined): void;
 }>) {
@@ -68,7 +68,7 @@ export function AnalyzeWorkspace({
             data-analyze-index-count={controller.telemetry?.retainedEntryCount}
             data-analyze-index-omitted-count={controller.telemetry?.indexOmittedEntryCount}
             data-analyze-match-count={controller.telemetry?.matchedEntryCount}
-            data-analyze-mounted-count={controller.evidenceWindow?.entries.length ?? 0}
+            data-analyze-mounted-count={controller.searchResult?.entries.length ?? 0}
             data-analyze-operation-generation={controller.operationGeneration}
             data-analyze-pending-painted={
                 controller.status === 'pending' &&

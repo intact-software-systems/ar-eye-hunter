@@ -32,6 +32,11 @@ export type AnalyzeTuneResponse = Extract<
 
 export type AnalyzeWorkerTimerHandle = number | ReturnType<typeof setTimeout>;
 
+export type AnalyzeWorkerRequestAuthority = Readonly<{
+    requestId: number;
+    kind: 'search' | 'window' | 'selection' | 'tune';
+}>;
+
 export type AnalyzeWorkerClientCallbacks = Readonly<{
     onAccepted?(operationGeneration: number): void;
     onPendingPaint?(operationGeneration: number): void;
@@ -40,10 +45,15 @@ export type AnalyzeWorkerClientCallbacks = Readonly<{
     onWindowComplete?(response: AnalyzeWindowResponse): void;
     onSelectionComplete?(response: AnalyzeSelectionResponse): void;
     onTuneComplete?(response: AnalyzeTuneResponse): void;
-    onFailure?(error: AnalyzeWorkerErrorProjection, operationGeneration?: number): void;
+    onFailure?(
+        error: AnalyzeWorkerErrorProjection,
+        operationGeneration?: number,
+        request?: AnalyzeWorkerRequestAuthority,
+    ): void;
     onUnavailable?(
         reason: 'error' | 'messageerror' | 'timeout',
         scope: 'candidate' | 'accepted-request' | 'accepted-worker',
+        request?: AnalyzeWorkerRequestAuthority,
     ): void;
 }>;
 

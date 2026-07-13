@@ -8,6 +8,8 @@ import { AnalyzeEvidenceSearch } from
     '../../../apps/rallar-black-box/src/recipe-console/analyze/AnalyzeEvidenceSearch.tsx';
 import type { AnalyzeWorkspaceController } from
     '../../../apps/rallar-black-box/src/recipe-console/analyze/use-analyze-workspace.ts';
+import { createAnalyzeWorkerWorkspaceCallbacks } from
+    '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-workspace-callbacks.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -83,7 +85,7 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
             analyzeIndexCount: '15003',
             analyzeIndexOmittedCount: '0',
             analyzeMatchCount: '321',
-            analyzeMountedCount: '64',
+            analyzeMountedCount: '0',
             analyzeOperationGeneration: '7',
             analyzePendingPainted: 'true',
         });
@@ -95,6 +97,31 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
         const clearFilters = vi.fn();
         const controller = {
             model: {},
+            queryFingerprint: 'artifact-1:query-a',
+            evidenceWindowFingerprint: 'artifact-1:query-a',
+            evidenceWindowPending: false,
+            evidenceWindow: {
+                entries: [{
+                    id: 'evidence-1',
+                    kind: 'failure',
+                    sourceFile: 'failures.json',
+                    summary: 'Prior failure evidence',
+                    payloadSummary: '{}',
+                }],
+                rangeStart: 1,
+                rangeEnd: 1,
+                counts: {
+                    totalEntries: 1,
+                    indexedEntries: 1,
+                    indexOmittedEntries: 0,
+                    retainedMatches: 1,
+                    queryExcludedEntries: 0,
+                    renderedMatches: 1,
+                    renderOmittedMatches: 0,
+                },
+                totalMatchesIsComplete: true,
+                windowSize: 64,
+            },
             searchResult: {
                 entries: [{
                     id: 'evidence-1',
@@ -163,4 +190,85 @@ describe('Recipe Console Analyze worker UI telemetry', () => {
             commandId: undefined,
         });
     });
+
+    it('does not mount fingerprintless initial rows for a URL-filtered import',
+        async () => {
+            const controller = {
+                model: {},
+                queryFingerprint: 'artifact-1:filtered-query',
+                evidenceWindowFingerprint: undefined,
+                evidenceWindowPending: true,
+                evidenceWindow: {
+                    entries: [{
+                        id: 'unfiltered-initial-row',
+                        kind: 'event',
+                        sourceFile: 'events.jsonl',
+                        summary: 'Must not flash for filtered URL',
+                        payloadSummary: '{}',
+                    }],
+                    rangeStart: 1,
+                    rangeEnd: 1,
+                    counts: {
+                        totalEntries: 1,
+                        indexedEntries: 1,
+                        indexOmittedEntries: 0,
+                        retainedMatches: 1,
+                        queryExcludedEntries: 0,
+                        renderedMatches: 1,
+                        renderOmittedMatches: 0,
+                    },
+                    totalMatchesIsComplete: true,
+                    windowSize: 64,
+                },
+                searchResult: undefined,
+                selectedEvidence: undefined,
+                updateFilters: vi.fn(),
+                clearFilters: vi.fn(),
+                selectEvidence: vi.fn(),
+                requestWindow: vi.fn(),
+                retryEvidenceSearch: vi.fn(),
+            } as unknown as AnalyzeWorkspaceController;
+
+            await act(async () => root.render(createElement(AnalyzeEvidenceSearch, {
+                controller,
+                urlState: {
+                    v: 1,
+                    experience: 'recipe-console',
+                    view: 'analyze',
+                    historyQuery: 'needle',
+                },
+            })));
+
+            expect(container.querySelectorAll('[data-evidence-result]')).toHaveLength(0);
+            expect(container.querySelector('[role="status"]')?.textContent)
+                .toBe('Current query range is pending. Updating…');
+            expect(container.querySelector('[data-analyze-matching-truth]')?.textContent)
+                .toContain('Pending current query');
+        });
+
+    it('scopes request timeout failure without declaring the accepted worker unavailable',
+        () => {
+            const fail = vi.fn();
+            const setWorkerUnavailable = vi.fn();
+            const callbacks = createAnalyzeWorkerWorkspaceCallbacks({
+                pendingRef: { current: undefined },
+                validationErrorRef: { current: undefined },
+                pendingIdentityPatchRef: { current: undefined },
+                setState: vi.fn(),
+                evidence: { fail } as never,
+                setSelectedEvidence: vi.fn(),
+                setTuneFacade: vi.fn(),
+                setTelemetry: vi.fn(),
+                setWorkerUnavailable,
+                setPendingPaintGeneration: vi.fn(),
+            });
+
+            callbacks.onUnavailable?.('timeout', 'accepted-request', {
+                kind: 'search',
+                requestId: 47,
+            });
+
+            expect(fail).toHaveBeenCalledWith('search', 47);
+            expect(setWorkerUnavailable).not.toHaveBeenCalled();
+        });
 });

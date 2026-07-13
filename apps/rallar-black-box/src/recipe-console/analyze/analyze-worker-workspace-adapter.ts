@@ -1,27 +1,25 @@
-import {
-    useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction,
-} from 'react';
-import { flushSync } from 'react-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { DistributedArtifactEvidenceWindowQuery } from
+    '@shared-test/rallar-bb-test/mod.ts';
 import type { RecipeConsoleControlConnection } from
     '../control/ControlConnectionProvider.tsx';
 import { analyzeOperationOwnsCurrentBoundary } from
     './analyze-operation-boundary.ts';
 import { createAnalyzeInterruptedError } from './analyze-workspace-policy.ts';
 import {
-    clearAnalyzeWorkspaceArtifact, completeAnalyzeWorkspaceOperation,
-    failAnalyzeWorkspaceOperation, selectAnalyzeWorkspaceEvidence,
+    clearAnalyzeWorkspaceArtifact, selectAnalyzeWorkspaceEvidence,
     createInitialAnalyzeWorkspaceState, type AnalyzeWorkspaceOperationAuthority,
-    type AnalyzeWorkspaceState,
 } from './analyze-workspace-state.ts';
 import type {
     AnalyzeArtifactProjection, AnalyzeEvidenceWindowProjection,
-    AnalyzeTuneArtifactFacade, AnalyzeWorkerErrorProjection, AnalyzeWorkerTelemetry,
+    AnalyzeTuneArtifactFacade, AnalyzeWorkerTelemetry,
 } from './analyze-worker-contract.ts';
-import type { AnalyzeWorkerClient, AnalyzeWorkerClientCallbacks } from
-    './analyze-worker-client.ts';
-import { analyzeWorkerError } from './analyze-worker-error.ts';
-import { analyzeCompletionNavigationIdentity } from
-    './analyze-completion-navigation.ts';
+import type { AnalyzeWorkerClient } from './analyze-worker-client.ts';
+import { useAnalyzeEvidenceRequests } from './use-analyze-evidence-requests.ts';
+import {
+    createAnalyzeWorkerWorkspaceCallbacks,
+    type AnalyzePendingIdentityPatch,
+} from './analyze-worker-workspace-callbacks.ts';
 
 export type AnalyzePendingOperation = Readonly<{
     controller: AbortController;
@@ -44,7 +42,7 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
     const [state, setState] = useState(
         createInitialAnalyzeWorkspaceState<AnalyzeArtifactProjection>,
     );
-    const [evidenceWindow, setEvidenceWindow] = useState<AnalyzeEvidenceWindowProjection>();
+    const evidence = useAnalyzeEvidenceRequests();
     const [selectedEvidence, setSelectedEvidence] = useState<
         AnalyzeEvidenceWindowProjection['entries'][number]
     >();
@@ -56,7 +54,9 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
     const clientPromiseRef = useRef<Promise<AnalyzeWorkerClient> | undefined>(undefined);
     const lifetimeRef = useRef(0);
     const validationErrorRef = useRef<Error | undefined>(undefined);
-    const pendingIdentityPatchRef = useRef<PendingIdentityPatch | undefined>(undefined);
+    const pendingIdentityPatchRef = useRef<
+        AnalyzePendingIdentityPatch | undefined
+    >(undefined);
     const navigateIdentityRef = useRef(input.navigateIdentity);
     navigateIdentityRef.current = input.navigateIdentity;
     const ensureClient = useCallback(async (): Promise<AnalyzeWorkerClient> => {
@@ -96,12 +96,12 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
                     );
                     return false;
                 },
-                callbacks: createWorkerCallbacks({
+                callbacks: createAnalyzeWorkerWorkspaceCallbacks({
                     pendingRef: input.pendingRef,
                     validationErrorRef,
                     pendingIdentityPatchRef,
                     setState,
-                    setEvidenceWindow,
+                    evidence,
                     setSelectedEvidence,
                     setTuneFacade,
                     setTelemetry,
@@ -148,23 +148,43 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
         input.pendingRef.current = undefined;
         clientRef.current?.clear();
         pendingIdentityPatchRef.current = undefined;
-        setEvidenceWindow(undefined);
+        evidence.clear();
         setSelectedEvidence(undefined);
         setTuneFacade(undefined);
         setTelemetry(undefined);
         setWorkerUnavailable(undefined);
         setPendingPaintGeneration(undefined);
         setState(clearAnalyzeWorkspaceArtifact);
-    }, [input.pendingRef]);
+    }, [evidence.clear, input.pendingRef]);
     const selectEvidence = useCallback((id: string | undefined) => {
         setState(previous => selectAnalyzeWorkspaceEvidence(previous, id));
-        setSelectedEvidence(evidenceWindow?.entries.find(row => row.id === id));
+        setSelectedEvidence(evidence.window?.entries.find(row => row.id === id));
         clientRef.current?.select(id);
-    }, [evidenceWindow]);
+    }, [evidence.window]);
+    const searchEvidence = useCallback((
+        query: DistributedArtifactEvidenceWindowQuery,
+        fingerprint: string,
+    ) => evidence.begin({
+        fingerprint,
+        kind: 'search',
+        send: () => clientRef.current?.search(query),
+    }), [evidence.begin]);
+    const requestEvidenceWindow = useCallback((
+        query: DistributedArtifactEvidenceWindowQuery,
+        cursor: string,
+        fingerprint: string,
+    ) => evidence.begin({
+        fingerprint,
+        kind: 'window',
+        send: () => clientRef.current?.window({ query, cursor }),
+    }), [evidence.begin]);
     return {
         state,
         setState,
-        evidenceWindow,
+        evidenceWindow: evidence.window,
+        evidenceWindowFingerprint: evidence.windowFingerprint,
+        evidenceWindowPending: evidence.pending,
+        evidenceWindowError: evidence.error,
         selectedEvidence,
         tuneFacade,
         telemetry,
@@ -175,119 +195,8 @@ export function useAnalyzeWorkerWorkspaceAdapter(input: Readonly<{
         currentClient: () => clientRef.current,
         clearArtifact,
         selectEvidence,
+        searchEvidence,
+        requestEvidenceWindow,
         currentExport: () => clientRef.current?.currentExport(),
     } as const;
-}
-
-type WorkerCallbackInput = Readonly<{
-    pendingRef: AnalyzeMutableRef<AnalyzePendingOperation | undefined>;
-    validationErrorRef: AnalyzeMutableRef<Error | undefined>;
-    pendingIdentityPatchRef: AnalyzeMutableRef<PendingIdentityPatch | undefined>;
-    setState: StateSetter<AnalyzeWorkspaceState<AnalyzeArtifactProjection>>;
-    setEvidenceWindow: StateSetter<AnalyzeEvidenceWindowProjection | undefined>;
-    setSelectedEvidence: StateSetter<
-        AnalyzeEvidenceWindowProjection['entries'][number] | undefined
-    >;
-    setTuneFacade: StateSetter<AnalyzeTuneArtifactFacade | undefined>;
-    setTelemetry: StateSetter<AnalyzeWorkerTelemetry | undefined>;
-    setWorkerUnavailable: StateSetter<string | undefined>;
-    setPendingPaintGeneration: StateSetter<number | undefined>;
-}>;
-type StateSetter<Value> = Dispatch<SetStateAction<Value>>;
-type PendingIdentityPatch = Readonly<{
-    generation: number;
-    identity: AnalyzeArtifactProjection['identity'];
-}>;
-
-function createWorkerCallbacks(
-    input: WorkerCallbackInput,
-): AnalyzeWorkerClientCallbacks {
-    return {
-        onPendingPaint(generation: number) {
-            flushSync(() => input.setPendingPaintGeneration(generation));
-        },
-        onComplete(response) {
-            const pending = input.pendingRef.current;
-            if (pending?.authority.generation !== response.operationGeneration) return;
-            const navigationIdentity = analyzeCompletionNavigationIdentity({
-                action: pending.authority.action,
-                expectedDistributedRunId: pending.authority.expectedDistributedRunId,
-                expectedControlRunId: pending.authority.expectedControlRunId,
-                projection: response.projection.identity,
-            });
-            input.pendingIdentityPatchRef.current = navigationIdentity
-                ? { generation: response.operationGeneration, identity: navigationIdentity }
-                : undefined;
-            input.setEvidenceWindow(response.initialWindow);
-            input.setSelectedEvidence(response.selected);
-            input.setTuneFacade(undefined);
-            input.setTelemetry(response.telemetry);
-            input.setWorkerUnavailable(undefined);
-            input.setState(previous => completeAnalyzeWorkspaceOperation(
-                previous,
-                pending.authority,
-                {
-                    artifact: response.projection,
-                    selectedEvidenceId: response.selected?.id ??
-                        response.projection.firstActionableEvidenceId,
-                    controlIdentityValidated: response.controlIdentityValidated,
-                },
-            ));
-            input.pendingRef.current = undefined;
-            input.setPendingPaintGeneration(undefined);
-            pending.resolve(true);
-        },
-        onSearchComplete(response) {
-            input.setEvidenceWindow(response.window);
-            input.setTelemetry(response.telemetry);
-            input.setWorkerUnavailable(undefined);
-            input.setSelectedEvidence(previous => previous &&
-                response.window.entries.some(row => row.id === previous.id)
-                ? previous
-                : undefined);
-        },
-        onWindowComplete(response) {
-            input.setEvidenceWindow(response.window);
-            input.setTelemetry(response.telemetry);
-            input.setWorkerUnavailable(undefined);
-        },
-        onSelectionComplete(response) {
-            input.setSelectedEvidence(response.selected);
-        },
-        onTuneComplete(response) {
-            input.setTuneFacade(response.facade);
-            input.setWorkerUnavailable(undefined);
-        },
-        onFailure(error: AnalyzeWorkerErrorProjection, operationGeneration?: number) {
-            const pending = input.pendingRef.current;
-            if (!pending || pending.authority.generation !== operationGeneration) return;
-            const failure = input.validationErrorRef.current ?? analyzeWorkerError(error);
-            input.validationErrorRef.current = undefined;
-            input.setState(previous => failAnalyzeWorkspaceOperation(
-                previous,
-                pending.authority,
-                failure,
-            ));
-            input.pendingRef.current = undefined;
-            pending.resolve(false);
-        },
-        onUnavailable(reason, scope) {
-            const pending = input.pendingRef.current;
-            if (scope === 'candidate' && pending) {
-                input.setState(previous => failAnalyzeWorkspaceOperation(
-                    previous,
-                    pending.authority,
-                    new Error('The Analyze worker became unavailable before the candidate completed.'),
-                ));
-                input.pendingRef.current = undefined;
-                pending.resolve(false);
-                input.setPendingPaintGeneration(undefined);
-            }
-            if (scope !== 'candidate') {
-                input.setWorkerUnavailable(
-                    `Analyze worker unavailable (${reason}); the last bounded projection and export remain available.`,
-                );
-            }
-        },
-    };
 }

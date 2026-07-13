@@ -224,12 +224,19 @@ export function useAnalyzeOperations(input: Readonly<{
         });
     }, [perform]);
 
-    const search = useCallback((query: DistributedArtifactEvidenceWindowQuery) =>
-        workspaceRef.current.currentClient()?.search(query), []);
+    const search = useCallback((
+        query: DistributedArtifactEvidenceWindowQuery,
+        fingerprint: string,
+    ) => workspaceRef.current.searchEvidence(query, fingerprint), []);
     const requestWindow = useCallback((
         query: DistributedArtifactEvidenceWindowQuery,
         cursor: string,
-    ) => workspaceRef.current.currentClient()?.window({ query, cursor }), []);
+        fingerprint: string,
+    ) => workspaceRef.current.requestEvidenceWindow(
+        query,
+        cursor,
+        fingerprint,
+    ), []);
     const requestTune = useCallback((
         tune: Parameters<AnalyzeWorkerClient['tune']>[0],
     ) => workspaceRef.current.currentClient()?.tune(tune), []);

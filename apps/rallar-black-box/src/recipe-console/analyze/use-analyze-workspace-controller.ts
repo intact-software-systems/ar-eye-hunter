@@ -37,6 +37,10 @@ export function useAnalyzeWorkspaceController(input: Readonly<{
     requestedDistributedRunId?: string;
     state: AnalyzeWorkspaceState<AnalyzeArtifactProjection>;
     evidenceWindow?: AnalyzeEvidenceWindowProjection;
+    evidenceWindowFingerprint?: string;
+    evidenceWindowPending: boolean;
+    evidenceWindowError?: string;
+    queryFingerprint: string;
     selectedEvidence?: AnalyzeEvidenceWindowProjection['entries'][number];
     tuneFacade?: AnalyzeTuneArtifactFacade;
     telemetry?: AnalyzeWorkerTelemetry;
@@ -46,13 +50,17 @@ export function useAnalyzeWorkspaceController(input: Readonly<{
     loadControlArtifact(): Promise<boolean>;
     exportArtifact(): void;
     requestWindow(cursor: string): number | undefined;
+    retryEvidenceSearch(): number | undefined;
     selectEvidence(id: string | undefined): void;
     clearArtifact(): void;
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
     replace(patch: Partial<RecipeConsoleUrlState>): void;
 }>) {
     const model = input.state.artifact;
-    const searchResult = useMemo(() => input.evidenceWindow
+    const searchResult = useMemo(() => (
+        input.evidenceWindow &&
+        input.evidenceWindowFingerprint === input.queryFingerprint
+    )
         ? {
             entries: input.evidenceWindow.entries,
             totalMatches: input.evidenceWindow.counts.retainedMatches,
@@ -62,7 +70,11 @@ export function useAnalyzeWorkspaceController(input: Readonly<{
             totalMatchesIsComplete: input.evidenceWindow.totalMatchesIsComplete,
             limit: input.evidenceWindow.windowSize,
         }
-        : undefined, [input.evidenceWindow]);
+        : undefined, [
+        input.evidenceWindow,
+        input.evidenceWindowFingerprint,
+        input.queryFingerprint,
+    ]);
     const controlRunOptions = useMemo(
         () => deriveAnalyzeControlRunOptions(
             input.connection.query.snapshot?.runs ?? [],
@@ -86,6 +98,10 @@ export function useAnalyzeWorkspaceController(input: Readonly<{
         searchResult,
         selectedEvidence: input.selectedEvidence,
         evidenceWindow: input.evidenceWindow,
+        evidenceWindowFingerprint: input.evidenceWindowFingerprint,
+        evidenceWindowPending: input.evidenceWindowPending,
+        evidenceWindowError: input.evidenceWindowError,
+        queryFingerprint: input.queryFingerprint,
         tuneFacade: input.tuneFacade,
         telemetry: input.telemetry,
         operationGeneration: input.state.operationGeneration,
@@ -113,6 +129,7 @@ export function useAnalyzeWorkspaceController(input: Readonly<{
         clearArtifact: input.clearArtifact,
         selectEvidence: input.selectEvidence,
         requestWindow: input.requestWindow,
+        retryEvidenceSearch: input.retryEvidenceSearch,
         selectControlRun: (controlRunId: string) => input.navigate(
             controlRunId
                 ? recipeConsoleAnalyzeControlRunSelectionPatch({

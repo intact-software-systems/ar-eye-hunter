@@ -305,6 +305,33 @@ describe('ExplicitWindowControls', () => {
         expect(buttons[1]?.disabled).toBe(false);
     });
 
+    it('announces an explicit unknown empty state without inventing zero matches',
+        async () => {
+            const model = deriveExplicitWindowModel({
+                fingerprint: 'artifact:query-pending',
+                total: 0,
+                windowSize: 64,
+            }, createExplicitWindowState('artifact:query-pending'));
+            root = createRoot(container);
+            await act(async () => root?.render(createElement(
+                ExplicitWindowControls,
+                {
+                    contentId: 'artifact-evidence-results',
+                    emptyLabel: 'Current query range is pending.',
+                    label: 'Evidence results',
+                    model,
+                    onNext: vi.fn(),
+                    onPrevious: vi.fn(),
+                    pending: true,
+                },
+            )));
+
+            expect(container.querySelector('[role="status"]')?.textContent)
+                .toBe('Current query range is pending. Updating…');
+            expect(container.querySelector('[role="status"]')?.textContent)
+                .not.toContain('No items');
+        });
+
     it('uses logical coarse targets with compact and reduced-motion containment', () => {
         const css = readFileSync(resolve(
             repoRoot,

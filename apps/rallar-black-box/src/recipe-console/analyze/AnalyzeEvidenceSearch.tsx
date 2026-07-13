@@ -14,6 +14,7 @@ import {
     type AnalyzeSearchFormError,
 } from './analyze-search-form-boundary.ts';
 import { AnalyzeEvidenceFilterSelect } from './AnalyzeEvidenceFilterSelect.tsx';
+import { AnalyzeEvidenceResults } from './AnalyzeEvidenceResults.tsx';
 import styles from './AnalyzeSearch.module.css';
 
 export function AnalyzeEvidenceSearch({
@@ -23,7 +24,7 @@ export function AnalyzeEvidenceSearch({
 }: Readonly<{
     controller: AnalyzeWorkspaceController;
     urlState: RecipeConsoleUrlState;
-    onInspect?(trigger: HTMLButtonElement): void;
+    onInspect?(trigger: HTMLElement): void;
 }>) {
     const result = controller.searchResult;
     const [searchError, setSearchError] = useState<AnalyzeSearchFormError>();
@@ -56,6 +57,7 @@ export function AnalyzeEvidenceSearch({
     function activate(
         entry: DistributedArtifactEvidenceEntry,
         trigger: HTMLButtonElement,
+        rangeFallback: HTMLElement | null,
     ): void {
         controller.selectEvidence(entry.id);
         const agentId = entry.agentId ??
@@ -65,8 +67,15 @@ export function AnalyzeEvidenceSearch({
             recipeId: entry.recipeId,
             commandId: entry.commandId,
         });
+        const invalidatesCurrentQuery = Object.entries(patch).some(
+            ([key, value]) => urlState[key as keyof RecipeConsoleUrlState] !== value,
+        );
         if (Object.keys(patch).length > 0) controller.updateFilters(patch);
-        onInspect?.(trigger);
+        onInspect?.(
+            invalidatesCurrentQuery && rangeFallback
+                ? rangeFallback
+                : trigger,
+        );
     }
 
     return (
@@ -82,7 +91,15 @@ export function AnalyzeEvidenceSearch({
                     <h2 id="analyze-evidence-search-title">Find the signal behind the verdict</h2>
                     <p>Search normalized failures, results, events, and diagnostics.</p>
                 </div>
-                <span>{result?.totalMatches ?? 0} matches</span>
+                <span data-analyze-search-status>
+                    {result
+                        ? `${result.totalMatches} matches`
+                        : controller.evidenceWindowPending
+                            ? 'Search pending'
+                            : controller.evidenceWindowError
+                                ? 'Search unavailable'
+                                : 'Search not started'}
+                </span>
             </header>
 
             <form className={styles.searchForm} key={formKey} onSubmit={submitSearch}>
@@ -189,57 +206,7 @@ export function AnalyzeEvidenceSearch({
                 </label>
             </div>
 
-            {result && (!result.totalMatchesIsComplete ||
-                result.upstreamOmittedEntryCount > 0) ? (
-                <p className={styles.incomplete} data-analyze-index-incomplete role="note">
-                    The artifact index was bounded before search. At least
-                    {' '}{result.upstreamOmittedEntryCount} upstream entries are omitted;
-                    totals may be incomplete.
-                </p>
-            ) : null}
-
-            <div className={styles.resultSummary} aria-live="polite">
-                <span>
-                    Showing {result?.entries.length ?? 0} of {result?.totalMatches ?? 0}
-                    {result?.totalMatchesIsComplete === false ? '+' : ''}
-                </span>
-                {result?.omittedMatchCount ? (
-                    <span>{result.omittedMatchCount} matching rows omitted by the result limit</span>
-                ) : null}
-            </div>
-
-            {result && result.entries.length > 0 ? (
-                <ol className={styles.results} aria-label="Artifact evidence results">
-                    {result.entries.map(entry => (
-                        <li key={entry.id}>
-                            <button
-                                aria-pressed={controller.selectedEvidence?.id === entry.id}
-                                className={styles.resultButton}
-                                data-evidence-id={entry.id}
-                                data-evidence-kind={entry.kind}
-                                data-evidence-result
-                                data-evidence-source={entry.sourceFile}
-                                onClick={event => activate(entry, event.currentTarget)}
-                                type="button"
-                            >
-                                <strong>{entry.summary}</strong>
-                                <small>{entry.kind} · {entry.sourceFile}</small>
-                                <span className={styles.resultMeta}>
-                                    {evidenceMetadata(entry).map(item => (
-                                        <span key={item}>{item}</span>
-                                    ))}
-                                </span>
-                            </button>
-                        </li>
-                    ))}
-                </ol>
-            ) : (
-                <p className={styles.empty} data-analyze-no-evidence>
-                    {controller.model
-                        ? 'No evidence matches the current filters.'
-                        : 'Import or load an artifact to search its evidence.'}
-                </p>
-            )}
+            <AnalyzeEvidenceResults controller={controller} onActivate={activate} />
         </section>
     );
 }
@@ -273,22 +240,4 @@ function compact(
     return Object.fromEntries(
         Object.entries(patch).filter(([, entry]) => entry !== undefined),
     );
-}
-
-function evidenceMetadata(
-    entry: DistributedArtifactEvidenceEntry,
-): readonly string[] {
-    return [
-        entry.agentId ?? entry.agentIds?.join(', '),
-        entry.recipeId,
-        entry.commandId,
-        entry.topic,
-        entry.diagnosticType,
-        entry.status,
-        entry.severity,
-        entry.transport,
-        entry.atEpochMs === undefined
-            ? undefined
-            : new Date(entry.atEpochMs).toISOString(),
-    ].filter((item): item is string => Boolean(item));
 }

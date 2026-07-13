@@ -68,6 +68,12 @@
     font-weight: 650;
 }
 
+.exactIdentifiers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+}
+
 .payload {
     display: grid;
     gap: 7px;

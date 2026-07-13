@@ -110,6 +110,70 @@
     font-size: 11px;
 }
 
+.windowRegion {
+    display: grid;
+    min-width: 0;
+    gap: 10px;
+}
+
+.windowTruth {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: 0;
+    border: 1px solid var(--rc-border);
+}
+
+.windowTruth > div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+    padding: 9px 10px;
+    border-inline-end: 1px solid var(--rc-border);
+}
+
+.windowTruth > div:last-child { border-inline-end: 0; }
+
+.windowTruth dt {
+    color: var(--rc-muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.windowTruth dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: 11px;
+}
+
+.windowError {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0;
+    padding: 9px 11px;
+    border-inline-start: 3px solid var(--rc-status-failed-border);
+    color: var(--rc-status-failed-text);
+    background: var(--rc-status-failed-bg);
+}
+
+.windowError p { margin: 0; }
+
+.windowError button {
+    min-block-size: 44px;
+    padding-inline: 12px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    font-weight: 750;
+}
+
 .incomplete {
     padding: 9px 11px;
     border-left: 3px solid var(--rc-status-warning-border);
@@ -182,6 +246,8 @@
     .searchForm { grid-template-columns: minmax(0, 1fr); }
     .filterBar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .filterBar button { grid-column: 1 / -1; }
+    .windowTruth { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .windowTruth > div:nth-child(2) { border-inline-end: 0; }
 }
 
 @media (max-width: 560px) {
@@ -192,7 +258,11 @@
 
     .heading,
     .filterBar,
-    .timeFilters { grid-template-columns: minmax(0, 1fr); }
+    .timeFilters,
+    .windowTruth { grid-template-columns: minmax(0, 1fr); }
+
+    .windowTruth > div { border-inline-end: 0; }
+    .windowError { align-items: stretch; flex-direction: column; }
 
     .heading > span { justify-self: start; }
 }

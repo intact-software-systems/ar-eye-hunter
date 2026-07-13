@@ -193,7 +193,7 @@ describe('RetentionPanel', () => {
             expect(rendered?.getAttribute('dir')).toBe('ltr');
 
             const css = readFileSync(
-                'apps/rallar-black-box/src/recipe-console/history/ExactIdentifier.module.css',
+                'apps/rallar-black-box/src/recipe-console/ui/ExactIdentifier.module.css',
                 'utf8',
             );
             expect(css).toMatch(/white-space:\s*break-spaces/);

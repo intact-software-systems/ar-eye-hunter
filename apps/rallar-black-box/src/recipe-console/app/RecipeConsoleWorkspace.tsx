@@ -44,10 +44,10 @@ export function RecipeConsoleWorkspace() {
     const [selectionLabel, setSelectionLabel] = useState<string>();
     const [executeSafeTargetLabel, setExecuteSafeTargetLabel] = useState<string>();
     const [inspectorTrigger, setInspectorTrigger] =
-        useState<HTMLButtonElement | null>(null);
+        useState<HTMLElement | null>(null);
     const restoreFocusRef = useRef<HTMLButtonElement>(null);
 
-    const inspectEvidence = useCallback((trigger: HTMLButtonElement) => {
+    const inspectEvidence = useCallback((trigger: HTMLElement) => {
         setInspectorTrigger(trigger);
         setInspectorOpen(true);
     }, []);

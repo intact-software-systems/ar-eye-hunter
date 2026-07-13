@@ -4,6 +4,7 @@ import styles from './ExplicitWindowControls.module.css';
 
 export type ExplicitWindowControlsProps = Readonly<{
     contentId: string;
+    emptyLabel?: string;
     focusFallbackRef?: Ref<HTMLSpanElement>;
     itemLabel?: string;
     label: string;
@@ -15,6 +16,7 @@ export type ExplicitWindowControlsProps = Readonly<{
 
 export function ExplicitWindowControls({
     contentId,
+    emptyLabel,
     focusFallbackRef,
     itemLabel = 'items',
     label,
@@ -51,7 +53,7 @@ export function ExplicitWindowControls({
                 role="status"
                 tabIndex={-1}
             >
-                {rangeLabel(model, itemLabel)}{pending ? ' Updating…' : ''}
+                {rangeLabel(model, itemLabel, emptyLabel)}{pending ? ' Updating…' : ''}
             </span>
             <button
                 aria-controls={contentId}
@@ -66,8 +68,12 @@ export function ExplicitWindowControls({
     );
 }
 
-function rangeLabel(model: ExplicitWindowModel, itemLabel: string): string {
-    if (model.total === 0) return `No ${itemLabel}.`;
+function rangeLabel(
+    model: ExplicitWindowModel,
+    itemLabel: string,
+    emptyLabel: string | undefined,
+): string {
+    if (model.total === 0) return emptyLabel ?? `No ${itemLabel}.`;
     return `Showing ${number(model.displayStart)}–${number(model.displayEnd)} of ${number(model.total)} ${itemLabel}.`;
 }
 
