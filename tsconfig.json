@@ -12,9 +12,6 @@
     },
     {
       "path": "packages/relic-hunters"
-    },
-    {
-      "path": "apps/web"
     }
   ],
   "compilerOptions": {

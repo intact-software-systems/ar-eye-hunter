@@ -16,6 +16,15 @@ npx vitest run packages/tests/relic-hunters/relic-game.test.ts
 npm --workspace relic-hunters-v1 run test -- tests/relic-hunters-runtime.test.ts
 ```
 
+## Skills And Active Documentation
+
+```sh
+npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts
+```
+
+Run this after changing repo skills, plugin metadata, active Rallar examples,
+startup guidance, or root app-path configuration.
+
 ## Type Checks And Builds
 
 ```bash

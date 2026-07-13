@@ -1,9 +1,15 @@
 ---
 name: rallar-platform
-description: Use when working across Rallar package boundaries, public API surfaces, shared browser/server code, app-data, CRDT, package exports, or general monorepo architecture under packages/** and apps/**.
+description: Use when working across Rallar package boundaries, public API surfaces, shared browser/server code, app-data, CRDT, package exports, new app or greenfield React/Vite/Three.js work, or general monorepo architecture under packages/** and apps/**.
 ---
 
 # Rallar Platform
+
+**REQUIRED SUB-SKILL:** Use `building-rallar-apps` for new consumer application
+scaffolding and greenfield React, Vite, or Three.js architecture. Keep
+`rallar-platform` focused on package boundaries and public-surface changes.
+For selected game-authority, realtime, or validation surfaces, also use
+`rallar-games`, `rallar-realtime`, or `rallar-testing`, respectively.
 
 ## Start Here
 
@@ -35,4 +41,3 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 ## Validation
 
 Use the rallar-testing skill for command selection. At minimum, type-check the changed package and run targeted tests for the touched domain.
-

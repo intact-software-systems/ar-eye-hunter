@@ -7,6 +7,9 @@
   },
   "keywords": [
     "rallar",
+    "app-scaffolding",
+    "react",
+    "three.js",
     "realtime",
     "games",
     "ai",
@@ -15,11 +18,11 @@
     "package-quality",
     "testability"
   ],
-  "skills": "./skills/",
+  "skills": "./.agents/skills/",
   "interface": {
     "displayName": "Rallar Repo",
-    "shortDescription": "Navigate and change the Rallar monorepo.",
-    "longDescription": "Repo-local skills that guide Codex through Rallar package boundaries, realtime infrastructure, game apps, RallarAI, and validation commands.",
+    "shortDescription": "Build and change Rallar packages and apps.",
+    "longDescription": "Repo-local skills for Rallar package boundaries, greenfield browser apps, React/3D architecture, realtime infrastructure, games, AI, operations, performance, and validation.",
     "developerName": "Rallar Project",
     "category": "Developer Tools",
     "capabilities": [
@@ -28,10 +31,9 @@
       "Testing"
     ],
     "defaultPrompt": [
-      "Find the right Rallar package for this change.",
-      "Plan tests for a Rallar realtime fix.",
-      "Update a RallarAI or game flow safely.",
-      "Write package code in Rallar style."
+      "Scaffold a Rallar-first browser app.",
+      "Plan a Rallar React and 3D architecture.",
+      "Find and test the right Rallar package change."
     ],
     "brandColor": "#2F80ED"
   }

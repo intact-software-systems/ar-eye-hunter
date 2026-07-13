@@ -4,10 +4,10 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 
 ## Startup
 
-- `rallar.configure(...)` is called before `connect()` or `start()`.
-- `rallar.setDefaults(...)` has the correct `applicationId` and `workspaceId`.
+- Initial configuration uses `rallar.setup(...)` with the API base URL and the
+  correct `applicationId` and `workspaceId`.
+- Configured reconnect or after-login flows may use `rallar.start(...)`.
 - `rallar.auth.restore()` returns a session when startup expects one.
-- `rallar.start({ restoreSession: true, connect: true })` is used for normal app boot.
 - `rallar.status()` is not stuck at `connecting`.
 
 ## Auth

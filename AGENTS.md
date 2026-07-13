@@ -1,13 +1,16 @@
 # Rallar Agent Guide
 
 Use this file as the lightweight repo orientation. Detailed workflows live in
-the repo-local Codex plugin under `skills/**`.
+the repo-local Codex plugin under `.agents/skills/**`.
 
 ## Start Here
 
-- Inspect the existing code before editing; Rallar package docs can lag behind
-  active package work.
-- For package/app changes, read the relevant repo skill in `skills/**`:
+- Inspect the existing code and relevant `examples/**` before editing; Rallar
+  package docs can lag behind active package work.
+- For package/app changes, read the relevant repo skill in `.agents/skills/**`:
+  - `building-rallar-apps` first for greenfield apps and React/3D architecture;
+    then use the authority, realtime, and testing specialists for the selected
+    surfaces.
   - `rallar-platform` for package boundaries and public surfaces.
   - `rallar-realtime` for rooms, presence, WS/RTC, scoped identity, and routing.
   - `rallar-games` for AR Eye Hunter, Relic Hunters, Rallar Game, and Motion.
@@ -50,27 +53,19 @@ the repo-local Codex plugin under `skills/**`.
 
 ## Performance analysis repo guidance
 
-When using the performance-analysis skill:
+When using the `performance-analysis` skill:
 
-- Start static performance audits from these entry points:
-  - `packages/**`
-  - `apps/api-v1`
-  - `apps/rallar-black-box-control-server`
-  - `apps/rallar-black-box-headless`
-  
-- Use these benchmark commands:
-  - `...`
-
-- Use these test commands before accepting optimization changes:
-  - `...`
-
-- Put temporary profiling artifacts under:
-  - `tmp/perf/`
-
-- Do not commit generated profile files unless explicitly requested.
-
-- Treat these as performance-sensitive paths:
-  - `packages/...`
-
-- Treat these as not representative for performance:
-  - `...`
+- Start static audits from `packages/**`, `apps/api-v1`,
+  `apps/rallar-black-box-control-server`, and
+  `apps/rallar-black-box-headless`.
+- Read `scripts/perf/README.md` and the relevant existing harness under
+  `scripts/perf/**` before adding a benchmark.
+- Run focused correctness tests from the `rallar-testing` skill before
+  accepting an optimization.
+- Put generated profiles under `tmp/perf/` and do not commit them unless
+  explicitly requested.
+- Treat `packages/shared/webrtc`, `packages/shared/multicast`,
+  `packages/shared-web/browser`, and shared-server queue/state paths as
+  performance-sensitive when they are on the measured workload.
+- Treat historical plans and generated black-box artifacts as context, not a
+  runtime baseline unless the environment and workload match.

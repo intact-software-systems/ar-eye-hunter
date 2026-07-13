@@ -52,13 +52,13 @@ Requirements:
 Expected API use:
 
 ```ts
-rallar.configure({ apiBaseUrl });
-rallar.setDefaults({ applicationId, workspaceId });
-await rallar.start({
-  restoreSession: true,
-  connect: true,
-  refreshRooms: true,
-  refreshPeople: true,
+await rallar.setup({
+  apiBaseUrl,
+  applicationId,
+  workspaceId,
+  start: {
+    refreshPeople: true,
+  },
 });
 ```
 

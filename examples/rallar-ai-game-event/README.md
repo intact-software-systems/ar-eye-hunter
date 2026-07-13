@@ -9,7 +9,29 @@ import {
   createRallarAiMockProvider,
   transitionRallarAiResultLifecycle,
 } from '@shared/rallar-ai/mod.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
+
+type GameEvent = Readonly<{
+  kind: 'spawn' | 'reward';
+  amount: number;
+}>;
+
+const currentRevision: string = 'revision-1';
+const roomId: string = 'lobby';
+const turnId: string = 'turn-1';
+const appliedGameEvents: GameEvent[] = [];
+
+const applyGameEvent = (event: GameEvent): void => {
+  if (
+    (event.kind !== 'spawn' && event.kind !== 'reward') ||
+    !Number.isInteger(event.amount) ||
+    event.amount < 1
+  ) {
+    throw new Error('Game event failed domain validation');
+  }
+  appliedGameEvents.push(event);
+};
 
 const gameEventSchema = {
   type: 'object',
@@ -29,8 +51,8 @@ const ai = createRallarBrowserAi({
   policy: { mode: 'browser-only', staleResultMode: 'reject' },
 });
 
-const tracker = createRallarAiAcceptedResultTracker();
-const draft = await ai.generateJson({
+const tracker = createRallarAiAcceptedResultTracker<GameEvent>();
+const draft = await ai.generateJson<GameEvent>({
   schemaId: 'game-event',
   schemaVersion: '1',
   schema: gameEventSchema,

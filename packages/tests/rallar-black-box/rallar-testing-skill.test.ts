@@ -7,11 +7,11 @@ const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 describe('rallar-testing skill guidance', () => {
     it('requires human-operated Playwright coverage for changed UI behavior', () => {
         const skill = readFileSync(
-            resolve(REPO_ROOT, 'skills/rallar-testing/SKILL.md'),
+            resolve(REPO_ROOT, '.agents/skills/rallar-testing/SKILL.md'),
             'utf8',
         );
         const commands = readFileSync(
-            resolve(REPO_ROOT, 'skills/rallar-testing/references/test-commands.md'),
+            resolve(REPO_ROOT, '.agents/skills/rallar-testing/references/test-commands.md'),
             'utf8',
         );
 
@@ -22,6 +22,9 @@ describe('rallar-testing skill guidance', () => {
         expect(commands).toContain('Prefer role/label selectors');
         expect(commands).toContain(
             'npx playwright test --config apps/rallar-black-box/playwright.config.ts tests/playwright/rallar-black-box/tabbed-navigation.spec.ts',
+        );
+        expect(commands).toContain(
+            'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts',
         );
         expect(
             existsSync(resolve(REPO_ROOT, 'playwright.config.ts')),

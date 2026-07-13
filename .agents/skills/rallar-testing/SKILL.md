@@ -17,6 +17,10 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
 - REST API additions or behavior changes: add or update Rallar black-box recipes/tests in `packages/shared-test/black-box-runner` alongside the API change, then run the focused black-box command when its required services are available.
 - Game changes: include the game app test/build and package tests for shared game/motion/rules code.
 - Black-box runner changes: include `packages/tests/shared-test` and the relevant rallar-black-box Playwright config only when needed.
+- Repo skills and active routing: after changes to `.agents/skills/**`,
+  `.codex-plugin/plugin.json`, active Rallar docs/examples, or root skill/config
+  routing, run
+  `npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts`.
 
 ## UI Behavior Rule
 
