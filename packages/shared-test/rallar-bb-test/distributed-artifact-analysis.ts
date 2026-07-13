@@ -8,9 +8,19 @@ import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     deriveRunVerdictView,
+    validateDistributedRunArtifactFromParsed,
+    type DistributedRunArtifactValidation,
     type DistributedRunAnalysisReport,
+    type DistributedRunMonitor,
     type RunVerdictView,
 } from './distributed-run-monitor.ts';
+import {
+    distributedArtifactPipelineFile,
+    distributedArtifactPipelineJsonRecord,
+    distributedArtifactPipelineJsonlRows,
+    parseDistributedArtifactPipeline,
+    type ParsedDistributedArtifactPipeline,
+} from './distributed-artifact-pipeline.ts';
 
 export type DistributedRunArtifactFiles = Readonly<Record<string, string | undefined>>;
 
@@ -207,6 +217,28 @@ export type DistributedRunArtifactSnapshots = Readonly<{
     artifactBundle?: ControlDistributedRunArtifactBundle;
 }>;
 
+export type DistributedRunArtifactPipelineAnalysisInput = Readonly<{
+    parsed: ParsedDistributedArtifactPipeline;
+    generatedAtEpochMs?: number;
+    artifactSchemaVersion?: number;
+    parsedFiles?: ParsedDistributedRunArtifactFiles;
+    snapshots?: DistributedRunArtifactSnapshots;
+    artifactBundle?: ControlDistributedRunArtifactBundle;
+    artifactValidation?: DistributedRunArtifactValidation;
+    monitor?: DistributedRunMonitor;
+    report?: DistributedRunAnalysisReport;
+}>;
+
+export type DistributedRunArtifactPipelineAnalysisResult = Readonly<{
+    analysis: DistributedRunAnalysis;
+    monitor?: DistributedRunMonitor;
+    report?: DistributedRunAnalysisReport;
+    telemetry: Readonly<{
+        monitorDerivationCount: number;
+        reportDerivationCount: number;
+    }>;
+}>;
+
 type ControlPostFailureArtifact = Readonly<{
     phase?: string;
     path?: string;
@@ -266,27 +298,58 @@ const CONTROL_POST_ERROR_FILE_NAMES = [
 export function analyzeDistributedRunArtifactFiles(
     input: DistributedRunAnalysisInput,
 ): DistributedRunAnalysis {
+    return analyzeDistributedRunArtifactPipeline({
+        parsed: parseDistributedArtifactPipeline(input.files, {
+            projection: 'literal-loose-files',
+        }),
+        generatedAtEpochMs: input.generatedAtEpochMs,
+        artifactSchemaVersion: input.artifactSchemaVersion,
+    });
+}
+
+export function analyzeDistributedRunArtifactPipeline(
+    input: DistributedRunArtifactPipelineAnalysisInput,
+): DistributedRunAnalysis {
+    return deriveDistributedRunArtifactPipelineAnalysis(input).analysis;
+}
+
+export function deriveDistributedRunArtifactPipelineAnalysis(
+    input: DistributedRunArtifactPipelineAnalysisInput,
+): DistributedRunArtifactPipelineAnalysisResult {
     const generatedAtEpochMs = input.generatedAtEpochMs ?? Date.now();
+    const parsedFiles = input.parsedFiles ??
+        parseDistributedRunArtifactPipeline(input.parsed);
+    const parseWarnings = parsedFiles.parseWarnings.map(warning => ({ ...warning }));
     const {
-        parseWarnings,
-        distributedRunRecord,
-        controlRunRecord,
         fleetReport,
         failureBundle,
         controlPostFailure,
         results,
         events,
         targetResolutionRecord,
-    } = parseDistributedRunArtifactFiles(input.files);
-    const distributedRun = normalizeDistributedRunRecord(distributedRunRecord, results);
-    const controlRun = normalizeControlRunRecord(controlRunRecord, distributedRun.controlRunId, results, events);
-    const artifactBundle = distributedArtifactBundleFromFiles(
-        input.files,
+    } = parsedFiles;
+    const snapshots = input.snapshots ?? distributedArtifactSnapshotsFromPipeline(
+        input.parsed,
         generatedAtEpochMs,
-        distributedRun.distributedRunId,
         input.artifactSchemaVersion,
+        parsedFiles,
     );
-    const spa = deriveSpaAnalysis(distributedRun, controlRun, artifactBundle, parseWarnings);
+    const distributedRun = snapshots.distributedRun;
+    const controlRun = snapshots.controlRun;
+    const artifactBundle = input.artifactBundle ?? snapshots.artifactBundle;
+    const spaDerivation = deriveSpaAnalysis(
+        distributedRun,
+        controlRun,
+        artifactBundle,
+        parseWarnings,
+        input.artifactValidation ?? validateDistributedRunArtifactFromParsed(
+            artifactBundle,
+            input.parsed,
+        ),
+        input.monitor,
+        input.report,
+    );
+    const spa = spaDerivation.spa;
 
     const distributedRunId = firstString(
         distributedRun.distributedRunId,
@@ -346,10 +409,15 @@ export function analyzeDistributedRunArtifactFiles(
     const performanceMarkdown = performance ? renderPerformanceMarkdown(base) : undefined;
 
     return {
-        ...base,
-        summaryMarkdown,
-        fixProposalMarkdown,
-        performanceMarkdown,
+        analysis: {
+            ...base,
+            summaryMarkdown,
+            fixProposalMarkdown,
+            performanceMarkdown,
+        },
+        monitor: spaDerivation.monitor,
+        report: spaDerivation.report,
+        telemetry: spaDerivation.telemetry,
     };
 }
 
@@ -359,6 +427,23 @@ export function distributedArtifactBundleFromFiles(
     fallbackDistributedRunId = 'imported-distributed-run',
     artifactSchemaVersionOverride?: number,
 ): ControlDistributedRunArtifactBundle | undefined {
+    return distributedArtifactBundleFromPipeline(
+        parseDistributedArtifactPipeline(files, {
+            projection: 'literal-loose-files',
+        }),
+        generatedAtEpochMs,
+        fallbackDistributedRunId,
+        artifactSchemaVersionOverride,
+    );
+}
+
+export function distributedArtifactBundleFromPipeline(
+    parsed: ParsedDistributedArtifactPipeline,
+    generatedAtEpochMs = Date.now(),
+    fallbackDistributedRunId = 'imported-distributed-run',
+    artifactSchemaVersionOverride?: number,
+): ControlDistributedRunArtifactBundle | undefined {
+    const files = parsed.projectedFiles;
     const distributedRunText = files['distributed-run.json'];
     const controlRunText = files['control-run.json'];
     const manifestText = files['manifest.json'] ?? distributedRunText;
@@ -384,7 +469,8 @@ export function distributedArtifactBundleFromFiles(
     return {
         artifactSchemaVersion,
         distributedRunId: firstString(
-            asRecord(safeJson(distributedRunText)).distributedRunId,
+            distributedArtifactPipelineJsonRecord(parsed, 'distributed-run.json')
+                .distributedRunId,
             fallbackDistributedRunId,
         ) ?? fallbackDistributedRunId,
         generatedAtEpochMs,
@@ -397,12 +483,27 @@ export function distributedArtifactSnapshotsFromFiles(
     generatedAtEpochMs = Date.now(),
     artifactSchemaVersion?: number,
 ): DistributedRunArtifactSnapshots {
+    return distributedArtifactSnapshotsFromPipeline(
+        parseDistributedArtifactPipeline(files, {
+            projection: 'literal-loose-files',
+        }),
+        generatedAtEpochMs,
+        artifactSchemaVersion,
+    );
+}
+
+export function distributedArtifactSnapshotsFromPipeline(
+    parsed: ParsedDistributedArtifactPipeline,
+    generatedAtEpochMs = Date.now(),
+    artifactSchemaVersion?: number,
+    parsedFiles?: ParsedDistributedRunArtifactFiles,
+): DistributedRunArtifactSnapshots {
     const {
         distributedRunRecord,
         controlRunRecord,
         results,
         events,
-    } = parseDistributedRunArtifactFiles(files);
+    } = parsedFiles ?? parseDistributedRunArtifactPipeline(parsed);
     const distributedRun = normalizeDistributedRunRecord(distributedRunRecord, results);
     const controlRun = normalizeControlRunRecord(
         controlRunRecord,
@@ -413,8 +514,8 @@ export function distributedArtifactSnapshotsFromFiles(
     return {
         distributedRun,
         controlRun,
-        artifactBundle: distributedArtifactBundleFromFiles(
-            files,
+        artifactBundle: distributedArtifactBundleFromPipeline(
+            parsed,
             generatedAtEpochMs,
             distributedRun.distributedRunId,
             artifactSchemaVersion,
@@ -427,13 +528,54 @@ function deriveSpaAnalysis(
     controlRun: ControlRunSnapshot,
     artifactBundle: ControlDistributedRunArtifactBundle | undefined,
     warnings: DistributedRunArtifactParseWarning[],
-): DistributedRunAnalysis['spa'] {
+    artifactValidation: DistributedRunArtifactValidation,
+    precomputedMonitor?: DistributedRunMonitor,
+    precomputedReport?: DistributedRunAnalysisReport,
+): Readonly<{
+    spa?: NonNullable<DistributedRunAnalysis['spa']>;
+    monitor?: DistributedRunMonitor;
+    report?: DistributedRunAnalysisReport;
+    telemetry: Readonly<{
+        monitorDerivationCount: number;
+        reportDerivationCount: number;
+    }>;
+}> {
+    let monitor = precomputedMonitor;
+    let report = precomputedReport;
+    let monitorDerivationCount = 0;
+    let reportDerivationCount = 0;
     try {
-        const monitor = deriveDistributedRunMonitor({ distributedRun, controlRun, artifactBundle });
-        const report = deriveDistributedRunAnalysisReport({ distributedRun, controlRun, artifactBundle });
+        if (!monitor) {
+            monitorDerivationCount += 1;
+            monitor = deriveDistributedRunMonitor({
+                distributedRun,
+                controlRun,
+                artifactBundle,
+                artifactValidation,
+            });
+        }
+        if (!report) {
+            reportDerivationCount += 1;
+            report = deriveDistributedRunAnalysisReport({
+                distributedRun,
+                controlRun,
+                artifactBundle,
+                monitor,
+            });
+        }
         return {
+            spa: {
+                report,
+                verdict: deriveRunVerdictView({
+                    distributedRun,
+                    monitor,
+                    report,
+                    artifactBundle,
+                }),
+            },
+            monitor,
             report,
-            verdict: deriveRunVerdictView({ distributedRun, monitor, report, artifactBundle }),
+            telemetry: { monitorDerivationCount, reportDerivationCount },
         };
     } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
@@ -441,7 +583,11 @@ function deriveSpaAnalysis(
             fileName: 'spa-analysis',
             message: `Unable to derive SPA report: ${detail}`,
         });
-        return undefined;
+        return {
+            monitor,
+            report,
+            telemetry: { monitorDerivationCount, reportDerivationCount },
+        };
     }
 }
 
@@ -1071,7 +1217,7 @@ function targetResolutionAnalysis(
     };
 }
 
-type ParsedDistributedRunArtifactFiles = Readonly<{
+export type ParsedDistributedRunArtifactFiles = Readonly<{
     parseWarnings: DistributedRunArtifactParseWarning[];
     distributedRunRecord: Record<string, unknown>;
     controlRunRecord: Record<string, unknown>;
@@ -1085,34 +1231,30 @@ type ParsedDistributedRunArtifactFiles = Readonly<{
     events: readonly Record<string, unknown>[];
 }>;
 
-function parseDistributedRunArtifactFiles(
-    files: DistributedRunArtifactFiles,
+export function parseDistributedRunArtifactPipeline(
+    parsed: ParsedDistributedArtifactPipeline,
 ): ParsedDistributedRunArtifactFiles {
     const parseWarnings: DistributedRunArtifactParseWarning[] = [];
-    const runnerSummary = parseJsonRecord(files['runner-summary.json'], 'runner-summary.json', parseWarnings);
-    const manifestRecord = parseJsonRecord(files['manifest.json'], 'manifest.json', parseWarnings);
-    const controlPostFailure = parseControlPostFailure(files, parseWarnings);
+    const runnerSummary = parsedJsonRecord(parsed, 'runner-summary.json', parseWarnings);
+    const manifestRecord = parsedJsonRecord(parsed, 'manifest.json', parseWarnings);
+    const controlPostFailure = parseControlPostFailureFromParsed(parsed, parseWarnings);
     return {
         parseWarnings,
-        distributedRunRecord: parseDistributedRunRecord(
-            files['distributed-run.json'],
+        distributedRunRecord: parseDistributedRunRecordFromParsed(
+            parsed,
             runnerSummary,
             manifestRecord,
             parseWarnings,
         ),
-        controlRunRecord: parseJsonRecord(files['control-run.json'], 'control-run.json', parseWarnings),
-        fleetReport: parseJsonRecord(files['fleet-report.json'], 'fleet-report.json', parseWarnings),
-        failureBundle: parseJsonRecord(files['failures.json'], 'failures.json', parseWarnings),
-        targetResolutionRecord: parseJsonRecord(
-            files['target-resolution.json'],
-            'target-resolution.json',
-            parseWarnings,
-        ),
+        controlRunRecord: parsedJsonRecord(parsed, 'control-run.json', parseWarnings),
+        fleetReport: parsedJsonRecord(parsed, 'fleet-report.json', parseWarnings),
+        failureBundle: parsedJsonRecord(parsed, 'failures.json', parseWarnings),
+        targetResolutionRecord: parsedJsonRecord(parsed, 'target-resolution.json', parseWarnings),
         runnerSummary,
         manifestRecord,
         controlPostFailure,
-        results: parseJsonl(files['results.jsonl'], 'results.jsonl', parseWarnings),
-        events: parseJsonl(files['events.jsonl'], 'events.jsonl', parseWarnings),
+        results: parsedJsonlRecords(parsed, 'results.jsonl', parseWarnings),
+        events: parsedJsonlRecords(parsed, 'events.jsonl', parseWarnings),
     };
 }
 
@@ -2361,12 +2503,13 @@ function outlierCount(
     return values.filter(value => value >= p95Ms && value > p50Ms).length;
 }
 
-function parseControlPostFailure(
-    files: DistributedRunArtifactFiles,
+function parseControlPostFailureFromParsed(
+    parsed: ParsedDistributedArtifactPipeline,
     warnings: DistributedRunArtifactParseWarning[],
 ): ControlPostFailureArtifact | undefined {
-    const metadata = parseJsonRecord(
-        files['control-post-error-metadata.json'],
+    const files = parsed.projectedFiles;
+    const metadata = parsedJsonRecord(
+        parsed,
         'control-post-error-metadata.json',
         warnings,
     );
@@ -2386,7 +2529,7 @@ function parseControlPostFailure(
         curlStatus: numberValue(metadata.curlStatus),
         exitStatus: numberValue(metadata.exitStatus),
         responseFile: responseFile ?? 'control-post-error-metadata.json',
-        body: responseFile ? parseJsonRecord(files[responseFile], responseFile, warnings) : {},
+        body: responseFile ? parsedJsonRecord(parsed, responseFile, warnings) : {},
     };
 }
 
@@ -2395,13 +2538,15 @@ function controlPostPhaseFromFileName(fileName: string): string | undefined {
     return match?.[1];
 }
 
-function parseDistributedRunRecord(
-    text: string | undefined,
+function parseDistributedRunRecordFromParsed(
+    parsed: ParsedDistributedArtifactPipeline,
     runnerSummary: Record<string, unknown>,
     manifestRecord: Record<string, unknown>,
     warnings: DistributedRunArtifactParseWarning[],
 ): Record<string, unknown> {
-    if (!text || text.trim().length === 0) {
+    const fileName = 'distributed-run.json';
+    const file = distributedArtifactPipelineFile(parsed, fileName);
+    if (file.status === 'missing' || file.status === 'empty') {
         const fallback = distributedRunRecordFromFallback(runnerSummary, manifestRecord);
         if (fallback) {
             warnings.push({
@@ -2413,10 +2558,11 @@ function parseDistributedRunRecord(
         throw new Error('distributed-run.json is required.');
     }
 
-    try {
-        return asRecord(JSON.parse(text));
-    } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
+    if (file.format === 'json' && file.status === 'parsed') {
+        return asRecord(file.value);
+    }
+    {
+        const detail = parsedJsonErrorDetail(fileName, file.message);
         const fallback = distributedRunRecordFromFallback(runnerSummary, manifestRecord);
         if (fallback) {
             warnings.push({
@@ -2487,22 +2633,24 @@ function distributedRunRecordFromFallback(
     };
 }
 
-function parseJsonRecord(
-    text: string | undefined,
+function parsedJsonRecord(
+    parsed: ParsedDistributedArtifactPipeline,
     fileName: string,
     warnings: DistributedRunArtifactParseWarning[],
     required = false,
 ): Record<string, unknown> {
-    if (!text || text.trim().length === 0) {
+    const file = distributedArtifactPipelineFile(parsed, fileName);
+    if (file.status === 'missing' || file.status === 'empty') {
         if (required) {
             throw new Error(`${fileName} is required.`);
         }
         return {};
     }
-    try {
-        return asRecord(JSON.parse(text));
-    } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
+    if (file.format === 'json' && file.status === 'parsed') {
+        return asRecord(file.value);
+    }
+    {
+        const detail = parsedJsonErrorDetail(fileName, file.message);
         if (required) {
             throw new Error(`${fileName} is not valid JSON: ${detail}`);
         }
@@ -2511,32 +2659,34 @@ function parseJsonRecord(
     }
 }
 
-function parseJsonl(
-    text: string | undefined,
+function parsedJsonlRecords(
+    parsed: ParsedDistributedArtifactPipeline,
     fileName: string,
     warnings: DistributedRunArtifactParseWarning[],
 ): readonly Record<string, unknown>[] {
-    if (!text || text.trim().length === 0) {
-        return [];
-    }
     const rows: Record<string, unknown>[] = [];
-    text.split(/\r?\n/).forEach((line, index) => {
-        const trimmed = line.trim();
-        if (trimmed.length === 0) {
-            return;
-        }
-        try {
-            rows.push(asRecord(JSON.parse(trimmed)));
-        } catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
+    distributedArtifactPipelineJsonlRows(parsed, fileName).forEach(row => {
+        if (row.status === 'parsed') {
+            rows.push(asRecord(row.value));
+        } else {
             warnings.push({
                 fileName,
-                lineNumber: index + 1,
-                message: `${fileName}:${index + 1} is not valid JSON: ${detail}`,
+                lineNumber: row.lineNumber,
+                message: row.message ?? `${fileName}:${row.lineNumber} is not valid JSON.`,
             });
         }
     });
     return rows;
+}
+
+function parsedJsonErrorDetail(
+    fileName: string,
+    message: string | undefined,
+): string {
+    const prefix = `${fileName} is not valid JSON: `;
+    return message?.startsWith(prefix)
+        ? message.slice(prefix.length)
+        : message ?? 'Unknown JSON parse error';
 }
 
 function normalizeDistributedRunRecord(
@@ -2819,12 +2969,4 @@ function formatMs(value: number | undefined): string {
 
 function formatRate(value: number | undefined): string {
     return value === undefined ? '-' : `${roundMetric(value)}Hz`;
-}
-
-function safeJson(text: string): unknown {
-    try {
-        return JSON.parse(text);
-    } catch (_error) {
-        return {};
-    }
 }

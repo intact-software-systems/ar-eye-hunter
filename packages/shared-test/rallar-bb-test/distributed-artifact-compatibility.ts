@@ -1,5 +1,11 @@
 import type { DistributedRunArtifactFiles } from './distributed-artifact-analysis.ts';
 import {
+    distributedArtifactPipelineFile,
+    distributedArtifactPipelineJsonRecord,
+    parseDistributedArtifactPipeline,
+    type ParsedDistributedArtifactPipeline,
+} from './distributed-artifact-pipeline.ts';
+import {
     DISTRIBUTED_ARTIFACT_CORE_FILE_NAMES,
     DISTRIBUTED_ARTIFACT_KNOWN_SCHEMA_VERSIONS,
     DISTRIBUTED_ARTIFACT_OPTIONAL_FILE_NAMES,
@@ -34,14 +40,27 @@ export function identifyDistributedArtifactFamily(
     files: DistributedRunArtifactFiles,
     envelopeDistributedRunId?: string,
 ): DistributedArtifactFamily {
+    return identifyDistributedArtifactFamilyFromParsed(
+        parseDistributedArtifactPipeline(files, {
+            projection: 'literal-loose-files',
+        }),
+        envelopeDistributedRunId,
+    );
+}
+
+export function identifyDistributedArtifactFamilyFromParsed(
+    parsed: ParsedDistributedArtifactPipeline,
+    envelopeDistributedRunId?: string,
+): DistributedArtifactFamily {
+    const files = parsed.projectedFiles;
     if (
         envelopeDistributedRunId ||
         DISTRIBUTED_ARTIFACT_CORE_FILE_NAMES.some(
             fileName => files[fileName] !== undefined,
         )
     ) return 'distributed-run';
-    const report = jsonRecord(files['report.json']);
-    const metadata = jsonRecord(files['metadata.json']);
+    const report = distributedArtifactPipelineJsonRecord(parsed, 'report.json');
+    const metadata = distributedArtifactPipelineJsonRecord(parsed, 'metadata.json');
     if (metadata.execution === 'distributed-run' || report.execution === 'distributed-run') {
         return 'distributed-run';
     }
@@ -62,22 +81,39 @@ export function createDistributedArtifactInventory(
     projection: DistributedArtifactEnvelopeProjection,
     issues: DistributedArtifactWorkspaceIssue[],
 ): DistributedArtifactInventoryItem[] {
+    return createDistributedArtifactInventoryFromParsed(
+        family,
+        parseDistributedArtifactPipeline(files, {
+            projection: 'literal-loose-files',
+        }),
+        projection,
+        issues,
+    );
+}
+
+export function createDistributedArtifactInventoryFromParsed(
+    family: DistributedArtifactFamily,
+    parsed: ParsedDistributedArtifactPipeline,
+    projection: DistributedArtifactEnvelopeProjection,
+    issues: DistributedArtifactWorkspaceIssue[],
+): DistributedArtifactInventoryItem[] {
+    const files = parsed.projectedFiles;
     const inventory: DistributedArtifactInventoryItem[] = [];
     const visited = new Set<string>();
     if (family === 'distributed-run') {
         for (const fileName of DISTRIBUTED_ARTIFACT_CORE_FILE_NAMES) {
             visited.add(fileName);
-            addExpected(inventory, issues, files, projection, fileName, 'core');
+            addExpected(inventory, issues, files, projection, fileName, 'core', parsed);
         }
         for (const fileName of DISTRIBUTED_ARTIFACT_OPTIONAL_FILE_NAMES) {
             visited.add(fileName);
-            addExpected(inventory, issues, files, projection, fileName, 'optional');
+            addExpected(inventory, issues, files, projection, fileName, 'optional', parsed);
         }
     }
     for (const fileName of Object.keys(files).sort()) {
         if (visited.has(fileName) || files[fileName] === undefined) continue;
         if (isRecognizedFile(fileName)) {
-            const validation = validateFile(fileName, files[fileName] ?? '');
+            const validation = validateParsedFile(parsed, fileName);
             inventory.push({
                 fileName,
                 status: validation.status,
@@ -141,17 +177,49 @@ export function inferredDistributedArtifactSchemaVersion(
         : 1;
 }
 
+export function inferredDistributedArtifactSchemaVersionFromParsed(
+    parsed: ParsedDistributedArtifactPipeline,
+    family: DistributedArtifactFamily,
+): number | undefined {
+    return inferredDistributedArtifactSchemaVersion(parsed.projectedFiles, family);
+}
+
 export function declaredDistributedArtifactSchemaVersion(
     files: DistributedRunArtifactFiles,
 ): number | undefined {
-    return finiteInteger(jsonRecord(files['metadata.json']).artifactSchemaVersion) ??
-        finiteInteger(jsonRecord(files['report.json']).artifactSchemaVersion);
+    return declaredDistributedArtifactSchemaVersionFromParsed(
+        parseDistributedArtifactPipeline(files, {
+            projection: 'literal-loose-files',
+        }),
+    );
+}
+
+export function declaredDistributedArtifactSchemaVersionFromParsed(
+    parsed: ParsedDistributedArtifactPipeline,
+): number | undefined {
+    return finiteInteger(
+        distributedArtifactPipelineJsonRecord(parsed, 'metadata.json').artifactSchemaVersion,
+    ) ?? finiteInteger(
+        distributedArtifactPipelineJsonRecord(parsed, 'report.json').artifactSchemaVersion,
+    );
 }
 
 export function distributedArtifactGeneratedAt(
     files: DistributedRunArtifactFiles,
 ): number | undefined {
-    return finiteNumber(jsonRecord(files['metadata.json']).generatedAtEpochMs);
+    return distributedArtifactGeneratedAtFromParsed(
+        parseDistributedArtifactPipeline(files, {
+            projection: 'literal-loose-files',
+        }),
+    );
+}
+
+export function distributedArtifactGeneratedAtFromParsed(
+    parsed: ParsedDistributedArtifactPipeline,
+): number | undefined {
+    return finiteNumber(
+        distributedArtifactPipelineJsonRecord(parsed, 'metadata.json').generatedAtEpochMs,
+    );
 }
 
 export function distributedArtifactSchemaInventory(
@@ -173,6 +241,7 @@ function addExpected(
     projection: DistributedArtifactEnvelopeProjection,
     fileName: string,
     requirement: 'core' | 'optional',
+    parsed: ParsedDistributedArtifactPipeline,
 ): void {
     const invalidMessage = projection.invalidFiles[fileName];
     if (invalidMessage) {
@@ -194,29 +263,44 @@ function addExpected(
         });
         return;
     }
-    const validation = validateFile(fileName, text);
+    const validation = validateParsedFile(parsed, fileName);
     inventory.push({ fileName, status: validation.status, requirement, message: validation.message });
     addValidationIssue(issues, fileName, validation);
 }
 
-function validateFile(fileName: string, text: string): FileValidation {
+function validateParsedFile(
+    parsed: ParsedDistributedArtifactPipeline,
+    fileName: string,
+): FileValidation {
+    const file = distributedArtifactPipelineFile(parsed, fileName);
     if (JSONL_FILE_NAMES.has(fileName)) {
-        for (const [index, line] of text.split(/\r?\n/).entries()) {
-            if (!line.trim()) continue;
-            const parsed = parseJson(line);
-            if (parsed === undefined) {
-                return { status: 'malformed', message: `${fileName}:${index + 1} is not valid JSON.` };
+        if (file.format !== 'jsonl') {
+            return { status: 'malformed', message: `${fileName} is not valid JSON.` };
+        }
+        for (const row of file.rows) {
+            if (row.status === 'malformed') {
+                return {
+                    status: 'malformed',
+                    message: `${fileName}:${row.lineNumber} is not valid JSON.`,
+                };
             }
-            if (!isRecord(parsed)) {
-                return { status: 'incompatible', message: `${fileName}:${index + 1} must contain a JSON object.` };
+            if (!isRecord(row.value)) {
+                return {
+                    status: 'incompatible',
+                    message: `${fileName}:${row.lineNumber} must contain a JSON object.`,
+                };
             }
         }
         return { status: 'loaded' };
     }
-    const parsed = parseJson(text);
-    if (parsed === undefined) return { status: 'malformed', message: `${fileName} is not valid JSON.` };
-    if (parsed === null && NULLABLE_JSON_FILE_NAMES.has(fileName)) return { status: 'loaded' };
-    return isRecord(parsed)
+    if (file.status === 'malformed' || file.status === 'empty') {
+        return { status: 'malformed', message: `${fileName} is not valid JSON.` };
+    }
+    const value = file.format === 'json' && file.status === 'parsed'
+        ? file.value
+        : undefined;
+    if (value === null && NULLABLE_JSON_FILE_NAMES.has(fileName)) return { status: 'loaded' };
+    return isRecord(value)
         ? { status: 'loaded' }
         : { status: 'incompatible', message: `${fileName} must contain a JSON object.` };
 }
@@ -250,13 +334,6 @@ function isRecognizedFile(fileName: string): boolean {
         ADDITIONAL_RECOGNIZED_FILE_NAMES.has(fileName);
 }
 
-function parseJson(text: string): unknown | undefined {
-    try { return JSON.parse(text); } catch { return undefined; }
-}
-function jsonRecord(text: string | undefined): Record<string, unknown> {
-    const parsed = text === undefined ? undefined : parseJson(text);
-    return isRecord(parsed) ? parsed : {};
-}
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

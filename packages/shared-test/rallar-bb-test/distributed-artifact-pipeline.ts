@@ -67,6 +67,10 @@ export type ParsedDistributedArtifactPipeline = Readonly<{
     telemetry: DistributedArtifactPipelineTelemetry;
 }>;
 
+export type DistributedArtifactPipelineOptions = Readonly<{
+    projection?: 'auto' | 'literal-loose-files';
+}>;
+
 type MutablePipelineTelemetry = {
     pipelinePassCount: number;
     sourceCollectionPassCount: number;
@@ -101,6 +105,7 @@ type EnvelopeCandidate = Readonly<{
 
 export function parseDistributedArtifactPipeline(
     inputFiles: DistributedRunArtifactFiles,
+    options: DistributedArtifactPipelineOptions = {},
 ): ParsedDistributedArtifactPipeline {
     const telemetry = createTelemetry();
     const jsonCache = nullRecord<CachedJsonParse>();
@@ -111,17 +116,25 @@ export function parseDistributedArtifactPipeline(
         (entry): entry is readonly [string, string] => typeof entry[1] === 'string',
     );
     const candidates: EnvelopeCandidate[] = [];
+    const selectedInputControlResponseFile = selectedControlResponseFile(
+        inputFiles,
+        telemetry,
+        jsonCache,
+    );
 
     for (const [fileName, text] of definedInputEntries) {
         if (text.trim().length === 0) {
             continue;
         }
-        const parsed = fileFormat(fileName) === 'jsonl'
+        const parsed = selectedInputControlResponseFile !== fileName &&
+                fileFormat(fileName) === 'jsonl'
             ? singleParsedJsonlValue(
                 parseJsonlFile(fileName, text, telemetry, jsonlCache),
             )
             : parseJsonValue(fileName, text, telemetry, jsonCache);
         if (
+            options.projection !== 'literal-loose-files' &&
+            selectedInputControlResponseFile !== fileName &&
             parsed?.status === 'parsed' &&
             isRecord(parsed.value) &&
             hasOwn(parsed.value, 'files') &&
@@ -184,6 +197,32 @@ export function distributedArtifactPipelineFile(
     return hasOwn(pipeline.files, fileName)
         ? pipeline.files[fileName] as ParsedDistributedArtifactFile
         : missingFile(fileName);
+}
+
+export function distributedArtifactPipelineJsonValue(
+    pipeline: ParsedDistributedArtifactPipeline,
+    fileName: string,
+): unknown | undefined {
+    const file = distributedArtifactPipelineFile(pipeline, fileName);
+    return file.format === 'json' && file.status === 'parsed'
+        ? file.value
+        : undefined;
+}
+
+export function distributedArtifactPipelineJsonRecord(
+    pipeline: ParsedDistributedArtifactPipeline,
+    fileName: string,
+): Record<string, unknown> {
+    const value = distributedArtifactPipelineJsonValue(pipeline, fileName);
+    return isRecord(value) ? value : {};
+}
+
+export function distributedArtifactPipelineJsonlRows(
+    pipeline: ParsedDistributedArtifactPipeline,
+    fileName: string,
+): readonly ParsedDistributedArtifactJsonlRow[] {
+    const file = distributedArtifactPipelineFile(pipeline, fileName);
+    return file.format === 'jsonl' ? file.rows : [];
 }
 
 function resolveProjection(

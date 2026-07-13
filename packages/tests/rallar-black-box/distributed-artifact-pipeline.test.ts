@@ -333,6 +333,52 @@ describe('distributed artifact parse pipeline', () => {
         expect(pipeline.telemetry.jsonDocumentParseCount).toBe(3);
     });
 
+    it('classifies a metadata-selected JSONL-named control response before discovery', () => {
+        const responseFile = 'control-response.jsonl';
+        const responseText = '{ "error": "denied" }';
+        const pipeline = parseDistributedArtifactPipeline({
+            'control-post-error-metadata.json': JSON.stringify({ responseFile }),
+            [responseFile]: responseText,
+        });
+
+        expect(pipeline.files[responseFile]).toEqual({
+            fileName: responseFile,
+            format: 'json',
+            status: 'parsed',
+            text: responseText,
+            value: { error: 'denied' },
+        });
+        expect(pipeline.telemetry.jsonDocumentParseCountByFile[responseFile]).toBe(1);
+        expect(pipeline.telemetry.jsonlFilePassCountByFile[responseFile]).toBeUndefined();
+        expect(pipeline.telemetry.jsonlRowParseCountByFile[responseFile]).toBeUndefined();
+        expect(pipeline.telemetry).toMatchObject({
+            jsonDocumentParseCount: 2,
+            jsonlFilePassCount: 0,
+            jsonlRowParseCount: 0,
+        });
+    });
+
+    it('does not mistake a metadata-selected control response for an artifact envelope', () => {
+        const responseFile = 'control-response.json';
+        const responseText = JSON.stringify({
+            artifactSchemaVersion: 2,
+            distributedRunId: 'error-payload-run',
+            generatedAtEpochMs: 7,
+            files: {},
+        });
+        const pipeline = parseDistributedArtifactPipeline({
+            'control-post-error-metadata.json': JSON.stringify({ responseFile }),
+            [responseFile]: responseText,
+        });
+
+        expect(pipeline.source).toBe('loose-files');
+        expect(pipeline.projection.fatalMessage).toBeUndefined();
+        expect(pipeline.files[responseFile]).toMatchObject({
+            format: 'json',
+            status: 'parsed',
+        });
+    });
+
     it('uses null-prototype dictionaries and own-property lookup for hostile artifact names', () => {
         const files = Object.create(null) as Record<string, string>;
         Object.defineProperties(files, {

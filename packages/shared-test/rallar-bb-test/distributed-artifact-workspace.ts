@@ -1,21 +1,28 @@
 import {
-    analyzeDistributedRunArtifactFiles,
-    distributedArtifactBundleFromFiles,
-    distributedArtifactSnapshotsFromFiles,
+    deriveDistributedRunArtifactPipelineAnalysis,
+    distributedArtifactSnapshotsFromPipeline,
+    parseDistributedRunArtifactPipeline,
     type DistributedRunAnalysis,
     type DistributedRunArtifactSnapshots,
 } from './distributed-artifact-analysis.ts';
 import {
-    createDistributedArtifactInventory,
-    declaredDistributedArtifactSchemaVersion,
-    distributedArtifactGeneratedAt,
+    createDistributedArtifactInventoryFromParsed,
+    declaredDistributedArtifactSchemaVersionFromParsed,
+    distributedArtifactGeneratedAtFromParsed,
     distributedArtifactSchemaInventory,
     distributedArtifactWorkspaceSupport,
-    identifyDistributedArtifactFamily,
-    inferredDistributedArtifactSchemaVersion,
+    identifyDistributedArtifactFamilyFromParsed,
+    inferredDistributedArtifactSchemaVersionFromParsed,
 } from './distributed-artifact-compatibility.ts';
-import { projectDistributedArtifactEnvelope } from './distributed-artifact-envelope.ts';
-import { distributedArtifactIdentityIssues } from './distributed-artifact-identity.ts';
+import { distributedArtifactIdentityIssuesFromParsed } from './distributed-artifact-identity.ts';
+import {
+    parseDistributedArtifactPipeline,
+    type ParsedDistributedArtifactPipeline,
+} from './distributed-artifact-pipeline.ts';
+import type {
+    DistributedRunAnalysisReport,
+    DistributedRunMonitor,
+} from './distributed-run-monitor.ts';
 import {
     DISTRIBUTED_ARTIFACT_KNOWN_SCHEMA_VERSIONS,
     type DistributedArtifactWorkspace,
@@ -38,16 +45,46 @@ export type {
 export function createDistributedArtifactWorkspace(
     input: DistributedArtifactWorkspaceInput,
 ): DistributedArtifactWorkspace {
-    const projection = projectDistributedArtifactEnvelope(input.files);
+    return deriveDistributedArtifactWorkspace(input).workspace;
+}
+
+export type DistributedArtifactWorkspaceDerivationTelemetry = Readonly<{
+    parsedArtifactPassCount: number;
+    normalizedSnapshotCount: number;
+    bundleDerivationCount: number;
+    monitorDerivationCount: number;
+    reportDerivationCount: number;
+}>;
+
+export type DerivedDistributedArtifactWorkspace = Readonly<{
+    parsed: ParsedDistributedArtifactPipeline;
+    workspace: DistributedArtifactWorkspace;
+    monitor?: DistributedRunMonitor;
+    report?: DistributedRunAnalysisReport;
+    telemetry: DistributedArtifactWorkspaceDerivationTelemetry;
+}>;
+
+export function deriveDistributedArtifactWorkspace(
+    input: DistributedArtifactWorkspaceInput,
+): DerivedDistributedArtifactWorkspace {
+    const parsed = parseDistributedArtifactPipeline(input.files);
+    const telemetry = {
+        parsedArtifactPassCount: 0,
+        normalizedSnapshotCount: 0,
+        bundleDerivationCount: 0,
+        monitorDerivationCount: 0,
+        reportDerivationCount: 0,
+    };
+    const projection = parsed.projection;
     const files = projection.files;
-    const family = identifyDistributedArtifactFamily(
-        files,
+    const family = identifyDistributedArtifactFamilyFromParsed(
+        parsed,
         projection.distributedRunId,
     );
     const issues: DistributedArtifactWorkspaceIssue[] = [];
-    const inventory = createDistributedArtifactInventory(
+    const inventory = createDistributedArtifactInventoryFromParsed(
         family,
-        files,
+        parsed,
         projection,
         issues,
     );
@@ -56,8 +93,8 @@ export function createDistributedArtifactWorkspace(
         envelopeVersion !== undefined &&
         input.artifactSchemaVersion !== envelopeVersion;
     let artifactSchemaVersion = input.artifactSchemaVersion ?? envelopeVersion ??
-        declaredDistributedArtifactSchemaVersion(files) ??
-        inferredDistributedArtifactSchemaVersion(files, family);
+        declaredDistributedArtifactSchemaVersionFromParsed(parsed) ??
+        inferredDistributedArtifactSchemaVersionFromParsed(parsed, family);
 
     if (hasSchemaConflict) {
         const message = `Caller schema version ${input.artifactSchemaVersion} conflicts with envelope schema version ${envelopeVersion}.`;
@@ -104,12 +141,12 @@ export function createDistributedArtifactWorkspace(
         });
     }
     const identityIssues = family === 'distributed-run'
-        ? distributedArtifactIdentityIssues(files)
+        ? distributedArtifactIdentityIssuesFromParsed(parsed)
         : [];
     issues.push(...identityIssues);
 
     const generatedAtEpochMs = input.generatedAtEpochMs ??
-        projection.generatedAtEpochMs ?? distributedArtifactGeneratedAt(files) ??
+        projection.generatedAtEpochMs ?? distributedArtifactGeneratedAtFromParsed(parsed) ??
         Date.now();
     let support = distributedArtifactWorkspaceSupport({
         family,
@@ -123,25 +160,39 @@ export function createDistributedArtifactWorkspace(
     let analysis: DistributedRunAnalysis | undefined;
     let snapshots: DistributedRunArtifactSnapshots | undefined;
     let bundle: DistributedArtifactWorkspace['bundle'];
+    let monitor: DistributedRunMonitor | undefined;
+    let report: DistributedRunAnalysisReport | undefined;
     if (
         family === 'distributed-run' && !hasSchemaConflict &&
         !projection.invalidSchemaMessage && !projection.fatalMessage
     ) {
         try {
-            analysis = analyzeDistributedRunArtifactFiles({
-                files, generatedAtEpochMs, artifactSchemaVersion,
+            const parsedFiles = parseDistributedRunArtifactPipeline(parsed);
+            telemetry.parsedArtifactPassCount += 1;
+            snapshots = distributedArtifactSnapshotsFromPipeline(
+                parsed,
+                generatedAtEpochMs,
+                artifactSchemaVersion,
+                parsedFiles,
+            );
+            telemetry.normalizedSnapshotCount += 1;
+            telemetry.bundleDerivationCount += 1;
+            bundle = snapshots.artifactBundle;
+            const analysisResult = deriveDistributedRunArtifactPipelineAnalysis({
+                parsed,
+                generatedAtEpochMs,
+                artifactSchemaVersion,
+                parsedFiles,
+                snapshots,
+                artifactBundle: bundle,
             });
-            snapshots = distributedArtifactSnapshotsFromFiles(
-                files,
-                generatedAtEpochMs,
-                artifactSchemaVersion,
-            );
-            bundle = distributedArtifactBundleFromFiles(
-                files,
-                generatedAtEpochMs,
-                analysis.distributedRunId,
-                artifactSchemaVersion,
-            );
+            analysis = analysisResult.analysis;
+            monitor = analysisResult.monitor;
+            report = analysisResult.report;
+            telemetry.monitorDerivationCount +=
+                analysisResult.telemetry.monitorDerivationCount;
+            telemetry.reportDerivationCount +=
+                analysisResult.telemetry.reportDerivationCount;
         } catch (error) {
             support = 'incompatible';
             issues.push({
@@ -161,7 +212,7 @@ export function createDistributedArtifactWorkspace(
             message: `${projection.envelopeFileName ?? 'Artifact envelope'} declares distributed run ${projection.distributedRunId}, but distributed-run.json contains ${analysis.distributedRunId}.`,
         });
     }
-    return {
+    const workspace = {
         family,
         source: projection.source,
         support,
@@ -175,6 +226,7 @@ export function createDistributedArtifactWorkspace(
         snapshots,
         bundle,
     };
+    return { parsed, workspace, monitor, report, telemetry };
 }
 
 function errorMessage(error: unknown): string {
