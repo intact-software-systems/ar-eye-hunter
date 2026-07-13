@@ -12,26 +12,55 @@ import {
 } from './analyze-identity-policy.ts';
 export { analyzeArtifactIdentityIssues } from './analyze-identity-policy.ts';
 
+export type AnalyzeOptionDerivationWork = {
+    controlRunVisitCount: number;
+    distributedRunVisitCount: number;
+    compatibleRunProjectionCount: number;
+    sortComparisonCount: number;
+};
+
+const EMPTY_ANALYZE_RUN_OPTIONS = Object.freeze([]) as readonly never[];
+
 export function deriveAnalyzeControlRunOptions(
     runs: readonly ControlRunSnapshot[],
+    active = true,
+    work?: AnalyzeOptionDerivationWork,
 ): readonly ControlRunSnapshot[] {
-    return [...runs].sort((left, right) =>
-        right.updatedAtEpochMs - left.updatedAtEpochMs ||
-        left.runId.localeCompare(right.runId)
-    );
+    if (!active) return EMPTY_ANALYZE_RUN_OPTIONS;
+    const options: ControlRunSnapshot[] = [];
+    for (const run of runs) {
+        if (work) work.controlRunVisitCount += 1;
+        options.push(run);
+    }
+    return options.sort((left, right) => {
+        if (work) work.sortComparisonCount += 1;
+        return right.updatedAtEpochMs - left.updatedAtEpochMs ||
+            left.runId.localeCompare(right.runId);
+    });
 }
 
-export function deriveAnalyzeDistributedRunOptions(input: Readonly<{
-    controlRunId?: string;
-    distributedRuns: readonly ControlDistributedRunSnapshot[];
-}>): readonly ControlDistributedRunSnapshot[] {
-    if (!input.controlRunId) return [];
-    return input.distributedRuns
-        .filter(run => run.controlRunId === input.controlRunId)
-        .sort((left, right) =>
-            right.updatedAtEpochMs - left.updatedAtEpochMs ||
-            left.distributedRunId.localeCompare(right.distributedRunId)
-        );
+export function deriveAnalyzeDistributedRunOptions(
+    input: Readonly<{
+        controlRunId?: string;
+        distributedRuns: readonly ControlDistributedRunSnapshot[];
+    }>,
+    active = true,
+    work?: AnalyzeOptionDerivationWork,
+): readonly ControlDistributedRunSnapshot[] {
+    if (!active) return EMPTY_ANALYZE_RUN_OPTIONS;
+    if (!input.controlRunId) return EMPTY_ANALYZE_RUN_OPTIONS;
+    const options: ControlDistributedRunSnapshot[] = [];
+    for (const run of input.distributedRuns) {
+        if (work) work.distributedRunVisitCount += 1;
+        if (run.controlRunId !== input.controlRunId) continue;
+        if (work) work.compatibleRunProjectionCount += 1;
+        options.push(run);
+    }
+    return options.sort((left, right) => {
+        if (work) work.sortComparisonCount += 1;
+        return right.updatedAtEpochMs - left.updatedAtEpochMs ||
+            left.distributedRunId.localeCompare(right.distributedRunId);
+    });
 }
 
 export function findAnalyzeDistributedRunOption(

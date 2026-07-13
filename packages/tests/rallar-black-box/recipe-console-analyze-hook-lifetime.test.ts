@@ -9,6 +9,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecipeConsoleControlExecutionApi } from
     '../../../apps/rallar-black-box/src/recipe-console/control/control-execution-api.ts';
+import type {
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+} from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RecipeConsoleControlSelection } from
     '../../../apps/rallar-black-box/src/recipe-console/control/control-selection.ts';
 import type { RecipeConsoleUrlState } from
@@ -230,6 +234,105 @@ describe('Recipe Console rendered Analyze worker lifetime', () => {
         expect(revokeObjectUrl).toHaveBeenCalledWith('blob:retained-artifact');
     });
 
+    it('does no Analyze option or search work off-view, retains the artifact and Tune facade, then searches the latest query once on entry', async () => {
+        const controls = [
+            controlRun('control-old', 10),
+            controlRun('control-a', 30),
+            controlRun('control-mid', 20),
+        ];
+        const distributedRuns = [
+            distributedRun('dist-old', 'control-a', 10),
+            distributedRun('dist-foreign', 'control-mid', 100),
+            distributedRun('dist-a', 'control-a', 30),
+            distributedRun('dist-mid', 'control-a', 20),
+        ];
+        const props = harnessProps({
+            connection: createConnection(createExecution(), {
+                runs: controls,
+                distributedRuns,
+            }),
+            navigate: vi.fn(),
+            urlState: {
+                ...urlState('execute', 'dist-a'),
+                historyQuery: 'execute-query',
+            },
+            capture: value => {
+                controller = value;
+            },
+        });
+        await render(props);
+
+        const inactiveOptions = controller?.controlRunOptions;
+        expect(inactiveOptions).toBe(controller?.distributedRunOptions);
+        expect(inactiveOptions).toEqual([]);
+
+        const { completion } = await beginControlLoad(1);
+        const worker = ControllableWorker.instances[0]!;
+        const generation = worker.request('offer').operationGeneration;
+        await acceptAndStart(worker, generation);
+        await emit(worker, completeResponse(generation, 151, 'dist-a'));
+        await expect(completion).resolves.toBe(true);
+        const retainedArtifact = controller?.model;
+        expect(retainedArtifact?.distributedRunId).toBe('dist-a');
+        expect(worker.requestTypes().filter(type => type === 'search')).toEqual([]);
+
+        for (const view of ['execute', 'monitor', 'history'] as const) {
+            await render({
+                ...props,
+                urlState: {
+                    ...urlState(view, 'dist-a'),
+                    historyQuery: `${view}-query`,
+                },
+            });
+            expect(controller?.model).toBe(retainedArtifact);
+            expect(controller?.controlRunOptions).toBe(inactiveOptions);
+            expect(controller?.distributedRunOptions).toBe(inactiveOptions);
+            expect(worker.requestTypes().filter(type => type === 'search'))
+                .toEqual([]);
+        }
+
+        await render({
+            ...props,
+            urlState: {
+                ...urlState('tune', 'dist-a'),
+                historyQuery: 'tune-query',
+            },
+        });
+        expect(worker.requestTypes().filter(type => type === 'search')).toEqual([]);
+        expect(worker.requestTypes().filter(type => type === 'tune'))
+            .toHaveLength(1);
+        const tuneRequest = worker.request('tune');
+        await emit(worker, tuneResponse(tuneRequest));
+        const retainedTuneFacade = controller?.tuneFacade;
+        expect(retainedTuneFacade).toBeDefined();
+
+        await render({
+            ...props,
+            urlState: {
+                ...urlState('analyze', 'dist-a'),
+                historyQuery: 'latest-query',
+            },
+        });
+        await vi.waitFor(() => {
+            expect(worker.requestTypes().filter(type => type === 'search'))
+                .toHaveLength(1);
+        });
+        expect(worker.request('search').query.query).toBe('latest-query');
+        expect(controller?.model).toBe(retainedArtifact);
+        expect(controller?.tuneFacade).toBe(retainedTuneFacade);
+        expect(controller?.controlRunOptions.map(run => run.runId)).toEqual([
+            'control-a',
+            'control-mid',
+            'control-old',
+        ]);
+        expect(controller?.controlRunOptions[0]).toBe(controls[1]);
+        expect(controller?.distributedRunOptions.map(run => run.distributedRunId))
+            .toEqual(['dist-a', 'dist-mid', 'dist-old']);
+        expect(controller?.distributedRunOptions[0]).toBe(distributedRuns[2]);
+        expect(ControllableWorker.instances).toHaveLength(1);
+        expect(worker.terminate).not.toHaveBeenCalled();
+    });
+
     it('rejects a candidate completed after a render-time context and execution change before passive reconciliation', async () => {
         const firstExecution = createExecution();
         const firstConnection = createConnection(firstExecution);
@@ -273,7 +376,7 @@ describe('Recipe Console rendered Analyze worker lifetime', () => {
             ...initialProps,
             connection: createConnection(secondExecution),
             selection: createSelection('dist-b'),
-            urlState: urlState('analyze', 'dist-b'),
+            urlState: urlState('execute', 'dist-b'),
             afterCommit: () => {
                 if (emittedDuringLayout) return;
                 emittedDuringLayout = true;
@@ -702,6 +805,10 @@ function createExecution(): RecipeConsoleControlExecutionApi {
 
 function createConnection(
     execution: RecipeConsoleControlExecutionApi,
+    snapshot: Readonly<{
+        runs: readonly ControlRunSnapshot[];
+        distributedRuns: readonly ControlDistributedRunSnapshot[];
+    }> = { runs: [], distributedRuns: [] },
 ): RecipeConsoleControlConnection {
     return {
         baseUrl: 'http://control.example.test',
@@ -710,12 +817,57 @@ function createConnection(
             status: 'live',
             reachability: 'reachable',
             authorization: 'ready',
-            snapshot: { runs: [], distributedRuns: [] },
+            snapshot,
             completeness: 'complete',
             receivedAtEpochMs: 1,
             isRefreshing: false,
         },
     } as unknown as RecipeConsoleControlConnection;
+}
+
+function controlRun(runId: string, updatedAtEpochMs: number): ControlRunSnapshot {
+    return {
+        runId,
+        createdAtEpochMs: 1,
+        updatedAtEpochMs,
+        agents: [],
+        commands: [],
+        results: [],
+        events: [],
+        stats: [],
+        reports: [],
+        heartbeats: [],
+    };
+}
+
+function distributedRun(
+    distributedRunId: string,
+    controlRunId: string,
+    updatedAtEpochMs: number,
+): ControlDistributedRunSnapshot {
+    return {
+        distributedRunId,
+        controlRunId,
+        state: 'completed',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs,
+        targetAgentIds: [],
+        manifest: {
+            schemaVersion: 1,
+            distributedRunId,
+            controlRunId,
+            group: { groupId: 'ci-analyze' },
+            recipes: [],
+            targetPolicy: {},
+        },
+        commandLinks: [],
+        rollup: {
+            state: 'completed',
+            ok: true,
+            summary: { blockingFailures: 0 },
+            failures: [],
+        },
+    };
 }
 
 function createSelection(distributedRunId: string): RecipeConsoleControlSelection {

@@ -67,9 +67,17 @@ export function useAnalyzeWorkspace(input: Readonly<{
     ), [operations.state.operationGeneration, query]);
 
     useEffect(() => {
-        if (!operations.state.artifact) return;
+        if (input.urlState.view !== 'analyze' || !operations.state.artifact) {
+            return;
+        }
         operations.search(query, queryFingerprint);
-    }, [operations.search, operations.state.artifact, query, queryFingerprint]);
+    }, [
+        input.urlState.view,
+        operations.search,
+        operations.state.artifact,
+        query,
+        queryFingerprint,
+    ]);
 
     useEffect(() => {
         if (input.urlState.view !== 'tune' || !operations.state.artifact) return;

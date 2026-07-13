@@ -7,6 +7,7 @@ import {
     analyzeArtifactIdentityIssues,
     analyzeFilterClearPatch,
     analyzeImportedIdentityPatch,
+    type AnalyzeOptionDerivationWork,
     deriveAnalyzeControlRunOptions,
     deriveAnalyzeDistributedRunOptions,
     findAnalyzeDistributedRunOption,
@@ -85,18 +86,67 @@ describe('Recipe Console Analyze selection', () => {
             distributedRun('distributed-a', 'control-b', 30),
         ];
 
-        expect(deriveAnalyzeControlRunOptions(controls).map(run => run.runId))
-            .toEqual(['control-a', 'control-b', 'control-z']);
-        expect(deriveAnalyzeDistributedRunOptions({
+        const controlOptions = deriveAnalyzeControlRunOptions(controls);
+        const distributedOptions = deriveAnalyzeDistributedRunOptions({
             controlRunId: 'control-b',
             distributedRuns: distributed,
-        }).map(run => run.distributedRunId)).toEqual([
+        });
+
+        expect(controlOptions.map(run => run.runId))
+            .toEqual(['control-a', 'control-b', 'control-z']);
+        expect(distributedOptions.map(run => run.distributedRunId)).toEqual([
             'distributed-a',
             'distributed-b',
             'distributed-z',
         ]);
+        expect(controlOptions).toEqual([
+            controls[2],
+            controls[1],
+            controls[0],
+        ]);
+        expect(controlOptions[0]).toBe(controls[2]);
+        expect(distributedOptions[0]).toBe(distributed[3]);
         expect(controls.map(run => run.runId))
             .toEqual(['control-z', 'control-b', 'control-a']);
+    });
+
+    it('returns one stable empty singleton with zero option work while Analyze is inactive at 5,000 run pairs', () => {
+        const controls = Array.from({ length: 5_000 }, (_, index) =>
+            controlRun(`control-${index}`, index));
+        const distributed = Array.from({ length: 5_000 }, (_, index) =>
+            distributedRun(`distributed-${index}`, `control-${index}`, index));
+        const inactiveWork = optionWork();
+
+        const controlOptions = deriveAnalyzeControlRunOptions(
+            controls,
+            false,
+            inactiveWork,
+        );
+        const distributedOptions = deriveAnalyzeDistributedRunOptions({
+            controlRunId: 'control-4999',
+            distributedRuns: distributed,
+        }, false, inactiveWork);
+
+        expect(controlOptions).toBe(distributedOptions);
+        expect(deriveAnalyzeControlRunOptions(controls, false))
+            .toBe(controlOptions);
+        expect(deriveAnalyzeDistributedRunOptions({
+            controlRunId: 'control-0',
+            distributedRuns: distributed,
+        }, false)).toBe(controlOptions);
+        expect(inactiveWork).toEqual(optionWork());
+
+        const activeWork = optionWork();
+        expect(deriveAnalyzeControlRunOptions(controls, true, activeWork))
+            .toHaveLength(5_000);
+        expect(deriveAnalyzeDistributedRunOptions({
+            controlRunId: 'control-4999',
+            distributedRuns: distributed,
+        }, true, activeWork)).toEqual([distributed[4_999]]);
+        expect(activeWork.controlRunVisitCount).toBe(5_000);
+        expect(activeWork.distributedRunVisitCount).toBe(5_000);
+        expect(activeWork.compatibleRunProjectionCount).toBe(1);
+        expect(activeWork.sortComparisonCount).toBeGreaterThan(0);
     });
 
     it('projects exact control and distributed run patches with incompatible evidence cleared', () => {
@@ -247,3 +297,12 @@ describe('Recipe Console Analyze selection', () => {
         expect(findAnalyzeDistributedRunOption([], 'first')).toBeUndefined();
     });
 });
+
+function optionWork(): AnalyzeOptionDerivationWork {
+    return {
+        controlRunVisitCount: 0,
+        distributedRunVisitCount: 0,
+        compatibleRunProjectionCount: 0,
+        sortComparisonCount: 0,
+    };
+}

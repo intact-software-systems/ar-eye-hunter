@@ -56,6 +56,7 @@ export function useAnalyzeWorkspaceController(input: Readonly<{
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
     replace(patch: Partial<RecipeConsoleUrlState>): void;
 }>) {
+    const active = input.urlState.view === 'analyze';
     const model = input.state.artifact;
     const searchResult = useMemo(() => (
         input.evidenceWindow &&
@@ -78,16 +79,18 @@ export function useAnalyzeWorkspaceController(input: Readonly<{
     const controlRunOptions = useMemo(
         () => deriveAnalyzeControlRunOptions(
             input.connection.query.snapshot?.runs ?? [],
+            active,
         ),
-        [input.connection.query.snapshot?.runs],
+        [active, input.connection.query.snapshot?.runs],
     );
     const distributedRunOptions = useMemo(
         () => deriveAnalyzeDistributedRunOptions({
             controlRunId: input.selection.controlRunId,
             distributedRuns:
                 input.connection.query.snapshot?.distributedRuns ?? [],
-        }),
+        }, active),
         [
+            active,
             input.connection.query.snapshot?.distributedRuns,
             input.selection.controlRunId,
         ],
