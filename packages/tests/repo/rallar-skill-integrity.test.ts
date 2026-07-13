@@ -65,6 +65,15 @@ describe('Rallar repo skill and documentation integrity', () => {
         const messageExample = readRepo('examples/room-message-channel/README.md');
         const realtimeExample = readRepo('examples/room-realtime-channel/README.md');
         const examplesIndex = readRepo('examples/README.md');
+        const initialBoot = scaffolding.match(
+            /## Initial Boot\n([\s\S]*?)\n## Room-Bound Vertical Slice/,
+        )?.[1] ?? '';
+        const verticalSlice = scaffolding.match(
+            /## Room-Bound Vertical Slice\n([\s\S]*?)\n## Runtime Adapter/,
+        )?.[1] ?? '';
+        const runtimeAdapter = scaffolding.match(
+            /## Runtime Adapter\n([\s\S]*?)\n## React Adapter/,
+        )?.[1] ?? '';
 
         expectAll(skill, [
             '`references/app-scaffolding.md`',
@@ -151,6 +160,64 @@ describe('Rallar repo skill and documentation integrity', () => {
             strictPort: true,
             websocketProxy: true,
             appLocalRenderer: true,
+        });
+        expect.soft({
+            oneAppStartOptions:
+                initialBoot.match(/const appStartOptions/g)?.length === 1,
+            posesLaneConfig: initialBoot.includes('const posesLaneConfig'),
+            posesLaneId: initialBoot.includes("id: 'poses'"),
+            defaultRealtimeLane: initialBoot.includes(
+                'DEFAULT_REALTIME_DATA_CHANNEL_LANE',
+            ),
+            laneBearingStartOptions: initialBoot.includes(
+                'dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, posesLaneConfig]',
+            ),
+            setupStartOptions: initialBoot.includes('start: appStartOptions'),
+            postLoginStartOptions: initialBoot.includes(
+                'rallar.start(appStartOptions)',
+            ),
+        }).toEqual({
+            oneAppStartOptions: true,
+            posesLaneConfig: true,
+            posesLaneId: true,
+            defaultRealtimeLane: true,
+            laneBearingStartOptions: true,
+            setupStartOptions: true,
+            postLoginStartOptions: true,
+        });
+        expect.soft({
+            runtimeMessageType: runtimeAdapter.includes('RallarMessage'),
+            runtimeTargetNarrowing: runtimeAdapter.includes('message.raw.targets'),
+            runtimeFullGroupRefCheck: runtimeAdapter.includes('isSameGroupRef'),
+            runtimeCallbackValidation: runtimeAdapter.includes(
+                'isMessageForRoom(roomSession.roomRef, message)',
+            ),
+        }).toEqual({
+            runtimeMessageType: true,
+            runtimeTargetNarrowing: true,
+            runtimeFullGroupRefCheck: true,
+            runtimeCallbackValidation: true,
+        });
+        expect.soft({
+            returnsDisposer: verticalSlice.includes(
+                'Promise<() => void>',
+            ),
+            exposesSubscriptionCleanup: verticalSlice.includes(
+                'return () => subscriptions.unsubscribe()',
+            ),
+            capturesDisposer: verticalSlice.includes(
+                'const disposeArena = await openArena()',
+            ),
+            invokesDisposer: verticalSlice.includes('disposeArena()'),
+            failureCleansSubscriptions: verticalSlice.includes(
+                'catch (error) {\n        subscriptions.unsubscribe();\n        throw error;\n    }',
+            ),
+        }).toEqual({
+            returnsDisposer: true,
+            exposesSubscriptionCleanup: true,
+            capturesDisposer: true,
+            invokesDisposer: true,
+            failureCleansSubscriptions: true,
         });
     });
 

@@ -107,17 +107,37 @@ export default defineConfig({
 Configure and start the facade once at the application boundary:
 
 ```ts
-import { rallar } from '@shared-web/browser/rallar.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import {
+    rallar,
+    type RallarStartOptions,
+} from '@shared-web/browser/rallar.ts';
+import { DEFAULT_REALTIME_DATA_CHANNEL_LANE } from '@shared-web/browser/middleware.ts';
 
 const credentials = { username: 'alice', password: 'secret' } as const;
 
-const started = await rallar.setup({
+const posesLaneConfig = {
+    id: 'poses',
+    label: 'rtc-poses',
+    init: { ordered: false, maxRetransmits: 0 },
+    flowControl: {
+        overflow: 'replace-by-key',
+        maxQueueItems: 8,
+    },
+} satisfies RtcDataChannelLaneConfig;
+
+const appStartOptions = {
+    connect: true,
+    refreshRooms: true,
+    refreshPeople: true,
+    dataChannelLanes: [DEFAULT_REALTIME_DATA_CHANNEL_LANE, posesLaneConfig],
+} satisfies RallarStartOptions;
+
+let started = await rallar.setup({
     apiBaseUrl: 'http://localhost:8080',
     applicationId: 'example-rallar-app',
     workspaceId: 'default',
-    start: {
-        refreshPeople: true,
-    },
+    start: appStartOptions,
 });
 
 if (!started.session) {
@@ -125,11 +145,10 @@ if (!started.session) {
         username: credentials.username,
         password: credentials.password,
     });
-    await rallar.start({
-        connect: true,
-        refreshRooms: true,
-        refreshPeople: true,
-    });
+    started = await rallar.start(appStartOptions);
+}
+if (!started.session) {
+    throw new Error('Login required before entering a room.');
 }
 ```
 
@@ -207,7 +226,7 @@ function surfaceRealtimeDelivery(
     }
 }
 
-async function openArena(existingRoomRef?: GroupRef): Promise<void> {
+async function openArena(existingRoomRef?: GroupRef): Promise<() => void> {
     const room = existingRoomRef
         ? await rallar.rooms.enter(existingRoomRef)
         : rallar.rooms.session((await rallar.rooms.createAndSwitch({
@@ -221,30 +240,48 @@ async function openArena(existingRoomRef?: GroupRef): Promise<void> {
     });
 
     const subscriptions = rallar.subscriptions();
-    subscriptions.add(ready.onWs((payload, message) => {
-        if (isMessageForRoom(roomRef, message)) console.info('ready', payload.ready);
-    }));
-    subscriptions.add(ready.onRtc((payload, message) => {
-        if (isMessageForRoom(roomRef, message)) console.info('ready', payload.ready);
-    }));
-    subscriptions.add(poses.on((message) => {
-        if (isSameGroupRef(message.data.roomRef, roomRef)) {
-            console.info('pose', message.peerId, message.data.position);
+    try {
+        subscriptions.add(ready.onWs((payload, message) => {
+            if (isMessageForRoom(roomRef, message)) {
+                console.info('ready', payload.ready);
+            }
+        }));
+        subscriptions.add(ready.onRtc((payload, message) => {
+            if (isMessageForRoom(roomRef, message)) {
+                console.info('ready', payload.ready);
+            }
+        }));
+        subscriptions.add(poses.on((message) => {
+            if (isSameGroupRef(message.data.roomRef, roomRef)) {
+                console.info('pose', message.peerId, message.data.position);
+            }
+        }));
+
+        const readyResult = await ready.send({ ready: true });
+        surfaceMessageDelivery('ready', readyResult);
+
+        const poseResult = await poses.send({
+            roomRef,
+            seq: 1,
+            position: [0, 0, 0],
+        });
+        if (poseResult.status !== 'sent') {
+            surfaceRealtimeDelivery('pose', poseResult);
         }
-    }));
 
-    const readyResult = await ready.send({ ready: true });
-    surfaceMessageDelivery('ready', readyResult);
-
-    const poseResult = await poses.send({
-        roomRef,
-        seq: 1,
-        position: [0, 0, 0],
-    });
-    if (poseResult.status !== 'sent') surfaceRealtimeDelivery('pose', poseResult);
+        return () => subscriptions.unsubscribe();
+    } catch (error) {
+        subscriptions.unsubscribe();
+        throw error;
+    }
 }
 
-await openArena();
+const disposeArena = await openArena();
+try {
+    console.info('Arena channels active.');
+} finally {
+    disposeArena();
+}
 ```
 
 Use `rooms.createAndSwitch(...)` for the new-room branch, then bind its current
@@ -269,12 +306,27 @@ concrete adapter can use `rallar.start(...)` because the app boundary already
 performed initial `rallar.setup(...)`.
 
 ```ts
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
+    RallarMessage,
     RallarRoomSession,
     RallarStartResult,
     RallarSubscriptionScope,
 } from '@shared-web/browser/rallar.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+
+function isMessageForRoom<T>(
+    roomRef: GroupRef,
+    message: RallarMessage<T>,
+): boolean {
+    const targets = message.raw.targets;
+    const targetRoomRef = targets?.mode === 'multicast'
+        ? targets.groupRef
+        : targets?.mode === 'broadcast' && targets.scope === 'room'
+        ? targets.groupRef
+        : undefined;
+    return targetRoomRef !== undefined && isSameGroupRef(targetRoomRef, roomRef);
+}
 
 export type RallarAppRuntimeDeps = Readonly<{
     start(signal: AbortSignal): Promise<RallarStartResult>;
@@ -319,9 +371,12 @@ export class RallarAppRuntime {
             const subscriptions = this.deps.subscriptions();
             const status = roomSession.message<{ ready: boolean }>('ready');
             this.assertActive(generation, controller.signal);
-            subscriptions.add(status.onWs((payload) => {
-                if (this.isActive(generation, controller.signal)) {
-                    publishRuntimeState(payload);
+            subscriptions.add(status.onWs((payload, message) => {
+                if (
+                    this.isActive(generation, controller.signal) &&
+                    isMessageForRoom(roomSession.roomRef, message)
+                ) {
+                    console.info('runtime ready', payload.ready);
                 }
             }));
             this.subscriptions = subscriptions;
