@@ -18,7 +18,7 @@ import type {
     ControlAgentBoardRow,
     ControlAgentRunParticipation,
     DeriveControlAgentBoardRowsInput,
-} from './control-agent-board.ts';
+} from './control-agent-board-contract.ts';
 import {
     controlAgentIdentitySummary,
     type ControlDistributedRunSnapshot,

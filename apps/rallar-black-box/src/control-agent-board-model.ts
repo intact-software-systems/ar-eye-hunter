@@ -11,7 +11,7 @@ import type {
 import type {
     ControlAgentBoardRow,
     ControlAgentRunParticipation,
-} from './control-agent-board.ts';
+} from './control-agent-board-contract.ts';
 
 export function controlAgentBoardRowFromParticipations(input: Readonly<{
     agentRow: ControlRunAgentRow;
