@@ -43,11 +43,15 @@ Use Rallar Server middleware/facade when the task involves:
 
 ## Core Rules
 
-1. Configure before connect.
-   Call `rallar.configure({ apiBaseUrl })` before `connect()` or `start()`.
+1. Use `setup()` for initial facade configuration.
+   Initial boot passes the API base URL to `rallar.setup(...)`.
+   Use `rallar.configure(...)` directly only for lower-level or
+   already-configured flows that manage lifecycle steps separately.
 
-2. Prefer defaults for application and workspace.
-   Call `rallar.setDefaults({ applicationId, workspaceId })` so app code can pass simple room IDs most of the time.
+2. Pass initial application and workspace defaults through `setup()`.
+   Include `applicationId` and `workspaceId` in `rallar.setup(...)`.
+   Use `rallar.setDefaults(...)` directly only when updating an
+   already-configured facade.
 
 3. Login before state mutation.
    Room create/join/leave and most state APIs require an authenticated session.
@@ -194,8 +198,12 @@ If creating middleware directly:
 
 Check browser code for:
 
-- `configure()` is called before connect/start.
-- `setDefaults()` exists when app/workspace/group IDs are repeated.
+- Initial boot uses `rallar.setup(...)` to configure the API base URL before
+  connection; direct `configure()` calls are limited to lower-level or
+  already-configured flows.
+- Initial `applicationId` and `workspaceId` defaults are passed through
+  `rallar.setup(...)`; direct `setDefaults()` calls only update an
+  already-configured facade.
 - Authenticated operations handle missing session.
 - UI subscriptions are unsubscribed.
 - First realtime send waits for RTC readiness or handles not-ready results.

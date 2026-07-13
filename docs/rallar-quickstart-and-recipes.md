@@ -370,6 +370,12 @@ const poseGate = createRallarMotionSendGate({
     minRotationDelta: 0.01,
 });
 
+const nextPose: PoseUpdate = {
+    position: [1, 0, 0],
+    velocity: [0.5, 0, 0],
+    seq: 1,
+};
+
 const decision = poseGate.check(nextPose, Date.now());
 if (decision.shouldSend) {
     poseGate.recordSent(nextPose, Date.now());
