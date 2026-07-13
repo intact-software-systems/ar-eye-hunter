@@ -105,8 +105,10 @@ describe('Rallar repo skill and documentation integrity', () => {
             'projects/cash-chase-arena',
         ]);
         expect.soft({
-            scaffoldingMessageTargets: scaffolding.includes('message.raw.targets'),
-            scaffoldingMessageGroupRefCheck: scaffolding.includes('isSameGroupRef'),
+            verticalMessageTargets: verticalSlice.includes('message.raw.targets'),
+            verticalMessageGroupRefCheck: verticalSlice.includes('isSameGroupRef'),
+            verticalMessageCallbackValidations:
+                verticalSlice.match(/isMessageForRoom\(roomRef, message\)/g)?.length === 2,
             scaffoldingRealtimePayloadRoomRef: scaffolding.includes('roomRef: GroupRef'),
             scaffoldingRealtimeGroupRefCheck: scaffolding.includes(
                 'message.data.roomRef',
@@ -121,8 +123,9 @@ describe('Rallar repo skill and documentation integrity', () => {
                 'not automatically room-filtered',
             ),
         }).toEqual({
-            scaffoldingMessageTargets: true,
-            scaffoldingMessageGroupRefCheck: true,
+            verticalMessageTargets: true,
+            verticalMessageGroupRefCheck: true,
+            verticalMessageCallbackValidations: true,
             scaffoldingRealtimePayloadRoomRef: true,
             scaffoldingRealtimeGroupRefCheck: true,
             messageExampleTargets: true,
