@@ -3,7 +3,8 @@
 Status: in progress; Iteration 8 is qualified through `fd9055e`, `f762749`,
 and `37c7a32`; the reviewed Task 0 artifact baseline is committed at
 `166b40b`; two instrumentation-dependent Task 0 proofs remain open; Task 1 is
-green through `56d4a43`; Task 2 is green through `4e89a17`; and Task 3 is next
+green through `56d4a43`; Task 2 is green through `4e89a17`; Task 3 is green
+through `77b0922`; and Tasks 4–5 are next
 
 **Goal:** Complete parent Iteration 9 so large distributed artifacts and run
 collections stay searchable and operable without blocking the browser or
@@ -264,44 +265,70 @@ four Important RED/GREEN fixes; final re-review is clean.
 
 ## Task 3: Move Analyze Derivation And Search Off The Blocking Main Thread
 
-- [ ] Add a focused `src/recipe-console/analyze/**` lifetime worker and typed
+- [x] Add a focused `src/recipe-console/analyze/**` lifetime worker and typed
   request/response adapter; keep it lazy to Analyze import/load and absent from
   the eager shell.
-- [ ] Keep raw/parsed files, the full evidence catalog, search haystacks, and
+- [x] Keep raw/parsed files, the full evidence catalog, search haystacks, and
   cursor execution worker-owned. The main thread receives only compact summary,
   analysis/quality/performance projections, the current <=64-row window, and
   the selected evidence projection—not duplicate artifact strings/snapshots.
-- [ ] Export/reimport bytes on demand through a Blob or transferable buffer;
+- [x] Export/reimport bytes on demand through a Blob or transferable buffer;
   never structured-clone accepted 48 MiB strings back and forth per operation.
-- [ ] Separate in-flight candidate and accepted artifact lifetimes. Abort/
+- [x] Separate in-flight candidate and accepted artifact lifetimes. Abort/
   terminate a candidate on authority loss; keep the accepted worker across
   Analyze→Tune and ordinary view/context changes until Clear, replacement,
   Recipe Console unmount, crash, or explicit disposal.
-- [ ] Retain one exportable Blob/transferable envelope outside the worker so
+- [x] Retain one exportable Blob/transferable envelope outside the worker so
   accepted export remains available without a second Control request even if
   the worker fails. Handle `error`, `messageerror`, and unexpected exit with
   last-usable bounded projection truth.
-- [ ] Reuse existing operation authority: validate Control identity before
+- [x] Reuse existing operation authority: validate Control identity before
   accepting the candidate and patch the URL only after accepted completion.
-- [ ] Expose an on-demand bounded Tune facade containing manifest, focused/
+- [x] Expose an on-demand bounded Tune facade containing manifest, focused/
   compared-run truth, tuning inventory/candidate inputs, and received-message
   deltas without raw event/result arrays.
-- [ ] Return only bounded clone-safe projections plus numeric telemetry. Errors
+- [x] Return only bounded clone-safe projections plus numeric telemetry. Errors
   cross a typed secret-free boundary.
-- [ ] Emit local performance measures for parse/model/search and DOM attributes
+- [x] Emit local performance measures for parse/model/search and DOM attributes
   for source/index/match/mounted/render counts.
-- [ ] Make responsiveness deterministic: worker posts `accepted`; adapter paints
+- [x] Make responsiveness deterministic: worker posts `accepted`; adapter paints
   pending on the next rAF; only then it sends `start`. Assert protocol order
   `accepted → pending-painted/start → complete`. Use a controllable fake to
   prove input/navigation during held search/window replies; real-browser proof
   asserts the actual worker asset/request.
-- [ ] Give build/search/window requests monotonically generated authority.
+- [x] Give build/search/window requests monotonically generated authority.
   Query A→B and window N→N+1 must suppress late A/N responses, selection, and
   telemetry.
-- [ ] GREEN Analyze→Tune→Analyze, compare/candidate, export-after-navigation,
+- [x] GREEN Analyze→Tune→Analyze, compare/candidate, export-after-navigation,
   candidate rejection, worker crash/disposal, and stale search/window tests.
   Telemetry is finite, exact, token/payload-free, non-persistent, and clears/
   bounds performance entries so they cannot grow per search.
+
+Task 3 is green through `77b0922`. Analyze now lazy-loads a focused worker only
+after artifact import/load, paints accepted pending state before `start`, keeps
+candidate and accepted lifetimes separate, and retains only bounded projections,
+one export Blob, numeric telemetry, and an on-demand bounded Tune facade on the
+main thread. Exact Control identity is SHA-256-bound inside the worker; bounded
+opaque display handles are explicitly non-authoritative and never become URL
+IDs. Request generations, watchdogs, disposal, crash/message-error handling,
+late-response suppression, and last-usable Tune/export behavior are executable.
+
+Control artifact bodies are streamed under declared and observed byte limits.
+Non-success bodies use a 64 KiB ceiling while preserving HTTP status for token
+broker retries; modern engines accumulate in one resizable backing store and
+transfer it to an exact fixed buffer before worker handoff. Local form, URL, and
+worker strings share one 4,096-byte UTF-8 contract, so multibyte overflow is
+rejected visibly without stale evidence authority. Every Analyze TS/TSX module
+is at most 300 lines.
+
+Fresh Task 3 proof passed 280/280 focused unit tests, shared TypeScript and all
+seven Deno checks, app TypeScript, a 621-module production build, reciprocal
+experience-chunk proof, and 21/21 focused Chromium cases including the emitted
+worker asset, accepted→paint→start order, Control safety, multibyte URL bounds,
+and retained Tune operation. Independent protocol/security, regression, and
+large-scale reviews report no Critical or Important findings. No navigation
+row, legacy visibility/mount, public export, control-server endpoint, default,
+or cutover status changed.
 
 ## Task 4: Add Reusable Accessible Window Controls
 

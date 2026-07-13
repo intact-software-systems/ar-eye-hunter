@@ -1,11 +1,29 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Iteration 8 History/retention qualified through `fd9055e` and `f762749`, all legacy workflow rows visible and uncut
+Status: canonical migration register; Iteration 9 workerized Analyze is green through `77b0922`, all legacy workflow rows visible and uncut
 Evidence/status date: 2026-07-13
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
 No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 9 workerized Analyze milestone — `77b0922`
+
+Analyze artifact decoding, parsed-model/evidence derivation, full retained
+catalog search, cursor traversal, selection, and bounded Tune projection now
+live behind a lazy feature-local worker. Candidate/accepted authority, exact
+Control identity validation, fixed-buffer transfer, retained export, stale RPC
+suppression, crash fallback, secret-free telemetry, UTF-8 URL boundaries, and
+production worker loading are independently reviewed and green. The main
+thread receives only bounded projections and at most 64 current evidence rows.
+
+This milestone changes no migration row. `runner.runs`,
+`runner.distributed-monitor`, `runner.artifact-analysis`,
+`legacy.distributed-recipes`, and `legacy.shared-test-import` remain visible,
+deep-linkable, and governed by their existing mount and rollback policies.
+Analyze window controls, remaining pressure lists, and the canonical 15,000-row
+production acceptance are still open inside Iteration 9; no parity or cutover
+claim is inferred from worker completion alone.
 
 ## Iteration 8 qualified History and retention exit — `fd9055e`, `f762749`
 
