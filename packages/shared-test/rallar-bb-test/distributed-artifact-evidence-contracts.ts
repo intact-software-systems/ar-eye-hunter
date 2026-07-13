@@ -73,6 +73,8 @@ export type DeriveDistributedArtifactEvidenceInput = Readonly<{
 export type DeriveDistributedArtifactEvidenceIndexInput = Readonly<{
     analysis: DistributedRunAnalysis;
     snapshots: DistributedRunArtifactSnapshots;
+    monitor?: DistributedRunMonitor;
+    parsedControlRun?: Readonly<Record<string, unknown>>;
     sourceFileNames?: readonly string[];
     sourceFiles?: DistributedRunArtifactFiles;
     indexLimit?: number;

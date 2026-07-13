@@ -1,7 +1,12 @@
 import {
-    analyzeDistributedRunArtifactFiles,
-    distributedArtifactSnapshotsFromFiles,
+    deriveDistributedRunArtifactPipelineAnalysis,
+    distributedArtifactSnapshotsFromPipeline,
+    parseDistributedRunArtifactPipeline,
 } from './distributed-artifact-analysis.ts';
+import {
+    distributedArtifactPipelineJsonRecord,
+    parseDistributedArtifactPipeline,
+} from './distributed-artifact-pipeline.ts';
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
     DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
@@ -24,19 +29,34 @@ export function deriveDistributedArtifactEvidence(
     input: DeriveDistributedArtifactEvidenceInput,
 ): DistributedArtifactEvidenceIndex {
     const generatedAtEpochMs = input.generatedAtEpochMs ?? Date.now();
+    const parsed = parseDistributedArtifactPipeline(input.files, {
+        projection: 'literal-loose-files',
+    });
+    const parsedFiles = parseDistributedRunArtifactPipeline(parsed);
+    const snapshots = distributedArtifactSnapshotsFromPipeline(
+        parsed,
+        generatedAtEpochMs,
+        undefined,
+        parsedFiles,
+    );
+    const analysisResult = deriveDistributedRunArtifactPipelineAnalysis({
+        parsed,
+        parsedFiles,
+        snapshots,
+        generatedAtEpochMs,
+    });
     return deriveDistributedArtifactEvidenceIndex({
-        analysis: analyzeDistributedRunArtifactFiles({
-            files: input.files,
-            generatedAtEpochMs,
-        }),
-        snapshots: distributedArtifactSnapshotsFromFiles(
-            input.files,
-            generatedAtEpochMs,
+        analysis: analysisResult.analysis,
+        snapshots,
+        monitor: analysisResult.monitor,
+        parsedControlRun: distributedArtifactPipelineJsonRecord(
+            parsed,
+            'control-run.json',
         ),
-        sourceFileNames: Object.keys(input.files).filter(
-            fileName => input.files[fileName] !== undefined,
+        sourceFileNames: Object.keys(parsed.projectedFiles).filter(
+            fileName => parsed.projectedFiles[fileName] !== undefined,
         ),
-        sourceFiles: input.files,
+        sourceFiles: parsed.projectedFiles,
         indexLimit: input.indexLimit,
         summaryLimit: input.summaryLimit,
         payloadSummaryLimit: input.payloadSummaryLimit,
@@ -46,7 +66,7 @@ export function deriveDistributedArtifactEvidence(
 export function deriveDistributedArtifactEvidenceIndex(
     input: DeriveDistributedArtifactEvidenceIndexInput,
 ): DistributedArtifactEvidenceIndex {
-    const monitor = deriveDistributedRunMonitor({
+    const monitor = input.monitor ?? deriveDistributedRunMonitor({
         distributedRun: input.snapshots.distributedRun,
         controlRun: input.snapshots.controlRun,
         artifactBundle: input.snapshots.artifactBundle,
@@ -57,6 +77,7 @@ export function deriveDistributedArtifactEvidenceIndex(
         monitor,
         sourceFileNames: new Set(input.sourceFileNames ?? []),
         sourceFiles: input.sourceFiles,
+        parsedControlRun: input.parsedControlRun,
         summaryLimit: boundedEvidenceTextLimit(
             input.summaryLimit,
             DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT,

@@ -6,6 +6,8 @@ import {
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import type { DistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import { createRecipeConsoleScaleFixture } from
+    '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 const GENERATED_AT_EPOCH_MS = Date.parse('2026-07-12T14:00:00.000Z');
 
@@ -163,6 +165,52 @@ function urlState(
 }
 
 describe('Recipe Console Analyze artifact model', () => {
+    it('parses one source pipeline and reuses its monitor and control provenance', () => {
+        const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
+        const jsonDocuments = new Set(Object.entries(fixture.files)
+            .filter(([fileName, text]) => fileName.endsWith('.json') && typeof text === 'string')
+            .map(([, text]) => text as string));
+        const jsonlRows = new Set(Object.entries(fixture.files)
+            .filter(([fileName, text]) => fileName.endsWith('.jsonl') && typeof text === 'string')
+            .flatMap(([, text]) => (text as string).split(/\r?\n/u))
+            .filter(row => row.trim().length > 0));
+        let sourceEnumerationCount = 0;
+        const files = new Proxy(fixture.files, {
+            ownKeys(target) {
+                sourceEnumerationCount += 1;
+                return Reflect.ownKeys(target);
+            },
+        });
+        const originalParse = JSON.parse;
+        let jsonDocumentParseCount = 0;
+        let jsonlRowParseCount = 0;
+        let otherJsonParseCount = 0;
+        JSON.parse = ((text: string, reviver?: Parameters<typeof JSON.parse>[1]) => {
+            if (jsonDocuments.has(text)) jsonDocumentParseCount += 1;
+            else if (jsonlRows.has(text)) jsonlRowParseCount += 1;
+            else otherJsonParseCount += 1;
+            return originalParse(text, reviver);
+        }) as typeof JSON.parse;
+        try {
+            const model = createAnalyzeArtifactModel({
+                files,
+                source: 'local-files',
+                label: 'Single-pipeline scale fixture',
+                generatedAtEpochMs: fixture.generatedAtEpochMs,
+                artifactSchemaVersion: fixture.artifactSchemaVersion,
+            });
+
+            expect(model.evidenceIndex.monitor.distributedRunId)
+                .toBe(model.distributedRunId);
+            expect(sourceEnumerationCount).toBe(1);
+            expect(jsonDocumentParseCount).toBe(6);
+            expect(jsonlRowParseCount).toBe(fixture.counts.sourceRows);
+            expect(otherJsonParseCount).toBe(0);
+        } finally {
+            JSON.parse = originalParse;
+        }
+    });
+
     it('projects an authoritative server-v2 workspace and a portable re-import envelope', () => {
         const model = createAnalyzeArtifactModel({
             files: serverV2Files(),

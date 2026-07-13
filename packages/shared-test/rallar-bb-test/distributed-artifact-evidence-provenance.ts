@@ -4,11 +4,13 @@ export function distributedArtifactEvidenceSourceFile(
     input: Readonly<{
         sourceFileNames: ReadonlySet<string>;
         sourceFiles?: DistributedRunArtifactFiles;
+        parsedControlRun?: Readonly<Record<string, unknown>>;
     }>,
     controlField: 'results' | 'events',
     jsonlFile: 'results.jsonl' | 'events.jsonl',
 ): string {
-    const controlRun = jsonRecord(input.sourceFiles?.['control-run.json']);
+    const controlRun = input.parsedControlRun ??
+        jsonRecord(input.sourceFiles?.['control-run.json']);
     if (
         Array.isArray(controlRun[controlField]) &&
         controlRun[controlField].length > 0

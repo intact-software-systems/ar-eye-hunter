@@ -10,6 +10,10 @@ import {
     deriveDistributedArtifactEvidenceIndex,
     searchDistributedArtifactEvidence,
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence.ts';
+import {
+    deriveDistributedArtifactWorkspace,
+    distributedArtifactPipelineJsonRecord,
+} from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 
 const GENERATED_AT_EPOCH_MS = Date.parse('2026-07-12T12:00:00.000Z');
 
@@ -227,6 +231,50 @@ describe('distributed artifact evidence index', () => {
         expect(fromFiles.entries.every((entry) => entry.summary.length <= 28)).toBe(true);
         expect(fromFiles.entries.every((entry) => entry.payloadSummary.length <= 32)).toBe(true);
         expect(fromFiles.entries.map((entry) => entry.atEpochMs)).toEqual([320, 340, 340, 500]);
+    });
+
+    it('reuses a precomputed monitor and parsed control provenance without JSON reparsing', () => {
+        const files = evidenceFiles();
+        const derived = deriveDistributedArtifactWorkspace({
+            files,
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+        });
+        const analysis = derived.workspace.analysis;
+        const snapshots = derived.workspace.snapshots;
+        if (!analysis || !snapshots || !derived.monitor) {
+            throw new Error('Expected derived evidence inputs.');
+        }
+        const parsedControlRun = distributedArtifactPipelineJsonRecord(
+            derived.parsed,
+            'control-run.json',
+        );
+        const controlRunText = files['control-run.json'];
+        const originalParse = JSON.parse;
+        let controlRunParseCount = 0;
+        JSON.parse = ((text: string, reviver?: Parameters<typeof JSON.parse>[1]) => {
+            if (text === controlRunText) controlRunParseCount += 1;
+            return originalParse(text, reviver);
+        }) as typeof JSON.parse;
+        try {
+            const index = deriveDistributedArtifactEvidenceIndex({
+                analysis,
+                snapshots,
+                monitor: derived.monitor,
+                parsedControlRun,
+                sourceFileNames: Object.keys(derived.parsed.projectedFiles),
+                sourceFiles: derived.parsed.projectedFiles,
+                indexLimit: 100,
+            });
+
+            expect(index.monitor).toBe(derived.monitor);
+            expect(controlRunParseCount).toBe(0);
+            expect(index.entries.find(entry => entry.kind === 'result'))
+                .toMatchObject({ sourceFile: 'control-run.json' });
+            expect(index.entries.find(entry => entry.kind === 'diagnostic'))
+                .toMatchObject({ sourceFile: 'control-run.json' });
+        } finally {
+            JSON.parse = originalParse;
+        }
     });
 
     it('indexes failures, results, events, and diagnostics without duplicating diagnostic events', () => {

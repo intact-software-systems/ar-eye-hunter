@@ -29,6 +29,7 @@ export function distributedArtifactEvidenceRows(input: Readonly<{
     monitor: DistributedRunMonitor;
     sourceFileNames: ReadonlySet<string>;
     sourceFiles?: DistributedRunArtifactFiles;
+    parsedControlRun?: Readonly<Record<string, unknown>>;
     summaryLimit: number;
     payloadSummaryLimit: number;
 }>): DistributedArtifactEvidenceEntry[] {

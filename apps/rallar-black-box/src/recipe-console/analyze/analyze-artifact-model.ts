@@ -1,7 +1,8 @@
 import {
     composeDistributedArtifactIssueMarkdown,
-    createDistributedArtifactWorkspace,
+    deriveDistributedArtifactWorkspace,
     deriveDistributedArtifactEvidenceIndex,
+    distributedArtifactPipelineJsonRecord,
     searchDistributedArtifactEvidence,
     type DistributedArtifactEvidenceIndex,
     type DistributedArtifactEvidenceSearchResult,
@@ -9,6 +10,7 @@ import {
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles,
     type DistributedRunArtifactSnapshots,
+    type ParsedDistributedArtifactPipeline,
 } from '@shared-test/rallar-bb-test/mod.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
@@ -90,11 +92,12 @@ export class AnalyzeArtifactModelError extends Error {
 export function createAnalyzeArtifactModel(
     input: AnalyzeArtifactModelInput,
 ): AnalyzeArtifactModel {
-    const workspace = createDistributedArtifactWorkspace({
+    const derived = deriveDistributedArtifactWorkspace({
         files: input.files,
         generatedAtEpochMs: input.generatedAtEpochMs,
         artifactSchemaVersion: input.artifactSchemaVersion,
     });
+    const workspace = derived.workspace;
     rejectUnsupportedFamily(workspace, input.label);
 
     const analysis = workspace.analysis;
@@ -107,17 +110,20 @@ export function createAnalyzeArtifactModel(
         );
     }
 
-    const portableFiles = normalizedPortableFiles(workspace.files);
+    const portableFiles = normalizedPortableFiles(derived.parsed.projectedFiles);
     const evidenceIndex = deriveDistributedArtifactEvidenceIndex({
         analysis,
         snapshots,
+        monitor: derived.monitor,
+        parsedControlRun: distributedArtifactPipelineJsonRecord(
+            derived.parsed,
+            'control-run.json',
+        ),
         sourceFileNames: Object.keys(portableFiles),
-        sourceFiles: workspace.files,
+        sourceFiles: derived.parsed.projectedFiles,
     });
     const ignoredFiles = normalizedIgnoredFiles(input.ignoredFiles ?? []);
-    const selectedArtifactFileCount = Object.values(input.files).filter(
-        value => typeof value === 'string',
-    ).length;
+    const selectedArtifactFileCount = selectedInputFileCount(derived.parsed);
     const firstActionableEvidenceId = evidenceIndex.entries.find(
         entry => entry.kind === 'failure',
     )?.id;
@@ -168,6 +174,17 @@ export function createAnalyzeArtifactModel(
             ? { firstActionableEvidenceId }
             : {}),
     };
+}
+
+function selectedInputFileCount(
+    parsed: ParsedDistributedArtifactPipeline,
+): number {
+    if (parsed.source === 'bundle-envelope') {
+        return 1 + parsed.projection.outerIgnoredFiles.length;
+    }
+    return Object.values(parsed.projectedFiles).filter(
+        value => typeof value === 'string',
+    ).length;
 }
 
 export function deriveAnalyzeArtifactSearchResult(
