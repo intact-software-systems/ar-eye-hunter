@@ -24,3 +24,5 @@ apps/web/dist
 **.env**
 
 /tmp/**
+
+/.pnpm-store/**
