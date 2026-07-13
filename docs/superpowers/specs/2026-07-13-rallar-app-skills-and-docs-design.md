@@ -380,4 +380,3 @@ The iteration is complete when:
 7. both example SPAs still build;
 8. the focused and broader unit tests pass, with any environment-only skipped
    validator reported explicitly.
-
