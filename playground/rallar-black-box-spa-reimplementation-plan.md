@@ -441,7 +441,57 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 9 — Large-Run Scale And Virtualization | **Complete** | One parsed shared pipeline, workerized Analyze, indexed Control/Monitor truth, and accessible deterministic windows now bound 15,000 artifact rows, 5,000 History/Tune pairs, 24,002 knobs, Execute/Monitor/retention pressure paths, and every mounted list. The exact production acceptance, same-machine candidate profile, 1,385-test app suite, 169 available Recipe Console browser cases, 28 legacy cases, four independent reviews, and final focus/fidelity repairs are green through `f8cef95`. Ready-State #10 is code-backed. Configured live remains an exact skip, not a pass; no legacy row, default, route, mount, public/control contract, or cutover changed. |
 | 10 — Fleet And Geographic Evidence | **Complete** | Shared indexed Fleet evidence and the lazy bounded workspace are code-backed in `0088be0`; canonical browser, responsive, CSS/chunk, alias, and five-baseline proof is code-backed in `3ab86a9`. Fresh qualification passes 279 focused tests, 1,472 complete app tests, all shared/app type and Deno gates, a 758-module build, 7/7 Fleet and 3/3 visual cases, 65/65 broader Recipe Console cases, the complete Recipe Console configuration with 179 passed and one exact configured-live skip, 33/33 legacy Fleet/navigation cases, and 28/28 existing-owner regressions. Legacy Fleet remains visible, active-only, deep-linkable, and uncut; no default or contract changed. |
 | 11 — Advanced Diagnostics Bridge | **Complete** | The complete contextual Advanced bridge, 22-surface alias contract, bounded return context, ten safe dynamic legacy targets, twelve documented stateful exceptions, reciprocal chunks, Direction A browser matrix, and fresh qualification are code-backed through `78e2c13`. Ready-State #11–#13 are satisfied. No legacy row or default changed; configured live remains skipped, not passed. |
-| 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
+| 12 — Polish, Accessibility, And Default Flip | **Complete** | Blank and provider-only URLs now canonicalize to Recipe Console Execute; explicit legacy routes, aliases, stateful exceptions, and runner-agent launches remain operational. Scoped legacy accessibility, modal/focus behavior, deterministic browser QA, real Postgres lifecycle/export, and final review evidence are qualified through `4f04228` and `aec6e57`. Ready-State #1–#14 are satisfied; no legacy row is retired or newly hidden. |
+
+#### Iteration 12 qualified final cutover — `4f04228`, `aec6e57`
+
+- The authenticated blank route and provider-only route select canonical
+  Recipe Console Execute without requesting or mounting `LegacyExperience`.
+  Explicit `experience=legacy`, every old alias/deep link, Advanced handoff,
+  and control-agent launch still select the preserved legacy owner. The exact
+  blank-default browser acceptance passes 1/1 and the exhaustive legacy
+  navigation suite passes 29/29.
+- The six registered legacy accessibility debts are closed by the 67-line,
+  legacy-only scoped stylesheet plus semantic CRDT document/entity buttons.
+  The final regular browser matrix passes 48/48 across desktop 1440x900,
+  tablet 900x900, genuine-touch portrait 430x932, genuine-touch landscape
+  932x430, keyboard, reduced motion, operational states, modal focus,
+  persistent non-hover evidence, 44px targets, and both CSS load orders.
+- The settled deterministic Recipe Console configuration passes 196 tests and
+  skips exactly one opt-in configured-live wrapper. That skip is not a pass and
+  retains the exact prerequisite text. The separately configured command
+  `npm run test:e2e:rallar-black-box:full-stack:real:distributed` executes and
+  passes 4/4 against fresh Postgres/API/control/SPA services, including visible
+  create/stage/start/Monitor/Cancel/export plus strict browser ACK, WS, and RTC
+  recipes. Ready-State #3 is therefore passed by real execution, not discovery
+  or mock evidence.
+- Production-bound chunk/Advanced cases use the Recipe Console configuration
+  that owns preview port 4176 and pass 13/13. Direction A concept fidelity uses
+  the same deterministic renderer and passes all 8 baselines without snapshot
+  updates. A regular-config attempt was intentionally rejected as
+  non-authoritative after 5 tests passed and 8 production navigations received
+  `ERR_CONNECTION_REFUSED`: that config starts only ports 5176/5180. The
+  regular config was not broadened for unrelated suites.
+- Fresh non-browser qualification passes 294/294 focused tests and 1,568/1,568
+  app tests across 149 files; shared-test TypeScript, all seven Deno entries,
+  direct Deno checks, app/shared-server/API checks, a 777-module build,
+  reciprocal chunk assertion, control-server 79/79, PGlite 13/13, and real
+  PostgreSQL prefix/planner 3/3. Prisma reports 15 migrations and an up-to-date
+  schema. Independent final review reports no Critical, Important, or Minor
+  finding.
+- Final ownership remains bounded: `App.tsx` is 260 lines,
+  `RecipeConsoleApp.tsx` 28, `LegacyAppShell.tsx` 111, and the focused Execute
+  target owner 149. No replacement registry, shell, or global stylesheet
+  monolith was introduced. No existing public export was removed or changed,
+  and no existing control-server contract changed; one deterministic
+  request-ID helper export and one idempotent database expression index are
+  additive.
+- The in-app Browser was attempted and remains unavailable exactly as
+  `Browser runtime unavailable after setup failure: Cannot redefine property:
+  process`; terminal Playwright is fallback evidence, not an in-app Browser
+  pass. Original-resolution captures and console/page-error acceptance were
+  inspected; no unexplained clipping, overflow, hidden control, hover-only
+  evidence, or relevant warning/error/page-error remained.
 
 #### Iteration 10 implementation start — `7d25ab9`
 
@@ -1831,21 +1881,21 @@ compatible, and nothing was pushed or opened as a PR.
 | Existing runner and distributed recipe tests pass | `distributed-recipes.test.ts` passed 36/36 and `control-run-manager.test.ts` passed 5/5 inside the exact 82/82 Iteration 1 command. |
 | Structure gates reject legacy imports from Recipe Console and new App feature ownership | `app-structure.test.ts` passed 41/41 and retains its Recipe Console-to-legacy ban, App feature declaration/import ban, lazy-boundary checks, and exact owner DAG. |
 
-#### Remaining risks and evidence ownership
+#### Risk register and final disposition
 
 | Remaining risk | Owning iteration(s) | Mitigation and evidence target |
 | --- | --- | --- |
 | Hidden mounted effects, polling, subscriptions, and runtime ownership | 1, 11 | Extract ownership before unmounting and satisfy `packages/tests/rallar-black-box/app-structure.test.ts` — `legacy routes resolve through dynamic imports only` plus `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions`. |
 | Source, DOM, and CSS selector compatibility can regress during extraction | 1, 2, 11 | Preserve source/public boundaries and add the structure assertion plus `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `CSS isolation fixture preserves representative legacy and Recipe Console controls`. |
-| URL/default flip and runner-agent launch compatibility | 2, 8, 12 | Iteration 8 now passes `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL` and the preserved legacy runner-agent ticket pair. Iteration 12 still owns the blank-URL default flip and stale stored-legacy precedence proof. |
+| URL/default flip and runner-agent launch compatibility | Closed in 12 | The blank/provider default and stale stored-legacy precedence acceptance pass, while explicit legacy URLs and the preserved runner-agent ticket pair remain operational. |
 | Future artifact versions and new profile drift | 12 and future contract changes | Iteration 6 now proves profile/version-aware partial, malformed, future-schema, envelope, and generic-profile distinctions through the canonical Analyze acceptance and shared workspace tests. Preserve the additive compatibility inventory and rerun those gates whenever a producer changes. |
 | Retention preview safety | 8 | Satisfied through `fd9055e`: optional dry-run behavior preserves the destructive default, guarded confirmation is explicit, and `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup` passes. Preserve this gate for later changes. |
-| Qualitative visual and performance gates lack executable thresholds | 12 | Iteration 2 has four approved screenshot baselines and a 1% executable drift budget in `recipe-console-concept-fidelity.spec.ts`; Iteration 9 now passes exact bounded-render/cardinality, accepted-to-paint heartbeat, complete responsive/input/reduced-motion, and same-machine advisory profiling gates. Iteration 12 still owns the final cross-product viewport, keyboard, touch, reduced-motion, and non-hover acceptance after the remaining surfaces and default flip land. |
-| Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
-| Preserved legacy CRDT controls are 30px high at desktop and 932x430 landscape, and its fixed editor/diagnostic/table tracks create an 807px document at 430px portrait | 12 | Keep the exact parity extraction unchanged; add narrow-screen CRDT grid collapse and locally contained table scrolling, require 44px touch targets in touch viewports, and prove zero page overflow in `recipe-console-accessibility.spec.ts`. |
-| Preserved legacy Auth, Groups/Clients, and Rallar Server action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact parity extractions unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
+| Qualitative visual and performance gates need executable thresholds | Closed in 12 | Direction A retains its 1% pixel budget; the final 48/48 cross-product matrix and eight no-update concept baselines cover desktop, tablet, touch portrait/landscape, keyboard, reduced motion, non-hover evidence, operational states, and CSS isolation. |
+| Preserved legacy Media and Rallar Data controls were only 30px high, including at 932x430 | Closed in 12 | The scoped legacy accessibility layer raises actionable touch targets to at least 44px without overflow or hover-only evidence; the final accessibility acceptance passes. |
+| Preserved legacy CRDT controls and fixed tracks overflowed narrow screens | Closed in 12 | Semantic document/entity buttons, narrow-screen grid collapse, contained table scrolling, 44px targets, focus behavior, and zero page overflow pass in portrait and landscape. |
+| Preserved legacy Auth, Groups/Clients, and Rallar Server controls measured 42px | Closed in 12 | The scoped legacy accessibility layer raises these actionable targets to at least 44px across the final viewport matrix. |
 | Local Node 26 differs from CI Node 24 | 1 and every code-changing iteration | Run the focused tests, typecheck, and build on CI Node 24; retain the local Node `26.5.0` result separately so version-specific differences remain visible. |
-| The configured live/Postgres lifecycle remains unexecuted after the Iteration 5 code-backed exit | 8, 12, or the next available configured-service checkpoint | Run `npm run test:e2e:rallar-black-box:full-stack:real:distributed`, including `full-stack-recipe-console-monitor.spec.ts`; do not close Ready-State #3 from mock, discovery, no-environment skip, or sandbox-only evidence. |
+| The configured live/Postgres lifecycle remained unexecuted after the Iteration 5 code-backed exit | Closed in 12 | `npm run test:e2e:rallar-black-box:full-stack:real:distributed` now executes 4/4 against fresh Postgres/API/control/SPA services, including `full-stack-recipe-console-monitor.spec.ts` and strict ACK/WS/RTC recipes. The deterministic config's opt-in wrapper skip remains recorded separately and was not used as pass evidence. |
 
 ### Iteration 0: Product Cut And Evidence Map
 

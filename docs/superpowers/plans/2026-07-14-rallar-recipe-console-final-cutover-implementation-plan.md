@@ -46,9 +46,10 @@ stylesheet.
   Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
   apps/rallar-black-box available.`
 - Interpret Ready-State #3 according to the user's completion rule: all
-  deterministic/code-backed behavior and every available validation must pass;
-  the unavailable configured-service execution remains explicitly skipped and
-  must never be described as passed.
+  deterministic/code-backed behavior and every available validation must pass.
+  Iteration 12 found the configured services available and executed the live
+  owner 4/4; the deterministic config's separate opt-in wrapper remains an
+  explicit skip and must never be described as that pass.
 - No push or pull request.
 
 ---
@@ -383,11 +384,11 @@ stylesheet.
 - Produces: the final code-backed Ready-State matrix, exact skip evidence, and
   an independently reviewed local branch.
 
-- [ ] Dispatch independent reviews for default/compatibility routing,
+- [x] Dispatch independent reviews for default/compatibility routing,
   accessibility/contrast, React/CSS/chunk ownership, operational state, and
   final Ready-State traceability. RED/GREEN every Critical or Important
   finding, then re-review.
-- [ ] Run the following exact non-browser qualification commands and record
+- [x] Run the following exact non-browser qualification commands and record
   their exit code and test count separately:
 
   ```bash
@@ -419,7 +420,7 @@ stylesheet.
   npm run test:rallar-black-box-control
   ```
 
-- [ ] Run the following exact browser commands. The first command is the
+- [x] Run the following exact browser commands. The first command is the
   complete Recipe Console config; the remaining commands provide separately
   countable cutover, legacy, responsive, operational, CSS, keyboard/reduced-
   motion, and no-update visual evidence:
@@ -439,9 +440,11 @@ stylesheet.
     tests/playwright/rallar-black-box/recipe-console-analyze-safety.spec.ts \
     tests/playwright/rallar-black-box/recipe-console-css-isolation.spec.ts
   npx playwright test \
-    --config apps/rallar-black-box/playwright.config.ts \
+    --config apps/rallar-black-box/playwright.recipe-console.config.ts \
     tests/playwright/rallar-black-box/recipe-console-chunks.spec.ts \
-    tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts \
+    tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts
+  npx playwright test \
+    --config apps/rallar-black-box/playwright.recipe-console.config.ts \
     tests/playwright/rallar-black-box/recipe-console-concept-fidelity.spec.ts
   npx playwright test \
     --config apps/rallar-black-box/playwright.config.ts \
@@ -452,40 +455,77 @@ stylesheet.
   430×932, and touch landscape 932×430 screenshots at original resolution;
   review console/page errors; never use `--update-snapshots` unless an
   intentional reviewed visual change requires it.
-- [ ] Attempt
+- [x] Attempt
   `npm run test:e2e:rallar-black-box:full-stack:real:distributed`. Record a
   real pass only on successful configured execution; otherwise record the exact
   unavailable prerequisite from Global Constraints as skipped.
-- [ ] Verify actual line counts and structure boundaries for `App.tsx`,
+- [x] Verify actual line counts and structure boundaries for `App.tsx`,
   `RecipeConsoleApp.tsx`, and `LegacyAppShell.tsx`; verify old deep links,
   explicit `experience=legacy`, Advanced Legacy, and runner-agent launch remain
   operational.
-- [ ] Update all five evidence documents with actual hashes, commits, counts,
+- [x] Update all five evidence documents with actual hashes, commits, counts,
   viewports, skips, cutover proof, rollback, remaining risks, and Ready-State
   #1–#14 dispositions. Mark #3 code-backed/conditionally available while
   leaving the configured live execution explicitly skipped if unavailable.
-- [ ] Run `git diff --check`, documentation consistency searches, and a final
+- [x] Run `git diff --check`, documentation consistency searches, and a final
   whole-branch independent review. Do not accept unresolved Critical or
   Important findings.
-- [ ] Commit `docs: qualify Recipe Console final cutover`. Do not push or open a
+- [x] Commit `docs: qualify Recipe Console final cutover`. Do not push or open a
   pull request.
+
+### Task 4 qualification — 2026-07-14
+
+- Code milestone `aec6e57` closes the last accessibility, modal/focus,
+  collision, live-test, Postgres-prefix, and durable-inbox qualification gaps.
+  Default cutover remains the earlier single-purpose `4f04228` milestone.
+- Exact non-browser proof passes 294/294 focused tests and 1,568/1,568 complete
+  app tests across 149 files; shared-test TypeScript and Deno checks, direct
+  Deno entries, app/shared-server/API checks, a 777-module production build,
+  reciprocal chunk assertion, control-server 79/79, PGlite 13/13, real
+  PostgreSQL 3/3, and Prisma's 15-migration up-to-date status.
+- Final browser proof passes the settled Recipe Console configuration 196 with
+  one explicit configured-live wrapper skip, blank/default 1/1, legacy
+  navigation 29/29, responsive/accessibility/operational/CSS 48/48,
+  chunk/Advanced 13/13, and concept fidelity 8/8 without snapshot updates.
+  Original-resolution desktop/tablet/touch captures and explicit
+  console/page-error evidence were inspected.
+- Repository truth corrected the draft browser command: chunk/Advanced and
+  concept specs intentionally target production preview port 4176 and must use
+  `playwright.recipe-console.config.ts`, which owns both dev and preview. The
+  regular config owns only 5176/5180 and forces SwiftShader. Its exploratory
+  chunk/Advanced attempt passed five dev cases and received eight
+  `ERR_CONNECTION_REFUSED` production navigations; no product assertion failed,
+  the config was not broadened, and the authoritative deterministic runs pass.
+- The configured service owner was available. The exact
+  `npm run test:e2e:rallar-black-box:full-stack:real:distributed` command passes
+  4/4 after executing visible create/stage/start/Monitor/Cancel/export plus
+  strict browser ACK, WS, and RTC recipes. The deterministic config's one
+  opt-in skip remains a skip and is not counted as this pass.
+- Final line counts are 260 (`App.tsx`), 28 (`RecipeConsoleApp.tsx`), 111
+  (`LegacyAppShell.tsx`), 149 (`ExecuteTargetWindow.tsx`), and 67 for the scoped
+  legacy accessibility stylesheet. Explicit legacy/alias/agent-launch rollback
+  stays operational and no legacy row is retired or newly hidden.
+- Independent final review reports no Critical, Important, or Minor finding.
+  The in-app Browser remains unavailable exactly as `Browser runtime
+  unavailable after setup failure: Cannot redefine property: process`;
+  terminal Playwright is fallback evidence, not an in-app Browser pass.
 
 ## Iteration 12 Exit Criteria
 
-- [ ] Authenticated blank `/` resolves to canonical Recipe Console Execute and
+- [x] Authenticated blank `/` resolves to canonical Recipe Console Execute and
   does not load legacy resources; explicit old aliases/deep links remain legacy.
-- [ ] The six registered legacy accessibility debts are closed with 44px
+- [x] The six registered legacy accessibility debts are closed with 44px
   actions, narrow CRDT containment, and no page overflow.
-- [ ] Desktop, tablet, genuine-touch portrait/landscape, keyboard, reduced
+- [x] Desktop, tablet, genuine-touch portrait/landscape, keyboard, reduced
   motion, persistent non-hover evidence, contrast, operational states, and CSS
   isolation pass executable browser gates.
-- [ ] Ready-State #14 has the exact named browser acceptance; #1–#14 have
-  code-backed evidence. Unavailable configured live validation is recorded as
-  skipped with the exact reason and is never represented as passed.
-- [ ] `App.tsx`, `RecipeConsoleApp.tsx`, and `LegacyAppShell.tsx` remain bounded
+- [x] Ready-State #14 has the exact named browser acceptance; #1–#14 have
+  code-backed evidence. The deterministic config's opt-in live wrapper remains
+  an exact skip; the separately configured owner executes and passes 4/4.
+- [x] `App.tsx`, `RecipeConsoleApp.tsx`, and `LegacyAppShell.tsx` remain bounded
   glue; no registry, shell, or stylesheet monolith is introduced.
-- [ ] Legacy rollback navigation, all old routes, public exports, and existing
+- [x] Legacy rollback navigation, all old routes, public exports, and existing
   control contracts remain operational; nothing is retired.
-- [ ] All available focused, complete, build, Deno, browser, visual, and review
+- [x] All available focused, complete, build, Deno, browser, visual, and review
   gates are green, docs match repository truth, and cohesive local milestone
   commits exist on the isolated `codex/` branch.

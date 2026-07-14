@@ -1,9 +1,9 @@
 # Recipe Console Product Spec
 
-Status: canonical product contract; Ready-State #2 and #4–#13 are code-backed
-through Iterations 4–11 and `78e2c13`; Ready-State #3 remains open for its
-unavailable configured-service execution, while Ready-State #1 and #14 remain
-owned by Iteration 12
+Status: canonical product contract; Ready-State #1–#14 are code-backed and
+executed through Iteration 12, `4f04228`, and `aec6e57`; Recipe Console is the
+blank/provider-only URL default and the preserved legacy experience remains an
+operational rollback
 Evidence date: 2026-07-14
 
 This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
@@ -159,7 +159,7 @@ The product must not present all eight files as universally required. Unknown ve
 
 ## Ready-State traceability
 
-The quoted test names below are the canonical acceptance evidence. A row is not complete until its named artifact exists and passes; naming it here is not pass evidence. An unavailable configured-service test remains open even when its wrapper and discovery checks pass.
+The quoted test names below are the canonical acceptance evidence. A row is not complete until its named artifact exists and passes; naming it here is not pass evidence. An unavailable configured-service test would remain open even when its wrapper and discovery checks pass. Iteration 12 executed the configured owner, so no row below remains open.
 
 | # | Ready-State condition | Owning iteration | Exact expected evidence |
 | --- | --- | --- | --- |
@@ -177,6 +177,35 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
 | 12 | Existing legacy UI elements remain reachable through advanced/contextual routes, even when hidden from the main flow. | 11 | `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `opens every registered legacy surface from its alias and contextual route` |
 | 13 | Hidden legacy routes are not mounted or loaded on the default path unless a documented state-preservation exception requires it. | 1, 11 | `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions`; `packages/tests/rallar-black-box/app-structure.test.ts` — `legacy routes resolve through dynamic imports only` |
 | 14 | Desktop and mobile views are usable without hidden hover-only evidence. | 12 | `tests/playwright/rallar-black-box/recipe-console-accessibility.spec.ts` — `exposes equivalent keyboard touch and persistent evidence at desktop portrait and landscape viewports` |
+
+### Iteration 12 final Ready-State checkpoint — `4f04228`, `aec6e57`
+
+All fourteen rows above pass. Ready-State #1 and #14 pass their exact named
+acceptances after the blank-default flip and final accessibility work.
+Ready-State #3 passes the separately configured
+`npm run test:e2e:rallar-black-box:full-stack:real:distributed` execution 4/4:
+visible create/stage/start/Monitor/Cancel/export and strict browser ACK, WS, and
+RTC recipes run against fresh Postgres/API/control/SPA services. The complete
+deterministic Recipe Console configuration still reports one opt-in live
+wrapper skip with the exact prerequisite; that skip is retained as skipped and
+is not the #3 pass evidence.
+
+Final qualification passes 196 deterministic browser cases plus that one
+explicit skip, blank default 1/1, preserved legacy navigation 29/29,
+responsive/accessibility/operational/CSS 48/48, production chunk/Advanced
+13/13, and all eight Direction A baselines without updates. Non-browser proof
+passes 294/294 focused and 1,568/1,568 complete app tests, a 777-module build,
+shared/app/server/API type and Deno checks, control-server 79/79, PGlite 13/13,
+real PostgreSQL prefix/planner 3/3, and an up-to-date 15-migration schema.
+Independent final review is clean.
+
+The cutover changes only experience selection. Explicit legacy aliases, old
+deep links, Advanced/contextual handoffs, and runner-agent launches remain
+operational. Ten safe legacy owners remain lazy/unmounted and twelve documented
+stateful exceptions remain mounted only inside active `LegacyExperience`.
+Nothing is retired or newly hidden from the preserved legacy navigation. No
+existing public export was removed or changed, and no existing control-server
+contract changed; one deterministic request-ID helper export is additive.
 
 ### Iteration 5 evidence checkpoint — `42eedae`
 

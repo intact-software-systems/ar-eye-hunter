@@ -4,8 +4,10 @@ This folder documents the current state of `apps/rallar-black-box` after the
 command-center distributed recipe Iterations 43-50 and the shared-test
 Iterations 1-19 runner/handoff work.
 
-The app is a browser-based black-box test agent and visible debugging workbench
-for Rallar RTC, WebSocket, and HTTP test flows. It uses the shared
+The app is a browser-based Recipe Console and black-box test agent for Rallar
+RTC, WebSocket, and HTTP test flows. The blank URL and provider-only URLs open
+the Recipe Console `Execute` view; its primary navigation is `Execute`,
+`Monitor`, `Analyze`, `Tune`, `Fleet`, and `Advanced`. It uses the shared
 `rallar-bb-test` command contract, can connect to a WebSocket control server,
 streams results and runtime events, and provides tabbed UI surfaces for
 auth/session testing, rooms/client state inspection, manual testing, WebSocket
@@ -88,26 +90,39 @@ set `RALLAR_PRODUCTION_HARDENING=1`,
 storage, and bounded retention. See
 [Production Env Hardening Checklist](../../../docs/production-env-hardening-checklist.md).
 
-Open the SPA in local workbench mode:
+Open the Recipe Console:
 
 ```text
 http://localhost:5176/
 ```
 
 No login is required for the local simulated UI. The client starts with demo
-defaults and the current SPA executor is simulated, so the visible tabs,
-diagnostics, reports, topology, Auth, Groups/Clients, and WebSocket surfaces
-work without a Rallar account or backend login.
+defaults and the current SPA executor is simulated, so the seeded Recipe
+Console can execute and inspect deterministic local runs without a Rallar
+account or backend login. The blank URL canonicalizes to the versioned Recipe
+Console `Execute` route; a URL containing only `provider=simulated` does the
+same while preserving that provider selection.
+
+The previous Local Workbench, Shared Test, and direct diagnostic tabs remain
+available through `Advanced` handoffs and their explicit legacy deep links.
+For example, open Local Workbench directly with:
+
+```text
+http://localhost:5176/?experience=legacy&workspace=black-box-runner&tab=local-workbench
+```
 
 The active provider defaults to `simulated`. Real Rallar execution uses
 `provider=browser-rallar`, which requires a real Rallar API base URL plus
 username/password or a restorable browser auth session. In that mode the SPA
-shows a login screen before entering the tabbed app shell.
+shows a login screen before entering the requested Recipe Console or preserved
+legacy experience.
 
-After login, the app shell exposes a global command-center context above the
-tabs. It keeps API base URL, application, workspace, room/group, client, and
-session values aligned across Quick Test, Manual Rallar, Groups/Clients,
-WebSocket, RTC Diagnostics, Rallar Server, and Flow Builder defaults.
+After login, Recipe Console keeps its operational run and provider context in
+the versioned URL. The preserved legacy shell exposes a global command-center
+context above its tabs. It keeps API base URL, application, workspace,
+room/group, client, and session values aligned across Quick Test, Manual
+Rallar, Groups/Clients, WebSocket, RTC Diagnostics, Rallar Server, and Flow
+Builder defaults.
 
 Groups/Clients, WebSocket, and RTC/Realtimes now use the same prominent
 action-feedback pattern as the Rallar Server REST workbench: the latest
@@ -137,8 +152,8 @@ Auth, Groups/Clients, WebSocket, RTC/Realtimes, Rallar Data, Media, Rallar
 Server, Manual Rallar, and Local Workbench expose the same collapse pattern for
 their main inputs.
 
-The app shell now has a `Workspace Mode` switch. `Rallar` mode shows direct
-live-operation tabs. `Rallar
+The preserved legacy shell has a `Workspace Mode` switch. `Rallar` mode shows
+direct live-operation tabs. `Rallar
 black-box-runner` mode shows recipe, control-run,
 flow-builder, and artifact workflows. Existing `tab` deep links still work and
 infer the correct workspace for runner-owned tabs. Switching into runner mode
@@ -148,8 +163,8 @@ facade; explicit reset/close actions still perform cleanup.
 `Rallar` mode also has a direct-operation boundary panel. The first direct
 action, `Check Direct Rallar`, calls the browser Rallar facade directly and
 emits `rallar.direct.*` diagnostics instead of creating black-box-runner command
-results. The default `Quick Test` tab uses the same direct boundary for the
-common real-data path: create/join a group using the current Group text as the
+results. The legacy Rallar workspace's `Quick Test` tab uses the same direct
+boundary for the common real-data path: create/join a group using the current Group text as the
 explicit Rallar group ID, subscribe this browser to WS group messages, send JSON
 through `rallar.messages.ws.send(...)`, wait for receives, and copy redacted
 diagnostics. Browser Rallar signaling uses fresh API-v1 WS tickets for each
@@ -161,8 +176,8 @@ Rallar/Rallar Server directly, not the SPA `browser-rallar-runtime.ts` adapter.
 Runner mode owns the command-oriented `Manual Rallar` scratchpad and has a
 boundary panel that keeps recipes, control runs, flow exports, and imported
 artifacts separate from direct facade operations. The local sample recipe
-bootstrap and header `Replay Sample` action are runner-only, so the default
-Rallar workspace does not auto-run the simulated black-box scaffold.
+bootstrap and header `Replay Sample` action are runner-only. They do not run on
+the default Recipe Console entry.
 
 Open the SPA as a control agent:
 
@@ -298,15 +313,16 @@ npm run test:shared-black-box:composite-conformance
 
 The matrix commands execute through `packages/shared-test/black-box-runner`. The
 composite conformance command executes the shared `rallar-bb-test` runtime
-contract directly. The SPA `Shared Test` tab renders the browser-safe fixture
-catalog, app-local examples, copyable runner commands, coverage ownership, and
-imported artifact bundles. It still leaves actual shell execution to explicit
-local tooling or the control server.
+contract directly. The preserved legacy `Shared Test` tab, available through
+`Advanced` or `/?experience=legacy&workspace=black-box-runner&tab=shared-test`,
+renders the browser-safe fixture catalog, app-local examples, copyable runner
+commands, coverage ownership, and imported artifact bundles. It still leaves
+actual shell execution to explicit local tooling or the control server.
 
 ## Main Source Files
 
-- `src/client-defaults.ts`: out-of-the-box default values for local workbench
-  and control-agent bootstrap.
+- `src/client-defaults.ts`: out-of-the-box provider/runtime values for Recipe
+  Console, Local Workbench, and control-agent bootstrap.
 - `src/app-tabs.ts`: tab IDs, URL parsing, aliases, and keyboard-order helpers
   for the operational shell.
 - `src/direct-rallar-operations.ts`: direct browser Rallar facade operations

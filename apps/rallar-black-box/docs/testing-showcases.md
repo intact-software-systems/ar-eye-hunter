@@ -3,27 +3,31 @@
 This document describes how Rallar Black Box can be used from small manual checks to larger controlled runs. The default
 SPA provider is simulated, so local examples validate orchestration, UI, diagnostics, reporting, and command shape. Use
 `provider=browser-rallar` with real environment config when the same command path should exercise live Rallar.
+The blank URL and provider-only URLs open Recipe Console `Execute`; the other primary views are `Monitor`, `Analyze`,
+`Tune`, `Fleet`, and `Advanced`.
 
 ## Small Scale: Local Visible Smoke
 
-Goal: quickly verify the UI, runtime state, events, stats, and report output.
+Goal: quickly verify the Recipe Console execution, monitoring, and evidence flow.
 
 Steps:
 
-1. Start the SPA with `npm run dev:rallar`.
-2. Open `http://localhost:5176/`.
-3. Let the default local recipe run.
-4. Inspect the command queue and completed commands.
-5. Open the event stream and filter by `message` or `diagnostic`.
-6. Inspect stats, first failure, report, and topology.
+1. Start the control server with `npm run dev:rallar:control`.
+2. Start the SPA with `npm run dev:rallar`.
+3. In a separate browser session, open a simulated control agent at
+   `http://localhost:5176/?mode=control&autoConnect=1&controlUrl=ws%3A%2F%2Flocalhost%3A5180%2Fcontrol&runId=demo-run&agentId=agent-1`.
+4. Open `http://localhost:5176/` as the operator.
+5. In `Execute`, choose a seeded recipe and resolve its simulated target.
+6. Create, stage, and start the run with the visible lifecycle controls.
+7. Open `Monitor` to inspect progress, verdict, and correlated evidence.
+8. Open `Analyze` to search or inspect the resulting bounded artifact evidence.
 
 Good signal:
 
-- commands move from pending to completed
-- selected result JSON is visible
-- events are correlated to command IDs
-- received data appears for message events
-- topology shows run, agent, actor, connection, room, session, and route nodes
+- the run moves through create, stage, start, and a terminal verdict
+- participant and recipe progress is visible
+- the first failure is prominent when the recipe is expected to fail
+- event, result, diagnostic, and artifact evidence stays correlated to the run and command IDs
 
 ## Small Scale: Auth And WS Ticket Check
 
@@ -496,7 +500,8 @@ from the browser.
 
 Steps:
 
-1. Open the `Shared Test` tab.
+1. Open `Shared Test` from Recipe Console `Advanced`, or use
+   `/?experience=legacy&workspace=black-box-runner&tab=shared-test`.
 2. Filter the recipe catalog by provider, profile, or text.
 3. Select a shared-test recipe and copy the root matrix or direct scenario command.
 4. Run the command from local tooling when needed.
@@ -523,13 +528,14 @@ test orchestrator or black-box runner
   -> monitor/report analysis
 ```
 
-This shape is partially implemented across two layers. The SPA and control server provide browser agents, control
-envelopes, result replay, stats, reports, local orchestration, bounded Event Stream windows, topology search/node
-limits, and deterministic route summaries. The shared-test runner now provides deterministic same-connection soak,
-seeded traffic replay, bounded parallel groups, redacted artifact bundles, and gated live browser/remote-browser recipes
-for those patterns. Control-server snapshot persistence, retention cleanup, command-center artifact browsing, and the
-three-browser live RTC baseline now exist for local runs. Monitor ingestion, artifact search, cross-run comparison, and
-true large-run UI virtualization are still planned.
+This shape is implemented across two layers. The SPA and control server provide browser agents, control envelopes,
+result replay, stats, reports, local orchestration, bounded Event Stream windows, topology search/node limits, and
+deterministic route summaries. Recipe Console adds bounded artifact search, cross-run comparison, History filters,
+preview-first retention cleanup, and accessible deterministic windows for large run and artifact collections. The
+shared-test runner provides deterministic same-connection soak, seeded traffic replay, bounded parallel groups,
+redacted artifact bundles, and gated live browser/remote-browser recipes for those patterns. Control-server snapshot
+persistence and the three-browser live RTC baseline exist for local runs. External monitor-server ingestion and
+production-grade durable artifact storage remain separate work.
 
 Useful runner commands:
 

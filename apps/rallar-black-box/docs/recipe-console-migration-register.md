@@ -1,14 +1,51 @@
 # Recipe Console Migration Register
 
-Status: canonical migration register; Ready-State #10 is code-backed through
-Iteration 10, Ready-State #11–#13 and the Advanced bridge are code-backed
-through `78e2c13`, and all legacy workflow rows remain visible, deep-linkable,
-and uncut
+Status: canonical migration register; Ready-State #1–#14 and the blank-default
+Recipe Console cutover are qualified through `4f04228` and `aec6e57`; all
+legacy workflow rows remain visible, deep-linkable, operational, and unretired
 Evidence/status date: 2026-07-14
 
 This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
-No row below is newly cut over or newly hidden. `Consolidated` describes navigation that already exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are SPA-root-relative and intentionally use the current compatibility codec.
+Iteration 12 changes the default experience selection; it does not retire or
+hide a legacy workflow row. `Consolidated` describes navigation that already
+exists in `app-tabs.ts`; it is not Recipe Console parity. All rollback URLs are
+SPA-root-relative and intentionally use the current compatibility codec.
+
+## Iteration 12 qualified default cutover — `4f04228`, `aec6e57`
+
+Blank and provider-only URLs now canonicalize to Recipe Console Execute without
+loading or mounting the legacy experience. Explicit `experience=legacy`, every
+registered alias/deep link, all 22 Advanced/contextual destinations, and
+control-agent launch URLs still open their existing owner. The universal
+rollback remains
+`/?experience=legacy&workspace=black-box-runner&tab=local-workbench`; individual
+rollback URLs in the register remain authoritative.
+
+The final cutover hides nothing from legacy navigation. Ten safe targets remain
+selected-only dynamic owners and unmount on exit. The twelve documented
+stateful exceptions remain hidden-mounted only while `LegacyExperience` itself
+is active; none loads, mounts, subscribes, or polls on cold Recipe Console.
+Six registered legacy accessibility debts are closed through a 67-line scoped
+legacy stylesheet and semantic CRDT selection buttons, without changing their
+route, state ownership, or parity behavior.
+
+Cutover proof passes blank default 1/1, preserved legacy navigation 29/29,
+responsive/accessibility/operational/CSS 48/48, production chunk/Advanced
+13/13, and eight no-update Direction A baselines. The complete deterministic
+Recipe Console config passes 196 and retains one exact opt-in live skip. The
+separately configured live/Postgres command executes 4/4, so Ready-State #3 is
+passed by actual create/stage/start/Monitor/Cancel/export and ACK/WS/RTC work,
+not by that skip. Final focused/complete app proof is 294/294 and
+1,568/1,568; final independent review is clean.
+
+No existing public export was removed or changed, and no existing
+control-server contract changed. One additive deterministic request-ID helper
+is exported from shared-test; the only schema addition is an idempotent
+C-collated expression index for the existing runtime-state prefix contract.
+`App.tsx` remains 260 lines, `RecipeConsoleApp.tsx` 28, and
+`LegacyAppShell.tsx` 111; no replacement monolith or runtime registry was
+introduced.
 
 ## Iteration 11 qualified Advanced bridge — `5ed54fc` through `78e2c13`
 
@@ -1114,9 +1151,19 @@ style changed.
 
 ## Surface register
 
+Final-status interpretation: responsibility, ownership, mount policy, and
+rollback columns below describe the current product. Evidence phrases in
+`runner.recipes`, `runner.runs`, and `legacy.distributed-recipes` that mention
+an Iteration 4–8 configured-live skip or pending proof are deliberately
+retained historical checkpoint text. They are superseded by the Iteration 12
+qualified cutover above: the live/Postgres suite passes 4/4 and Ready-State #3
+is closed. Any remaining “full row cutover” wording means the legacy workflow
+is intentionally still operational and unretired; it is not an open
+Ready-State criterion.
+
 | Stable surface ID | Current component(s); route/query aliases | Complete current responsibility | Destination | Target code owner/path | Current mount policy | Target mount policy | State/persistence and temporary exception | Parity/cutover status | Exact cutover proof | Exact rollback URL | Evidence/status date |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `shell.global-context` | 260-line `App` bootstrap/auth/experience glue plus `LegacyAppShell`, focused shell leaves, drawer, six tab groups, global-context model, agent-ticket service, runner shell model, and `RallarBrowserTraceBar` under `src/legacy/{shell,runner/shell}/**`; blank URL or any route | Bootstrap/auth gate, provider/runtime/control status, global application/workspace/group/client/session context, workspace/tab navigation, first failure, always-available trace summary, shared runtime-store subscription, queue/selection derivation, and agent-ticket consumption. | Shell infrastructure | `src/recipe-console/{app,control}/**`, with bootstrap/provider glue retained in `src/App.tsx` | App/runtime bootstrap stays mounted. `LegacyExperience` and its shell mount only while the legacy experience is active; inside that experience the exact shell order, guards, and 18 stateful hidden lifetimes remain locked through M4. Blank URLs still resolve to stored navigation or direct Rallar `quick-test`. | Recipe Console shell is the final default; legacy shell is a separate lazy experience. Shared services outlive views, not legacy component trees. | URL/shareable state moves to the v1 codec. Only personal defaults remain local. Legacy and `mode=control` ticket consumption stay compatible. On Recipe Console cold entry, a URL-selected API origin disables automatic ticket consumption and sensitive query/hash fields are synchronously scrubbed; stored credentials remain excluded from URL persistence. | Iteration 1 shell/model/controller/composition extraction is complete with exact parity. Iteration 2 adds mutually exclusive lazy experience mounts. Iteration 3 adds root-owned control connection, command context, credential-origin policy, and synchronous secret scrubbing only on the explicit Recipe Console route, without a workflow cutover, primary hide, legacy/default behavior change, existing legacy mount change, or default flip. | `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `blank URL opens Recipe Console Execute only after all ready-state gates`; `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `explicit URL wins over stored legacy navigation` | `/?experience=legacy&workspace=rallar&tab=quick-test` (supported pre-v1 alias: `/?workspace=rallar&tab=quick-test`) | Focused shell/model/composition owners, `App.tsx`, `app-tabs.ts`, `runtime-store.ts`; `9c173d8`; `a7df46f`; 2026-07-12 |
+| `shell.global-context` | 260-line `App` bootstrap/auth/experience glue plus `LegacyAppShell`, focused shell leaves, drawer, six tab groups, global-context model, agent-ticket service, runner shell model, and `RallarBrowserTraceBar` under `src/legacy/{shell,runner/shell}/**`; blank URL or any route | Bootstrap/auth gate, provider/runtime/control status, global application/workspace/group/client/session context, workspace/tab navigation, first failure, always-available trace summary, shared runtime-store subscription, queue/selection derivation, and agent-ticket consumption. | Shell infrastructure | `src/recipe-console/{app,control}/**`, with bootstrap/provider glue retained in `src/App.tsx` | App/runtime bootstrap stays mounted. `LegacyExperience` and its shell mount only while the legacy experience is active; inside that experience the exact shell order, guards, and documented stateful hidden lifetimes remain locked. Blank/provider-only URLs select Recipe Console; explicit legacy URLs still resolve their stored or direct Rallar navigation. | Recipe Console shell is the final default; legacy shell is a separate lazy experience. Shared services outlive views, not legacy component trees. | URL/shareable state uses the v1 codec. Only personal defaults remain local. Legacy and `mode=control` ticket consumption stay compatible. On Recipe Console cold entry, a URL-selected API origin disables automatic ticket consumption and sensitive query/hash fields are synchronously scrubbed; stored credentials remain excluded from URL persistence. | Iterations 1–3 preserve and isolate bootstrap/shell behavior; Iterations 11–12 prove all aliases, dynamic/stateful ownership, and the blank-default cutover. No legacy row is retired or hidden. | `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `blank URL opens Recipe Console Execute after the final ready-state flip`; `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `explicit URL wins over stored legacy navigation`; `tests/playwright/rallar-black-box/tabbed-navigation.spec.ts` | `/?experience=legacy&workspace=rallar&tab=quick-test` (supported pre-v1 alias: `/?workspace=rallar&tab=quick-test`) | Focused shell/model/composition owners, `App.tsx`, `app-tabs.ts`, `runtime-store.ts`; `9c173d8`, `a7df46f`, `4f04228`, `aec6e57`; 2026-07-14 |
 | `runner.recipes` | `RunnerRecipesPanel`, `RunnerReadinessPanel`, `RunnerAgentSetupPanel`, `ControlAgentBoardPanel`; `/?workspace=black-box-runner&tab=recipes`, aliases `catalog`, `recipes` | Service/auth/TURN/control readiness, agent launch/setup and identity board, recipe catalog/search/profile/source filters, preflight, target resolution, local launch, distributed create/stage/start handoff, and visible failure/status feedback. | `Execute` | `src/recipe-console/execute/**` and `src/recipe-console/control/**` | Existing consolidated primary tab; mounted only while `recipes` is active. | Lazy route, unmounted when inactive; polling/query lifecycle owned by control services. | Preserve selected recipe/profile as URL/personal default as appropriate; never persist control tokens. Runner-agent launch URL and ticket fragment behavior are compatibility constraints. | Iteration 4 guided Execute passes repository recipe selection, target resolution, preflight, read-only manifest, Resolve/Create/Stage/Start/Cancel/Refresh/export, URL restoration, and simulated distributed lifecycle proof. The legacy runner still owns agent setup, readiness, and local launch, so its row remains visible and uncut. | `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts` — `runs a simulated distributed ACK recipe through visible controls`; `diagnoses non-targetable agents before staging`; `restores an existing Execute run from a copied v1 URL`; configured-live acceptance skipped with its exact environment reason | `/?workspace=black-box-runner&tab=recipes` | `src/recipe-console/execute/**`, `control-run-manager.ts`, `runner-agent-launch.ts`; `bddde71`; 2026-07-12 |
 | `runner.runs` | `RunnerRunsPanel`, `RunVerdictPanel`, `CausalTrailPanel`, `RtcPerformancePanel`, `DistributedRunSummary`, participant board; `/?workspace=black-box-runner&tab=runs`, alias `runs` | Select and refresh live/historical distributed runs, retain last run handoff, import/export/copy artifacts, show local verdict/failures/report, select synthetic evidence, and compose nested monitor/analyze/compare surfaces. | `Monitor`, `Analyze`, and `Tune` | `src/recipe-console/{monitor,analyze,tune,history}/**` with selection/query adapters under `src/recipe-console/control/**` | Existing consolidated primary tab; mounted only while `runs` is active. It polls a selected non-terminal run and auto-loads terminal artifacts. | Monitor and Analyze UI unmount while inactive; Tune/History is a separate lazy entry that unmounts while inactive. Root query/retained-artifact services alone outlive views. | Selected run, control run, filters, comparison, and timing metric belong in URL state. Tokens and artifact payloads stay in memory. Poll ownership must move before unmounting. | Iterations 5–8 qualify bounded live monitoring, distributed artifact analysis, real tuning/comparison, server History, saved filters, and guarded preview-first retention through root query and retained-artifact authority. Canonical History browser acceptance now passes. Generic/local-run responsibility remains legacy-owned, so the row stays visible, deep-linkable, uncut, and active-only. | **Capability evidence passed:** canonical Monitor, Analyze, Tune, copied-URL History, and guarded retention cases; 147/148 Recipe Console cases and 28/28 legacy navigation/ticket cases at the Iteration 8 exit. **Full row cutover still pending:** remaining generic/local-run responsibility and configured-live proof. | `/?workspace=black-box-runner&tab=runs` | `src/recipe-console/{monitor,analyze,tune,history}/**`, `src/legacy/runner/runs/legacy-run-url-selection.ts`, `control-run-manager.ts`; `42eedae`, `47c332d`, `cc17169`, `382df72`, `fd9055e`, `f762749`; 2026-07-13 |
 | `runner.distributed-monitor` | `DistributedRunMonitorPanel`, nested composite/timeline/diagnostic/progress views inside `RunnerRunsPanel` and `DistributedRecipesPanel`; runs/distributed routes | Verdict, failure-first evidence, agent/recipe progress, ACK/barrier readiness, lifecycle timeline, structured WS/RTC diagnostics, latency, event filtering, composite loop/parallel/wait/assert drilldowns, and artifact validation. | `Monitor` | `src/recipe-console/monitor/**`; deterministic derivation remains in `packages/shared-test/rallar-bb-test/**` | Mounted only with its owning active runs/distributed tree and selected monitor. | Lazy `Monitor` route; inactive view unmounted; shared deterministic helpers only. | Selection/filter fields use v1 URL state. No duplicate monitor derivation in React. | Iteration 5 core Monitor is code-backed for failure-first current/last-known truth, selected-failure correlations, progress/readiness, and current-safe actions. Iteration 9 adds exact-revision indexed reuse and browseable main/inspector windows for every pressured collection, exact omission/cardinality truth, complete stable-ID traversal, touch/reduced-motion proof, and post-refresh focus priority through `f8cef95`. Ready-State #10 is code-backed. This remains capability evidence, not a cutover or hide: both owning legacy workflow rows stay visible and operational. | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `places the failure verdict and failure list before raw event evidence`; `opens all available correlated evidence from a failure row`; `preserves last-known evidence while a selected run refresh fails`; `tests/playwright/rallar-black-box/recipe-console-monitor-windowing.spec.ts` — all nine bounded traversal/focus/touch cases; `tests/playwright/rallar-black-box/recipe-console-scale.spec.ts` — `keeps synthetic large event and result lists bounded responsive and searchable` | `/?workspace=black-box-runner&tab=runs` or `/?workspace=black-box-runner&tab=distributed-recipes` | `src/recipe-console/monitor/**`, indexed Control/board consumers, `packages/shared-test/rallar-bb-test/**`; `42eedae`, `8c630fc`, `66a16fd`, `f8cef95`; 2026-07-14 |

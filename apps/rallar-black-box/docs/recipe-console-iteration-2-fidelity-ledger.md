@@ -1,11 +1,9 @@
 # Recipe Console Iteration 2 Fidelity Ledger
 
-Status: Iteration 2 visual direction preserved; Execute, live Monitor, offline
-Analyze, real-evidence Tune, bounded History/retention, and full Iteration 9
-large-run composition are qualified through `f8cef95`; the Iteration 10 Fleet
-workspace is qualified through `0088be0` and `3ab86a9`; and the Iteration 11
-Advanced diagnostics bridge is qualified through `78e2c13`; Ready-State
-#10–#13 are code-backed
+Status: Direction A is preserved through the qualified Iteration 12 default
+cutover; Recipe Console Execute, Monitor, Analyze, Tune, Fleet, and Advanced,
+the final accessibility matrix, and Ready-State #1–#14 are code-backed through
+`4f04228` and `aec6e57`
 
 Evidence date: 2026-07-14
 Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
@@ -16,6 +14,7 @@ Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
 `796fa59`, `66a16fd`, `12999dd`, `f8cef95` (Iteration 9 scale/fidelity exit)
 and `0088be0`, `3ab86a9` (Iteration 10 Fleet), plus `75ab910`, `84493f3`,
 `2502f50`, `78e2c13` (Iteration 11 Advanced diagnostics)
+and `4f04228`, `aec6e57` (Iteration 12 final cutover)
 Approved direction: Signal Ledger (Direction A)
 
 This ledger preserves the approved Iteration 2 visual contract and its
@@ -23,9 +22,50 @@ historical seeded Monitor/Tune evidence, then records the Iteration 4 Execute,
 Iteration 5 live Monitor, Iteration 6 Analyze, Iteration 7 Tune, and Iteration 8
 History/retention baseline advances, then records the Iteration 9 bounded
 Analyze/Monitor/History/Execute/Tune extension, the Iteration 10 bounded
-Fleet/geographic evidence workspace, and the Iteration 11 contextual Advanced
-bridge. It does not claim the unavailable configured live/Postgres acceptance,
-a legacy-row retirement, final Iteration 12 accessibility, or the default flip.
+Fleet/geographic evidence workspace, the Iteration 11 contextual Advanced
+bridge, and the Iteration 12 final responsive/accessibility/default cutover.
+The configured live/Postgres owner now passes separately; no legacy row is
+retired.
+
+## Iteration 12 final fidelity addendum
+
+Direction A remains unchanged. The blank/provider-only entry now opens
+canonical Recipe Console Execute, while explicit legacy URLs and every
+Advanced/contextual destination retain the existing visual and operational
+owner. The settled deterministic Recipe Console configuration passes 196
+tests with one exact opt-in live wrapper skip. The separately configured
+Postgres/API/control/SPA suite executes 4/4, so the skip is retained as a skip
+and is not used to claim live fidelity.
+
+Final controlled QA passes desktop 1440x900, tablet 900x900, genuine-touch
+portrait 430x932, genuine-touch short landscape 932x430, keyboard, reduced
+motion, 44px targets, modal trap/restore and detached-trigger fallbacks,
+persistent non-hover evidence, complete operational states, and both CSS load
+orders. The final regular matrix passes 48/48. Production chunk/Advanced proof
+passes 13/13 and all eight concept baselines pass under the deterministic
+Recipe Console config without snapshot updates. The regular config is not the
+concept/production-preview owner: it forces SwiftShader and starts 5176/5180,
+not the required preview 4176. Its rejected 5-pass/8-connection-refused attempt
+is recorded as plan/config drift, not visual or product failure.
+
+The final Ready-State captures were inspected at original resolution. Their
+SHA-256 values are:
+
+| Capture | SHA-256 |
+| --- | --- |
+| Ready-State desktop 1440x900 | `e6f0d087e2a63aafbf425049411a99e19fa4879dbef2a84643f0a305f0060627` |
+| Ready-State touch portrait 430x932 | `87bc16445d2ab57e8ec71decf4c3cdd885d1cf7da958d433b980000d3f551a7c` |
+| Ready-State touch landscape 932x430 | `bf37d2027e7724e08957c8175cc8cb78a4a9625506582444a4bea7d17e94a7ea` |
+| Legacy CRDT touch portrait 430x932 | `85a7c0815cdc747bd8e6cd3ebca0ce3c12885406951dd43e7e5be9a3601749f9` |
+| Legacy CRDT touch landscape 932x430 | `142504ea874618a0adbbcea8ad4dfeaaded234c9b1ed6d29fdc3bae9c87400ce` |
+
+No unexplained clipping, overlap, page overflow, hidden control, hover-only
+evidence, or color-only state remained. Compact header labels truncate
+intentionally; portrait uses the bottom navigation and landscape the rail.
+The explicit six-view console/page-error acceptance observed no relevant
+warning, error, or page error. The in-app Browser remains unavailable exactly
+as `Browser runtime unavailable after setup failure: Cannot redefine property:
+process`; terminal Playwright is fallback evidence, not an in-app Browser pass.
 
 ## Iteration 4 Execute fidelity addendum
 
@@ -481,7 +521,11 @@ The current production build's explicit Recipe Console closure remains
 separate from the preserved legacy closure. Historical Iteration 2 figures are
 retained above for comparison, not represented as current asset sizes.
 
-## Live-service qualification
+## Historical Iteration 8 live-service qualification (superseded by Iteration 12)
+
+The status in this section records the Iteration 8 exit only. The Iteration 12
+final fidelity addendum above supersedes it: the separately configured live
+Postgres suite now passes 4/4 and Ready-State #3 is closed.
 
 Live/Postgres validation is skipped, not passed, unless the complete stack is
 explicitly enabled. Current exact skip reason:
@@ -499,7 +543,11 @@ was not run without its required services. Deterministic live-control evidence
 is qualified, but configured live Postgres proof is not: Ready-State #3 remains
 open.
 
-## Remaining risks and deferrals
+## Historical Iteration 8 risks and deferrals (superseded by Iteration 12)
+
+The bullets below are retained as dated migration evidence. Statements that
+the configured lifecycle, final surfaces, accessibility work, or default flip
+remain open describe the Iteration 8 checkpoint, not the final product state.
 
 - The pixel baselines are controlled-Darwin evidence. Other platforms execute
   the semantic and geometry assertions but require their own approved pixels

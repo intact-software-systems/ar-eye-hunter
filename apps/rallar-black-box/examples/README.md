@@ -1,10 +1,14 @@
 # Rallar Black Box Example Recipes
 
-These recipes are meant for the SPA `Local Workbench` while running with `provider=browser-rallar`.
+These recipes are meant for the preserved SPA `Local Workbench` while running with `provider=browser-rallar`. Blank and
+provider-only URLs now open Recipe Console `Execute`; its primary views are `Execute`, `Monitor`, `Analyze`, `Tune`,
+`Fleet`, and `Advanced`. Reach Local Workbench from `Advanced` or directly at
+`/?experience=legacy&workspace=black-box-runner&tab=local-workbench`.
 
 For the full command-center examples index, including shared-test runner recipes and artifact bundles, see
 `apps/rallar-black-box/docs/examples-index.md`.
-The SPA `Shared Test` tab also lists these app-local recipes next to selected shared-test runner entries.
+The preserved `Shared Test` tab also lists these app-local recipes next to selected shared-test runner entries. Reach it
+from `Advanced` or at `/?experience=legacy&workspace=black-box-runner&tab=shared-test`.
 
 1. Log in to the Rallar Server from the SPA login gate or `Auth` tab.
 2. Load either recipe and run it. `rallar-server-rtc-connect-send.recipe.json`
