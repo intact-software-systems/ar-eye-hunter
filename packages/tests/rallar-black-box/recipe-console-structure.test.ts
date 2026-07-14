@@ -806,13 +806,14 @@ describe('Recipe Console experience boundary', () => {
         }
         expect(contract).toContain("input.section === 'diagnostics'");
         expect(contract).toContain('JSON.stringify([');
-        expect(windowSupportSource[1]).toContain(
-            'controlsFocusProps: focus.contentFocusProps',
-        );
+        expect(windowSupportSource[1].match(
+            /'data-monitor-window-owner': fingerprint/g,
+        )).toHaveLength(2);
         const windowTruth = source(
             `${recipeConsoleRoot}/monitor/MonitorWindowTruth.tsx`,
         );
         expect(windowTruth).toContain('data-monitor-window-focus-anchor={label}');
+        expect(windowTruth).toContain('data-monitor-window-owner={window.owner}');
         expect(windowTruth).toContain('ref={window.focusFallbackRef}');
         expect(windowTruth).toContain(
             'window.model.total > window.model.windowSize',
@@ -841,11 +842,31 @@ describe('Recipe Console experience boundary', () => {
             'const inspectableSelection = inspectorContent !== undefined &&',
         );
         expect(workspace).toContain('onSelectionLabelChange={setSelectionLabel}');
+        expect(workspace).toContain(
+            'setInspectorTriggerFallback(owningWindowRangeAnchor(trigger))',
+        );
+        expect(workspace).toContain(
+            "trigger.closest<HTMLElement>('[data-monitor-window-owner]')",
+        );
+        expect(workspace).toContain(
+            "trigger.closest<HTMLElement>('[data-recipe-console-shell]')",
+        );
+        expect(workspace).toContain(
+            'anchor.dataset.monitorWindowOwner === owner',
+        );
+
+        const shell = source(`${recipeConsoleRoot}/shell/RecipeConsoleShell.tsx`);
+        expect(shell).toMatch(
+            /inspectorRestoreFocusFallback,[\s\S]*restoreFocusRef\.current,[\s\S]*workSurfaceRef\.current/,
+        );
+        expect(shell).toContain('aria-label="Recipe console work surface"');
 
         const overlay = source(`${recipeConsoleRoot}/ui/OverlaySheet.tsx`);
         expect(overlay).toContain("event.key === 'Escape'");
         expect(overlay).toContain("event.key !== 'Tab'");
-        expect(overlay).toContain('restoreFocusTo.focus()');
+        expect(overlay).toContain('availableFocusTarget(restoreFocusTo)');
+        expect(overlay).toContain('restoreFocusFallback?.()');
+        expect(overlay).toContain('target.focus()');
         expect(overlay).toContain('querySelectorAll<HTMLElement>(FOCUSABLE)');
     });
 

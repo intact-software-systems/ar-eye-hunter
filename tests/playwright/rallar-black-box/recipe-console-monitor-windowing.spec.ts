@@ -630,6 +630,91 @@ test('retains disclosure cursors and live truth, resets diagnostic filters, and 
     expect(fixture.mutationRequestCount()).toBe(0);
 });
 
+test('restores a detached windowed inspector trigger to its owning range anchor', async ({
+    context,
+    page,
+}) => {
+    await page.setViewportSize({ width: 900, height: 900 });
+    const fixture = await installRecipeConsoleLargeMonitorFixture(context);
+    await page.goto(LARGE_MONITOR_ROUTE);
+    await waitForLargeMonitor(page);
+
+    const matrix = page.locator('[data-monitor-section="matrix"]');
+    const agentWindow = matrix.getByRole('group', { name: 'Agents window' });
+    await agentWindow.getByRole('button', { name: 'Next' }).click();
+    await expect(agentWindow.getByRole('status'))
+        .toHaveText('Showing 81–126 of 126 agents.');
+    const sourceRow = matrix.locator(
+        '[data-monitor-agent-row][data-monitor-source-ordinal="125"]',
+    );
+    const sourceTrigger = sourceRow.getByRole('button');
+    await sourceTrigger.click();
+
+    const inspector = page.getByRole('dialog', { name: 'Inspector' });
+    await expect(inspector).toHaveAttribute('data-mode', 'overlay');
+    const close = inspector.getByRole('button', { name: 'Close inspector' });
+    await expect(close).toBeFocused();
+
+    fixture.setAgentCount(30);
+    await refreshMonitor(page, fixture.runRequestCount);
+    await expect(sourceTrigger).toHaveCount(0);
+    const rangeAnchor = matrix.locator(
+        '[data-monitor-window-focus-anchor="Agents"]',
+    );
+    await expect(rangeAnchor).toHaveText('Showing 1–30 of 30 agents.');
+
+    await close.focus();
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(rangeAnchor).toBeFocused();
+    expect(await page.evaluate(() => document.activeElement?.tagName))
+        .not.toBe('BODY');
+    expect(fixture.mutationRequestCount()).toBe(0);
+});
+
+test('restores a detached multi-window disclosure trigger to its exact range anchor', async ({
+    context,
+    page,
+}) => {
+    await page.setViewportSize({ width: 900, height: 900 });
+    await installRecipeConsoleLargeMonitorFixture(context);
+    await page.goto(LARGE_MONITOR_ROUTE);
+    await waitForLargeMonitor(page);
+
+    const timeline = disclosure(page, 'Timeline');
+    const events = disclosure(page, 'Events');
+    await timeline.locator('summary').click();
+    await events.locator('summary').click();
+    const eventsWindow = events.getByRole('group', { name: 'Events window' });
+    await eventsWindow.getByRole('button', { name: 'Next' }).click();
+    await expect(eventsWindow.getByRole('status'))
+        .toHaveText('Showing 41–80 of 110 events.');
+    const sourceTrigger = events.locator(
+        '[data-monitor-source-ordinal="79"] button',
+    );
+    await sourceTrigger.click();
+
+    const inspector = page.getByRole('dialog', { name: 'Inspector' });
+    const close = inspector.getByRole('button', { name: 'Close inspector' });
+    await expect(close).toBeFocused();
+    await eventsWindow.getByRole('button', { name: 'Previous' }).click();
+    await expect(sourceTrigger).toHaveCount(0);
+    const timelineAnchor = timeline.locator(
+        '[data-monitor-window-focus-anchor="Timeline"]',
+    );
+    const eventsAnchor = events.locator(
+        '[data-monitor-window-focus-anchor="Events"]',
+    );
+    await expect(timelineAnchor).toHaveText('Showing 1–40 of 825 timeline rows.');
+    await expect(eventsAnchor).toHaveText('Showing 1–40 of 110 events.');
+
+    await close.focus();
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(eventsAnchor).toBeFocused();
+    await expect(timelineAnchor).not.toBeFocused();
+});
+
 test('contains exact long bidi evidence and touch window controls across desktop and mobile contracts', async ({
     browser,
 }) => {

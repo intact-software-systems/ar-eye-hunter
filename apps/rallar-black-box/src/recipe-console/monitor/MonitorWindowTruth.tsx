@@ -17,6 +17,7 @@ export function MonitorWindowTruth({
             <span
                 className={styles.focusAnchor}
                 data-monitor-window-focus-anchor={label}
+                data-monitor-window-owner={window.owner}
                 ref={window.focusFallbackRef}
                 tabIndex={-1}
             >{rangeLabel(window, itemLabel)}</span>

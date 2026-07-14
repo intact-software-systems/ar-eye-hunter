@@ -9,6 +9,7 @@ export type OverlaySheetProps = Readonly<{
     label: string;
     onClose(): void;
     restoreFocusTo?: HTMLElement | null;
+    restoreFocusFallback?(): HTMLElement | null;
     children: ReactNode;
 }>;
 
@@ -20,6 +21,7 @@ export function OverlaySheet({
     label,
     onClose,
     restoreFocusTo,
+    restoreFocusFallback,
     children,
 }: OverlaySheetProps) {
     const hostRef = useRef<HTMLElement>(null);
@@ -38,7 +40,10 @@ export function OverlaySheet({
     function closeAndRestore(): void {
         onClose();
         queueMicrotask(() => {
-            if (restoreFocusTo?.isConnected) restoreFocusTo.focus();
+            const target = availableFocusTarget(restoreFocusTo)
+                ? restoreFocusTo
+                : restoreFocusFallback?.();
+            if (availableFocusTarget(target)) target.focus();
         });
     }
 
@@ -86,4 +91,10 @@ export function OverlaySheet({
             <div className={styles.overlayContent}>{children}</div>
         </aside>
     );
+}
+
+function availableFocusTarget(
+    target: HTMLElement | null | undefined,
+): target is HTMLElement {
+    return Boolean(target?.isConnected && !target.matches(':disabled'));
 }

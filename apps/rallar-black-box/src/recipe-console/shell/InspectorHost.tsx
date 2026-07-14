@@ -7,12 +7,14 @@ export function InspectorHost({
     open,
     onClose,
     restoreFocusTo,
+    restoreFocusFallback,
     children,
 }: Readonly<{
     mode: RecipeConsolePresentation['inspector'];
     open: boolean;
     onClose(): void;
     restoreFocusTo?: HTMLElement | null;
+    restoreFocusFallback?(): HTMLElement | null;
     children: ReactNode;
 }>) {
     return (
@@ -21,6 +23,7 @@ export function InspectorHost({
             mode={mode}
             onClose={onClose}
             open={open}
+            restoreFocusFallback={restoreFocusFallback}
             restoreFocusTo={restoreFocusTo}
         >
             {children}

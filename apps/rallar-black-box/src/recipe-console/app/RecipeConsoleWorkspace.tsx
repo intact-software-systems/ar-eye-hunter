@@ -45,10 +45,13 @@ export function RecipeConsoleWorkspace() {
     const [executeSafeTargetLabel, setExecuteSafeTargetLabel] = useState<string>();
     const [inspectorTrigger, setInspectorTrigger] =
         useState<HTMLElement | null>(null);
+    const [inspectorTriggerFallback, setInspectorTriggerFallback] =
+        useState<HTMLElement | null>(null);
     const restoreFocusRef = useRef<HTMLButtonElement>(null);
 
     const inspectEvidence = useCallback((trigger: HTMLElement) => {
         setInspectorTrigger(trigger);
+        setInspectorTriggerFallback(owningWindowRangeAnchor(trigger));
         setInspectorOpen(true);
     }, []);
     const selectMonitorControlRun = useCallback((controlRunId: string) => {
@@ -135,6 +138,7 @@ export function RecipeConsoleWorkspace() {
         setInspectorContent(undefined);
         setSelectionLabel(undefined);
         setInspectorTrigger(null);
+        setInspectorTriggerFallback(null);
         setInspectorOpen(view === 'execute' ||
             (view === 'monitor' && presentation.inspector === 'rail'));
     }
@@ -171,6 +175,7 @@ export function RecipeConsoleWorkspace() {
                 inspectorContent={inspectorContent}
                 inspectorOpen={inspectorOpen}
                 inspectorRestoreFocus={inspectorTrigger}
+                inspectorRestoreFocusFallback={inspectorTriggerFallback}
                 onCopyLink={copyLink}
                 onInspectorClose={() => setInspectorOpen(false)}
                 onNavigate={navigate}
@@ -192,4 +197,14 @@ export function RecipeConsoleWorkspace() {
             />
         </div>
     );
+}
+
+function owningWindowRangeAnchor(trigger: HTMLElement): HTMLElement | null {
+    const owner = trigger.closest<HTMLElement>('[data-monitor-window-owner]')
+        ?.dataset.monitorWindowOwner;
+    const shell = trigger.closest<HTMLElement>('[data-recipe-console-shell]');
+    if (!owner || !shell) return null;
+    return Array.from(shell.querySelectorAll<HTMLElement>(
+        '[data-monitor-window-focus-anchor][data-monitor-window-owner]',
+    )).find(anchor => anchor.dataset.monitorWindowOwner === owner) ?? null;
 }

@@ -30,8 +30,15 @@ export function useMonitorWindow(input: Readonly<{
     const focus = useExplicitWindowFocusRecovery(controller.model);
     return {
         ...controller,
-        contentFocusProps: focus.contentFocusProps,
-        controlsFocusProps: focus.contentFocusProps,
+        contentFocusProps: {
+            ...focus.contentFocusProps,
+            'data-monitor-window-owner': fingerprint,
+        },
+        controlsFocusProps: {
+            ...focus.contentFocusProps,
+            'data-monitor-window-owner': fingerprint,
+        },
         focusFallbackRef: focus.fallbackFocusRef,
+        owner: fingerprint,
     } as const;
 }

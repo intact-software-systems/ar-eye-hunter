@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from 'react';
+import { useCallback, useRef, type ReactNode, type RefObject } from 'react';
 import type {
     RecipeConsoleUrlIssue,
     RecipeConsoleView,
@@ -24,6 +24,7 @@ export type RecipeConsoleShellProps = Readonly<{
     inspectorOpen: boolean;
     onInspectorClose(): void;
     inspectorRestoreFocus?: HTMLElement | null;
+    inspectorRestoreFocusFallback?: HTMLElement | null;
     selectionDockContent?: ReactNode;
     onSelectionDockInspect?(trigger: HTMLButtonElement): void;
     restoreFocusRef: RefObject<HTMLButtonElement | null>;
@@ -43,14 +44,26 @@ export function RecipeConsoleShell({
     inspectorOpen,
     onInspectorClose,
     inspectorRestoreFocus,
+    inspectorRestoreFocusFallback,
     selectionDockContent,
     onSelectionDockInspect,
     restoreFocusRef,
 }: RecipeConsoleShellProps) {
     const presentation = useRecipeConsolePresentation();
+    const workSurfaceRef = useRef<HTMLElement>(null);
     const showInspector = Boolean(inspectorContent) && inspectorOpen;
     const showSelectionDock = selectionDockContent !== undefined &&
         onSelectionDockInspect !== undefined;
+    const restoreInspectorFallback = useCallback(() => {
+        for (const target of [
+            inspectorRestoreFocusFallback,
+            restoreFocusRef.current,
+            workSurfaceRef.current,
+        ]) {
+            if (target?.isConnected && !target.matches(':disabled')) return target;
+        }
+        return null;
+    }, [inspectorRestoreFocusFallback, restoreFocusRef]);
     return (
         <div
             className={`${styles.shell} ${showInspector ? '' : styles.withoutInspector} ${showSelectionDock ? '' : styles.withoutSelectionDock} ${urlIssues.length > 0 ? styles.withUrlIssues : ''} ${showInspector && currentView === 'monitor' ? styles.monitorInspector : ''}`}
@@ -73,7 +86,13 @@ export function RecipeConsoleShell({
                 onNavigate={onNavigate}
                 presentation={presentation.navigation}
             />
-            <main className={styles.workSurface} data-work-surface tabIndex={-1}>
+            <main
+                aria-label="Recipe console work surface"
+                className={styles.workSurface}
+                data-work-surface
+                ref={workSurfaceRef}
+                tabIndex={-1}
+            >
                 {workContent}
             </main>
             {showInspector ? (
@@ -81,6 +100,7 @@ export function RecipeConsoleShell({
                     mode={presentation.inspector}
                     onClose={onInspectorClose}
                     open
+                    restoreFocusFallback={restoreInspectorFallback}
                     restoreFocusTo={inspectorRestoreFocus}
                 >
                     {inspectorContent}
