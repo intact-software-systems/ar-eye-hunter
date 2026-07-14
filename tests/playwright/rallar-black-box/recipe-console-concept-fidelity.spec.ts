@@ -304,7 +304,7 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
             linkColumns: 2,
             localScroll: false,
             navigation: 'compact-rail',
-            navigationFontSize: '10px',
+            navigationFontSize: '9px',
         }),
     },
 ];

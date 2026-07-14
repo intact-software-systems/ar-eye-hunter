@@ -193,7 +193,7 @@
         justify-content: center;
         gap: 2px;
         padding: 3px;
-        font-size: 10px;
+        font-size: 9px;
     }
 
     .shell > :global([data-inspector-host]) {

@@ -708,7 +708,7 @@ test('keeps Direction A Advanced contained across desktop, tablet, and genuine t
                 inspector: 'overlay',
                 contextColumns: 2,
                 linkColumns: 2,
-                navigationFontSize: '10px',
+                navigationFontSize: '9px',
                 scrollOwner: 'work',
                 touch: false,
             },

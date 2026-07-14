@@ -1020,6 +1020,10 @@ test('finds a past failure, compares it, and manages saved filters', async ({
     await expect(from).toBeFocused();
     await keyboardDateTimeUntil(page, from, to, 2039);
     await keyboardDateTimeUntil(page, to, reset, 2040);
+    const selectedFrom = await from.inputValue();
+    const selectedTo = await to.inputValue();
+    expect(selectedFrom).toMatch(/^2039-/u);
+    expect(selectedTo).toMatch(/^2040-/u);
     await page.keyboard.press('Tab');
     await expect(apply).toBeFocused();
     await apply.press('Enter');
@@ -1051,8 +1055,8 @@ test('finds a past failure, compares it, and manages saved filters', async ({
         historyProfile: 'candidate',
         failureCategory: 'rtc-stream-performance',
         status: 'failed',
-        from: String(Date.UTC(2039, 0, 1)),
-        to: String(Date.UTC(2040, 0, 1)),
+        from: historyControlEpoch(selectedFrom),
+        to: historyControlEpoch(selectedTo),
     };
     expect(historyFilterParams(copied)).toEqual(savedFilterParams);
 
