@@ -87,8 +87,10 @@ async function expectVisibleView(page: Page, view: RecipeConsoleView): Promise<v
             );
             break;
         case 'fleet':
+            await expect(page.locator('[data-fleet-operational-state="partial"]'))
+                .toContainText('Fleet evidence is partial');
             await expect(page.locator('[data-preview-view="fleet"]'))
-                .toContainText('Fleet live data unavailable in offline preview');
+                .toContainText('Fleet report collection unavailable.');
             break;
         case 'advanced':
             await expect(page.locator('[data-preview-view="advanced"]'))

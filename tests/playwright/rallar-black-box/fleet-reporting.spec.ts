@@ -180,6 +180,37 @@ test('Fleet tab remains usable on mobile with the same 20-agent data', async ({ 
     await expect(panel.getByRole('button', { name: /RTC lane mismatch/ })).toBeVisible();
 });
 
+for (const legacyFleetAlias of [
+    'fleet',
+    'fleet-report',
+    'fleet-reports',
+] as const) {
+    test(`keeps legacy tab=${legacyFleetAlias} on the active Fleet mount`, async ({
+        page,
+    }) => {
+        await mockFleetApi(page, fleetFixture(), []);
+        await page.goto(
+            '/?provider=simulated&workspace=black-box-runner' +
+            `&tab=${legacyFleetAlias}&roomId=bb-group`,
+        );
+
+        await expect(page.locator('.app-shell')).toBeVisible();
+        await expect(page.locator('.recipe-console')).toHaveCount(0);
+        await expect(page.locator('[data-fleet-workspace]')).toHaveCount(0);
+        await expect(page.getByRole('tab', { name: 'Fleet', exact: true }))
+            .toHaveAttribute('aria-selected', 'true');
+        const legacyFleet = page.locator('#panel-fleet');
+        await expect(legacyFleet).toBeVisible();
+        await expect(legacyFleet.locator('.runner-fleet-panel')).toHaveCount(1);
+        await expect(legacyFleet.locator('.runner-fleet-panel')).toBeVisible();
+        await expect(page.locator('.runner-fleet-panel')).toHaveCount(1);
+        expect(new URL(page.url()).searchParams.get('tab'))
+            .toBe(legacyFleetAlias);
+        expect(new URL(page.url()).searchParams.get('experience'))
+            .not.toBe('recipe-console');
+    });
+}
+
 async function mockFleetApi(
     page: Page,
     fixture: ReturnType<typeof fleetFixture>,

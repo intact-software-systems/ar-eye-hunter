@@ -1,5 +1,9 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import {
+    FLEET_ROUTE,
+    installRecipeConsoleFleetFixture,
+} from './recipe-console-fleet-fixture.ts';
+import {
     installRecipeConsoleMonitorFixture,
     MONITOR_ROUTE,
 } from './recipe-console-monitor-fixture.ts';
@@ -213,6 +217,62 @@ async function captureRealMonitorStyles(page: Page) {
         ]),
         inspector: await style(inspector, [
             'display', 'min-width', 'overflow-wrap', 'padding',
+        ]),
+    };
+}
+
+async function captureRealFleetStyles(page: Page) {
+    const workspace = page.locator('[data-fleet-workspace]');
+    const operational = workspace.locator('[data-fleet-operational-state="live"]');
+    const summary = workspace.getByRole('region', { name: 'Fleet status' });
+    const liveBoard = workspace.getByRole('region', { name: 'Live agent board' });
+    const map = workspace.getByRole('region', { name: 'Fleet evidence map' });
+    const mapLayer = map.locator('[data-fleet-map-layer="live-agents"]');
+    const artifact = workspace.getByRole('region', {
+        name: 'Selected report artifact',
+    });
+    for (const owner of [
+        workspace,
+        operational,
+        summary,
+        liveBoard,
+        map,
+        mapLayer,
+        artifact,
+    ]) {
+        await expect(owner).toBeVisible();
+    }
+    const style = async (
+        owner: ReturnType<Page['locator']>,
+        properties: readonly string[],
+    ) => owner.evaluate((node, names) => {
+        const computed = getComputedStyle(node);
+        return Object.fromEntries(names.map(name => [
+            name,
+            computed.getPropertyValue(name),
+        ]));
+    }, properties);
+    return {
+        workspace: await style(workspace, [
+            'display', 'gap', 'min-width', 'overflow-y', 'padding-bottom',
+        ]),
+        operational: await style(operational, [
+            'background-color', 'border-top-color', 'display', 'min-width',
+        ]),
+        summary: await style(summary, [
+            'background-color', 'border-top-color', 'display', 'padding',
+        ]),
+        liveBoard: await style(liveBoard, [
+            'background-color', 'border-top-color', 'display', 'min-width',
+        ]),
+        map: await style(map, [
+            'background-color', 'border-top-color', 'display', 'min-width',
+        ]),
+        mapLayer: await style(mapLayer, [
+            'background-color', 'border-radius', 'border-top-color', 'min-height',
+        ]),
+        artifact: await style(artifact, [
+            'background-color', 'border-top-color', 'display', 'min-width',
         ]),
     };
 }
@@ -566,6 +626,29 @@ test('matches cold Tune styles when legacy components load first', async ({
     await legacyFirst.close();
 });
 
+test('matches cold Fleet styles when legacy Fleet loads first', async ({
+    context,
+    page,
+}) => {
+    await installRecipeConsoleFleetFixture(context, page);
+    await page.goto(FLEET_ROUTE);
+    const coldFleet = await captureRealFleetStyles(page);
+
+    const legacyFirst = await context.newPage();
+    await installRecipeConsoleFleetFixture(context, legacyFirst);
+    await legacyFirst.goto(
+        '/?provider=simulated&experience=legacy' +
+        '&workspace=black-box-runner&tab=fleet',
+    );
+    await expect(legacyFirst.locator('.runner-fleet-panel')).toBeVisible();
+    await expect(legacyFirst.locator('[data-fleet-workspace]')).toHaveCount(0);
+    await navigateInApp(legacyFirst, FLEET_ROUTE);
+    await expect(legacyFirst.locator('.app-shell')).toHaveCount(0);
+
+    expect(await captureRealFleetStyles(legacyFirst)).toEqual(coldFleet);
+    await legacyFirst.close();
+});
+
 test('lazy-loads Tune only on demand and unmounts it when leaving', async ({
     context,
     page,
@@ -626,6 +709,56 @@ test('lazy-loads Tune only on demand and unmounts it when leaving', async ({
     await expect(page.locator('[data-history-workspace]')).toHaveCount(0);
     await expect(page.locator('[data-retention-panel]')).toHaveCount(0);
     await expect(page.locator('[data-retention-confirm-dialog]')).toHaveCount(0);
+});
+
+test('lazy-loads Fleet on demand and leaves no inactive artifact owner', async ({
+    context,
+    page,
+}) => {
+    const fixture = await installRecipeConsoleFleetFixture(context, page);
+    const fleetModuleRequests: string[] = [];
+    page.on('request', request => {
+        if (request.url().includes('/recipe-console/fleet/')) {
+            fleetModuleRequests.push(request.url());
+        }
+    });
+    const executeRoute = FLEET_ROUTE.replace('view=fleet', 'view=execute');
+
+    await page.goto(executeRoute);
+    await expect(page.locator('.recipe-console')).toHaveAttribute(
+        'data-view',
+        'execute',
+    );
+    await expect(page.locator('[data-fleet-workspace]')).toHaveCount(0);
+    expect(fleetModuleRequests).toEqual([]);
+    expect(fixture.artifactRequestCount()).toBe(0);
+
+    await page.getByRole('button', { name: 'Fleet', exact: true }).click();
+    const fleet = page.locator('[data-fleet-workspace]');
+    await expect(fleet.locator('[data-fleet-operational-state="live"]'))
+        .toBeVisible();
+    expect(fleetModuleRequests.some(url => url.includes('FleetWorkspace.tsx')))
+        .toBe(true);
+    await fleet.getByRole('button', { name: 'Load artifact bundle' }).click();
+    await expect.poll(fixture.artifactRequestCount).toBe(1);
+
+    const fleetRequestsAtLeave = fleetModuleRequests.length;
+    await page.getByRole('button', { name: 'Execute', exact: true }).click();
+    await expect(page.locator('.recipe-console')).toHaveAttribute(
+        'data-view',
+        'execute',
+    );
+    await expect(page.locator('[data-fleet-workspace]')).toHaveCount(0);
+    await expect(page.getByRole('region', {
+        name: 'Selected report artifact',
+    })).toHaveCount(0);
+
+    const rootRequestsBeforeRefresh = fixture.rootRequestCount();
+    await page.getByRole('button', { name: 'Refresh control data' }).click();
+    await expect.poll(fixture.rootRequestCount)
+        .toBeGreaterThan(rootRequestsBeforeRefresh);
+    expect(fixture.artifactRequestCount()).toBe(1);
+    expect(fleetModuleRequests).toHaveLength(fleetRequestsAtLeave);
 });
 
 test('keeps complete target status evidence reachable across Execute viewports', async ({

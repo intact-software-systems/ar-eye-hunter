@@ -204,11 +204,17 @@ test('routes bounded Analyze Fleet and Advanced workspaces', async ({ page }) =>
     await page.getByRole('button', { name: 'Fleet', exact: true }).click();
     await expect(page).toHaveURL(/view=fleet/);
     await expect(page.locator('[data-analyze-workspace]')).toHaveCount(0);
-    await expect(page.locator('[data-preview-view="fleet"]')
-        .getByText('Fleet live data unavailable in offline preview', { exact: true }))
+    const offlineFleet = page.locator('[data-fleet-operational-state="offline"]');
+    await expect(offlineFleet.getByRole('heading', {
+        name: 'Fleet control is offline',
+    }))
         .toBeVisible();
-    await expect(page.getByText('No control connection is available in offline preview.', { exact: true }))
+    await expect(offlineFleet.getByText(
+        'No current snapshot is available. Reconnect or use the operational legacy fallback.',
+        { exact: true },
+    ))
         .toBeVisible();
+    await expect(offlineFleet).toContainText('Fleet report collection unavailable.');
     await expect(page.locator('[data-preview-view="fleet"] [data-fleet-region]')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Advanced', exact: true }).click();

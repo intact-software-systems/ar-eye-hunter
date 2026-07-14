@@ -13,6 +13,7 @@ async function coldEntry(
     url: string,
     visible: '.recipe-console' | '.app-shell',
     baseUrl?: string,
+    ready?: string,
 ) {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -24,6 +25,9 @@ async function coldEntry(
     });
     await page.goto(baseUrl ? new URL(url, baseUrl).href : url);
     await expect(page.locator(visible)).toBeVisible();
+    if (ready) {
+        await expect(page.locator(ready)).toBeVisible();
+    }
     await expect(page.locator(
         visible === '.recipe-console' ? '.app-shell' : '.recipe-console',
     )).toHaveCount(0);
@@ -201,6 +205,37 @@ test('proves each production experience static closure without fixture or peer r
     expect(legacyResources.some(url => /\/assets\/LegacyExperience-[^/]+\.css$/.test(url))).toBe(true);
     expect(legacyResources.some(url => url.includes('RecipeConsoleApp'))).toBe(false);
     expect(legacyResources.some(url => url.includes('recipe-console-css-isolation'))).toBe(false);
+});
+
+test('loads the production Fleet chunk only for the Fleet route', async ({
+    browser,
+}) => {
+    const productionBaseUrl = 'http://127.0.0.1:4176';
+    const executeResources = await coldEntry(
+        browser,
+        '/?provider=simulated&v=1&experience=recipe-console&view=execute',
+        '.recipe-console',
+        productionBaseUrl,
+    );
+    expect(executeResources.some(url =>
+        /\/assets\/FleetWorkspace-[^/]+\.(?:js|css)$/.test(url)
+    )).toBe(false);
+
+    const fleetResources = await coldEntry(
+        browser,
+        '/?provider=simulated&v=1&experience=recipe-console&view=fleet',
+        '.recipe-console',
+        productionBaseUrl,
+        '[data-fleet-workspace]',
+    );
+    expect(fleetResources.some(url =>
+        /\/assets\/FleetWorkspace-[^/]+\.js$/.test(url)
+    )).toBe(true);
+    expect(fleetResources.some(url =>
+        /\/assets\/FleetWorkspace-[^/]+\.css$/.test(url)
+    )).toBe(true);
+    expect(fleetResources.some(url => url.includes('LegacyExperience')))
+        .toBe(false);
 });
 
 test('loads the real production Analyze worker only on import and paints pending before start', async ({

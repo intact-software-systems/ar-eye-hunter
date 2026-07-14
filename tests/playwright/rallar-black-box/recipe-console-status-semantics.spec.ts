@@ -53,12 +53,18 @@ test('keeps empty stale and error states explicit without discarding evidence', 
 
     await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=fleet');
     await expect(page.locator('[data-analyze-workspace]')).toHaveCount(0);
-    const error = page.locator('[data-state="error"]');
-    await expect(error).toHaveAttribute('aria-live', 'assertive');
-    await expect(error.getByRole('heading', {
-        name: 'Fleet live data unavailable in offline preview',
+    const partialFleet = page.locator('[data-fleet-operational-state="partial"]');
+    const partialState = partialFleet.locator('[data-state="stale"]');
+    await expect(partialState).toHaveAttribute('aria-live', 'polite');
+    await expect(partialState.getByRole('heading', {
+        name: 'Fleet evidence is partial',
     })).toBeVisible();
-    await expect(error).toContainText('No control connection is available in offline preview.');
+    await expect(partialState).toContainText(
+        'Some root control collections are unavailable; supported evidence remains visible.',
+    );
+    await expect(partialState).toContainText('Fleet report collection unavailable.');
+    await expect(partialFleet.locator('[data-fleet-retained-evidence]'))
+        .toContainText(MONITOR_FAILURE_AGENT_ID);
 
     await page.goto(MONITOR_ROUTE);
     const verdict = page.locator('[data-monitor-section="verdict"]');
