@@ -208,6 +208,8 @@ deno check --node-modules-dir=none \
   packages/shared-test/rallar-bb-test/mod.ts
 ```
 
+### Task 1 milestone — `5ed54fc`
+
 Task 1 adds one bounded, React-free, correlation-safe classifier with a stable
 Auth → WebSocket → RTC Diagnostics → Groups/Clients → Rallar Server order.
 Malformed, over-limit, uncorrelated, generic-word, and frozen non-mutation
@@ -228,19 +230,19 @@ Files:
 - Modify `packages/tests/rallar-black-box/app-tabs.test.ts`
 - Modify `packages/tests/rallar-black-box/experience-route.test.ts`
 
-- [ ] RED a complete data-only catalog for all 13 direct surfaces and the six
+- [x] RED a complete data-only catalog for all 13 direct surfaces and the six
   Advanced Legacy workflows: Manual, Local Workbench, Run Manager,
   Distributed Recipes, Flow Builder, and Shared Test.
-- [ ] RED every canonical route and every existing alias, including
+- [x] RED every canonical route and every existing alias, including
   `advancedSurface`/`advanced`, `flow-builder`, and runner launch routes.
-- [ ] RED provider allow-listing, secret/non-shareable scrubbing, 4,096-byte
+- [x] RED provider allow-listing, secret/non-shareable scrubbing, 4,096-byte
   bounds, URL encoding, long/bidi IDs, and preservation of safe context.
-- [ ] RED a structural return builder that restores the exact Recipe Console
+- [x] RED a structural return builder that restores the exact Recipe Console
   view/run selection, removes legacy aliases/bridge fields, and cannot become
   an open redirect.
-- [ ] GREEN pure catalog/URL modules with no React, legacy imports, history
+- [x] GREEN pure catalog/URL modules with no React, legacy imports, history
   mutation, runtime registry, or new URL authority.
-- [ ] Commit `feat: define advanced legacy routing contracts`.
+- [x] Commit `feat: define advanced legacy routing contracts`.
 
 Validation:
 
@@ -251,6 +253,17 @@ npx vitest run \
   packages/tests/rallar-black-box/experience-route.test.ts \
   packages/tests/rallar-black-box/recipe-console-url-state.test.ts
 ```
+
+Task 2 defines exactly 22 actionable leaves: 13 direct diagnostics, four
+preserved runner fallbacks, and five selected Advanced children (with Flow
+Builder owned by the real Builder route). Structural outbound links emit only
+the versioned bridge and bounded allow-listed context; structural returns drop
+bridge/group/legacy/secret fields and restore only owned Recipe Console state.
+The reviewed Task 4A parser/context bar contract is included as routing
+groundwork and cross-checked for identical return policy; shell and consumer
+integration remains open under Task 4. The focused routing/context gate passes
+19/19, the wider route contract passes 61/61, app TypeScript passes, and diff
+check is clean.
 
 ## Task 3: Build Advanced And Contextual Monitor Handoffs
 
