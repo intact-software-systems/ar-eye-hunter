@@ -114,6 +114,12 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json',
             'apps/rallar-black-box/manifests/hetzner/08-rtc-messages-principal-50-agent-30s-20hz-mesh.json',
             'apps/rallar-black-box/manifests/hetzner/09-rtc-messages-all-peer-50-agent-30s-5hz-tree.json',
+            'apps/rallar-black-box/manifests/hetzner/10-rtc-messages-principal-15-agent-30s-20hz-tree.json',
+            'apps/rallar-black-box/manifests/hetzner/11-rtc-messages-principal-15-agent-30s-20hz-mesh.json',
+            'apps/rallar-black-box/manifests/hetzner/12-rtc-messages-all-peer-15-agent-30s-5hz-tree.json',
+            'apps/rallar-black-box/manifests/hetzner/13-rtc-messages-principal-30-agent-30s-20hz-tree.json',
+            'apps/rallar-black-box/manifests/hetzner/14-rtc-messages-principal-30-agent-30s-20hz-mesh.json',
+            'apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json',
         ]);
         expect(diagnosticPaths).toEqual([
             'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
@@ -243,6 +249,12 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal-50-agent-30s-20hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
             ['apps/rallar-black-box/manifests/hetzner/08-rtc-messages-principal-50-agent-30s-20hz-mesh.json', { peers: 1, timeoutMs: 45_000 }],
             ['apps/rallar-black-box/manifests/hetzner/09-rtc-messages-all-peer-50-agent-30s-5hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
+            ['apps/rallar-black-box/manifests/hetzner/10-rtc-messages-principal-15-agent-30s-20hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
+            ['apps/rallar-black-box/manifests/hetzner/11-rtc-messages-principal-15-agent-30s-20hz-mesh.json', { peers: 1, timeoutMs: 45_000 }],
+            ['apps/rallar-black-box/manifests/hetzner/12-rtc-messages-all-peer-15-agent-30s-5hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
+            ['apps/rallar-black-box/manifests/hetzner/13-rtc-messages-principal-30-agent-30s-20hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
+            ['apps/rallar-black-box/manifests/hetzner/14-rtc-messages-principal-30-agent-30s-20hz-mesh.json', { peers: 1, timeoutMs: 45_000 }],
+            ['apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
         ]);
 
         for (const entry of buildHetznerDistributedManifestCatalog().filter(candidate => !candidate.diagnostic)) {
@@ -688,6 +700,86 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(entry?.manifest.metadata?.catalogProfiles).toEqual(
             expect.arrayContaining(['github-free-smoke', '50-agent', 'tree']),
         );
+    });
+
+    it('adds 15- and 30-agent mainline alternatives for the three 50-agent multicast recipes', () => {
+        const byId = new Map(
+            buildHetznerDistributedManifestCatalog().map(entry => [entry.manifest.distributedRunId, entry]),
+        );
+
+        for (const agentCount of [15, 30]) {
+            const principalTree = byId.get(
+                `hetzner-rtc-messages-principal-${agentCount}-agent-30s-20hz-tree`,
+            );
+            const principalMesh = byId.get(
+                `hetzner-rtc-messages-principal-${agentCount}-agent-30s-20hz-mesh`,
+            );
+            const allPeerTree = byId.get(
+                `hetzner-rtc-messages-all-peer-${agentCount}-agent-30s-5hz-tree`,
+            );
+            const principalFrames = 30 * 20;
+            const allPeerFrames = (agentCount - 1) * 30 * 5;
+
+            expect(principalTree?.diagnostic).toBe(false);
+            expect(principalTree?.agentCount).toBe(agentCount);
+            expect(principalTree?.manifest.metadata).toMatchObject({
+                topologyProfile: 'tree',
+                participantCount: agentCount,
+                senderCount: 1,
+                receiverDelivery: {
+                    expectedInboundMessages: principalFrames,
+                    minExpectedInboundMessages: Math.floor(principalFrames * 0.95),
+                    minReceiveRatio: 0.95,
+                },
+                loadEstimate: {
+                    streamFrames: principalFrames,
+                    logicalFanoutMessages: principalFrames * (agentCount - 1),
+                },
+                rtcTopologyEnv: {
+                    RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: String(agentCount + 1),
+                },
+            });
+            expect(principalTree?.manifest.recipes.map(selection => selection.role)).toEqual([
+                'sender',
+                'receiver',
+            ]);
+
+            expect(principalMesh?.diagnostic).toBe(false);
+            expect(principalMesh?.agentCount).toBe(agentCount);
+            expect(principalMesh?.manifest.metadata).toMatchObject({
+                topologyProfile: 'mesh',
+                participantCount: agentCount,
+                senderCount: 1,
+                receiverDelivery: {
+                    expectedInboundMessages: principalFrames,
+                    minExpectedInboundMessages: Math.floor(principalFrames * 0.95),
+                    minReceiveRatio: 0.95,
+                },
+                rtcTopologyEnv: {
+                    RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: '16',
+                },
+            });
+
+            expect(allPeerTree?.diagnostic).toBe(false);
+            expect(allPeerTree?.agentCount).toBe(agentCount);
+            expect(allPeerTree?.manifest.metadata).toMatchObject({
+                topologyProfile: 'tree',
+                participantCount: agentCount,
+                senderCount: agentCount,
+                receiverDelivery: {
+                    expectedInboundMessages: allPeerFrames,
+                    minExpectedInboundMessages: Math.floor(allPeerFrames * 0.9),
+                    minReceiveRatio: 0.9,
+                },
+                loadEstimate: {
+                    streamFrames: agentCount * 30 * 5,
+                    logicalFanoutMessages: agentCount * 30 * 5 * (agentCount - 1),
+                },
+                rtcTopologyEnv: {
+                    RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: String(agentCount + 1),
+                },
+            });
+        }
     });
 
     it('adds medium-scale messages.rtc multicast matrix manifests for 10 to 30 agents', () => {
