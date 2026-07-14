@@ -1,5 +1,7 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { RallarWsStatus } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type {
+    CreateRallarRtcFacadeOptions,
     RallarRoomTransportState,
     RallarRoomTransportStatus,
     RallarRtcCandidateDiagnostics,
@@ -26,13 +28,11 @@ import type {
     RallarRtcStatusSubscriptionOptions,
     RallarRtcWaitForOpenOptions,
     RallarRtcWaitForOpenResult,
-    RallarUnsubscribe,
     RallarWaitForOpenStatus,
-    RallarWsStatus,
-} from '@shared-web/browser/rallar-facade-contract.ts';
-import type { CreateRallarRtcFacadeOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
+} from '@shared-web/browser/rallar-rtc-facade.ts';
 import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/rallar-runtime/wait.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
     evaluateRallarReadinessExpectation,
     normalizeRallarReadinessExpectation,

@@ -1,6 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { CreateRallarCallsFacadeOptions } from '@shared-web/browser/rallar-calls-facade.ts';
 import type {
+    CreateRallarCallsFacadeOptions,
     RallarCallEndOptions,
     RallarCallHandle,
     RallarCallInviteInput,
@@ -18,19 +18,25 @@ import type {
     RallarCallStatus,
     RallarCallWaitOptions,
     RallarIncomingCallInvite,
+} from '@shared-web/browser/rallar-calls-facade.ts';
+import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
+import type {
     RallarMessage,
     RallarMessageSendResult,
-    RallarRtcLaneStatus,
-    RallarRtcPeerStatus,
+    RallarMessagesFacade,
+} from '@shared-web/browser/rallar-messages-facade.ts';
+import type {
     RallarTargetedChannel,
     RallarTargetedChannelDefinition,
     RallarTargetSelector,
-    RallarUnsubscribe,
-} from '@shared-web/browser/rallar-facade-contract.ts';
-import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
-import type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
-import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
+} from '@shared-web/browser/rallar-realtime-facade.ts';
+import type {
+    RallarRtcFacade,
+    RallarRtcLaneStatus,
+    RallarRtcPeerStatus,
+} from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/contracts.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';

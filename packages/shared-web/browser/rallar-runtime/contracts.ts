@@ -75,6 +75,7 @@ export type RallarAuthRuntimePort = Pick<
 export type RallarStatePort = Readonly<{
     attachCache(): void;
     detachCache(): void;
+    onCacheChange(listener: () => void): RallarUnsubscribe;
     acceptSnapshots(
         ctx: ApiMiddleware,
         clients: readonly ClientSnapshot[],

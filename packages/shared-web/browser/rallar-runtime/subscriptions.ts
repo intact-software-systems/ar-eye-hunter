@@ -1,10 +1,12 @@
 import type {
     RallarMessage,
     RallarStateEventListener,
+} from '@shared-web/browser/rallar-messages-facade.ts';
+import type {
     RallarStateListener,
     RallarSubscriptionScope,
     RallarUnsubscribe,
-} from '@shared-web/browser/rallar-facade-contract.ts';
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 
 export function createRallarSubscriptionScope(): RallarSubscriptionScope {
     const unsubscribers = new Set<RallarUnsubscribe>();

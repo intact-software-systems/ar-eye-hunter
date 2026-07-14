@@ -2,17 +2,29 @@ import * as api from '@shared-web/browser/api-integration.ts';
 import type { StateGroupWorkflowValue } from '@shared-web/browser/api-workflows.ts';
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import * as stateCaches from '@shared-web/browser/data-caches.ts';
 import type {
+    RallarRefreshOptions,
+    RallarScopedOperationOptions,
+} from '@shared-web/browser/rallar-connection-facade.ts';
+import type {
+    RallarRoomMessageChannelDefinition,
+    RallarMessagesFacade,
+} from '@shared-web/browser/rallar-messages-facade.ts';
+import {
+    type RallarOperationOptions,
+    toRallarOperationOptions,
+    toRallarWorkflowPolicies,
+} from '@shared-web/browser/rallar-operation-options.ts';
+import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type {
+    CreateRallarRoomsFacadeOptions,
     RallarCreateRoomInput,
     RallarJoinRoomInput,
     RallarJoinRoomOptions,
     RallarLeaveRoomOptions,
-    RallarRefreshOptions,
     RallarRoomGovernanceOptions,
     RallarRoomInviteOptions,
     RallarRoomLifecycleOptions,
-    RallarRoomMessageChannelDefinition,
     RallarRoomPresenceWaitOptions,
     RallarRoomPresenceWaitResult,
     RallarRoomSession,
@@ -22,18 +34,8 @@ import type {
     RallarRoomSummary,
     RallarRoomSwitchPartialFailureError,
     RallarRoomTargetInput,
-    RallarScopedOperationOptions,
-    RallarUnsubscribe,
     RallarUpdateRoomInput,
-} from '@shared-web/browser/rallar-facade-contract.ts';
-import type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
-import {
-    type RallarOperationOptions,
-    toRallarOperationOptions,
-    toRallarWorkflowPolicies,
-} from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { CreateRallarRoomsFacadeOptions } from '@shared-web/browser/rallar-rooms-facade.ts';
+} from '@shared-web/browser/rallar-rooms-facade.ts';
 import type {
     RallarStateEventsPort,
     RallarStatePort,
@@ -45,6 +47,7 @@ import {
     throwRallarValidationIssue,
 } from '@shared-web/browser/rallar-runtime/validation.ts';
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/rallar-runtime/wait.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
     evaluateRallarReadinessExpectation,
     normalizeRallarReadinessExpectation,
@@ -950,7 +953,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                 ...readResult(),
                 status: 'aborted',
             });
-            unsubscribe = stateCaches.onStateCacheChange(() => {
+            unsubscribe = this.options.stateStore.onCacheChange(() => {
                 const next = readResult();
                 if (isTerminalReadinessWaitResult(next)) {
                     finish(next);

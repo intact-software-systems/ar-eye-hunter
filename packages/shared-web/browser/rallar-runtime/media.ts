@@ -1,5 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type {
+    CreateRallarMediaFacadeOptions,
     RallarCameraSourceStartOptions,
     RallarMediaSourceController,
     RallarMediaSourceHandle,
@@ -9,10 +10,9 @@ import type {
     RallarMicrophoneSourceStartOptions,
     RallarRemoteStream,
     RallarScreenSourceStartOptions,
-    RallarUnsubscribe,
-} from '@shared-web/browser/rallar-facade-contract.ts';
+} from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/contracts.ts';
-import type { CreateRallarMediaFacadeOptions } from '@shared-web/browser/rallar-media-facade.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
 
 const RALLAR_REMOTE_STREAM_CALLBACK_ID = 'rallar:remote-stream';

@@ -1,7 +1,7 @@
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { CreateRallarDirectorFacadeOptions } from '@shared-web/browser/rallar-director-facade.ts';
 import type {
+    CreateRallarDirectorFacadeOptions,
     RallarDirectorAppointOptions,
     RallarDirectorRelayConfig,
     RallarDirectorRelayEnvelope,
@@ -12,23 +12,28 @@ import type {
     RallarDirectorStatus,
     RallarDirectorStatusListener,
     RallarDirectorStatusOptions,
+} from '@shared-web/browser/rallar-director-facade.ts';
+import type {
+    RallarMessageSendResult,
     RallarMessageSendStatus,
+    RallarMessagesFacade,
+} from '@shared-web/browser/rallar-messages-facade.ts';
+import type {
+    RallarRealtimeFacade,
     RallarTargetedChannel,
     RallarTargetedChannelDefinition,
-    RallarUnsubscribe,
-} from '@shared-web/browser/rallar-facade-contract.ts';
-import type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
+} from '@shared-web/browser/rallar-realtime-facade.ts';
 import {
     type RallarOperationOptions,
     toRallarWorkflowPolicies,
 } from '@shared-web/browser/rallar-operation-options.ts';
-import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRoomsFacade } from '@shared-web/browser/rallar-rooms-facade.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/contracts.ts';
 import {
     createRallarSubscriptionScope,
     notifyListener,
 } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toStateScope } from '@shared/api/api-type-utils.ts';
 import {
@@ -78,7 +83,7 @@ export type CreateRallarDirectorControllerOptions = Readonly<{
             contextId: string;
             resourceId?: string;
         }>,
-    ): Promise<import('@shared-web/browser/rallar-facade-contract.ts').RallarMessageSendResult>;
+    ): Promise<RallarMessageSendResult>;
 }>;
 
 export type RallarDirectorController = Readonly<{

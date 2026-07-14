@@ -1,5 +1,6 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type {
+    CreateRallarRealtimeFacadeOptions,
     RallarRealtimeBinarySendInput,
     RallarRealtimeHandler,
     RallarRealtimeHealthOptions,
@@ -17,16 +18,17 @@ import type {
     RallarRoomRealtimeSendResult,
     RallarRoomRealtimeSendStatus,
     RallarRoomRealtimeTransportOptions,
-    RallarRtcRoomLaneWaitResult,
     RallarTargetedChannel,
     RallarTargetedChannelDefinition,
     RallarTargetedChannelSendOptions,
     RallarTargetedSendStatus,
     RallarTargetSelector,
-    RallarUnsubscribe,
-} from '@shared-web/browser/rallar-facade-contract.ts';
-import type { CreateRallarRealtimeFacadeOptions } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
+} from '@shared-web/browser/rallar-realtime-facade.ts';
+import type {
+    RallarRtcFacade,
+    RallarRtcRoomLaneWaitResult,
+} from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     isGroupActive,

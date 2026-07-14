@@ -112,6 +112,22 @@ describe('Rallar browser runtime foundations', () => {
         expect(events).toEqual(['rooms', 'people', 'derived']);
     });
 
+    it('exposes cache observation through the state port', () => {
+        const state = createRallarStateStore({
+            runtime: createRallarBrowserFacadeRuntimeContext({
+                isMiddlewareReady: () => false,
+            }),
+            readSession: () => undefined,
+            readGroupSnapshots: () => [],
+            readClientSnapshots: () => [],
+        });
+
+        expect(state).toHaveProperty('onCacheChange', expect.any(Function));
+        const unsubscribe = state.onCacheChange(() => undefined);
+        expect(unsubscribe).toBeTypeOf('function');
+        unsubscribe();
+    });
+
     it('multiplexes one WS callback and dispatches handlers in order', async () => {
         const events: string[] = [];
         let onMessage: ((message: unknown) => Promise<void>) | undefined;

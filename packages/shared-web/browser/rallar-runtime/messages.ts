@@ -1,6 +1,7 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt-transport.ts';
 import type {
+    CreateRallarMessagesFacadeOptions,
     RallarMessageHandler,
     RallarMessageSendBase,
     RallarMessageSendResult,
@@ -14,9 +15,8 @@ import type {
     RallarTypedMessageSendOptions,
     RallarTypedRtcSendOptions,
     RallarTypedWsSendOptions,
-    RallarUnsubscribe,
     RallarWsSendInput,
-} from '@shared-web/browser/rallar-facade-contract.ts';
+} from '@shared-web/browser/rallar-messages-facade.ts';
 import {
     matchesRallarMessageSelector,
     normalizeRallarMessageSelector,
@@ -24,9 +24,9 @@ import {
     type RallarMessageSelectorInput,
     toRallarMessageSelectorKey,
 } from '@shared-web/browser/rallar-message-selectors.ts';
-import type { CreateRallarMessagesFacadeOptions } from '@shared-web/browser/rallar-messages-facade.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
     type ALMessage,
     newALBroadcastMessage,

@@ -2,11 +2,15 @@ import * as stateCaches from '@shared-web/browser/data-caches.ts';
 import type {
     RallarPeopleState,
     RallarPerson,
+} from '@shared-web/browser/rallar-people-facade.ts';
+import type {
     RallarRoomMember,
     RallarRoomState,
+} from '@shared-web/browser/rallar-rooms-facade.ts';
+import type {
     RallarStateListener,
     RallarUnsubscribe,
-} from '@shared-web/browser/rallar-facade-contract.ts';
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     RallarStatePort,
     RallarStateRuntimePort,
@@ -281,6 +285,8 @@ export function createRallarStateStore(
             options.runtime.readStateCacheUnsubscribe()?.();
             options.runtime.setStateCacheUnsubscribe(undefined);
         },
+        onCacheChange: (listener): RallarUnsubscribe =>
+            stateCaches.onStateCacheChange(listener),
         acceptSnapshots: async (ctx, clients, groups, scope): Promise<void> => {
             await stateCaches.hydrateStateCaches(
                 ctx.middleware.webRtcGroupManager,

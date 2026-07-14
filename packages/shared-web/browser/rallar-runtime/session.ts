@@ -11,21 +11,21 @@ import {
     isMiddlewareReady,
 } from '@shared-web/browser/app-context.ts';
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/browser-al-runtime-stores.ts';
-import type { CreateRallarAuthFacadeOptions } from '@shared-web/browser/rallar-auth-facade.ts';
-import type { CreateRallarConnectionFacadeOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
+    CreateRallarAuthFacadeOptions,
     RallarAuthChangeListener,
     RallarAuthChangeReason,
     RallarAuthState,
+    RallarRegisterOptions,
+} from '@shared-web/browser/rallar-auth-facade.ts';
+import type {
+    CreateRallarConnectionFacadeOptions,
     RallarDefaults,
     RallarFlowPolicies,
-    RallarOnChangeOptions,
-    RallarRegisterOptions,
     RallarScopedOperationOptions,
     RallarStartOptions,
     RallarStartResult,
-    RallarUnsubscribe,
-} from '@shared-web/browser/rallar-facade-contract.ts';
+} from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     type RallarOperationOptions,
     toRallarCommandOptions,
@@ -41,6 +41,10 @@ import {
     createRallarSubscriptionScope,
     notifyListener,
 } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
+import type {
+    RallarOnChangeOptions,
+    RallarUnsubscribe,
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     AuthSession,
     LoginRequest,

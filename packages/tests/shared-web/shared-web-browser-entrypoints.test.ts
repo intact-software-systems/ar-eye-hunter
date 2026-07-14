@@ -150,6 +150,44 @@ describe('shared-web browser entrypoints', () => {
         expect(references).toEqual([]);
     });
 
+    it('keeps runtime controllers independent from the aggregate contract', () => {
+        const allowedFiles = new Set(['composition.ts']);
+        const runtimeFiles = readdirSync(
+            path.resolve('packages/shared-web/browser/rallar-runtime'),
+        ).filter((fileName) =>
+            fileName.endsWith('.ts') && !allowedFiles.has(fileName)
+        );
+        const references = runtimeFiles.flatMap((fileName) =>
+            collectModuleReferences(
+                readSourceFile(
+                    `packages/shared-web/browser/rallar-runtime/${fileName}`,
+                ),
+                '@shared-web/browser/rallar-facade-contract.ts',
+            ).map((reference) => `${fileName}: ${reference}`)
+        );
+
+        expect(references).toEqual([]);
+    });
+
+    it('keeps mutable state-cache access inside the state store', () => {
+        const allowedFiles = new Set(['state-store.ts']);
+        const runtimeFiles = readdirSync(
+            path.resolve('packages/shared-web/browser/rallar-runtime'),
+        ).filter((fileName) =>
+            fileName.endsWith('.ts') && !allowedFiles.has(fileName)
+        );
+        const references = runtimeFiles.flatMap((fileName) =>
+            collectModuleReferences(
+                readSourceFile(
+                    `packages/shared-web/browser/rallar-runtime/${fileName}`,
+                ),
+                '@shared-web/browser/data-caches.ts',
+            ).map((reference) => `${fileName}: ${reference}`)
+        );
+
+        expect(references).toEqual([]);
+    });
+
     it('limits the full runtime context to the composer and port contracts', () => {
         const allowedFiles = new Set(['composition.ts', 'contracts.ts']);
         const runtimeFiles = readdirSync(

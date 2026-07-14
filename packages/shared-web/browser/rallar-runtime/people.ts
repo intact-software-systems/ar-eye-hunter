@@ -1,14 +1,14 @@
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type {
-    RallarPeopleState,
-    RallarRefreshOptions,
-} from '@shared-web/browser/rallar-facade-contract.ts';
+import type { RallarRefreshOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     type RallarOperationOptions,
     toRallarWorkflowPolicies,
 } from '@shared-web/browser/rallar-operation-options.ts';
-import type { CreateRallarPeopleFacadeOptions } from '@shared-web/browser/rallar-people-facade.ts';
+import type {
+    CreateRallarPeopleFacadeOptions,
+    RallarPeopleState,
+} from '@shared-web/browser/rallar-people-facade.ts';
 import type {
     RallarStateEventsPort,
     RallarStatePort,

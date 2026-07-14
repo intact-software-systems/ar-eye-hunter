@@ -1,19 +1,23 @@
 import * as api from '@shared-web/browser/api-integration.ts';
 import type {
     RallarListPeopleEventsOptions,
-    RallarListRoomEventsInput,
-    RallarListRoomEventsOptions,
-    RallarMessage,
     RallarPeopleEventListener,
     RallarPeopleEventOptions,
-    RallarReplayEventsResult,
     RallarReplayPeopleEventsOptions,
+} from '@shared-web/browser/rallar-people-facade.ts';
+import type { RallarMessage } from '@shared-web/browser/rallar-messages-facade.ts';
+import type {
+    RallarListRoomEventsInput,
+    RallarListRoomEventsOptions,
     RallarReplayRoomEventsInput,
     RallarReplayRoomEventsOptions,
     RallarRoomEventListener,
     RallarRoomEventOptions,
+} from '@shared-web/browser/rallar-rooms-facade.ts';
+import type {
+    RallarReplayEventsResult,
     RallarUnsubscribe,
-} from '@shared-web/browser/rallar-facade-contract.ts';
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 import {
     type RallarOperationOptions,
     toRallarCommandOptions,
