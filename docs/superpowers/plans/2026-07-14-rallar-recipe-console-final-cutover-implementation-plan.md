@@ -1,0 +1,403 @@
+# Rallar Recipe Console Final Cutover Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use
+> superpowers:subagent-driven-development (recommended) or
+> superpowers:executing-plans to implement this plan task-by-task. Steps use
+> checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Complete Iteration 12 by making Recipe Console the safe blank-URL
+default, clearing the registered legacy accessibility debt, proving the final
+cross-viewport Ready-State contract, and recording every available and
+unavailable qualification result without retiring the legacy experience.
+
+**Architecture:** Change only the experience-selection default; explicit
+legacy aliases, old deep links, and runner-agent launch URLs remain authoritative
+and continue to select the lazy `LegacyExperience`. Put final legacy overrides
+in one narrowly scoped stylesheet under `src/legacy/accessibility/**`, loaded
+only with the legacy chunk. Add browser acceptance beside the existing Recipe
+Console suites; do not add feature ownership to `App.tsx`,
+`RecipeConsoleApp.tsx`, `LegacyAppShell.tsx`, a registry, or the global legacy
+stylesheet.
+
+**Tech Stack:** React 19, TypeScript, Vite, Vitest, Playwright Chromium, Deno.
+
+## Global Constraints
+
+- Preserve public exports, current control-server contracts, rollback URLs,
+  aliases, runner-agent launch inputs, and explicit `experience=legacy` routes.
+- Keep legacy and Recipe Console as mutually exclusive lazy experience
+  closures. A cold blank/default route must not request, mount, subscribe, or
+  poll legacy owners.
+- Keep the twelve Iteration 11 stateful legacy exceptions mounted only inside
+  active `LegacyExperience`; do not silently convert them to unmounted routes.
+- Use tests first for every behavior change and watch each RED fail for the
+  intended reason before production edits.
+- Approved visual direction remains Signal Ledger (Direction A). Baseline
+  changes require deliberate inspection; do not update snapshots merely to
+  make a gate green.
+- Browser QA must cover 1440×900 desktop, 900×900 tablet, genuine-touch 430×932
+  portrait, genuine-touch 932×430 landscape, keyboard, reduced motion,
+  persistent non-hover evidence, operational states, and both CSS load orders.
+- The in-app Browser failure remains exactly `Browser runtime unavailable after
+  setup failure: Cannot redefine property: process`; terminal Playwright is the
+  permitted fallback and is not an in-app Browser pass.
+- Configured live/Postgres validation is a pass only if it executes successfully.
+  When unavailable, record exactly `Set RALLAR_BLACK_BOX_FULL_STACK=1 with
+  Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
+  apps/rallar-black-box available.`
+- Interpret Ready-State #3 according to the user's completion rule: all
+  deterministic/code-backed behavior and every available validation must pass;
+  the unavailable configured-service execution remains explicitly skipped and
+  must never be described as passed.
+- No push or pull request.
+
+---
+
+## Repository-Authoritative Corrections
+
+- The source plan names an app-local Playwright path, but repository tests live
+  under `tests/playwright/rallar-black-box/**`.
+- `App.tsx` is already 260 lines, `RecipeConsoleApp.tsx` 28 lines, and
+  `LegacyAppShell.tsx` 111 lines. Iteration 12 must preserve those boundaries,
+  not perform another shell extraction.
+- Existing Recipe Console responsive suites already prove many interaction
+  details, but the named final `recipe-console-accessibility.spec.ts` artifact
+  and the six registered legacy debt surfaces do not yet exist.
+- `src/styles.css` is extraction-hash-locked legacy parity. Final accessibility
+  overrides belong in a scoped, legacy-only file rather than extending it.
+- The production full-stack script exists as
+  `npm run test:e2e:rallar-black-box:full-stack:real:distributed` and delegates
+  to the current Postgres distributed Playwright config.
+
+## Task 0: Bind The Final Cutover Plan
+
+**Files:**
+
+- Create: `docs/superpowers/plans/2026-07-14-rallar-recipe-console-final-cutover-implementation-plan.md`
+- Modify: `.superpowers/sdd/progress.md` (ignored durable ledger only)
+
+**Interfaces:**
+
+- Consumes: Iteration 11 qualified implementation head `78e2c13` and
+  documentation milestone `f281425`.
+- Produces: the task contract used by all Iteration 12 implementers/reviewers.
+
+- [x] Verify this plan against Iteration 12, all 14 Ready-State bullets, the
+  current migration register, and current source/test paths.
+- [x] Scan for placeholders, contradictory task requirements, and nonexistent
+  commands or files.
+- [x] Record the Iteration 12 plan path and Task 0 completion in
+  `.superpowers/sdd/progress.md`.
+- [x] Commit `docs: bind final Recipe Console cutover`.
+
+## Task 1: Blank-URL Default And Explicit Legacy Compatibility
+
+**Files:**
+
+- Modify: `apps/rallar-black-box/src/app/experience-route.ts`
+- Modify: `packages/tests/rallar-black-box/experience-route.test.ts`
+- Modify: `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts`
+- Modify: `tests/playwright/rallar-black-box/recipe-console-chunks.spec.ts`
+- Modify: `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts`
+- Modify: `tests/playwright/rallar-black-box/tabbed-navigation.spec.ts`
+
+**Interfaces:**
+
+- Consumes: `resolveAppExperience(search, defaultExperience?)` and the v1 URL
+  codec.
+- Produces: `DEFAULT_APP_EXPERIENCE === 'recipe-console'`; explicit legacy
+  aliases still win; blank/provider-only URLs enter Recipe Console.
+
+- [ ] RED `experience-route.test.ts`: remove blank search from the legacy alias
+  table, import `DEFAULT_APP_EXPERIENCE`, and assert:
+
+  ```ts
+  expect(DEFAULT_APP_EXPERIENCE).toBe('recipe-console');
+  expect(resolveAppExperience('')).toBe('recipe-console');
+  expect(resolveAppExperience('?provider=simulated')).toBe('recipe-console');
+  ```
+
+  Preserve assertions that `mode`, `workspace`, `appMode`, `tab`,
+  `advancedSurface`, `advanced`, future versions, invalid explicit experience,
+  and control-agent launch URLs resolve to legacy.
+
+- [ ] Run
+  `./node_modules/.bin/vitest run packages/tests/rallar-black-box/experience-route.test.ts`
+  and verify only the new default assertions fail because the constant is
+  still `legacy`.
+- [ ] Make legacy-intent Playwright setup explicit by adding
+  `experience=legacy` to provider-only routes in `tabbed-navigation.spec.ts`
+  (Quick Test default, browser-Rallar Quick Test, persistence reload),
+  `recipe-console-shell.spec.ts` (legacy side of the lazy round trip), and
+  `recipe-console-chunks.spec.ts` (legacy cold entries). Do not change old
+  compatibility routes that already contain a legacy key such as `tab`.
+- [ ] Add exact browser acceptance `blank URL opens Recipe Console Execute
+  after the final ready-state flip`. Seed a valid local auth session plus stale
+  stored legacy mode/tab, navigate literal `/`, and assert canonical Execute,
+  Recipe Console navigation, no `.app-shell`, no legacy owner, no
+  `LegacyExperience` request, and canonical v1 URL replacement.
+- [ ] Before changing production, run the exact named browser acceptance and
+  observe RED because blank `/` still resolves to legacy. Keep the explicit
+  legacy-intent route corrections in this test-only RED patch so unrelated
+  legacy cases do not fail merely because they depended on the old default.
+- [ ] GREEN the smallest production change:
+
+  ```ts
+  export const DEFAULT_APP_EXPERIENCE: AppExperience = 'recipe-console';
+  ```
+
+- [ ] Change the Iteration 11 cold default proof in
+  `recipe-console-advanced.spec.ts` and the recipe side of
+  `recipe-console-chunks.spec.ts` to enter through `/` (using auth setup where
+  the browser-Rallar login gate applies). Preserve reciprocal explicit legacy
+  chunk proof and credential-origin policy tests.
+- [ ] Run focused Vitest, the exact shell/default test, chunks 10/10, Advanced
+  3/3, and full `tabbed-navigation.spec.ts`. Review every changed test route to
+  ensure it expresses product intent rather than depending on the old default.
+- [ ] Dispatch a fresh specification reviewer and then a code-quality reviewer
+  for Task 1. Fix every Critical or Important finding test-first, rerun the
+  focused gates, and obtain a clean re-review before advancing.
+- [ ] Commit `feat: make Recipe Console the default`.
+
+## Task 2: Scoped Legacy Touch And Narrow-Screen Repair
+
+**Files:**
+
+- Create: `apps/rallar-black-box/src/legacy/accessibility/legacy-accessibility.css`
+- Modify: `apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx`
+- Modify: `apps/rallar-black-box/test/fixtures/recipe-console-css-isolation-main.tsx`
+- Modify: `apps/rallar-black-box/test/fixtures/recipe-console-css-isolation-recipe-first-main.tsx`
+- Modify: `packages/tests/rallar-black-box/legacy-shell-composition.test.ts`
+- Create: `tests/playwright/rallar-black-box/recipe-console-accessibility.spec.ts`
+
+**Interfaces:**
+
+- Consumes: legacy panel root classes and the existing mutually exclusive
+  `LegacyExperience` chunk.
+- Produces: 44px action targets for Media, Rallar Data, CRDT, Auth,
+  Groups/Clients, and Rallar Server; narrow CRDT tracks collapse and wide tables
+  scroll locally.
+
+- [ ] RED the legacy import inventory and browser matrix. Require the new
+  side-effect import immediately after `../../styles.css`, require both CSS
+  fixtures to load it after legacy base CSS, then measure visible actions at
+  1440×900, 430×932 touch, and 932×430 touch. Verify CRDT portrait currently
+  overflows or keeps multi-column tracks and the registered targets are below
+  44px.
+- [ ] Run the focused structure test and the new legacy accessibility case;
+  confirm failures identify only the missing stylesheet/import and the recorded
+  size/overflow debts.
+- [ ] Add only scoped rules rooted at `.app-shell` and the six panel classes.
+  The core contract is:
+
+  ```css
+  .app-shell :is(
+      .media-console-panel,
+      .rallar-data-panel,
+      .crdt-health-panel,
+      .auth-command-center-panel,
+      .rooms-clients-panel,
+      .rallar-server-panel
+  ) button {
+      min-block-size: 44px;
+  }
+
+  @media (max-width: 960px) {
+      .app-shell .crdt-health-panel :is(
+          .crdt-editor-controls,
+          .crdt-editor-workbench .form-grid,
+          .crdt-editor-diagnostics
+      ) {
+          grid-template-columns: minmax(0, 1fr);
+      }
+
+      .app-shell .crdt-health-panel .table-shell {
+          max-inline-size: 100%;
+          overflow-x: auto;
+          overscroll-behavior-x: contain;
+      }
+  }
+  ```
+
+  The `960px` starting breakpoint deliberately includes the required 932×430
+  landscape viewport. Keep it only if the RED measurements show it is the
+  smallest safe landscape-inclusive boundary; otherwise choose the smallest
+  measured wider boundary and record it in the test. Expand the action selector
+  only when the RED matrix proves another actual interactive control is
+  undersized. Do not use unscoped `button`, `input`, or `table` rules.
+- [ ] In the same new spec add exact Ready-State #14 acceptance `exposes
+  equivalent keyboard touch and persistent evidence at desktop portrait and
+  landscape viewports`. Across the three required viewports, exercise primary
+  keyboard navigation, a real visible selection/disclosure, persistent
+  Advanced evidence without hover, 44px representative controls, reduced
+  motion, and zero document overflow. The 900×900 tablet remains covered by the
+  complete responsive suite.
+- [ ] GREEN the focused structure/browser tests, both CSS load orders, existing
+  responsive/accessibility cases, and legacy AppTabs focus tests. Inspect
+  desktop/portrait/landscape screenshots at original resolution.
+- [ ] Dispatch fresh Task 2 specification and code-quality reviewers. Fix every
+  Critical or Important finding test-first and re-review before advancing.
+- [ ] Commit `fix: close final accessibility debt`.
+
+## Task 3: Executable Contrast And Artifact-Missing Semantics
+
+**Files:**
+
+- Modify: `tests/playwright/rallar-black-box/recipe-console-status-semantics.spec.ts`
+- Modify: `tests/playwright/rallar-black-box/recipe-console-analyze-safety.spec.ts`
+- Modify: `tests/playwright/rallar-black-box/recipe-console-analyze-fixture.ts`
+- Modify only if RED proves a production gap:
+  `apps/rallar-black-box/src/recipe-console/analyze/**`
+
+**Interfaces:**
+
+- Consumes: rendered Direction A status tokens and Control artifact load state.
+- Produces: executable WCAG contrast evidence and an accessible Control artifact
+  404 state that retains prior usable evidence without inventing data.
+
+- [ ] Add pure test-local RGB parsing, relative luminance, and contrast-ratio
+  helpers. For every running/passed/failed/warning/stale/partial/disabled mark,
+  assert text/background at least 4.5:1 and border/background at least 3:1.
+  Also assert the selected primary navigation foreground/background and focus
+  outline contrast at least 3:1.
+- [ ] RED an Analyze safety case that first loads a valid Control artifact,
+  configures the fixture's next artifact request to return 404, clicks the
+  visible load action, and expects `Needs attention`, an accessible error that
+  names unavailable/missing evidence without leaking a response body, the
+  previous verdict/evidence still visible, and no fabricated replacement
+  identity.
+- [ ] Run the focused spec and verify it fails only because the fixture lacks a
+  one-shot HTTP failure or because production mishandles that observable state.
+- [ ] Add a one-shot `failNextArtifactResponse(status, body)` fixture seam. If
+  production already meets the acceptance, make no production change. If not,
+  apply the smallest Analyze state/controller fix and keep derivation outside
+  React.
+- [ ] Run status, Analyze safety, all operational-state cases, responsive CSS,
+  and app typecheck.
+- [ ] Dispatch fresh Task 3 specification and code-quality reviewers. Fix every
+  Critical or Important finding test-first and re-review before advancing.
+- [ ] Commit `test: prove final operational accessibility`.
+
+## Task 4: Fresh Qualification, Reviews, And Cutover Records
+
+**Files:**
+
+- Modify: `playground/rallar-black-box-spa-reimplementation-plan.md`
+- Modify: `apps/rallar-black-box/docs/recipe-console-product-spec.md`
+- Modify: `apps/rallar-black-box/docs/recipe-console-migration-register.md`
+- Modify: `apps/rallar-black-box/docs/recipe-console-iteration-2-fidelity-ledger.md`
+- Modify: this child plan
+- Modify: `.superpowers/sdd/progress.md` (ignored ledger only)
+
+**Interfaces:**
+
+- Consumes: Tasks 1–3 green commits and every Iteration 0–11 milestone.
+- Produces: the final code-backed Ready-State matrix, exact skip evidence, and
+  an independently reviewed local branch.
+
+- [ ] Dispatch independent reviews for default/compatibility routing,
+  accessibility/contrast, React/CSS/chunk ownership, operational state, and
+  final Ready-State traceability. RED/GREEN every Critical or Important
+  finding, then re-review.
+- [ ] Run the following exact non-browser qualification commands and record
+  their exit code and test count separately:
+
+  ```bash
+  npx vitest run \
+    packages/tests/rallar-black-box/experience-route.test.ts \
+    packages/tests/rallar-black-box/recipe-console-control-api.test.ts \
+    packages/tests/rallar-black-box/recipe-console-url-state.test.ts \
+    packages/tests/rallar-black-box/recipe-console-url-history.test.ts \
+    packages/tests/rallar-black-box/ui-persistence.test.ts \
+    packages/tests/rallar-black-box/app-tabs.test.ts \
+    packages/tests/rallar-black-box/legacy-app-tabs-focus.test.ts \
+    packages/tests/rallar-black-box/legacy-shell-composition.test.ts \
+    packages/tests/rallar-black-box/legacy-shell-structure.test.ts \
+    packages/tests/rallar-black-box/recipe-console-structure.test.ts \
+    packages/tests/rallar-black-box/app-structure.test.ts \
+    packages/tests/rallar-black-box/distributed-recipes.test.ts \
+    packages/tests/rallar-black-box/control-run-manager.test.ts \
+    packages/tests/rallar-black-box/schema-authoring.test.ts
+  npx vitest run packages/tests/rallar-black-box
+  npm --workspace @ar-eye-hunter/shared-test run check:ts
+  npm --workspace @ar-eye-hunter/shared-test run check:deno
+  deno check --node-modules-dir=none \
+    packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts \
+    packages/shared-test/rallar-bb-test/mod.ts
+  npm --workspace rallar-black-box run typecheck
+  npm run build:rallar-black-box
+  npx tsx apps/rallar-black-box/scripts/assert-experience-chunks.ts
+  npm run check:rallar-black-box-control
+  npm run test:rallar-black-box-control
+  ```
+
+- [ ] Run the following exact browser commands. The first command is the
+  complete Recipe Console config; the remaining commands provide separately
+  countable cutover, legacy, responsive, operational, CSS, keyboard/reduced-
+  motion, and no-update visual evidence:
+
+  ```bash
+  npx playwright test \
+    --config apps/rallar-black-box/playwright.recipe-console.config.ts
+  npx playwright test \
+    --config apps/rallar-black-box/playwright.config.ts \
+    tests/playwright/rallar-black-box/recipe-console-shell.spec.ts \
+    --grep "blank URL opens Recipe Console Execute after the final ready-state flip"
+  npx playwright test \
+    --config apps/rallar-black-box/playwright.config.ts \
+    tests/playwright/rallar-black-box/recipe-console-accessibility.spec.ts \
+    tests/playwright/rallar-black-box/recipe-console-responsive-accessibility.spec.ts \
+    tests/playwright/rallar-black-box/recipe-console-status-semantics.spec.ts \
+    tests/playwright/rallar-black-box/recipe-console-analyze-safety.spec.ts \
+    tests/playwright/rallar-black-box/recipe-console-css-isolation.spec.ts
+  npx playwright test \
+    --config apps/rallar-black-box/playwright.config.ts \
+    tests/playwright/rallar-black-box/recipe-console-chunks.spec.ts \
+    tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts \
+    tests/playwright/rallar-black-box/recipe-console-concept-fidelity.spec.ts
+  npx playwright test \
+    --config apps/rallar-black-box/playwright.config.ts \
+    tests/playwright/rallar-black-box/tabbed-navigation.spec.ts
+  ```
+
+  Inspect all captured desktop 1440×900, tablet 900×900, touch portrait
+  430×932, and touch landscape 932×430 screenshots at original resolution;
+  review console/page errors; never use `--update-snapshots` unless an
+  intentional reviewed visual change requires it.
+- [ ] Attempt
+  `npm run test:e2e:rallar-black-box:full-stack:real:distributed`. Record a
+  real pass only on successful configured execution; otherwise record the exact
+  unavailable prerequisite from Global Constraints as skipped.
+- [ ] Verify actual line counts and structure boundaries for `App.tsx`,
+  `RecipeConsoleApp.tsx`, and `LegacyAppShell.tsx`; verify old deep links,
+  explicit `experience=legacy`, Advanced Legacy, and runner-agent launch remain
+  operational.
+- [ ] Update all five evidence documents with actual hashes, commits, counts,
+  viewports, skips, cutover proof, rollback, remaining risks, and Ready-State
+  #1–#14 dispositions. Mark #3 code-backed/conditionally available while
+  leaving the configured live execution explicitly skipped if unavailable.
+- [ ] Run `git diff --check`, documentation consistency searches, and a final
+  whole-branch independent review. Do not accept unresolved Critical or
+  Important findings.
+- [ ] Commit `docs: qualify Recipe Console final cutover`. Do not push or open a
+  pull request.
+
+## Iteration 12 Exit Criteria
+
+- [ ] Authenticated blank `/` resolves to canonical Recipe Console Execute and
+  does not load legacy resources; explicit old aliases/deep links remain legacy.
+- [ ] The six registered legacy accessibility debts are closed with 44px
+  actions, narrow CRDT containment, and no page overflow.
+- [ ] Desktop, tablet, genuine-touch portrait/landscape, keyboard, reduced
+  motion, persistent non-hover evidence, contrast, operational states, and CSS
+  isolation pass executable browser gates.
+- [ ] Ready-State #14 has the exact named browser acceptance; #1–#14 have
+  code-backed evidence. Unavailable configured live validation is recorded as
+  skipped with the exact reason and is never represented as passed.
+- [ ] `App.tsx`, `RecipeConsoleApp.tsx`, and `LegacyAppShell.tsx` remain bounded
+  glue; no registry, shell, or stylesheet monolith is introduced.
+- [ ] Legacy rollback navigation, all old routes, public exports, and existing
+  control contracts remain operational; nothing is retired.
+- [ ] All available focused, complete, build, Deno, browser, visual, and review
+  gates are green, docs match repository truth, and cohesive local milestone
+  commits exist on the isolated `codex/` branch.
