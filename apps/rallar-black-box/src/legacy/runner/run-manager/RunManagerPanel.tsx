@@ -42,6 +42,10 @@ import {
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
 import { sameStringArray } from '../../shared/same-string-array.ts';
 import { artifactIssueText } from '../shared/artifact-issue-presentation.ts';
+import { useLegacyDiagnosticContext } from
+    '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
+import { resolveRunManagerRefreshSelection } from
+    '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
 
 export function RunManagerPanel({
     state,
@@ -52,12 +56,14 @@ export function RunManagerPanel({
     bootstrap: RallarBlackBoxBootstrapConfig;
     control: RallarBlackBoxControlSnapshot;
 }) {
+    const diagnosticContext = useLegacyDiagnosticContext().context;
+    const diagnosticControlRunId = diagnosticContext?.controlRunId;
     const [baseUrl, setBaseUrl] = useState(() =>
         controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl),
     );
     const [token, setToken] = useState('');
     const [selectedRunId, setSelectedRunId] = useState(
-        control.runId ?? bootstrap.runId ?? '',
+        diagnosticControlRunId ?? control.runId ?? bootstrap.runId ?? '',
     );
     const [selectedAgentIds, setSelectedAgentIds] = useState<readonly string[]>(
         [],
@@ -76,6 +82,8 @@ export function RunManagerPanel({
     const [error, setError] = useState<string | undefined>();
     const [lastAction, setLastAction] = useState<string | undefined>();
     const didInitialRefresh = useRef(false);
+    const lastDiagnosticControlRunId = useRef(diagnosticControlRunId);
+    const refreshGeneration = useRef(0);
     const stats = useMemo(() => controlRunManagerStats(snapshot), [snapshot]);
     const agentRows = useMemo(() => controlRunAgentRows(run), [run]);
     const agentRowsKey = agentRows.map((row) => row.agentId).join('\u0000');
@@ -118,6 +126,8 @@ export function RunManagerPanel({
     const canTargetAgents = Boolean(run && selectedAgentIds.length > 0);
 
     const refresh = async (preferredRunId = selectedRunId): Promise<void> => {
+        const generation = refreshGeneration.current + 1;
+        refreshGeneration.current = generation;
         setBusyAction('refresh');
         setError(undefined);
         try {
@@ -126,23 +136,26 @@ export function RunManagerPanel({
                 token,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
             });
+            if (generation !== refreshGeneration.current) {
+                return;
+            }
             setSnapshot(serverSnapshot);
-            const preferredCandidates = [
+            const selection = resolveRunManagerRefreshSelection({
                 preferredRunId,
-                control.runId,
-                bootstrap.runId,
-            ].filter((value): value is string =>
-                Boolean(value && value.length > 0),
-            );
-            const knownRunIds = new Set(
-                serverSnapshot.runs.map((candidate) => candidate.runId),
-            );
-            const knownPreferredRunId = preferredCandidates.find((candidate) =>
-                knownRunIds.has(candidate),
-            );
-            const nextRunId =
-                knownPreferredRunId ?? serverSnapshot.runs[0]?.runId ?? '';
+                diagnosticControlRunId,
+                controlRunId: control.runId,
+                bootstrapRunId: bootstrap.runId,
+                availableRunIds: serverSnapshot.runs.map(run => run.runId),
+            });
+            const nextRunId = selection.runId;
             setSelectedRunId(nextRunId);
+            if (selection.issue) {
+                setRun(undefined);
+                setArtifactBundle(undefined);
+                setError(selection.issue);
+                setLastAction('Diagnostic run selection unavailable.');
+                return;
+            }
             if (nextRunId) {
                 const nextRun = await fetchControlRunSnapshot({
                     baseUrl,
@@ -150,6 +163,9 @@ export function RunManagerPanel({
                     runId: nextRunId,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
                 });
+                if (generation !== refreshGeneration.current) {
+                    return;
+                }
                 setRun(nextRun);
                 setArtifactBundle(undefined);
             } else {
@@ -158,9 +174,13 @@ export function RunManagerPanel({
             }
             setLastAction(`Refreshed ${serverSnapshot.runs.length} run(s).`);
         } catch (caught) {
-            setError(caught instanceof Error ? caught.message : String(caught));
+            if (generation === refreshGeneration.current) {
+                setError(caught instanceof Error ? caught.message : String(caught));
+            }
         } finally {
-            setBusyAction(undefined);
+            if (generation === refreshGeneration.current) {
+                setBusyAction(undefined);
+            }
         }
     };
 
@@ -174,6 +194,21 @@ export function RunManagerPanel({
         // The initial refresh intentionally uses the first rendered form values.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        if (diagnosticControlRunId === lastDiagnosticControlRunId.current) {
+            return;
+        }
+        lastDiagnosticControlRunId.current = diagnosticControlRunId;
+        const preferredRunId =
+            diagnosticControlRunId ?? control.runId ?? bootstrap.runId ?? '';
+        setSelectedRunId(preferredRunId);
+        setRun(undefined);
+        setArtifactBundle(undefined);
+        void refresh(preferredRunId);
+        // Context changes intentionally restart selection with current form values.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [diagnosticControlRunId]);
 
     useEffect(() => {
         const availableAgentIds = agentRows.map((row) => row.agentId);

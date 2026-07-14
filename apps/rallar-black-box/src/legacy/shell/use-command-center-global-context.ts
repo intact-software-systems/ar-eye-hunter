@@ -8,22 +8,32 @@ import {
 import {
     bootstrapPatchFromGlobalValues,
     commandCenterGlobalValuesFromState,
+    reconcileDiagnosticGlobalScope,
     sameCommandCenterGlobalValues,
     type CommandCenterGlobalValues,
 } from './global-context-model.ts';
 import { deriveRallarBrowserStatus } from './rallar-browser-status.ts';
+import type { LegacyDiagnosticContext } from
+    '../diagnostics/context/legacy-diagnostic-context.ts';
 
 export function useCommandCenterGlobalContext({
     state,
     bootstrap,
     authSession,
+    diagnosticContext,
 }: Readonly<{
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
     authSession?: AuthSession;
+    diagnosticContext?: LegacyDiagnosticContext;
 }>) {
     const defaultGlobalValues = useMemo(
-        () => commandCenterGlobalValuesFromState(state, bootstrap, authSession),
+        () => commandCenterGlobalValuesFromState(
+            state,
+            bootstrap,
+            authSession,
+            diagnosticContext,
+        ),
         [
             authSession?.clientId,
             authSession?.sessionId,
@@ -32,6 +42,9 @@ export function useCommandCenterGlobalContext({
             bootstrap.apiBaseUrl,
             bootstrap.roomId,
             bootstrap.sessionId,
+            diagnosticContext?.contextApplicationId,
+            diagnosticContext?.contextGroupId,
+            diagnosticContext?.contextWorkspaceId,
             state.currentConfig,
         ],
     );
@@ -47,6 +60,12 @@ export function useCommandCenterGlobalContext({
             ? `${authSession.clientId ?? authSession.username}:${authSession.sessionId}`
             : undefined,
     );
+    const diagnosticContextKey = JSON.stringify([
+        diagnosticContext?.contextApplicationId,
+        diagnosticContext?.contextWorkspaceId,
+        diagnosticContext?.contextGroupId,
+    ]);
+    const lastDiagnosticContextKey = useRef(diagnosticContextKey);
 
     useEffect(() => {
         const authKey = authSession
@@ -54,6 +73,9 @@ export function useCommandCenterGlobalContext({
             : undefined;
         const authChanged = authKey !== lastGlobalAuthKey.current;
         lastGlobalAuthKey.current = authKey;
+        const diagnosticContextChanged =
+            diagnosticContextKey !== lastDiagnosticContextKey.current;
+        lastDiagnosticContextKey.current = diagnosticContextKey;
 
         setGlobalValues((current) => {
             if (!globalValuesEdited) {
@@ -84,15 +106,22 @@ export function useCommandCenterGlobalContext({
                         : current.sessionId || defaultGlobalValues.sessionId,
             };
 
-            return sameCommandCenterGlobalValues(current, nextValues)
+            const reconciledValues = reconcileDiagnosticGlobalScope(
+                nextValues,
+                defaultGlobalValues,
+                diagnosticContextChanged,
+            );
+
+            return sameCommandCenterGlobalValues(current, reconciledValues)
                 ? current
-                : nextValues;
+                : reconciledValues;
         });
     }, [
         authSession?.clientId,
         authSession?.sessionId,
         authSession?.username,
         defaultGlobalValues,
+        diagnosticContextKey,
         globalValuesEdited,
     ]);
 

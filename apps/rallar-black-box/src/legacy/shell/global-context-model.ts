@@ -5,6 +5,8 @@ import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../manual-workbench.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
 import { recordValue as optionalRecord } from '../shared/record-value.ts';
 import { stringValue } from '../shared/string-value.ts';
+import type { LegacyDiagnosticContext } from
+    '../diagnostics/context/legacy-diagnostic-context.ts';
 
 export type CommandCenterGlobalValues = Readonly<{
     apiBaseUrl: string;
@@ -19,16 +21,19 @@ export function commandCenterGlobalValuesFromState(
     state: RallarBlackBoxTestState,
     bootstrap: RallarBlackBoxBootstrapConfig,
     authSession?: AuthSession,
+    diagnosticContext?: LegacyDiagnosticContext,
 ): CommandCenterGlobalValues {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const configRallar = optionalRecord(config?.rallar);
     return {
         apiBaseUrl: config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
         applicationId:
+            diagnosticContext?.contextApplicationId ??
             stringValue(
                 config?.defaults?.applicationId ?? configRallar.applicationId,
             ) ?? DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId,
         workspaceId:
+            diagnosticContext?.contextWorkspaceId ??
             stringValue(
                 config?.defaults?.workspaceId ?? configRallar.workspaceId,
             ) ?? DEFAULT_MANUAL_WORKBENCH_VALUES.workspaceId,
@@ -39,7 +44,10 @@ export function commandCenterGlobalValuesFromState(
             bootstrap.actor,
         sessionId:
             authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
-        roomId: config?.roomId ?? bootstrap.roomId,
+        roomId:
+            diagnosticContext?.contextGroupId ??
+            config?.roomId ??
+            bootstrap.roomId,
     };
 }
 
@@ -55,6 +63,22 @@ export function sameCommandCenterGlobalValues(
         left.sessionId === right.sessionId &&
         left.roomId === right.roomId
     );
+}
+
+export function reconcileDiagnosticGlobalScope(
+    current: CommandCenterGlobalValues,
+    defaults: CommandCenterGlobalValues,
+    diagnosticContextChanged: boolean,
+): CommandCenterGlobalValues {
+    if (!diagnosticContextChanged) {
+        return current;
+    }
+    return {
+        ...current,
+        applicationId: defaults.applicationId,
+        workspaceId: defaults.workspaceId,
+        roomId: defaults.roomId,
+    };
 }
 
 export function bootstrapPatchFromGlobalValues(

@@ -1,17 +1,18 @@
 import type { DistributedFailureExplanation } from
     '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import {
+    DIAGNOSTIC_BRIDGE_SOURCE_VIEWS,
+    DIAGNOSTIC_BRIDGE_TRANSPORTS,
+    DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES,
+    type DiagnosticBridgeSourceView,
+    type DiagnosticBridgeTransport,
+} from '../../app/diagnostic-bridge-url-contract.ts';
 
 export const RECIPE_CONSOLE_URL_VERSION = 1 as const;
-export const RECIPE_CONSOLE_URL_STRING_MAX_BYTES = 4_096;
+export const RECIPE_CONSOLE_URL_STRING_MAX_BYTES =
+    DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES;
 
-export const RECIPE_CONSOLE_VIEWS = [
-    'execute',
-    'monitor',
-    'analyze',
-    'tune',
-    'fleet',
-    'advanced',
-] as const;
+export const RECIPE_CONSOLE_VIEWS = DIAGNOSTIC_BRIDGE_SOURCE_VIEWS;
 
 export const RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES = [
     'debug',
@@ -20,14 +21,7 @@ export const RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES = [
     'error',
 ] as const;
 
-export const RECIPE_CONSOLE_TRANSPORTS = [
-    'realtime',
-    'messages.rtc',
-    'rtc',
-    'ws',
-    'http',
-    'runtime',
-] as const;
+export const RECIPE_CONSOLE_TRANSPORTS = DIAGNOSTIC_BRIDGE_TRANSPORTS;
 
 export const RECIPE_CONSOLE_RUN_STATUSES = [
     'draft',
@@ -119,10 +113,10 @@ export const RECIPE_CONSOLE_NON_SHAREABLE_URL_KEYS = [
     'controlUrl',
 ] as const;
 
-export type RecipeConsoleView = typeof RECIPE_CONSOLE_VIEWS[number];
+export type RecipeConsoleView = DiagnosticBridgeSourceView;
 export type RecipeConsoleDiagnosticSeverity =
     typeof RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES[number];
-export type RecipeConsoleTransport = typeof RECIPE_CONSOLE_TRANSPORTS[number];
+export type RecipeConsoleTransport = DiagnosticBridgeTransport;
 export type RecipeConsoleRunStatus = typeof RECIPE_CONSOLE_RUN_STATUSES[number];
 export type RecipeConsoleFailureCategory =
     typeof RECIPE_CONSOLE_FAILURE_CATEGORIES[number];

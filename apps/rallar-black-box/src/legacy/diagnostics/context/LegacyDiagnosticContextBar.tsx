@@ -1,4 +1,8 @@
-import type { ReactNode } from 'react';
+import {
+    createContext,
+    type ReactNode,
+    useContext,
+} from 'react';
 import {
     buildLegacyDiagnosticReturnHref,
     type LegacyDiagnosticContext,
@@ -28,6 +32,31 @@ const CONTEXT_FIELDS: readonly ContextField[] = [
 export type LegacyDiagnosticContextBarProps = Readonly<{
     parsed: ParsedLegacyDiagnosticContext;
 }>;
+
+const ABSENT_CONTEXT: ParsedLegacyDiagnosticContext = {
+    status: 'absent',
+    issues: [],
+    omittedIssueCount: 0,
+};
+
+const LegacyDiagnosticContext = createContext<ParsedLegacyDiagnosticContext>(
+    ABSENT_CONTEXT,
+);
+
+export function LegacyDiagnosticContextProvider({
+    parsed,
+    children,
+}: LegacyDiagnosticContextBarProps & Readonly<{ children: ReactNode }>) {
+    return (
+        <LegacyDiagnosticContext.Provider value={parsed}>
+            {children}
+        </LegacyDiagnosticContext.Provider>
+    );
+}
+
+export function useLegacyDiagnosticContext(): ParsedLegacyDiagnosticContext {
+    return useContext(LegacyDiagnosticContext);
+}
 
 export function LegacyDiagnosticContextBar({
     parsed,

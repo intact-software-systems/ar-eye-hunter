@@ -1,10 +1,10 @@
 import {
-    RECIPE_CONSOLE_TRANSPORTS,
-    RECIPE_CONSOLE_URL_STRING_MAX_BYTES,
-    RECIPE_CONSOLE_VIEWS,
-    type RecipeConsoleTransport,
-    type RecipeConsoleView,
-} from '../../../recipe-console/routing/url-state-contract.ts';
+    DIAGNOSTIC_BRIDGE_SOURCE_VIEWS,
+    DIAGNOSTIC_BRIDGE_TRANSPORTS,
+    DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES,
+    type DiagnosticBridgeSourceView,
+    type DiagnosticBridgeTransport,
+} from '../../../app/diagnostic-bridge-url-contract.ts';
 
 const ISSUE_LIMIT = 32;
 
@@ -74,8 +74,8 @@ export type LegacyDiagnosticContext = Readonly<{
     agentId?: string;
     recipeId?: string;
     commandId?: string;
-    transport?: RecipeConsoleTransport;
-    view?: RecipeConsoleView;
+    transport?: DiagnosticBridgeTransport;
+    view?: DiagnosticBridgeSourceView;
 }>;
 
 export type LegacyDiagnosticContextIssue = Readonly<{
@@ -168,7 +168,7 @@ export function parseLegacyDiagnosticContext(
     }
     const transport = readSingleValue(params, 'transport', malformed, collector);
     if (transport !== undefined) {
-        if (includes(RECIPE_CONSOLE_TRANSPORTS, transport)) {
+        if (includes(DIAGNOSTIC_BRIDGE_TRANSPORTS, transport)) {
             context.transport = transport;
         } else {
             collector.add(issue(
@@ -180,7 +180,7 @@ export function parseLegacyDiagnosticContext(
     }
     const view = readSingleValue(params, 'view', malformed, collector);
     if (view !== undefined) {
-        if (includes(RECIPE_CONSOLE_VIEWS, view)) {
+        if (includes(DIAGNOSTIC_BRIDGE_SOURCE_VIEWS, view)) {
             context.view = view;
         } else {
             collector.add(issue(
@@ -200,7 +200,7 @@ export function buildLegacyDiagnosticReturnHref(
     if (
         context?.version !== 1 ||
         !context.view ||
-        !includes(RECIPE_CONSOLE_VIEWS, context.view)
+        !includes(DIAGNOSTIC_BRIDGE_SOURCE_VIEWS, context.view)
     ) {
         return undefined;
     }
@@ -223,7 +223,7 @@ export function buildLegacyDiagnosticReturnHref(
     }
     if (
         context.transport &&
-        includes(RECIPE_CONSOLE_TRANSPORTS, context.transport)
+        includes(DIAGNOSTIC_BRIDGE_TRANSPORTS, context.transport)
     ) {
         params.set('transport', context.transport);
     }
@@ -257,7 +257,8 @@ function readSingleValue(
         return undefined;
     }
     const value = values[0];
-    if (new TextEncoder().encode(value).byteLength > RECIPE_CONSOLE_URL_STRING_MAX_BYTES) {
+    if (new TextEncoder().encode(value).byteLength >
+        DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES) {
         collector.add(issue(
             field,
             'overlong',
@@ -279,7 +280,7 @@ function readSingleValue(
 function isSafeValue(value: string): boolean {
     return value.length > 0 &&
         new TextEncoder().encode(value).byteLength <=
-            RECIPE_CONSOLE_URL_STRING_MAX_BYTES &&
+            DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES &&
         !/[\u0000-\u001f\u007f]/u.test(value);
 }
 

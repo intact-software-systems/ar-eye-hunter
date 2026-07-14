@@ -3,6 +3,7 @@ import {
     type SetStateAction,
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from 'react';
 import {
@@ -21,18 +22,45 @@ import { useNow } from '../../shared/use-now.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
 import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
 import { deriveQueue, findSelectedResult } from './runner-shell-model.ts';
+import type { LegacyDiagnosticContext } from
+    '../../diagnostics/context/legacy-diagnostic-context.ts';
 
-export function useRunnerShellState(state: RallarBlackBoxTestState) {
+export function useRunnerShellState(
+    state: RallarBlackBoxTestState,
+    diagnosticContext?: LegacyDiagnosticContext,
+) {
     const queueRows = useMemo(() => deriveQueue(state), [state]);
     const history = selectRallarBlackBoxCommandHistory(state);
     const activeCommand = selectRallarBlackBoxActiveCommand(state);
     const now = useNow(250);
     const [selectedCommandId, setSelectedCommandId] = useState<
         string | undefined
-    >(() => readStoredSelectedCommandId(browserUiStorage()));
+    >(() => initialRunnerCommandId(
+        diagnosticContext,
+        readStoredSelectedCommandId(browserUiStorage()),
+    ));
     const [runnerDistributedSelection, setRunnerDistributedSelection] =
         useState<RunnerDistributedRunSelection | undefined>();
-    const selectedResult = findSelectedResult(history, selectedCommandId);
+    const selectedResult = selectedRunnerResult(
+        history,
+        selectedCommandId,
+        diagnosticContext,
+    );
+    const diagnosticCommandId = diagnosticContext?.commandId;
+    const lastDiagnosticCommandId = useRef(diagnosticCommandId);
+
+    useEffect(() => {
+        if (diagnosticCommandId === lastDiagnosticCommandId.current) {
+            return;
+        }
+        lastDiagnosticCommandId.current = diagnosticCommandId;
+        setSelectedCommandId(
+            initialRunnerCommandId(
+                diagnosticContext,
+                readStoredSelectedCommandId(browserUiStorage()),
+            ),
+        );
+    }, [diagnosticCommandId]);
 
     return {
         queueRows,
@@ -44,6 +72,7 @@ export function useRunnerShellState(state: RallarBlackBoxTestState) {
         runnerDistributedSelection,
         setRunnerDistributedSelection,
         selectedResult,
+        diagnosticCommandId,
     };
 }
 
@@ -52,11 +81,13 @@ export function useRunnerShellSelectionSync({
     history,
     selectedCommandId,
     setSelectedCommandId,
+    diagnosticCommandId,
 }: Readonly<{
     activeCommand: RallarBlackBoxTestState['activeCommand'];
     history: readonly RallarBlackBoxTestResult[];
     selectedCommandId: string | undefined;
     setSelectedCommandId: Dispatch<SetStateAction<string | undefined>>;
+    diagnosticCommandId?: string;
 }>): void {
     useEffect(() => {
         if (activeCommand) {
@@ -67,9 +98,31 @@ export function useRunnerShellSelectionSync({
         if (!selectedCommandId && history.length > 0) {
             setSelectedCommandId(history.at(-1)?.commandId);
         }
-    }, [activeCommand, history, selectedCommandId]);
+    }, [activeCommand, diagnosticCommandId, history, selectedCommandId]);
 
     useEffect(() => {
-        writeStoredSelectedCommandId(browserUiStorage(), selectedCommandId);
-    }, [selectedCommandId]);
+        if (!diagnosticCommandId) {
+            writeStoredSelectedCommandId(browserUiStorage(), selectedCommandId);
+        }
+    }, [diagnosticCommandId, selectedCommandId]);
+}
+
+export function initialRunnerCommandId(
+    diagnosticContext: LegacyDiagnosticContext | undefined,
+    storedCommandId: string | undefined,
+): string | undefined {
+    return diagnosticContext?.commandId ?? storedCommandId;
+}
+
+export function selectedRunnerResult(
+    history: readonly RallarBlackBoxTestResult[],
+    selectedCommandId: string | undefined,
+    diagnosticContext: LegacyDiagnosticContext | undefined,
+): RallarBlackBoxTestResult | undefined {
+    if (diagnosticContext?.commandId) {
+        return history.find(
+            result => result.commandId === diagnosticContext.commandId,
+        );
+    }
+    return findSelectedResult(history, selectedCommandId);
 }

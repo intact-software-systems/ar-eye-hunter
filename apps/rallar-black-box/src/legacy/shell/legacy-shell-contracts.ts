@@ -4,6 +4,8 @@ import type { useRallarBlackBoxRuntimeStore } from '../../runtime-store.ts';
 import type { useRunnerShellState } from '../runner/shell/use-runner-shell-state.ts';
 import type { useCommandCenterGlobalContext } from './use-command-center-global-context.ts';
 import type { useLegacyNavigation } from './use-legacy-navigation.ts';
+import type { ParsedLegacyDiagnosticContext } from
+    '../diagnostics/context/legacy-diagnostic-context.ts';
 
 export type LegacyShellRuntime = ReturnType<
     typeof useRallarBlackBoxRuntimeStore
@@ -26,3 +28,5 @@ export type LegacyShellGlobalContext = ReturnType<
 export type LegacyShellRunnerSelection = ReturnType<
     typeof useRunnerShellState
 >;
+
+export type LegacyShellDiagnosticContext = ParsedLegacyDiagnosticContext;

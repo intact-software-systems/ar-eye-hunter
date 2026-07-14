@@ -2,6 +2,12 @@ import { useEffect } from 'react';
 import { bootstrapMatchesAuthSession } from '../../auth-flow.ts';
 import { rallarBlackBoxRuntimeStore } from '../../runtime-store.ts';
 import {
+    LegacyDiagnosticContextProvider,
+} from '../diagnostics/context/LegacyDiagnosticContextBar.tsx';
+import {
+    parseLegacyDiagnosticContext,
+} from '../diagnostics/context/legacy-diagnostic-context.ts';
+import {
     useRunnerShellSelectionSync,
     useRunnerShellState,
 } from '../runner/shell/use-runner-shell-state.ts';
@@ -24,12 +30,19 @@ export default function LegacyExperience({
     auth,
 }: LegacyExperienceProps) {
     const { state, bootstrap } = runtime;
-    const runnerSelection = useRunnerShellState(state);
+    const diagnosticContext = parseLegacyDiagnosticContext(
+        typeof window === 'undefined' ? '' : window.location.search,
+    );
+    const runnerSelection = useRunnerShellState(
+        state,
+        diagnosticContext.context,
+    );
     const navigation = useLegacyNavigation();
     const globalContext = useCommandCenterGlobalContext({
         state,
         bootstrap,
         authSession: auth.authSession,
+        diagnosticContext: diagnosticContext.context,
     });
     const canBootstrap = bootstrap.providerMode === 'simulated' || Boolean(
         auth.authSession &&
@@ -45,12 +58,15 @@ export default function LegacyExperience({
     useRunnerShellSelectionSync(runnerSelection);
 
     return (
-        <LegacyAppShell
-            runtime={runtime}
-            auth={auth}
-            navigation={navigation}
-            globalContext={globalContext}
-            runnerSelection={runnerSelection}
-        />
+        <LegacyDiagnosticContextProvider parsed={diagnosticContext}>
+            <LegacyAppShell
+                runtime={runtime}
+                auth={auth}
+                navigation={navigation}
+                globalContext={globalContext}
+                runnerSelection={runnerSelection}
+                diagnosticContext={diagnosticContext}
+            />
+        </LegacyDiagnosticContextProvider>
     );
 }

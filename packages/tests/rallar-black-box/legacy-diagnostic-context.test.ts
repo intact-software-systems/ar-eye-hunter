@@ -9,6 +9,16 @@ import {
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/context/legacy-diagnostic-context.ts';
 import { LegacyDiagnosticContextBar } from
     '../../../apps/rallar-black-box/src/legacy/diagnostics/context/LegacyDiagnosticContextBar.tsx';
+import {
+    initialRunnerCommandId,
+    selectedRunnerResult,
+    useRunnerShellSelectionSync,
+    useRunnerShellState,
+} from '../../../apps/rallar-black-box/src/legacy/runner/shell/use-runner-shell-state.ts';
+import {
+    resolveRunManagerRefreshSelection,
+    deriveDistributedDiagnosticSelection,
+} from '../../../apps/rallar-black-box/src/legacy/diagnostics/context/legacy-diagnostic-run-selection.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true;
@@ -313,7 +323,201 @@ describe('LegacyDiagnosticContextBar', () => {
         );
         expect(componentSource).not.toMatch(/\bonClick\b|window\.|history\.|location\./);
         expect(contextSource).not.toMatch(/window\.|history\.|location\.|returnTo\s*:/);
+        expect(contextSource).toContain(
+            "from '../../../app/diagnostic-bridge-url-contract.ts'",
+        );
+        expect(contextSource).not.toContain('recipe-console/');
         expect(css).not.toMatch(/:global|(^|[}\n])\s*(html|body|a|button|section)\s*[{,]/m);
         expect(css).toMatch(/unicode-bidi:\s*isolate-override/);
+    });
+});
+
+describe('legacy diagnostic context consumers', () => {
+    const context = parseLegacyDiagnosticContext(
+        '?diagnosticContext=1&view=monitor&controlRunId=control-context'
+        + '&distributedRunId=distributed-context&commandId=command-context'
+        + '&agentId=agent-display-only',
+    ).context;
+
+    it('makes command context the actual exact selection without falling back', () => {
+        const history = [{
+            commandId: 'command-other',
+            kind: 'health',
+            status: 'ok',
+            ok: true,
+            startedAtEpochMs: 1,
+            endedAtEpochMs: 2,
+            durationMs: 1,
+        }] as const;
+
+        expect(initialRunnerCommandId(context, 'stored-command'))
+            .toBe('command-context');
+        expect(selectedRunnerResult(history, 'command-context', context))
+            .toBeUndefined();
+        expect(initialRunnerCommandId(undefined, 'stored-command'))
+            .toBe('stored-command');
+        expect(selectedRunnerResult(history, undefined, undefined))
+            .toBe(history[0]);
+    });
+
+    it('uses command context initially and on context change without locking user selection', async () => {
+        const container = document.createElement('div');
+        document.body.append(container);
+        const root = createRoot(container);
+        const state = {
+            status: 'idle',
+            commandHistory: [],
+            events: [],
+            failures: [],
+            resultCache: {},
+        } as const;
+
+        function Harness({ commandId }: { commandId: string }) {
+            const selection = useRunnerShellState(state, {
+                version: 1,
+                commandId,
+            });
+            useRunnerShellSelectionSync(selection);
+            return createElement('button', {
+                type: 'button',
+                onClick: () => selection.setSelectedCommandId('manual-command'),
+            }, selection.selectedCommandId);
+        }
+
+        await act(async () => root.render(createElement(Harness, {
+            commandId: 'context-command-a',
+        })));
+        const button = container.querySelector('button');
+        expect(button?.textContent).toBe('context-command-a');
+        await act(async () => button?.click());
+        expect(button?.textContent).toBe('manual-command');
+        await act(async () => root.render(createElement(Harness, {
+            commandId: 'context-command-a',
+        })));
+        expect(button?.textContent).toBe('manual-command');
+        await act(async () => root.render(createElement(Harness, {
+            commandId: 'context-command-b',
+        })));
+        expect(button?.textContent).toBe('context-command-b');
+
+        await act(async () => root.unmount());
+        container.remove();
+    });
+
+    it('selects the exact Run Manager context and never substitutes a stale ID', () => {
+        expect(resolveRunManagerRefreshSelection({
+            preferredRunId: 'control-context',
+            diagnosticControlRunId: 'control-context',
+            controlRunId: 'control-live',
+            bootstrapRunId: 'control-bootstrap',
+            availableRunIds: [
+                'control-live',
+                'control-context',
+                'control-bootstrap',
+            ],
+        })).toEqual({ runId: 'control-context' });
+
+        expect(resolveRunManagerRefreshSelection({
+            preferredRunId: 'control-context',
+            diagnosticControlRunId: 'control-context',
+            controlRunId: 'control-live',
+            bootstrapRunId: 'control-bootstrap',
+            availableRunIds: ['control-live', 'control-bootstrap'],
+        })).toEqual({
+            runId: '',
+            issue: 'Requested diagnostic control run is unavailable. No substitute was selected.',
+        });
+
+        expect(resolveRunManagerRefreshSelection({
+            preferredRunId: '',
+            diagnosticControlRunId: 'control-context',
+            controlRunId: 'control-live',
+            bootstrapRunId: 'control-bootstrap',
+            availableRunIds: ['control-live', 'control-bootstrap'],
+        })).toEqual({
+            runId: '',
+            issue: 'Requested diagnostic control run is unavailable. No substitute was selected.',
+        });
+
+        expect(resolveRunManagerRefreshSelection({
+            preferredRunId: '',
+            controlRunId: 'control-live',
+            bootstrapRunId: 'control-bootstrap',
+            availableRunIds: ['control-live', 'control-bootstrap'],
+        })).toEqual({ runId: 'control-live' });
+    });
+
+    it('accepts only an exact available distributed pair and reports stale context', () => {
+        const runs = [{
+            controlRunId: 'control-context',
+            distributedRunId: 'distributed-context',
+        }, {
+            controlRunId: 'control-other',
+            distributedRunId: 'distributed-other',
+        }];
+        expect(deriveDistributedDiagnosticSelection({
+            requestedControlRunId: 'control-context',
+            requestedDistributedRunId: 'distributed-context',
+            availableControlRunIds: ['control-context', 'control-other'],
+            distributedRuns: runs,
+        })).toEqual({
+            controlRunId: 'control-context',
+            distributedRunId: 'distributed-context',
+        });
+        expect(deriveDistributedDiagnosticSelection({
+            requestedControlRunId: 'control-missing',
+            requestedDistributedRunId: 'distributed-context',
+            availableControlRunIds: ['control-context'],
+            distributedRuns: runs,
+        })).toEqual({
+            controlRunId: '',
+            issue: 'Requested diagnostic control run is unavailable. No substitute was selected.',
+        });
+        expect(deriveDistributedDiagnosticSelection({
+            requestedControlRunId: 'control-context',
+            requestedDistributedRunId: 'distributed-other',
+            availableControlRunIds: ['control-context', 'control-other'],
+            distributedRuns: runs,
+        })).toEqual({
+            controlRunId: 'control-context',
+            issue: 'Requested diagnostic distributed run does not belong to the requested control run.',
+        });
+    });
+
+    it('parses once at the experience root and keeps absent old links uncluttered', () => {
+        const experience = readFileSync(
+            'apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx',
+            'utf8',
+        );
+        const shell = readFileSync(
+            'apps/rallar-black-box/src/legacy/shell/LegacyAppShell.tsx',
+            'utf8',
+        );
+        const globalHook = readFileSync(
+            'apps/rallar-black-box/src/legacy/shell/use-command-center-global-context.ts',
+            'utf8',
+        );
+        const runManager = readFileSync(
+            'apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerPanel.tsx',
+            'utf8',
+        );
+        const distributed = readFileSync(
+            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx',
+            'utf8',
+        );
+
+        expect(experience.match(/parseLegacyDiagnosticContext\(/g)).toHaveLength(1);
+        expect(experience).toContain('LegacyDiagnosticContextProvider');
+        expect(experience).toContain('diagnosticContext={diagnosticContext}');
+        expect(shell).toMatch(
+            /diagnosticContext\.status !== 'absent'[\s\S]*<LegacyDiagnosticContextBar/,
+        );
+        expect(globalHook).toContain('diagnosticContextChanged');
+        expect(runManager).toContain('useLegacyDiagnosticContext');
+        expect(runManager).toContain('refreshGeneration');
+        expect(distributed).toContain('useLegacyDiagnosticContext');
+        for (const source of [experience, shell, globalHook, runManager, distributed]) {
+            expect(source).not.toMatch(/localStorage|sessionStorage/);
+        }
     });
 });

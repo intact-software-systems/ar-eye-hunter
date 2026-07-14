@@ -1,6 +1,6 @@
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
@@ -13,24 +13,30 @@ import {
 import { deriveDistributedRunMonitor } from '../../../distributed-recipes.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
+import { deriveDistributedDiagnosticSelection } from
+    '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
 
 type UseDistributedRecipesRemoteStateInput = Readonly<{
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
     control: RallarBlackBoxControlSnapshot;
+    initialControlRunId?: string;
+    initialDistributedRunId?: string;
 }>;
 
 export function useDistributedRecipesRemoteState({
     state,
     bootstrap,
     control,
+    initialControlRunId,
+    initialDistributedRunId,
 }: UseDistributedRecipesRemoteStateInput) {
     const [baseUrl, setBaseUrl] = useState(() =>
         controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl),
     );
     const [token, setToken] = useState('');
     const [selectedRunId, setSelectedRunId] = useState(
-        control.runId ?? bootstrap.runId ?? '',
+        initialControlRunId ?? control.runId ?? bootstrap.runId ?? '',
     );
     const [snapshot, setSnapshot] = useState<
         ControlServerSnapshot | undefined
@@ -87,6 +93,42 @@ export function useDistributedRecipesRemoteState({
               ),
           )
         : undefined;
+    const diagnosticSelection = useMemo(
+        () => snapshot && (initialControlRunId || initialDistributedRunId)
+            ? deriveDistributedDiagnosticSelection({
+                requestedControlRunId: initialControlRunId,
+                requestedDistributedRunId: initialDistributedRunId,
+                availableControlRunIds: snapshot.runs.map(run => run.runId),
+                distributedRuns,
+            })
+            : undefined,
+        [
+            distributedRuns,
+            initialControlRunId,
+            initialDistributedRunId,
+            snapshot,
+        ],
+    );
+    const diagnosticSelectionIssue = diagnosticSelection?.issue;
+
+    useEffect(() => {
+        if (!diagnosticSelectionIssue || !diagnosticSelection) {
+            return;
+        }
+        setSelectedRunId(diagnosticSelection.controlRunId);
+        setRun(current =>
+            current?.runId === diagnosticSelection.controlRunId
+                ? current
+                : undefined);
+        setSelectedDistributedRun(undefined);
+        setArtifactBundle(undefined);
+    }, [
+        diagnosticSelection,
+        diagnosticSelectionIssue,
+        run,
+        selectedDistributedRun,
+        selectedRunId,
+    ]);
 
     return {
         baseUrl,
@@ -117,6 +159,7 @@ export function useDistributedRecipesRemoteState({
         currentDistributedRuns,
         selectedMonitor,
         redactedError,
+        diagnosticSelectionIssue,
     };
 }
 

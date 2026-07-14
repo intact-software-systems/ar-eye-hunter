@@ -13,6 +13,8 @@ import { DistributedRecipeCatalogPanel } from './views/DistributedRecipeCatalogP
 import { DistributedRecipesHeader } from './views/DistributedRecipesHeader.tsx';
 import { DistributedRunControlPanel } from './views/DistributedRunControlPanel.tsx';
 import { DistributedTargetResolutionPanel } from './views/DistributedTargetResolutionPanel.tsx';
+import { useLegacyDiagnosticContext } from
+    '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
 
 type DistributedRecipesPanelProps = Readonly<{
     state: RallarBlackBoxTestState;
@@ -24,7 +26,44 @@ type DistributedRecipesPanelProps = Readonly<{
 export function DistributedRecipesPanel({
     state, bootstrap, control, globalValues,
 }: DistributedRecipesPanelProps) {
-    const remote = useDistributedRecipesRemoteState({ state, bootstrap, control });
+    const diagnosticContext = useLegacyDiagnosticContext().context;
+    const initialControlRunId = diagnosticContext?.controlRunId;
+    const initialDistributedRunId = diagnosticContext?.distributedRunId;
+    const contextKey = JSON.stringify([
+        initialControlRunId,
+        initialDistributedRunId,
+    ]);
+    return (
+        <DistributedRecipesPanelVisit
+            key={contextKey}
+            state={state}
+            bootstrap={bootstrap}
+            control={control}
+            globalValues={globalValues}
+            initialControlRunId={initialControlRunId}
+            initialDistributedRunId={initialDistributedRunId}
+        />
+    );
+}
+
+function DistributedRecipesPanelVisit({
+    state,
+    bootstrap,
+    control,
+    globalValues,
+    initialControlRunId,
+    initialDistributedRunId,
+}: DistributedRecipesPanelProps & Readonly<{
+    initialControlRunId?: string;
+    initialDistributedRunId?: string;
+}>) {
+    const remote = useDistributedRecipesRemoteState({
+        state,
+        bootstrap,
+        control,
+        initialControlRunId,
+        initialDistributedRunId,
+    });
     const builder = useDistributedRecipeBuilder({
         globalValues,
         selectedRunId: remote.selectedRunId,
@@ -33,6 +72,8 @@ export function DistributedRecipesPanel({
         selectedDistributedRun: remote.selectedDistributedRun,
         targetResolutionPreview: remote.targetResolutionPreview,
         monitorAgentProgress: remote.selectedMonitor?.agentProgress,
+        initialDistributedRunId,
+        diagnosticSelectionIssue: remote.diagnosticSelectionIssue,
     });
     const actions = useDistributedRecipesActions({
         bootstrap,
@@ -61,7 +102,9 @@ export function DistributedRecipesPanel({
                 selectedAgentCount={builder.selectedAgentIds.length}
                 targetableAgentCount={builder.targetableRows.length}
                 distributedRunCount={remote.distributedRuns.length}
-                redactedError={remote.redactedError}
+                redactedError={
+                    remote.diagnosticSelectionIssue ?? remote.redactedError
+                }
                 manifestValidation={builder.manifestValidation}
                 onBaseUrlChange={remote.setBaseUrl}
                 onTokenChange={remote.setToken}

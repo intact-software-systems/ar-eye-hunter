@@ -13,8 +13,11 @@ import {
 import {
     bootstrapPatchFromGlobalValues,
     commandCenterGlobalValuesFromState,
+    reconcileDiagnosticGlobalScope,
     sameCommandCenterGlobalValues,
 } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
+import type { LegacyDiagnosticContext } from
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/context/legacy-diagnostic-context.ts';
 
 const ticketMocks = vi.hoisted(() => ({
     configureApiClient: vi.fn(),
@@ -176,6 +179,66 @@ describe('legacy global-context model', () => {
             sessionId: bootstrap.sessionId,
             roomId: bootstrap.roomId,
         });
+    });
+
+    it('applies explicit diagnostic scope without coercing agent context into identity', () => {
+        const authSession: AuthSession = {
+            clientId: 'auth-client',
+            accessToken: 'access-token',
+            username: 'auth-user',
+            sessionId: 'auth-session',
+            expiresAtEpochMs: 9_999,
+        };
+        const diagnosticContext: LegacyDiagnosticContext = {
+            version: 1,
+            contextApplicationId: 'context-application',
+            contextWorkspaceId: 'context-workspace',
+            contextGroupId: 'context-group',
+            agentId: 'diagnostic-agent-not-client',
+        };
+
+        expect(commandCenterGlobalValuesFromState(
+            state(),
+            bootstrap,
+            authSession,
+            diagnosticContext,
+        )).toEqual({
+            apiBaseUrl: bootstrap.apiBaseUrl,
+            applicationId: 'context-application',
+            workspaceId: 'context-workspace',
+            roomId: 'context-group',
+            clientId: 'auth-client',
+            sessionId: 'auth-session',
+        });
+    });
+
+    it('reconciles a changed diagnostic scope without replacing identity or API state', () => {
+        const current = {
+            apiBaseUrl: 'https://edited.example.test',
+            applicationId: 'old-context-app',
+            workspaceId: 'old-context-workspace',
+            roomId: 'old-context-group',
+            clientId: 'edited-client',
+            sessionId: 'edited-session',
+        };
+        const nextDefaults = {
+            apiBaseUrl: 'https://default.example.test',
+            applicationId: 'new-context-app',
+            workspaceId: 'new-context-workspace',
+            roomId: 'new-context-group',
+            clientId: 'default-client',
+            sessionId: 'default-session',
+        };
+
+        expect(reconcileDiagnosticGlobalScope(current, nextDefaults, true))
+            .toEqual({
+                ...current,
+                applicationId: 'new-context-app',
+                workspaceId: 'new-context-workspace',
+                roomId: 'new-context-group',
+            });
+        expect(reconcileDiagnosticGlobalScope(current, nextDefaults, false))
+            .toBe(current);
     });
 
     it('compares all global values and creates the minimal bootstrap patch', () => {

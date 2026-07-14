@@ -43,6 +43,8 @@ type UseDistributedRecipeBuilderInput = Readonly<{
     selectedDistributedRun: ControlDistributedRunSnapshot | undefined;
     targetResolutionPreview: RallarBlackBoxDistributedTargetResolution | undefined;
     monitorAgentProgress: readonly DistributedRunAgentProgressRow[] | undefined;
+    initialDistributedRunId?: string;
+    diagnosticSelectionIssue?: string;
 }>;
 
 export function useDistributedRecipeBuilder({
@@ -53,9 +55,11 @@ export function useDistributedRecipeBuilder({
     selectedDistributedRun,
     targetResolutionPreview,
     monitorAgentProgress,
+    initialDistributedRunId,
+    diagnosticSelectionIssue,
 }: UseDistributedRecipeBuilderInput) {
     const [distributedRunId, setDistributedRunId] = useState(
-        () =>
+        () => initialDistributedRunId ??
             `dist-${safeIdSegment(globalValues.roomId || 'group')}-${Date.now()}`,
     );
     const [query, setQuery] = useState('');
@@ -222,11 +226,11 @@ export function useDistributedRecipeBuilder({
         usesWorldFleetTargets,
     ]);
     const manifestValidation = useMemo(
-        () =>
+        () => diagnosticSelectionIssue ?? (
             manifest
                 ? validateDistributedRecipeManifest(manifest)
-                : 'Select a run, group, and at least one recipe.',
-        [manifest],
+                : 'Select a run, group, and at least one recipe.'),
+        [diagnosticSelectionIssue, manifest],
     );
     const worldFleetTargetGate = deriveDistributedWorldFleetTargetGate({
         usesWorldFleetTargets,
