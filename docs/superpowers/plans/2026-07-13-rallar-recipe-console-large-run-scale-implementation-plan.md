@@ -1,13 +1,11 @@
 # Rallar Recipe Console Large-Run Scale And Windowing Implementation Plan
 
-Status: in progress; Iteration 8 is qualified through `fd9055e`, `f762749`,
-and `37c7a32`; the reviewed Task 0 artifact baseline is committed at
-`166b40b`, while its remaining Tune/History pressure measurements stay open;
-Task 1 is green through `56d4a43`; Task 2 is green through `4e89a17`; Task 3
-is green through `77b0922`; Tasks 4–5 are green through `6d90061`; Task 6
-Monitor indexing, indexed consumers, and main/inspector window composition are
-green through `8c630fc`; Tasks 7–9, canonical scale acceptance, and final
-profiling remain open
+Status: complete; parent Iteration 9 and Ready-State #10 are code-backed through
+`f8cef95`. Tasks 0–9, the canonical production scale acceptance, candidate
+profiling, four independent review tracks, the complete app and Recipe Console
+suites, and the preserved legacy pair are green. The configured-live/Postgres
+owner remains skipped, not passed, for the exact unavailable-environment reason
+recorded below; no legacy row was hidden or cut over.
 
 **Goal:** Complete parent Iteration 9 so large distributed artifacts and run
 collections stay searchable and operable without blocking the browser or
@@ -94,7 +92,7 @@ justifies that accessibility cost.
 - [x] After the harness-only commit and before algorithm changes, run the fenced
   benchmark command with `--out=tmp/perf/results/iteration-9-base.json`; run the
   identical flags at Task 8 with `iteration-9-candidate.json`.
-- [ ] Record 5,000 run-pair and 2,000-command Tune baselines, including global
+- [x] Record 5,000 run-pair and 2,000-command Tune baselines, including global
   selection work, projected rows/options, mounted DOM, and heartbeat progress.
 - [x] RED-prove safe extrema with a portable 200,000-value correctness case,
   late evidence beyond the retained index is unsearchable, and current Monitor
@@ -511,66 +509,145 @@ row was hidden.
 
 ## Task 7: Window History, Retention Consequences, And Proven Pressure Lists
 
-- [ ] Replace History's first-100 dead end with a 5,000-row deterministic
+- [x] Replace History's first-100 dead end with a 5,000-row deterministic
   window while preserving full-set counts, quarantine, Baseline/Candidate,
   saved filters, copied URLs, and cleanup reconciliation.
-- [ ] Slice the History window before per-row label projection, Tune catalog/
+- [x] Slice the History window before per-row label projection, Tune catalog/
   quarantine work, connected-agent scans, and action projection. Assert the
   expensive projected-row counter never exceeds the active window budget.
-- [ ] Bound retention candidate/linked/global-ID DOM with explicit windows;
+- [x] Bound retention candidate/linked/global-ID DOM with explicit windows;
   exact server consequences and confirmation fingerprints remain unchanged.
-- [ ] Profile and then window the proven 2,000-command Tune maximum, unbounded
+- [x] Profile and then window the proven 2,000-command Tune maximum, unbounded
   run selectors, and target collections to <=100 mounted options/rows while
   preserving catalog/selection semantics and event-loop heartbeat progress.
-- [ ] Replace pressure-path native selects with an accessible searchable
+- [x] Replace pressure-path native selects with an accessible searchable
   combobox/listbox window; native `<select>` children are not silently sliced.
   Build only cheap run identity indexes globally and derive Tune performance
   for the focused/compared pair, never every 5,000-run catalog entry.
-- [ ] Present existing generic `artifact-index.json` compaction/truncation in
+- [x] Present existing generic `artifact-index.json` compaction/truncation in
   `src/legacy/runner/shared-test/**` only; keep the generic handoff, identity,
   parsing, rollback route, and mount policy unchanged.
-- [ ] GREEN `recipe-console-shared-test-compaction.test.ts` and exact browser
+- [x] GREEN `recipe-console-shared-test-compaction.test.ts` and exact browser
   `recipe-console-legacy-shared-test-compaction.spec.ts` — `shows bounded
   generic artifact compaction without changing the Shared Test fallback`.
-- [ ] GREEN component/browser tests for last-window reachability, long exact IDs,
+- [x] GREEN component/browser tests for last-window reachability, long exact IDs,
   keyboard/touch/focus, dialog safety, and no destructive-request regression.
 
 ## Task 8: Canonical Production Scale Acceptance And Profiling
 
-- [ ] GREEN exact Ready-State #10 title against production port 4176.
-- [ ] Assert 15,000 source rows, exact late needles, <=64 mounted Analyze rows,
+- [x] GREEN exact Ready-State #10 title against production port 4176.
+- [x] Assert 15,000 source rows, exact late needles, <=64 mounted Analyze rows,
   5,000 History pairs, <=80 mounted History rows, finite telemetry, one parsed
   representation with exact file/record counters, responsive search/window
   actions, and no document overflow.
-- [ ] Assert <=100 mounted options/rows for 2,000-command Tune, run selectors,
+- [x] Assert <=100 mounted options/rows for 2,000-command Tune, run selectors,
   targets, Monitor pressure lists, and retention consequences; assert bounded
   global-selection/Tune-derivation and History-projection work counters plus
   heartbeat progress. Traverse first/middle/last evidence inside the exact test.
-- [ ] Exercise desktop 1440x900, tablet 900x900, portrait 430x932, landscape
+- [x] Exercise desktop 1440x900, tablet 900x900, portrait 430x932, landscape
   932x430, keyboard, touch, reduced motion, operational states, both CSS load
   orders, lazy chunks, and unmount cleanup.
-- [ ] Record five-run candidate measurements and compare model/search median,
+- [x] Record five-run candidate measurements and compare model/search median,
   approximate p95-max, and heap/count signals to Task 0 without turning
   machine-dependent milliseconds into CI gates. Browser responsiveness is the
   deterministic accepted→paint→start/held-RPC protocol gate, not a synthetic
   long-task before/after claim.
-- [ ] Record Canvas as deferred with measured reason unless the profile shows
+- [x] Record Canvas as deferred with measured reason unless the profile shows
   a real dense-DOM bottleneck requiring a separate accessible design.
 
 ## Task 9: Reviews, Fresh Exit, Documentation, And Milestone Commits
 
-- [ ] Dispatch independent shared-algorithm/performance, worker/state,
+- [x] Dispatch independent shared-algorithm/performance, worker/state,
   UI/accessibility/browser, and strangler/cutover reviews; RED/GREEN every
   Critical or Important finding.
-- [ ] Run focused shared/app tests, complete app suite, shared/app TypeScript and
+- [x] Run focused shared/app tests, complete app suite, shared/app TypeScript and
   Deno checks, build/chunk assertion, complete Recipe Console config, exact
   legacy navigation/ticket pair, and control-server tests if touched.
-- [ ] Try the in-app Browser and record exact availability; report configured
+- [x] Try the in-app Browser and record exact availability; report configured
   live/Postgres tests as skipped with the exact reason when unavailable.
-- [ ] Update this plan, parent ledger/risks, product spec, migration register,
+- [x] Update this plan, parent ledger/risks, product spec, migration register,
   and fidelity ledger with commits, counts, measurements, proof, skips,
   unchanged rollback/cutover status, and remaining Iterations 10–12 risks.
-- [ ] Make cohesive local green milestone commits. Do not push or open a PR.
+- [x] Make cohesive local green milestone commits. Do not push or open a PR.
+
+### Tasks 7–8 and canonical scale exit — `58070bf` through `796fa59`
+
+History now traverses all 5,000 filtered run pairs in deterministic 80-row
+windows and performs expensive row projection only for the active window.
+Retention candidate, distributed-run, fleet-report, and global consequence
+lists use exact 50-row windows without changing preview fingerprints or
+destructive authority. Execute bounds 250 control runs and 240 target rows;
+Tune indexes 5,000 paired runs with cheap identities, derives performance for
+only the two requested comparison runs, and indexes 24,002 editable knobs in
+one pass. Searchable disclosure/listbox controls mount at most 100 options,
+retain keyboard/touch/focus behavior, preserve unavailable and invalid
+selection truth, and unmount their popup DOM when closed. Generic compaction
+truth remains solely in the preserved legacy Shared Test importer.
+
+The exact production-port owner, `keeps synthetic large event and result lists
+bounded responsive and searchable`, passes with 12,000 events, 3,000 results,
+5,000 History pairs, 5,000 Tune pairs, 24,002 knobs, 250 Execute runs, 240
+targets, every Monitor pressure collection, retention consequences, and first/
+middle/last traversal. Analyze mounts at most 64 rows; History at most 80; every
+other pressure list at most 100. The Analyze worker reports one pipeline pass,
+one source collection pass, eight file visits, six JSON document parses, two
+JSONL file passes, and exactly 15,000 nonempty JSONL row parses. The held-refresh
+Tune protocol proves an event-loop heartbeat before accepted work, after paint,
+and while the distributed snapshot RPC is held; a cloned poll reuses the
+catalog and knob index without losing search, draft, or cursor state.
+
+The clean candidate harness at `796fa59` used the same Node 26.5.0 Darwin arm64
+runtime, `--expose-gc --import tsx`, one warm-up, five measured runs, and
+500/2,000/15,000 sizes as baseline `166b40b`. At 15,000 rows, model median
+improved from 114.584 ms to 73.337 ms (0.640x), approximate p95/max from
+115.246 ms to 79.725 ms (0.692x), search median from 0.870 ms to 0.860 ms
+(0.988x), and retained model heap median from 10,678,856 to 10,028,264 bytes
+(0.939x). No measured size crossed the 1.25x investigation threshold. These
+timings and heap values remain advisory; exact counters and browser behavior
+are the gates. The historical 5,000-pair/2,000-command UI baseline recorded
+5,400 manifest touches, 10,002 unbounded run-option nodes, and 24,002 knob
+options; its browser heartbeat probe completed decode-to-DOM in a 198.2 ms
+median while advancing zero timer/rAF beats. The accepted implementation keeps
+the heartbeat progressing and bounded DOM mounted. Canvas remains deferred:
+profiling identified pressure in variable-height rows/options and repeated
+derivation, not a dense timing plot; worker derivation, indexes, and accessible
+windows remove the measured bottlenecks without Canvas accessibility cost.
+
+### Task 9 final exit — `66a16fd`, `12999dd`, `f8cef95`
+
+The final selector migration replaced stale native-select browser assertions,
+restored Direction A's Execute inline selector geometry, and refreshed only the
+reviewed Tune and Monitor baselines for the required searchable control and
+later exact-ID/action contracts. Independent browser review found a live-shrink
+focus defect after a source row disappeared. RED/GREEN repair now restores in
+order to the connected source trigger, exact owning range anchor, visible
+selection dock, or named work surface; hidden/unfocusable candidates fall
+through only after focus verification. The nine-case Monitor windowing suite
+covers exact matrix and multi-window anchors, hidden tablet dock, visible
+portrait dock, keyboard, touch, bidi evidence, reduced motion, operational
+states, URL stability, and zero mutation.
+
+Fresh final-head evidence is 131/131 app test files and 1,385/1,385 tests;
+shared and app TypeScript; all seven shared Deno entries; a 699-module
+production build; reciprocal Recipe Console/Legacy Experience chunk proof;
+169/170 Recipe Console Chromium cases with the sole configured-live owner
+skipped; and 28/28 preserved legacy navigation/agent-ticket cases. The exact
+Ready-State #10 production case passed in 27.7 seconds inside the complete
+48.8-second browser run. Four independent shared-algorithm/performance,
+worker/state, UI/accessibility/browser, and strangler/cutover reviews are clean
+after every Critical/Important finding received focused RED/GREEN proof. The
+in-app Browser remained unavailable exactly as `No browser is available`
+(`agent.browsers.list() === []`), so repository Playwright/System Chromium is
+the recorded fallback, not an in-app Browser pass.
+
+Configured live/Postgres is skipped, not passed, for exactly: `Set
+RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.` No
+control-server source was touched. No public export or existing endpoint was
+removed or changed. The default and primary navigation, every legacy row,
+mount policy, deep link, alias, rollback URL, and cutover status are unchanged;
+Iterations 10–12 remain responsible for Fleet, Advanced diagnostics, and the
+final default flip.
 
 ## Focused Validation Contract
 

@@ -1,7 +1,10 @@
 # Recipe Console Product Spec
 
-Status: canonical product contract; Ready-State #4–#9 are code-backed, Iteration 9 Task 6 Monitor scale is green through `8c630fc`, and Ready-State #3 and #10 remain open
-Evidence date: 2026-07-13
+Status: canonical product contract; Ready-State #2 and #4–#10 are code-backed
+through `f8cef95`; Ready-State #3 remains open for its unavailable configured-
+service execution and Ready-State #1 and #11–#14 remain owned by Iterations
+10–12
+Evidence date: 2026-07-14
 
 This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
@@ -65,8 +68,9 @@ timing and candidate evidence remains first and a bounded History ledger follows
 with explicit root/fallback/stale/partial provenance, URL-backed semantic
 filters, saved local filter presets, safe Baseline/Candidate handoff, exact
 filtered/rendered/omitted counts, and no artifact-derived synthetic server row.
-At most 100 rows render before Iteration 9 windowing; unsafe, duplicate,
-malformed, missing, and ambiguous identities remain visible but cannot navigate.
+At most 80 History rows mount in one active Iteration 9 window and every match
+remains browseable; unsafe, duplicate, malformed, missing, and ambiguous
+identities remain visible but cannot navigate.
 
 ### Preview-first history retention
 
@@ -351,3 +355,41 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
   scale acceptance, remaining heartbeat proof, and final profiling. No
   primary/default navigation, legacy visibility/mount, deep link, rollback,
   public/control contract, or cutover changed, and no legacy row was hidden.
+
+### Iteration 9 qualified scale exit — `58070bf` through `f8cef95`
+
+- Ready-State #10 is satisfied by the passing exact production acceptance
+  `keeps synthetic large event and result lists bounded responsive and
+  searchable`. It covers 12,000 events, 3,000 results, 5,000 History pairs,
+  5,000 Tune pairs, 24,002 knobs, Execute/Monitor/retention pressure paths,
+  exact first/middle/last traversal, and bounded mounted DOM at desktop,
+  tablet, touch portrait, and touch landscape viewports.
+- Analyze performs one shared parsed pipeline pass, visits eight files, parses
+  six JSON documents, passes two JSONL files once, parses exactly 15,000 rows,
+  derives in its worker, and mounts no more than 64 results. History mounts no
+  more than 80 rows; every other proven pressure list mounts no more than 100.
+  Tune derives performance for only the explicit pair and advances an event-
+  loop heartbeat before acceptance, after paint, and while the snapshot RPC is
+  held. Closed searchable popups and disclosures are unmounted.
+- Same-machine profiling at 15,000 rows improved model median 114.584→73.337
+  ms, approximate p95/max 115.246→79.725 ms, search median 0.870→0.860 ms,
+  and retained model heap median 10,678,856→10,028,264 bytes. These remain
+  advisory; exact work/cardinality and browser gates own acceptance. Canvas is
+  deferred because measured pressure was rows/options and repeated derivation,
+  not a dense plot.
+- Fresh qualification passed 1,385/1,385 app tests, shared/app TypeScript,
+  seven shared Deno entries, a 699-module build and reciprocal chunk proof,
+  169 available Recipe Console browser cases, and 28/28 legacy navigation/
+  ticket cases. Four independent reviews are clean after focused fixes for
+  selector fidelity and live-shrink inspector focus. Direction A remains
+  unchanged.
+- The in-app Browser was unavailable exactly as `No browser is available`
+  with an empty browser list; Playwright/System Chromium is fallback evidence.
+  The configured-live owner is skipped, not passed, for exactly: `Set
+  RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+  Ready-State #3 remains open for that configured execution.
+- No default, primary navigation, legacy visibility/mount, deep link, rollback,
+  public export, existing control contract, or cutover changed. Fleet,
+  Advanced diagnostics, accessibility polish, and the default flip remain
+  Iterations 10–12 work.

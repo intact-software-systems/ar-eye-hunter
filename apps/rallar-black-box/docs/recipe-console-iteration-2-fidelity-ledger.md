@@ -1,25 +1,26 @@
 # Recipe Console Iteration 2 Fidelity Ledger
 
 Status: Iteration 2 visual direction preserved; Execute, live Monitor, offline
-Analyze, real-evidence Tune, bounded History/retention, and Task 6 large-Monitor
-window composition are qualified through `8c630fc`; Ready-State #10 remains
-open
+Analyze, real-evidence Tune, bounded History/retention, and full Iteration 9
+large-run composition are qualified through `f8cef95`; Ready-State #10 is
+code-backed
 
 Evidence date: 2026-07-14
 Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
 (Iteration 4 Execute), `42eedae` (Iteration 5 live Monitor fidelity proof),
 `f96b5b4`, `abe257e`, `9b07330`, `47c332d` (Iteration 6 Analyze),
 `cc17169`, `382df72` (Iteration 7 Tune), `fd9055e`, `f762749`
-(Iteration 8 History/retention), `8c630fc` (Iteration 9 Task 6 Monitor scale)
+(Iteration 8 History/retention), `8c630fc` (Iteration 9 Task 6 Monitor scale),
+`796fa59`, `66a16fd`, `12999dd`, `f8cef95` (Iteration 9 scale/fidelity exit)
 Approved direction: Signal Ledger (Direction A)
 
 This ledger preserves the approved Iteration 2 visual contract and its
 historical seeded Monitor/Tune evidence, then records the Iteration 4 Execute,
 Iteration 5 live Monitor, Iteration 6 Analyze, Iteration 7 Tune, and Iteration 8
-History/retention baseline advances, then records the Iteration 9 Task 6
-browseable Monitor extension. It does not claim the unavailable configured
-live/Postgres acceptance, Ready-State #10, a legacy navigation hide, or the
-Iteration 12 default flip.
+History/retention baseline advances, then records the Iteration 9 bounded
+Analyze/Monitor/History/Execute/Tune extension. It does not claim the
+unavailable configured live/Postgres acceptance, a legacy navigation hide, or
+the Iteration 12 default flip.
 
 ## Iteration 4 Execute fidelity addendum
 
@@ -211,6 +212,15 @@ failed-desktop baseline SHA-256 is
 The Execute and portrait Monitor baselines were not refreshed. A final no-update
 Darwin run passes all four Direction A captures; focused structure/behavior passes
 89/89 and app TypeScript passes.
+
+The final Iteration 9 exit additionally passes all 169 available Recipe Console
+browser cases, including desktop, tablet, touch portrait/landscape, keyboard,
+reduced motion, operational states, both CSS load orders, chunks, and unmount
+cleanup. Independent re-review caught and RED/GREEN fixed detached inspector
+focus after live window shrink: focus now tries the connected trigger, exact
+owning range anchor, visible selection dock, then named work surface, verifying
+success before stopping. The configured-live owner is the sole skip and is not
+represented as visual or runtime pass. No legacy row, default, or cutover changed.
 
 ## Controlled environment
 

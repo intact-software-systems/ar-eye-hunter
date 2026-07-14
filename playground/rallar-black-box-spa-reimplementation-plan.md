@@ -408,7 +408,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 6 — Artifact Analysis | **Complete** | Additive shared workspace/evidence truth (`f96b5b4`), the bounded failure-first Analyze workspace (`abe257e`), the complete safety matrix (`9b07330`), and exact keyboard/drop/handoff proof (`47c332d`) pass offline/control import, search, export/re-import, adversarial state, responsive/accessibility, and strangler proof. Ready-State #6 is satisfied. Legacy Runs, Distributed Recipes, Shared Test, and Run Manager remain visible and uncut. |
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
 | 8 — History, Compare, Saved Filters, Retention | **Complete** | Preview-first retention, shareable filters/presets, bounded History, comparison reuse, cleanup reconciliation, and exact copied-link/retention acceptance are qualified through `fd9055e` and `f762749`. Fresh focused/complete/server/browser/legacy gates and independent re-reviews are green; the configured live/Postgres lifecycle is explicitly skipped, not passed. Ready-State #8 and #9 are code-backed. No legacy surface is hidden or cut over. |
-| 9 — Large-Run Scale And Virtualization | **In progress** | The reviewed child plan binds Ready-State #10 to a 15,000-row artifact, 5,000 History pairs, accessible deterministic windows, a single parsed shared pipeline, off-main Analyze derivation, numeric session-only telemetry, production-browser DOM/cardinality gates, and before/after profiling. Parsed pipeline/cursor contracts are green through `4e89a17`; lazy workerized Analyze and its bounded Tune facade are green through `77b0922`; reusable native controls and full-catalog Analyze composition are green through `6d90061`; reviewed Monitor indexing, indexed Control/board consumers, exact poll revisions, inactive-Analyze zero-work, and main/inspector Monitor windows are green through `8c630fc`. Tasks 7–9, the canonical scale owner, final profiling, and the iteration-wide exit remain open; Ready-State #10 and parity/cutover are not claimed. |
+| 9 — Large-Run Scale And Virtualization | **Complete** | One parsed shared pipeline, workerized Analyze, indexed Control/Monitor truth, and accessible deterministic windows now bound 15,000 artifact rows, 5,000 History/Tune pairs, 24,002 knobs, Execute/Monitor/retention pressure paths, and every mounted list. The exact production acceptance, same-machine candidate profile, 1,385-test app suite, 169 available Recipe Console browser cases, 28 legacy cases, four independent reviews, and final focus/fidelity repairs are green through `f8cef95`. Ready-State #10 is code-backed. Configured live remains an exact skip, not a pass; no legacy row, default, route, mount, public/control contract, or cutover changed. |
 | 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
 | 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
@@ -535,6 +535,61 @@ scale acceptance, the remaining heartbeat measurement, and final candidate
 profiling. This checkpoint changed no primary/default navigation, legacy row
 visibility or mount, deep link, rollback URL, public/control contract, or
 cutover, and it hid no legacy row.
+
+#### Iteration 9 qualified exit — `58070bf` through `f8cef95`
+
+History now traverses 5,000 run pairs in 80-row windows; retention consequences
+use exact 50-row windows; Execute bounds 250 run choices and 240 targets; Tune
+indexes 5,000 paired runs and 24,002 editable knobs while deriving performance
+for only the explicit comparison pair. Searchable disclosure/listbox controls
+mount at most 100 options and preserve exact unavailable/invalid truth,
+keyboard, touch, focus, URL history, and unmounted closed-popup DOM. The legacy
+Shared Test importer alone displays generic compaction truth. Analyze remains
+workerized and mounts at most 64 rows; every Monitor main/inspector pressure
+collection is browseable without gaps, duplicates, hidden rows, or changed
+authority.
+
+The exact production-port Ready-State #10 owner passes with 12,000 events,
+3,000 results, 5,000 History pairs, 5,000 Tune pairs, 24,002 knobs, Execute,
+Monitor, retention, first/middle/last traversal, reduced motion, desktop,
+tablet, genuine-touch portrait/landscape, both CSS load orders, lazy chunks,
+and unmount cleanup. One Analyze pipeline pass visits eight files, parses six
+JSON documents, passes each of two JSONL files once, and parses exactly 15,000
+nonempty rows. The Tune accepted→paint→held-RPC protocol advances its event-loop
+heartbeat and exact-clone polls reuse catalog/knob indexes.
+
+At 15,000 rows, the clean same-command candidate profile improved model median
+114.584→73.337 ms (0.640x), approximate p95/max 115.246→79.725 ms (0.692x),
+search median 0.870→0.860 ms (0.988x), and retained model heap median
+10,678,856→10,028,264 bytes (0.939x). No size crossed the 1.25x advisory
+threshold. Exact structural counters and browser behavior, not milliseconds or
+heap, are acceptance gates. Canvas is deferred with measured reason: pressure
+was variable-height row/option cardinality and repeated derivation, not a dense
+plot; workers, indexes, and accessible windows resolve it without Canvas cost.
+
+Fresh final-head validation passed 131/131 app files and 1,385/1,385 tests;
+shared/app TypeScript; seven shared Deno entries; the 699-module production
+build and reciprocal experience-chunk proof; 169/170 Recipe Console Chromium
+cases with the sole configured-live owner skipped; and 28/28 legacy navigation/
+agent-ticket cases. The canonical scale case passed in 27.7 seconds inside the
+complete 48.8-second browser run. Four independent algorithm/performance,
+worker/state, UI/accessibility/browser, and strangler/cutover reviews are clean
+after focused RED/GREEN repairs. Final focus priority is connected trigger,
+exact owning range anchor, visible selection dock, then named work surface;
+hidden or otherwise unfocusable candidates fall through only after focus
+verification. Direction A remains approved and the fidelity ledger records the
+reviewed selector baseline updates.
+
+The in-app Browser remained unavailable exactly as `No browser is available`
+with `agent.browsers.list() === []`; Playwright/System Chromium is fallback
+evidence, not an in-app Browser pass. Configured live/Postgres remains skipped,
+not passed, for exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed
+apps/api-v1, apps/rallar-black-box-control-server, and apps/rallar-black-box
+available.` No control-server source changed. Ready-State #10 is code-backed;
+Ready-State #3 stays open for its configured-service execution. No default,
+primary navigation, legacy visibility/mount, deep link, rollback URL, public
+export, existing control contract, or cutover changed, and no legacy row was
+hidden. Iterations 10–12 remain open.
 
 #### Iteration 0 baseline and validation evidence
 
@@ -1590,7 +1645,7 @@ compatible, and nothing was pushed or opened as a PR.
 | URL/default flip and runner-agent launch compatibility | 2, 8, 12 | Iteration 8 now passes `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL` and the preserved legacy runner-agent ticket pair. Iteration 12 still owns the blank-URL default flip and stale stored-legacy precedence proof. |
 | Future artifact versions and new profile drift | 12 and future contract changes | Iteration 6 now proves profile/version-aware partial, malformed, future-schema, envelope, and generic-profile distinctions through the canonical Analyze acceptance and shared workspace tests. Preserve the additive compatibility inventory and rerun those gates whenever a producer changes. |
 | Retention preview safety | 8 | Satisfied through `fd9055e`: optional dry-run behavior preserves the destructive default, guarded confirmation is explicit, and `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `previews retention impact before confirmed destructive cleanup` passes. Preserve this gate for later changes. |
-| Qualitative visual and performance gates lack executable thresholds | 9, 12 | Iteration 2 now has four approved screenshot baselines and a 1% executable drift budget in `recipe-console-concept-fidelity.spec.ts`; Iteration 9 still owns bounded-render/interaction budgets and Iteration 12 owns final viewport, keyboard, touch, reduced-motion, and non-hover gates. |
+| Qualitative visual and performance gates lack executable thresholds | 12 | Iteration 2 has four approved screenshot baselines and a 1% executable drift budget in `recipe-console-concept-fidelity.spec.ts`; Iteration 9 now passes exact bounded-render/cardinality, accepted-to-paint heartbeat, complete responsive/input/reduced-motion, and same-machine advisory profiling gates. Iteration 12 still owns the final cross-product viewport, keyboard, touch, reduced-motion, and non-hover acceptance after the remaining surfaces and default flip land. |
 | Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
 | Preserved legacy CRDT controls are 30px high at desktop and 932x430 landscape, and its fixed editor/diagnostic/table tracks create an 807px document at 430px portrait | 12 | Keep the exact parity extraction unchanged; add narrow-screen CRDT grid collapse and locally contained table scrolling, require 44px touch targets in touch viewports, and prove zero page overflow in `recipe-console-accessibility.spec.ts`. |
 | Preserved legacy Auth, Groups/Clients, and Rallar Server action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact parity extractions unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
