@@ -1,6 +1,8 @@
 import { expect, type Page, test } from '@playwright/test';
 import { installRecipeConsoleTuneFixture } from
     './recipe-console-tune-fixture.ts';
+import { chooseTuneListboxOption, tuneListboxTrigger } from
+    './recipe-console-tune-listbox-helpers.ts';
 import {
     TUNE_COMPARE_ROUTE,
     TUNE_BASE_EPOCH_MS,
@@ -77,8 +79,12 @@ async function expectVisibleView(page: Page, view: RecipeConsoleView): Promise<v
             break;
         case 'tune':
             await expect(page.locator('[data-tune-workspace]')).toBeVisible();
-            await expect(page.getByLabel('Candidate run'))
-                .toContainText(TUNE_RIGHT_RUN_ID);
+            const candidateRun = tuneListboxTrigger(page, 'Candidate run');
+            const candidateRunId = currentUrl(page).searchParams.get('compareRight');
+            await expect(candidateRun).toBeVisible();
+            await expect(candidateRun).toContainText(
+                candidateRunId ?? 'Select candidate run',
+            );
             break;
         case 'fleet':
             await expect(page.locator('[data-preview-view="fleet"]'))
@@ -340,7 +346,7 @@ test('restores explicit Tune comparison and atomic focus through history', async
     expect(rightLegacyHref.searchParams.get('distributedRunId'))
         .toBe(TUNE_RIGHT_RUN_ID);
 
-    await page.getByLabel('Candidate run').selectOption(TUNE_LEFT_RUN_ID);
+    await chooseTuneListboxOption(page, 'Candidate run', TUNE_LEFT_RUN_ID);
     await expect(page.locator('[data-inspector-host]')).toHaveCount(0);
     await expect(page.getByText(`Agent · ${TUNE_SLOW_AGENT_ID}`, { exact: true }))
         .toHaveCount(0);
@@ -704,6 +710,9 @@ test('previews retention impact before confirmed destructive cleanup', async ({
     await expect(retention).toContainText('1 projected');
     await expect(retention).toContainText('Cap 1');
     await expect(retention).toContainText(TUNE_RIGHT_CONTROL_RUN_ID);
+    await retention.getByText('Linked distributed runs (1)', {
+        exact: true,
+    }).click();
     await expect(retention).toContainText(TUNE_RIGHT_RUN_ID);
     await expect(retention).toContainText(
         'Existing connected sockets and stored artifact files remain.',

@@ -1,6 +1,11 @@
 import type { BrowserContext, Route } from '@playwright/test';
-import type { ControlDistributedRunSnapshot } from
+import type {
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+} from
     '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { createRecipeConsoleTuneScaleFixture } from
+    '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
 import { createTuneArtifactEnvelope } from './recipe-console-tune-artifacts.ts';
 import {
     TUNE_BASE_EPOCH_MS,
@@ -19,11 +24,21 @@ export const RETENTION_LONG_BIDI_CONTROL_ID =
 const RETENTION_LONG_BIDI_DISTRIBUTED_ID =
     `history-distributed-\u202egnol-界-\u2066exact\u2069-${'distributed'.repeat(14)}`;
 
+export const TUNE_SCALE_LONG_BIDI_RUN_ID =
+    `tune-scale-run-مرحبا-שלום-界-exact-${'run'.repeat(24)}`;
+export const TUNE_SCALE_LONG_BIDI_CONTROL_ID =
+    `tune-scale-control-مرحبا-שלום-界-exact-${'control'.repeat(18)}`;
+
 export type RecipeConsoleTuneFixture = Readonly<{
     artifactRequestCount(): number;
     mutationRequestCount(): number;
     requestOrder(): readonly string[];
     retentionRequests(): readonly RetentionRequestObservation[];
+    distributedSnapshotRequestCount(): number;
+    heldDistributedSnapshotCount(): number;
+    holdNextDistributedSnapshot(): void;
+    releaseHeldDistributedSnapshot(): void;
+    setTuneScaleEnabled(value: boolean): void;
     setReachability(value: 'live' | 'offline'): void;
     snapshotIds(): Readonly<{
         controlRunIds: readonly string[];
@@ -52,6 +67,12 @@ export type RecipeConsoleTuneFixtureOptions = Readonly<{
     retentionLongBidiId?: boolean;
     rightRecipe?: 'inline' | 'reference-only';
     shadowedRateHz?: boolean;
+    tuneScale?: Readonly<{
+        runCount: number;
+        commandCount: number;
+        initial?: boolean;
+        shadowedRateHz?: boolean;
+    }>;
 }>;
 
 export async function installRecipeConsoleTuneFixture(
@@ -93,8 +114,26 @@ export async function installRecipeConsoleTuneFixture(
             index,
         ));
     }
+    const scaleSnapshots = options.tuneScale
+        ? createTuneScaleSnapshots(
+            controlRuns.slice(0, 2),
+            distributedRuns.slice(0, 2),
+            options.tuneScale,
+        )
+        : undefined;
+    let tuneScaleEnabled = options.tuneScale?.initial === true;
+    const visibleControlRuns = () => tuneScaleEnabled && scaleSnapshots
+        ? scaleSnapshots.controlRuns
+        : controlRuns;
+    const visibleDistributedRuns = () => tuneScaleEnabled && scaleSnapshots
+        ? scaleSnapshots.distributedRuns
+        : distributedRuns;
     let artifactReads = 0;
     let mutationRequests = 0;
+    let distributedSnapshotReads = 0;
+    let holdNextDistributedSnapshot = false;
+    let heldDistributedSnapshots = 0;
+    let releaseHeldSnapshot: (() => void) | undefined;
     let reachability = options.initialReachability ?? 'live';
     const retentionMode = options.retention ?? 'ready';
     let retentionSequence = 0;
@@ -127,12 +166,23 @@ export async function installRecipeConsoleTuneFixture(
         }
         if (request.method() === 'GET' && url.pathname === '/runs') {
             order.push('runs');
-            await fulfillJson(route, { runs: controlRuns });
+            await fulfillJson(route, { runs: visibleControlRuns() });
             return;
         }
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
             order.push('distributed-runs');
-            await fulfillJson(route, { distributedRuns });
+            distributedSnapshotReads += 1;
+            if (holdNextDistributedSnapshot) {
+                holdNextDistributedSnapshot = false;
+                heldDistributedSnapshots += 1;
+                await new Promise<void>(resolve => {
+                    releaseHeldSnapshot = resolve;
+                });
+                releaseHeldSnapshot = undefined;
+            }
+            await fulfillJson(route, {
+                distributedRuns: visibleDistributedRuns(),
+            });
             return;
         }
         if (request.method() === 'POST' && url.pathname === '/retention/cleanup') {
@@ -201,13 +251,15 @@ export async function installRecipeConsoleTuneFixture(
         }
         const runId = detailId(url.pathname, '/runs/');
         if (request.method() === 'GET' && runId) {
-            const run = controlRuns.find(candidate => candidate.runId === runId);
+            const run = visibleControlRuns().find(candidate =>
+                candidate.runId === runId
+            );
             await fulfillJson(route, run ?? { error: 'run not found' }, run ? 200 : 404);
             return;
         }
         const distributedRunId = detailId(url.pathname, '/distributed-runs/');
         if (request.method() === 'GET' && distributedRunId) {
-            const run = distributedRuns.find(candidate =>
+            const run = visibleDistributedRuns().find(candidate =>
                 candidate.distributedRunId === distributedRunId
             );
             await fulfillJson(route, run ?? { error: 'distributed run not found' }, run ? 200 : 404);
@@ -233,16 +285,121 @@ export async function installRecipeConsoleTuneFixture(
 
     return {
         artifactRequestCount: () => artifactReads,
+        distributedSnapshotRequestCount: () => distributedSnapshotReads,
+        heldDistributedSnapshotCount: () => heldDistributedSnapshots,
+        holdNextDistributedSnapshot: () => {
+            holdNextDistributedSnapshot = true;
+        },
+        releaseHeldDistributedSnapshot: () => {
+            releaseHeldSnapshot?.();
+        },
         mutationRequestCount: () => mutationRequests,
         requestOrder: () => [...order],
         retentionRequests: () => retentionObservations.map(value => ({ ...value })),
         setReachability: value => {
             reachability = value;
         },
+        setTuneScaleEnabled: value => {
+            if (!scaleSnapshots && value) {
+                throw new Error('Tune scale fixture is not configured.');
+            }
+            tuneScaleEnabled = value;
+        },
         snapshotIds: () => ({
-            controlRunIds: controlRuns.map(run => run.runId),
-            distributedRunIds: distributedRuns.map(run => run.distributedRunId),
+            controlRunIds: visibleControlRuns().map(run => run.runId),
+            distributedRunIds: visibleDistributedRuns().map(run =>
+                run.distributedRunId
+            ),
         }),
+    };
+}
+
+export function tuneScaleRunNeedles(runCount: number) {
+    const middle = Math.floor(runCount / 2);
+    const last = runCount - 1;
+    const longBidi = Math.floor(runCount * 3 / 4);
+    return {
+        first: tuneScaleRunIdentity(0, runCount).distributedRunId,
+        middle: tuneScaleRunIdentity(middle, runCount).distributedRunId,
+        last: tuneScaleRunIdentity(last, runCount).distributedRunId,
+        longBidi: tuneScaleRunIdentity(longBidi, runCount).distributedRunId,
+    } as const;
+}
+
+function createTuneScaleSnapshots(
+    ordinaryControlRuns: readonly ControlRunSnapshot[],
+    ordinaryDistributedRuns: readonly ControlDistributedRunSnapshot[],
+    config: NonNullable<RecipeConsoleTuneFixtureOptions['tuneScale']>,
+) {
+    if (!Number.isSafeInteger(config.runCount) || config.runCount < 2) {
+        throw new Error('Tune scale runCount must be a safe integer of at least 2.');
+    }
+    const leftControl = ordinaryControlRuns[0];
+    const rightControl = ordinaryControlRuns[1];
+    const left = ordinaryDistributedRuns[0];
+    const right = ordinaryDistributedRuns[1];
+    if (!leftControl || !rightControl || !left || !right) {
+        throw new Error('Tune scale fixture requires the ordinary paired runs.');
+    }
+    const scale = createRecipeConsoleTuneScaleFixture({
+        commandCount: config.commandCount,
+    });
+    const commands = config.shadowedRateHz
+        ? scale.recipe.commands.map(command => command.kind === 'rtc.stream'
+            ? { ...command, intervalMs: 34 }
+            : command)
+        : scale.recipe.commands;
+    const scaledRight: ControlDistributedRunSnapshot = {
+        ...right,
+        manifest: {
+            ...scale.manifest,
+            distributedRunId: right.distributedRunId,
+            controlRunId: right.controlRunId,
+            group: right.manifest.group,
+            targetPolicy: right.manifest.targetPolicy,
+            recipes: [{
+                ...scale.manifest.recipes[0]!,
+                recipe: { ...scale.recipe, commands },
+            }],
+        },
+    };
+    const controlRuns: ControlRunSnapshot[] = [leftControl, rightControl];
+    const distributedRuns: ControlDistributedRunSnapshot[] = [left, scaledRight];
+    for (let index = 2; index < config.runCount; index += 1) {
+        const identity = tuneScaleRunIdentity(index, config.runCount);
+        controlRuns.push(historyOverflowControlRun(identity.controlRunId, index));
+        distributedRuns.push(historyOverflowDistributedRun(
+            identity.distributedRunId,
+            identity.controlRunId,
+            index,
+        ));
+    }
+    return { controlRuns, distributedRuns } as const;
+}
+
+function tuneScaleRunIdentity(index: number, runCount: number) {
+    if (index === 0) {
+        return {
+            distributedRunId: TUNE_LEFT_RUN_ID,
+            controlRunId: TUNE_LEFT_CONTROL_RUN_ID,
+        };
+    }
+    if (index === 1) {
+        return {
+            distributedRunId: TUNE_RIGHT_RUN_ID,
+            controlRunId: TUNE_RIGHT_CONTROL_RUN_ID,
+        };
+    }
+    if (index === Math.floor(runCount * 3 / 4)) {
+        return {
+            distributedRunId: TUNE_SCALE_LONG_BIDI_RUN_ID,
+            controlRunId: TUNE_SCALE_LONG_BIDI_CONTROL_ID,
+        };
+    }
+    const ordinal = String(index).padStart(6, '0');
+    return {
+        distributedRunId: `tune-scale-run-${ordinal}`,
+        controlRunId: `tune-scale-control-${ordinal}`,
     };
 }
 

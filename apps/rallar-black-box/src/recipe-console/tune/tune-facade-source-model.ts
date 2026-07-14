@@ -4,10 +4,12 @@ import { deriveDistributedRunTuningDecisions } from
     '@shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
 import type { DistributedRunTuningInventory } from
     '@shared-test/rallar-bb-test/distributed-run-tuning.ts';
-import { validateDistributedRunManifest } from
-    '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { AnalyzeTuneArtifactFacade } from
     '../analyze/analyze-worker-contract.ts';
+import {
+    resolveTuneFacadeManifestValidation,
+    type TuneFacadeManifestValidation,
+} from './tune-facade-manifest-validation.ts';
 import { projectTuneIdentitySurfaces } from './tune-identity.ts';
 import { hasTunePerformanceEvidence } from './tune-performance-evidence.ts';
 import { tuneOmittedInventoryMessage } from './tune-source-issue.ts';
@@ -20,6 +22,7 @@ import type {
 export function deriveTuneSourceModelFromFacade(input: Readonly<{
     facade: AnalyzeTuneArtifactFacade;
     focusRunId?: string;
+    manifestValidation?: TuneFacadeManifestValidation;
     sourceSearch?: string;
 }>): TuneSourceModel {
     const facade = input.facade;
@@ -38,10 +41,10 @@ export function deriveTuneSourceModelFromFacade(input: Readonly<{
     });
     const identity = projectTuneIdentitySurfaces(facade.identity, input.sourceSearch);
     const issues: TuneSourceIssue[] = [];
-    const manifestValidation = facade.candidateManifest
-        ? validateDistributedRunManifest(facade.candidateManifest)
-        : undefined;
-    const candidateManifestValid = manifestValidation?.ok === true;
+    const manifestValidation = resolveTuneFacadeManifestValidation(
+        facade, input.manifestValidation,
+    );
+    const candidateManifestValid = manifestValidation.status === 'valid';
     const supportIssueMessage = facade.supportIssues?.entries.find(
         issue => issue.severity === 'error',
     )?.message ?? facade.supportIssues?.entries[0]?.message;
@@ -70,8 +73,8 @@ export function deriveTuneSourceModelFromFacade(input: Readonly<{
     if (!facade.candidateManifest) {
         addIssue(issues, 'reference-only',
             'Candidate preview requires a bounded authoritative manifest window.');
-    } else if (manifestValidation && !manifestValidation.ok) {
-        const first = manifestValidation.errors[0];
+    } else if (manifestValidation.status === 'invalid') {
+        const first = manifestValidation.firstError;
         addIssue(
             issues,
             'invalid-manifest',

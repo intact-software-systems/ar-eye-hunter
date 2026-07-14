@@ -7,17 +7,11 @@ import type { TuneSourceModel } from './tune-source-model.ts';
  * discard a draft when its authority, support, identity, and knob truth are
  * unchanged.
  */
-export function tuneCandidateFingerprint(source: TuneSourceModel): string {
-    const knobs = (source.inventory?.knobs ?? [])
-        .map(knob => ({
-            pointer: knob.pointer,
-            currentValue: knob.currentValue,
-            availability: knob.availability,
-            effective: knob.effective,
-        }))
-        .sort((left, right) => left.pointer.localeCompare(right.pointer));
-
-    return JSON.stringify({
+export function tuneCandidateFingerprint(
+    source: TuneSourceModel,
+    knobRevisionKey = tuneKnobRevisionKey(source),
+): string {
+    const contextKey = JSON.stringify({
         identity: {
             distributedRunId: source.identity.distributedRunId,
             controlRunId: source.identity.controlRunId,
@@ -32,6 +26,26 @@ export function tuneCandidateFingerprint(source: TuneSourceModel): string {
             retainedRelation: source.retained.relation,
             retainedWorkspace: source.retained.support,
         },
-        knobs,
     });
+    return `${contextKey}\u0000${knobRevisionKey}`;
+}
+
+function tuneKnobRevisionKey(source: TuneSourceModel): string {
+    let revisionKey = 'tune-candidate-knob-fallback-v1:';
+    for (const knob of source.inventory?.knobs ?? []) {
+        const row = JSON.stringify([
+            knob.pointer,
+            knob.name,
+            knob.scope,
+            knob.currentValue,
+            knob.availability,
+            knob.effective,
+            knob.commandId,
+            knob.recipeId,
+            knob.reason,
+            knob.constraint,
+        ]);
+        revisionKey += `${row.length}:${row}`;
+    }
+    return revisionKey;
 }

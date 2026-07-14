@@ -7,6 +7,10 @@ import {
     type RecipeConsoleTuneFixtureOptions,
 } from './recipe-console-tune-fixture.ts';
 import {
+    chooseTuneListboxOption,
+    visibleTuneListboxValues,
+} from './recipe-console-tune-listbox-helpers.ts';
+import {
     TUNE_ANALYZE_ROUTE,
     TUNE_COMPARE_ROUTE,
     TUNE_LEFT_RUN_ID,
@@ -55,7 +59,11 @@ const OPERATIONAL_CASES: readonly OperationalCase[] = [
                 'distributedRunId',
             )).toBe(TUNE_RIGHT_RUN_ID);
             await page.getByRole('button', { name: 'Tune', exact: true }).click();
-            await page.getByLabel('Candidate run').selectOption(TUNE_LEFT_RUN_ID);
+            await chooseTuneListboxOption(
+                page,
+                'Candidate run',
+                TUNE_LEFT_RUN_ID,
+            );
         },
         verify: async page => {
             const tune = page.locator('[data-tune-workspace]');
@@ -81,10 +89,10 @@ const OPERATIONAL_CASES: readonly OperationalCase[] = [
                 'A selected recipe is reference-only and has no authoritative inline knobs.',
             );
             const candidate = tune.locator('[data-tune-candidate]');
-            expect(await candidate.getByLabel('Exact knob path').locator('option')
-                .evaluateAll(options => options.map(option =>
-                    (option as HTMLOptionElement).value
-                ))).toEqual(['/ackTimeoutMs', '/barrier/timeoutMs']);
+            expect(await visibleTuneListboxValues(
+                candidate,
+                'Exact knob path',
+            )).toEqual(['/ackTimeoutMs', '/barrier/timeoutMs']);
             await expect(candidate.getByRole('button', {
                 name: 'Preview candidate',
             })).toBeEnabled();

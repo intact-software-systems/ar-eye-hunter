@@ -5,10 +5,12 @@ import type { DistributedRunAnalysis } from
     '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { RallarBlackBoxDistributedRunManifest } from
     '@shared-test/rallar-bb-test/distributed-run.ts';
-import { validateDistributedRunManifest } from
-    '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { AnalyzeTuneArtifactFacade } from
     '../analyze/analyze-worker-contract.ts';
+import {
+    resolveTuneFacadeManifestValidation,
+    type TuneFacadeManifestValidation,
+} from './tune-facade-manifest-validation.ts';
 import { projectTuneIdentitySurfaces } from './tune-identity.ts';
 import type {
     TuneQuarantineCode,
@@ -29,6 +31,7 @@ export function projectTuneFacadeCatalog(input: Readonly<{
     facade: AnalyzeTuneArtifactFacade;
     current?: TuneRunOption;
     distributedIdentityIsAmbiguous: boolean;
+    manifestValidation?: TuneFacadeManifestValidation;
 }>): TuneFacadeCatalogProjection {
     const facade = input.facade;
     const distributedRunId = facade.identity.distributedRunId;
@@ -59,11 +62,11 @@ export function projectTuneFacadeCatalog(input: Readonly<{
     }
 
     const manifest = facade.candidateManifest ?? manifestSummaryProjection(facade);
-    const validation = facade.candidateManifest
-        ? validateDistributedRunManifest(manifest)
-        : undefined;
-    if (validation && !validation.ok) {
-        const first = validation.errors[0];
+    const validation = resolveTuneFacadeManifestValidation(
+        facade, input.manifestValidation,
+    );
+    if (validation.status === 'invalid') {
+        const first = validation.firstError;
         return quarantine(
             distributedRunId,
             controlRunId,
@@ -100,6 +103,7 @@ export function projectTuneFacadeCatalog(input: Readonly<{
             performance: facade.analysis.performance,
             identity,
             pairStatus: 'missing',
+            manifestValidation: 'validated',
             manifestAuthority: facade.candidateManifest
                 ? 'authoritative'
                 : 'summary-projection',

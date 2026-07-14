@@ -15,6 +15,8 @@ import {
     TUNE_RIGHT_RUN_ID,
     TUNE_SLOW_AGENT_ID,
 } from './recipe-console-tune-run-data.ts';
+import { chooseTuneListboxOptionWithKeyboard } from
+    './recipe-console-tune-listbox-helpers.ts';
 
 async function expectMinimumTargetHeight(locator: Locator, label: string): Promise<void> {
     await expect(locator.first(), `${label} should resolve a visible control`).toBeVisible();
@@ -285,10 +287,11 @@ test('supports Tune metric and evidence inspection from the keyboard', async ({
             value: 24,
         }]);
 
-    const baseline = page.getByLabel('Baseline run');
-    await baseline.focus();
-    await baseline.pressSequentially(TUNE_RIGHT_RUN_ID);
-    await page.keyboard.press('Tab');
+    await chooseTuneListboxOptionWithKeyboard(
+        page,
+        'Baseline run',
+        TUNE_RIGHT_RUN_ID,
+    );
     await expect(page).toHaveURL(new RegExp(`compareLeft=${TUNE_RIGHT_RUN_ID}`));
     await expect(page.locator('[data-tune-comparison]'))
         .toContainText('Baseline and candidate must be different runs.');
@@ -595,7 +598,9 @@ test('keeps real Tune portrait controls at least 44px', async ({
     await page.getByRole('button', { name: 'Tune', exact: true }).click();
 
     await expectMinimumTargetHeight(
-        page.locator('[data-tune-source] select'),
+        page.locator(
+            '[data-tune-source] [data-searchable-listbox-trigger]',
+        ),
         'Tune run selector',
     );
     await expectMinimumTargetHeight(

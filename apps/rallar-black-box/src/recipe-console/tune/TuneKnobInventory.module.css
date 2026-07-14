@@ -24,6 +24,34 @@
     color: var(--rc-muted);
 }
 
+.truth {
+    font-size: 12px;
+}
+
+.focusAnchor {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.focusAnchor:focus-visible {
+    position: relative;
+    inline-size: auto;
+    block-size: auto;
+    margin: 0;
+    padding: 8px 10px;
+    overflow: visible;
+    clip-path: none;
+    border: 1px solid var(--rc-focus);
+    color: var(--rc-text);
+    background: var(--rc-selected-bg);
+    white-space: normal;
+}
+
 .inventory ul {
     display: grid;
     padding: 0;

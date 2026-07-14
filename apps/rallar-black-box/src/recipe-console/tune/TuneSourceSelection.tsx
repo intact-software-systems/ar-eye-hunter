@@ -1,11 +1,12 @@
+import { useMemo } from 'react';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { SegmentedControl } from '../ui/SegmentedControl.tsx';
 import type { TuneSelectionModel } from './tune-selection-model.ts';
 import type { TuneSourceModel } from './tune-source-model.ts';
 import { tuneSourceIssueKey } from './tune-source-issue.ts';
+import { createTuneRunPickerModel } from './tune-run-picker-model.ts';
+import { TuneRunPicker } from './TuneRunPicker.tsx';
 import {
-    tuneLeftSelectionPatch,
-    tuneRightSelectionPatch,
     tuneTimingMetricPatch,
 } from './tune-url-patches.ts';
 import styles from './TuneEvidence.module.css';
@@ -28,9 +29,19 @@ export function TuneSourceSelection({
     urlState: RecipeConsoleUrlState;
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
 }>) {
-    const candidateValue = urlState.compareRight ?? '';
+    const runPicker = useMemo(() => createTuneRunPickerModel(selection), [
+        selection.options,
+        selection.optionsByDistributedRunId,
+    ]);
     return (
-        <section className={styles.source} data-tune-source>
+        <section
+            className={styles.source}
+            data-tune-picker-options-projected={
+                runPicker.work.pickerOptionsProjected
+            }
+            data-tune-picker-options-visited={runPicker.work.runOptionsVisited}
+            data-tune-source
+        >
             <header className={styles.sectionHeader}>
                 <div>
                     <p className={styles.eyebrow}>Signal ledger</p>
@@ -41,44 +52,20 @@ export function TuneSourceSelection({
                 </p>
             </header>
             <div className={styles.selectors}>
-                <label>
-                    <span>Baseline run</span>
-                    <select
-                        onChange={event => {
-                            const option = selection.options.find(row =>
-                                row.distributedRunId === event.currentTarget.value
-                            );
-                            if (option) navigate(tuneLeftSelectionPatch(option));
-                        }}
-                        value={urlState.compareLeft ?? ''}
-                    >
-                        <option disabled value="">Select baseline</option>
-                        {selection.options.map(option => (
-                            <option key={option.key} value={option.distributedRunId}>
-                                {option.distributedRunId}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <label>
-                    <span>Candidate run</span>
-                    <select
-                        onChange={event => {
-                            const option = selection.options.find(row =>
-                                row.distributedRunId === event.currentTarget.value
-                            );
-                            if (option) navigate(tuneRightSelectionPatch(option));
-                        }}
-                        value={candidateValue}
-                    >
-                        <option disabled value="">Select candidate</option>
-                        {selection.options.map(option => (
-                            <option key={option.key} value={option.distributedRunId}>
-                                {option.distributedRunId}
-                            </option>
-                        ))}
-                    </select>
-                </label>
+                <TuneRunPicker
+                    field="compareLeft"
+                    model={runPicker}
+                    navigate={navigate}
+                    selectedKey={urlState.compareLeft}
+                    selection={selection}
+                />
+                <TuneRunPicker
+                    field="compareRight"
+                    model={runPicker}
+                    navigate={navigate}
+                    selectedKey={urlState.compareRight}
+                    selection={selection}
+                />
                 <div className={styles.metricSelector}>
                     <span>Timing metric</span>
                     <SegmentedControl

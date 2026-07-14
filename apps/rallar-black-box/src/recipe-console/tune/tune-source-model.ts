@@ -19,6 +19,7 @@ import type { AnalyzeArtifactProjection } from
     '../analyze/analyze-worker-contract.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { validateTuneCatalogSelections } from './tune-catalog-selection-validation.ts';
 import { retainedTuneArtifactIdentityMatches } from './tune-artifact-identity.ts';
 import {
     projectTuneIdentitySurfaces,
@@ -26,6 +27,7 @@ import {
 } from './tune-identity.ts';
 import { hasTunePerformanceEvidence } from './tune-performance-evidence.ts';
 import { buildTuneRunCatalog, type TuneQuarantineCode, type TuneRunCatalog } from './tune-run-catalog.ts';
+import { tunePerformanceRunIds } from './tune-performance-run-ids.ts';
 
 export { deriveTuneSourceModelFromFacade } from './tune-facade-source-model.ts';
 
@@ -82,15 +84,19 @@ export function deriveTuneSourceModel(input: Readonly<{
 }>): TuneSourceModel {
     const focusRunId = input.urlState.compareRight ?? input.urlState.distributedRunId;
     const retainedModel = input.retained?.model;
-    const catalog = input.catalog ?? buildTuneRunCatalog({
+    const unvalidatedCatalog = input.catalog ?? buildTuneRunCatalog({
         distributedRuns: input.query.snapshot?.distributedRuns ?? [],
         controlRuns: input.query.snapshot?.runs ?? [],
         retainedArtifact: retainedModel,
         retainedArtifactStatus: input.retained?.status,
         retainedArtifactFocusRunId: focusRunId,
+        performanceRunIds: tunePerformanceRunIds(input.urlState),
     });
+    const catalog = validateTuneCatalogSelections(
+        unvalidatedCatalog, tunePerformanceRunIds(input.urlState),
+    );
     const option = focusRunId
-        ? catalog.options.find(row => row.distributedRunId === focusRunId)
+        ? catalog.optionsByDistributedRunId.get(focusRunId)
         : undefined;
     const quarantined = focusRunId
         ? catalog.quarantined.find(row => row.distributedRunId === focusRunId)

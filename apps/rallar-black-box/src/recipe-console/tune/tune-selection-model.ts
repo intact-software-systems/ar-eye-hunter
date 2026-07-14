@@ -12,6 +12,7 @@ import type { AnalyzeTuneArtifactFacade } from
     '../analyze/analyze-worker-contract.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { validateTuneCatalogSelections } from './tune-catalog-selection-validation.ts';
 import {
     buildTuneRunCatalog,
     type TuneRunCatalog,
@@ -19,6 +20,7 @@ import {
     type TuneQuarantinedRun,
     type TuneRunOption,
 } from './tune-run-catalog.ts';
+import { tunePerformanceRunIds } from './tune-performance-run-ids.ts';
 
 export type TuneComparisonIssue = Readonly<{
     field: 'compareLeft' | 'compareRight';
@@ -36,6 +38,7 @@ export type TuneCompatibilityWarning = Readonly<{
 
 export type TuneSelectionModel = Readonly<{
     options: readonly TuneRunOption[];
+    optionsByDistributedRunId: ReadonlyMap<string, TuneRunOption>;
     quarantined: readonly TuneQuarantinedRun[];
     focusRunId?: string;
     focus?: TuneRunOption;
@@ -59,29 +62,34 @@ export function deriveTuneSelectionModel(input: Readonly<{
     catalog?: TuneRunCatalog;
 }>): TuneSelectionModel {
     const focusRunId = input.urlState.compareRight ?? input.urlState.distributedRunId;
-    const catalog = input.catalog ?? buildTuneRunCatalog({
+    const unvalidatedCatalog = input.catalog ?? buildTuneRunCatalog({
         distributedRuns: input.query.snapshot?.distributedRuns ?? [],
         controlRuns: input.query.snapshot?.runs ?? [],
         retainedArtifact: input.retainedArtifact,
         retainedArtifactStatus: input.retainedArtifactStatus,
         retainedArtifactFocusRunId: focusRunId,
         retainedFacade: input.retainedFacade,
+        performanceRunIds: tunePerformanceRunIds(input.urlState),
     });
+    const catalog = validateTuneCatalogSelections(
+        unvalidatedCatalog, tunePerformanceRunIds(input.urlState),
+    );
     const issues: TuneComparisonIssue[] = [];
     const left = resolveSelection(
-        'compareLeft', input.urlState.compareLeft, catalog.options,
+        'compareLeft', input.urlState.compareLeft, catalog.optionsByDistributedRunId,
         catalog.quarantined, issues,
     );
     const right = resolveSelection(
-        'compareRight', input.urlState.compareRight, catalog.options,
+        'compareRight', input.urlState.compareRight, catalog.optionsByDistributedRunId,
         catalog.quarantined, issues,
     );
     const focus = focusRunId
-        ? catalog.options.find(option => option.distributedRunId === focusRunId)
+        ? catalog.optionsByDistributedRunId.get(focusRunId)
         : undefined;
     const comparison = comparisonModel(input.urlState, left, right, issues);
     return {
         options: catalog.options,
+        optionsByDistributedRunId: catalog.optionsByDistributedRunId,
         quarantined: catalog.quarantined,
         focusRunId,
         focus,
@@ -94,7 +102,7 @@ export function deriveTuneSelectionModel(input: Readonly<{
 function resolveSelection(
     field: TuneComparisonIssue['field'],
     value: string | undefined,
-    options: readonly TuneRunOption[],
+    options: ReadonlyMap<string, TuneRunOption>,
     quarantined: readonly TuneQuarantinedRun[],
     issues: TuneComparisonIssue[],
 ): TuneRunOption | undefined {
@@ -105,7 +113,7 @@ function resolveSelection(
         });
         return undefined;
     }
-    const option = options.find(candidate => candidate.distributedRunId === value);
+    const option = options.get(value);
     if (option) return option;
     const quarantinedRun = quarantined.find(candidate =>
         candidate.distributedRunId === value

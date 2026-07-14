@@ -1,5 +1,7 @@
 import { expect, test, type Locator } from '@playwright/test';
 import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
+import { chooseTuneListboxOptionWithKeyboard } from
+    './recipe-console-tune-listbox-helpers.ts';
 import {
     TUNE_COMPARE_ROUTE,
     TUNE_LEFT_RUN_ID,
@@ -74,11 +76,11 @@ test('announces keyboard-selected same-run comparison state and its issue atomic
     await expect(announcement).toHaveAttribute('aria-atomic', 'true');
     await expect(announcement).toHaveText('Comparison state: ready.');
 
-    const candidateRun = page.getByLabel('Candidate run');
-    await candidateRun.focus();
-    await expect(candidateRun).toBeFocused();
-    await candidateRun.pressSequentially(TUNE_LEFT_RUN_ID);
-    await page.keyboard.press('Tab');
+    await chooseTuneListboxOptionWithKeyboard(
+        page,
+        'Candidate run',
+        TUNE_LEFT_RUN_ID,
+    );
 
     await expect(page).toHaveURL(new RegExp(`compareRight=${TUNE_LEFT_RUN_ID}`));
     await expect(announcement).toHaveText(

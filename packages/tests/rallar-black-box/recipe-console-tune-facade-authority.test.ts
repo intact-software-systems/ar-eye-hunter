@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
@@ -6,12 +6,20 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type { AnalyzeTuneArtifactFacade } from
     '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import * as manifestValidation from
+    '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { ControlQuerySnapshot } from
     '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import type { RecipeConsoleUrlState } from
     '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { deriveTuneSelectionModel } from
     '../../../apps/rallar-black-box/src/recipe-console/tune/tune-selection-model.ts';
+import { deriveTuneSourceModelFromFacade } from
+    '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-source-model.ts';
+import { projectTuneFacadeManifestValidation } from
+    '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-manifest-validation.ts';
+import { buildTuneRunCatalog } from
+    '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
 import { deriveTuneWorkspaceSourceModel } from
     '../../../apps/rallar-black-box/src/recipe-console/tune/tune-workspace-source-model.ts';
 import { tuneRightSelectionPatch } from
@@ -180,6 +188,80 @@ function facade(input: Readonly<{
 }
 
 describe('Recipe Console Tune facade authority', () => {
+    it('rejects a facade validation projection bound to different truth', () => {
+        const original = facade({
+            distributedRunId: 'artifact',
+            controlRunId: 'control-artifact',
+            role: 'focus',
+            focusRunId: 'artifact',
+        });
+        const validation = projectTuneFacadeManifestValidation(original);
+        const changed = {
+            ...original,
+            candidateManifest: {
+                ...original.candidateManifest!,
+                recipes: [],
+            },
+        } satisfies AnalyzeTuneArtifactFacade;
+
+        const source = deriveTuneSourceModelFromFacade({
+            facade: changed,
+            focusRunId: 'artifact',
+            manifestValidation: validation,
+        });
+        expect(source.manifest).toBeUndefined();
+        expect(source.candidate.allowed).toBe(false);
+        expect(source.issues.map(issue => issue.code))
+            .toContain('invalid-manifest');
+    });
+
+    it('validates two selected control manifests and one retained facade exactly once',
+        () => {
+            const validate = vi.spyOn(
+                manifestValidation,
+                'validateDistributedRunManifest',
+            );
+            const baseline = distributedRun('baseline', 'control-baseline');
+            const candidate = distributedRun('candidate', 'control-candidate');
+            const retained = facade({
+                distributedRunId: 'candidate',
+                controlRunId: 'control-candidate',
+                role: 'focus',
+                focusRunId: 'candidate',
+                compareLeft: 'baseline',
+                compareRight: 'candidate',
+            });
+            const controlQuery = query(
+                [baseline, candidate],
+                [controlRun('control-baseline'), controlRun('control-candidate')],
+            );
+            const state = urlState({
+                compareLeft: 'baseline',
+                compareRight: 'candidate',
+            });
+            const catalog = buildTuneRunCatalog({
+                distributedRuns: controlQuery.snapshot?.distributedRuns ?? [],
+                controlRuns: controlQuery.snapshot?.runs ?? [],
+                retainedFacade: retained,
+                performanceRunIds: ['baseline', 'candidate'],
+            });
+
+            expect(validate).toHaveBeenCalledTimes(3);
+            expect(catalog.work).toMatchObject({
+                manifestValidations: 2,
+                retainedFacadeManifestValidations: 1,
+            });
+            const source = deriveTuneWorkspaceSourceModel({
+                catalog,
+                query: controlQuery,
+                retained: { status: 'ready', model: retained },
+                urlState: state,
+            });
+            expect(source.provenance.source).toBe('artifact');
+            expect(validate).toHaveBeenCalledTimes(3);
+            validate.mockRestore();
+        });
+
     it('keeps an artifact-only retained run selectable without pretending it is comparable', () => {
         const retained = facade({
             distributedRunId: 'artifact-only',

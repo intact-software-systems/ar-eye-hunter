@@ -11,6 +11,14 @@ const RECIPE_URL =
     '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
     '&controlRunId=execute-control-a';
 const MATCHED_REASON = 'Agent is connected and reports the selected global group.';
+const TUNE_CSS_FIXTURE = {
+    retention: 'ready',
+    tuneScale: {
+        runCount: 120,
+        commandCount: 4,
+        initial: true,
+    },
+} as const;
 
 const legacySelectors = [
     '[data-isolation-legacy-panel]',
@@ -209,6 +217,66 @@ async function captureRealMonitorStyles(page: Page) {
     };
 }
 
+async function openTuneBaselineRunPopup(page: Page) {
+    const picker = page.getByRole('group', {
+        name: 'Baseline run',
+        exact: true,
+    });
+    const trigger = picker.getByRole('button', {
+        name: /^Baseline run\b/u,
+    });
+    await expect(picker).toBeVisible();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await trigger.click();
+
+    const search = picker.getByRole('combobox', {
+        name: 'Search Baseline run',
+        exact: true,
+    });
+    const listbox = picker.getByRole('listbox', {
+        name: 'Baseline run options',
+        exact: true,
+    });
+    const option = listbox.getByRole('option').first();
+    const popup = listbox.locator('..');
+    const windowControls = picker.getByRole('group', {
+        name: 'Baseline run options window',
+        exact: true,
+    });
+    const previous = windowControls.getByRole('button', {
+        name: 'Previous',
+        exact: true,
+    });
+    const next = windowControls.getByRole('button', {
+        name: 'Next',
+        exact: true,
+    });
+    for (const owner of [
+        popup,
+        search,
+        listbox,
+        option,
+        windowControls,
+        previous,
+        next,
+    ]) {
+        await expect(owner).toBeVisible();
+    }
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    return {
+        picker,
+        trigger,
+        popup,
+        search,
+        listbox,
+        option,
+        windowControls,
+        previous,
+        next,
+    };
+}
+
 async function captureRealTuneStyles(page: Page) {
     const source = page.locator('[data-tune-source]');
     const hints = page.locator('[data-tune-hints]');
@@ -265,6 +333,44 @@ async function captureRealTuneStyles(page: Page) {
     const panelProperties = [
         'background-color', 'border-top-color', 'display', 'min-width', 'padding',
     ] as const;
+    const runPicker = await openTuneBaselineRunPopup(page);
+    const runPickerStyles = {
+        popup: await style(runPicker.popup, [
+            'background-color', 'border-radius', 'border-top-color', 'box-shadow',
+            'display', 'max-height', 'overflow', 'padding', 'position', 'z-index',
+        ]),
+        trigger: await style(runPicker.trigger, [
+            'background-color', 'border-radius', 'border-top-color', 'color',
+            'display', 'min-height', 'padding',
+        ]),
+        search: await style(runPicker.search, [
+            'background-color', 'border-radius', 'border-top-color', 'color',
+            'min-height', 'padding',
+        ]),
+        option: await style(runPicker.option, [
+            'background-color', 'border-radius', 'border-top-color', 'color',
+            'display', 'min-height', 'padding', 'width',
+        ]),
+        windowControls: await style(runPicker.windowControls, [
+            'display', 'gap', 'grid-template-columns', 'min-width',
+        ]),
+        windowPrevious: await style(runPicker.previous, [
+            'background-color', 'border-radius', 'border-top-color', 'color',
+            'cursor', 'font-weight', 'min-height', 'padding',
+        ]),
+        windowNext: await style(runPicker.next, [
+            'background-color', 'border-radius', 'border-top-color', 'color',
+            'cursor', 'font-weight', 'min-height', 'padding',
+        ]),
+    };
+    await page.keyboard.press('Escape');
+    await expect(runPicker.trigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('listbox', {
+        name: 'Baseline run options',
+        exact: true,
+    })).toHaveCount(0);
+    await expect(page.locator('[data-searchable-listbox-popup]')).toHaveCount(0);
+
     await retentionPreview.evaluate(button => {
         button.setAttribute('disabled', '');
     });
@@ -306,6 +412,7 @@ async function captureRealTuneStyles(page: Page) {
             'background-color', 'border-radius', 'border-top-color', 'color',
             'font-weight', 'min-height',
         ]),
+        runPicker: runPickerStyles,
         history: await style(history, panelProperties),
         filters: await style(filters, panelProperties),
         savedFilters: await style(savedFilters, panelProperties),
@@ -419,13 +526,21 @@ test('preserves real Tune styles across a legacy round trip', async ({
     context,
     page,
 }) => {
-    await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
+    await installRecipeConsoleTuneFixture(context, TUNE_CSS_FIXTURE);
     await page.goto(TUNE_COMPARE_ROUTE);
     const before = await captureRealTuneStyles(page);
+
+    const leavingPopup = await openTuneBaselineRunPopup(page);
+    await expect(leavingPopup.popup).toBeVisible();
 
     await navigateInApp(page, '/?provider=simulated&experience=legacy&tab=auth');
     await expect(page.locator('.app-shell')).toBeVisible();
     await expect(page.locator('[data-tune-workspace]')).toHaveCount(0);
+    await expect(page.getByRole('listbox', {
+        name: 'Baseline run options',
+        exact: true,
+    })).toHaveCount(0);
+    await expect(page.locator('[data-searchable-listbox-popup]')).toHaveCount(0);
     await navigateInApp(page, TUNE_COMPARE_ROUTE);
     await expect(page.locator('.app-shell')).toHaveCount(0);
 
@@ -436,7 +551,7 @@ test('matches cold Tune styles when legacy components load first', async ({
     context,
     page,
 }) => {
-    await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
+    await installRecipeConsoleTuneFixture(context, TUNE_CSS_FIXTURE);
     await page.goto(TUNE_COMPARE_ROUTE);
     const coldTune = await captureRealTuneStyles(page);
 

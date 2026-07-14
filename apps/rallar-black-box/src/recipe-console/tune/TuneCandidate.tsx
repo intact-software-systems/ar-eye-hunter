@@ -1,12 +1,16 @@
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
     createDistributedRunTuningCandidate,
     type DistributedRunTuningCandidateResult,
 } from '@shared-test/rallar-bb-test/distributed-run-tuning-candidate.ts';
-import type { DistributedRunTuningKnob } from
-    '@shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import { tuneNumber } from './tune-format.ts';
+import {
+    createTuneCandidateKnobIndex,
+    type TuneCandidateKnobIndex,
+} from './tune-candidate-knob-index.ts';
+import { tuneCandidateFingerprint } from './tune-candidate-fingerprint.ts';
 import type { TuneInspection } from './tune-inspection.ts';
+import { TuneKnobPicker } from './TuneKnobPicker.tsx';
 import { TuneKnobInventory } from './TuneKnobInventory.tsx';
 import type { TuneSourceModel } from './tune-source-model.ts';
 import styles from './TuneCandidate.module.css';
@@ -20,9 +24,56 @@ export function TuneCandidate({
     source: TuneSourceModel;
     onInspect(selection: TuneInspection, trigger: HTMLButtonElement): void;
 }>) {
-    const knobs = source.inventory?.knobs ?? [];
-    const initialPointer = preferredPointer(source, knobs);
-    const initialKnob = knobs.find(knob => knob.pointer === initialPointer);
+    const indexBuildCount = useRef(0);
+    const index = useMemo(() => {
+        indexBuildCount.current += 1;
+        return createTuneCandidateKnobIndex(source);
+    }, [
+        source.decisions,
+        source.inventory?.knobs,
+    ]);
+    const resetKey = useMemo(() => tuneCandidateFingerprint(
+        source,
+        index.revisionKey,
+    ), [
+        index.revisionKey,
+        source.controlRun?.runId,
+        source.distributedRun?.controlRunId,
+        source.distributedRun?.distributedRunId,
+        source.identity.controlRunId,
+        source.identity.distributedRunId,
+        source.identity.quarantined,
+        source.provenance.detail,
+        source.provenance.source,
+        source.retained.relation,
+        source.retained.support,
+    ]);
+    return (
+        <TuneCandidateState
+            index={index}
+            indexBuildCount={indexBuildCount.current}
+            key={resetKey}
+            onInspect={onInspect}
+            source={source}
+        />
+    );
+}
+
+function TuneCandidateState({
+    index,
+    indexBuildCount,
+    source,
+    onInspect,
+}: Readonly<{
+    index: TuneCandidateKnobIndex;
+    indexBuildCount: number;
+    source: TuneSourceModel;
+    onInspect(selection: TuneInspection, trigger: HTMLButtonElement): void;
+}>) {
+    const initialPointer = index.preferredPointer;
+    const initialKnob = initialPointer
+        ? index.byPointer.get(initialPointer)
+        : undefined;
     const [pointer, setPointer] = useState(initialPointer ?? '');
     const [draft, setDraft] = useState(
         initialKnob?.currentValue === undefined
@@ -32,16 +83,13 @@ export function TuneCandidate({
     const [preview, setPreview] =
         useState<DistributedRunTuningCandidateResult>();
     const [status, setStatus] = useState('No candidate preview yet.');
-    const knob = knobs.find(row => row.pointer === pointer);
-    const editableKnobs = knobs.filter(row =>
-        row.effective && row.availability !== 'blocked'
-    );
+    const knob = index.byPointer.get(pointer);
     const enabled = Boolean(
         source.candidate.allowed && source.manifest && knob,
     );
 
     function selectPointer(nextPointer: string): void {
-        const next = knobs.find(row => row.pointer === nextPointer);
+        const next = index.byPointer.get(nextPointer);
         setPointer(nextPointer);
         setDraft(next?.currentValue === undefined
             ? ''
@@ -86,7 +134,15 @@ export function TuneCandidate({
     }
 
     return (
-        <section className={styles.candidate} data-tune-candidate>
+        <section
+            className={styles.candidate}
+            data-tune-candidate
+            data-tune-editable-options={index.work.editableOptionsProjected}
+            data-tune-blocked-options={index.work.blockedRowsProjected}
+            data-tune-knob-index-builds={indexBuildCount}
+            data-tune-knob-rows-visited={index.work.knobRowsVisited}
+            data-tune-knob-revision-rows={index.work.revisionRowsProjected}
+        >
             <header>
                 <div>
                     <p>Clone-only output</p>
@@ -94,21 +150,14 @@ export function TuneCandidate({
                 </div>
                 <span>{source.identity.candidateFilename ?? 'No safe filename'}</span>
             </header>
-            {editableKnobs.length > 0 ? (
+            {index.editableKnobs.length > 0 ? (
                 <div className={styles.editor}>
-                    <label>
-                        <span>Exact knob path</span>
-                        <select
-                            onChange={event => selectPointer(event.currentTarget.value)}
-                            value={pointer}
-                        >
-                            {editableKnobs.map(row => (
-                                <option key={row.pointer} value={row.pointer}>
-                                    {row.pointer}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
+                    <TuneKnobPicker
+                        contextKey={`tune-knobs-v1:${source.focusRunId ?? 'none'}`}
+                        index={index}
+                        onSelect={selectPointer}
+                        selectedPointer={pointer || undefined}
+                    />
                     <div className={styles.path}>
                         <code>{knob?.pointer ?? 'No editable path'}</code>
                         <strong>Current {tuneNumber(knob?.currentValue)}</strong>
@@ -145,7 +194,7 @@ export function TuneCandidate({
             ) : (
                 <p className={styles.empty}>No effective inline tuning knob is available.</p>
             )}
-            <TuneKnobInventory knobs={knobs} onInspect={onInspect} />
+            <TuneKnobInventory index={index} onInspect={onInspect} />
             {!source.candidate.allowed ? (
                 <ul className={styles.errors}>
                     {source.candidate.reasons.map(reason => <li key={reason}>{reason}</li>)}
@@ -178,26 +227,4 @@ export function TuneCandidate({
             </p>
         </section>
     );
-}
-
-function preferredPointer(
-    source: TuneSourceModel,
-    knobs: readonly DistributedRunTuningKnob[],
-): string | undefined {
-    const recommended = source.decisions?.hints.find(hint =>
-        hint.knob && knobs.some(knob =>
-            knob.pointer === hint.knob?.pointer && knob.effective &&
-            knob.availability !== 'blocked'
-        )
-    )?.knob?.pointer;
-    const configuredCadence = knobs.find(knob =>
-        knob.effective && knob.availability === 'configured' &&
-        knob.name === 'rateHz'
-    ) ?? knobs.find(knob =>
-        knob.effective && knob.availability === 'configured' &&
-        knob.name === 'intervalMs'
-    );
-    return recommended ?? configuredCadence?.pointer ?? knobs.find(knob =>
-        knob.effective && knob.availability === 'configured'
-    )?.pointer ?? knobs.find(knob => knob.effective)?.pointer;
 }

@@ -3,6 +3,11 @@ import { chooseAnalyzeFiles } from './recipe-console-analyze-helpers.ts';
 import { createTuneArtifactUpload } from './recipe-console-tune-artifacts.ts';
 import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
 import {
+    chooseTuneListboxOptionWithKeyboard,
+    tuneListboxTrigger,
+    visibleTuneListboxValues,
+} from './recipe-console-tune-listbox-helpers.ts';
+import {
     TUNE_ANALYZE_ROUTE,
     TUNE_COMPARE_ROUTE,
     TUNE_LEFT_RUN_ID,
@@ -114,10 +119,10 @@ test('compares two runs and emits explicit candidate timing changes without muta
         .toBeVisible({ timeout: 2_000 });
     await expect(candidate).toContainText('/recipes/0/recipe/commands/0/rateHz');
     await expect(candidate).toContainText('Current 30');
-    expect(await candidate.getByLabel('Exact knob path').locator('option')
-        .evaluateAll(options => options.map(option =>
-            (option as HTMLOptionElement).value
-        ))).toEqual(TUNE_EDITABLE_KNOB_PATHS);
+    expect(await visibleTuneListboxValues(
+        candidate,
+        'Exact knob path',
+    )).toEqual(TUNE_EDITABLE_KNOB_PATHS);
     await candidate.getByLabel('Candidate value').fill('24');
     await candidate.getByRole('button', { name: 'Preview candidate' }).click();
     await expect(candidate.locator('[data-candidate-patch]'))
@@ -265,13 +270,9 @@ test('keeps a shadowed rate knob visible and inspectable but not editable', asyn
     await page.goto(TUNE_COMPARE_ROUTE);
 
     const candidate = page.locator('[data-tune-candidate]');
-    const editor = candidate.getByLabel('Exact knob path');
-    await expect(editor.locator(
-        'option[value="/recipes/0/recipe/commands/0/intervalMs"]',
-    )).toHaveCount(1);
-    await expect(editor.locator(
-        'option[value="/recipes/0/recipe/commands/0/rateHz"]',
-    )).toHaveCount(0);
+    const editable = await visibleTuneListboxValues(candidate, 'Exact knob path');
+    expect(editable).toContain('/recipes/0/recipe/commands/0/intervalMs');
+    expect(editable).not.toContain('/recipes/0/recipe/commands/0/rateHz');
     const blocked = candidate.locator('[data-tune-blocked-knob]')
         .filter({ hasText: '/recipes/0/recipe/commands/0/rateHz' });
     await expect(blocked).toContainText('Current 30');
@@ -305,21 +306,21 @@ test('shows uncommitted candidate focus and commits comparison in one keyboard c
         `&distributedRunId=${TUNE_RIGHT_RUN_ID}` +
         `&compareLeft=${TUNE_LEFT_RUN_ID}`);
 
-    const candidate = page.getByLabel('Candidate run');
-    await expect(candidate).toHaveValue('');
-    await expect(candidate.locator('option[value=""]'))
-        .toHaveText('Select candidate');
+    const candidate = tuneListboxTrigger(page, 'Candidate run');
+    await expect(candidate).toContainText('Select candidate run');
     const comparison = page.locator('[data-tune-comparison]');
     await expect(comparison).toContainText('incomplete');
     await expect(comparison).toContainText('compareRight must be selected explicitly.');
     await expect(page.locator('[data-tune-workspace]'))
         .toHaveAttribute('data-source-kind', 'control');
 
-    await candidate.focus();
-    await candidate.pressSequentially(TUNE_RIGHT_RUN_ID);
-    await page.keyboard.press('Tab');
+    await chooseTuneListboxOptionWithKeyboard(
+        page,
+        'Candidate run',
+        TUNE_RIGHT_RUN_ID,
+    );
     await expect(page).toHaveURL(new RegExp(`compareRight=${TUNE_RIGHT_RUN_ID}`));
-    await expect(candidate).toHaveValue(TUNE_RIGHT_RUN_ID);
+    await expect(candidate).toContainText(TUNE_RIGHT_RUN_ID);
     await expect(comparison).toContainText('ready');
     await expect(comparison.locator('[data-compare-category="recipe"]'))
         .toBeVisible();

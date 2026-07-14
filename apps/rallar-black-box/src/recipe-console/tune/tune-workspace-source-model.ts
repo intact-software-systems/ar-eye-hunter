@@ -9,6 +9,7 @@ import {
     tuneFacadeIsCurrentFocus,
 } from './tune-facade-source-model.ts';
 import { buildTuneRunCatalog, type TuneRunCatalog } from './tune-run-catalog.ts';
+import { tunePerformanceRunIds } from './tune-performance-run-ids.ts';
 import {
     deriveTuneSourceModel,
     type TuneSourceIssue,
@@ -32,9 +33,10 @@ export function deriveTuneWorkspaceSourceModel(input: Readonly<{
         distributedRuns: input.query.snapshot?.distributedRuns ?? [],
         controlRuns: input.query.snapshot?.runs ?? [],
         retainedFacade: facade,
+        performanceRunIds: tunePerformanceRunIds(input.urlState),
     });
     const current = focusRunId
-        ? catalog.options.find(option => option.distributedRunId === focusRunId)
+        ? catalog.optionsByDistributedRunId.get(focusRunId)
         : undefined;
     const expectedControlRunIds = [
         input.urlState.controlRunId,
@@ -58,6 +60,7 @@ export function deriveTuneWorkspaceSourceModel(input: Readonly<{
         ? deriveTuneSourceModelFromFacade({
             facade,
             focusRunId,
+            manifestValidation: catalog.retainedFacadeManifestValidation,
             sourceSearch: input.sourceSearch,
         })
         : deriveTuneSourceModel({

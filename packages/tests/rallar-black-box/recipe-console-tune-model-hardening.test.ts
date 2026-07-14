@@ -10,6 +10,8 @@ import type { ControlQuerySnapshot } from
     '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import { buildTuneRunCatalog } from
     '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
+import { validateTuneCatalogSelections } from
+    '../../../apps/rallar-black-box/src/recipe-console/tune/tune-catalog-selection-validation.ts';
 import { deriveTuneSelectionModel } from
     '../../../apps/rallar-black-box/src/recipe-console/tune/tune-selection-model.ts';
 import { deriveTuneSourceModel } from
@@ -109,6 +111,265 @@ const url = (patch: Record<string, unknown> = {}) => ({
 });
 
 describe('Recipe Console Tune model hardening', () => {
+    it('revalidates a deferred injected catalog before selection dereferences it', () => {
+        const baseline = run('baseline', 'control-baseline');
+        const malformed = structuredClone(
+            run('deep-invalid', 'control-invalid'),
+        ) as unknown as Record<string, any>;
+        malformed.manifest.recipes = null;
+        const querySnapshot = query('live', [
+            baseline,
+            malformed as ControlDistributedRunSnapshot,
+        ], [control('control-baseline'), control('control-invalid')]);
+        const deferred = buildTuneRunCatalog({
+            distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
+            controlRuns: querySnapshot.snapshot?.runs ?? [],
+            performanceRunIds: ['different-selected-run'],
+        });
+        let model: ReturnType<typeof deriveTuneSelectionModel> | undefined;
+
+        expect(() => {
+            model = deriveTuneSelectionModel({
+                catalog: deferred,
+                query: querySnapshot,
+                urlState: url({
+                    compareLeft: 'baseline',
+                    compareRight: 'deep-invalid',
+                }),
+            });
+        }).not.toThrow();
+        expect(model?.right).toBeUndefined();
+        expect(model?.comparison.state).toBe('invalid');
+        expect(model?.comparison.structural).toBeUndefined();
+        expect(model?.comparison.issues.map(issue => issue.code))
+            .toContain('invalid-manifest');
+    });
+
+    it('revalidates a deferred injected catalog before source dereferences it', () => {
+        const malformed = structuredClone(
+            run('deep-invalid', 'control-invalid'),
+        ) as unknown as Record<string, any>;
+        malformed.manifest.recipes = null;
+        const querySnapshot = query('live', [
+            malformed as ControlDistributedRunSnapshot,
+        ], [control('control-invalid')]);
+        const deferred = buildTuneRunCatalog({
+            distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
+            controlRuns: querySnapshot.snapshot?.runs ?? [],
+            performanceRunIds: ['different-selected-run'],
+        });
+        let model: ReturnType<typeof deriveTuneSourceModel> | undefined;
+
+        expect(() => {
+            model = deriveTuneSourceModel({
+                catalog: deferred,
+                query: querySnapshot,
+                urlState: url({ distributedRunId: 'deep-invalid' }),
+            });
+        }).not.toThrow();
+        expect(model?.manifest).toBeUndefined();
+        expect(model?.inventory).toBeUndefined();
+        expect(model?.candidate.allowed).toBe(false);
+        expect(model?.issues.map(issue => issue.code))
+            .toContain('invalid-manifest');
+    });
+
+    it('reports deferred boundary work and restores selected performance semantics', () => {
+        const candidate = run('deferred-valid', 'control-valid');
+        const querySnapshot = query(
+            'live', [candidate], [control('control-valid')],
+        );
+        const deferred = buildTuneRunCatalog({
+            distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
+            controlRuns: querySnapshot.snapshot?.runs ?? [],
+            performanceRunIds: ['different-selected-run'],
+        });
+
+        const covered = validateTuneCatalogSelections(
+            deferred, ['deferred-valid'],
+        );
+        expect(covered.work).toMatchObject({
+            selectionBoundaryManifestValidations: 1,
+            selectionBoundaryPerformanceDerivations: 1,
+        });
+        expect(covered.optionsByDistributedRunId.get('deferred-valid'))
+            .toMatchObject({
+                manifestValidation: 'validated',
+                performance: expect.any(Object),
+                controlEvidence: { performance: expect.any(Object) },
+            });
+        const source = deriveTuneSourceModel({
+            catalog: deferred,
+            query: querySnapshot,
+            urlState: url({ distributedRunId: 'deferred-valid' }),
+        });
+        expect(source.performance).toBeDefined();
+        expect(source.issues.map(issue => issue.code))
+            .not.toContain('missing-performance');
+    });
+
+    it('reports cached boundary projection reuse without recounting actual work', () => {
+        const candidate = run('deferred-valid', 'control-valid');
+        const querySnapshot = query(
+            'live', [candidate], [control('control-valid')],
+        );
+        const deferred = buildTuneRunCatalog({
+            distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
+            controlRuns: querySnapshot.snapshot?.runs ?? [],
+            performanceRunIds: ['different-selected-run'],
+        });
+
+        const first = validateTuneCatalogSelections(
+            deferred, ['deferred-valid'],
+        );
+        const reused = validateTuneCatalogSelections(
+            deferred, ['deferred-valid'],
+        );
+
+        expect(first.work).toMatchObject({
+            selectionBoundaryManifestValidations: 1,
+            selectionBoundaryPerformanceDerivations: 1,
+            selectionBoundaryProjectionReuses: 0,
+        });
+        expect(reused.work).toMatchObject({
+            selectionBoundaryManifestValidations: 0,
+            selectionBoundaryPerformanceDerivations: 0,
+            selectionBoundaryProjectionReuses: 1,
+        });
+        expect(reused.optionsByDistributedRunId.get('deferred-valid'))
+            .toMatchObject({
+                manifestValidation: 'validated',
+                performance: expect.any(Object),
+            });
+    });
+
+    it('preserves disabled performance evidence through deferred validation', () => {
+        const candidate = run('deferred-valid', 'control-valid');
+        const querySnapshot = query(
+            'live', [candidate], [control('control-valid')],
+        );
+        const deferred = buildTuneRunCatalog({
+            distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
+            controlRuns: querySnapshot.snapshot?.runs ?? [],
+            includePerformanceEvidence: false,
+            performanceRunIds: ['different-selected-run'],
+        });
+
+        expect(deferred.includePerformanceEvidence).toBe(false);
+        const covered = validateTuneCatalogSelections(
+            deferred, ['deferred-valid'],
+        );
+        expect(covered.includePerformanceEvidence).toBe(false);
+        expect(covered.work).toMatchObject({
+            selectionBoundaryManifestValidations: 1,
+            selectionBoundaryPerformanceDerivations: 0,
+            selectionBoundaryProjectionReuses: 0,
+        });
+        expect(covered.optionsByDistributedRunId.get('deferred-valid'))
+            .toMatchObject({ manifestValidation: 'validated' });
+        expect(covered.optionsByDistributedRunId.get('deferred-valid')?.performance)
+            .toBeUndefined();
+        expect(covered.optionsByDistributedRunId.get('deferred-valid')
+            ?.controlEvidence?.performance).toBeUndefined();
+    });
+
+    it('fails closed on unreadable unselected manifest identities without full validation',
+        () => {
+            const nullManifest = {
+                ...run('null-manifest', 'control-null'),
+                manifest: null,
+            } as unknown as ControlDistributedRunSnapshot;
+            const throwingManifest = {
+                ...run('throwing-manifest', 'control-throwing'),
+            } as unknown as Record<string, unknown>;
+            Object.defineProperty(throwingManifest, 'manifest', {
+                enumerable: true,
+                get: () => { throw new Error('manifest getter trap'); },
+            });
+
+            for (const malformed of [
+                nullManifest,
+                throwingManifest as unknown as ControlDistributedRunSnapshot,
+            ]) {
+                let catalog: ReturnType<typeof buildTuneRunCatalog> | undefined;
+                expect(() => {
+                    catalog = buildTuneRunCatalog({
+                        distributedRuns: [malformed],
+                        controlRuns: [],
+                        performanceRunIds: ['different-selected-run'],
+                    });
+                }).not.toThrow();
+                expect(catalog?.options).toEqual([]);
+                expect(catalog?.quarantined).toEqual([
+                    expect.objectContaining({
+                        distributedRunId: malformed.distributedRunId,
+                        codes: ['invalid-manifest'],
+                    }),
+                ]);
+                expect(catalog?.work).toMatchObject({
+                    manifestIdentityChecks: 1,
+                    manifestValidations: 0,
+                    performanceDerivations: 0,
+                });
+            }
+        });
+
+    it('marks deep manifests for selection validation and rejects invalid truth before authority',
+        () => {
+            const malformed = structuredClone(
+                run('deep-invalid', 'control-invalid'),
+            ) as unknown as Record<string, any>;
+            malformed.manifest.recipes = null;
+            const querySnapshot = query('live', [
+                malformed as ControlDistributedRunSnapshot,
+            ], [control('control-invalid')]);
+            const deferred = buildTuneRunCatalog({
+                distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
+                controlRuns: querySnapshot.snapshot?.runs ?? [],
+                performanceRunIds: ['different-selected-run'],
+            });
+            expect(deferred.options).toEqual([
+                expect.objectContaining({
+                    distributedRunId: 'deep-invalid',
+                    manifestValidation: 'selection-required',
+                }),
+            ]);
+            expect(deferred.work).toMatchObject({
+                manifestIdentityChecks: 1,
+                manifestValidations: 0,
+                performanceDerivations: 0,
+            });
+
+            const selected = buildTuneRunCatalog({
+                distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
+                controlRuns: querySnapshot.snapshot?.runs ?? [],
+                performanceRunIds: ['deep-invalid'],
+            });
+            expect(selected.options).toEqual([]);
+            expect(selected.quarantined).toEqual([
+                expect.objectContaining({
+                    distributedRunId: 'deep-invalid',
+                    codes: ['invalid-manifest'],
+                }),
+            ]);
+            const selection = deriveTuneSelectionModel({
+                catalog: selected,
+                query: querySnapshot,
+                urlState: url({ compareRight: 'deep-invalid' }),
+            });
+            expect(selection.comparison.state).toBe('invalid');
+            expect(selection.comparison.structural).toBeUndefined();
+            const source = deriveTuneSourceModel({
+                catalog: selected,
+                query: querySnapshot,
+                urlState: url({ distributedRunId: 'deep-invalid' }),
+            });
+            expect(source.manifest).toBeUndefined();
+            expect(source.candidate.allowed).toBe(false);
+            expect(source.issues.map(issue => issue.code))
+                .toContain('invalid-manifest');
+        });
+
     it('quarantines repeated distributed IDs and refuses duplicate control pairing', () => {
         const duplicated = [run('dup', 'control-dup', 3_000), run('dup', 'control-dup', 2_000), run('dup', 'control-dup', 1_000)];
         const duplicatedCatalog = buildTuneRunCatalog({
@@ -142,6 +403,29 @@ describe('Recipe Console Tune model hardening', () => {
         expect(catalog.quarantined.every(row =>
             /^tune-quarantined:\d+$/.test(row.key) && !row.key.includes('\u0000')
         )).toBe(true);
+    });
+
+    it('keeps natural RTL identities exact while quarantining directional controls', () => {
+        const rtlRunId = 'run-مرحبا-שלום-界';
+        const rtlControlId = 'control-مرحبا-שלום-界';
+        const unsafeRunId = 'run-\u202Ehidden';
+        const unsafeControlId = 'control-unsafe-direction';
+        const catalog = buildTuneRunCatalog({
+            distributedRuns: [
+                run(rtlRunId, rtlControlId),
+                run(unsafeRunId, unsafeControlId),
+            ],
+            controlRuns: [control(rtlControlId), control(unsafeControlId)],
+        });
+
+        expect(catalog.options.map(option => option.distributedRunId))
+            .toEqual([rtlRunId]);
+        expect(catalog.quarantined).toEqual([
+            expect.objectContaining({
+                distributedRunId: unsafeRunId,
+                codes: ['unsafe-identity'],
+            }),
+        ]);
     });
 
     it('uses matching artifact snapshots consistently for structural and message comparison', () => {

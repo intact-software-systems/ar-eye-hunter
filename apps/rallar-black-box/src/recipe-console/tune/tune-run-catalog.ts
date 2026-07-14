@@ -6,19 +6,34 @@ import type {
     DistributedRunAnalysis,
     DistributedRunPerformanceAnalysis,
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
 import type { AnalyzeTuneArtifactFacade } from
     '../analyze/analyze-worker-contract.ts';
 import { deriveDistributedRunSnapshotPerformance } from
     '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { validateDistributedRunManifest } from
-    '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {
     projectTuneIdentitySurfaces,
     type TuneIdentitySurfaces,
 } from './tune-identity.ts';
-import { retainedTuneArtifactIdentityMatches } from './tune-artifact-identity.ts';
 import { projectTuneFacadeCatalog } from './tune-facade-catalog.ts';
+import {
+    projectTuneFacadeManifestValidation,
+    type TuneFacadeManifestValidation,
+} from './tune-facade-manifest-validation.ts';
+import { projectTuneRetainedArtifactCatalog } from
+    './tune-retained-artifact-catalog.ts';
+import {
+    boundedTunePerformanceRunIds,
+    indexTuneRows,
+} from './tune-run-catalog-index.ts';
+import {
+    distributedRunManifestContractIssues,
+    distributedRunManifestIdentityIssues,
+} from
+    './tune-run-catalog-safety.ts';
+import {
+    createTuneRunCatalogWork,
+    type TuneRunCatalogWork,
+} from './tune-run-catalog-work.ts';
 
 export type TuneRunOption = Readonly<{
     key: string;
@@ -31,6 +46,7 @@ export type TuneRunOption = Readonly<{
     performance?: DistributedRunPerformanceAnalysis;
     identity: TuneIdentitySurfaces;
     pairStatus: 'paired' | 'missing' | 'ambiguous';
+    manifestValidation: 'validated' | 'selection-required';
     manifestAuthority?: 'authoritative' | 'summary-projection';
     recipeIdentityComplete?: boolean;
     controlEvidence?: TuneRunEvidence;
@@ -57,26 +73,43 @@ export type TuneQuarantinedRun = Readonly<{
 
 export type TuneRunCatalog = Readonly<{
     options: readonly TuneRunOption[];
+    optionsByDistributedRunId: ReadonlyMap<string, TuneRunOption>;
     quarantined: readonly TuneQuarantinedRun[];
+    includePerformanceEvidence: boolean;
+    retainedFacadeManifestValidation?: TuneFacadeManifestValidation;
+    work: TuneRunCatalogWork;
 }>;
 
 export function buildTuneRunCatalog(_input: Readonly<{
     distributedRuns: readonly ControlDistributedRunSnapshot[];
     controlRuns: readonly ControlRunSnapshot[];
     includePerformanceEvidence?: boolean;
-    retainedArtifact?: AnalyzeArtifactModel;
+    retainedArtifact?: import('../analyze/analyze-artifact-model.ts').AnalyzeArtifactModel;
     retainedArtifactStatus?: 'idle' | 'pending' | 'ready' | 'error';
     retainedArtifactFocusRunId?: string;
     retainedFacade?: AnalyzeTuneArtifactFacade;
+    performanceRunIds?: readonly string[];
 }>): TuneRunCatalog {
     const input = _input;
-    const controlGroups = groupBy(input.controlRuns, run => run.runId);
-    const distributedGroups = groupBy(input.distributedRuns, run => run.distributedRunId);
+    const work = createTuneRunCatalogWork();
+    const includePerformanceEvidence = input.includePerformanceEvidence !== false;
+    const performanceRunIds = boundedTunePerformanceRunIds(input.performanceRunIds);
+    const controlGroups = indexTuneRows(
+        input.controlRuns,
+        run => run.runId,
+        () => { work.controlRowsIndexed += 1; },
+    );
+    const distributedGroups = indexTuneRows(
+        input.distributedRuns,
+        run => run.distributedRunId,
+        () => { work.distributedRowsIndexed += 1; },
+    );
     const ambiguousDistributedIds = new Set(
         [...distributedGroups].filter(([, rows]) => rows.length !== 1).map(([id]) => id),
     );
     const options = new Map<string, TuneRunOption>();
     const quarantined = new Map<string, Omit<TuneQuarantinedRun, 'key'>>();
+    let retainedFacadeManifestValidation: TuneFacadeManifestValidation | undefined;
     const quarantine = (
         distributedRunId: string,
         controlRunId: string | undefined,
@@ -87,17 +120,27 @@ export function buildTuneRunCatalog(_input: Readonly<{
         quarantined.set(identityKey, { distributedRunId, controlRunId, codes, issues });
     };
 
-    for (const [distributedRunId, rows] of [...distributedGroups].sort(([left], [right]) =>
-        left.localeCompare(right)
-    )) {
+    for (const [distributedRunId, rows] of distributedGroups) {
+        work.distributedIdentitiesVisited += 1;
         if (rows.length !== 1) {
             quarantine(distributedRunId, undefined, ['ambiguous-run'],
                 ['Duplicate distributed run identity is ambiguous.']);
             continue;
         }
         const distributedRun = rows[0];
+        work.identityProjections += 1;
         const identity = projectTuneIdentitySurfaces(distributedRun);
-        const manifestIssues = distributedRunManifestSafetyIssues(distributedRun);
+        work.manifestIdentityChecks += 1;
+        const identityIssues = distributedRunManifestIdentityIssues(distributedRun);
+        const validatesManifest = performanceRunIds === undefined ||
+            performanceRunIds.has(distributedRunId);
+        if (validatesManifest) work.manifestValidations += 1;
+        const manifestIssues = [
+            ...identityIssues,
+            ...(validatesManifest
+                ? distributedRunManifestContractIssues(distributedRun)
+                : []),
+        ];
         if (
             identity.quarantined || !identity.controlRunId || !identity.reactKey ||
             manifestIssues.length > 0
@@ -114,12 +157,18 @@ export function buildTuneRunCatalog(_input: Readonly<{
             );
             continue;
         }
+        work.controlPairLookups += 1;
         const controlRows = controlGroups.get(distributedRun.controlRunId) ?? [];
         const pairStatus = controlRows.length === 1
             ? 'paired' as const
             : controlRows.length === 0 ? 'missing' as const : 'ambiguous' as const;
         const controlRun = pairStatus === 'paired' ? controlRows[0] : undefined;
-        const performance = controlRun && input.includePerformanceEvidence !== false
+        const derivesPerformance = Boolean(
+            controlRun && includePerformanceEvidence &&
+            (performanceRunIds === undefined || performanceRunIds.has(distributedRunId)),
+        );
+        if (derivesPerformance) work.performanceDerivations += 1;
+        const performance = controlRun && derivesPerformance
             ? deriveDistributedRunSnapshotPerformance({ distributedRun, controlRun })
             : undefined;
         const controlEvidence: TuneRunEvidence = {
@@ -135,107 +184,52 @@ export function buildTuneRunCatalog(_input: Readonly<{
             performance,
             identity,
             pairStatus,
+            manifestValidation: validatesManifest
+                ? 'validated'
+                : 'selection-required',
             controlEvidence,
         });
     }
 
     const artifact = input.retainedArtifact;
     if (artifact) {
-        const distributedRun = artifact.snapshots.distributedRun;
-        const controlRun = artifact.snapshots.controlRun;
-        const artifactAuthoritative = input.retainedArtifactStatus === 'ready' &&
-            artifact.workspace.support === 'supported' &&
-            input.retainedArtifactFocusRunId !== undefined &&
-            retainedTuneArtifactIdentityMatches(
-                artifact,
-                input.retainedArtifactFocusRunId,
-                distributedRun.controlRunId,
-            );
-        const identity = projectTuneIdentitySurfaces({
-            distributedRunId: artifact.identity.distributedRunId,
-            controlRunId: artifact.identity.controlRunId ?? distributedRun.controlRunId,
+        work.retainedArtifactProjections += 1;
+        work.manifestIdentityChecks += 1;
+        work.retainedArtifactManifestValidations += 1;
+        const projection = projectTuneRetainedArtifactCatalog({
+            artifact,
+            artifactStatus: input.retainedArtifactStatus,
+            artifactFocusRunId: input.retainedArtifactFocusRunId,
+            current: options.get(artifact.snapshots.distributedRun.distributedRunId),
+            distributedIdentityIsAmbiguous: ambiguousDistributedIds.has(
+                artifact.snapshots.distributedRun.distributedRunId,
+            ),
         });
-        const manifestIssues = distributedRunManifestSafetyIssues(distributedRun);
-        if (
-            ambiguousDistributedIds.has(distributedRun.distributedRunId) ||
-            identity.quarantined || !identity.controlRunId || !identity.reactKey ||
-            manifestIssues.length > 0 ||
-            controlRun.runId !== distributedRun.controlRunId
-        ) {
+        if (projection.kind === 'quarantine') {
             quarantine(
-                artifact.identity.distributedRunId,
-                artifact.identity.controlRunId,
-                ambiguousDistributedIds.has(distributedRun.distributedRunId)
-                    ? ['ambiguous-run']
-                    : manifestIssues.length > 0
-                    ? ['invalid-manifest']
-                    : identity.quarantined || !identity.controlRunId || !identity.reactKey
-                    ? ['unsafe-identity']
-                    : ['identity-conflict'],
-                identity.quarantined
-                    ? identity.issues
-                    : manifestIssues.length > 0
-                    ? manifestIssues
-                    : ['Retained artifact identity or manifest is ambiguous.'],
+                projection.distributedRunId,
+                projection.controlRunId,
+                projection.codes,
+                projection.issues,
             );
         } else {
-            const current = options.get(distributedRun.distributedRunId);
-            if (current && current.controlRunId !== distributedRun.controlRunId) {
-                quarantine(
-                    distributedRun.distributedRunId,
-                    distributedRun.controlRunId,
-                    ['identity-conflict'],
-                    ['Retained artifact control identity conflicts with control evidence.'],
-                );
-            } else {
-                const artifactEvidence = {
-                    distributedRun,
-                    controlRun,
-                    analysis: artifact.analysis,
-                    performance: artifact.analysis.performance,
-                    pairStatus: 'paired' as const,
-                };
-                const artifactOption: TuneRunOption = {
-                    key: identity.reactKey,
-                    distributedRunId: distributedRun.distributedRunId,
-                    controlRunId: distributedRun.controlRunId,
-                    source: current ? 'artifact+control' : 'artifact',
-                    distributedRun,
-                    controlRun,
-                    analysis: artifact.analysis,
-                    performance: artifact.analysis.performance,
-                    identity,
-                    pairStatus: 'paired',
-                    controlEvidence: current?.controlEvidence,
-                    artifactEvidence,
-                };
-                if (artifactAuthoritative) {
-                    options.set(distributedRun.distributedRunId, artifactOption);
-                } else if (current) {
-                    options.set(distributedRun.distributedRunId, {
-                        ...current,
-                        artifactEvidence,
-                    });
-                } else {
-                    options.set(distributedRun.distributedRunId, {
-                        ...artifactOption,
-                        controlRun: undefined,
-                        analysis: undefined,
-                        performance: undefined,
-                        pairStatus: 'missing',
-                    });
-                }
-            }
+            options.set(projection.option.distributedRunId, projection.option);
         }
     }
 
     if (input.retainedFacade) {
+        work.retainedFacadeProjections += 1;
         const facade = input.retainedFacade;
+        retainedFacadeManifestValidation =
+            projectTuneFacadeManifestValidation(facade);
+        work.retainedFacadeManifestValidations +=
+            retainedFacadeManifestValidation.validationCount;
         const projection = projectTuneFacadeCatalog({
             facade,
             current: options.get(facade.identity.distributedRunId),
             distributedIdentityIsAmbiguous:
                 ambiguousDistributedIds.has(facade.identity.distributedRunId),
+            manifestValidation: retainedFacadeManifestValidation,
         });
         if (projection.kind === 'quarantine') {
             quarantine(
@@ -254,42 +248,17 @@ export function buildTuneRunCatalog(_input: Readonly<{
             right.distributedRun.updatedAtEpochMs - left.distributedRun.updatedAtEpochMs ||
             left.distributedRunId.localeCompare(right.distributedRunId)
         ),
+        optionsByDistributedRunId: options,
         quarantined: [...quarantined.values()]
             .sort((left, right) =>
                 left.distributedRunId.localeCompare(right.distributedRunId) ||
                 (left.controlRunId ?? '').localeCompare(right.controlRunId ?? '')
             )
             .map((row, index) => ({ key: `tune-quarantined:${index}`, ...row })),
+        includePerformanceEvidence,
+        ...(retainedFacadeManifestValidation === undefined
+            ? {}
+            : { retainedFacadeManifestValidation }),
+        work,
     };
-}
-
-function distributedRunManifestSafetyIssues(
-    run: ControlDistributedRunSnapshot,
-): string[] {
-    try {
-        const identityIssues = [
-            run.manifest.distributedRunId === run.distributedRunId
-                ? undefined
-                : 'Manifest distributed-run identity conflicts with its snapshot.',
-            run.manifest.controlRunId === run.controlRunId
-                ? undefined
-                : 'Manifest control-run identity conflicts with its snapshot.',
-        ].filter((value): value is string => value !== undefined);
-        const validation = validateDistributedRunManifest(run.manifest);
-        if (!validation.ok) {
-            const first = validation.errors[0];
-            identityIssues.push(first
-                ? `Distributed run manifest is invalid at ${first.path}: ${first.message}`
-                : 'Distributed run manifest is invalid.');
-        }
-        return identityIssues;
-    } catch {
-        return ['Distributed run manifest could not be validated safely.'];
-    }
-}
-
-function groupBy<T>(values: readonly T[], key: (value: T) => string): Map<string, T[]> {
-    const groups = new Map<string, T[]>();
-    for (const value of values) groups.set(key(value), [...(groups.get(key(value)) ?? []), value]);
-    return groups;
 }
