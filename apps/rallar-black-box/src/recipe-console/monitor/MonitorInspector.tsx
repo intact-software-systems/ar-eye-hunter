@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import type { DistributedRunProgressStatus } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import { deriveDistributedRunFailureEvidenceDestinations } from '../../distributed-recipes.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import { StatusMark, type OperationalStatus } from '../ui/StatusMark.tsx';
@@ -12,8 +11,8 @@ import {
 } from './monitor-selection.ts';
 import {
     MonitorEvidenceLinksWindow,
-    MonitorFailureDestinationsWindow,
 } from './MonitorInspectorWindow.tsx';
+import { MonitorFailureEvidence } from './MonitorFailureEvidence.tsx';
 import { MonitorRecipeEvidence } from './MonitorRecipeEvidence.tsx';
 import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
 import styles from './MonitorInspector.module.css';
@@ -22,10 +21,19 @@ export type MonitorInspectorProps = Readonly<{
     model: MonitorWorkspaceModel;
     selection?: MonitorEvidenceSelection;
     legacyHref: string;
+    sourceSearch: string;
+    urlState: RecipeConsoleUrlState;
     onSelectEvidence(selection: MonitorEvidenceSelection, patch?: Partial<RecipeConsoleUrlState>): void;
 }>;
 
-export function MonitorInspector({ model, selection, legacyHref, onSelectEvidence }: MonitorInspectorProps) {
+export function MonitorInspector({
+    model,
+    selection,
+    legacyHref,
+    sourceSearch,
+    urlState,
+    onSelectEvidence,
+}: MonitorInspectorProps) {
     const active = selection ?? defaultSelection(model);
     const heading = active ? `${labelKind(active.kind)} evidence` : 'Run evidence';
     return (
@@ -36,7 +44,13 @@ export function MonitorInspector({ model, selection, legacyHref, onSelectEvidenc
                 <ExactIdentifier value={monitorEvidenceSelectionIdentifier(active) ?? model.monitor.distributedRunId} />
                 <StatusMark label={statusLabel(model, active)} status={selectionStatus(model, active)} />
             </header>
-            {active ? selectedEvidence(model, active, onSelectEvidence) : (
+            {active ? selectedEvidence(
+                model,
+                active,
+                onSelectEvidence,
+                sourceSearch,
+                urlState,
+            ) : (
                 <p className={styles.empty}>No inspectable evidence is available yet.</p>
             )}
             <a className={styles.legacyLink} href={legacyHref}>Open this run in legacy Runs</a>
@@ -45,9 +59,16 @@ export function MonitorInspector({ model, selection, legacyHref, onSelectEvidenc
 }
 
 function selectedEvidence(model: MonitorWorkspaceModel, selection: MonitorEvidenceSelection,
-    onSelect: MonitorInspectorProps['onSelectEvidence']): ReactNode {
+    onSelect: MonitorInspectorProps['onSelectEvidence'], sourceSearch: string,
+    urlState: RecipeConsoleUrlState): ReactNode {
     switch (selection.kind) {
-        case 'failure': return <FailureView model={model} failureKey={selection.id} onSelect={onSelect} />;
+        case 'failure': return <MonitorFailureEvidence
+            failureKey={selection.id}
+            model={model}
+            onSelectEvidence={onSelect}
+            sourceSearch={sourceSearch}
+            urlState={urlState}
+        />;
         case 'agent': return agentView(model, selection.id);
         case 'recipe': return <MonitorRecipeEvidence
             model={model}
@@ -60,48 +81,6 @@ function selectedEvidence(model: MonitorWorkspaceModel, selection: MonitorEviden
         case 'event': return eventView(model, selection.id);
         case 'artifact': return artifactView(model);
     }
-}
-
-function FailureView({ model, failureKey, onSelect }: Readonly<{
-    model: MonitorWorkspaceModel;
-    failureKey: string;
-    onSelect: MonitorInspectorProps['onSelectEvidence'];
-}>) {
-    const failure = model.monitor.failures.find(row => row.key === failureKey);
-    if (!failure) return <MissingEvidence kind="failure" id={failureKey} />;
-    const explanation = model.report.nextActions.find(action => action.evidence.includes(failure.key));
-    const destinations = deriveDistributedRunFailureEvidenceDestinations({ failure, monitor: model.monitor });
-    return <>
-        <section className={styles.callout} data-minimal-fix>
-            <h3>{explanation?.title ?? 'Selected distributed failure'}</h3>
-            <p>{failure.message}</p>
-            <Facts values={[
-                ['Agent', failure.agentId ?? 'Run scope'], ['Recipe', failure.recipeId ?? 'Run rollup'],
-                ['Command', failure.commandId ?? 'No command link'], ['Code', failure.code ?? 'No error code'],
-                ['Observed', formatEpoch(failure.atEpochMs)],
-            ]} />
-        </section>
-        <section className={styles.section}>
-            <h3>Likely cause</h3>
-            <p>{explanation?.likelyCause ?? failure.message}</p>
-        </section>
-        <section className={styles.section}>
-            <h3>Next action</h3>
-            <p>{explanation?.nextAction ?? fallbackFailureAction(failure)}</p>
-        </section>
-        <section className={styles.section}>
-            <h3>Correlated destinations <span>{destinations.length}</span></h3>
-            {destinations.length > 0 ? (
-                <MonitorFailureDestinationsWindow
-                    contentClassName={styles.destinations}
-                    contextKey={model.source.contextKey}
-                    destinations={destinations}
-                    onSelect={onSelect}
-                    scopeId={failureKey}
-                />
-            ) : <p className={styles.empty}>No directly correlated destination is available.</p>}
-        </section>
-    </>;
 }
 
 function agentView(model: MonitorWorkspaceModel, agentId: string): ReactNode {
@@ -283,11 +262,6 @@ function statusLabel(model: MonitorWorkspaceModel, selection?: MonitorEvidenceSe
     if (!selection) return 'No evidence';
     if (selection.kind === 'artifact') return model.monitor.artifact.status;
     return `${labelKind(selection.kind)} selected`;
-}
-
-function fallbackFailureAction(failure: MonitorWorkspaceModel['monitor']['failures'][number]): string {
-    const scope = failure.commandId ?? failure.recipeId ?? failure.agentId ?? failure.key;
-    return `Inspect the correlated destinations for ${scope}, then compare the failing evidence with sibling agents.`;
 }
 
 function labelKind(kind: string): string {

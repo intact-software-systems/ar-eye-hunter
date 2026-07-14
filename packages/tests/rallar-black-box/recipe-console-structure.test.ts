@@ -558,6 +558,10 @@ describe('Recipe Console experience boundary', () => {
             'design/reset.css',
             'app/RecipeConsoleWorkspace.tsx',
             'app/recipe-console-navigation.ts',
+            'advanced/advanced-workspace-contract.ts',
+            'advanced/advanced-workspace-model.ts',
+            'advanced/AdvancedWorkspace.tsx',
+            'advanced/AdvancedWorkspace.module.css',
             'shell/RecipeConsoleShell.tsx',
             'shell/RecipeConsoleShell.module.css',
             'shell/TopCommandBar.tsx',
@@ -605,6 +609,10 @@ describe('Recipe Console experience boundary', () => {
         const workspace = source(recipeConsoleWorkspacePath);
         const activeWork = source(recipeConsoleActiveWorkPath);
         expect(activeWork).toMatch(/switch\s*\(view\)/);
+        expect(activeWork).toContain(
+            "const AdvancedWorkspace = lazy(() => import('../advanced/AdvancedWorkspace.tsx'));",
+        );
+        expect(activeWork).not.toContain('AdvancedPreview');
         expect(workspace).toContain('<RecipeConsoleActiveWork');
         expect(workspace).toContain('<MonitorWorkspace');
         expect(workspace).not.toMatch(/display\s*:\s*['"]none|(?:^|\s)hidden(?:=|\s|>)/m);
@@ -612,6 +620,11 @@ describe('Recipe Console experience boundary', () => {
         expect(workspace).not.toMatch(
             /createRecipeConsoleSeedState|seeded-console-state|\bseedState\b|\bseededRevision\b/,
         );
+        expect(existsSync(resolve(
+            repositoryRoot,
+            recipeConsoleRoot,
+            'advanced/AdvancedPreview.tsx',
+        ))).toBe(false);
 
         for (const path of filesBelow(recipeConsoleRoot).filter(path => path.endsWith('.tsx'))) {
             const file = source(path);
@@ -701,6 +714,8 @@ describe('Recipe Console experience boundary', () => {
             'MonitorWindowTruth.tsx',
             'MonitorActionBand.tsx',
             'MonitorInspector.tsx',
+            'MonitorFailureEvidence.tsx',
+            'MonitorDiagnosticHandoffs.tsx',
             'MonitorInspectorWindow.tsx',
             'MonitorRecipeEvidence.tsx',
         ].map(file => `${recipeConsoleRoot}/monitor/${file}`);
@@ -712,6 +727,7 @@ describe('Recipe Console experience boundary', () => {
             'MonitorEvidence.module.css',
             'MonitorActions.module.css',
             'MonitorInspector.module.css',
+            'MonitorDiagnosticHandoffs.module.css',
             'MonitorWindowTruth.module.css',
         ].map(file => `${recipeConsoleRoot}/monitor/${file}`);
         const support = `${recipeConsoleRoot}/monitor/legacy-monitor-link.ts`;
@@ -762,7 +778,7 @@ describe('Recipe Console experience boundary', () => {
             expect(composition, owner).toContain(`<${owner}`);
         }
         expect(composition).toContain('<ControlRunCancelDialog');
-        expect(source(`${recipeConsoleRoot}/monitor/MonitorInspector.tsx`))
+        expect(source(`${recipeConsoleRoot}/monitor/MonitorFailureEvidence.tsx`))
             .toContain('deriveDistributedRunFailureEvidenceDestinations');
         expect(composition).toContain('MONITOR_ARTIFACT_EVIDENCE_ID');
         expect(composition.match(/contextKey=\{monitor\.model\.source\.contextKey\}/g))
@@ -1012,28 +1028,23 @@ describe('Recipe Console experience boundary', () => {
     });
 
     test('routes focused lazy Tune and Fleet plus Advanced through one switch', () => {
-        const focusedModules = [
-            ['advanced/AdvancedPreview.tsx', "import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';", '<AdvancedPreview'],
-        ] as const;
         const app = source(recipeConsoleActiveWorkPath);
+        const advancedPath = `${recipeConsoleRoot}/advanced/AdvancedWorkspace.tsx`;
 
         expect(existsSync(resolve(repositoryRoot, recipeConsoleActiveWorkPath))).toBe(true);
         expect(app.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(100);
-
-        for (const [path, directImport, render] of focusedModules) {
-            const absolutePath = resolve(repositoryRoot, recipeConsoleRoot, path);
-            expect(existsSync(absolutePath), path).toBe(true);
-            expect(app).toContain(directImport);
-            expect(app).toContain(render);
-            expect(source(`${recipeConsoleRoot}/${path}`)).not.toMatch(
-                /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/,
-            );
-        }
+        expect(existsSync(resolve(repositoryRoot, advancedPath))).toBe(true);
+        expect(source(advancedPath)).not.toMatch(
+            /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/,
+        );
         expect(app).toContain(
             "const TuneWorkspace = lazy(() => import('../tune/TuneWorkspace.tsx'));",
         );
         expect(app).toContain(
             "const FleetWorkspace = lazy(() => import('../fleet/FleetWorkspace.tsx'));",
+        );
+        expect(app).toContain(
+            "const AdvancedWorkspace = lazy(() => import('../advanced/AdvancedWorkspace.tsx'));",
         );
         expect(app).toMatch(
             /case 'tune':[\s\S]*<Suspense[\s\S]*<TuneWorkspace[\s\S]*<\/Suspense>/,
@@ -1041,6 +1052,14 @@ describe('Recipe Console experience boundary', () => {
         expect(app).toMatch(
             /case 'fleet':[\s\S]*<Suspense[\s\S]*<FleetWorkspace[\s\S]*<\/Suspense>/,
         );
+        expect(app).toMatch(
+            /case 'advanced':[\s\S]*<Suspense[\s\S]*<AdvancedWorkspace[\s\S]*<\/Suspense>/,
+        );
+        expect(existsSync(resolve(
+            repositoryRoot,
+            recipeConsoleRoot,
+            'advanced/AdvancedPreview.tsx',
+        ))).toBe(false);
         expect(existsSync(resolve(
             repositoryRoot,
             recipeConsoleRoot,

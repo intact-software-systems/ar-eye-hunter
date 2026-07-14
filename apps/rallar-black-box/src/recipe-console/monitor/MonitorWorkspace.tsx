@@ -60,12 +60,15 @@ export function MonitorWorkspace({
         () => effectiveSelection(monitor.model, monitor.state.evidenceSelection),
         [monitor.model, monitor.state.evidenceSelection],
     );
+    const sourceSearch = typeof window === 'undefined'
+        ? ''
+        : window.location.search;
     const legacyHref = useMemo(
         () => createLegacyMonitorHref(
             urlState,
-            typeof window === 'undefined' ? '' : window.location.search,
+            sourceSearch,
         ),
-        [urlState],
+        [sourceSearch, urlState],
     );
     const selectFromInspector = useCallback((
         next: MonitorEvidenceSelection,
@@ -77,8 +80,17 @@ export function MonitorWorkspace({
             model={monitor.model}
             onSelectEvidence={selectFromInspector}
             selection={evidenceSelection}
+            sourceSearch={sourceSearch}
+            urlState={urlState}
         />
-    ) : undefined, [evidenceSelection, legacyHref, monitor.model, selectFromInspector]);
+    ) : undefined, [
+        evidenceSelection,
+        legacyHref,
+        monitor.model,
+        selectFromInspector,
+        sourceSearch,
+        urlState,
+    ]);
 
     useEffect(() => {
         onInspectorChange(inspector);

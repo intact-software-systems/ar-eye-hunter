@@ -57,9 +57,6 @@ export function createAdvancedLegacyHref({
         'provider',
         PROVIDERS,
     ));
-    for (const [sourceField, targetField] of SOURCE_CONTEXT_FIELDS) {
-        appendBounded(params, targetField, singleParam(source, sourceField));
-    }
     for (const field of RUN_CONTEXT_FIELDS) {
         appendBounded(params, field, state[field]);
     }
@@ -68,6 +65,9 @@ export function createAdvancedLegacyHref({
         'transport',
         allowedValue(state.transport, RECIPE_CONSOLE_TRANSPORTS),
     );
+    for (const [sourceField, targetField] of SOURCE_CONTEXT_FIELDS) {
+        appendBounded(params, targetField, singleParam(source, sourceField));
+    }
 
     return `/?${params.toString()}`;
 }

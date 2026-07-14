@@ -1,10 +1,4 @@
-import {
-    useCallback,
-    useEffect,
-    useRef,
-    useState,
-    type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnalyzeWorkspace } from '../analyze/AnalyzeWorkspace.tsx';
 import { useAnalyzeWorkspace } from '../analyze/use-analyze-workspace.ts';
 import { ControlCommandContext } from '../control/ControlCommandContext.tsx';
@@ -105,6 +99,12 @@ export function RecipeConsoleWorkspace() {
     );
     const work = (
         <RecipeConsoleActiveWork
+            advanced={{
+                sourceSearch: window.location.search,
+                selection: control.selection,
+                urlIssues: urlState.issues,
+                urlState: urlState.state,
+            }}
             analyzeWork={analyzeWork}
             executeWork={executeWork}
             fleet={{

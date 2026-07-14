@@ -1,7 +1,8 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import type { ControlServerSnapshot } from
     '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';
+import type { AdvancedWorkspaceProps } from
+    '../advanced/advanced-workspace-contract.ts';
 import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
 import type {
     RecipeConsoleControlQueryProvenance,
@@ -18,6 +19,7 @@ import { StatePanel } from '../ui/StatePanel.tsx';
 
 const TuneWorkspace = lazy(() => import('../tune/TuneWorkspace.tsx'));
 const FleetWorkspace = lazy(() => import('../fleet/FleetWorkspace.tsx'));
+const AdvancedWorkspace = lazy(() => import('../advanced/AdvancedWorkspace.tsx'));
 
 type TuneWorkInput = Readonly<{
     query: ControlQuerySnapshot<
@@ -41,6 +43,7 @@ type TuneWorkInput = Readonly<{
 }>;
 
 export function RecipeConsoleActiveWork({
+    advanced,
     analyzeWork,
     executeWork,
     fleet,
@@ -48,6 +51,7 @@ export function RecipeConsoleActiveWork({
     tune,
     view,
 }: Readonly<{
+    advanced: AdvancedWorkspaceProps;
     analyzeWork: ReactNode;
     executeWork: ReactNode;
     fleet: FleetWorkspaceProps;
@@ -83,6 +87,14 @@ export function RecipeConsoleActiveWork({
                 </Suspense>
             );
         case 'advanced':
-            return <AdvancedPreview />;
+            return (
+                <Suspense fallback={(
+                    <StatePanel kind="empty" title="Loading Advanced tools">
+                        <p>The bounded legacy-tool catalog is loading.</p>
+                    </StatePanel>
+                )}>
+                    <AdvancedWorkspace {...advanced} />
+                </Suspense>
+            );
     }
 }

@@ -55,6 +55,14 @@ describe('Recipe Console Monitor inspector windows', () => {
             model,
             onSelectEvidence,
             selection,
+            sourceSearch: '',
+            urlState: {
+                v: 1,
+                experience: 'recipe-console',
+                view: 'monitor',
+                controlRunId: 'control-run-a',
+                distributedRunId: 'distributed-run-a',
+            },
         })));
         return onSelectEvidence;
     }
@@ -352,7 +360,17 @@ function model(input: ModelCollections = {}): MonitorWorkspaceModel {
         source: {
             contextKey: input.contextKey ?? 'monitor-context-a',
             freshness: 'current',
-            controlRun: { agents: [] },
+            controlRun: { runId: 'control-run-a', agents: [] },
+            distributedRun: {
+                distributedRunId: 'distributed-run-a',
+                manifest: {
+                    group: {
+                        applicationId: 'application-a',
+                        workspaceId: 'workspace-a',
+                        groupId: 'group-a',
+                    },
+                },
+            },
         },
         monitor: {
             distributedRunId: 'distributed-run-a',
