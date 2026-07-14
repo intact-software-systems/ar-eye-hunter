@@ -14,6 +14,7 @@ export type RecipeConsoleAnalyzeFixture = Readonly<{
     runRequestCount(): number;
     distributedRunRequestCount(): number;
     setArtifactResponse(artifact: ControlDistributedRunArtifactBundle): void;
+    failNextArtifactResponse(status: number, body: unknown): void;
     deferNextArtifactResponse(): void;
     waitForDeferredArtifactRequest(): Promise<void>;
     releaseDeferredArtifactResponse(): void;
@@ -29,6 +30,10 @@ export async function installRecipeConsoleAnalyzeFixture(
     let artifactReads = 0;
     let runReads = 0;
     let distributedRunReads = 0;
+    let nextArtifactFailure: Readonly<{
+        status: number;
+        body: unknown;
+    }> | undefined;
     let deferArtifactResponse = false;
     let markDeferredArtifactStarted = (): void => {};
     let releaseDeferredArtifact = (): void => {};
@@ -61,10 +66,16 @@ export async function installRecipeConsoleAnalyzeFixture(
             /^\/distributed-runs\/[^/]+\/artifacts$/.test(url.pathname)
         ) {
             artifactReads += 1;
+            const failure = nextArtifactFailure;
+            nextArtifactFailure = undefined;
             if (deferArtifactResponse) {
                 deferArtifactResponse = false;
                 markDeferredArtifactStarted();
                 await deferredArtifactGate;
+            }
+            if (failure) {
+                await fulfillJson(route, failure.body, failure.status);
+                return;
             }
             await fulfillJson(route, artifactResponse);
             return;
@@ -80,6 +91,9 @@ export async function installRecipeConsoleAnalyzeFixture(
         runRequestCount: () => runReads,
         distributedRunRequestCount: () => distributedRunReads,
         setArtifactResponse: next => { artifactResponse = next; },
+        failNextArtifactResponse: (status, body) => {
+            nextArtifactFailure = { status, body };
+        },
         deferNextArtifactResponse: () => { deferArtifactResponse = true; },
         waitForDeferredArtifactRequest: () => deferredArtifactStarted,
         releaseDeferredArtifactResponse: releaseDeferredArtifact,

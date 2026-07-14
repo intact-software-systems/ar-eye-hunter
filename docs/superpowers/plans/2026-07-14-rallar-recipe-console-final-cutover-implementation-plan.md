@@ -297,8 +297,13 @@ stylesheet.
 - Modify: `tests/playwright/rallar-black-box/recipe-console-status-semantics.spec.ts`
 - Modify: `tests/playwright/rallar-black-box/recipe-console-analyze-safety.spec.ts`
 - Modify: `tests/playwright/rallar-black-box/recipe-console-analyze-fixture.ts`
-- Modify only if RED proves a production gap:
-  `apps/rallar-black-box/src/recipe-console/analyze/**`
+- Modify after the broader keyboard gate exposed the real scroll owner:
+  `tests/playwright/rallar-black-box/recipe-console-fleet.spec.ts`
+  `apps/rallar-black-box/src/recipe-console/fleet/FleetWorkspace.tsx`
+- Modify if contrast RED proves the measured token gap:
+  `apps/rallar-black-box/src/recipe-console/design/tokens.css`
+- Modify only if artifact RED proves the response-projection gap:
+  `apps/rallar-black-box/src/recipe-console/analyze/analyze-workspace-policy.ts`
 
 **Interfaces:**
 
@@ -306,28 +311,60 @@ stylesheet.
 - Produces: executable WCAG contrast evidence and an accessible Control artifact
   404 state that retains prior usable evidence without inventing data.
 
-- [ ] Add pure test-local RGB parsing, relative luminance, and contrast-ratio
+- [x] Add pure test-local RGB parsing, relative luminance, and contrast-ratio
   helpers. For every running/passed/failed/warning/stale/partial/disabled mark,
   assert text/background at least 4.5:1 and border/background at least 3:1.
-  Also assert the selected primary navigation foreground/background and focus
-  outline contrast at least 3:1.
-- [ ] RED an Analyze safety case that first loads a valid Control artifact,
+  Also assert selected primary-navigation text/background at least 4.5:1 and
+  its border/background and focus-outline/surrounding-background at least 3:1.
+- [x] RED an Analyze safety case that first loads a valid Control artifact,
   configures the fixture's next artifact request to return 404, clicks the
   visible load action, and expects `Needs attention`, an accessible error that
   names unavailable/missing evidence without leaking a response body, the
   previous verdict/evidence still visible, and no fabricated replacement
   identity.
-- [ ] Run the focused spec and verify it fails only because the fixture lacks a
-  one-shot HTTP failure or because production mishandles that observable state.
-- [ ] Add a one-shot `failNextArtifactResponse(status, body)` fixture seam. If
+- [x] Run both focused specs before production edits. Verify contrast RED names
+  the actual failing rendered token/ratio, and artifact RED fails only because
+  the fixture lacks a one-shot HTTP failure or production exposes/mishandles
+  that observable state.
+- [x] Add a one-shot `failNextArtifactResponse(status, body)` fixture seam. If
   production already meets the acceptance, make no production change. If not,
   apply the smallest Analyze state/controller fix and keep derivation outside
   React.
-- [ ] Run status, Analyze safety, all operational-state cases, responsive CSS,
+- [x] Run status, Analyze safety, all operational-state cases, responsive CSS,
   and app typecheck.
-- [ ] Dispatch fresh Task 3 specification and code-quality reviewers. Fix every
+- [x] When that broader gate exposes a keyboard-focus gap on the actual
+  short-landscape Fleet scroll owner, reproduce it alone, target the named
+  scroll region in the acceptance, and add only semantic focus ownership.
+- [x] Dispatch fresh Task 3 specification and code-quality reviewers. Fix every
   Critical or Important finding test-first and re-review before advancing.
-- [ ] Commit `test: prove final operational accessibility`.
+- [x] Commit `test: prove final operational accessibility`.
+
+### Task 3 qualification — 2026-07-14
+
+- Contrast RED measured the disabled status border at 1.2506:1; the scoped
+  token change to `#7A8492` raises it to 3.3418:1. All seven rendered status
+  text/background pairs pass 4.5:1, their borders pass 3:1, selected normal-size
+  navigation text passes 4.5:1, and its border and focus outline pass 3:1.
+- Analyze RED exposed the fixture's private 404 response sentinel verbatim.
+  The one-shot failure is consumed before its optional defer gate, and only a
+  canonical Control artifact 404 now projects a fixed unavailable-artifact
+  message. Prior provenance, verdict, evidence, URL identity, and legacy link
+  remain exact; fabricated response identities never reach visible copy.
+- Focused Task 3 browser acceptance passes 13/13, Analyze policy unit coverage
+  passes 5/5, and app TypeScript plus diff-check pass.
+- The first broader operational/responsive/CSS run passed 36/37 and isolated a
+  pre-existing Fleet short-landscape keyboard gap: the real 32,785px scroll
+  owner was not focusable. The refined acceptance failed 0/1 on the missing
+  `tabindex`, then passed 1/1 after the named region received semantic focus
+  ownership. The exact broader gate now passes 37/37; existing global
+  `:focus-visible` styling supplies the visible outline without new CSS.
+- The specification review's 3:1 selected-text threshold finding was closed by
+  the correct 4.5:1 normal-text assertion and matching plan language; re-review
+  and a fresh code-quality/privacy/accessibility review report no Critical or
+  Important finding. The review's two non-blocking notes are intentionally
+  retained: the real browser pipeline, rather than a duplicate unit assertion,
+  owns 404 privacy proof, and the single named Fleet region remains a tab stop
+  outside short landscape so its landmark is consistently keyboard reachable.
 
 ## Task 4: Fresh Qualification, Reviews, And Cutover Records
 

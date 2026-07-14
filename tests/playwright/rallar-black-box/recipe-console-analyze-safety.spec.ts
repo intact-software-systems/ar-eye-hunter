@@ -113,7 +113,9 @@ test('rejects a multibyte search over the URL byte budget without stale filter a
     await chooseAnalyzeFiles(page, createAnalyzeLooseFiles());
     await expect(artifactStatus(page)).toHaveText('Artifact ready');
     const search = analyzeSearch(page);
-    const priorEvidenceCount = await search.locator('[data-evidence-result]').count();
+    const priorEvidence = search.locator('[data-evidence-result]');
+    await expect(priorEvidence).not.toHaveCount(0);
+    const priorEvidenceCount = await priorEvidence.count();
     const oversized = '界'.repeat(2_000);
 
     await search.getByLabel('Search evidence').fill(oversized);
@@ -144,6 +146,78 @@ test('announces Control artifact loading and ready completion', async ({ context
     }
     await expect(artifactStatus(page)).toHaveText('Artifact ready');
     await expect(analyzePoliteAnnouncement(page)).toContainText('Control artifact ready');
+});
+
+test('retains prior Control evidence when its artifact disappears without exposing response details', async ({
+    context,
+    page,
+}) => {
+    const fixture = await installRecipeConsoleAnalyzeFixture(context);
+    await page.goto(ANALYZE_CONTROL_ROUTE);
+    const loadArtifact = page.locator('[data-analyze-load-artifact]');
+    await loadArtifact.click();
+    await expect(artifactStatus(page)).toHaveText('Artifact ready');
+
+    const provenance = analyzeSource(page).locator('[data-analyze-provenance]');
+    const verdict = analyzeVerdict(page);
+    const evidence = analyzeSearch(page).locator('[data-evidence-result]');
+    await expect(provenance).toContainText(
+        `Control artifact ${ANALYZE_DISTRIBUTED_RUN_ID}`,
+    );
+    await expect(verdict).toContainText(ANALYZE_FAILURE_MESSAGE);
+    await expect(evidence).not.toHaveCount(0);
+    const retainedProvenance = await provenance.innerText();
+    const retainedVerdict = await verdict.innerText();
+    const retainedEvidence = await evidence.allInnerTexts();
+    const retainedUrl = page.url();
+    const retainedLegacyHref = await analyzeLegacyRunsLink(page).getAttribute('href');
+
+    const privateSentinel = 'PRIVATE_CONTROL_ARTIFACT_404_SENTINEL';
+    const fabricatedControlRunId = 'fabricated-private-control';
+    const fabricatedDistributedRunId = 'fabricated-private-distributed';
+    fixture.failNextArtifactResponse(404, {
+        error: `${privateSentinel}: ${fabricatedControlRunId}/${fabricatedDistributedRunId}`,
+        controlRunId: fabricatedControlRunId,
+        distributedRunId: fabricatedDistributedRunId,
+    });
+    fixture.deferNextArtifactResponse();
+    const readsBeforeFailure = fixture.artifactRequestCount();
+    await loadArtifact.click();
+    await fixture.waitForDeferredArtifactRequest();
+    try {
+        await expect(artifactStatus(page)).toHaveText('Loading');
+        await expect(analyzePoliteAnnouncement(page)).toContainText(
+            'Control artifact load started',
+        );
+    } finally {
+        fixture.releaseDeferredArtifactResponse();
+    }
+    await expect.poll(fixture.artifactRequestCount).toBeGreaterThan(
+        readsBeforeFailure,
+    );
+
+    await expect(artifactStatus(page)).toHaveText('Needs attention');
+    await expect(operationError(page)).toHaveAttribute('role', 'alert');
+    await expect(operationError(page)).toHaveText(
+        'Previous analysis retained. The selected Control artifact is unavailable. It may have expired or been removed.',
+    );
+    await expect(analyzePoliteAnnouncement(page)).toHaveText(
+        'Control artifact load failed. Previous analysis retained.',
+    );
+    expect(await provenance.innerText()).toBe(retainedProvenance);
+    expect(await verdict.innerText()).toBe(retainedVerdict);
+    expect(await evidence.allInnerTexts()).toEqual(retainedEvidence);
+    expect(page.url()).toBe(retainedUrl);
+    expect(await analyzeLegacyRunsLink(page).getAttribute('href'))
+        .toBe(retainedLegacyHref);
+    const retainedIdentity = new URL(page.url()).searchParams;
+    expect(retainedIdentity.get('controlRunId')).toBe(ANALYZE_CONTROL_RUN_ID);
+    expect(retainedIdentity.get('distributedRunId'))
+        .toBe(ANALYZE_DISTRIBUTED_RUN_ID);
+    const visibleCopy = await page.locator('body').innerText();
+    expect(visibleCopy).not.toContain(privateSentinel);
+    expect(visibleCopy).not.toContain(fabricatedControlRunId);
+    expect(visibleCopy).not.toContain(fabricatedDistributedRunId);
 });
 
 test('rejects a dropped artifact without reading it while Control loading is busy', async ({ context, page }) => {

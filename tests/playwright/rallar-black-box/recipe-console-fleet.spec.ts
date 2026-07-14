@@ -549,12 +549,16 @@ async function expectShortLandscapeEvidenceReachable(
     expectFleetScrollAtBottom('wheel', wheel);
 
     await resetFleetScrollOwner(fleet);
-    await fleet.getByRole('button').first().focus();
-    let keyboard = await readFleetScrollMetrics(page);
-    for (let keypress = 0; keypress < 40 && !fleetScrollAtBottom(keyboard); keypress += 1) {
-        await page.keyboard.press('End');
-        keyboard = await readFleetScrollMetrics(page);
-    }
+    await expect(fleet).toHaveAttribute('tabindex', '0');
+    await expect(fleet).toHaveRole('region');
+    await expect(fleet).toHaveAccessibleName('Fleet evidence');
+    await fleet.focus();
+    await expect(fleet).toBeFocused();
+    await page.keyboard.press('End');
+    await expect.poll(async () => fleetScrollAtBottom(
+        await readFleetScrollMetrics(page),
+    )).toBe(true);
+    const keyboard = await readFleetScrollMetrics(page);
     expectFleetScrollAtBottom('keyboard', keyboard);
 
     await resetFleetScrollOwner(fleet);

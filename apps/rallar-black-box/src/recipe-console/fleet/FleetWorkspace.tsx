@@ -11,9 +11,12 @@ export default function FleetWorkspace(props: FleetWorkspaceProps) {
     useFleetInspectionHost(props, workspace, actions);
     return (
         <div
+            aria-label="Fleet evidence"
             className={styles.workspace}
             data-fleet-workspace
             data-preview-view="fleet"
+            role="region"
+            tabIndex={0}
         >
             <FleetWorkspaceEvidence
                 actions={actions}
