@@ -54,16 +54,11 @@ export function RecipeConsoleShell({
     const showInspector = Boolean(inspectorContent) && inspectorOpen;
     const showSelectionDock = selectionDockContent !== undefined &&
         onSelectionDockInspect !== undefined;
-    const restoreInspectorFallback = useCallback(() => {
-        for (const target of [
-            inspectorRestoreFocusFallback,
-            restoreFocusRef.current,
-            workSurfaceRef.current,
-        ]) {
-            if (target?.isConnected && !target.matches(':disabled')) return target;
-        }
-        return null;
-    }, [inspectorRestoreFocusFallback, restoreFocusRef]);
+    const restoreInspectorFallbacks = useCallback(() => [
+        inspectorRestoreFocusFallback,
+        restoreFocusRef.current,
+        workSurfaceRef.current,
+    ], [inspectorRestoreFocusFallback, restoreFocusRef]);
     return (
         <div
             className={`${styles.shell} ${showInspector ? '' : styles.withoutInspector} ${showSelectionDock ? '' : styles.withoutSelectionDock} ${urlIssues.length > 0 ? styles.withUrlIssues : ''} ${showInspector && currentView === 'monitor' ? styles.monitorInspector : ''}`}
@@ -100,7 +95,7 @@ export function RecipeConsoleShell({
                     mode={presentation.inspector}
                     onClose={onInspectorClose}
                     open
-                    restoreFocusFallback={restoreInspectorFallback}
+                    restoreFocusFallbacks={restoreInspectorFallbacks}
                     restoreFocusTo={inspectorRestoreFocus}
                 >
                     {inspectorContent}

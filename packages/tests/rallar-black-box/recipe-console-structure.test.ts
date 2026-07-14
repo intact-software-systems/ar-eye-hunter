@@ -859,14 +859,16 @@ describe('Recipe Console experience boundary', () => {
         expect(shell).toMatch(
             /inspectorRestoreFocusFallback,[\s\S]*restoreFocusRef\.current,[\s\S]*workSurfaceRef\.current/,
         );
+        expect(shell).toContain('restoreFocusFallbacks={restoreInspectorFallbacks}');
         expect(shell).toContain('aria-label="Recipe console work surface"');
 
         const overlay = source(`${recipeConsoleRoot}/ui/OverlaySheet.tsx`);
         expect(overlay).toContain("event.key === 'Escape'");
         expect(overlay).toContain("event.key !== 'Tab'");
-        expect(overlay).toContain('availableFocusTarget(restoreFocusTo)');
-        expect(overlay).toContain('restoreFocusFallback?.()');
+        expect(overlay).toContain('restoreFocusFallbacks?.()');
         expect(overlay).toContain('target.focus()');
+        expect(overlay).toContain('document.activeElement === target');
+        expect(overlay).not.toContain('queueMicrotask');
         expect(overlay).toContain('querySelectorAll<HTMLElement>(FOCUSABLE)');
     });
 

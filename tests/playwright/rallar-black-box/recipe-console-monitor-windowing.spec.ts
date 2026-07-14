@@ -715,6 +715,98 @@ test('restores a detached multi-window disclosure trigger to its exact range anc
     await expect(timelineAnchor).not.toBeFocused();
 });
 
+test('restores a disconnected unowned trigger past the hidden dock to the named work surface', async ({
+    context,
+    page,
+}) => {
+    await page.setViewportSize({ width: 900, height: 900 });
+    await installRecipeConsoleLargeMonitorFixture(context);
+    await page.goto(LARGE_MONITOR_ROUTE);
+    await waitForLargeMonitor(page);
+
+    const artifact = page.getByRole('button', { name: /^Artifact ·/ }).first();
+    expect(await artifact.evaluate(element =>
+        element.closest('[data-monitor-window-owner]') === null
+    )).toBe(true);
+    await artifact.click();
+
+    const inspector = page.getByRole('dialog', { name: 'Inspector' });
+    const close = inspector.getByRole('button', { name: 'Close inspector' });
+    await expect(close).toBeFocused();
+    const dock = page.locator('[data-selection-dock]');
+    await expect(dock).toContainText('Artifact ·');
+    await expect(dock.locator('button')).toBeHidden();
+    await artifact.evaluate(element => element.remove());
+    await expect(artifact).toHaveCount(0);
+
+    await close.focus();
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(page.getByRole('main', {
+        name: 'Recipe console work surface',
+    })).toBeFocused();
+    expect(await page.evaluate(() => document.activeElement?.tagName))
+        .toBe('MAIN');
+});
+
+test('restores an unmounted disclosure owner past the hidden dock to the named work surface', async ({
+    context,
+    page,
+}) => {
+    await page.setViewportSize({ width: 900, height: 900 });
+    await installRecipeConsoleLargeMonitorFixture(context);
+    await page.goto(LARGE_MONITOR_ROUTE);
+    await waitForLargeMonitor(page);
+
+    const events = disclosure(page, 'Events');
+    await events.locator('summary').click();
+    const sourceTrigger = events.locator('[data-monitor-event-row]').first();
+    await sourceTrigger.click();
+    const inspector = page.getByRole('dialog', { name: 'Inspector' });
+    const close = inspector.getByRole('button', { name: 'Close inspector' });
+    await expect(close).toBeFocused();
+    await events.locator('summary').click();
+    await expect(sourceTrigger).toHaveCount(0);
+    await expect(events.locator(
+        '[data-monitor-window-focus-anchor="Events"]',
+    )).toHaveCount(0);
+    await expect(page.locator('[data-selection-dock] button')).toBeHidden();
+
+    await close.focus();
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(page.getByRole('main', {
+        name: 'Recipe console work surface',
+    })).toBeFocused();
+});
+
+test('restores a disconnected portrait trigger to the visible live selection dock', async ({
+    context,
+    page,
+}) => {
+    await page.setViewportSize({ width: 430, height: 932 });
+    await installRecipeConsoleLargeMonitorFixture(context);
+    await page.goto(LARGE_MONITOR_ROUTE);
+    await waitForLargeMonitor(page);
+
+    const artifact = page.getByRole('button', { name: /^Artifact ·/ }).first();
+    await artifact.click();
+    const inspector = page.getByRole('dialog', { name: 'Inspector' });
+    const close = inspector.getByRole('button', { name: 'Close inspector' });
+    await expect(close).toBeFocused();
+    const dockButton = page.locator('[data-selection-dock]')
+        .getByRole('button', { name: 'Inspect' });
+    await expect(dockButton).toBeVisible();
+    await artifact.evaluate(element => element.remove());
+    await expect(artifact).toHaveCount(0);
+
+    await close.focus();
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(page.locator('[data-selection-dock]')
+        .getByRole('button', { name: 'Inspect' })).toBeFocused();
+});
+
 test('contains exact long bidi evidence and touch window controls across desktop and mobile contracts', async ({
     browser,
 }) => {

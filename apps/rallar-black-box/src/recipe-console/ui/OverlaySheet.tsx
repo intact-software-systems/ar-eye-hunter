@@ -9,7 +9,7 @@ export type OverlaySheetProps = Readonly<{
     label: string;
     onClose(): void;
     restoreFocusTo?: HTMLElement | null;
-    restoreFocusFallback?(): HTMLElement | null;
+    restoreFocusFallbacks?(): readonly (HTMLElement | null | undefined)[];
     children: ReactNode;
 }>;
 
@@ -21,7 +21,7 @@ export function OverlaySheet({
     label,
     onClose,
     restoreFocusTo,
-    restoreFocusFallback,
+    restoreFocusFallbacks,
     children,
 }: OverlaySheetProps) {
     const hostRef = useRef<HTMLElement>(null);
@@ -39,11 +39,16 @@ export function OverlaySheet({
 
     function closeAndRestore(): void {
         onClose();
-        queueMicrotask(() => {
-            const target = availableFocusTarget(restoreFocusTo)
-                ? restoreFocusTo
-                : restoreFocusFallback?.();
-            if (availableFocusTarget(target)) target.focus();
+        requestAnimationFrame(() => {
+            const candidates = [
+                restoreFocusTo,
+                ...(restoreFocusFallbacks?.() ?? []),
+            ];
+            for (const target of candidates) {
+                if (!availableFocusTarget(target)) continue;
+                target.focus();
+                if (document.activeElement === target) return;
+            }
         });
     }
 
