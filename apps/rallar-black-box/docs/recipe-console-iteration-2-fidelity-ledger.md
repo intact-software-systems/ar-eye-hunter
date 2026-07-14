@@ -2,7 +2,8 @@
 
 Status: Iteration 2 visual direction preserved; Execute, live Monitor, offline
 Analyze, real-evidence Tune, bounded History/retention, and full Iteration 9
-large-run composition are qualified through `f8cef95`; Ready-State #10 is
+large-run composition are qualified through `f8cef95`; the Iteration 10 Fleet
+workspace is qualified through `0088be0` and `3ab86a9`; Ready-State #10 is
 code-backed
 
 Evidence date: 2026-07-14
@@ -12,15 +13,17 @@ Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
 `cc17169`, `382df72` (Iteration 7 Tune), `fd9055e`, `f762749`
 (Iteration 8 History/retention), `8c630fc` (Iteration 9 Task 6 Monitor scale),
 `796fa59`, `66a16fd`, `12999dd`, `f8cef95` (Iteration 9 scale/fidelity exit)
+and `0088be0`, `3ab86a9` (Iteration 10 Fleet)
 Approved direction: Signal Ledger (Direction A)
 
 This ledger preserves the approved Iteration 2 visual contract and its
 historical seeded Monitor/Tune evidence, then records the Iteration 4 Execute,
 Iteration 5 live Monitor, Iteration 6 Analyze, Iteration 7 Tune, and Iteration 8
 History/retention baseline advances, then records the Iteration 9 bounded
-Analyze/Monitor/History/Execute/Tune extension. It does not claim the
-unavailable configured live/Postgres acceptance, a legacy navigation hide, or
-the Iteration 12 default flip.
+Analyze/Monitor/History/Execute/Tune extension and the Iteration 10 bounded
+Fleet/geographic evidence workspace. It does not claim the unavailable
+configured live/Postgres acceptance, a legacy navigation hide, or the
+Iteration 12 default flip.
 
 ## Iteration 4 Execute fidelity addendum
 
@@ -222,6 +225,60 @@ owning range anchor, visible selection dock, then named work surface, verifying
 success before stopping. The configured-live owner is the sole skip and is not
 represented as visual or runtime pass. No legacy row, default, or cutover changed.
 
+## Iteration 10 Fleet fidelity addendum
+
+Direction A remains unchanged. The Fleet workspace follows the Signal Ledger
+order: operational/source truth, live and historical summary, repeated failure
+and timing evidence, then a secondary deterministic map and exact report/
+artifact detail. The map is never the only carrier of a conclusion or action;
+equivalent persistent HTML controls expose provenance, unresolved locations,
+candidate/rendered/omitted counts, and complete bounded traversal. Current live
+status and historical outcomes remain visually and semantically separate.
+
+Controlled terminal Playwright/System Chromium QA covers 1440×900 desktop,
+900×900 tablet, genuine-touch 430×932 portrait, and genuine-touch 932×430
+landscape; keyboard-only traversal and focus recovery; 44px touch targets;
+reduced motion; long/bidi identifiers; loading, live, partial, stale, offline,
+empty, and schema-error truth; URL copy/reload/back-forward; exact evidence
+handoffs; selected-report load/export; bounded map/window budgets; zero document
+overflow; both CSS load orders; inactive unmount/cleanup; and reciprocal chunk
+separation. The canonical Fleet owner passes 7/7, its three-case visual owner
+passes no-update 3/3, the broader Recipe Console regression matrix passes 65/65,
+and the complete Recipe Console configuration passes 179 with one exact
+configured-live skip. Legacy Fleet/navigation passes 33/33 and existing-owner
+regressions pass 28/28.
+
+Five approved Darwin baselines were inspected at original detail after semantic,
+geometry, overflow, map-budget, and interaction gates passed:
+
+- desktop:
+  `direction-a-fleet-desktop-chromium-darwin.png`, SHA-256
+  `f621428cedfdd6260826d6aacf58962a8742694ddc95bee5fa61c37c6257bcac`
+- tablet:
+  `direction-a-fleet-tablet-chromium-darwin.png`, SHA-256
+  `ead980c88f19f61dbd406342c678904590b248c83a8dad54123793a71acc39cf`
+- stale desktop:
+  `direction-a-fleet-stale-desktop-chromium-darwin.png`, SHA-256
+  `0d26b4b63e7814e0e3c89f593ee05463735de85f0390fecbbea08b72e123ff5f`
+- touch portrait:
+  `direction-a-fleet-touch-portrait-chromium-darwin.png`, SHA-256
+  `12a76900434ec94a611a9304784ad4a4fc495f334cd9d768a1fd27402e8c6bb4`
+- touch landscape:
+  `direction-a-fleet-touch-landscape-chromium-darwin.png`, SHA-256
+  `dd2b2fbe63a636941e212e7a07b25a520383f8886da2ca02c6479aca060589d8`
+
+The baselines live under
+`../../../tests/playwright/rallar-black-box/recipe-console-fleet-visual.spec.ts-snapshots/`.
+They establish no second visual direction and do not authorize a legacy hide.
+The in-app Browser was attempted first and was unavailable exactly as `Browser
+runtime unavailable after setup failure: Cannot redefine property: process`;
+terminal Playwright is the fallback, not an in-app Browser pass. Configured
+live/Postgres remains skipped, not passed, for exactly: `Set
+RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.` The
+standalone configured-live owner independently reports one skip for that same
+reason.
+
 ## Controlled environment
 
 | Item | Value |
@@ -307,6 +364,7 @@ rewritten as current evidence.
 | Live Monitor landscape, 932×430 | The keyboard-only failure-inspector and armed-Cancel paths restore focus. The matrix owns horizontal overflow while document overflow remains zero on both axes before and after the dialog path. |
 | Reduced motion | Live Monitor overlay transition duration is `0s`, animation is removed, and state remains visible. |
 | Large Monitor Task 6, desktop and true-touch portrait/landscape | Main and inspector windows traverse every stable identity without gaps/duplicates, preserve exact omission and operational truth, recover focus, keep Previous navigation URL-stable, expose 44px tap targets, disable new-control motion, and contain long bidi evidence and the short-landscape command bar without overlap or document overflow. |
+| Fleet Iteration 10, desktop/tablet/true-touch portrait/landscape | The operational summary, complete bounded evidence windows, secondary provenance-bearing map, exact handoffs, artifact load/export, URL history, keyboard/focus, 44px targets, reduced motion, long/bidi IDs, and every degraded state remain contained with zero document overflow. Five reviewed Direction A baselines pass no-update. |
 | Tune landscape, 932×430 | The Iteration 7 refresh shows retained-artifact provenance, uncommitted baseline/candidate placeholders, decision-first hints, and command/stream evidence in bounded panes. Keyboard inspection/focus restoration, 44px actions, contained scrolling, and zero document overflow pass. |
 | CSS isolation | Both load orders and Recipe Console → legacy → Recipe Console retain stable computed styles. Iteration 7 adds real Tune source, comparison, candidate, and inspector comparisons; the historical Iteration 2 system-Chrome load-order PNGs remain byte-for-byte identical (`cmp=0`, SHA-256 `39259c08719440dd98ef60898466d8a5a7b722e81b6b5e637de2481d7dc528a6`). |
 | Console/document health | A focused RED exposed the missing icon. `index.html` now declares a local SVG icon; its response is HTTP 200 with `image/svg+xml`. A fresh canonical Execute run had `consoleDiagnostics: []` and `failedResponses: []`. |
@@ -323,6 +381,12 @@ they are not counted as live-service passes.
 
 | Command | Result | Evidence |
 | --- | --- | --- |
+| Iteration 10 focused Fleet contract | Passed | 18 files and 279/279 tests covering tolerant validation, shared indexed report/geography truth, legacy parity, bounded transfer, workspace state/handoffs, UI/structure, URL state, shell composition, aliases, and experience routing. |
+| Iteration 10 complete app/shared/build gate | Passed with preserved advisory | 139 files and 1,472/1,472 app tests; shared/app TypeScript; shared configured Deno plus direct checks of all three Fleet modules; `git diff --check`; a 758-module build; and reciprocal experience closure. Fleet emits 62.26 kB JS (15.98 kB gzip) and 22.76 kB CSS (3.90 kB gzip). Only the pre-existing greater-than-500-kB `LegacyExperience` advisory remains. |
+| Iteration 10 Fleet browser and visual owners | Passed | Fleet 7/7 and visual no-update 3/3 across desktop, tablet, genuine-touch portrait/landscape, keyboard/focus, 44px targets, reduced motion, operational states, URL history, exact handoffs, artifact load/export, bounded map/windows, overflow, CSS load order, inactive cleanup, chunks, and aliases. Five SHA-256 baselines are recorded above. |
+| Iteration 10 complete Recipe Console configuration | Qualified | 179 passed and one exact configured-live skip (180 total). The broader focused Recipe Console regression matrix passed 65/65; legacy Fleet/navigation passed 33/33; existing-owner regressions passed 28/28. The standalone configured-live owner independently reported one skip. |
+| Iteration 10 in-app Browser attempt | Unavailable; not passed | Exact failure: `Browser runtime unavailable after setup failure: Cannot redefine property: process`. Terminal Playwright/System Chromium is fallback evidence. |
+| Iteration 10 configured live/Postgres owner | Skipped; not passed | Exact reason: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and apps/rallar-black-box available.` |
 | Iteration 9 Task 6 composed Vitest gate | Passed | 11 files and 226/226 tests: 28 query, 24 structure, 10 shared topology, 3 cache, 69 API, 27 Monitor state, 17 board, 26 control selection, 1 provider, 13 main-window, and 8 inspector-window. |
 | Iteration 9 Task 6 app/build/chunk gate | Passed | App TypeScript, `git diff --check`, a 655-module production build, and reciprocal `RecipeConsoleApp-D4wdYE2J.js` / `LegacyExperience-DzD-0gim.js` closure proof passed. Only the preserved greater-than-500-kB advisory remained. |
 | Iteration 9 Task 6 stable-source Chromium gate | Passed | 11/11 combined new/existing Monitor cases plus 6/6 responsive/accessibility and CSS-isolation Monitor cases. The large fixture itself passed 4/4 across desktop and genuine-touch portrait/landscape, keyboard/focus, reduced motion, operational states, exact traversal, URL stability, bounded mounts, and Direction A containment. |
@@ -587,3 +651,21 @@ proof, and final profiling. Direction A remains the sole approved visual
 baseline. No existing legacy row is hidden: all legacy surfaces retain their
 visibility, active mount policy, old deep links, rollback URLs, and operational
 fallback role, and no default/navigation/cutover changed.
+
+## Iteration 10 Fleet review verdict
+
+Independent shared-validation/analysis and geography reviews closed
+surrogate-safe identity, literal-sentinel collision, live-projection freshness,
+one-pass historical geography, and precomputed per-agent detail issues with
+focused RED/GREEN proof. Independent React/state/accessibility and browser
+reviews closed nested window focus ownership and tablet timing-grid containment.
+Final shared, geography, UI, browser, and strangler re-reviews report no
+remaining Critical or Important finding.
+
+This qualifies the bounded Recipe Console Fleet capability and its approved
+Direction A visual baseline. It does not qualify Ready-State #3, hide or cut
+over the legacy Fleet row, change the default, or retire any alias, rebuild,
+export, rollback, public export, or existing control contract. Iterations
+11–12 still own contextual Advanced diagnostics, safe lazy legacy routes and
+documented stateful exceptions, the default flip, and final desktop/mobile/
+keyboard/reduced-motion/non-hover accessibility proof.

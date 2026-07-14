@@ -1,7 +1,7 @@
 # Rallar Black Box SPA Reimplementation Plan
 
 Date: 2026-07-06
-Last reviewed: 2026-07-12
+Last reviewed: 2026-07-14
 
 ## Goal
 
@@ -409,7 +409,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
 | 8 — History, Compare, Saved Filters, Retention | **Complete** | Preview-first retention, shareable filters/presets, bounded History, comparison reuse, cleanup reconciliation, and exact copied-link/retention acceptance are qualified through `fd9055e` and `f762749`. Fresh focused/complete/server/browser/legacy gates and independent re-reviews are green; the configured live/Postgres lifecycle is explicitly skipped, not passed. Ready-State #8 and #9 are code-backed. No legacy surface is hidden or cut over. |
 | 9 — Large-Run Scale And Virtualization | **Complete** | One parsed shared pipeline, workerized Analyze, indexed Control/Monitor truth, and accessible deterministic windows now bound 15,000 artifact rows, 5,000 History/Tune pairs, 24,002 knobs, Execute/Monitor/retention pressure paths, and every mounted list. The exact production acceptance, same-machine candidate profile, 1,385-test app suite, 169 available Recipe Console browser cases, 28 legacy cases, four independent reviews, and final focus/fidelity repairs are green through `f8cef95`. Ready-State #10 is code-backed. Configured live remains an exact skip, not a pass; no legacy row, default, route, mount, public/control contract, or cutover changed. |
-| 10 — Fleet And Geographic Evidence | **In progress** | Tasks 0–4 are code-backed through `0d046ca`: tolerant shared validation, deterministic report/geographic evidence, collision-safe identities, legacy parity adapters, bounded bundle transfer, a lazy authorized one-bundle capability, and exact pending-safe Fleet selection/handoff contracts pass a stable 267-test gate plus type/Deno/review proof. The reviewed [Fleet implementation plan](../docs/superpowers/plans/2026-07-14-rallar-recipe-console-fleet-geographic-implementation-plan.md) records the mandatory shared traversal correction before Task 5. The active-only legacy fallback and aliases remain unchanged; no row is hidden or cut over. |
+| 10 — Fleet And Geographic Evidence | **Complete** | Shared indexed Fleet evidence and the lazy bounded workspace are code-backed in `0088be0`; canonical browser, responsive, CSS/chunk, alias, and five-baseline proof is code-backed in `3ab86a9`. Fresh qualification passes 279 focused tests, 1,472 complete app tests, all shared/app type and Deno gates, a 758-module build, 7/7 Fleet and 3/3 visual cases, 65/65 broader Recipe Console cases, the complete Recipe Console configuration with 179 passed and one exact configured-live skip, 33/33 legacy Fleet/navigation cases, and 28/28 existing-owner regressions. Legacy Fleet remains visible, active-only, deep-linkable, and uncut; no default or contract changed. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
 | 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
 
@@ -465,11 +465,55 @@ re-audits are clean. No default, primary navigation, legacy visibility/mount,
 alias, rollback URL, existing public import, control-server contract, or
 cutover changed.
 
-Task 5 remains open. Its repository review found that the composed shared
+At this milestone Task 5 remained open. Its repository review found that the composed shared
 analysis permanently projects only the first bounded rows and the initial
 workspace model performs a second region index. The next prerequisite is one
 shared indexed collection with complete first/middle/final window projection;
 the UI must not duplicate aggregation or claim traversal before that lands.
+
+#### Iteration 10 qualified Fleet exit — `0088be0`, `3ab86a9`
+
+Tasks 5–6 complete the shared traversal correction and replace the placeholder
+with a feature-local, lazy, active-only Fleet workspace. Live board, heatmap,
+regions, repeated failures, timing, deterministic secondary map, exact report
+and artifact evidence, and agent/run/History/Analyze handoffs all derive from
+validated shared indexes with explicit bounded windows. Current live state and
+historical outcomes remain separate; unresolved geography stays explicit and
+routes require documented endpoints. No second poll, credential owner, legacy
+import, broad stylesheet, endpoint, or required artifact file was added.
+
+Task 7 passes its canonical seven-case Fleet browser owner and the three-case
+no-update visual owner across 1440×900 desktop, 900×900 tablet, genuine-touch
+430×932 portrait and 932×430 landscape, keyboard/focus, 44px targets, reduced
+motion, long/bidi evidence, all operational states, copy/reload/back-forward,
+exact handoffs, artifact load/export, map/DOM budgets, CSS load orders, inactive
+cleanup, chunk separation, and the `fleet`, `fleet-report`, and `fleet-reports`
+legacy aliases. Five reviewed Direction A baselines and their hashes are
+recorded in the fidelity ledger.
+
+Fresh exit evidence is 279/279 focused tests across 18 files; shared
+TypeScript/configured Deno and direct Deno checks of all three Fleet modules;
+app TypeScript; a 758-module build; and reciprocal chunk closure. The emitted
+Fleet assets are 62.26 kB JavaScript (15.98 kB gzip) and 22.76 kB CSS (3.90 kB
+gzip); only the pre-existing greater-than-500-kB `LegacyExperience` advisory
+remains. The complete app suite passes 1,472/1,472 across 139 files. Browser
+qualification passes Fleet 7/7, visual no-update 3/3, broader Recipe Console
+65/65, the complete Recipe Console configuration with 179 passed and one exact
+configured-live skip, legacy Fleet/navigation 33/33, and existing-owner
+regressions 28/28.
+Independent shared, geography, React/state/accessibility, browser, and
+strangler reviews are clean after RED/GREEN fixes.
+
+The in-app Browser was unavailable exactly as `Browser runtime unavailable
+after setup failure: Cannot redefine property: process`; terminal Playwright
+is fallback evidence, not an in-app Browser pass. Configured live/Postgres is
+skipped, not passed, for exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with
+Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
+apps/rallar-black-box available.` No default, navigation row, legacy Fleet
+visibility or active-only mount, alias, rebuild/export path, rollback URL,
+public export, existing control-server contract, or cutover changed.
+Iterations 11–12 now own contextual Advanced diagnostics, safe lazy legacy
+ownership, the blank-URL default flip, and final cross-app accessibility.
 
 #### Iteration 9 Tasks 4–5 Analyze window checkpoint — `6d90061`
 

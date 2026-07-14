@@ -1,9 +1,10 @@
 # Recipe Console Product Spec
 
 Status: canonical product contract; Ready-State #2 and #4–#10 are code-backed
-through `f8cef95`; Ready-State #3 remains open for its unavailable configured-
-service execution and Ready-State #1 and #11–#14 remain owned by Iterations
-10–12
+through `f8cef95`, and the Iteration 10 Fleet capability is code-backed through
+`0088be0` and `3ab86a9`; Ready-State #3 remains open for its unavailable
+configured-service execution and Ready-State #1 and #11–#14 remain owned by
+Iterations 11–12
 Evidence date: 2026-07-14
 
 This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
@@ -390,6 +391,49 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
   apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
   Ready-State #3 remains open for that configured execution.
 - No default, primary navigation, legacy visibility/mount, deep link, rollback,
-  public export, existing control contract, or cutover changed. Fleet,
+  public export, existing control contract, or cutover changed. At this
+  checkpoint Fleet,
   Advanced diagnostics, accessibility polish, and the default flip remain
   Iterations 10–12 work.
+
+### Iteration 10 qualified Fleet exit — `0088be0`, `3ab86a9`
+
+- The canonical Fleet acceptance passes:
+  `restores fleet filters and map layers and links a failure signature to its
+  run evidence`. From visible controls an operator can identify repeatedly
+  failing agents and regions, distinguish timing correlation, traverse the
+  complete bounded live board/heatmap/region/failure/timing evidence, and
+  reach exact agent, run, History, Analyze, report, and artifact evidence.
+- The shared evidence contract tolerantly validates optional reports, keeps
+  malformed/unsupported/duplicate truth explicit, preserves live and
+  historical authority separately, indexes complete browseable collections,
+  and resolves geography only from explicit coordinates or documented
+  datacenter/region lookups. The SVG is secondary and bounded; routes require
+  explicit target-agent evidence and two resolved endpoints. Opaque artifact
+  references are never treated as URLs.
+- `fleetRegion` and `fleetMapLayers` restore exactly across copy, reload, and
+  every committed back/forward state. The Fleet route is lazy and unmounted
+  while inactive, imports no legacy panel, consumes the single root query, and
+  adds no poll or credential owner. Direction A passes desktop, tablet,
+  genuine-touch portrait/landscape, keyboard/focus, 44px targets, reduced
+  motion, long/bidi evidence, operational states, zero document overflow,
+  both CSS load orders, chunk separation, and five reviewed baselines.
+- Fresh qualification passed 279/279 focused tests across 18 files, shared/app
+  TypeScript, shared configured and direct Fleet Deno checks, the 758-module
+  production build and reciprocal chunk assertion, and 1,472/1,472 complete
+  app tests across 139 files. Browser evidence passes Fleet 7/7, visual
+  no-update 3/3, broader Recipe Console 65/65, the complete Recipe Console
+  configuration with 179 passed and one exact configured-live skip, legacy
+  Fleet/navigation 33/33, and existing-owner regressions 28/28. Independent
+  reviews report no remaining Critical or Important issue.
+- The in-app Browser was unavailable exactly as `Browser runtime unavailable
+  after setup failure: Cannot redefine property: process`; terminal Playwright
+  is fallback evidence. The configured live/Postgres owner remains skipped,
+  not passed, for exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-
+  backed apps/api-v1, apps/rallar-black-box-control-server, and
+  apps/rallar-black-box available.` Ready-State #3 remains open.
+- No legacy Fleet row was hidden or cut over. Its `fleet`, `fleet-report`, and
+  `fleet-reports` links, active-only mount, rebuild/export behavior, rollback
+  URL, and public/control contracts remain operational. No default changed.
+  Iterations 11–12 retain Advanced/contextual diagnostics, safe lazy legacy
+  ownership, final accessibility, and blank-URL default-flip work.

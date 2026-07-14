@@ -1,7 +1,7 @@
 # Rallar Recipe Console Fleet And Geographic Evidence Implementation Plan
 
-Status: in progress; Tasks 0–4 are code-backed through `0d046ca`, and the
-shared traversal correction required before Task 5 is in progress
+Status: complete; Tasks 0–8 and every Iteration 10 exit criterion are
+code-backed through `0088be0` and `3ab86a9`
 
 **Goal:** Replace the Recipe Console Fleet placeholder with a lean, bounded,
 live/last-known evidence workspace that answers which agents or regions fail
@@ -321,7 +321,8 @@ selection authority, History filtering, and tuple-safe public identities.
 No endpoint, existing typed client, public legacy import, default, navigation
 row, rollback URL, legacy mount policy, or cutover changed.
 
-Task 5 review found one repository-authoritative prerequisite: the current
+At this milestone, Task 5 review found one repository-authoritative
+prerequisite: the current
 composed analysis exposes only its first bounded rows and the workspace model
 performs a second region index. Before rendering, add one reusable shared
 indexed collection plus complete bounded window projection so first/middle/
@@ -329,21 +330,21 @@ final traversal is possible without re-indexing or app-local aggregation.
 
 ## Task 5: Replace The Placeholder With A Lazy, Bounded Fleet Workspace
 
-- [ ] RED `recipe-console-fleet-structure.test.ts` for the lazy boundary,
+- [x] RED `recipe-console-fleet-structure.test.ts` for the lazy boundary,
   active-only composition, no legacy imports, no second query/poll, CSS Module
   ownership, line caps, and focused module DAG.
-- [ ] RED `recipe-console-fleet-ui.test.ts` for semantic headings, operational
+- [x] RED `recipe-console-fleet-ui.test.ts` for semantic headings, operational
   state panels, exact counts/ranges, complete windows, selected evidence, and
   keyboard-operable actions.
-- [ ] Replace the eager `FleetPreview` branch with lazy `FleetWorkspace` input
+- [x] Replace the eager `FleetPreview` branch with lazy `FleetWorkspace` input
   wiring from `RecipeConsoleWorkspace`; keep `RecipeConsoleActiveWork` and the
   workspace as routing/composition glue only.
-- [ ] Compose focused live-board, summary, heatmap, region, repeated-failure,
+- [x] Compose focused live-board, summary, heatmap, region, repeated-failure,
   timing, and evidence-detail components under `src/recipe-console/fleet/**`.
-- [ ] Reuse `ExplicitWindowControls`/window state and native lists/tables.
+- [x] Reuse `ExplicitWindowControls`/window state and native lists/tables.
   Slice before per-row/cell projection and expose exact `Showing a–b of n`
   truth; no native select is silently truncated.
-- [ ] Render complete empty/loading/partial/stale/offline/schema-error states
+- [x] Render complete empty/loading/partial/stale/offline/schema-error states
   and retain visible refresh/legacy-fallback paths.
 
 Validation:
@@ -358,23 +359,23 @@ npm --workspace rallar-black-box run typecheck
 
 ## Task 6: Add The Secondary Map And Exact Evidence Links
 
-- [ ] RED map component tests for layer semantics, visible provenance,
+- [x] RED map component tests for layer semantics, visible provenance,
   unresolved truth, selected region/agent, keyboard-equivalent HTML controls,
   no-route state, explicit route evidence, stable selected-item pinning, exact
   candidate/rendered/omitted counts, and the 40-agent/24-region/32-route/
   40-failure-mark DOM budgets.
-- [ ] Add a deterministic feature-local SVG map and CSS Module. Keep it below
+- [x] Add a deterministic feature-local SVG map and CSS Module. Keep it below
   summary/failure evidence and pair every color/shape with persistent text.
-- [ ] Wire region selection to `fleetRegion`, layer toggles to canonical
+- [x] Wire region selection to `fleetRegion`, layer toggles to canonical
   `fleetMapLayers`, affected agents to `agentId`, exact runs to Monitor/Analyze,
   and repeated signatures to filtered Tune/History without treating opaque
   artifact refs as URLs.
-- [ ] Add an explicit selected-report artifact action that loads the validated
+- [x] Add an explicit selected-report artifact action that loads the validated
   existing Fleet report bundle, shows exact file identities/sizes, and exports
   it without retaining multiple bundles or issuing an inactive request.
-- [ ] Preserve exact selected report/control identities and never silently
+- [x] Preserve exact selected report/control identities and never silently
   substitute a different run when a URL selection is unavailable.
-- [ ] Expose the legacy Fleet fallback for rebuild/report export; do not hide
+- [x] Expose the legacy Fleet fallback for rebuild/report export; do not hide
   the legacy row after this capability proof.
 
 Validation:
@@ -388,23 +389,23 @@ npx vitest run \
 
 ## Task 7: Prove Browser Behavior, Responsiveness, And CSS Isolation
 
-- [ ] RED then GREEN the exact canonical browser title with seeded root-query
+- [x] RED then GREEN the exact canonical browser title with seeded root-query
   evidence and no legacy component import.
-- [ ] Cover desktop 1440×900, tablet 900×900, genuine-touch portrait 430×932,
+- [x] Cover desktop 1440×900, tablet 900×900, genuine-touch portrait 430×932,
   and genuine-touch landscape 932×430 with zero document overflow and bounded
   internal scrolling.
-- [ ] Cover keyboard-only navigation, 44px touch targets, focus recovery after
+- [x] Cover keyboard-only navigation, 44px touch targets, focus recovery after
   region/window changes, reduced motion, non-hover evidence, long/bidi IDs,
   all operational states, first/middle/last window traversal, and exact map DOM
   budgets plus omission truth under a pressured fixture.
-- [ ] Cover `fleetRegion`/`fleetMapLayers` copy/reload/back-forward restoration,
+- [x] Cover `fleetRegion`/`fleetMapLayers` copy/reload/back-forward restoration,
   including every intermediate state across multiple committed changes; exact
   failure-to-agent/run/History/Analyze handoffs; selected-report artifact load/
   export; unresolved geography; and explicit-route-only rendering.
-- [ ] Capture and review deterministic Direction A desktop, touch portrait,
+- [x] Capture and review deterministic Direction A desktop, touch portrait,
   touch landscape, and degraded operational-state screenshots; update only the
   approved Fleet baselines and record their evidence in the fidelity ledger.
-- [ ] Prove both CSS load orders, cold Recipe Console versus legacy-first Fleet,
+- [x] Prove both CSS load orders, cold Recipe Console versus legacy-first Fleet,
   inactive unmount/cleanup, Fleet chunk separation, and exact `tab=fleet`,
   `tab=fleet-report`, and `tab=fleet-reports` legacy selection/mount without a
   Recipe Console redirect.
@@ -434,42 +435,88 @@ npx playwright test \
 
 ## Task 8: Independent Reviews And Fresh Iteration Exit
 
-- [ ] Dispatch independent shared validation/analysis, geographic evidence,
+- [x] Dispatch independent shared validation/analysis, geographic evidence,
   React/state/accessibility, and strangler/cutover reviews. RED/GREEN every
   Critical or Important finding and rerun its owner.
-- [ ] Run all focused shared/app tests above, complete app Vitest, shared/app
+- [x] Run all focused shared/app tests above, complete app Vitest, shared/app
   TypeScript and all shared Deno entries, app build, reciprocal experience-
   chunk assertion, complete Recipe Console browser config, and preserved
   legacy Fleet/navigation cases.
-- [ ] Run control-server check/tests only if shared changes affect its imports
+- [x] Run control-server check/tests only if shared changes affect its imports
   or server source changes; otherwise record the untouched contract evidence.
-- [ ] Try the in-app Browser and record exact availability. Report configured-
+- [x] Try the in-app Browser and record exact availability. Report configured-
   live/Postgres as skipped with the exact unavailable-environment reason; never
   treat it as passed.
-- [ ] Update this child plan, parent iteration ledger/risks, product spec,
+- [x] Update this child plan, parent iteration ledger/risks, product spec,
   migration register, and fidelity ledger with commits, test counts, viewport/
   interaction/CSS proof, skip reasons, no-cutover state, and remaining
   Iterations 11–12 risks.
-- [ ] Make cohesive local green milestone commits. Do not push or open a PR.
+- [x] Make cohesive local green milestone commits. Do not push or open a PR.
+
+### Tasks 5–8 qualified exit — `0088be0`, `3ab86a9`
+
+`0088be0` replaces the placeholder with a lazy, active-only Fleet workspace
+whose live board, heatmap, region, failure, timing, map, report, and artifact
+evidence use complete bounded windows over shared indexed truth. The map stays
+secondary, every route and location remains provenance-bearing, current live
+state stays separate from historical outcomes, and exact agent/run/History/
+Analyze handoffs preserve typed URL context. The workspace adds no poll,
+credential owner, legacy import, global registry, broad stylesheet, endpoint,
+or required artifact file.
+
+`3ab86a9` adds the canonical seven-case Fleet browser owner and five reviewed
+Direction A baselines. Desktop, tablet, genuine-touch portrait and landscape,
+keyboard/focus, 44px targets, reduced motion, long/bidi evidence, operational
+states, copy/reload/back-forward, exact handoffs, artifact load/export,
+bounded traversal, map budgets, zero document overflow, CSS load order,
+inactive cleanup, chunk separation, and all three legacy Fleet aliases pass.
+The five no-update baselines pass 3/3 and have SHA-256 values recorded in the
+fidelity ledger.
+
+Fresh qualification passed the 18-file focused contract at 279/279, shared
+TypeScript and configured Deno checks, direct Deno checks of all three Fleet
+modules, app TypeScript, and a 758-module production build. The Fleet asset is
+62.26 kB JavaScript (15.98 kB gzip) and 22.76 kB CSS (3.90 kB gzip); reciprocal
+experience-chunk closure passes, with only the pre-existing greater-than-500-kB
+`LegacyExperience` advisory. The complete app suite passes 1,472/1,472 across
+139 files. Browser qualification passes Fleet 7/7, visual no-update 3/3, the
+broader Recipe Console regression matrix 65/65, the complete Recipe Console
+configuration with 179 passed and one exact configured-live skip, legacy
+Fleet/navigation 33/33, and existing-owner regressions 28/28. Independent
+shared-analysis, geography,
+React/state/accessibility, browser, and strangler reviews are clean after
+focused RED/GREEN repairs.
+
+The in-app Browser was unavailable exactly as `Browser runtime unavailable
+after setup failure: Cannot redefine property: process`; terminal Playwright
+is the fallback, not an in-app Browser pass. The configured live/Postgres owner
+remains skipped, not passed, for exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1
+with Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
+apps/rallar-black-box available.` Control-server source and contracts were
+unchanged. No legacy Fleet row, alias, active-only mount, rebuild/export path,
+rollback URL, default, public export, or existing control contract was hidden,
+cut over, or broken. Remaining work is Iterations 11–12: contextual Advanced
+diagnostics, safe lazy legacy ownership, the default flip, and final cross-app
+accessibility polish.
 
 ## Iteration 10 Exit Criteria
 
-- [ ] A user can identify repeatedly failing agents and regions, see whether
+- [x] A user can identify repeatedly failing agents and regions, see whether
   timing is correlated, and reach the exact affected run/agent/artifact/history
   evidence from visible controls.
-- [ ] Live board, heatmap, region summaries, repeated failure signatures,
+- [x] Live board, heatmap, region summaries, repeated failure signatures,
   timing distributions, and the deterministic SVG map derive from validated
   shared evidence and remain bounded/traversable.
-- [ ] Geography and routes are provenance-bearing and never guessed; unresolved
+- [x] Geography and routes are provenance-bearing and never guessed; unresolved
   locations and unavailable optional collections remain explicit.
-- [ ] Fleet URL filters and map layers restore exactly across copy, reload, and
+- [x] Fleet URL filters and map layers restore exactly across copy, reload, and
   browser history.
-- [ ] The new route is lazy/unmounted, CSS-isolated, responsive, keyboard/touch
+- [x] The new route is lazy/unmounted, CSS-isolated, responsive, keyboard/touch
   operable, reduced-motion safe, and free of hover-only evidence.
-- [ ] The legacy Fleet row, behavior, aliases, active-only mount, rebuild,
+- [x] The legacy Fleet row, behavior, aliases, active-only mount, rebuild,
   export, public contracts, and rollback URL remain operational. No default or
   cutover changes.
-- [ ] Every available focused, complete, build, chunk, browser, and review gate
+- [x] Every available focused, complete, build, chunk, browser, and review gate
   is green; unavailable live-service evidence is recorded as skipped with its
   exact reason.
 
