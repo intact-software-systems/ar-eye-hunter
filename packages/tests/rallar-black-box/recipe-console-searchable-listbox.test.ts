@@ -589,6 +589,29 @@ describe('SearchableWindowedListbox', () => {
         );
         expect(css).not.toMatch(/(?:margin|padding|inset|border)-(?:left|right):/);
     });
+
+    it('keeps the closed selected option compact without flattening popup rows', () => {
+        const css = readFileSync(resolve(
+            repoRoot,
+            'apps/rallar-black-box/src/recipe-console/ui/SearchableWindowedListbox.module.css',
+        ), 'utf8');
+        const selectionRule = css.match(/\.selection \.optionBody\s*\{([^}]*)\}/u)?.[1];
+        const identifierRule = css.match(
+            /\.selection \.optionBody > \[data-exact-identifier\]\s*\{([^}]*)\}/u,
+        )?.[1];
+        const detailRule = css.match(
+            /\.selection \.optionBody > small\s*\{([^}]*)\}/u,
+        )?.[1];
+
+        expect(selectionRule).toMatch(/display:\s*flex/u);
+        expect(selectionRule).toMatch(/white-space:\s*nowrap/u);
+        expect(identifierRule).toMatch(/order:\s*1/u);
+        expect(css).toMatch(
+            /\.selection \.optionBody > \[data-exact-identifier\]::after\s*\{[^}]*content:\s*["'] · ["']/u,
+        );
+        expect(detailRule).toMatch(/display:\s*none/u);
+        expect(css).not.toMatch(/\.option > \.optionBody > small\s*\{[^}]*display:\s*none/u);
+    });
 });
 
 function fixtureOptions(count: number): readonly SearchableListboxOption[] {

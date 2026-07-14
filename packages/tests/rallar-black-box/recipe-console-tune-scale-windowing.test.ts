@@ -237,6 +237,51 @@ describe('Recipe Console Tune pressure UI', () => {
         container.remove();
     });
 
+    it('uses concise missing-selection placeholders and keeps invalid truth adjacent',
+        async () => {
+            const navigate = vi.fn();
+            const missing = scaleSelection(undefined, undefined);
+            root = createRoot(container);
+            await act(async () => root?.render(createElement(TuneRunPicker, {
+                field: 'compareLeft',
+                model: createTuneRunPickerModel(missing),
+                navigate,
+                selection: missing,
+            })));
+
+            expect(container.querySelector('#tune-compareLeft-selection')?.textContent)
+                .toBe('Select baseline');
+            expect(container.querySelector('[data-tune-run-picker-issue]')).toBeNull();
+
+            const invalid = scaleSelection('run-missing', 'run-000123');
+            await act(async () => root?.render(createElement(TuneRunPicker, {
+                field: 'compareLeft',
+                model: createTuneRunPickerModel(invalid),
+                navigate,
+                selectedKey: 'run-missing',
+                selection: invalid,
+            })));
+            const trigger = container.querySelector(
+                '[data-searchable-listbox-trigger]',
+            );
+            expect(trigger?.getAttribute('aria-invalid')).toBe('true');
+            expect(trigger?.getAttribute('aria-describedby'))
+                .toBe('tune-compareLeft-issue');
+            expect(container.querySelector('[data-tune-run-picker-issue]')?.textContent)
+                .toBe('compareLeft is not available in retained artifact or control evidence.');
+
+            const sameRun = scaleSelection('run-000123', 'run-000123');
+            await act(async () => root?.render(createElement(TuneRunPicker, {
+                field: 'compareRight',
+                model: createTuneRunPickerModel(sameRun),
+                navigate,
+                selectedKey: 'run-000123',
+                selection: sameRun,
+            })));
+            expect(container.querySelector('[data-tune-run-picker-issue]')?.textContent)
+                .toBe('Baseline and candidate must be different runs.');
+        });
+
     it('mounts at most 100 of 5,000 runs and reaches a late selected ID', async () => {
         const selection = scaleSelection('run-004999', 'run-000123');
         const navigate = vi.fn();
@@ -493,7 +538,7 @@ async function setSearch(container: HTMLElement, value: string): Promise<void> {
     });
 }
 
-function scaleSelection(left: string, right: string) {
+function scaleSelection(left: string | undefined, right: string | undefined) {
     const distributedRuns = Array.from(
         { length: RUN_COUNT },
         (_, index) => distributedRun(index),

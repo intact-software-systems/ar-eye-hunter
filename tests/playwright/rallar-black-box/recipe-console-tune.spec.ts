@@ -307,7 +307,7 @@ test('shows uncommitted candidate focus and commits comparison in one keyboard c
         `&compareLeft=${TUNE_LEFT_RUN_ID}`);
 
     const candidate = tuneListboxTrigger(page, 'Candidate run');
-    await expect(candidate).toContainText('Select candidate run');
+    await expect(candidate).toContainText('Select candidate');
     const comparison = page.locator('[data-tune-comparison]');
     await expect(comparison).toContainText('incomplete');
     await expect(comparison).toContainText('compareRight must be selected explicitly.');

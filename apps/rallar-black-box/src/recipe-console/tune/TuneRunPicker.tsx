@@ -28,8 +28,12 @@ export function TuneRunPicker({
 }>) {
     const revision = useMemo(() => Object.freeze({}), [model.revisionKey]);
     const issue = selection.comparison.issues.find(row => row.field === field);
+    const visibleIssue = issue?.code === 'missing' ? undefined : issue;
     const label = field === 'compareLeft' ? 'Baseline run' : 'Candidate run';
-    const issueId = issue ? `tune-${field}-issue` : undefined;
+    const issueId = visibleIssue ? `tune-${field}-issue` : undefined;
+    const placeholder = field === 'compareLeft'
+        ? 'Select baseline'
+        : 'Select candidate';
 
     return (
         <div data-tune-run-picker={field}>
@@ -37,7 +41,7 @@ export function TuneRunPicker({
                 contextKey={`tune-run-picker-v1:${field}`}
                 describedBy={issueId}
                 id={`tune-${field}`}
-                invalid={issue !== undefined && issue.code !== 'missing'}
+                invalid={visibleIssue !== undefined}
                 label={label}
                 onSelect={row => {
                     const option = model.byId.get(row.value);
@@ -47,13 +51,13 @@ export function TuneRunPicker({
                         : tuneRightSelectionPatch(option));
                 }}
                 options={model.options}
-                placeholder={`Select ${label.toLocaleLowerCase('en-US')}`}
+                placeholder={placeholder}
                 revision={revision}
                 selectedKey={selectedKey}
             />
-            {issue ? (
+            {visibleIssue ? (
                 <p data-tune-run-picker-issue id={issueId} role="status">
-                    {issue.message}
+                    {visibleIssue.message}
                 </p>
             ) : null}
         </div>

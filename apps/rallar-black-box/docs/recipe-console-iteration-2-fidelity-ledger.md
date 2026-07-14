@@ -5,7 +5,7 @@ Analyze, real-evidence Tune, bounded History/retention, and Task 6 large-Monitor
 window composition are qualified through `8c630fc`; Ready-State #10 remains
 open
 
-Evidence date: 2026-07-13
+Evidence date: 2026-07-14
 Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
 (Iteration 4 Execute), `42eedae` (Iteration 5 live Monitor fidelity proof),
 `f96b5b4`, `abe257e`, `9b07330`, `47c332d` (Iteration 6 Analyze),
@@ -177,6 +177,40 @@ Ready-State #10 and parent Iteration 9 remain open for Tasks 7–9, canonical
 scale acceptance, remaining heartbeat proof, and final profiling. No default
 or primary navigation, legacy visibility/mount, deep link, rollback URL, or
 cutover changed, and no legacy row was hidden.
+
+## Iteration 9 scale-selector fidelity addendum
+
+Direction A remains unchanged. Execute's required searchable, windowed control-
+run picker now uses an explicit inline layout variant, restoring the approved
+label/control row and leaving the checked-in Execute baseline unchanged. The
+complete Control browser contract passes 20/20 against the disclosure trigger,
+editable search combobox, bounded listbox options, unavailable-selection truth,
+keyboard commit, history, copy, reload, and touch-size behavior; no stale native
+`select` assertion remains.
+
+Tune retains the approved 932×430 source geometry and concise `Select baseline`
+and `Select candidate` copy. Missing-selection messages remain in the comparison
+truth without duplicating visible error rows beside the placeholders; invalid and
+same-run errors remain adjacent and explicit. Its baseline refresh is intentional:
+the native `select` chrome was replaced by the required searchable disclosure,
+combobox, and windowed listbox that bounds 5,000 run options to at most 100 mounted
+rows. After semantic and geometry gates passed, the stable pre-refresh difference
+was 3,398 pixels; exact native-control pixels cannot represent the new interaction
+contract. The refreshed baseline SHA-256 is
+`e0dfaf3e29e9a9d5de054aea7aac637af4f446ff966756cbfdbd5b8657bdca94`.
+
+Monitor preserves the repository-tested operational action order (`Refresh`,
+`Cancel run`, `Load artifact`, `Export artifact`) and exact bidi-isolated machine
+identifiers introduced by bounded evidence windows. The failure-destination row
+no longer repeats an exact identifier on a third visual line; the identifier is
+isolated inside its existing label. Those later safety/interaction contracts must
+not be undone to imitate the older Iteration 5 pixels. After semantic and geometry
+gates passed, the stable pre-refresh difference was 21,694 pixels. The refreshed
+failed-desktop baseline SHA-256 is
+`f5cfc68090cb1171e6e464d098cf7f0ddeb2b0250a9cf062fde13c61af372c38`.
+The Execute and portrait Monitor baselines were not refreshed. A final no-update
+Darwin run passes all four Direction A captures; focused structure/behavior passes
+89/89 and app TypeScript passes.
 
 ## Controlled environment
 

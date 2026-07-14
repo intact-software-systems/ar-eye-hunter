@@ -79,6 +79,28 @@ describe('Recipe Console Execute pressure-window contract', () => {
             expect(source.split('\n').length, file).toBeLessThanOrEqual(budget);
         }
     });
+
+    it('keeps the Execute control-run disclosure on the approved inline row', () => {
+        const picker = readFileSync(
+            'apps/rallar-black-box/src/recipe-console/execute/ExecuteControlRunPicker.tsx',
+            'utf8',
+        );
+        const css = readFileSync(
+            'apps/rallar-black-box/src/recipe-console/ui/SearchableWindowedListbox.module.css',
+            'utf8',
+        );
+        expect(picker).toContain('layout="inline"');
+        const inlineRule = css.match(
+            /\.root\[data-layout="inline"\]\s*\{([^}]*)\}/u,
+        )?.[1];
+        expect(inlineRule).toMatch(/display:\s*grid/u);
+        expect(inlineRule).toMatch(
+            /grid-template-columns:\s*minmax\(90px,\s*\.35fr\)\s+minmax\(180px,\s*1fr\)/u,
+        );
+        expect(css).toMatch(
+            /@media \(max-width: 767px\)[\s\S]*\.root\[data-layout="inline"\]\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/u,
+        );
+    });
 });
 
 describe('Recipe Console Execute pressure windows', () => {

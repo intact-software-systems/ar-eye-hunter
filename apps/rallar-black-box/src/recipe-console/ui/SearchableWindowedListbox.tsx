@@ -18,6 +18,7 @@ export type SearchableWindowedListboxProps = Readonly<{
     revision?: object;
     selectedKey?: string;
     placeholder: string;
+    layout?: 'inline' | 'stacked';
     disabled?: boolean;
     describedBy?: string;
     invalid?: boolean;
@@ -30,8 +31,7 @@ export function SearchableWindowedListbox({
     contextKey,
     options,
     revision,
-    selectedKey,
-    placeholder,
+    selectedKey, placeholder, layout = 'stacked',
     disabled = false,
     describedBy,
     invalid = false,
@@ -72,6 +72,7 @@ export function SearchableWindowedListbox({
         <div
             aria-labelledby={`${id}-label`}
             className={styles.root}
+            data-layout={layout}
             data-searchable-listbox-disabled-focus
             data-searchable-windowed-listbox
             ref={state.rootRef}

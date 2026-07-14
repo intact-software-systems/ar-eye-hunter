@@ -166,9 +166,26 @@ function EvidenceDestination({ destination, onSelect }: Readonly<{
         type="button"
     >
         <span>{labelKind(destination.kind)}</span>
-        <strong>{destination.label}</strong>
-        <ExactIdentifier value={destination.id} />
+        <ExactDestinationLabel
+            exactIdentifier={destination.id}
+            label={destination.label}
+        />
     </button>;
+}
+
+function ExactDestinationLabel({
+    exactIdentifier,
+    label,
+}: Readonly<{ exactIdentifier: string; label: string }>) {
+    const exactOffset = label.indexOf(exactIdentifier);
+    if (exactOffset < 0) {
+        return <><strong>{label}</strong><ExactIdentifier value={exactIdentifier} /></>;
+    }
+    return <strong>
+        {label.substring(0, exactOffset)}
+        <ExactIdentifier value={exactIdentifier} />
+        {label.substring(exactOffset + exactIdentifier.length)}
+    </strong>;
 }
 
 function EvidenceLink({ link, onSelect }: Readonly<{

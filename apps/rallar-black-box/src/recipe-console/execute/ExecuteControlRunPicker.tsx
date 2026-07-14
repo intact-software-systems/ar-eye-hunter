@@ -34,6 +34,7 @@ export function ExecuteControlRunPicker({
                 disabled={disabled}
                 id="execute-control-run"
                 label="Control run"
+                layout="inline"
                 invalid={issueId !== undefined}
                 onSelect={option => onSelect(option.value)}
                 options={model.options}

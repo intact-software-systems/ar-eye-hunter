@@ -134,6 +134,10 @@
     font-size: 12px;
 }
 
+.destinations strong [data-exact-identifier] code {
+    font: inherit;
+}
+
 .legacyLink {
     display: inline-flex;
     min-width: 44px;

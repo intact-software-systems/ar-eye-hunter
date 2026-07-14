@@ -83,7 +83,7 @@ async function expectVisibleView(page: Page, view: RecipeConsoleView): Promise<v
             const candidateRunId = currentUrl(page).searchParams.get('compareRight');
             await expect(candidateRun).toBeVisible();
             await expect(candidateRun).toContainText(
-                candidateRunId ?? 'Select candidate run',
+                candidateRunId ?? 'Select candidate',
             );
             break;
         case 'fleet':

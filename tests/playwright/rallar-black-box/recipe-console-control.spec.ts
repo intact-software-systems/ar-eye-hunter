@@ -263,6 +263,27 @@ function actionRequirement(page: Page, action: string) {
         .filter({ hasText: new RegExp(`^${action}:`) });
 }
 
+function controlRunPicker(page: Page) {
+    const group = executeTargets(page).getByRole('group', { name: 'Control run' });
+    return {
+        group,
+        search: group.getByRole('combobox', { name: 'Search Control run' }),
+        trigger: group.getByRole('button', { name: /^Control run(?:\s|$)/u }),
+    };
+}
+
+async function chooseControlRun(page: Page, runId: string): Promise<void> {
+    const picker = controlRunPicker(page);
+    await picker.trigger.focus();
+    await expect(picker.trigger).toBeFocused();
+    await picker.trigger.press('Enter');
+    await expect(picker.search).toBeFocused();
+    await picker.search.fill(runId);
+    const option = picker.group.getByRole('option').filter({ hasText: runId });
+    await expect(option).toHaveCount(1);
+    await picker.search.press('Enter');
+}
+
 test('renders live command context and canonical repository-derived target reasons', async ({
     context,
     page,
@@ -291,8 +312,7 @@ test('renders live command context and canonical repository-derived target reaso
         'dist-live-canonical · running',
     );
 
-    await expect(targets.getByRole('combobox', { name: 'Control run' }))
-        .toHaveValue('control-canonical');
+    await expect(controlRunPicker(page).trigger).toContainText('control-canonical');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(5);
     for (const [agentId, status] of [
         ['agent-matched', 'matched'],
@@ -338,7 +358,7 @@ test('shows initial network failure as offline without seeded board fallback', a
         'Control is offline. Refresh to retry.',
         { exact: true },
     )).toBeVisible();
-    const runPicker = targets.getByRole('combobox', { name: 'Control run' });
+    const runPicker = controlRunPicker(page).trigger;
     await expect(runPicker).toContainText('Control runs unavailable');
     await expect(runPicker).not.toContainText('No control runs');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
@@ -636,7 +656,7 @@ test('renders a truthful live-empty control state', async ({ context, page }) =>
         'The selected live control run contains no target agents.',
         { exact: true },
     )).toBeVisible();
-    await expect(targets.getByRole('combobox', { name: 'Control run' }))
+    await expect(controlRunPicker(page).trigger)
         .toContainText('Control runs unavailable');
     await expect(commandContextItem(page, 'Connected')).toContainText('0/0');
     await expect(commandContextItem(page, 'Active run')).toContainText('None');
@@ -676,9 +696,13 @@ for (const unresolvedCase of [
         await expect(commandContextItem(page, 'Safe targets'))
             .toContainText('0 selected · 0 recipe-safe');
         const targets = executeTargets(page);
-        const runPicker = targets.getByRole('combobox', { name: 'Control run' });
-        await expect(runPicker).toHaveValue('');
-        await expect(runPicker).toContainText('Select a control run');
+        const runPicker = controlRunPicker(page).trigger;
+        if (unresolvedCase.routeSuffix) {
+            await expect(runPicker).toContainText('Unavailable selection');
+            await expect(runPicker).toContainText('missing-control-run');
+        } else {
+            await expect(runPicker).toContainText('Select a control run');
+        }
         const empty = targetEmptyState(page);
         await expect(empty.getByText('No current target evidence', { exact: true }))
             .toBeVisible();
@@ -816,8 +840,9 @@ test('preserves unavailable URL selections without collection-index fallback', a
     await expect(targets.getByRole('alert')).toHaveText(
         'Control run control-unavailable is not present in the latest snapshot.',
     );
-    const runPicker = targets.getByRole('combobox', { name: 'Control run' });
-    await expect(runPicker).toHaveValue('');
+    const runPicker = controlRunPicker(page).trigger;
+    await expect(runPicker).toContainText('Unavailable selection');
+    await expect(runPicker).toContainText('control-unavailable');
     await expect(runPicker).toHaveAttribute('aria-invalid', 'true');
     await expect(runPicker).toHaveAttribute(
         'aria-describedby',
@@ -851,12 +876,10 @@ test('commits, reloads, copies, and restores run selection while target checks s
     }]);
 
     await page.goto(`${RECIPE_CONSOLE_ROUTE}&controlRunId=control-west`);
-    const runSelect = page.getByRole('combobox', { name: 'Control run' });
-    await expect(runSelect).toHaveValue('control-west');
+    const runSelect = controlRunPicker(page).trigger;
+    await expect(runSelect).toContainText('control-west');
 
-    await runSelect.focus();
-    await expect(runSelect).toBeFocused();
-    await page.keyboard.type('control-east');
+    await chooseControlRun(page, 'control-east');
     await expect(page).toHaveURL(/(?:\?|&)controlRunId=control-east(?:&|$)/);
     await expect(page).not.toHaveURL(/(?:\?|&)agentId=/);
     const eastRow = targetRow(page, 'agent-east');
@@ -871,18 +894,18 @@ test('commits, reloads, copies, and restores run selection while target checks s
 
     // Target selection is bounded draft state: it must not create a history entry.
     await page.goBack();
-    await expect(runSelect).toHaveValue('control-west');
+    await expect(runSelect).toContainText('control-west');
     await expect(targetRow(page, 'agent-west')).toBeVisible();
 
     await page.goForward();
-    await expect(runSelect).toHaveValue('control-east');
+    await expect(runSelect).toContainText('control-east');
     await expect(targetRow(page, 'agent-east')
         .getByRole('checkbox', { name: 'Select agent-east' }))
         .toBeChecked();
     await expect(page).not.toHaveURL(/(?:\?|&)agentId=/);
 
     await page.reload();
-    await expect(runSelect).toHaveValue('control-east');
+    await expect(runSelect).toContainText('control-east');
     await expect(targetRow(page, 'agent-east')
         .getByRole('checkbox', { name: 'Select agent-east' }))
         .toBeChecked();
@@ -992,7 +1015,7 @@ test('keeps the connected board usable at tablet and portrait touch sizes', asyn
 
         const targets = executeTargets(page);
         await expect(targets).toBeVisible();
-        const runSelect = targets.getByRole('combobox', { name: 'Control run' });
+        const runSelect = controlRunPicker(page).trigger;
         expect((await runSelect.boundingBox())?.height)
             .toBeGreaterThanOrEqual(44);
         const rows = targets.locator('[data-execute-target]');

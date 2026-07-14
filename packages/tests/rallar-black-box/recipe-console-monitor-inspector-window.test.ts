@@ -133,6 +133,15 @@ describe('Recipe Console Monitor inspector windows', () => {
 
             expect(container.querySelector('[data-evidence-destination="command"]')
                 ?.getAttribute('data-evidence-id')).toBe(commandId);
+            const commandDestination = container.querySelector(
+                '[data-evidence-destination="command"]',
+            );
+            expect(commandDestination?.children).toHaveLength(2);
+            expect(commandDestination?.querySelector('strong')?.textContent)
+                .toBe(`Command ${commandId}`);
+            expect(commandDestination?.querySelector(
+                'strong [data-exact-identifier]',
+            )?.textContent).toBe(commandId);
             expect(windowStatus('Failure destinations')?.textContent)
                 .toBe('Showing 1–40 of 47 destinations.');
             expect(windowButtons('monitor-inspector-failure-destinations')).toHaveLength(40);

@@ -11,6 +11,19 @@
     font-weight: 800;
 }
 
+.root[data-layout="inline"] {
+    display: grid;
+    grid-template-columns: minmax(90px, .35fr) minmax(180px, 1fr);
+    align-items: center;
+    gap: 10px;
+}
+
+.root[data-layout="inline"] .trigger {
+    padding-block: 0;
+    padding-inline: 10px;
+    border-radius: 4px;
+}
+
 .trigger,
 .option {
     min-inline-size: 44px;
@@ -43,6 +56,30 @@
     overflow-wrap: anywhere;
     unicode-bidi: isolate;
 }
+
+.selection .optionBody {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.selection .optionBody > [data-exact-identifier] {
+    min-width: 0;
+    order: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.selection .optionBody > [data-exact-identifier]::after {
+    content: " · ";
+}
+.selection .optionBody > strong {
+    order: 2;
+    flex: 0 0 auto;
+}
+.selection .optionBody > small { display: none; }
 
 .popup {
     position: absolute;
@@ -164,6 +201,12 @@
         inset-block: auto 8px;
         inset-inline: 8px;
         max-block-size: min(80vh, 640px);
+    }
+}
+
+@media (max-width: 767px) {
+    .root[data-layout="inline"] {
+        grid-template-columns: minmax(0, 1fr);
     }
 }
 
