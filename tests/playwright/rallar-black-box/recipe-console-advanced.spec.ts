@@ -373,12 +373,25 @@ test("keeps direct Rallar diagnostics out of primary navigation and opens them f
     distributedRunId: MONITOR_DISTRIBUTED_RUN_ID,
   });
   const advancedReturn = page.locator("[data-legacy-diagnostic-return]");
+  const advancedReturnUrl = new URL(
+    (await advancedReturn.getAttribute("href")) ?? "",
+    page.url(),
+  );
+  expect(Object.fromEntries(advancedReturnUrl.searchParams)).toEqual({
+    provider: "simulated",
+    v: "1",
+    experience: "recipe-console",
+    view: "advanced",
+    controlRunId: MONITOR_CONTROL_RUN_ID,
+    distributedRunId: MONITOR_DISTRIBUTED_RUN_ID,
+    agentId: LONG_BIDI_AGENT_ID,
+    recipeId: LONG_BIDI_RECIPE_ID,
+    commandId: LONG_BIDI_COMMAND_ID,
+    legacySurface: "direct.groups-clients",
+  });
   expect(
-    new URL(
-      (await advancedReturn.getAttribute("href")) ?? "",
-      page.url(),
-    ).searchParams.get("view"),
-  ).toBe("advanced");
+    new TextEncoder().encode(advancedReturnUrl.search.slice(1)).byteLength,
+  ).toBeLessThanOrEqual(4_096);
   await advancedReturn.focus();
   await expect(advancedReturn).toBeFocused();
   await advancedReturn.press("Enter");

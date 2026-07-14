@@ -1,7 +1,11 @@
+import type {
+    DiagnosticBridgeLegacySurfaceId,
+} from '../../app/diagnostic-bridge-url-contract.ts';
+
 export type AdvancedSurfaceKind = 'direct' | 'advanced-legacy';
 
 export type AdvancedSurfaceDescriptor = Readonly<{
-    id: string;
+    id: DiagnosticBridgeLegacySurfaceId;
     label: string;
     kind: AdvancedSurfaceKind;
     route: Readonly<{
@@ -189,7 +193,7 @@ export function resolveAdvancedSurfaceFromLegacySearch(
 }
 
 function directSurface<
-    const Id extends string,
+    const Id extends DiagnosticBridgeLegacySurfaceId,
     const Label extends string,
     const Tab extends string,
     const Aliases extends readonly string[],
@@ -210,7 +214,7 @@ function directSurface<
 }
 
 function runnerSurface<
-    const Id extends string,
+    const Id extends DiagnosticBridgeLegacySurfaceId,
     const Label extends string,
     const Tab extends string,
     const Aliases extends readonly string[],
@@ -225,7 +229,7 @@ function runnerSurface<
 }
 
 function advancedChild<
-    const Id extends string,
+    const Id extends DiagnosticBridgeLegacySurfaceId,
     const Label extends string,
     const Child extends string,
     const Aliases extends readonly string[],

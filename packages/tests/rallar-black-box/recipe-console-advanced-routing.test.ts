@@ -17,6 +17,9 @@ import {
     buildLegacyDiagnosticReturnHref,
     parseLegacyDiagnosticContext,
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/context/legacy-diagnostic-context.ts';
+import {
+    DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS,
+} from '../../../apps/rallar-black-box/src/app/diagnostic-bridge-url-contract.ts';
 
 const EXPECTED_SURFACES = {
     'direct.quick-test': direct('rallar', 'quick-test'),
@@ -111,6 +114,8 @@ describe('Recipe Console Advanced surface catalog', () => {
         expect(ADVANCED_SURFACE_CATALOG).toHaveLength(22);
         expect(new Set(ADVANCED_SURFACE_CATALOG.map(surface => surface.id)).size)
             .toBe(22);
+        expect(ADVANCED_SURFACE_CATALOG.map(surface => surface.id))
+            .toEqual(DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS);
         expect(Object.fromEntries(ADVANCED_SURFACE_CATALOG.map(surface => [
             surface.id,
             {
@@ -286,13 +291,13 @@ describe('Recipe Console Advanced legacy href contract', () => {
     });
 
     it('keeps canonical legacySurface only for an Advanced return', () => {
-        const href = createAdvancedRecipeConsoleReturnHref('?' +
-            new URLSearchParams({
+        const source = new URLSearchParams({
                 diagnosticContext: '1',
                 view: 'advanced',
                 legacySurface: 'diagnostics',
                 provider: 'simulated',
-            }));
+            });
+        const href = createAdvancedRecipeConsoleReturnHref(`?${source}`);
         const url = legacyUrl(href);
 
         expect(Object.fromEntries(url.searchParams)).toEqual({
@@ -302,6 +307,33 @@ describe('Recipe Console Advanced legacy href contract', () => {
             provider: 'simulated',
             legacySurface: 'direct.rtc-diagnostics',
         });
+
+        source.set('legacySurface', 'direct.rtc-diagnostics');
+        const parsed = parseLegacyDiagnosticContext(`?${source}`);
+        expect(parsed.status).toBe('ready');
+        expect(buildLegacyDiagnosticReturnHref(parsed.context)).toBe(href);
+        expect(new TextEncoder().encode(
+            new URL(href, 'https://app.example').search.slice(1),
+        ).byteLength).toBeLessThanOrEqual(
+            ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES,
+        );
+    });
+
+    it('prioritizes the canonical Advanced surface at the return URL budget', () => {
+        const href = createAdvancedRecipeConsoleReturnHref('?' +
+            new URLSearchParams({
+                diagnosticContext: '1',
+                view: 'advanced',
+                legacySurface: 'direct.rtc-diagnostics',
+                controlRunId: 'r'.repeat(4_003),
+            }));
+        const url = legacyUrl(href);
+
+        expect(url.searchParams.get('legacySurface'))
+            .toBe('direct.rtc-diagnostics');
+        expect(url.searchParams.has('controlRunId')).toBe(false);
+        expect(utf8Bytes(url.search.slice(1)))
+            .toBeLessThanOrEqual(ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES);
     });
 
     it('drops unversioned context invalid values and oversized output', () => {
@@ -325,6 +357,7 @@ describe('Recipe Console Advanced legacy href contract', () => {
         );
         const largeState = {
             ...MONITOR_STATE,
+            view: 'advanced',
             controlRunId: overlong,
             distributedRunId: 'd'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES),
             agentId: 'a'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES),
@@ -344,8 +377,13 @@ describe('Recipe Console Advanced legacy href contract', () => {
         expect(largeUrl.searchParams.has('controlRunId')).toBe(false);
         expect(utf8Bytes(largeUrl.search.slice(1)))
             .toBeLessThanOrEqual(ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES);
-        expect(utf8Bytes(createAdvancedRecipeConsoleReturnHref(largeUrl.search)))
-            .toBeLessThanOrEqual(ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES + 2);
+        const returnUrl = legacyUrl(
+            createAdvancedRecipeConsoleReturnHref(largeUrl.search),
+        );
+        expect(returnUrl.searchParams.get('legacySurface'))
+            .toBe('direct.rtc-diagnostics');
+        expect(utf8Bytes(returnUrl.search.slice(1)))
+            .toBeLessThanOrEqual(ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES);
     });
 });
 

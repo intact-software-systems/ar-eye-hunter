@@ -1,17 +1,19 @@
 import {
+    buildDiagnosticBridgeReturnHref,
+} from '../../../app/diagnostic-bridge-return-href.ts';
+import {
+    DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS,
+    DIAGNOSTIC_BRIDGE_PROVIDERS,
     DIAGNOSTIC_BRIDGE_SOURCE_VIEWS,
     DIAGNOSTIC_BRIDGE_TRANSPORTS,
     DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES,
+    type DiagnosticBridgeLegacySurfaceId,
+    type DiagnosticBridgeProvider,
     type DiagnosticBridgeSourceView,
     type DiagnosticBridgeTransport,
 } from '../../../app/diagnostic-bridge-url-contract.ts';
 
 const ISSUE_LIMIT = 32;
-
-const PROVIDERS = [
-    'simulated',
-    'browser-rallar',
-] as const;
 
 const CONTEXT_STRING_FIELDS = [
     'contextApplicationId',
@@ -23,14 +25,6 @@ const CONTEXT_STRING_FIELDS = [
     'recipeId',
     'commandId',
 ] as const;
-
-const RETURN_SELECTION_FIELDS = [
-    'controlRunId',
-    'distributedRunId',
-    'agentId',
-    'recipeId',
-    'commandId',
-] as const satisfies readonly (keyof LegacyDiagnosticContext)[];
 
 const SENSITIVE_FIELDS = new Set([
     'agentsessionticket',
@@ -61,7 +55,7 @@ const FORBIDDEN_CONTEXT_FIELDS = new Set([
     'contextRoomId',
 ]);
 
-export type LegacyDiagnosticProvider = typeof PROVIDERS[number];
+export type LegacyDiagnosticProvider = DiagnosticBridgeProvider;
 
 export type LegacyDiagnosticContext = Readonly<{
     version: 1;
@@ -76,6 +70,7 @@ export type LegacyDiagnosticContext = Readonly<{
     commandId?: string;
     transport?: DiagnosticBridgeTransport;
     view?: DiagnosticBridgeSourceView;
+    legacySurface?: DiagnosticBridgeLegacySurfaceId;
 }>;
 
 export type LegacyDiagnosticContextIssue = Readonly<{
@@ -150,7 +145,7 @@ export function parseLegacyDiagnosticContext(
     const context: MutableContext = { version: 1 };
     const provider = readSingleValue(params, 'provider', malformed, collector);
     if (provider !== undefined) {
-        if (includes(PROVIDERS, provider)) {
+        if (includes(DIAGNOSTIC_BRIDGE_PROVIDERS, provider)) {
             context.provider = provider;
         } else {
             collector.add(issue(
@@ -164,6 +159,23 @@ export function parseLegacyDiagnosticContext(
         const value = readSingleValue(params, field, malformed, collector);
         if (value !== undefined) {
             context[field] = value;
+        }
+    }
+    const legacySurface = readSingleValue(
+        params,
+        'legacySurface',
+        malformed,
+        collector,
+    );
+    if (legacySurface !== undefined) {
+        if (includes(DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS, legacySurface)) {
+            context.legacySurface = legacySurface;
+        } else {
+            collector.add(issue(
+                'legacySurface',
+                'invalid',
+                'The legacy diagnostic surface is not registered.',
+            ));
         }
     }
     const transport = readSingleValue(params, 'transport', malformed, collector);
@@ -197,37 +209,7 @@ export function parseLegacyDiagnosticContext(
 export function buildLegacyDiagnosticReturnHref(
     context: LegacyDiagnosticContext | undefined,
 ): string | undefined {
-    if (
-        context?.version !== 1 ||
-        !context.view ||
-        !includes(DIAGNOSTIC_BRIDGE_SOURCE_VIEWS, context.view)
-    ) {
-        return undefined;
-    }
-    if (context.provider && !includes(PROVIDERS, context.provider)) {
-        return undefined;
-    }
-
-    const params = new URLSearchParams();
-    if (context.provider) {
-        params.set('provider', context.provider);
-    }
-    params.set('v', '1');
-    params.set('experience', 'recipe-console');
-    params.set('view', context.view);
-    for (const field of RETURN_SELECTION_FIELDS) {
-        const value = context[field];
-        if (typeof value === 'string' && isSafeValue(value)) {
-            params.set(field, value);
-        }
-    }
-    if (
-        context.transport &&
-        includes(DIAGNOSTIC_BRIDGE_TRANSPORTS, context.transport)
-    ) {
-        params.set('transport', context.transport);
-    }
-    return `/?${params.toString()}`;
+    return buildDiagnosticBridgeReturnHref(context);
 }
 
 function readSingleValue(
@@ -335,6 +317,7 @@ function isKnownValueField(field: string): boolean {
         field === 'provider' ||
         field === 'transport' ||
         field === 'view' ||
+        field === 'legacySurface' ||
         (CONTEXT_STRING_FIELDS as readonly string[]).includes(field);
 }
 

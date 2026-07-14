@@ -1,5 +1,13 @@
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import {
+    buildDiagnosticBridgeReturnHref,
+} from '../../app/diagnostic-bridge-return-href.ts';
+import {
+    DIAGNOSTIC_BRIDGE_PROVIDERS,
+    DIAGNOSTIC_BRIDGE_URL_QUERY_MAX_BYTES,
+    DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES,
+} from '../../app/diagnostic-bridge-url-contract.ts';
+import {
     RECIPE_CONSOLE_TRANSPORTS,
     RECIPE_CONSOLE_VIEWS,
 } from '../routing/url-state-contract.ts';
@@ -7,10 +15,11 @@ import {
     resolveAdvancedSurface,
 } from './advanced-surface-catalog.ts';
 
-export const ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES = 4_096;
-export const ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES = 4_096;
+export const ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES =
+    DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES;
+export const ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES =
+    DIAGNOSTIC_BRIDGE_URL_QUERY_MAX_BYTES;
 
-const PROVIDERS = ['simulated', 'browser-rallar'] as const;
 const RUN_CONTEXT_FIELDS = [
     'controlRunId',
     'distributedRunId',
@@ -55,7 +64,7 @@ export function createAdvancedLegacyHref({
     appendAllowed(params, 'provider', singleAllowedParam(
         source,
         'provider',
-        PROVIDERS,
+        DIAGNOSTIC_BRIDGE_PROVIDERS,
     ));
     for (const field of RUN_CONTEXT_FIELDS) {
         appendBounded(params, field, state[field]);
@@ -82,35 +91,33 @@ export function createAdvancedRecipeConsoleReturnHref(
         return genericAdvancedHref();
     }
 
-    const params = new URLSearchParams();
-    appendAllowed(params, 'provider', singleAllowedParam(
-        source,
-        'provider',
-        PROVIDERS,
-    ));
-    params.set('v', '1');
-    params.set('experience', 'recipe-console');
     const view = singleAllowedParam(source, 'view', RECIPE_CONSOLE_VIEWS) ??
         'advanced';
-    params.set('view', view);
-
-    for (const field of RUN_CONTEXT_FIELDS) {
-        appendBounded(params, field, singleParam(source, field));
-    }
-    appendAllowed(params, 'transport', singleAllowedParam(
-        source,
-        'transport',
-        RECIPE_CONSOLE_TRANSPORTS,
-    ));
-    if (view === 'advanced') {
-        appendBounded(
-            params,
-            'legacySurface',
-            resolveAdvancedSurface(singleParam(source, 'legacySurface'))?.id,
-        );
-    }
-
-    return `/?${params.toString()}`;
+    return buildDiagnosticBridgeReturnHref({
+        version: 1,
+        provider: singleAllowedParam(
+            source,
+            'provider',
+            DIAGNOSTIC_BRIDGE_PROVIDERS,
+        ),
+        view,
+        controlRunId: boundedContextValue(singleParam(source, 'controlRunId')),
+        distributedRunId: boundedContextValue(singleParam(
+            source,
+            'distributedRunId',
+        )),
+        agentId: boundedContextValue(singleParam(source, 'agentId')),
+        recipeId: boundedContextValue(singleParam(source, 'recipeId')),
+        commandId: boundedContextValue(singleParam(source, 'commandId')),
+        transport: singleAllowedParam(
+            source,
+            'transport',
+            RECIPE_CONSOLE_TRANSPORTS,
+        ),
+        legacySurface: view === 'advanced'
+            ? resolveAdvancedSurface(singleParam(source, 'legacySurface'))?.id
+            : undefined,
+    }) ?? genericAdvancedHref();
 }
 
 function genericAdvancedHref(): string {
