@@ -6,7 +6,6 @@ import { RtcRealtimePanel } from '../../diagnostics/rtc-realtime/RtcRealtimePane
 import { StatsPanel } from '../../diagnostics/events/StatsPanel.tsx';
 import { TopologyGraphPanel } from '../../diagnostics/topology/TopologyGraphPanel.tsx';
 import { WebSocketCommandCenterPanel } from '../../diagnostics/websocket/WebSocketCommandCenterPanel.tsx';
-import { ManualRallarSection } from '../../runner/manual/ManualRallarSection.tsx';
 import { FailurePanel } from '../../runner/runs/RunnerRunsPanel.tsx';
 import type {
     LegacyShellAuth,
@@ -34,12 +33,10 @@ export function DirectConnectionTabPanels({
     const { activeTab, selectTab, selectMode } = navigation;
     const {
         globalValues,
-        globalValuesEdited,
         browserStatus,
         updateGlobalValue,
     } = globalContext;
-    const { history, selectedCommandId, setSelectedCommandId } =
-        runnerSelection;
+    const { setSelectedCommandId } = runnerSelection;
 
     return (
         <>
@@ -75,26 +72,6 @@ export function DirectConnectionTabPanels({
                     globalValues={globalValues}
                     onAuthenticated={(session) => setAuthSession(session)}
                     onLogout={logout}
-                />
-            </section>
-            <section
-                id="legacy-panel-manual-rallar"
-                className="workspace-grid tab-workspace manual-tab-grid"
-                role="tabpanel"
-                aria-labelledby="tab-manual-rallar"
-                hidden={activeTab !== 'manual-rallar'}
-            >
-                <ManualRallarSection
-                    state={state}
-                    bootstrap={bootstrap}
-                    authSession={authSession}
-                    globalValues={globalValues}
-                    globalValuesEdited={globalValuesEdited}
-                    busy={busy}
-                    history={history}
-                    selectedCommandId={selectedCommandId}
-                    onSelectCommand={setSelectedCommandId}
-                    onGlobalValueChange={updateGlobalValue}
                 />
             </section>
             <section

@@ -201,12 +201,17 @@ const shellModelOwners = [
             {
                 name: 'commandCenterGlobalValuesFromState',
                 fingerprint:
-                    '803b1f60b5757295e9fa072581b1799b1991fd4d8e54ca787fe3a2f2ea013eb5',
+                    '5a50b6315dbbae744805183f03d970c5b59de016a694938c6e108d05973d988e',
             },
             {
                 name: 'sameCommandCenterGlobalValues',
                 fingerprint:
                     '1be5249c05b049d9f3cfe7140064749306337e4b83cfc649ea182ddd6b63f968',
+            },
+            {
+                name: 'reconcileDiagnosticGlobalScope',
+                fingerprint:
+                    '36ab8a477b1b935cd8f0881e0f1a753909c453e9ecc63cd1d278c7bd50242ed8',
             },
             {
                 name: 'bootstrapPatchFromGlobalValues',
@@ -217,6 +222,7 @@ const shellModelOwners = [
         imports: [
             '../../manual-workbench.ts|value:DEFAULT_MANUAL_WORKBENCH_VALUES',
             '../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
+            '../diagnostics/context/legacy-diagnostic-context.ts|type:LegacyDiagnosticContext',
             '../shared/record-value.ts|value:recordValue->optionalRecord',
             '../shared/string-value.ts|value:stringValue',
             '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxCurrentConfig',
@@ -227,6 +233,7 @@ const shellModelOwners = [
             'export-type:CommandCenterGlobalValues',
             'export-function:commandCenterGlobalValuesFromState',
             'export-function:sameCommandCenterGlobalValues',
+            'export-function:reconcileDiagnosticGlobalScope',
             'export-function:bootstrapPatchFromGlobalValues',
         ],
         lineCap: 100,
@@ -302,14 +309,16 @@ const shellControllerOwners = [
         exports: ['useCommandCenterGlobalContext'],
         fingerprints: {
             useCommandCenterGlobalContext:
-                '41249fad729b61cf5bb82e32e05fb0f056f70b6a4297099a64a93d308bd8c5ad',
+                '4a1ff099eacf963952b01801fa645647c8c6d5069bc3a1be3c9dca08708c70ac',
         },
         imports: [
             '../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
             '../../runtime-store.ts|value:rallarBlackBoxRuntimeStore',
+            '../diagnostics/context/legacy-diagnostic-context.ts|type:LegacyDiagnosticContext',
             './global-context-model.ts|type:CommandCenterGlobalValues',
             './global-context-model.ts|value:bootstrapPatchFromGlobalValues',
             './global-context-model.ts|value:commandCenterGlobalValuesFromState',
+            './global-context-model.ts|value:reconcileDiagnosticGlobalScope',
             './global-context-model.ts|value:sameCommandCenterGlobalValues',
             './rallar-browser-status.ts|value:deriveRallarBrowserStatus',
             '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
@@ -319,11 +328,11 @@ const shellControllerOwners = [
             'react|value:useRef',
             'react|value:useState',
         ],
-        hooks: { useState: 2, useMemo: 2, useRef: 1, useEffect: 1 },
+        hooks: { useState: 2, useMemo: 2, useRef: 2, useEffect: 1 },
         inventory: ['export-function:useCommandCenterGlobalContext'],
         staleAppPattern:
             /useState<CommandCenterGlobalValues>|\blastGlobalAuthKey\b|const updateGlobalValue\s*=|const resetGlobalValues\s*=/,
-        lineCap: 150,
+        lineCap: 160,
     },
     {
         path: 'apps/rallar-black-box/src/legacy/runner/shell/use-runner-shell-state.ts',
@@ -335,13 +344,18 @@ const shellControllerOwners = [
         ],
         fingerprints: {
             useRunnerShellState:
-                '99b1483102958463c041259b3ceec86003eb976cd72f672f9216fb1edfb3354e',
+                '34a376f163c5c4567859003e102067ce1ae45cd9c6cbac85bcbb4b9e6dd47a42',
             useRunnerShellSelectionSync:
-                'd31ee132b03905c4edbe251f851e4a2cbecfff04f83fb1d22cace4431c79d3e3',
+                'e4f656139d862c94d1b9f2a3ce2db6cd02b41780cd293c98328b133b7a15f67e',
+            initialRunnerCommandId:
+                'e3d15d77756baa23a9eb199d1e7da547dcb43f76bfe9528516281b3538e45ded',
+            selectedRunnerResult:
+                'aca9713869f9b781d3f10a6be7ed885355be67f4c3515a7f0cffd338fbc791c7',
         },
         imports: [
             '../../../ui-persistence.ts|value:readStoredSelectedCommandId',
             '../../../ui-persistence.ts|value:writeStoredSelectedCommandId',
+            '../../diagnostics/context/legacy-diagnostic-context.ts|type:LegacyDiagnosticContext',
             '../../shared/use-now.ts|value:useNow',
             '../../shell/browser-ui-storage.ts|value:browserUiStorage',
             '../runner-contracts.ts|type:RunnerDistributedRunSelection',
@@ -355,16 +369,19 @@ const shellControllerOwners = [
             'react|type:SetStateAction',
             'react|value:useEffect',
             'react|value:useMemo',
+            'react|value:useRef',
             'react|value:useState',
         ],
-        hooks: { useState: 2, useMemo: 1, useRef: 0, useEffect: 2 },
+        hooks: { useState: 2, useMemo: 1, useRef: 4, useEffect: 3 },
         inventory: [
             'export-function:useRunnerShellState',
             'export-function:useRunnerShellSelectionSync',
+            'export-function:initialRunnerCommandId',
+            'export-function:selectedRunnerResult',
         ],
         staleAppPattern:
             /useMemo\(\(\) => deriveQueue|\buseNow\(250\)|readStoredSelectedCommandId|writeStoredSelectedCommandId|useState<RunnerDistributedRunSelection/,
-        lineCap: 120,
+        lineCap: 150,
     },
 ] as const;
 

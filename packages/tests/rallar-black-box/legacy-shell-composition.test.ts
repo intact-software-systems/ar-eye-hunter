@@ -15,9 +15,7 @@ const compositionOwners = [
     { path: `${shellRoot}/tabs/RunnerWorkspaceTabPanels.tsx`, cap: 190 },
     { path: `${shellRoot}/tabs/DirectConnectionTabPanels.tsx`, cap: 210 },
     { path: `${shellRoot}/tabs/DirectResourceTabPanels.tsx`, cap: 100 },
-    { path: `${shellRoot}/tabs/RunnerCompatibilityTabPanels.tsx`, cap: 130 },
     { path: `${shellRoot}/tabs/DiagnosticEvidenceTabPanels.tsx`, cap: 140 },
-    { path: `${shellRoot}/tabs/LegacyCompatibilityTailTabPanels.tsx`, cap: 80 },
 ] as const;
 const tabGroupPaths = compositionOwners
     .map((owner) => owner.path)
@@ -26,9 +24,7 @@ const expectedTabGroupOrder = [
     'RunnerWorkspaceTabPanels',
     'DirectConnectionTabPanels',
     'DirectResourceTabPanels',
-    'RunnerCompatibilityTabPanels',
     'DiagnosticEvidenceTabPanels',
-    'LegacyCompatibilityTailTabPanels',
 ] as const;
 const expectedSectionIds = [
     'panel-recipes',
@@ -38,7 +34,6 @@ const expectedSectionIds = [
     'panel-advanced',
     'panel-quick-test',
     'panel-auth',
-    'legacy-panel-manual-rallar',
     'panel-rooms-clients',
     'panel-websocket',
     'panel-rtc-realtime',
@@ -47,33 +42,22 @@ const expectedSectionIds = [
     'panel-rallar-data',
     'panel-crdt-health',
     'panel-media',
-    'legacy-panel-local-workbench',
-    'legacy-panel-run-manager',
-    'legacy-panel-distributed-recipes',
     'panel-rallar-trace',
     'panel-event-stream',
     'panel-rallar-server',
-    'legacy-panel-flow-builder',
-    'legacy-panel-shared-test',
 ] as const;
 const expectedSectionsByGroup = new Map<string, readonly string[]>([
     [tabGroupPaths[0], expectedSectionIds.slice(0, 5)],
-    [tabGroupPaths[1], expectedSectionIds.slice(5, 13)],
-    [tabGroupPaths[2], expectedSectionIds.slice(13, 16)],
-    [tabGroupPaths[3], expectedSectionIds.slice(16, 19)],
-    [tabGroupPaths[4], expectedSectionIds.slice(19, 22)],
-    [tabGroupPaths[5], expectedSectionIds.slice(22, 24)],
+    [tabGroupPaths[1], expectedSectionIds.slice(5, 12)],
+    [tabGroupPaths[2], expectedSectionIds.slice(12, 15)],
+    [tabGroupPaths[3], expectedSectionIds.slice(15, 18)],
 ]);
 const expectedHiddenExpressions = new Map<string, string>(
     expectedSectionIds.map((id) => {
         const tab = id
             .replace(/^legacy-panel-/, '')
             .replace(/^panel-/, '');
-        const owner = ['legacy-panel-flow-builder', 'legacy-panel-shared-test']
-            .includes(id)
-            ? 'navigation.activeTab'
-            : 'activeTab';
-        return [id, `${owner} !== '${tab}'`];
+        return [id, `activeTab !== '${tab}'`];
     }),
 );
 const expectedGuardFingerprints = new Map<string, string>([
@@ -81,8 +65,6 @@ const expectedGuardFingerprints = new Map<string, string>([
     ['panel-runs', 'd12a6530dfbfe237bf382b608471e891ea73f61108d0095758ee25ae824b005f'],
     ['panel-fleet', '8f767a77fc68bfb3ee341199fb273f4f047610ed58212f80a558819e46c5055d'],
     ['panel-builder', '24e4faef22986ca263a73d0d54d18c7ed634addc4caaad549a6b128099478fde'],
-    ['legacy-panel-run-manager', 'f0cb9b1f77a5efbc3a61ea829d94d16fb09df50cbf9d704b89956eda3c184240'],
-    ['legacy-panel-distributed-recipes', '63ff9b090b9fa076027cb180e8a3a06645b6fbbd7c413dc56d7105fb5a48bc38'],
 ]);
 
 const expectedImportInventory = new Map<string, readonly string[]>([
@@ -110,6 +92,7 @@ const expectedImportInventory = new Map<string, readonly string[]>([
     ]],
     [`${shellRoot}/legacy-shell-contracts.ts`, [
         '../../runtime-store.ts|type:useRallarBlackBoxRuntimeStore',
+        '../diagnostics/context/legacy-diagnostic-context.ts|type:ParsedLegacyDiagnosticContext',
         '../runner/shell/use-runner-shell-state.ts|type:useRunnerShellState',
         './use-command-center-global-context.ts|type:useCommandCenterGlobalContext',
         './use-legacy-navigation.ts|type:useLegacyNavigation',
@@ -118,12 +101,14 @@ const expectedImportInventory = new Map<string, readonly string[]>([
         'react|type:SetStateAction',
     ]],
     [`${shellRoot}/LegacyAppShell.tsx`, [
+        '../diagnostics/context/LegacyDiagnosticContextBar.tsx|value:LegacyDiagnosticContextBar',
         './AppModeSwitch.tsx|value:AppModeSwitch',
         './AppTabs.tsx|value:AppTabs',
         './GlobalContextBar.tsx|value:GlobalContextBar',
         './LegacyDiagnosticDrawer.tsx|value:LegacyDiagnosticDrawer',
         './LegacyRunHeader.tsx|value:Header',
         './legacy-shell-contracts.ts|type:LegacyShellAuth',
+        './legacy-shell-contracts.ts|type:LegacyShellDiagnosticContext',
         './legacy-shell-contracts.ts|type:LegacyShellGlobalContext',
         './legacy-shell-contracts.ts|type:LegacyShellNavigation',
         './legacy-shell-contracts.ts|type:LegacyShellRunnerSelection',
@@ -131,8 +116,6 @@ const expectedImportInventory = new Map<string, readonly string[]>([
         './tabs/DiagnosticEvidenceTabPanels.tsx|value:DiagnosticEvidenceTabPanels',
         './tabs/DirectConnectionTabPanels.tsx|value:DirectConnectionTabPanels',
         './tabs/DirectResourceTabPanels.tsx|value:DirectResourceTabPanels',
-        './tabs/LegacyCompatibilityTailTabPanels.tsx|value:LegacyCompatibilityTailTabPanels',
-        './tabs/RunnerCompatibilityTabPanels.tsx|value:RunnerCompatibilityTabPanels',
         './tabs/RunnerWorkspaceTabPanels.tsx|value:RunnerWorkspaceTabPanels',
     ]],
     [`${shellRoot}/LegacyDiagnosticDrawer.tsx`, [
@@ -165,7 +148,6 @@ const expectedImportInventory = new Map<string, readonly string[]>([
         '../../diagnostics/rtc/RtcDiagnosticsPanel.tsx|value:RtcDiagnosticsPanel',
         '../../diagnostics/topology/TopologyGraphPanel.tsx|value:TopologyGraphPanel',
         '../../diagnostics/websocket/WebSocketCommandCenterPanel.tsx|value:WebSocketCommandCenterPanel',
-        '../../runner/manual/ManualRallarSection.tsx|value:ManualRallarSection',
         '../../runner/runs/RunnerRunsPanel.tsx|value:FailurePanel',
         '../legacy-shell-contracts.ts|type:LegacyShellAuth',
         '../legacy-shell-contracts.ts|type:LegacyShellGlobalContext',
@@ -183,16 +165,6 @@ const expectedImportInventory = new Map<string, readonly string[]>([
         '../legacy-shell-contracts.ts|type:LegacyShellRuntime',
     ]],
     [tabGroupPaths[3], [
-        '../../runner/distributed-recipes/DistributedRecipesPanel.tsx|value:DistributedRecipesPanel',
-        '../../runner/run-manager/RunManagerPanel.tsx|value:RunManagerPanel',
-        '../../runner/workbench/LocalWorkbenchSection.tsx|value:LocalWorkbenchSection',
-        '../legacy-shell-contracts.ts|type:LegacyShellAuth',
-        '../legacy-shell-contracts.ts|type:LegacyShellGlobalContext',
-        '../legacy-shell-contracts.ts|type:LegacyShellNavigation',
-        '../legacy-shell-contracts.ts|type:LegacyShellRunnerSelection',
-        '../legacy-shell-contracts.ts|type:LegacyShellRuntime',
-    ]],
-    [tabGroupPaths[4], [
         '../../diagnostics/events/EventStreamPanel.tsx|value:EventStreamPanel',
         '../../diagnostics/events/ExecutionFocusPanel.tsx|value:ExecutionFocusPanel',
         '../../diagnostics/events/RallarTracePanel.tsx|value:RallarTracePanel',
@@ -201,15 +173,6 @@ const expectedImportInventory = new Map<string, readonly string[]>([
         '../../runner/advanced/CommandHistoryPanel.tsx|value:CommandHistoryPanel',
         '../../runner/runs/RunnerRunsPanel.tsx|value:FailurePanel',
         '../../shared/redaction-presentation.ts|value:uiRedactionOptions',
-        '../legacy-shell-contracts.ts|type:LegacyShellAuth',
-        '../legacy-shell-contracts.ts|type:LegacyShellGlobalContext',
-        '../legacy-shell-contracts.ts|type:LegacyShellNavigation',
-        '../legacy-shell-contracts.ts|type:LegacyShellRunnerSelection',
-        '../legacy-shell-contracts.ts|type:LegacyShellRuntime',
-    ]],
-    [tabGroupPaths[5], [
-        '../../runner/builder/FlowBuilderPanel.tsx|value:FlowBuilderPanel',
-        '../../runner/shared-test/SharedTestPanel.tsx|value:SharedTestPanel',
         '../legacy-shell-contracts.ts|type:LegacyShellAuth',
         '../legacy-shell-contracts.ts|type:LegacyShellGlobalContext',
         '../legacy-shell-contracts.ts|type:LegacyShellNavigation',
@@ -231,15 +194,14 @@ const expectedTopLevelInventory = new Map<string, readonly string[]>([
         'export-type:LegacyShellNavigation',
         'export-type:LegacyShellGlobalContext',
         'export-type:LegacyShellRunnerSelection',
+        'export-type:LegacyShellDiagnosticContext',
     ]],
     [`${shellRoot}/LegacyAppShell.tsx`, ['export-function:LegacyAppShell']],
     [`${shellRoot}/LegacyDiagnosticDrawer.tsx`, ['export-function:LegacyDiagnosticDrawer']],
     [tabGroupPaths[0], ['export-function:RunnerWorkspaceTabPanels']],
     [tabGroupPaths[1], ['export-function:DirectConnectionTabPanels']],
     [tabGroupPaths[2], ['export-function:DirectResourceTabPanels']],
-    [tabGroupPaths[3], ['export-function:RunnerCompatibilityTabPanels']],
-    [tabGroupPaths[4], ['export-function:DiagnosticEvidenceTabPanels']],
-    [tabGroupPaths[5], ['export-function:LegacyCompatibilityTailTabPanels']],
+    [tabGroupPaths[3], ['export-function:DiagnosticEvidenceTabPanels']],
 ]);
 
 const expectedLocalEdges = new Map<string, readonly string[]>([
@@ -498,6 +460,8 @@ describe('legacy shell composition boundary', () => {
             '../../auth-flow.ts|value:bootstrapMatchesAuthSession',
             '../../runtime-store.ts|value:rallarBlackBoxRuntimeStore',
             '../../styles.css|side-effect',
+            '../diagnostics/context/LegacyDiagnosticContextBar.tsx|value:LegacyDiagnosticContextProvider',
+            '../diagnostics/context/legacy-diagnostic-context.ts|value:parseLegacyDiagnosticContext',
             '../runner/shell/use-runner-shell-state.ts|value:useRunnerShellSelectionSync',
             '../runner/shell/use-runner-shell-state.ts|value:useRunnerShellState',
             './LegacyAppShell.tsx|value:LegacyAppShell',
@@ -515,7 +479,7 @@ describe('legacy shell composition boundary', () => {
 
         const controller = namedFunction(legacyExperience, 'LegacyExperience');
         expect(astFingerprint(controller)).toBe(
-            '82f6cb83634c7049fb0955425dc8f774e5a966a51af6055fa70262e9c0aa745a',
+            '69700d11d0036599ea0acc2dc1ad75a322c63077ca3c3f8edda481749a783c66',
         );
         expect(legacyExperienceSource).not.toMatch(
             /(?:from\s+['"][^'"]*App(?:\.tsx)?['"]|import\s*\([^)]*App)/,
@@ -611,11 +575,15 @@ describe('legacy shell composition boundary', () => {
         const shellImports = importModules(sourceFile(shellPath, shellSource));
         expect.soft(
             shellImports.some((moduleImport) =>
-                moduleImport.includes('/diagnostics/') ||
+                (
+                    moduleImport.includes('/diagnostics/') &&
+                    moduleImport !==
+                        '../diagnostics/context/LegacyDiagnosticContextBar.tsx'
+                ) ||
                 moduleImport.includes('/runner/') ||
                 /(?:Panel|Section)\.tsx$/.test(moduleImport),
             ),
-            'LegacyAppShell imports composition roots and shell chrome only',
+            'LegacyAppShell imports composition roots, shell chrome, and the context bar only',
         ).toBe(false);
         expect.soft(hookCount(sourceFile(shellPath, shellSource)), 'shell has no hooks')
             .toBe(0);
@@ -662,13 +630,13 @@ describe('legacy shell composition boundary', () => {
                     ? child.tagName.getText(shellFile)
                     : ts.SyntaxKind[child.kind],
             ),
-            'tab composition root has the six direct group children only',
+            'tab composition root has the four direct group children only',
         ).toEqual(expectedTabGroupOrder);
 
         const presentGroups = tabGroupPaths.filter((path) =>
             existsSync(resolve(repositoryRoot, path)),
         );
-        expect.soft(presentGroups, 'all six tab groups exist').toHaveLength(6);
+        expect.soft(presentGroups, 'all four tab groups exist').toHaveLength(4);
         const groupSources = presentGroups.map(repositorySource);
         const sectionIds = groupSources.flatMap((source) =>
             [...source.matchAll(/<section\s+[\s\S]*?id="([^"]+)"/g)]
@@ -758,20 +726,13 @@ describe('legacy shell composition boundary', () => {
                 `${path}: no cross-group imports`,
             ).toBe(false);
         }
-        expect.soft(guardedCount, 'exact guarded surface count').toBe(6);
+        expect.soft(guardedCount, 'exact guarded surface count').toBe(4);
         expect.soft(unconditionalCount, 'exact hidden-mounted surface count')
-            .toBe(18);
+            .toBe(14);
 
         const combined = groupSources.join('\n');
         for (const tab of ['recipes', 'runs', 'fleet', 'builder']) {
             expect.soft(combined, `${tab}: exact runner active guard`).toMatch(
-                new RegExp(
-                    `activeMode === 'black-box-runner'[\\s\\S]{0,120}activeTab === '${tab}'`,
-                ),
-            );
-        }
-        for (const tab of ['run-manager', 'distributed-recipes']) {
-            expect.soft(combined, `${tab}: exact compatibility guard`).toMatch(
                 new RegExp(
                     `activeMode === 'black-box-runner'[\\s\\S]{0,120}activeTab === '${tab}'`,
                 ),

@@ -18,12 +18,8 @@ const directConnectionTabsSourcePath =
     'apps/rallar-black-box/src/legacy/shell/tabs/DirectConnectionTabPanels.tsx';
 const directResourceTabsSourcePath =
     'apps/rallar-black-box/src/legacy/shell/tabs/DirectResourceTabPanels.tsx';
-const runnerCompatibilityTabsSourcePath =
-    'apps/rallar-black-box/src/legacy/shell/tabs/RunnerCompatibilityTabPanels.tsx';
 const diagnosticEvidenceTabsSourcePath =
     'apps/rallar-black-box/src/legacy/shell/tabs/DiagnosticEvidenceTabPanels.tsx';
-const legacyCompatibilityTailTabsSourcePath =
-    'apps/rallar-black-box/src/legacy/shell/tabs/LegacyCompatibilityTailTabPanels.tsx';
 const recipeConsoleSourcePath = 'apps/rallar-black-box/src/recipe-console';
 const runnerAdvancedSourcePath =
     'apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx';
@@ -1582,9 +1578,6 @@ describe('rallar-black-box app source ownership', () => {
     it('keeps distributed recipe core in exact one-way controller owners', () => {
         const appSource = repositorySource(appSourcePath);
         const advancedSource = runnerAdvancedSource(appSource);
-        const compatibilitySource = repositorySource(
-            runnerCompatibilityTabsSourcePath,
-        );
         const panelPath =
             'apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx';
         const remotePath =
@@ -1674,18 +1667,15 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(appSource, 'App.tsx local panel owner').not.toMatch(
             /^\s*function\s+DistributedRecipesPanel\s*\(/m,
         );
-        expect.soft(compatibilitySource, 'direct compatibility panel import').toMatch(
-            /import\s*{\s*DistributedRecipesPanel\s*}\s*from\s*'\.\.\/\.\.\/runner\/distributed-recipes\/DistributedRecipesPanel\.tsx';/,
+        expect.soft(advancedSource, 'canonical Advanced panel import').toMatch(
+            /import\s*{\s*DistributedRecipesPanel\s*}\s*from\s*'\.\.\/distributed-recipes\/DistributedRecipesPanel\.tsx';/,
         );
         const panelCalls = [
             ...advancedSource.matchAll(
                 /<DistributedRecipesPanel\b([\s\S]*?)\/>/g,
             ),
-            ...compatibilitySource.matchAll(
-                /<DistributedRecipesPanel\b([\s\S]*?)\/>/g,
-            ),
         ];
-        expect(panelCalls, 'advanced and legacy panel calls').toHaveLength(2);
+        expect(panelCalls, 'one canonical Advanced panel call').toHaveLength(1);
         for (const panelCall of panelCalls) {
             const props = [
                 ...panelCall[1].matchAll(/\b(\w+)=\{([^}]+)}/g),
@@ -1700,10 +1690,6 @@ describe('rallar-black-box app source ownership', () => {
         expect(advancedSource, 'Advanced distributed mount guard').toContain(
             `{surface === 'distributed' && (\n                    <div\n                        id="panel-distributed-recipes"\n                        className="workspace-grid tab-workspace distributed-recipes-tab-grid"\n                    >\n                        <DistributedRecipesPanel\n                            state={state}\n                            bootstrap={bootstrap}\n                            control={control}\n                            globalValues={globalValues}\n                        />\n                    </div>\n                )}`,
         );
-        expect(compatibilitySource, 'legacy runner distributed mount guard').toMatch(
-            /{activeMode === 'black-box-runner' &&\s+activeTab === 'distributed-recipes' && \(\s+<DistributedRecipesPanel\s+state={state}\s+bootstrap={bootstrap}\s+control={control}\s+globalValues={globalValues}\s+\/>\s+\)}/,
-        );
-
         const hookCalls = [
             'useDistributedRecipesRemoteState',
             'useDistributedRecipeBuilder',
@@ -2615,9 +2601,6 @@ describe('rallar-black-box app source ownership', () => {
     it('keeps the advanced workbench leaves in exact focused owners', () => {
         const appSource = repositorySource(appSourcePath);
         const advancedSource = runnerAdvancedSource(appSource);
-        const compatibilitySource = repositorySource(
-            runnerCompatibilityTabsSourcePath,
-        );
         const evidenceSource = repositorySource(
             diagnosticEvidenceTabsSourcePath,
         );
@@ -2725,9 +2708,9 @@ describe('rallar-black-box app source ownership', () => {
 
         const directImports = [
             {
-                importerPath: runnerCompatibilityTabsSourcePath,
+                importerPath: runnerAdvancedSourcePath,
                 moduleImport:
-                    '../../runner/workbench/LocalWorkbenchSection.tsx',
+                    '../workbench/LocalWorkbenchSection.tsx',
                 seam: 'LocalWorkbenchSection',
             },
             {
@@ -2863,12 +2846,9 @@ describe('rallar-black-box app source ownership', () => {
             ...advancedSource.matchAll(
                 /<LocalWorkbenchSection\b[\s\S]*?\/>/g,
             ),
-            ...compatibilitySource.matchAll(
-                /<LocalWorkbenchSection\b[\s\S]*?\/>/g,
-            ),
         ].map((match) => match[0]);
-        expect(sectionCalls, 'advanced and legacy workbench instances').toHaveLength(
-            2,
+        expect(sectionCalls, 'one canonical Advanced workbench instance').toHaveLength(
+            1,
         );
         for (const sectionCall of sectionCalls) {
             for (const prop of [
@@ -2896,11 +2876,6 @@ describe('rallar-black-box app source ownership', () => {
             [...advancedSource.matchAll(/^ {20}<LocalWorkbenchSection\b/gm)],
             'advanced workbench mounts as an unconditional direct child',
         ).toHaveLength(1);
-        expect(
-            [...compatibilitySource.matchAll(/^ {16}<LocalWorkbenchSection\b/gm)],
-            'compatibility workbench mounts as an unconditional direct child',
-        ).toHaveLength(1);
-
         const runnerWrapper = advancedSource.match(
             /<div\s+id="panel-local-workbench"[\s\S]*?<\/div>/,
         )?.[0] ?? '';
@@ -2913,25 +2888,6 @@ describe('rallar-black-box app source ownership', () => {
         expect(
             [...runnerWrapper.matchAll(/<LocalWorkbenchSection\b/g)],
             'RunnerAdvanced local instance',
-        ).toHaveLength(1);
-
-        const legacyWrapper = compatibilitySource.match(
-            /<section\s+id="legacy-panel-local-workbench"[\s\S]*?<\/section>/,
-        )?.[0] ?? '';
-        for (const wrapperMarker of [
-            'className="workspace-grid tab-workspace workbench-tab-grid"',
-            'role="tabpanel"',
-            'aria-labelledby="tab-local-workbench"',
-            "hidden={activeTab !== 'local-workbench'}",
-        ] as const) {
-            expect.soft(
-                legacyWrapper,
-                `legacy local workbench wrapper: ${wrapperMarker}`,
-            ).toContain(wrapperMarker);
-        }
-        expect(
-            [...legacyWrapper.matchAll(/<LocalWorkbenchSection\b/g)],
-            'legacy local workbench instance',
         ).toHaveLength(1);
 
         const workbenchSource =
@@ -3225,12 +3181,6 @@ describe('rallar-black-box app source ownership', () => {
                 seams: ['stringValue'],
             },
             {
-                importerPath: directConnectionTabsSourcePath,
-                moduleImport:
-                    '../../runner/manual/ManualRallarSection.tsx',
-                seams: ['ManualRallarSection'],
-            },
-            {
                 importerPath: defaultsPath,
                 moduleImport: '../../shared/string-value.ts',
                 seams: ['stringValue'],
@@ -3380,14 +3330,11 @@ describe('rallar-black-box app source ownership', () => {
             ...advancedSource.matchAll(
                 /<ManualRallarSection\b([\s\S]*?)\/>/g,
             ),
-            ...directConnectionSource.matchAll(
-                /<ManualRallarSection\b([\s\S]*?)\/>/g,
-            ),
         ];
         expect(
             sectionCalls,
-            'advanced and legacy manual controller instances',
-        ).toHaveLength(2);
+            'one canonical Advanced manual controller instance',
+        ).toHaveLength(1);
         const expectedSectionProps = [
             'state',
             'bootstrap',
@@ -3420,19 +3367,13 @@ describe('rallar-black-box app source ownership', () => {
             'RunnerAdvanced preserves selected history expression',
         ).toBe(true);
         expect(
-            sectionCalls.some((sectionCall) =>
-                sectionCall[0].includes('history={history}'),
-            ),
-            'legacy direct composition preserves selected history binding',
-        ).toBe(true);
-        expect(
             [...advancedSource.matchAll(/^ {20}<ManualRallarSection\b/gm)],
             'advanced manual section is an unconditional direct child',
         ).toHaveLength(1);
         expect(
             [...directConnectionSource.matchAll(/^ {16}<ManualRallarSection\b/gm)],
-            'direct compatibility manual section is an unconditional direct child',
-        ).toHaveLength(1);
+            'direct diagnostics no longer duplicate the manual section',
+        ).toHaveLength(0);
         for (const legacyChild of [
             'ManualRallarWorkbenchPanel',
             'ReceivedDataInboxPanel',
@@ -3459,25 +3400,6 @@ describe('rallar-black-box app source ownership', () => {
         expect(
             [...runnerWrapper.matchAll(/<ManualRallarSection\b/g)],
             'RunnerAdvanced manual instance',
-        ).toHaveLength(1);
-
-        const legacyWrapper = directConnectionSource.match(
-            /<section\s+id="legacy-panel-manual-rallar"[\s\S]*?<\/section>/,
-        )?.[0] ?? '';
-        for (const wrapperMarker of [
-            'className="workspace-grid tab-workspace manual-tab-grid"',
-            'role="tabpanel"',
-            'aria-labelledby="tab-manual-rallar"',
-            "hidden={activeTab !== 'manual-rallar'}",
-        ] as const) {
-            expect.soft(
-                legacyWrapper,
-                `legacy manual wrapper: ${wrapperMarker}`,
-            ).toContain(wrapperMarker);
-        }
-        expect(
-            [...legacyWrapper.matchAll(/<ManualRallarSection\b/g)],
-            'legacy manual instance',
         ).toHaveLength(1);
 
         const hookSource = sourceFor(hookPath);
@@ -3953,9 +3875,6 @@ describe('rallar-black-box app source ownership', () => {
     it('keeps the Shared Test domain in exact focused owners', () => {
         const appSource = repositorySource(appSourcePath);
         const advancedSource = runnerAdvancedSource(appSource);
-        const compatibilityTailSource = repositorySource(
-            legacyCompatibilityTailTabsSourcePath,
-        );
         const runnerRecipeCatalogPath =
             'apps/rallar-black-box/src/legacy/runner/recipes/runner-recipe-catalog.ts';
         const runnerRecipeCatalogExists = existsSync(
@@ -4078,9 +3997,9 @@ describe('rallar-black-box app source ownership', () => {
                 seams: ['catalogRequirements'],
             },
             {
-                importerPath: legacyCompatibilityTailTabsSourcePath,
+                importerPath: runnerAdvancedSourcePath,
                 moduleImport:
-                    '../../runner/shared-test/SharedTestPanel.tsx',
+                    '../shared-test/SharedTestPanel.tsx',
                 seams: ['SharedTestPanel'],
             },
             {
@@ -4324,12 +4243,11 @@ describe('rallar-black-box app source ownership', () => {
 
         const panelCalls = [
             ...advancedSource.matchAll(/<SharedTestPanel\b([^>]*)\/>/g),
-            ...compatibilityTailSource.matchAll(/<SharedTestPanel\b([^>]*)\/>/g),
         ];
         expect(
             panelCalls,
-            'advanced and legacy independent Shared Test instances',
-        ).toHaveLength(2);
+            'one canonical Advanced Shared Test instance',
+        ).toHaveLength(1);
         for (const panelCall of panelCalls) {
             expect.soft(panelCall[1] ?? '', 'SharedTestPanel call: no props or key').toBe(' ');
         }
@@ -4343,24 +4261,6 @@ describe('rallar-black-box app source ownership', () => {
             [...runnerWrapper.matchAll(/<SharedTestPanel\b/g)],
             'RunnerAdvanced conditional Shared Test instance',
         ).toHaveLength(1);
-        const legacyWrapper = compatibilityTailSource.match(
-            /<section\s+id="legacy-panel-shared-test"[\s\S]*?<\/section>/,
-        )?.[0] ?? '';
-        for (const wrapperMarker of [
-            'className="workspace-grid tab-workspace shared-test-tab-grid"',
-            'role="tabpanel"',
-            'aria-labelledby="tab-shared-test"',
-            "hidden={navigation.activeTab !== 'shared-test'}",
-        ] as const) {
-            expect.soft(legacyWrapper, `legacy Shared Test wrapper: ${wrapperMarker}`).toContain(
-                wrapperMarker,
-            );
-        }
-        expect(
-            [...legacyWrapper.matchAll(/<SharedTestPanel\b/g)],
-            'persistent legacy Shared Test instance',
-        ).toHaveLength(1);
-
         const targetPaths = new Set(owners.map((owner) => owner.path));
         const dependencies = new Map<string, readonly string[]>();
         for (const owner of owners) {
@@ -7599,20 +7499,6 @@ describe('rallar-black-box app source ownership', () => {
         const runManagerModules = [
             {
                 path: runManagerPath,
-                importerPath: runnerCompatibilityTabsSourcePath,
-                moduleImport:
-                    '../../runner/run-manager/RunManagerPanel.tsx',
-                seams: ['RunManagerPanel'],
-                declarations: [
-                    {
-                        seam: 'RunManagerPanel',
-                        pattern:
-                            /^\s*export\s+function\s+RunManagerPanel\s*\(/m,
-                    },
-                ],
-            },
-            {
-                path: runManagerPath,
                 importerPath: runnerAdvancedSourcePath,
                 moduleImport: '../run-manager/RunManagerPanel.tsx',
                 seams: ['RunManagerPanel'],
@@ -7856,13 +7742,10 @@ describe('rallar-black-box app source ownership', () => {
         }
     });
 
-    it('extracts the Builder domain without changing its two-instance lifetime contract', () => {
+    it('extracts the Builder domain behind one canonical lifetime owner', () => {
         const appSource = repositorySource(appSourcePath);
         const runnerWorkspaceSource = repositorySource(
             runnerWorkspaceTabsSourcePath,
-        );
-        const compatibilityTailSource = repositorySource(
-            legacyCompatibilityTailTabsSourcePath,
         );
         const builderRoot = 'apps/rallar-black-box/src/legacy/runner/builder';
         const supportPath = `${builderRoot}/flow-builder-support.ts`;
@@ -7952,9 +7835,6 @@ describe('rallar-black-box app source ownership', () => {
             );
         }
         expect.soft(runnerWorkspaceSource, 'runner workspace direct Builder owner import').toMatch(
-            /import\s*{\s*FlowBuilderPanel\s*}\s*from\s*'\.\.\/\.\.\/runner\/builder\/FlowBuilderPanel\.tsx';/,
-        );
-        expect.soft(compatibilityTailSource, 'compatibility tail direct Builder owner import').toMatch(
             /import\s*{\s*FlowBuilderPanel\s*}\s*from\s*'\.\.\/\.\.\/runner\/builder\/FlowBuilderPanel\.tsx';/,
         );
         expect.soft(appSource, 'App no root flow-builder import').not.toMatch(
@@ -8385,43 +8265,20 @@ describe('rallar-black-box app source ownership', () => {
             runnerWorkspaceTabsSourcePath,
             runnerWorkspaceSource,
         );
-        const compatibilityTailAst = task9aSourceFile(
-            legacyCompatibilityTailTabsSourcePath,
-            compatibilityTailSource,
-        );
         const runnerWorkspaceDeclaration = task9aNamedFunction(
             runnerWorkspaceAst,
             'RunnerWorkspaceTabPanels',
-        );
-        const compatibilityTailDeclaration = task9aNamedFunction(
-            compatibilityTailAst,
-            'LegacyCompatibilityTailTabPanels',
         );
         const primaryBuilderCalls = task9aJsxCalls(
             runnerWorkspaceDeclaration,
             'FlowBuilderPanel',
         );
-        const compatibilityBuilderCalls = task9aJsxCalls(
-            compatibilityTailDeclaration,
-            'FlowBuilderPanel',
-        );
-        const builderCalls = [
-            ...primaryBuilderCalls,
-            ...compatibilityBuilderCalls,
-        ];
-        expect.soft(builderCalls, 'explicit owners keep exactly two Builder calls').toHaveLength(2);
-        expect.soft(
-            task9aAstFingerprint(builderCalls),
-            'explicit owners preserve exact two five-prop Builder calls',
-        ).toBe('ec7aab4e4493774d8a9ec82cf59a410f72a86d34024b883546db4d576628e89c');
+        const builderCalls = primaryBuilderCalls;
+        expect.soft(builderCalls, 'one canonical Builder call').toHaveLength(1);
         expect.soft(
             task9aAstFingerprint(primaryBuilderCalls),
             'primary exact five-prop call',
         ).toBe('cc200559c8f66b8fa65295c42a15211c5dd78ddce6a44c50fb962086c6263ce9');
-        expect.soft(
-            task9aAstFingerprint(compatibilityBuilderCalls),
-            'compatibility exact five-prop call',
-        ).toBe('f4ec5cab99820d984da62f0742234e7c0f6a4e6eeee362a751dadc2a494a4cc5');
         for (const call of builderCalls) {
             expect.soft(call.getText(), 'Builder call has no key').not.toMatch(/\bkey\s*=/);
         }
@@ -8435,9 +8292,6 @@ describe('rallar-black-box app source ownership', () => {
         ).toBe('894ff5674a14643e4d41da3a3aba39e1e7224d082c889f3d87193aabcd533054');
         const runnerWorkspaceReturn = task9aReturnExpression(
             runnerWorkspaceDeclaration,
-        );
-        const compatibilityTailReturn = task9aReturnExpression(
-            compatibilityTailDeclaration,
         );
         const elementById = (
             root: ts.Node,
@@ -8469,7 +8323,6 @@ describe('rallar-black-box app source ownership', () => {
         for (const [root, id, expectedHash] of [
             [runnerWorkspaceReturn, 'panel-builder', '12c66f04d34a939946208376e661b189bcff34641d038ab6fc2026809339f36b'],
             [runnerWorkspaceReturn, 'panel-flow-builder', '65264fe3117926caaa843283448ab98dcb4c6c2f6cb9b1248953efd8a2f08641'],
-            [compatibilityTailReturn, 'legacy-panel-flow-builder', 'e4dd90769e0de7a65f90455c6473613c913697669bc3830d31216dbff045c144'],
         ] as const) {
             const element = elementById(root, id);
             expect.soft(
@@ -8477,12 +8330,6 @@ describe('rallar-black-box app source ownership', () => {
                 `${id}: exact wrapper`,
             ).toBe(expectedHash);
         }
-        const legacyWrapper = elementById(
-            compatibilityTailReturn,
-            'legacy-panel-flow-builder',
-        );
-        expect.soft(legacyWrapper?.getText() ?? '', 'legacy remains hidden persistent')
-            .toContain("hidden={navigation.activeTab !== 'flow-builder'}");
         expect.soft(
             task9aImportEdges(runnerWorkspaceAst).filter((edge) =>
                 edge.startsWith('../../runner/builder/'),
@@ -8491,15 +8338,6 @@ describe('rallar-black-box app source ownership', () => {
         ).toEqual([
             '../../runner/builder/FlowBuilderPanel.tsx|value:FlowBuilderPanel',
         ]);
-        expect.soft(
-            task9aImportEdges(compatibilityTailAst).filter((edge) =>
-                edge.startsWith('../../runner/builder/'),
-            ),
-            'compatibility tail imports only direct Builder Panel owner',
-        ).toEqual([
-            '../../runner/builder/FlowBuilderPanel.tsx|value:FlowBuilderPanel',
-        ]);
-
         const dependencies = new Map<string, readonly string[]>();
         const discoverDependencies = (sourcePath: string): void => {
             if (dependencies.has(sourcePath)) return;

@@ -16,8 +16,6 @@ import type {
 import { DiagnosticEvidenceTabPanels } from './tabs/DiagnosticEvidenceTabPanels.tsx';
 import { DirectConnectionTabPanels } from './tabs/DirectConnectionTabPanels.tsx';
 import { DirectResourceTabPanels } from './tabs/DirectResourceTabPanels.tsx';
-import { LegacyCompatibilityTailTabPanels } from './tabs/LegacyCompatibilityTailTabPanels.tsx';
-import { RunnerCompatibilityTabPanels } from './tabs/RunnerCompatibilityTabPanels.tsx';
 import { RunnerWorkspaceTabPanels } from './tabs/RunnerWorkspaceTabPanels.tsx';
 
 export function LegacyAppShell({
@@ -94,21 +92,7 @@ export function LegacyAppShell({
                     navigation={navigation}
                     globalContext={globalContext}
                 />
-                <RunnerCompatibilityTabPanels
-                    runtime={runtime}
-                    auth={auth}
-                    navigation={navigation}
-                    globalContext={globalContext}
-                    runnerSelection={runnerSelection}
-                />
                 <DiagnosticEvidenceTabPanels
-                    runtime={runtime}
-                    auth={auth}
-                    navigation={navigation}
-                    globalContext={globalContext}
-                    runnerSelection={runnerSelection}
-                />
-                <LegacyCompatibilityTailTabPanels
                     runtime={runtime}
                     auth={auth}
                     navigation={navigation}
