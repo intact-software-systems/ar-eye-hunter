@@ -48,6 +48,7 @@ import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
 import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
+import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import {
     distributedArtifactImportStatus,
     type DistributedArtifactImportStatus,
@@ -139,6 +140,8 @@ export function useRunnerRunsController({
     );
     const [compareRightId, setCompareRightId] = useState('');
     const didInitialDistributedRefresh = useRef(false);
+    const distributedRefreshRequests = useLatestRequestGuard();
+    const manualDistributedRefreshActive = useRef(false);
     const activeSyntheticSeedRef = useRef<SyntheticDistributedRunSeed | undefined>(
         initialSyntheticSeed,
     );
@@ -257,16 +260,22 @@ export function useRunnerRunsController({
         if (activeSyntheticSeedRef.current && !override) {
             return;
         }
+        if (options.quiet && manualDistributedRefreshActive.current) {
+            return;
+        }
+        const request = distributedRefreshRequests.begin();
         const baseUrl = override?.controlBaseUrl ?? controlBaseUrl;
         const token = override?.controlToken ?? controlToken;
         const preferredRunId =
             override?.distributedRunId ?? selectedDistributedRunId;
         if (!options.quiet) {
+            manualDistributedRefreshActive.current = true;
             setDistributedBusy(options.loadArtifact ? 'artifact' : 'refresh');
         }
         setDistributedError(undefined);
         try {
             const fetchedRuns = await fetchDistributedRuns({ baseUrl, token });
+            if (!request.isCurrent()) return;
             const list = [...fetchedRuns].sort(
                 (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs,
             );
@@ -280,6 +289,7 @@ export function useRunnerRunsController({
                     distributedRunId: preferredRunId,
                 }).catch(() => selectedFromList)
                 : list[0];
+            if (!request.isCurrent()) return;
             const nextControlRunId =
                 nextDistributedRun?.controlRunId ?? override?.controlRunId ??
                     controlRunId;
@@ -291,6 +301,7 @@ export function useRunnerRunsController({
                     bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
                 }).catch(() => undefined)
                 : undefined;
+            if (!request.isCurrent()) return;
             const shouldLoadArtifact = Boolean(
                 nextDistributedRun &&
                     (options.loadArtifact ||
@@ -306,7 +317,10 @@ export function useRunnerRunsController({
                 ? artifactBundle
                 : undefined;
 
-            if (activeSyntheticSeedRef.current && !override) {
+            if (
+                !request.isCurrent() ||
+                (activeSyntheticSeedRef.current && !override)
+            ) {
                 return;
             }
             setControlBaseUrl(baseUrl);
@@ -335,9 +349,12 @@ export function useRunnerRunsController({
                 return otherRun?.distributedRunId ?? '';
             });
         } catch (error) {
-            setDistributedError(runnerFriendlyErrorMessage(error));
+            if (request.isCurrent()) {
+                setDistributedError(runnerFriendlyErrorMessage(error));
+            }
         } finally {
-            if (!options.quiet) {
+            if (request.isCurrent() && !options.quiet) {
+                manualDistributedRefreshActive.current = false;
                 setDistributedBusy(undefined);
             }
         }

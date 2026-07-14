@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { selectRallarBlackBoxCommandHistory } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
@@ -6,14 +6,28 @@ import type { RunnerAdvancedSurfaceId } from '../../../app-tabs.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
-import { DistributedRecipesPanel } from '../distributed-recipes/DistributedRecipesPanel.tsx';
 import { ManualRallarSection } from '../manual/ManualRallarSection.tsx';
-import { RunManagerPanel } from '../run-manager/RunManagerPanel.tsx';
 import type { CommandQueueRow } from '../runner-contracts.ts';
-import { SharedTestPanel } from '../shared-test/SharedTestPanel.tsx';
 import { LocalWorkbenchSection } from '../workbench/LocalWorkbenchSection.tsx';
 
+const DistributedRecipesPanel = lazy(() =>
+    import('../distributed-recipes/DistributedRecipesPanel.tsx').then(module => ({
+        default: module.DistributedRecipesPanel,
+    }))
+);
+const RunManagerPanel = lazy(() =>
+    import('../run-manager/RunManagerPanel.tsx').then(module => ({
+        default: module.RunManagerPanel,
+    }))
+);
+const SharedTestPanel = lazy(() =>
+    import('../shared-test/SharedTestPanel.tsx').then(module => ({
+        default: module.SharedTestPanel,
+    }))
+);
+
 export function RunnerAdvancedPanel({
+    active,
     state,
     bootstrap,
     control,
@@ -31,6 +45,7 @@ export function RunnerAdvancedPanel({
     onGlobalValueChange,
     onSurfaceChange,
 }: {
+    active: boolean;
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
     control: RallarBlackBoxControlSnapshot;
@@ -106,29 +121,33 @@ export function RunnerAdvancedPanel({
                         onSelectCommand={onSelectCommand}
                     />
                 </div>
-                {surface === 'distributed' && (
+                {active && surface === 'distributed' && (
                     <div
                         id="panel-distributed-recipes"
                         className="workspace-grid tab-workspace distributed-recipes-tab-grid"
                     >
-                        <DistributedRecipesPanel
-                            state={state}
-                            bootstrap={bootstrap}
-                            control={control}
-                            globalValues={globalValues}
-                        />
+                        <Suspense fallback={<span role="status">Loading Distributed Recipes…</span>}>
+                            <DistributedRecipesPanel
+                                state={state}
+                                bootstrap={bootstrap}
+                                control={control}
+                                globalValues={globalValues}
+                            />
+                        </Suspense>
                     </div>
                 )}
-                {surface === 'run-manager' && (
+                {active && surface === 'run-manager' && (
                     <div
                         id="panel-run-manager"
                         className="workspace-grid tab-workspace run-manager-tab-grid"
                     >
-                        <RunManagerPanel
-                            state={state}
-                            bootstrap={bootstrap}
-                            control={control}
-                        />
+                        <Suspense fallback={<span role="status">Loading Run Manager…</span>}>
+                            <RunManagerPanel
+                                state={state}
+                                bootstrap={bootstrap}
+                                control={control}
+                            />
+                        </Suspense>
                     </div>
                 )}
                 <div
@@ -149,12 +168,14 @@ export function RunnerAdvancedPanel({
                         onGlobalValueChange={onGlobalValueChange}
                     />
                 </div>
-                {surface === 'shared-test' && (
+                {active && surface === 'shared-test' && (
                     <div
                         id="panel-shared-test"
                         className="workspace-grid tab-workspace shared-test-tab-grid"
                     >
-                        <SharedTestPanel />
+                        <Suspense fallback={<span role="status">Loading Shared Test…</span>}>
+                            <SharedTestPanel />
+                        </Suspense>
                     </div>
                 )}
             </div>

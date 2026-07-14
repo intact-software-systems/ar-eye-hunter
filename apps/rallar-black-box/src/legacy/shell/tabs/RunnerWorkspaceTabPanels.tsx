@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import type {
     LegacyShellAuth,
     LegacyShellGlobalContext,
@@ -6,10 +7,27 @@ import type {
     LegacyShellRuntime,
 } from '../legacy-shell-contracts.ts';
 import { RunnerAdvancedPanel } from '../../runner/advanced/RunnerAdvancedPanel.tsx';
-import { FlowBuilderPanel } from '../../runner/builder/FlowBuilderPanel.tsx';
-import { RunnerFleetPanel } from '../../runner/fleet/RunnerFleetPanel.tsx';
-import { RunnerRecipesPanel } from '../../runner/recipes/RunnerRecipesPanel.tsx';
-import { RunnerRunsPanel } from '../../runner/runs/RunnerRunsPanel.tsx';
+
+const RunnerRecipesPanel = lazy(() =>
+    import('../../runner/recipes/RunnerRecipesPanel.tsx').then(module => ({
+        default: module.RunnerRecipesPanel,
+    }))
+);
+const RunnerRunsPanel = lazy(() =>
+    import('../../runner/runs/RunnerRunsPanel.tsx').then(module => ({
+        default: module.RunnerRunsPanel,
+    }))
+);
+const RunnerFleetPanel = lazy(() =>
+    import('../../runner/fleet/RunnerFleetPanel.tsx').then(module => ({
+        default: module.RunnerFleetPanel,
+    }))
+);
+const FlowBuilderPanel = lazy(() =>
+    import('../../runner/builder/FlowBuilderPanel.tsx').then(module => ({
+        default: module.FlowBuilderPanel,
+    }))
+);
 
 export function RunnerWorkspaceTabPanels({
     runtime,
@@ -53,15 +71,14 @@ export function RunnerWorkspaceTabPanels({
 
     return (
         <>
-            <section
-                id="panel-recipes"
-                className="workspace-grid tab-workspace recipes-tab-grid"
-                role="tabpanel"
-                aria-labelledby="tab-recipes"
-                hidden={activeTab !== 'recipes'}
-            >
-                {activeMode === 'black-box-runner' &&
-                    activeTab === 'recipes' && (
+            {activeMode === 'black-box-runner' && activeTab === 'recipes' && (
+                <section
+                    id="panel-recipes"
+                    className="workspace-grid tab-workspace recipes-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-recipes"
+                >
+                    <Suspense fallback={<div role="status">Loading Recipes…</div>}>
                         <RunnerRecipesPanel
                             state={state}
                             bootstrap={bootstrap}
@@ -77,17 +94,17 @@ export function RunnerWorkspaceTabPanels({
                             }}
                             onOpenTab={selectTab}
                         />
-                    )}
-            </section>
-            <section
-                id="panel-runs"
-                className="workspace-grid tab-workspace runs-tab-grid"
-                role="tabpanel"
-                aria-labelledby="tab-runs"
-                hidden={activeTab !== 'runs'}
-            >
-                {activeMode === 'black-box-runner' &&
-                    activeTab === 'runs' && (
+                    </Suspense>
+                </section>
+            )}
+            {activeMode === 'black-box-runner' && activeTab === 'runs' && (
+                <section
+                    id="panel-runs"
+                    className="workspace-grid tab-workspace runs-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-runs"
+                >
+                    <Suspense fallback={<div role="status">Loading Runs…</div>}>
                         <RunnerRunsPanel
                             state={state}
                             bootstrap={bootstrap}
@@ -95,33 +112,33 @@ export function RunnerWorkspaceTabPanels({
                             authSession={authSession}
                             preferredDistributedRun={runnerDistributedSelection}
                         />
-                    )}
-            </section>
-            <section
-                id="panel-fleet"
-                className="workspace-grid tab-workspace fleet-tab-grid"
-                role="tabpanel"
-                aria-labelledby="tab-fleet"
-                hidden={activeTab !== 'fleet'}
-            >
-                {activeMode === 'black-box-runner' &&
-                    activeTab === 'fleet' && (
+                    </Suspense>
+                </section>
+            )}
+            {activeMode === 'black-box-runner' && activeTab === 'fleet' && (
+                <section
+                    id="panel-fleet"
+                    className="workspace-grid tab-workspace fleet-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-fleet"
+                >
+                    <Suspense fallback={<div role="status">Loading Fleet…</div>}>
                         <RunnerFleetPanel
                             bootstrap={bootstrap}
                             control={control}
                             globalValues={globalValues}
                         />
-                    )}
-            </section>
-            <section
-                id="panel-builder"
-                className="workspace-grid tab-workspace builder-tab-grid"
-                role="tabpanel"
-                aria-labelledby="tab-builder"
-                hidden={activeTab !== 'builder'}
-            >
-                {activeMode === 'black-box-runner' &&
-                    activeTab === 'builder' && (
+                    </Suspense>
+                </section>
+            )}
+            {activeMode === 'black-box-runner' && activeTab === 'builder' && (
+                <section
+                    id="panel-builder"
+                    className="workspace-grid tab-workspace builder-tab-grid"
+                    role="tabpanel"
+                    aria-labelledby="tab-builder"
+                >
+                    <Suspense fallback={<div role="status">Loading Builder…</div>}>
                     <div
                         id="panel-flow-builder"
                         className="workspace-grid tab-workspace flow-builder-tab-grid"
@@ -134,8 +151,9 @@ export function RunnerWorkspaceTabPanels({
                             onSelectCommand={setSelectedCommandId}
                         />
                     </div>
-                )}
-            </section>
+                    </Suspense>
+                </section>
+            )}
             <section
                 id="panel-advanced"
                 className="workspace-grid tab-workspace advanced-tab-grid"
@@ -144,6 +162,7 @@ export function RunnerWorkspaceTabPanels({
                 hidden={activeTab !== 'advanced'}
             >
                 <RunnerAdvancedPanel
+                    active={activeMode === 'black-box-runner' && activeTab === 'advanced'}
                     state={state}
                     bootstrap={bootstrap}
                     control={control}

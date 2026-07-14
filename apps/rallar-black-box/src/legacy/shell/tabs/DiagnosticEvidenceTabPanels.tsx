@@ -4,7 +4,7 @@ import { RallarTracePanel } from '../../diagnostics/events/RallarTracePanel.tsx'
 import { StatsPanel } from '../../diagnostics/events/StatsPanel.tsx';
 import { RallarServerPanel } from '../../diagnostics/rallar-server/RallarServerPanel.tsx';
 import { CommandHistoryPanel } from '../../runner/advanced/CommandHistoryPanel.tsx';
-import { FailurePanel } from '../../runner/runs/RunnerRunsPanel.tsx';
+import { FailurePanel } from '../../runner/runs/FailurePanel.tsx';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import type {
     LegacyShellAuth,

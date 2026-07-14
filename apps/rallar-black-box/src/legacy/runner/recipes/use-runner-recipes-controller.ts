@@ -51,6 +51,7 @@ import type { CommandCenterGlobalValues } from '../../shell/global-context-model
 import { validateDistributedRecipeManifest } from '../distributed-recipes/distributed-manifest-validation.ts';
 import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
+import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import { createRunnerAgentLaunchActions } from './runner-agent-launch-actions.ts';
 import {
     runnerApiEndpointUrl,
@@ -167,6 +168,7 @@ export function useRunnerRecipesController({
     );
     const [launchError, setLaunchError] = useState<string | undefined>();
     const didInitialRefresh = useRef(false);
+    const readinessRequests = useLatestRequestGuard();
     const targetRows = useMemo(
         () =>
             distributedRecipeTargetRows({
@@ -281,6 +283,7 @@ export function useRunnerRecipesController({
     };
 
     const refreshReadiness = async (): Promise<void> => {
+        const request = readinessRequests.begin();
         setBusyAction('refresh-readiness');
         setApiProbe({ status: 'checking', detail: 'Checking API' });
         setControlProbe({
@@ -306,12 +309,14 @@ export function useRunnerRecipesController({
             },
         )
             .then((response) => {
+                if (!request.isCurrent()) return;
                 setApiProbe({
                     status: response.status < 500 ? 'online' : 'offline',
                     detail: `HTTP ${response.status}`,
                 });
             })
             .catch((error) => {
+                if (!request.isCurrent()) return;
                 setApiProbe({
                     status: 'offline',
                     detail: runnerFriendlyErrorMessage(error),
@@ -329,12 +334,14 @@ export function useRunnerRecipesController({
                 },
             )
                 .then(async (response) => {
+                    if (!request.isCurrent()) return;
                     if (!response.ok) {
                         throw new Error(`HTTP ${response.status}`);
                     }
                     const payload = await response.json() as {
                         iceServers?: unknown;
                     };
+                    if (!request.isCurrent()) return;
                     const iceServerCount = Array.isArray(payload.iceServers)
                         ? payload.iceServers.length
                         : 0;
@@ -346,6 +353,7 @@ export function useRunnerRecipesController({
                     });
                 })
                 .catch((error) => {
+                    if (!request.isCurrent()) return;
                     setTurnProbe({
                         status: 'error',
                         detail: runnerFriendlyErrorMessage(error),
@@ -358,6 +366,7 @@ export function useRunnerRecipesController({
             bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
         })
             .then(async (serverSnapshot) => {
+                if (!request.isCurrent()) return;
                 setControlSnapshot(serverSnapshot);
                 setControlProbe({
                     status: 'online',
@@ -380,19 +389,20 @@ export function useRunnerRecipesController({
                 setControlRunId(nextRunId);
                 if (knownPreferredRunId) {
                     setAgentRunId(knownPreferredRunId);
-                    setControlRun(
-                        await fetchControlRunSnapshot({
-                            baseUrl: controlBaseUrl,
-                            token: controlToken,
-                            runId: knownPreferredRunId,
-                            bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
-                        }),
-                    );
+                    const nextControlRun = await fetchControlRunSnapshot({
+                        baseUrl: controlBaseUrl,
+                        token: controlToken,
+                        runId: knownPreferredRunId,
+                        bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                    });
+                    if (!request.isCurrent()) return;
+                    setControlRun(nextControlRun);
                 } else {
                     setControlRun(undefined);
                 }
             })
             .catch((error) => {
+                if (!request.isCurrent()) return;
                 setControlSnapshot(undefined);
                 setControlRun(undefined);
                 setControlProbe({
@@ -402,7 +412,7 @@ export function useRunnerRecipesController({
             });
 
         await Promise.allSettled([apiPromise, controlPromise, turnPromise]);
-        setBusyAction(undefined);
+        if (request.isCurrent()) setBusyAction(undefined);
     };
 
     useEffect(() => {

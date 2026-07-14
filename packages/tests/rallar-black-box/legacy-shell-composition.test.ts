@@ -12,7 +12,7 @@ const compositionOwners = [
     { path: `${shellRoot}/legacy-shell-contracts.ts`, cap: 70 },
     { path: `${shellRoot}/LegacyAppShell.tsx`, cap: 180 },
     { path: `${shellRoot}/LegacyDiagnosticDrawer.tsx`, cap: 90 },
-    { path: `${shellRoot}/tabs/RunnerWorkspaceTabPanels.tsx`, cap: 190 },
+    { path: `${shellRoot}/tabs/RunnerWorkspaceTabPanels.tsx`, cap: 210 },
     { path: `${shellRoot}/tabs/DirectConnectionTabPanels.tsx`, cap: 210 },
     { path: `${shellRoot}/tabs/DirectResourceTabPanels.tsx`, cap: 100 },
     { path: `${shellRoot}/tabs/DiagnosticEvidenceTabPanels.tsx`, cap: 140 },
@@ -52,19 +52,31 @@ const expectedSectionsByGroup = new Map<string, readonly string[]>([
     [tabGroupPaths[2], expectedSectionIds.slice(12, 15)],
     [tabGroupPaths[3], expectedSectionIds.slice(15, 18)],
 ]);
+const activeOnlySectionIds = new Set([
+    'panel-recipes',
+    'panel-runs',
+    'panel-fleet',
+    'panel-builder',
+    'panel-rooms-clients',
+    'panel-topology',
+    'panel-rtc-diagnostics',
+]);
 const expectedHiddenExpressions = new Map<string, string>(
-    expectedSectionIds.map((id) => {
+    expectedSectionIds.filter(id => !activeOnlySectionIds.has(id)).map((id) => {
         const tab = id
             .replace(/^legacy-panel-/, '')
             .replace(/^panel-/, '');
         return [id, `activeTab !== '${tab}'`];
     }),
 );
-const expectedGuardFingerprints = new Map<string, string>([
-    ['panel-recipes', '3449b7cff641f2c3c92e3899fd5e6220483eb04c5758518de53ef84378f0de72'],
-    ['panel-runs', 'd12a6530dfbfe237bf382b608471e891ea73f61108d0095758ee25ae824b005f'],
-    ['panel-fleet', '8f767a77fc68bfb3ee341199fb273f4f047610ed58212f80a558819e46c5055d'],
-    ['panel-builder', '24e4faef22986ca263a73d0d54d18c7ed634addc4caaad549a6b128099478fde'],
+const expectedGuardExpressions = new Map<string, string>([
+    ['panel-recipes', "activeMode === 'black-box-runner' && activeTab === 'recipes'"],
+    ['panel-runs', "activeMode === 'black-box-runner' && activeTab === 'runs'"],
+    ['panel-fleet', "activeMode === 'black-box-runner' && activeTab === 'fleet'"],
+    ['panel-builder', "activeMode === 'black-box-runner' && activeTab === 'builder'"],
+    ['panel-rooms-clients', "activeTab === 'rooms-clients'"],
+    ['panel-topology', "activeTab === 'topology'"],
+    ['panel-rtc-diagnostics', "activeTab === 'rtc-diagnostics'"],
 ]);
 
 const expectedImportInventory = new Map<string, readonly string[]>([
@@ -129,31 +141,28 @@ const expectedImportInventory = new Map<string, readonly string[]>([
     ]],
     [tabGroupPaths[0], [
         '../../runner/advanced/RunnerAdvancedPanel.tsx|value:RunnerAdvancedPanel',
-        '../../runner/builder/FlowBuilderPanel.tsx|value:FlowBuilderPanel',
-        '../../runner/fleet/RunnerFleetPanel.tsx|value:RunnerFleetPanel',
-        '../../runner/recipes/RunnerRecipesPanel.tsx|value:RunnerRecipesPanel',
-        '../../runner/runs/RunnerRunsPanel.tsx|value:RunnerRunsPanel',
         '../legacy-shell-contracts.ts|type:LegacyShellAuth',
         '../legacy-shell-contracts.ts|type:LegacyShellGlobalContext',
         '../legacy-shell-contracts.ts|type:LegacyShellNavigation',
         '../legacy-shell-contracts.ts|type:LegacyShellRunnerSelection',
         '../legacy-shell-contracts.ts|type:LegacyShellRuntime',
+        'react|value:Suspense',
+        'react|value:lazy',
     ]],
     [tabGroupPaths[1], [
         '../../diagnostics/auth/AuthCommandCenterPanel.tsx|value:AuthCommandCenterPanel',
         '../../diagnostics/events/StatsPanel.tsx|value:StatsPanel',
         '../../diagnostics/quick-test/QuickRallarTestPanel.tsx|value:QuickRallarTestPanel',
-        '../../diagnostics/rooms-clients/RoomsClientsPanel.tsx|value:RoomsClientsPanel',
         '../../diagnostics/rtc-realtime/RtcRealtimePanel.tsx|value:RtcRealtimePanel',
-        '../../diagnostics/rtc/RtcDiagnosticsPanel.tsx|value:RtcDiagnosticsPanel',
-        '../../diagnostics/topology/TopologyGraphPanel.tsx|value:TopologyGraphPanel',
         '../../diagnostics/websocket/WebSocketCommandCenterPanel.tsx|value:WebSocketCommandCenterPanel',
-        '../../runner/runs/RunnerRunsPanel.tsx|value:FailurePanel',
+        '../../runner/runs/FailurePanel.tsx|value:FailurePanel',
         '../legacy-shell-contracts.ts|type:LegacyShellAuth',
         '../legacy-shell-contracts.ts|type:LegacyShellGlobalContext',
         '../legacy-shell-contracts.ts|type:LegacyShellNavigation',
         '../legacy-shell-contracts.ts|type:LegacyShellRunnerSelection',
         '../legacy-shell-contracts.ts|type:LegacyShellRuntime',
+        'react|value:Suspense',
+        'react|value:lazy',
     ]],
     [tabGroupPaths[2], [
         '../../diagnostics/crdt/CrdtHealthPanel.tsx|value:CrdtHealthPanel',
@@ -171,7 +180,7 @@ const expectedImportInventory = new Map<string, readonly string[]>([
         '../../diagnostics/events/StatsPanel.tsx|value:StatsPanel',
         '../../diagnostics/rallar-server/RallarServerPanel.tsx|value:RallarServerPanel',
         '../../runner/advanced/CommandHistoryPanel.tsx|value:CommandHistoryPanel',
-        '../../runner/runs/RunnerRunsPanel.tsx|value:FailurePanel',
+        '../../runner/runs/FailurePanel.tsx|value:FailurePanel',
         '../../shared/redaction-presentation.ts|value:uiRedactionOptions',
         '../legacy-shell-contracts.ts|type:LegacyShellAuth',
         '../legacy-shell-contracts.ts|type:LegacyShellGlobalContext',
@@ -198,8 +207,19 @@ const expectedTopLevelInventory = new Map<string, readonly string[]>([
     ]],
     [`${shellRoot}/LegacyAppShell.tsx`, ['export-function:LegacyAppShell']],
     [`${shellRoot}/LegacyDiagnosticDrawer.tsx`, ['export-function:LegacyDiagnosticDrawer']],
-    [tabGroupPaths[0], ['export-function:RunnerWorkspaceTabPanels']],
-    [tabGroupPaths[1], ['export-function:DirectConnectionTabPanels']],
+    [tabGroupPaths[0], [
+        'variable:RunnerRecipesPanel',
+        'variable:RunnerRunsPanel',
+        'variable:RunnerFleetPanel',
+        'variable:FlowBuilderPanel',
+        'export-function:RunnerWorkspaceTabPanels',
+    ]],
+    [tabGroupPaths[1], [
+        'variable:RoomsClientsPanel',
+        'variable:TopologyGraphPanel',
+        'variable:RtcDiagnosticsPanel',
+        'export-function:DirectConnectionTabPanels',
+    ]],
     [tabGroupPaths[2], ['export-function:DirectResourceTabPanels']],
     [tabGroupPaths[3], ['export-function:DiagnosticEvidenceTabPanels']],
 ]);
@@ -448,6 +468,52 @@ function hookCount(root: ts.Node): number {
     return count;
 }
 
+function directOwnedSection(
+    child: ts.JsxChild,
+): Readonly<{ section: ts.JsxElement; guard?: ts.Expression }> | undefined {
+    if (
+        ts.isJsxElement(child) &&
+        child.openingElement.tagName.getText() === 'section'
+    ) {
+        return { section: child };
+    }
+    if (!ts.isJsxExpression(child) || !child.expression) return undefined;
+    let section: ts.JsxElement | undefined;
+    const visit = (node: ts.Node): void => {
+        if (section) return;
+        if (
+            ts.isJsxElement(node) &&
+            node.openingElement.tagName.getText() === 'section'
+        ) {
+            section = node;
+            return;
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(child.expression);
+    return section ? { section, guard: child.expression } : undefined;
+}
+
+function jsxCalls(root: ts.Node, name: string): readonly ts.JsxSelfClosingElement[] {
+    const calls: ts.JsxSelfClosingElement[] = [];
+    const visit = (node: ts.Node): void => {
+        if (
+            ts.isJsxSelfClosingElement(node) &&
+            node.tagName.getText() === name
+        ) calls.push(node);
+        ts.forEachChild(node, visit);
+    };
+    visit(root);
+    return calls;
+}
+
+function activeGuardText(guard: ts.Expression | undefined): string | undefined {
+    return guard && ts.isBinaryExpression(guard) &&
+            guard.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+        ? guard.left.getText(guard.getSourceFile())
+        : undefined;
+}
+
 describe('legacy shell composition boundary', () => {
     it('locks the exact lazy legacy experience controller and shell wiring', () => {
         const legacyExperienceSource = repositorySource(legacyExperiencePath);
@@ -511,8 +577,21 @@ describe('legacy shell composition boundary', () => {
                 source.trimEnd().split('\n').length,
                 `${owner.path}: line cap`,
             ).toBeLessThanOrEqual(owner.cap);
-            expect.soft(source, `${owner.path}: no App/CSS/lazy back-edge`)
-                .not.toMatch(/App\.tsx['"]|\.css['"]|\blazy\s*\(|\bSuspense\b/);
+            expect.soft(source, `${owner.path}: no App/CSS back-edge`)
+                .not.toMatch(/App\.tsx['"]|\.css['"]/);
+            const expectedDynamicImports = owner.path === tabGroupPaths[0]
+                ? 4
+                : owner.path === tabGroupPaths[1]
+                    ? 3
+                    : 0;
+            expect.soft(
+                dynamicImportCount(sourceFile(owner.path, source)),
+                `${owner.path}: exact local safe-route splits`,
+            ).toBe(expectedDynamicImports);
+            expect.soft(
+                [...source.matchAll(/<Suspense\b/g)],
+                `${owner.path}: one local boundary per split`,
+            ).toHaveLength(expectedDynamicImports);
         }
     });
 
@@ -531,10 +610,17 @@ describe('legacy shell composition boundary', () => {
                 topLevelInventory(file),
                 `${path}: exact top-level ownership inventory`,
             ).toEqual(expectedTopLevelInventory.get(path));
+            const expectedDynamicImports = path === appPath
+                ? 2
+                : path === tabGroupPaths[0]
+                    ? 4
+                    : path === tabGroupPaths[1]
+                        ? 3
+                        : 0;
             expect.soft(
                 dynamicImportCount(file),
-                `${path}: only App owns the two experience edges`,
-            ).toBe(path === appPath ? 2 : 0);
+                `${path}: exact dynamic composition edges`,
+            ).toBe(expectedDynamicImports);
 
             graph.set(
                 path,
@@ -665,21 +751,21 @@ describe('legacy shell composition boundary', () => {
             const directChildren = ts.isJsxFragment(returned)
                 ? semanticJsxChildren(returned.children)
                 : [];
+            const ownedSections = directChildren.flatMap(child => {
+                const owned = directOwnedSection(child);
+                return owned ? [owned] : [];
+            });
             expect.soft(
-                directChildren.every(
-                    (child) =>
-                        ts.isJsxElement(child) &&
-                        child.openingElement.tagName.getText(file) === 'section',
-                ),
-                `${path}: fragment children are direct sections without wrappers`,
-            ).toBe(true);
-            const directSections = directChildren.filter(ts.isJsxElement);
+                ownedSections,
+                `${path}: every fragment child owns one direct or active-only section`,
+            ).toHaveLength(directChildren.length);
+            const directSections = ownedSections.map(owned => owned.section);
             expect.soft(
                 directSections.map(sectionId),
                 `${path}: exact owned section IDs`,
             ).toEqual(expectedSectionsByGroup.get(path));
 
-            for (const section of directSections) {
+            for (const [sectionIndex, section] of directSections.entries()) {
                 const id = sectionId(section);
                 sectionsById.set(id, section);
                 const hidden = jsxAttribute(section.openingElement, 'hidden');
@@ -693,19 +779,17 @@ describe('legacy shell composition boundary', () => {
                 ).toBe(expectedHiddenExpressions.get(id));
 
                 const children = semanticJsxChildren(section.children);
-                const expectedGuard = expectedGuardFingerprints.get(id);
+                const expectedGuard = expectedGuardExpressions.get(id);
                 if (expectedGuard) {
                     guardedCount += 1;
-                    expect.soft(children, `${id}: one exact guarded child`)
-                        .toHaveLength(1);
-                    const guard = children[0];
-                    const expression = guard && ts.isJsxExpression(guard)
-                        ? guard.expression
-                        : undefined;
                     expect.soft(
-                        expression ? astFingerprint(expression) : '',
-                        `${id}: exact active mode/tab guard AST and mounted subtree`,
+                        activeGuardText(ownedSections[sectionIndex]?.guard),
+                        `${id}: exact active-only guard`,
                     ).toBe(expectedGuard);
+                    expect.soft(
+                        section.getText(file),
+                        `${id}: local status fallback`,
+                    ).toMatch(/<Suspense\b[\s\S]*role="status"/);
                 } else {
                     unconditionalCount += 1;
                     expect.soft(
@@ -726,9 +810,9 @@ describe('legacy shell composition boundary', () => {
                 `${path}: no cross-group imports`,
             ).toBe(false);
         }
-        expect.soft(guardedCount, 'exact guarded surface count').toBe(4);
+        expect.soft(guardedCount, 'exact guarded surface count').toBe(7);
         expect.soft(unconditionalCount, 'exact hidden-mounted surface count')
-            .toBe(14);
+            .toBe(11);
 
         const combined = groupSources.join('\n');
         for (const tab of ['recipes', 'runs', 'fleet', 'builder']) {
@@ -743,11 +827,7 @@ describe('legacy shell composition boundary', () => {
         );
         const topologySection = sectionsById.get('panel-topology');
         const topologyCalls = topologySection
-            ? semanticJsxChildren(topologySection.children).filter(
-                  (child): child is ts.JsxSelfClosingElement =>
-                      ts.isJsxSelfClosingElement(child) &&
-                      child.tagName.getText() === 'TopologyGraphPanel',
-              )
+            ? jsxCalls(topologySection, 'TopologyGraphPanel')
             : [];
         expect.soft(topologyCalls, 'one direct Topology graph mount')
             .toHaveLength(1);

@@ -86,6 +86,28 @@ describe('Recipe Console build boundary', () => {
         ]);
         expect(graph.recipeConsoleStaticClosure.size).toBeGreaterThan(1);
         expect(graph.legacyStaticClosure.size).toBeGreaterThan(1);
+        expect([...graph.legacySafeDynamicEntries.keys()]).toEqual([
+            'RunnerRecipesPanel',
+            'RunnerRunsPanel',
+            'RunnerFleetPanel',
+            'FlowBuilderPanel',
+            'DistributedRecipesPanel',
+            'RunManagerPanel',
+            'SharedTestPanel',
+            'RoomsClientsPanel',
+            'TopologyGraphPanel',
+            'RtcDiagnosticsPanel',
+        ]);
+        expect(graph.legacyDynamicClosure.size).toBeGreaterThan(
+            graph.legacyStaticClosure.size,
+        );
+        for (const entry of graph.legacySafeDynamicEntries.values()) {
+            expect(graph.mainStaticClosure.has(entry)).toBe(false);
+            expect(graph.legacyStaticClosure.has(entry)).toBe(false);
+            expect(graph.recipeConsoleStaticClosure.has(entry)).toBe(false);
+            expect(graph.legacyDynamicClosure.has(entry)).toBe(true);
+            expect(graph.productionClosure.has(entry)).toBe(true);
+        }
         expect(graph.retentionDynamicEntry).toBe(
             'src/recipe-console/control/control-retention-api.ts',
         );
@@ -101,9 +123,79 @@ describe('Recipe Console build boundary', () => {
         )).toBe(false);
         expect(() => assertExperienceChunkGraph(graph)).not.toThrow();
 
+        const manifestPath = join(outputRoot, '.vite/manifest.json');
         const manifest = JSON.parse(
-            await readFile(join(outputRoot, '.vite/manifest.json'), 'utf8'),
-        ) as Record<string, { file: string; src?: string }>;
+            await readFile(manifestPath, 'utf8'),
+        ) as Record<string, {
+            file: string;
+            src?: string;
+            imports?: string[];
+            dynamicImports?: string[];
+        }>;
+
+        const legacyEntry = Object.entries(manifest).find(([, entry]) =>
+            entry.src?.endsWith('/legacy/shell/LegacyExperience.tsx')
+        );
+        expect(legacyEntry).toBeDefined();
+        for (const [label, safeEntry] of graph.legacySafeDynamicEntries) {
+            const withStaticLeak = structuredClone(manifest);
+            const legacyChunk = withStaticLeak[legacyEntry?.[0] ?? 'missing'];
+            if (!legacyChunk) throw new Error('Legacy manifest entry is unavailable.');
+            legacyChunk.imports = [...legacyChunk.imports ?? [], safeEntry];
+            await writeFile(manifestPath, JSON.stringify(withStaticLeak));
+            const staticLeakGraph = readExperienceChunkGraph(manifestPath);
+            expect(
+                () => assertExperienceChunkGraph(staticLeakGraph),
+                `${label}: forced Legacy static import`,
+            ).toThrow(new RegExp(
+                `Legacy static closure includes safe legacy entry ${label}`,
+            ));
+
+            const withUnreachableEntry = structuredClone(manifest);
+            for (const chunk of Object.values(withUnreachableEntry)) {
+                chunk.imports = chunk.imports?.filter(entry => entry !== safeEntry);
+                chunk.dynamicImports = chunk.dynamicImports?.filter(
+                    entry => entry !== safeEntry,
+                );
+            }
+            await writeFile(manifestPath, JSON.stringify(withUnreachableEntry));
+            const unreachableGraph = readExperienceChunkGraph(manifestPath);
+            expect(
+                () => assertExperienceChunkGraph(unreachableGraph),
+                `${label}: disconnected production entry`,
+            ).toThrow(new RegExp(
+                `Legacy safe dynamic entry ${label} is not production-reachable`,
+            ));
+        }
+        await writeFile(manifestPath, JSON.stringify(manifest));
+
+        const legacyJavaScriptChunks = await Promise.all(
+            [...graph.legacyStaticClosure].map(async (key) => {
+                const path = join(outputRoot, manifest[key]?.file ?? 'missing');
+                return { path, text: await readFile(path, 'utf8') };
+            }),
+        );
+        const statefulOwnerChunk = legacyJavaScriptChunks.find(({ text }) =>
+            text.includes('quick-rallar-test-panel')
+        );
+        expect(statefulOwnerChunk).toBeDefined();
+        await writeFile(
+            statefulOwnerChunk?.path ?? 'missing',
+            (statefulOwnerChunk?.text ?? '').replaceAll(
+                'quick-rallar-test-panel',
+                'missing-quick-owner',
+            ),
+        );
+        const missingStatefulOwnerGraph = readExperienceChunkGraph(manifestPath);
+        expect(() => assertExperienceChunkGraph(missingStatefulOwnerGraph))
+            .toThrow(
+                /Legacy static closure is missing the Quick Rallar Test stateful exception/,
+            );
+        await writeFile(
+            statefulOwnerChunk?.path ?? 'missing',
+            statefulOwnerChunk?.text ?? '',
+        );
+
         const recipeChunk = Object.values(manifest).find(entry =>
             entry.src?.endsWith('/recipe-console/app/RecipeConsoleApp.tsx')
         );
@@ -133,7 +225,7 @@ describe('Recipe Console build boundary', () => {
             recipeChunkText.replaceAll('data-command-bar', 'corrupted-command-bar'),
         );
         const corruptedGraph = readExperienceChunkGraph(
-            join(outputRoot, '.vite/manifest.json'),
+            manifestPath,
         );
         expect(() => assertExperienceChunkGraph(corruptedGraph))
             .toThrow(/Recipe Console static closure sentinel is missing/);
@@ -154,7 +246,7 @@ describe('Recipe Console build boundary', () => {
             ),
         );
         const corruptedTuneGraph = readExperienceChunkGraph(
-            join(outputRoot, '.vite/manifest.json'),
+            manifestPath,
         );
         expect(() => assertExperienceChunkGraph(corruptedTuneGraph))
             .toThrow(/Tune static closure History sentinels are missing/);

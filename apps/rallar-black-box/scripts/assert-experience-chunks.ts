@@ -14,6 +14,25 @@ type ManifestChunk = Readonly<{
 
 type Manifest = Readonly<Record<string, ManifestChunk>>;
 
+const legacySafeDynamicEntrySources = {
+    RunnerRecipesPanel: '/legacy/runner/recipes/RunnerRecipesPanel.tsx',
+    RunnerRunsPanel: '/legacy/runner/runs/RunnerRunsPanel.tsx',
+    RunnerFleetPanel: '/legacy/runner/fleet/RunnerFleetPanel.tsx',
+    FlowBuilderPanel: '/legacy/runner/builder/FlowBuilderPanel.tsx',
+    DistributedRecipesPanel:
+        '/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx',
+    RunManagerPanel: '/legacy/runner/run-manager/RunManagerPanel.tsx',
+    SharedTestPanel: '/legacy/runner/shared-test/SharedTestPanel.tsx',
+    RoomsClientsPanel:
+        '/legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx',
+    TopologyGraphPanel:
+        '/legacy/diagnostics/topology/TopologyGraphPanel.tsx',
+    RtcDiagnosticsPanel:
+        '/legacy/diagnostics/rtc/RtcDiagnosticsPanel.tsx',
+} as const;
+
+type LegacySafeDynamicEntry = keyof typeof legacySafeDynamicEntrySources;
+
 export type ExperienceChunkGraph = Readonly<{
     main: string;
     mainStaticClosure: ReadonlySet<string>;
@@ -21,9 +40,12 @@ export type ExperienceChunkGraph = Readonly<{
     mainDynamicExperienceEntries: ReadonlySet<string>;
     recipeConsoleStaticClosure: ReadonlySet<string>;
     legacyStaticClosure: ReadonlySet<string>;
+    legacyDynamicClosure: ReadonlySet<string>;
+    legacySafeDynamicEntries: ReadonlyMap<LegacySafeDynamicEntry, string>;
     retentionDynamicEntry: string;
     retentionStaticClosure: ReadonlySet<string>;
     tuneStaticClosure: ReadonlySet<string>;
+    productionEntries: ReadonlySet<string>;
     productionClosure: ReadonlySet<string>;
 }>;
 
@@ -86,6 +108,17 @@ function closureText(
     }).join('\n');
 }
 
+function javascriptClosureText(
+    manifest: Manifest,
+    outputRoot: string,
+    keys: ReadonlySet<string>,
+): string {
+    return [...keys].map(key => {
+        const file = manifest[key]?.file;
+        return file ? readFileSync(resolve(outputRoot, file), 'utf8') : '';
+    }).join('\n');
+}
+
 function cssClosure(
     manifest: Manifest,
     keys: ReadonlySet<string>,
@@ -130,6 +163,17 @@ export function readExperienceChunkGraph(
         chunk => chunk.src?.endsWith('/recipe-console/tune/TuneWorkspace.tsx') === true,
         'Vite manifest must expose TuneWorkspace as a dynamic entry.',
     );
+    const legacySafeDynamicEntries = new Map<LegacySafeDynamicEntry, string>();
+    for (const [label, sourceSuffix] of Object.entries(
+        legacySafeDynamicEntrySources,
+    ) as [LegacySafeDynamicEntry, string][]) {
+        const [entry] = findEntry(
+            manifest,
+            chunk => chunk.src?.endsWith(sourceSuffix) === true,
+            `Vite manifest must expose ${label} as a dynamic entry.`,
+        );
+        legacySafeDynamicEntries.set(label, entry);
+    }
     const mainDynamicEntries = new Set(manifest[main]?.dynamicImports ?? []);
     const experienceEntries = new Set(
         [...mainDynamicEntries].filter(key => key === recipeConsole || key === legacy),
@@ -141,9 +185,18 @@ export function readExperienceChunkGraph(
         mainDynamicExperienceEntries: experienceEntries,
         recipeConsoleStaticClosure: closure(manifest, recipeConsole, false),
         legacyStaticClosure: closure(manifest, legacy, false),
+        legacyDynamicClosure: closure(manifest, legacy, true),
+        legacySafeDynamicEntries,
         retentionDynamicEntry: retention,
         retentionStaticClosure: closure(manifest, retention, false),
         tuneStaticClosure: closure(manifest, tune, false),
+        productionEntries: new Set(
+            Object.entries(manifest)
+                .filter(([, chunk]) =>
+                    chunk.isEntry === true || chunk.isDynamicEntry === true
+                )
+                .map(([key]) => key),
+        ),
         productionClosure: closure(manifest, main, true),
     };
     graphMetadata.set(graph, {
@@ -223,6 +276,38 @@ export function assertExperienceChunkGraph(graph: ExperienceChunkGraph): void {
             graph.productionClosure.has(legacy),
         'Production closure must reach the main entry and both experiences.',
     );
+    for (const [label, entry] of graph.legacySafeDynamicEntries) {
+        assert(
+            manifest[entry]?.isDynamicEntry === true,
+            `Legacy safe entry ${label} is not a Vite dynamic entry.`,
+        );
+        assert(
+            graph.productionClosure.has(entry),
+            `Legacy safe dynamic entry ${label} is not production-reachable.`,
+        );
+        assert(
+            graph.legacyDynamicClosure.has(entry),
+            `Legacy safe dynamic entry ${label} is not reachable from LegacyExperience.`,
+        );
+        assert(
+            !graph.mainStaticClosure.has(entry),
+            `Main static closure includes safe legacy entry ${label}.`,
+        );
+        assert(
+            !graph.legacyStaticClosure.has(entry),
+            `Legacy static closure includes safe legacy entry ${label}.`,
+        );
+        assert(
+            !graph.recipeConsoleStaticClosure.has(entry),
+            `Recipe Console static closure includes safe legacy entry ${label}.`,
+        );
+    }
+    for (const entry of graph.productionEntries) {
+        assert(
+            graph.productionClosure.has(entry),
+            `Production entry is unreachable from the main entry: ${entry}`,
+        );
+    }
     assert(
         ![...graph.productionClosure].some(key =>
             key.includes('recipe-console-css-isolation')
@@ -246,6 +331,11 @@ export function assertExperienceChunkGraph(graph: ExperienceChunkGraph): void {
     const mainText = closureText(manifest, outputRoot, graph.mainStaticClosure);
     const recipeText = closureText(manifest, outputRoot, graph.recipeConsoleStaticClosure);
     const legacyText = closureText(manifest, outputRoot, graph.legacyStaticClosure);
+    const legacyJavaScriptText = javascriptClosureText(
+        manifest,
+        outputRoot,
+        graph.legacyStaticClosure,
+    );
     const tuneText = closureText(manifest, outputRoot, graph.tuneStaticClosure);
     const retentionText = closureText(
         manifest,
@@ -268,12 +358,32 @@ export function assertExperienceChunkGraph(graph: ExperienceChunkGraph): void {
     assert(!recipeText.includes('app-shell'), 'Recipe Console static closure contains legacy shell UI.');
     assert(!recipeText.includes('panel-media'), 'Recipe Console static closure contains legacy media UI.');
     assert(!recipeText.includes('panel-rallar-server'), 'Recipe Console static closure contains legacy server UI.');
-    assert(!recipeText.includes('panel-distributed-recipes'), 'Recipe Console static closure contains legacy recipe UI.');
     assert(legacyText.includes('app-shell'), 'Legacy static closure does not contain the legacy shell.');
     assert(legacyText.includes('panel-media'), 'Legacy static closure does not contain panel-media.');
     assert(legacyText.includes('panel-rallar-server'), 'Legacy static closure does not contain panel-rallar-server.');
-    assert(legacyText.includes('panel-distributed-recipes'), 'Legacy static closure does not contain distributed recipes.');
-    assert(legacyText.includes('legacy-panel-distributed-recipes'), 'Legacy compatibility recipe sentinel is missing.');
+    for (const [label, sentinel] of [
+        ['Quick Rallar Test', 'quick-rallar-test-panel'],
+        ['Auth command center', 'auth-command-center-panel'],
+        ['WebSocket command center', 'websocket-command-center-panel'],
+        ['RTC realtime', 'rtc-realtime-panel'],
+        ['Rallar Data', 'rallar-data-panel'],
+        ['CRDT', 'crdt-health-panel'],
+        ['Media', 'media-console-panel'],
+        ['Local Workbench', 'workbench-panel'],
+        ['Manual Rallar', 'manual-rallar-panel'],
+        ['Rallar Trace', 'rallar-trace-panel'],
+        ['Event Stream', 'event-panel'],
+        ['Rallar Server', 'rallar-server-panel'],
+    ] as const) {
+        assert(
+            legacyJavaScriptText.includes(sentinel),
+            `Legacy static closure is missing the ${label} stateful exception.`,
+        );
+        assert(
+            !mainText.includes(sentinel) && !recipeText.includes(sentinel),
+            `Cold Recipe Console includes the ${label} stateful legacy exception.`,
+        );
+    }
     assert(
         tuneText.includes('data-history-workspace') &&
             tuneText.includes('data-retention-panel'),

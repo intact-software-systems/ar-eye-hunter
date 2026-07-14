@@ -26,6 +26,7 @@ import {
 import { json } from '../../shared/json-presentation.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
+import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import {
     fleetAgentDetail,
     fleetHeatmapRows,
@@ -95,6 +96,7 @@ export function useRunnerFleetController({
         ControlFleetReportBundle | undefined
     >();
     const didInitialRefresh = useRef(false);
+    const fleetRefreshRequests = useLatestRequestGuard();
     const overrides = useMemo(
         () => parseFleetLabelOverrides(overrideText),
         [overrideText],
@@ -198,6 +200,7 @@ export function useRunnerFleetController({
     const refreshFleet = async (
         options: Readonly<{ rebuild?: boolean; quiet?: boolean }> = {},
     ): Promise<void> => {
+        const request = fleetRefreshRequests.begin();
         if (!options.quiet) {
             setBusy(options.rebuild ? 'rebuild' : 'refresh');
         }
@@ -213,11 +216,13 @@ export function useRunnerFleetController({
                     token: controlToken,
                     filter: fleetReportFilterFromUi(filters),
                 });
+            if (!request.isCurrent()) return;
             const nextSnapshot = await fetchControlServerSnapshot({
                 baseUrl: controlBaseUrl,
                 token: controlToken,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
             });
+            if (!request.isCurrent()) return;
             setResponse(nextResponse);
             setLiveSnapshot(nextSnapshot);
             setLiveRunId((current) => {
@@ -239,9 +244,11 @@ export function useRunnerFleetController({
                 '',
             );
         } catch (caught) {
-            setError(runnerFriendlyErrorMessage(caught));
+            if (request.isCurrent()) {
+                setError(runnerFriendlyErrorMessage(caught));
+            }
         } finally {
-            if (!options.quiet) {
+            if (request.isCurrent() && !options.quiet) {
                 setBusy(undefined);
             }
         }
