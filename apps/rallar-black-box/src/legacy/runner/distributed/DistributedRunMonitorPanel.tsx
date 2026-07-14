@@ -18,6 +18,29 @@ import {
     distributedProgressTone,
 } from './status-presentation.ts';
 
+function createMonitorRows<T>(
+    namespace: string,
+    items: readonly T[],
+    identity: (item: T) => readonly (string | number | undefined)[],
+): readonly Readonly<{ item: T; key: string }>[] {
+    const occurrences = new Map<string, number>();
+    return items.map((item) => {
+        const identityParts = identity(item);
+        const signature = JSON.stringify(identityParts);
+        const occurrence = occurrences.get(signature) ?? 0;
+        occurrences.set(signature, occurrence + 1);
+        return {
+            item,
+            key: JSON.stringify([
+                'legacy-monitor-row-v1',
+                namespace,
+                ...identityParts,
+                occurrence,
+            ]),
+        };
+    });
+}
+
 export function DistributedRunMonitorPanel({
     monitor,
 }: {
@@ -32,6 +55,30 @@ export function DistributedRunMonitorPanel({
     const [diagnosticQuery, setDiagnosticQuery] = useState('');
     const runtimeDiagnostics: readonly DistributedRuntimeDiagnostic[] =
         monitor?.runtimeDiagnostics ?? [];
+    const runtimeDiagnosticRows = useMemo(
+        () => createMonitorRows(
+            'diagnostic',
+            runtimeDiagnostics,
+            (row) => [row.agentId, row.eventId, row.atEpochMs],
+        ),
+        [runtimeDiagnostics],
+    );
+    const monitorEventRows = useMemo(
+        () => createMonitorRows(
+            'event',
+            monitor?.events ?? [],
+            (row) => [row.agentId, row.eventId, row.atEpochMs],
+        ),
+        [monitor?.events],
+    );
+    const monitorTimelineRows = useMemo(
+        () => createMonitorRows(
+            'timeline',
+            monitor?.timeline ?? [],
+            (row) => [row.agentId, row.id, row.atEpochMs],
+        ),
+        [monitor?.timeline],
+    );
     const diagnosticTransports = useMemo(
         () => uniqueValues(runtimeDiagnostics.map((row) => row.transport)),
         [runtimeDiagnostics],
@@ -53,7 +100,7 @@ export function DistributedRunMonitorPanel({
     );
     const filteredRuntimeDiagnostics = useMemo(
         () =>
-            runtimeDiagnostics.filter((row) => {
+            runtimeDiagnosticRows.filter(({ item: row }) => {
                 if (
                     diagnosticTransportFilter &&
                     row.transport !== diagnosticTransportFilter
@@ -91,7 +138,7 @@ export function DistributedRunMonitorPanel({
             diagnosticSeverityFilter,
             diagnosticTransportFilter,
             monitor?.distributedRunId,
-            runtimeDiagnostics,
+            runtimeDiagnosticRows,
         ],
     );
 
@@ -538,10 +585,10 @@ export function DistributedRunMonitorPanel({
                                 {filteredRuntimeDiagnostics
                                     .slice(-16)
                                     .reverse()
-                                    .map((diagnostic) => (
+                                    .map(({ item: diagnostic, key }) => (
                                         <div
                                             className={`distributed-monitor-row diagnostic ${distributedDiagnosticTone(diagnostic.severity)}`}
-                                            key={diagnostic.eventId}
+                                            key={key}
                                         >
                                             <strong>
                                                 {diagnostic.message}
@@ -592,10 +639,10 @@ export function DistributedRunMonitorPanel({
                         <section>
                             <h3>Run Events</h3>
                             <div className="distributed-monitor-list">
-                                {monitor.events.slice(-12).map((event) => (
+                                {monitorEventRows.slice(-12).map(({ item: event, key }) => (
                                     <div
                                         className="distributed-monitor-row"
-                                        key={event.eventId}
+                                        key={key}
                                     >
                                         <strong>{event.kind}</strong>
                                         <span className="pill muted">
@@ -626,10 +673,10 @@ export function DistributedRunMonitorPanel({
                         <section>
                             <h3>Timeline</h3>
                             <div className="distributed-monitor-list">
-                                {monitor.timeline.slice(-16).map((item) => (
+                                {monitorTimelineRows.slice(-16).map(({ item, key }) => (
                                     <div
                                         className="distributed-monitor-row"
-                                        key={item.id}
+                                        key={key}
                                     >
                                         <strong>{item.label}</strong>
                                         <span className={`pill ${item.tone}`}>

@@ -136,6 +136,30 @@ describe('Recipe Console URL state codec', () => {
         expect(parsed.needsReplace).toBe(true);
     });
 
+    it.each([
+        {
+            label: 'blank parameters',
+            search: '',
+            canonicalSearch: '?v=1&experience=recipe-console&view=execute',
+        },
+        {
+            label: 'provider-only parameters',
+            search: '?provider=simulated',
+            canonicalSearch:
+                '?provider=simulated&v=1&experience=recipe-console&view=execute',
+        },
+    ])('canonicalizes $label as an issue-free default route', ({
+        search,
+        canonicalSearch,
+    }) => {
+        const parsed = parseRecipeConsoleUrl(search);
+
+        expect(parsed.state).toEqual(BASE_STATE);
+        expect(parsed.issues).toEqual([]);
+        expect(parsed.canonicalSearch).toBe(canonicalSearch);
+        expect(parsed.needsReplace).toBe(true);
+    });
+
     it('defaults a missing view visibly while retaining valid and unknown fields', () => {
         const parsed = parseRecipeConsoleUrl(
             '?provider=simulated&roomId=room-a&futureField=future' +

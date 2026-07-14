@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '../../..');
@@ -87,6 +87,17 @@ describe('Rallar server storage schema docs', () => {
         expect(migration).toContain('CREATE STATISTICS IF NOT EXISTS resource_inbox_type_status_stats');
         expect(migration).toContain('ON ri_type_id, ri_status');
         expect(migration).toContain('ANALYZE resource_inbox');
+    });
+
+    it('keeps the C-collated runtime-state prefix index represented in API-v1 migrations', () => {
+        const migrationPath =
+            'apps/api-v1/prisma/migrations/20260714170000_runtime_state_store_c_prefix_index/migration.sql';
+
+        expect(existsSync(resolve(ROOT, migrationPath))).toBe(true);
+        const migration = readWorkspaceFile(migrationPath).replace(/\s+/g, ' ');
+        expect(migration).toContain(
+            'CREATE INDEX IF NOT EXISTS runtime_state_store_namespace_key_c_ix ON runtime_state_store (store_namespace, store_key COLLATE "C")',
+        );
     });
 
     it('documents state snapshots and event logs in the architecture notes', () => {

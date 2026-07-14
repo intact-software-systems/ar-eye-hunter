@@ -16543,7 +16543,7 @@ describe('rallar-black-box app source ownership', () => {
                 ? task9aJsxRuntimeFingerprint(entitiesExpression)
                 : '',
             'exact compiled CRDT entities workbench subtree',
-        ).toBe('296745ea3cd5a433fcc94062eb28f8159aa8bc68ff6dc2fecf0b11266112a1ad');
+        ).toBe('dcc6c0134fd8767ee9f92cd380d0a5de0e55703dee02f0dc35be3bfa2a41eb48');
 
         const modelBindingKeys = (
             declaration: ts.FunctionDeclaration,
@@ -16851,7 +16851,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             task9aAstFingerprint([task9aReturnExpression(healthPanel)]),
             'exact complete CRDT health JSX and nested editor mount',
-        ).toBe('13c15bf14e47770518292c7909392824e398fe9dcd5ee75c968cea2be1ccb72b');
+        ).toBe('ba4533af3485a9a99fcd2f2fcab9feb303d49c3498c8dea71bd04bdcde8fe804');
         const nestedEditorCalls = task9aJsxCalls(healthPanel, 'CrdtEditorPanel');
         expect.soft(nestedEditorCalls, 'one nested CRDT editor root').toHaveLength(1);
         expect.soft(
@@ -17993,7 +17993,7 @@ describe('rallar-black-box app source ownership', () => {
         expect(source).not.toMatch(/\bfunction\s+RecipeConsole\w*/);
     });
 
-    it('keeps future Recipe Console features behind the legacy compatibility router', () => {
+    it('keeps Recipe Console free of direct legacy implementation imports', () => {
         const forbiddenImports = sourceFilesUnder(recipeConsoleSourcePath).flatMap((sourcePath) => {
             const source = repositorySource(sourcePath);
             const imports = source.matchAll(
@@ -18002,7 +18002,6 @@ describe('rallar-black-box app source ownership', () => {
 
             return [...imports]
                 .map((match) => match[1])
-                .filter((moduleImport) => !moduleImport.includes('LegacySurfaceRouter'))
                 .map((moduleImport) => `${sourcePath}: ${moduleImport}`);
         });
 

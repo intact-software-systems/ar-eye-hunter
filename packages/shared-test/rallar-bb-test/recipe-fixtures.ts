@@ -387,6 +387,19 @@ function topologySafeRtcReadyPeerCount(
     return plan.participantCount > 1 ? 1 : 0;
 }
 
+export function createRallarBlackBoxEnsureGroupRequestId(input: Readonly<{
+    requestPrefix: string;
+    group: RallarBlackBoxDistributedGroupRef;
+}>): string {
+    return [
+        input.requestPrefix,
+        'ensure-group',
+        input.group.applicationId,
+        input.group.workspaceId,
+        input.group.groupId,
+    ].join(':');
+}
+
 function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
     commandPrefix: string;
     requestPrefix: string;
@@ -402,13 +415,7 @@ function createRallarBlackBoxEnsureGroupCommands(input: Readonly<{
         `/api/state/apps/${encodedApplicationId}/workspaces/${encodedWorkspaceId}/groups`;
     const groupMemberPath =
         `${groupStatePath}/${encodedGroupId}/members/${actorPathSegment}`;
-    const groupRequestKey = [
-        input.requestPrefix,
-        'ensure-group',
-        input.group.applicationId,
-        input.group.workspaceId,
-        input.group.groupId,
-    ].join(':');
+    const groupRequestKey = createRallarBlackBoxEnsureGroupRequestId(input);
     const memberRequestKey = [
         input.requestPrefix,
         'ensure-member',

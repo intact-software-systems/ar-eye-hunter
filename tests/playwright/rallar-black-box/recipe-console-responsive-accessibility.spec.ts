@@ -232,6 +232,123 @@ test('keeps the 900px tablet inspector overlaid without squeezing work', async (
     expect(overlayBounds?.x ?? 900).toBeLessThan((after?.x ?? 0) + (after?.width ?? 0));
 });
 
+test('bounds modal inspector interaction without changing the desktop rail', async ({
+    browser,
+}) => {
+    for (const contract of [
+        {
+            hasTouch: false,
+            mode: 'overlay',
+            viewport: { width: 900, height: 900 },
+        },
+        {
+            hasTouch: true,
+            mode: 'sheet',
+            viewport: { width: 430, height: 932 },
+        },
+    ] as const) {
+        const context = await browser.newContext({
+            baseURL: 'http://127.0.0.1:5176',
+            hasTouch: contract.hasTouch,
+            viewport: contract.viewport,
+        });
+        await installRecipeConsoleMonitorFixture(context);
+        const page = await context.newPage();
+        try {
+            await page.goto(MONITOR_ROUTE);
+            const analyzeNavigation = page.getByRole('button', {
+                name: 'Analyze',
+                exact: true,
+            });
+            const analyzeBounds = await analyzeNavigation.boundingBox();
+            expect(analyzeBounds).not.toBeNull();
+            const trigger = contract.mode === 'sheet'
+                ? page.locator('[data-selection-dock]').getByRole('button', {
+                    name: 'Inspect',
+                })
+                : page.locator(
+                    `[data-failure-key="${MONITOR_FAILURE_COMMAND_ID}"]`,
+                );
+            await trigger.click();
+
+            const dialog = page.getByRole('dialog', { name: 'Inspector' });
+            const backdrop = page.locator('[data-inspector-backdrop]');
+            const backgroundSiblings = page.locator(
+                '[data-recipe-console-shell] > ' +
+                ':not([data-inspector-host]):not([data-inspector-backdrop])',
+            );
+            await expect(dialog).toHaveAttribute('data-mode', contract.mode);
+            await expect(dialog).toHaveAttribute('aria-modal', 'true');
+            await expect(backdrop).toBeVisible();
+            await expect(backdrop).toHaveAttribute('aria-hidden', 'true');
+            expect(await backdrop.evaluate(element => ({
+                role: element.getAttribute('role'),
+                tabIndex: element.getAttribute('tabindex'),
+            }))).toEqual({ role: null, tabIndex: null });
+            expect(await backgroundSiblings.count()).toBeGreaterThanOrEqual(3);
+            for (let index = 0; index < await backgroundSiblings.count(); index += 1) {
+                await expect(backgroundSiblings.nth(index)).toHaveAttribute('inert', '');
+            }
+            await expect(dialog).not.toHaveAttribute('inert', '');
+            await expect(backdrop).not.toHaveAttribute('inert', '');
+            if (analyzeBounds) {
+                const point = {
+                    x: analyzeBounds.x + analyzeBounds.width / 2,
+                    y: analyzeBounds.y + analyzeBounds.height / 2,
+                };
+                expect(await page.evaluate(({ x, y }) =>
+                    document.elementFromPoint(x, y)?.hasAttribute(
+                        'data-inspector-backdrop',
+                    ) ?? false,
+                point)).toBe(true);
+                if (contract.hasTouch) {
+                    await page.touchscreen.tap(point.x, point.y);
+                } else {
+                    await page.mouse.click(point.x, point.y);
+                }
+            }
+
+            await expect(dialog).toHaveCount(0);
+            await expect(backdrop).toHaveCount(0);
+            await expect(page).toHaveURL(/view=monitor/);
+            await expect(trigger).toBeFocused();
+            const restoredSiblings = page.locator(
+                '[data-recipe-console-shell] > *',
+            );
+            for (let index = 0; index < await restoredSiblings.count(); index += 1) {
+                await expect(restoredSiblings.nth(index)).not.toHaveAttribute(
+                    'inert',
+                    '',
+                );
+            }
+        } finally {
+            await context.close();
+        }
+    }
+
+    const desktop = await browser.newContext({
+        baseURL: 'http://127.0.0.1:5176',
+        viewport: { width: 1440, height: 900 },
+    });
+    await installRecipeConsoleMonitorFixture(desktop);
+    const page = await desktop.newPage();
+    try {
+        await page.goto(MONITOR_ROUTE);
+        const rail = page.getByRole('complementary', { name: 'Inspector' });
+        await expect(rail).toHaveAttribute('data-mode', 'rail');
+        await expect(rail).not.toHaveAttribute('aria-modal', 'true');
+        await expect(page.locator('[data-inspector-backdrop]')).toHaveCount(0);
+        const siblings = page.locator(
+            '[data-recipe-console-shell] > :not([data-inspector-host])',
+        );
+        for (let index = 0; index < await siblings.count(); index += 1) {
+            await expect(siblings.nth(index)).not.toHaveAttribute('inert', '');
+        }
+    } finally {
+        await desktop.close();
+    }
+});
+
 test('keeps short-landscape Monitor contained through a keyboard-only evidence path', async ({
     context,
     page,
@@ -337,7 +454,10 @@ test('supports Tune metric and evidence inspection from the keyboard', async ({
     await page.keyboard.press('Space');
     await expect(page.locator('[data-tune-inspector]'))
         .toContainText('/recipes/0/recipe/commands/0/rateHz');
+    await expect(inspector.getByRole('button', { name: 'Close inspector' }))
+        .toBeFocused();
     await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
     await expect(inspectKnob).toBeFocused();
 
     const candidate = page.locator('[data-tune-candidate]');
@@ -1040,6 +1160,14 @@ test('uses roving keyboard navigation without activating focus-only keys', async
         expect(await items.evaluateAll(buttons => buttons.map(button => button.tabIndex)))
             .toEqual([0, -1, -1, -1, -1, -1]);
         await expect(execute).toHaveAttribute('aria-current', 'page');
+        if (contract.presentation === 'bottom') {
+            const inspector = page.getByRole('dialog', { name: 'Inspector' });
+            await expect(inspector.getByRole('button', {
+                name: 'Close inspector',
+            })).toBeFocused();
+            await page.keyboard.press('Escape');
+            await expect(inspector).toHaveCount(0);
+        }
 
         await execute.focus();
         for (const [key, focused] of [

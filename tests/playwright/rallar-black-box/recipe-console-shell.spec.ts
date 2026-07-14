@@ -695,6 +695,9 @@ test('blank URL opens Recipe Console Execute after the final ready-state flip', 
         '/?v=1&experience=recipe-console&view=execute' +
         '&recipeId=rtc-realtime-stability',
     );
+    await expect(page.locator('[data-command-bar]')
+        .getByText('Canonical', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-url-issues]')).toHaveCount(0);
     expect(requestedResources.some(url => url.includes('LegacyExperience')))
         .toBe(false);
 });

@@ -208,9 +208,9 @@ async function exportMonitorArtifact(
     const downloadPromise = page.waitForEvent('download');
     await actions.getByRole('button', { name: 'Export artifact' }).click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe(
-        `${distributedRunId}-artifact.json`,
-    );
+    expect(distributedRunId).toMatch(/^[a-z0-9-]+$/u);
+    const expectedStem = distributedRunId.slice(0, 120).replace(/-+$/u, '');
+    expect(download.suggestedFilename()).toBe(`${expectedStem}-artifact.json`);
     const downloadPath = await download.path();
     if (!downloadPath) throw new Error('Artifact download path is unavailable.');
     return JSON.parse(await readFile(downloadPath, 'utf8')) as Readonly<

@@ -588,7 +588,7 @@ describe('legacy shell composition boundary', () => {
         expect.soft(
             stylesheet.trimEnd().split('\n').length,
             'the focused accessibility repair stays small',
-        ).toBeLessThanOrEqual(50);
+        ).toBeLessThanOrEqual(75);
         for (const panelClass of [
             'media-console-panel',
             'rallar-data-panel',

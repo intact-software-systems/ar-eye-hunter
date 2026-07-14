@@ -361,10 +361,10 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                 select store_key, store_value
                 from runtime_state_store
                 where store_namespace = ${namespace}
-                  and store_key >= ${prefix}
-                  and store_key < ${prefixEnd}
+                  and store_key collate "C" >= ${prefix}
+                  and store_key collate "C" < ${prefixEnd}
                   and expire_at_ts > now()
-                order by store_key
+                order by store_key collate "C"
             `;
     }
 

@@ -656,7 +656,9 @@ test('restores a detached windowed inspector trigger to its owning range anchor'
     await expect(close).toBeFocused();
 
     fixture.setAgentCount(30);
-    await refreshMonitor(page, fixture.runRequestCount);
+    const readsBeforePoll = fixture.runRequestCount();
+    await expect.poll(fixture.runRequestCount, { timeout: 10_000 })
+        .toBeGreaterThan(readsBeforePoll);
     await expect(sourceTrigger).toHaveCount(0);
     const rangeAnchor = matrix.locator(
         '[data-monitor-window-focus-anchor="Agents"]',
@@ -697,6 +699,9 @@ test('restores a detached multi-window disclosure trigger to its exact range anc
     const inspector = page.getByRole('dialog', { name: 'Inspector' });
     const close = inspector.getByRole('button', { name: 'Close inspector' });
     await expect(close).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(inspector).toHaveCount(0);
+    await expect(sourceTrigger).toBeFocused();
     await eventsWindow.getByRole('button', { name: 'Previous' }).click();
     await expect(sourceTrigger).toHaveCount(0);
     const timelineAnchor = timeline.locator(
@@ -708,9 +713,6 @@ test('restores a detached multi-window disclosure trigger to its exact range anc
     await expect(timelineAnchor).toHaveText('Showing 1–40 of 825 timeline rows.');
     await expect(eventsAnchor).toHaveText('Showing 1–40 of 110 events.');
 
-    await close.focus();
-    await page.keyboard.press('Escape');
-    await expect(inspector).toHaveCount(0);
     await expect(eventsAnchor).toBeFocused();
     await expect(timelineAnchor).not.toBeFocused();
 });
@@ -765,7 +767,9 @@ test('restores an unmounted disclosure owner past the hidden dock to the named w
     const inspector = page.getByRole('dialog', { name: 'Inspector' });
     const close = inspector.getByRole('button', { name: 'Close inspector' });
     await expect(close).toBeFocused();
-    await events.locator('summary').click();
+    await events.evaluate((element: HTMLDetailsElement) => {
+        element.open = false;
+    });
     await expect(sourceTrigger).toHaveCount(0);
     await expect(events.locator(
         '[data-monitor-window-focus-anchor="Events"]',

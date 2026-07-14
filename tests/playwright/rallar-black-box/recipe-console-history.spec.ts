@@ -500,6 +500,9 @@ test('shows the exact visible fallback for an invalid view', async ({ context, p
         .toBeLessThanOrEqual(headingBounds?.y ?? 0);
     await expect.poll(() => currentUrl(page).searchParams.get('view'))
         .toBe('execute');
+    const inspector = page.getByRole('dialog', { name: 'Inspector' });
+    await inspector.getByRole('button', { name: 'Close inspector' }).click();
+    await expect(inspector).toHaveCount(0);
     await page.getByRole('button', { name: 'Copy canonical link' }).click();
     const copied = new URL(await readClipboardHref(page));
     expect(copied.searchParams.get('view')).toBe('execute');

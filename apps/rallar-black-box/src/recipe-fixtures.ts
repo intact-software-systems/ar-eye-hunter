@@ -1,6 +1,7 @@
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
 
 export {
+    createRallarBlackBoxEnsureGroupRequestId,
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
     createRallarBlackBoxProviderParityLiveRecipe,

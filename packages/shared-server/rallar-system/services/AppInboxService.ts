@@ -16,6 +16,10 @@ import {
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { type RallarTimingDetails, type RallarTimingSink, recordRallarTiming, timeRallarAsync, } from './timing.ts';
 import { isGroupPolicyDeniedError } from '../group-policy.ts';
+import {
+    toAppInboxQueueCreatedBy,
+    toAppInboxQueueKey,
+} from './app-inbox-queue-key.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
 export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
@@ -117,7 +121,7 @@ export class AppInboxService {
                 async (key) => {
                     return await this.inbox.enqueueIfAbsent(
                         newALUntargetedMessage(
-                            toQueueKeyPart(this.serviceId, 16),
+                            toAppInboxQueueCreatedBy(this.serviceId),
                             newALRoute(key.topicId, key.contextId, key.resourceId),
                             enqueue.type.toString(),
                             enqueue,
@@ -141,7 +145,7 @@ export class AppInboxService {
                 async (key) => {
                     return await this.inbox.enqueueIf(
                         newALUntargetedMessage(
-                            toQueueKeyPart(this.serviceId, 16),
+                            toAppInboxQueueCreatedBy(this.serviceId),
                             newALRoute(key.topicId, key.contextId, key.resourceId),
                             enqueue.type.toString(),
                             enqueue,
@@ -164,7 +168,7 @@ export class AppInboxService {
             async (key) => {
                 return await this.inbox.enqueueIfAbsent(
                     newALUntargetedMessage(
-                        toQueueKeyPart(this.serviceId, 16),
+                        toAppInboxQueueCreatedBy(this.serviceId),
                         newALRoute(key.topicId, key.contextId, key.resourceId),
                         enqueue.type.toString(),
                         enqueue,
@@ -184,7 +188,7 @@ export class AppInboxService {
             async (key) => {
                 return await this.inbox.enqueueIf(
                     newALUntargetedMessage(
-                        toQueueKeyPart(this.serviceId, 16),
+                        toAppInboxQueueCreatedBy(this.serviceId),
                         newALRoute(key.topicId, key.contextId, key.resourceId),
                         enqueue.type.toString(),
                         enqueue,
@@ -518,17 +522,11 @@ export class AppInboxService {
     }
 
     private toKey<V>(enqueue: AppInboxEnqueueInput<V>) {
-        return {
-            topicId: toQueueKeyPart(enqueue.topicId ?? this.defaultTopicId, 36),
-            resourceId: toQueueKeyPart(
-                enqueue.resourceId ?? crypto.randomUUID().toString(),
-                36,
-            ),
-            contextId: toQueueKeyPart(
-                enqueue.contextId ?? enqueue.senderId ?? 'rallar-server',
-                35,
-            ),
-        };
+        return toAppInboxQueueKey({
+            topicId: enqueue.topicId ?? this.defaultTopicId,
+            resourceId: enqueue.resourceId ?? crypto.randomUUID().toString(),
+            contextId: enqueue.contextId ?? enqueue.senderId ?? 'rallar-server',
+        });
     }
 }
 
@@ -587,31 +585,6 @@ function isSerializedPolicyDenial(value: unknown): value is Readonly<{
         'message' in value &&
         typeof value.message === 'string',
     );
-}
-
-function toQueueKeyPart(value: string, maxLength: number): string {
-    if (value.length <= maxLength) {
-        return value;
-    }
-
-    const hash = fnv1a64(value);
-    const separator = '-';
-    const prefixLength = Math.max(0, maxLength - hash.length - separator.length);
-    const prefix = value.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, prefixLength);
-
-    return `${prefix}${separator}${hash}`.slice(0, maxLength);
-}
-
-function fnv1a64(value: string): string {
-    let hash = 0xcbf29ce484222325n;
-    const prime = 0x100000001b3n;
-
-    for (let i = 0; i < value.length; i += 1) {
-        hash ^= BigInt(value.charCodeAt(i));
-        hash = BigInt.asUintN(64, hash * prime);
-    }
-
-    return hash.toString(36);
 }
 
 function toNonNegativeFiniteNumber(

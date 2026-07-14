@@ -28,6 +28,7 @@ import {
     RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
+    createRallarBlackBoxEnsureGroupRequestId,
     createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
     createRallarBlackBoxRtcRealtimeStabilityRecipe,
@@ -434,6 +435,17 @@ describe('distributed recipes helpers', () => {
             data?: Record<string, unknown>;
         } | undefined;
         const preview = distributedRecipeCommandPreview(recipe);
+
+        expect(createGroupCommand?.request.body).toMatchObject({
+            requestId: createRallarBlackBoxEnsureGroupRequestId({
+                requestPrefix: 'rtc-realtime',
+                group: {
+                    applicationId: 'game-app',
+                    workspaceId: 'live',
+                    groupId: 'arena-1',
+                },
+            }),
+        });
 
         expect(recipe.recipeId).toBe('rtc-realtime');
         expect(recipe.commands).toHaveLength(5);

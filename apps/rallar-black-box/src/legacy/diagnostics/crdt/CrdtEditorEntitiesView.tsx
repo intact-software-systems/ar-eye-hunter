@@ -217,7 +217,16 @@ export function CrdtEditorEntitiesView({
                                     setEntityStatus(entity.status);
                                 }}
                             >
-                                <td>{entity.id}</td>
+                                <td>
+                                    <button
+                                        type="button"
+                                        className="crdt-row-selector"
+                                        aria-label={`Load CRDT entity ${entity.id}`}
+                                        aria-pressed={entity.id === entityId}
+                                    >
+                                        {entity.id}
+                                    </button>
+                                </td>
                                 <td>{entity.type}</td>
                                 <td>
                                     {entity.x}, {entity.y}

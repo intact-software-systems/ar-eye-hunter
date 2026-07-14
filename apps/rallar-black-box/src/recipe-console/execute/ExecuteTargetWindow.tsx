@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type KeyboardEvent } from 'react';
 import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import { ExplicitWindowControls } from '../ui/ExplicitWindowControls.tsx';
@@ -67,6 +67,7 @@ export function ExecuteTargetWindow({
             className={styles.tableWrap}
             data-execute-target-scroller
             id={CONTENT_ID}
+            onKeyDown={scrollTargetEvidenceFromKeyboard}
             role="region"
             tabIndex={0}
             {...window.contentFocusProps}
@@ -87,6 +88,14 @@ export function ExecuteTargetWindow({
     </>;
 }
 
+function scrollTargetEvidenceFromKeyboard(event: KeyboardEvent<HTMLDivElement>): void {
+    const direction = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (event.target !== event.currentTarget || direction === 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const maximum = Math.max(0, event.currentTarget.scrollWidth - event.currentTarget.clientWidth);
+    if (direction > 0 ? event.currentTarget.scrollLeft >= maximum : event.currentTarget.scrollLeft <= 0) return;
+    event.preventDefault();
+    event.currentTarget.scrollLeft += direction * 40;
+}
 export function createExecuteTargetRowKeys(
     rows: readonly Pick<DistributedRecipeTargetRow, 'agentId'>[],
 ): readonly string[] {
@@ -94,11 +103,7 @@ export function createExecuteTargetRowKeys(
     return rows.map(row => {
         const occurrence = occurrences.get(row.agentId) ?? 0;
         occurrences.set(row.agentId, occurrence + 1);
-        return JSON.stringify([
-            'execute-target-row-v1',
-            row.agentId,
-            occurrence,
-        ]);
+        return JSON.stringify(['execute-target-row-v1', row.agentId, occurrence]);
     });
 }
 

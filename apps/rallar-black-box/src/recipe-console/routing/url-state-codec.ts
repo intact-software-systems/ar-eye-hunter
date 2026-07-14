@@ -105,8 +105,13 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
         experience: 'recipe-console',
         view: 'execute',
     };
+    const hasRouteDiscriminator = params.has('v') ||
+        params.has('experience') ||
+        params.has('view');
 
-    const version = requiredValue(params, 'v', issues);
+    const version = hasRouteDiscriminator
+        ? requiredValue(params, 'v', issues)
+        : undefined;
     if (version !== undefined && version !== String(RECIPE_CONSOLE_URL_VERSION)) {
         issues.push({
             field: 'v',
@@ -115,7 +120,9 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
             message: 'v is not a supported Recipe Console URL version.',
         });
     }
-    const experience = requiredValue(params, 'experience', issues);
+    const experience = hasRouteDiscriminator
+        ? requiredValue(params, 'experience', issues)
+        : undefined;
     if (experience !== undefined && experience !== 'recipe-console') {
         issues.push({
             field: 'experience',
@@ -124,7 +131,9 @@ export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl {
             message: 'experience must select recipe-console.',
         });
     }
-    const view = requiredValue(params, 'view', issues);
+    const view = hasRouteDiscriminator
+        ? requiredValue(params, 'view', issues)
+        : undefined;
     if (view !== undefined) {
         if ((RECIPE_CONSOLE_VIEWS as readonly string[]).includes(view)) {
             state.view = view as RecipeConsoleUrlState['view'];

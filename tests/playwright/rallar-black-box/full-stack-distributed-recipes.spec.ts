@@ -24,6 +24,7 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 import {
+    createRallarBlackBoxEnsureGroupRequestId,
     createRallarBlackBoxRtcRealtimeRecipe,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
@@ -360,6 +361,10 @@ function stringValue(value: unknown): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function numberValue(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
 function resultValue(result: ControlResult): Record<string, unknown> {
     return asRecord(result.result?.value);
 }
@@ -440,8 +445,11 @@ async function openControlAgent(
         await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
         await page.getByRole('button', { name: 'Sign in' }).click();
     }
-    await expect(page.getByRole('tab', { name: 'Local Workbench' })).toBeVisible({ timeout: 30_000 });
-    await page.getByRole('tab', { name: 'Local Workbench' }).click();
+    await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+        { timeout: 30_000 },
+    );
     await expect(page.locator('#panel-local-workbench .control-panel'))
         .toContainText('registered', { timeout: 30_000 });
 
@@ -879,6 +887,10 @@ async function setupGroupMembership(
             }/groups`,
             method: 'POST',
             body: {
+                requestId: createRallarBlackBoxEnsureGroupRequestId({
+                    requestPrefix: 'rtc-realtime',
+                    group: input.group,
+                }),
                 groupId: input.group.groupId,
                 displayName: input.group.groupId,
                 description: 'Created by rallar-black-box distributed recipe QA',
@@ -897,7 +909,7 @@ async function setupGroupMembership(
         },
         timeoutMs: 15_000,
     }, 45_000);
-    expect(Number(resultValue(createResult).status)).toBeLessThan(500);
+    expect(Number(resultValue(createResult).status)).toBe(201);
 
     for (const member of input.members) {
         const joinResult = await executeOk(request, runId, member.agentId, `group-join-${member.agentId}-${input.suffix}`, {
@@ -1033,6 +1045,80 @@ async function waitForRealtimePositionPayload(
                 data.topic === 'room.black-box.rtc-realtime.position';
         }) ?? false;
     }, { timeout: 75_000 }).toBe(true);
+}
+
+function retainedRealtimeRecipeEvidence(
+    run: ControlRunSnapshot,
+    distributedRun: DistributedRunSnapshot,
+): Readonly<{
+    compactedStartResults: readonly Readonly<{
+        agentId: string;
+        ok: boolean | undefined;
+        resultCount: number | undefined;
+        failureCount: number | undefined;
+        resultsOmitted: boolean;
+    }>[];
+    loopStats: readonly Readonly<{
+        agentId: string;
+        latestLoopCommandId: string | undefined;
+        plannedIterations: number | undefined;
+        completedIterations: number | undefined;
+        sendCount: number | undefined;
+        succeeded: number | undefined;
+        failed: number | undefined;
+    }>[];
+}> {
+    const compactedStartResults = distributedRun.commandLinks
+        .filter(link => link.phase === 'start')
+        .map(link => {
+            const result = run.results?.find(candidate =>
+                candidate.commandId === link.commandId &&
+                candidate.agentId === link.agentId
+            );
+            const value = result ? resultValue(result) : {};
+            return {
+                agentId: link.agentId,
+                ok: result?.ok,
+                resultCount: numberValue(value.resultCount),
+                failureCount: numberValue(value.failureCount),
+                resultsOmitted: value.resultsOmitted === true,
+            };
+        });
+    const loopStats = distributedRun.targetAgentIds.map(agentId => {
+        const matchingStats = (run.events ?? []).flatMap(event => {
+            if (event.agentId !== agentId || event.kind !== 'stats') {
+                return [];
+            }
+            const runtimeEvent = runtimeEventPayload(event);
+            const stats = asRecord(runtimeEvent.payload);
+            const load = asRecord(stats.load);
+            if (load.latestLoopCommandId !== 'rtc-realtime-position-loop') {
+                return [];
+            }
+            const pacing = asRecord(load.latestPacing);
+            const sends = asRecord(load.latestSends);
+            return [{
+                agentId,
+                latestLoopCommandId: stringValue(load.latestLoopCommandId),
+                plannedIterations: numberValue(pacing.plannedIterations),
+                completedIterations: numberValue(pacing.completedIterations),
+                sendCount: numberValue(sends.sendCount),
+                succeeded: numberValue(sends.succeeded),
+                failed: numberValue(sends.failed),
+            }];
+        });
+        return matchingStats.at(-1) ?? {
+            agentId,
+            latestLoopCommandId: undefined,
+            plannedIterations: undefined,
+            completedIterations: undefined,
+            sendCount: undefined,
+            succeeded: undefined,
+            failed: undefined,
+        };
+    });
+
+    return { compactedStartResults, loopStats };
 }
 
 function wsSendRecipe(
@@ -1225,7 +1311,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
     test('runs all-agent ACK through group target resolution and shows artifacts/history', async ({
                                                                                                       browser,
                                                                                                       request,
-                                                                                                  }) => {
+                                                                                                  }, testInfo) => {
         test.setTimeout(120_000);
         const suffix = uniqueSuffix();
         const runId = `dist-sim-ack-${suffix}`;
@@ -1281,12 +1367,18 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             expect(artifact.files?.['control-run.json']).toContain(runId);
 
             const panel = handles[0].page.locator('#panel-distributed-recipes');
-            await handles[0].page.getByRole('tab', { name: 'Distributed Recipes' }).click();
+            await handles[0].page.getByRole('button', {
+                name: 'Distributed Recipes',
+                exact: true,
+            }).click();
             await panel.getByRole('button', { name: 'Refresh' }).click();
             await expect(panel).toContainText(manifest.distributedRunId, { timeout: 15_000 });
             await expect(panel).toContainText('passed');
         } finally {
-            await Promise.all(handles.map(handle => handle.context.close()));
+            await attachDistributedRunSummary(request, testInfo, runId).catch(() => undefined);
+            await Promise.all(handles.map(handle =>
+                handle.context.close().catch(() => undefined)
+            ));
         }
     });
 
@@ -1761,13 +1853,37 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                 controlRun: realtimeControlRun as AppControlRunSnapshot,
                 artifactBundle: realtimeArtifact as AppControlDistributedRunArtifactBundle,
             });
-            const realtimeFrameRows = realtimeMonitor.compositeDrilldowns
-                .flatMap(drilldown => drilldown.rows)
-                .filter(row => row.originalCommandId === 'rtc-realtime-position');
-            expect(realtimeFrameRows.length).toBeGreaterThanOrEqual(RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ);
-            expect(realtimeMonitor.compositeDrilldowns
-                .flatMap(drilldown => drilldown.rows)
-                .some(row => row.originalCommandId === 'rtc-realtime-position-loop')).toBe(true);
+            const retainedRealtimeEvidence = retainedRealtimeRecipeEvidence(
+                realtimeControlRun,
+                realtimePassed,
+            );
+            await testInfo.attach('distributed-live-realtime-retained-evidence.json', {
+                body: JSON.stringify(retainedRealtimeEvidence, null, 2),
+                contentType: 'application/json',
+            });
+            expect(retainedRealtimeEvidence.compactedStartResults).toHaveLength(3);
+            for (const result of retainedRealtimeEvidence.compactedStartResults) {
+                expect(result).toEqual({
+                    agentId: expect.any(String),
+                    ok: true,
+                    resultCount: realtimeRecipe.commands.length,
+                    failureCount: 0,
+                    resultsOmitted: true,
+                });
+            }
+            expect(retainedRealtimeEvidence.loopStats).toHaveLength(3);
+            for (const stats of retainedRealtimeEvidence.loopStats) {
+                expect(stats).toEqual({
+                    agentId: expect.any(String),
+                    latestLoopCommandId: 'rtc-realtime-position-loop',
+                    plannedIterations: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                    completedIterations: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                    sendCount: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                    succeeded: RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+                    failed: 0,
+                });
+            }
+            expect(realtimeMonitor.compositeDrilldowns).toEqual([]);
 
             const realtimeWarningReport = deriveDistributedRunWarningRegressionReport({
                 distributedRun: realtimePassed as AppControlDistributedRunSnapshot,
@@ -1782,7 +1898,7 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                         'rallar.browser.ws.unhandled_message',
                         'rallar.browser.rtc.data_channel_warning',
                     ],
-                    compositeRecipeIds: [realtimeRecipe.recipeId],
+                    compositeRecipeIds: [],
                     failOnDiagnosticSeverities: ['error'],
                 },
             });
@@ -1794,7 +1910,10 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             expect(realtimeWarningReport.ok, realtimeWarningReport.failures.join('\n')).toBe(true);
 
             const panel = agents[0].page.locator('#panel-distributed-recipes');
-            await agents[0].page.getByRole('tab', { name: 'Distributed Recipes' }).click();
+            await agents[0].page.getByRole('button', {
+                name: 'Distributed Recipes',
+                exact: true,
+            }).click();
             await panel.getByRole('button', { name: 'Refresh' }).click();
             await panel.locator('.distributed-run-list .distributed-run-row')
                 .filter({ hasText: realtimeDistributedRunId })
@@ -1806,12 +1925,7 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             await expect(diagnostics).toContainText('Unhandled WS message');
             await expect(diagnostics).toContainText('Received data channel for different data channel name.');
             const composite = panel.getByLabel('Distributed composite drilldowns');
-            const realtimeComposite = composite.locator('details')
-                .filter({ hasText: realtimeRecipe.recipeId })
-                .first();
-            await realtimeComposite.locator('summary').click();
-            await expect(realtimeComposite).toContainText('rtc-realtime-position-loop');
-            await expect(realtimeComposite).toContainText('rtc-realtime-position');
+            await expect(composite).toContainText('No composite result drilldowns');
 
             expect(consoleArtifacts.highSeverityEntries()).toEqual([]);
         } finally {

@@ -1576,7 +1576,11 @@ test('keeps late Execute pressure evidence operable without changing lifecycle a
         await expect(actions.getByRole('button', { name: 'Create draft' }))
             .toBeDisabled();
 
+        const inspector = page.getByRole('dialog', { name: 'Inspector' });
+        await inspector.getByRole('button', { name: 'Close inspector' }).click();
+        await expect(inspector).toHaveCount(0);
         await runTrigger.focus();
+        await expect(runTrigger).toBeFocused();
         await page.keyboard.press('Enter');
         await expect(targets.getByRole('option')).toHaveCount(50);
         const runWindow = targets.getByRole('group', {

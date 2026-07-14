@@ -9,6 +9,8 @@ import {
 
 const BASE_URL = 'http://127.0.0.1:5176';
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
+const CRDT_ADMIN_LIST_ROUTE =
+    'http://localhost:8080/api/crdt/admin/documents/list';
 const PROVIDER_RECIPE_ID = 'rallar-provider-parity-recipe';
 const LEGACY_ACTIONABLE_TARGETS = [
     'button:visible',
@@ -48,6 +50,75 @@ async function installOfflineControlFixture(
     });
 }
 
+async function installCrdtAdminFixture(
+    context: BrowserContext,
+): Promise<void> {
+    await context.addInitScript(() => {
+        localStorage.setItem('auth.session', JSON.stringify({
+            clientId: 'accessibility-client',
+            accessToken: 'accessibility-secret-token',
+            username: 'accessibility-operator',
+            sessionId: 'accessibility-session',
+            expiresAtEpochMs: Date.now() + 60_000,
+        }));
+    });
+    await context.route(CRDT_ADMIN_LIST_ROUTE, route => {
+        if (route.request().method() === 'OPTIONS') {
+            return route.fulfill({
+                status: 204,
+                headers: {
+                    'access-control-allow-headers': 'content-type, authorization',
+                    'access-control-allow-methods': 'POST, OPTIONS',
+                    'access-control-allow-origin': '*',
+                },
+            });
+        }
+        return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            headers: { 'access-control-allow-origin': '*' },
+            body: JSON.stringify({
+                ok: true,
+                result: {
+                    documents: [
+                        {
+                            document: {
+                                applicationId: 'rallar-black-box',
+                                workspaceId: 'accessibility',
+                                documentName: 'alpha',
+                                documentId: 'document-alpha',
+                                documentType: 'accessibility-fixture',
+                            },
+                            documentKey: 'accessibility/document-alpha',
+                            lifecycle: 'active',
+                            updateCount: 3,
+                            snapshotCount: 1,
+                            lastAppendSequence: 3,
+                            updatedAtEpochMs: 1_700_000_000_000,
+                        },
+                        {
+                            document: {
+                                applicationId: 'rallar-black-box',
+                                workspaceId: 'accessibility',
+                                documentName: 'bravo',
+                                documentId: 'document-bravo',
+                                documentType: 'accessibility-fixture',
+                            },
+                            documentKey: 'accessibility/document-bravo',
+                            lifecycle: 'archived',
+                            updateCount: 8,
+                            snapshotCount: 2,
+                            lastAppendSequence: 8,
+                            updatedAtEpochMs: 1_700_000_010_000,
+                        },
+                    ],
+                    hasMore: false,
+                },
+            }),
+        });
+    });
+}
+
 async function visibleTargetMeasurements(
     locator: Locator,
 ): Promise<readonly TargetMeasurement[]> {
@@ -69,8 +140,11 @@ async function expectTargetsAtLeast44(
     label: string,
 ): Promise<readonly TargetMeasurement[]> {
     await expect(locator.first(), `${label}: visible target`).toBeVisible();
-    const measurements = await visibleTargetMeasurements(locator);
-    expect(measurements.length, `${label}: measured targets`).toBeGreaterThan(0);
+    let measurements: readonly TargetMeasurement[] = [];
+    await expect.poll(async () => {
+        measurements = await visibleTargetMeasurements(locator);
+        return measurements.length;
+    }, { message: `${label}: measured targets` }).toBeGreaterThan(0);
     expect.soft(
         measurements.filter(target => target.width < 44 || target.height < 44),
         `${label}: every visible target is at least 44px by 44px`,
@@ -266,6 +340,112 @@ test('repairs registered legacy touch targets and narrow CRDT containment', asyn
         body: Buffer.from(JSON.stringify(measurements, null, 2)),
         contentType: 'application/json',
     });
+});
+
+test('offers keyboard-operable 44px CRDT document and entity selection controls', async ({
+    browser,
+}) => {
+    test.setTimeout(120_000);
+    const contracts = [
+        {
+            documentKey: 'Enter',
+            entityKey: 'Space',
+            name: 'touch-portrait-430x932',
+            viewport: { width: 430, height: 932 },
+        },
+        {
+            documentKey: 'Space',
+            entityKey: 'Enter',
+            name: 'touch-landscape-932x430',
+            viewport: { width: 932, height: 430 },
+        },
+    ] as const;
+
+    for (const contract of contracts) {
+        const context = await browser.newContext({
+            baseURL: BASE_URL,
+            hasTouch: true,
+            viewport: contract.viewport,
+        });
+        await installOfflineControlFixture(context);
+        await installCrdtAdminFixture(context);
+        const page = await context.newPage();
+        try {
+            await page.goto(
+                '/?provider=browser-rallar&experience=legacy' +
+                '&workspace=rallar&tab=crdt-health' +
+                '&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080',
+            );
+            const panel = page.locator('.crdt-health-panel');
+            await expect(panel).toBeVisible();
+
+            await panel.getByRole('button', { name: 'Refresh', exact: true }).click();
+            const documentSelectors = panel.getByRole('button', {
+                name: /^Select CRDT document /u,
+            });
+            await expect(documentSelectors).toHaveCount(2);
+            await expectTargetsAtLeast44(
+                documentSelectors,
+                `${contract.name} CRDT document selectors`,
+            );
+            await expect(documentSelectors.first()).toHaveAttribute(
+                'aria-pressed',
+                'true',
+            );
+            await documentSelectors.nth(1).focus();
+            await documentSelectors.nth(1).press(contract.documentKey);
+            await expect(documentSelectors.nth(1)).toBeFocused();
+            await expect(documentSelectors.nth(1)).toHaveAttribute(
+                'aria-pressed',
+                'true',
+            );
+            await expect(
+                documentSelectors.nth(1).locator('xpath=ancestor::tr'),
+            ).toHaveClass(/selected/u);
+            await expect(panel.getByText('archived', { exact: true }).last())
+                .toBeVisible();
+
+            await panel.getByRole('button', { name: 'Open', exact: true }).click();
+            await expect(panel.getByText('open', { exact: true }).first())
+                .toBeVisible();
+            await panel.getByRole('button', { name: 'Entities', exact: true }).click();
+            await panel.getByLabel('Entity id').fill('entity-npc-2');
+            await panel.getByLabel('Type', { exact: true }).fill('npc');
+            await panel.getByRole('button', { name: 'Add Entity', exact: true })
+                .click();
+
+            const entitySelectors = panel.getByRole('button', {
+                name: /^Load CRDT entity /u,
+            });
+            await expect(entitySelectors).toHaveCount(1);
+            await expectTargetsAtLeast44(
+                entitySelectors,
+                `${contract.name} CRDT entity selectors`,
+            );
+            await expect(entitySelectors.first()).toHaveAttribute(
+                'aria-pressed',
+                'true',
+            );
+            await panel.getByLabel('Entity id').fill('unselected-draft');
+            await expect(entitySelectors.first()).toHaveAttribute(
+                'aria-pressed',
+                'false',
+            );
+            await entitySelectors.first().focus();
+            await entitySelectors.first().press(contract.entityKey);
+            await expect(entitySelectors.first()).toBeFocused();
+            await expect(entitySelectors.first()).toHaveAttribute(
+                'aria-pressed',
+                'true',
+            );
+            await expect(entitySelectors.first().locator('xpath=ancestor::tr'))
+                .toHaveClass(/selected/u);
+            await expect(panel.getByLabel('Entity id'))
+                .toHaveValue('entity-npc-2');
+        } finally {
+            await context.close();
+        }
+    }
 });
 
 test('exposes equivalent keyboard touch and persistent evidence at desktop portrait and landscape viewports', async ({

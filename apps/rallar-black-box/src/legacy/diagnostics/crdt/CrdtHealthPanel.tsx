@@ -224,7 +224,21 @@ export function CrdtHealthPanel(props: CrdtPanelInput) {
                                     setSelectedDocumentKey(document.documentKey)
                                 }
                             >
-                                <td>{document.documentKey}</td>
+                                <td>
+                                    <button
+                                        type="button"
+                                        className="crdt-row-selector"
+                                        aria-label={
+                                            `Select CRDT document ${document.documentKey}`
+                                        }
+                                        aria-pressed={
+                                            document.documentKey ===
+                                            selectedDocument?.documentKey
+                                        }
+                                    >
+                                        {document.documentKey}
+                                    </button>
+                                </td>
                                 <td>{document.lifecycle}</td>
                                 <td>{document.updateCount}</td>
                                 <td>{document.snapshotCount}</td>

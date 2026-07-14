@@ -24,8 +24,35 @@ export function OverlaySheet({
     restoreFocusFallbacks,
     children,
 }: OverlaySheetProps) {
+    const backdropRef = useRef<HTMLDivElement>(null);
     const hostRef = useRef<HTMLElement>(null);
     const modal = mode !== 'rail';
+
+    useEffect(() => {
+        if (!open || !modal) return;
+        const backdrop = backdropRef.current;
+        const host = hostRef.current;
+        const parent = host?.parentElement;
+        if (!backdrop || !host || !parent) return;
+        const siblings = Array.from(parent.children)
+            .filter((element): element is HTMLElement =>
+                element instanceof HTMLElement &&
+                element !== backdrop &&
+                element !== host
+            )
+            .map(element => ({
+                element,
+                hadInert: element.hasAttribute('inert'),
+                inertValue: element.getAttribute('inert'),
+            }));
+        for (const { element } of siblings) element.setAttribute('inert', '');
+        return () => {
+            for (const { element, hadInert, inertValue } of siblings) {
+                if (hadInert) element.setAttribute('inert', inertValue ?? '');
+                else element.removeAttribute('inert');
+            }
+        };
+    }, [modal, open]);
 
     useEffect(() => {
         if (!open || !modal) return;
@@ -77,24 +104,35 @@ export function OverlaySheet({
     }
 
     return (
-        <aside
-            aria-label={label}
-            aria-modal={modal ? true : undefined}
-            className={styles.overlaySheet}
-            data-inspector-host
-            data-mode={mode}
-            onKeyDown={handleKeyDown}
-            ref={hostRef}
-            role={modal ? 'dialog' : 'complementary'}
-        >
-            <header className={styles.overlayHeader}>
-                <strong>{label}</strong>
-                {modal ? (
-                    <IconButton aria-label="Close inspector" icon="close" onClick={closeAndRestore} />
-                ) : null}
-            </header>
-            <div className={styles.overlayContent}>{children}</div>
-        </aside>
+        <>
+            {modal ? (
+                <div
+                    aria-hidden="true"
+                    className={styles.overlayBackdrop}
+                    data-inspector-backdrop
+                    onClick={closeAndRestore}
+                    ref={backdropRef}
+                />
+            ) : null}
+            <aside
+                aria-label={label}
+                aria-modal={modal ? true : undefined}
+                className={styles.overlaySheet}
+                data-inspector-host
+                data-mode={mode}
+                onKeyDown={handleKeyDown}
+                ref={hostRef}
+                role={modal ? 'dialog' : 'complementary'}
+            >
+                <header className={styles.overlayHeader}>
+                    <strong>{label}</strong>
+                    {modal ? (
+                        <IconButton aria-label="Close inspector" icon="close" onClick={closeAndRestore} />
+                    ) : null}
+                </header>
+                <div className={styles.overlayContent}>{children}</div>
+            </aside>
+        </>
     );
 }
 

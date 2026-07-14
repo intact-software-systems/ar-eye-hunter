@@ -535,7 +535,12 @@ async function verifyExecuteScale(browser: Browser): Promise<void> {
                 )).toHaveCount(1);
 
                 const runTrigger = targets.locator('[data-searchable-listbox-trigger]');
+                const inspector = page.getByRole('dialog', { name: 'Inspector' });
+                await inspector.getByRole('button', { name: 'Close inspector' })
+                    .click();
+                await expect(inspector).toHaveCount(0);
                 await runTrigger.focus();
+                await expect(runTrigger).toBeFocused();
                 await page.keyboard.press('Enter');
                 const runOptions = targets.getByRole('option');
                 await expect(runOptions).toHaveCount(50);

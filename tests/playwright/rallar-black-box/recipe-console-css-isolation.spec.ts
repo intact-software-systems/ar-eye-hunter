@@ -899,21 +899,104 @@ test('keeps complete target status evidence reachable across Execute viewports',
         );
         if (contract.overflow) {
             expect(overflow, `${contract.name} horizontal overflow`).toBeGreaterThan(1);
+            const modalInspector = page.getByRole('dialog', { name: 'Inspector' });
+            if (await modalInspector.count() > 0) {
+                await modalInspector.getByRole('button', {
+                    name: 'Close inspector',
+                }).click();
+                await expect(modalInspector).toHaveCount(0);
+            }
             await scroller.focus();
             await expect(scroller).toBeFocused();
-            await page.keyboard.press('ArrowRight');
-            await expect.poll(
-                () => scroller.evaluate(element => element.scrollLeft),
-                { message: `${contract.name} ArrowRight scroll` },
-            ).toBeGreaterThan(0);
-            for (let index = 0; index < 24; index += 1) {
-                await page.keyboard.press('ArrowRight');
-            }
-            await expect.poll(() => scroller.evaluate(element => ({
+            const modifiedShortcuts = await scroller.evaluate(element => {
+                return (['altKey', 'ctrlKey', 'metaKey', 'shiftKey'] as const)
+                    .map(modifier => {
+                        element.scrollLeft = 0;
+                        const event = new KeyboardEvent('keydown', {
+                            [modifier]: true,
+                            bubbles: true,
+                            cancelable: true,
+                            key: 'ArrowRight',
+                        });
+                        const dispatched = element.dispatchEvent(event);
+                        return {
+                            after: element.scrollLeft,
+                            defaultPrevented: event.defaultPrevented,
+                            dispatched,
+                            modifier,
+                        };
+                    });
+            });
+            expect(modifiedShortcuts, `${contract.name} modified shortcuts`).toEqual(
+                ['altKey', 'ctrlKey', 'metaKey', 'shiftKey'].map(modifier => ({
+                    after: 0,
+                    defaultPrevented: false,
+                    dispatched: true,
+                    modifier,
+                })),
+            );
+            let scroll = await scroller.evaluate(element => ({
+                left: element.scrollLeft,
                 remaining: element.scrollWidth - element.clientWidth - element.scrollLeft,
-            }))).toEqual({ remaining: 0 });
+            }));
+            for (let repeat = 0; repeat < 64 && scroll.remaining > 1; repeat += 1) {
+                const previousLeft = scroll.left;
+                await page.keyboard.press('ArrowRight');
+                await expect.poll(
+                    () => scroller.evaluate(element => element.scrollLeft),
+                    { message: `${contract.name} ArrowRight scroll` },
+                ).toBeGreaterThan(previousLeft);
+                scroll = await scroller.evaluate(element => ({
+                    left: element.scrollLeft,
+                    remaining: element.scrollWidth - element.clientWidth - element.scrollLeft,
+                }));
+            }
+            expect(scroll.remaining).toBeLessThanOrEqual(1);
+            const rightEdge = await scroller.evaluate(element => {
+                element.scrollLeft = element.scrollWidth;
+                const before = element.scrollLeft;
+                const event = new KeyboardEvent('keydown', {
+                    bubbles: true,
+                    cancelable: true,
+                    key: 'ArrowRight',
+                });
+                const dispatched = element.dispatchEvent(event);
+                return {
+                    after: element.scrollLeft,
+                    before,
+                    defaultPrevented: event.defaultPrevented,
+                    dispatched,
+                };
+            });
+            expect(rightEdge, `${contract.name} right edge`).toEqual({
+                after: rightEdge.before,
+                before: rightEdge.before,
+                defaultPrevented: false,
+                dispatched: true,
+            });
         } else {
             expect(overflow, `${contract.name} horizontal overflow`).toBeLessThanOrEqual(1);
+            const noOverflow = await scroller.evaluate(element => {
+                const before = element.scrollLeft;
+                const event = new KeyboardEvent('keydown', {
+                    bubbles: true,
+                    cancelable: true,
+                    key: 'ArrowRight',
+                });
+                const dispatched = element.dispatchEvent(event);
+                return {
+                    after: element.scrollLeft,
+                    before,
+                    defaultPrevented: event.defaultPrevented,
+                    dispatched,
+                };
+            });
+            expect(noOverflow, `${contract.name} no overflow`).toEqual({
+                after: noOverflow.before,
+                before: noOverflow.before,
+                defaultPrevented: false,
+                dispatched: true,
+            });
         }
 
         const reachability = await scroller.evaluate((element, selectors) => {
