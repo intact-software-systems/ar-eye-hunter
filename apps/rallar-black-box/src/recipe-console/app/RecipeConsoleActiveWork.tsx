@@ -8,7 +8,8 @@ import type {
     RecipeConsoleControlRetentionCapability,
 } from '../control/control-api.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
-import { FleetPreview } from '../fleet/FleetPreview.tsx';
+import type { FleetWorkspaceProps } from
+    '../fleet/fleet-workspace-contract.ts';
 import type {
     RecipeConsoleUrlState,
     RecipeConsoleView,
@@ -16,6 +17,7 @@ import type {
 import { StatePanel } from '../ui/StatePanel.tsx';
 
 const TuneWorkspace = lazy(() => import('../tune/TuneWorkspace.tsx'));
+const FleetWorkspace = lazy(() => import('../fleet/FleetWorkspace.tsx'));
 
 type TuneWorkInput = Readonly<{
     query: ControlQuerySnapshot<
@@ -41,12 +43,14 @@ type TuneWorkInput = Readonly<{
 export function RecipeConsoleActiveWork({
     analyzeWork,
     executeWork,
+    fleet,
     monitorWork,
     tune,
     view,
 }: Readonly<{
     analyzeWork: ReactNode;
     executeWork: ReactNode;
+    fleet: FleetWorkspaceProps;
     monitorWork: ReactNode;
     tune: TuneWorkInput;
     view: RecipeConsoleView;
@@ -69,7 +73,15 @@ export function RecipeConsoleActiveWork({
                 </Suspense>
             );
         case 'fleet':
-            return <FleetPreview />;
+            return (
+                <Suspense fallback={(
+                    <StatePanel kind="empty" title="Loading Fleet evidence">
+                        <p>The bounded Fleet workspace is loading.</p>
+                    </StatePanel>
+                )}>
+                    <FleetWorkspace {...fleet} />
+                </Suspense>
+            );
         case 'advanced':
             return <AdvancedPreview />;
     }

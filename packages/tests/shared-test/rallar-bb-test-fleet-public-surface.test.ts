@@ -7,15 +7,26 @@ import {
     RALLAR_BLACK_BOX_FLEET_REPORT_FILE_MAX_BYTES,
     RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUES,
     RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUE_TEXT_LENGTH,
+    createFleetGeographyHistoricalCollection,
+    createFleetReportAnalysisCollection,
     createFleetReportAnalysisWork,
     deriveFleetGeography,
+    deriveFleetGeographyFromHistoricalCollection,
     deriveFleetReportAgentDetail,
+    deriveFleetReportAgentDetailWindow,
     deriveFleetReportAnalysis,
+    deriveFleetReportAnalysisFromCollection,
     deriveFleetReportDisplaySummary,
     deriveFleetReportFailureRows,
     deriveFleetReportHeatmapRows,
+    deriveFleetReportHeatmapWindow,
+    deriveFleetReportFailureWindow,
     deriveFleetReportMissingLabelAgentIds,
+    deriveFleetReportMissingLabelAgentIdWindow,
     deriveFleetReportRegionRows,
+    deriveFleetReportRegionTimingWindow,
+    deriveFleetReportRegionWindow,
+    deriveFleetReportRecipeTimingWindow,
     deriveFleetReportTimingDistribution,
     deriveFleetReportTimingGroupsByRecipe,
     deriveFleetReportTimingGroupsByRegion,
@@ -40,6 +51,8 @@ import type {
     FleetGeographyDocumentedLocationInput,
     FleetGeographyDocumentedLocationSource,
     FleetGeographyHistoricalOutcome,
+    FleetGeographyHistoricalCollection,
+    FleetGeographyHistoricalCollectionWork,
     FleetGeographyLiveAgentEvidence,
     FleetGeographyLiveState,
     FleetGeographyLocation,
@@ -51,15 +64,21 @@ import type {
     FleetGeographyRouteExtractionOptions,
     FleetGeographyRouteObservation,
     FleetReportAgentDetail,
+    FleetReportAgentDetailWindow,
     FleetReportAnalysis,
+    FleetReportAnalysisCollection,
     FleetReportAnalysisLimits,
     FleetReportAnalysisWork,
+    FleetReportBoundedWindow,
     FleetReportDerivationPolicy,
     FleetReportDisplaySummary,
     FleetReportHeatmap,
     FleetReportHeatmapRow,
+    FleetReportHeatmapWindow,
+    FleetReportHeatmapWindowRequest,
     FleetReportTimingGroup,
     FleetReportWindow,
+    FleetReportWindowRequest,
 } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 
 type PublicFleetTypeSurface = Readonly<{
@@ -75,9 +94,15 @@ type PublicFleetTypeSurface = Readonly<{
     timingGroup: FleetReportTimingGroup;
     displaySummary: FleetReportDisplaySummary;
     agentDetail: FleetReportAgentDetail;
+    agentDetailWindow: FleetReportAgentDetailWindow;
+    analysisCollection: FleetReportAnalysisCollection;
     analysisLimits: FleetReportAnalysisLimits;
     window: FleetReportWindow<string>;
+    boundedWindow: FleetReportBoundedWindow<string>;
+    windowRequest: FleetReportWindowRequest;
     heatmap: FleetReportHeatmap;
+    heatmapWindow: FleetReportHeatmapWindow;
+    heatmapWindowRequest: FleetReportHeatmapWindowRequest;
     analysis: FleetReportAnalysis;
     liveState: FleetGeographyLiveState;
     liveAgent: FleetGeographyLiveAgentEvidence;
@@ -95,6 +120,8 @@ type PublicFleetTypeSurface = Readonly<{
     route: FleetGeographyRoute;
     geography: FleetGeographyModel;
     geographyInput: DeriveFleetGeographyInput;
+    geographyHistory: FleetGeographyHistoricalCollection;
+    geographyHistoryWork: FleetGeographyHistoricalCollectionWork;
 }>;
 
 const PUBLIC_FLEET_FUNCTIONS = [
@@ -102,19 +129,30 @@ const PUBLIC_FLEET_FUNCTIONS = [
     validateControlFleetRunReportCollection,
     validateControlFleetReportsResponse,
     validateControlFleetReportBundle,
+    createFleetReportAnalysisCollection,
     createFleetReportAnalysisWork,
     sortFleetRunReports,
     deriveFleetReportHeatmapRows,
+    deriveFleetReportHeatmapWindow,
     deriveFleetReportRegionRows,
+    deriveFleetReportRegionWindow,
     deriveFleetReportMissingLabelAgentIds,
+    deriveFleetReportMissingLabelAgentIdWindow,
     deriveFleetReportAgentDetail,
+    deriveFleetReportAgentDetailWindow,
     deriveFleetReportDisplaySummary,
     deriveFleetReportFailureRows,
+    deriveFleetReportFailureWindow,
     deriveFleetReportTimingGroupsByRegion,
+    deriveFleetReportRegionTimingWindow,
     deriveFleetReportTimingGroupsByRecipe,
+    deriveFleetReportRecipeTimingWindow,
     deriveFleetReportTimingDistribution,
     deriveFleetReportAnalysis,
+    deriveFleetReportAnalysisFromCollection,
+    createFleetGeographyHistoricalCollection,
     deriveFleetGeography,
+    deriveFleetGeographyFromHistoricalCollection,
     fleetGeographyRouteEvidenceFromControlRun,
     resolveFleetGeographyDocumentedLocation,
 ] as const;

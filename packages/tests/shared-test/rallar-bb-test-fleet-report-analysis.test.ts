@@ -7,18 +7,34 @@ import type {
     ControlFleetRunReport,
 } from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
 import {
+    createFleetReportAnalysisCollection,
     deriveFleetReportAgentDetail,
+    deriveFleetReportAgentDetailWindow,
     deriveFleetReportAnalysis,
+    deriveFleetReportAnalysisFromCollection,
     deriveFleetReportDisplaySummary,
     deriveFleetReportFailureRows,
+    deriveFleetReportFailureWindow,
     deriveFleetReportHeatmapRows,
+    deriveFleetReportHeatmapWindow,
     deriveFleetReportMissingLabelAgentIds,
+    deriveFleetReportMissingLabelAgentIdWindow,
     deriveFleetReportRegionRows,
+    deriveFleetReportRegionTimingWindow,
+    deriveFleetReportRegionWindow,
+    deriveFleetReportRecipeTimingWindow,
     deriveFleetReportTimingDistribution,
     deriveFleetReportTimingGroupsByRecipe,
     deriveFleetReportTimingGroupsByRegion,
     sortFleetRunReports,
+    type FleetReportAnalysisCollection,
+    type FleetReportBoundedWindow,
+    type FleetReportWindowRequest,
 } from '../../../packages/shared-test/rallar-bb-test/fleet-report-analysis.ts';
+import * as fleetReportAnalysis from
+    '../../../packages/shared-test/rallar-bb-test/fleet-report-analysis.ts';
+import { validateControlFleetRunReportCollection } from
+    '../../../packages/shared-test/rallar-bb-test/fleet-report-validation.ts';
 
 function agent(
     agentId: string,
@@ -119,7 +135,365 @@ function report(
     };
 }
 
+const FLEET_TRAVERSAL_FUNCTIONS = [
+    'createFleetReportAnalysisCollection',
+    'deriveFleetReportAnalysisFromCollection',
+    'deriveFleetReportHeatmapWindow',
+    'deriveFleetReportRegionWindow',
+    'deriveFleetReportFailureWindow',
+    'deriveFleetReportRegionTimingWindow',
+    'deriveFleetReportRecipeTimingWindow',
+    'deriveFleetReportMissingLabelAgentIdWindow',
+    'deriveFleetReportAgentDetailWindow',
+] as const;
+
+function traversalReports(): readonly ControlFleetRunReport[] {
+    const recipes = Array.from(
+        { length: 55 },
+        (_, index) => `recipe-${String(index).padStart(2, '0')}`,
+    );
+    return Array.from({ length: 29 }, (_, runIndex) => report(
+        `run-${String(runIndex).padStart(2, '0')}`,
+        100_000 - runIndex,
+        Array.from({ length: 90 }, (_, agentIndex) => agent(
+            `agent-${String(agentIndex).padStart(2, '0')}`,
+            { region: `region-${String(agentIndex).padStart(2, '0')}` },
+            agentIndex % 3 === 0 ? 'failed' : 'passed',
+            { durationMs: agentIndex + runIndex + 1 },
+        )),
+        {
+            recipeIds: recipes,
+            runDurationMs: 1_000 + runIndex,
+            failures: runIndex === 0
+                ? Array.from(
+                    { length: 55 },
+                    (_, index) => failure(
+                        `signature-${String(index).padStart(2, '0')}`,
+                        1,
+                    ),
+                )
+                : [],
+        },
+    ));
+}
+
+function expectCompleteWindowTraversal<T>(input: Readonly<{
+    label: string;
+    collection: FleetReportAnalysisCollection;
+    expectedItems: readonly T[];
+    project: (
+        collection: FleetReportAnalysisCollection,
+        request: FleetReportWindowRequest,
+    ) => FleetReportBoundedWindow<T>;
+    identity: (item: T) => string;
+    maximumItems: number;
+}>): void {
+    const visited: string[] = [];
+    const starts: number[] = [];
+    let startIndex = 0;
+    while (startIndex < input.expectedItems.length) {
+        const window = input.project(input.collection, { startIndex });
+        starts.push(window.startIndex);
+        expect(window.items.length, input.label).toBeLessThanOrEqual(
+            input.maximumItems,
+        );
+        visited.push(...window.items.map(input.identity));
+        expect(window.startIndex, input.label).toBe(startIndex);
+        expect(window.endIndexExclusive, input.label).toBeGreaterThan(startIndex);
+        startIndex = window.endIndexExclusive;
+    }
+    const expected = input.expectedItems.map(input.identity);
+    expect(starts.length, `${input.label} first/middle/final windows`)
+        .toBeGreaterThanOrEqual(3);
+    expect(starts[0], input.label).toBe(0);
+    expect(visited, input.label).toEqual(expected);
+    expect(new Set(visited).size, input.label).toBe(expected.length);
+}
+
 describe('shared Fleet report analysis', () => {
+    it('exports the reusable indexed collection and bounded traversal projections', () => {
+        for (const name of FLEET_TRAVERSAL_FUNCTIONS) {
+            expect(
+                (fleetReportAnalysis as Record<string, unknown>)[name],
+                name,
+            ).toBeTypeOf('function');
+        }
+    });
+
+    it('traverses every bounded list and selected-agent run without gaps or duplicates', () => {
+        const collection = createFleetReportAnalysisCollection({
+            reports: traversalReports(),
+        });
+
+        expectCompleteWindowTraversal({
+            label: 'regions',
+            collection,
+            expectedItems: collection.regions,
+            project: deriveFleetReportRegionWindow,
+            identity: row => `${row.region}/${row.provider ?? 'unknown'}`,
+            maximumItems: 24,
+        });
+        expectCompleteWindowTraversal({
+            label: 'failures',
+            collection,
+            expectedItems: collection.failures,
+            project: deriveFleetReportFailureWindow,
+            identity: row => row.signatureId,
+            maximumItems: 24,
+        });
+        expectCompleteWindowTraversal({
+            label: 'region timing',
+            collection,
+            expectedItems: collection.regionTiming,
+            project: deriveFleetReportRegionTimingWindow,
+            identity: row => row.id,
+            maximumItems: 24,
+        });
+        expectCompleteWindowTraversal({
+            label: 'recipe timing',
+            collection,
+            expectedItems: collection.recipeTiming,
+            project: deriveFleetReportRecipeTimingWindow,
+            identity: row => row.id,
+            maximumItems: 24,
+        });
+        expectCompleteWindowTraversal({
+            label: 'missing labels',
+            collection,
+            expectedItems: collection.missingLabelAgentIds,
+            project: deriveFleetReportMissingLabelAgentIdWindow,
+            identity: agentId => agentId,
+            maximumItems: 40,
+        });
+
+        expect(deriveFleetReportRegionWindow(
+            collection,
+            { startIndex: 25 },
+        ).startIndex).toBe(24);
+        expect(deriveFleetReportRegionWindow(
+            collection,
+            { startIndex: 999_999 },
+        ).startIndex).toBe(72);
+        expect(deriveFleetReportRegionWindow(
+            collection,
+            { startIndex: -20 },
+        ).startIndex).toBe(0);
+        expect(deriveFleetReportRegionWindow(
+            collection,
+            { startIndex: Number.NaN },
+        ).startIndex).toBe(0);
+
+        const expectedRunIds = collection.reports.map(
+            (entry: ControlFleetRunReport) => entry.distributedRunId,
+        );
+        const visitedRunIds: string[] = [];
+        let runStartIndex = 0;
+        while (runStartIndex < expectedRunIds.length) {
+            const detail = deriveFleetReportAgentDetailWindow(
+                'agent-00',
+                collection,
+                {
+                    startIndex: runStartIndex,
+                },
+            );
+            if (!detail) {
+                throw new Error('Expected agent-00 detail');
+            }
+            expect(detail.runs).toHaveLength(
+                Math.min(12, expectedRunIds.length - runStartIndex),
+            );
+            visitedRunIds.push(...detail.runs.map(
+                entry => entry.run.distributedRunId,
+            ));
+            expect(detail.startIndex).toBe(runStartIndex);
+            runStartIndex = detail.endIndexExclusive;
+        }
+        expect(visitedRunIds).toEqual(expectedRunIds);
+        expect(new Set(visitedRunIds).size).toBe(expectedRunIds.length);
+        expect(deriveFleetReportAgentDetailWindow(
+            'agent-00',
+            collection,
+            { startIndex: 13 },
+        ))
+            .toMatchObject({ startIndex: 12, endIndexExclusive: 24 });
+        expect(deriveFleetReportAgentDetailWindow(
+            'agent-00',
+            collection,
+            { startIndex: 999_999 },
+        ))
+            .toMatchObject({ startIndex: 24, endIndexExclusive: 29 });
+    });
+
+    it('slices repeated agent-detail windows without rereading historical aggregates', () => {
+        const aggregateFields = new Set<PropertyKey>([
+            'state',
+            'missing',
+            'reconnectCount',
+            'diagnosticCount',
+        ]);
+        let aggregateReads = 0;
+        const reports = traversalReports().map(entry => ({
+            ...entry,
+            agents: entry.agents.map(outcome => outcome.agentId === 'agent-00'
+                ? new Proxy(outcome, {
+                    get(target, property, receiver) {
+                        if (aggregateFields.has(property)) aggregateReads += 1;
+                        return Reflect.get(target, property, receiver);
+                    },
+                })
+                : outcome),
+        }));
+        const collection = createFleetReportAnalysisCollection({ reports });
+        const readsAfterIndex = aggregateReads;
+        const workAfterIndex = { ...collection.work };
+
+        const windows = [0, 12, 24].map(startIndex =>
+            deriveFleetReportAgentDetailWindow(
+                'agent-00',
+                collection,
+                { startIndex },
+            )
+        );
+
+        expect(windows.map(window => window?.runs.map(
+            entry => entry.run.distributedRunId,
+        ))).toEqual([
+            collection.reports.slice(0, 12).map(entry => entry.distributedRunId),
+            collection.reports.slice(12, 24).map(entry => entry.distributedRunId),
+            collection.reports.slice(24).map(entry => entry.distributedRunId),
+        ]);
+        expect(windows.map(window => ({
+            passed: window?.passed,
+            failed: window?.failed,
+            missing: window?.missing,
+            reconnectCount: window?.reconnectCount,
+            diagnosticCount: window?.diagnosticCount,
+        }))).toEqual(Array.from({ length: 3 }, () => ({
+            passed: 0,
+            failed: 29,
+            missing: 0,
+            reconnectCount: 0,
+            diagnosticCount: 0,
+        })));
+        expect(aggregateReads).toBe(readsAfterIndex);
+        expect(collection.work).toEqual(workAfterIndex);
+    });
+
+    it('caps heatmap windows at 32 by 8 and looks up only visible cells', () => {
+        const collection = createFleetReportAnalysisCollection({
+            reports: traversalReports(),
+        });
+        const before = { ...collection.work };
+        const middle = deriveFleetReportHeatmapWindow(collection, {
+            agentStartIndex: 33,
+            runStartIndex: 9,
+            agentLimit: 9_999,
+            runLimit: 9_999,
+        });
+
+        expect(middle).toMatchObject({
+            agentStartIndex: 32,
+            agentEndIndexExclusive: 64,
+            runStartIndex: 8,
+            runEndIndexExclusive: 16,
+            totalAgentRows: 90,
+            totalRunColumns: 29,
+        });
+        expect(middle.rows).toHaveLength(32);
+        expect(middle.runs).toHaveLength(8);
+        expect(collection.work).toEqual({
+            ...before,
+            cellLookups: before.cellLookups + 32 * 8,
+        });
+
+        const visitedAgents: string[] = [];
+        for (let startIndex = 0; startIndex < 90; startIndex += 32) {
+            const cellLookups = collection.work.cellLookups;
+            const window = deriveFleetReportHeatmapWindow(collection, {
+                agentStartIndex: startIndex,
+                runLimit: 1,
+            });
+            visitedAgents.push(...window.rows.map(row => row.agent.agentId));
+            expect(collection.work.cellLookups - cellLookups)
+                .toBe(window.rows.length * window.runs.length);
+        }
+        expect(visitedAgents).toEqual(
+            Array.from(
+                { length: 90 },
+                (_, index) => `agent-${String(index).padStart(2, '0')}`,
+            ),
+        );
+        expect(new Set(visitedAgents).size).toBe(90);
+
+        const visitedRuns: string[] = [];
+        for (let startIndex = 0; startIndex < 29; startIndex += 8) {
+            const cellLookups = collection.work.cellLookups;
+            const window = deriveFleetReportHeatmapWindow(collection, {
+                agentLimit: 1,
+                runStartIndex: startIndex,
+            });
+            visitedRuns.push(...window.runs.map(entry => entry.distributedRunId));
+            expect(collection.work.cellLookups - cellLookups)
+                .toBe(window.rows.length * window.runs.length);
+        }
+        expect(visitedRuns).toEqual(collection.reports.map(
+            entry => entry.distributedRunId,
+        ));
+        expect(new Set(visitedRuns).size).toBe(29);
+
+        expect(deriveFleetReportHeatmapWindow(collection, {
+            agentStartIndex: 999_999,
+            runStartIndex: 999_999,
+        })).toMatchObject({
+            agentStartIndex: 64,
+            agentEndIndexExclusive: 90,
+            runStartIndex: 24,
+            runEndIndexExclusive: 29,
+        });
+    });
+
+    it('uses a collision-safe heatmap tie-break for separator-bearing labels', () => {
+        const left = agent('z/w', { region: 'x', provider: 'y' }, 'passed');
+        const right = agent('w', { region: 'x/y', provider: 'z' }, 'passed');
+        const forward = deriveFleetReportHeatmapRows([
+            report('run-collision', 1_000, [left, right]),
+        ]).rows.map(row => row.agent.agentId);
+        const reversed = deriveFleetReportHeatmapRows([
+            report('run-collision', 1_000, [right, left]),
+        ]).rows.map(row => row.agent.agentId);
+
+        expect(forward).toEqual(['z/w', 'w']);
+        expect(reversed).toEqual(forward);
+    });
+
+    it('reuses one indexed collection for the compatibility first window', () => {
+        const reports = traversalReports();
+        const collection = createFleetReportAnalysisCollection({ reports });
+        deriveFleetReportHeatmapWindow(collection, {
+            agentStartIndex: 64,
+            runStartIndex: 24,
+        });
+        const projected = deriveFleetReportAnalysisFromCollection(collection, {
+            selectedAgentId: 'agent-00',
+        });
+        const compatibility = deriveFleetReportAnalysis({
+            reports,
+            selectedAgentId: 'agent-00',
+        });
+
+        expect(projected).toEqual(compatibility);
+        expect(projected.summary).toBe(collection.summary);
+        expect(projected.regions.items[0]).toBe(collection.regions[0]);
+        expect(projected.failures.items[0]).toBe(collection.failures[0]);
+        expect(projected.work).toEqual({
+            reportVisits: 29,
+            outcomeVisits: 2_610,
+            indexInserts: 2_610,
+            cellLookups: 32 * 8,
+            failureSignatureVisits: 55,
+        });
+    });
+
     it('sorts reports newest-first with an exact run-id tie-break without mutation', () => {
         const runC = report('run-c', 3_000, []);
         const runB = report('run-b', 4_000, []);
@@ -365,6 +739,53 @@ describe('shared Fleet report analysis', () => {
         ]);
     });
 
+    it('keeps a missing provider distinct from the literal provider unknown', () => {
+        const reports = [report('run-provider-sentinels', 1_000, [
+            agent('agent-missing', { region: 'eu' }, 'failed', {
+                durationMs: 10,
+            }),
+            agent('agent-literal', {
+                region: 'eu',
+                provider: 'unknown',
+            }, 'passed', { durationMs: 20 }),
+        ])];
+
+        expect(deriveFleetReportRegionRows(reports).map(row => ({
+            provider: row.provider,
+            agentCount: row.agentCount,
+            failed: row.failed,
+        }))).toEqual([
+            { provider: undefined, agentCount: 1, failed: 1 },
+            { provider: 'unknown', agentCount: 1, failed: 0 },
+        ]);
+        const timing = deriveFleetReportTimingGroupsByRegion(reports);
+        expect(timing).toHaveLength(2);
+        expect(new Set(timing.map(row => row.id)).size).toBe(2);
+        expect(timing.map(row => row.label)).toEqual([
+            'eu / unknown',
+            'eu / unknown',
+        ]);
+    });
+
+    it('analyzes a validated lone-surrogate operator label without throwing', () => {
+        const loneSurrogate = 'edge-\ud800';
+        const validation = validateControlFleetRunReportCollection([
+            report('run-lone-surrogate', 1_000, [
+                agent('agent-lone-surrogate', {
+                    region: loneSurrogate,
+                    provider: 'provider',
+                }, 'passed'),
+            ]),
+        ]);
+
+        expect(validation.ok).toBe(true);
+        expect(() => createFleetReportAnalysisCollection({
+            reports: validation.reports,
+        })).not.toThrow();
+        expect(deriveFleetReportRegionRows(validation.reports)[0]?.region)
+            .toBe(loneSurrogate);
+    });
+
     it('uses aggregate fallback only when no accepted reports remain', () => {
         const response = {
             reports: [],
@@ -451,5 +872,30 @@ describe('shared Fleet report analysis', () => {
             failureSignatureVisits: 4,
         });
         expect(JSON.stringify(reports)).toBe(before);
+    });
+
+    it('preserves public composed-analysis limits above UI window defaults', () => {
+        const analysis = deriveFleetReportAnalysis({
+            reports: traversalReports(),
+            selectedAgentId: 'agent-00',
+            limits: {
+                heatmapAgentRows: 64,
+                heatmapRunColumns: 16,
+                regionRows: 48,
+                failureRows: 40,
+                timingGroups: 40,
+                missingLabelAgentIds: 64,
+                agentDetailRuns: 24,
+            },
+        });
+
+        expect(analysis.heatmap.rows).toHaveLength(64);
+        expect(analysis.heatmap.runs).toHaveLength(16);
+        expect(analysis.regions.items).toHaveLength(48);
+        expect(analysis.failures.items).toHaveLength(40);
+        expect(analysis.regionTiming.items).toHaveLength(40);
+        expect(analysis.recipeTiming.items).toHaveLength(40);
+        expect(analysis.missingLabelAgentIds.items).toHaveLength(64);
+        expect(analysis.selectedAgent?.runs).toHaveLength(24);
     });
 });

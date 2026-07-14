@@ -1110,9 +1110,8 @@ function normalizeFleetRunReportCollection(
             source: 'report',
             code: 'duplicate-distributed-run-id',
             path: collectionReportPath(distributedRunId),
-            message: `Every report for duplicated distributedRunId ${
-                JSON.stringify(distributedRunId)
-            } was quarantined (${count} reports).`,
+            message:
+                `Every report for the duplicated distributedRunId was quarantined (${count} reports).`,
             distributedRunId,
         });
     }

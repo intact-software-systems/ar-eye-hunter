@@ -62,7 +62,7 @@ describe('Recipe Console Tune composition boundary', () => {
         expect(activeWork.match(
             /\blazy\s*\(\s*\(\)\s*=>\s*import\(\s*['"]\.\.\/tune\/TuneWorkspace\.tsx['"]\s*\)\s*\)/g,
         )).toHaveLength(1);
-        expect(activeWork.match(/<Suspense\b/g)).toHaveLength(1);
+        expect(tuneBranch.match(/<Suspense\b/g)).toHaveLength(1);
         expect(activeWork.match(/<TuneWorkspace\b/g)).toHaveLength(1);
         expect(tuneBranch).toMatch(/<Suspense\b[\s\S]*<TuneWorkspace\b[\s\S]*<\/Suspense>/);
         expect(tuneBranch).not.toMatch(/\bhidden\b|display\s*:\s*none/);

@@ -1,0 +1,247 @@
+.panel {
+    min-width: 0;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.heading,
+.failureTitle {
+    display: flex;
+    min-width: 0;
+    align-items: end;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.heading {
+    padding: 13px 15px;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.heading h2,
+.heading p,
+.failureTitle h3 {
+    margin: 0;
+}
+
+.heading p {
+    color: var(--rc-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.tableScroll {
+    max-width: 100%;
+    overflow: auto;
+}
+
+.tableScroll:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: -3px;
+}
+
+.tableScroll table {
+    width: 100%;
+    min-width: 680px;
+    border-collapse: collapse;
+}
+
+.tableScroll th,
+.tableScroll td {
+    padding: 9px 11px;
+    border-right: 1px solid var(--rc-border);
+    border-bottom: 1px solid var(--rc-border);
+    text-align: left;
+    vertical-align: middle;
+}
+
+.tableScroll tr:last-child th,
+.tableScroll tr:last-child td {
+    border-bottom: 0;
+}
+
+.tableScroll caption {
+    padding: 10px 12px;
+    color: var(--rc-muted);
+    text-align: left;
+    font-weight: 700;
+}
+
+.identityButton,
+.cardButton,
+.chips button,
+.actions button {
+    min-height: 44px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    font: inherit;
+    cursor: pointer;
+}
+
+.identityButton {
+    display: inline-flex;
+    min-width: 120px;
+    align-items: center;
+    padding: 7px 9px;
+    text-align: left;
+}
+
+.identityButton[aria-pressed="true"],
+.cardButton[aria-pressed="true"] {
+    border-color: var(--rc-selected-border);
+    color: var(--rc-selected-text);
+    background: var(--rc-selected-bg);
+    box-shadow: inset 3px 0 var(--rc-selected-border);
+}
+
+.status {
+    display: inline-flex;
+    min-height: 26px;
+    align-items: center;
+    padding: 2px 8px;
+    border: 1px solid var(--rc-status-stale-border);
+    border-radius: 999px;
+    color: var(--rc-status-stale-text);
+    background: var(--rc-status-stale-bg);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.status[data-tone="passed"] {
+    border-color: var(--rc-status-passed-border);
+    color: var(--rc-status-passed-text);
+    background: var(--rc-status-passed-bg);
+}
+
+.status[data-tone="failed"] {
+    border-color: var(--rc-status-failed-border);
+    color: var(--rc-status-failed-text);
+    background: var(--rc-status-failed-bg);
+}
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px;
+    padding: 12px;
+}
+
+.cardButton {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+    padding: 11px 12px;
+    text-align: left;
+}
+
+.cardTitle {
+    overflow-wrap: anywhere;
+    font-weight: 800;
+}
+
+.failureList {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.failureList > li {
+    min-width: 0;
+    padding: 14px 15px;
+    border-bottom: 1px solid var(--rc-border);
+    box-shadow: inset 3px 0 var(--rc-status-failed-border);
+}
+
+.failureList > li:last-child {
+    border-bottom: 0;
+}
+
+.failureTitle {
+    align-items: start;
+}
+
+.failureTitle > div {
+    display: grid;
+    gap: 7px;
+}
+
+.failureList p {
+    margin: 9px 0 0;
+}
+
+.chips,
+.actions {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 10px;
+}
+
+.chips button,
+.actions button {
+    padding: 7px 10px;
+}
+
+.actions button {
+    border-color: var(--rc-primary);
+    color: var(--rc-primary);
+    font-weight: 700;
+}
+
+.split {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.split > :first-child {
+    border-right: 1px solid var(--rc-border);
+}
+
+.empty {
+    margin: 0;
+    padding: 18px 15px;
+    color: var(--rc-muted);
+}
+
+.identityButton:focus-visible,
+.cardButton:focus-visible,
+.chips button:focus-visible,
+.actions button:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: 2px;
+}
+
+@media (max-width: 820px) {
+    .split {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .split > :first-child {
+        border-right: 0;
+        border-bottom: 1px solid var(--rc-border);
+    }
+}
+
+@media (max-width: 540px) {
+    .heading,
+    .failureTitle {
+        align-items: start;
+        flex-direction: column;
+    }
+
+    .cards {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

@@ -2,8 +2,11 @@ import type {
     ControlFleetFailureSignature,
     ControlFleetRunReport,
 } from '@shared-test/rallar-bb-test/fleet-report.ts';
-import type { RecipeConsoleUrlState } from
-    '../routing/url-state-contract.ts';
+import {
+    RECIPE_CONSOLE_FLEET_MAP_LAYERS,
+    type RecipeConsoleFleetMapLayer,
+    type RecipeConsoleUrlState,
+} from '../routing/url-state-contract.ts';
 
 type FleetHandoffReport = Pick<
     ControlFleetRunReport,
@@ -23,6 +26,39 @@ export function fleetRegionSelectionPatch(
     fleetRegion: string | undefined,
 ): Partial<RecipeConsoleUrlState> {
     return { fleetRegion };
+}
+
+export function fleetReportSelectionPatch(
+    report: FleetHandoffReport,
+): Partial<RecipeConsoleUrlState> {
+    return {
+        controlRunId: report.controlRunId,
+        distributedRunId: report.distributedRunId,
+    };
+}
+
+export function fleetMapLayerTogglePatch(
+    currentLayers: readonly RecipeConsoleFleetMapLayer[] | undefined,
+    layer: RecipeConsoleFleetMapLayer,
+    enabled: boolean,
+): Partial<RecipeConsoleUrlState> {
+    const selected = new Set(
+        currentLayers ?? RECIPE_CONSOLE_FLEET_MAP_LAYERS,
+    );
+    if (enabled) {
+        selected.add(layer);
+    } else {
+        selected.delete(layer);
+    }
+    const canonical = RECIPE_CONSOLE_FLEET_MAP_LAYERS.filter(
+        candidate => selected.has(candidate),
+    );
+    return {
+        fleetMapLayers: canonical.length ===
+                RECIPE_CONSOLE_FLEET_MAP_LAYERS.length
+            ? undefined
+            : canonical,
+    };
 }
 
 export function fleetReportMonitorPatch(

@@ -9,7 +9,9 @@ import type { ControlDistributedRunSnapshot } from
     '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     fleetAffectedAgentPatch,
+    fleetMapLayerTogglePatch,
     fleetRegionSelectionPatch,
+    fleetReportSelectionPatch,
     fleetReportAnalyzePatch,
     fleetReportMonitorPatch,
     fleetReportTuneHistoryPatch,
@@ -17,6 +19,8 @@ import {
 } from '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-url-patches.ts';
 import type { RecipeConsoleUrlState } from
     '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import { resolveFleetFailureRunEvidence } from
+    '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-failure-evidence.ts';
 
 const REPORT = {
     distributedRunId: 'distributed/Δ exact',
@@ -52,6 +56,72 @@ const FLEET_STATE: RecipeConsoleUrlState = {
 };
 
 describe('Recipe Console Fleet URL handoffs', () => {
+    it('resolves a proving run and affected agent from the same exact report', () => {
+        const failure = {
+            ...FAILURE,
+            affectedRuns: ['run/non-proving', 'run/proving'],
+            affectedAgents: ['agent/non-proving', 'agent/proving'],
+        } as ControlFleetFailureSignature;
+        const nonProving = {
+            ...REPORT,
+            distributedRunId: 'run/non-proving',
+            agents: [{
+                agentId: 'agent/non-proving',
+                failureSignatureIds: ['another-signature'],
+            }],
+            failureSignatures: [],
+        } as ControlFleetRunReport;
+        const proving = {
+            ...REPORT,
+            distributedRunId: 'run/proving',
+            agents: [{
+                agentId: 'agent/proving',
+                failureSignatureIds: [FAILURE.signatureId],
+            }],
+            failureSignatures: [],
+        } as ControlFleetRunReport;
+        const unrelated = {
+            ...REPORT,
+            distributedRunId: 'run/unrelated',
+            agents: [{
+                agentId: 'agent/non-proving',
+                failureSignatureIds: [FAILURE.signatureId],
+            }],
+            failureSignatures: [{ signatureId: FAILURE.signatureId }],
+        } as ControlFleetRunReport;
+
+        expect(resolveFleetFailureRunEvidence({
+            failure,
+            preferredRunId: nonProving.distributedRunId,
+            reports: [unrelated, nonProving, proving],
+        })).toEqual({
+            report: proving,
+            agentId: 'agent/proving',
+        });
+    });
+
+    it('does not infer an agent that the exact proving report cannot support', () => {
+        const failure = {
+            ...FAILURE,
+            affectedRuns: ['run/report-level-proof'],
+            affectedAgents: ['agent/aggregate-only'],
+        } as ControlFleetFailureSignature;
+        const proving = {
+            ...REPORT,
+            distributedRunId: 'run/report-level-proof',
+            agents: [{
+                agentId: 'agent/aggregate-only',
+                failureSignatureIds: [],
+            }],
+            failureSignatures: [{ signatureId: FAILURE.signatureId }],
+        } as ControlFleetRunReport;
+
+        expect(resolveFleetFailureRunEvidence({
+            failure,
+            reports: [proving],
+        })).toEqual({ report: proving });
+    });
+
     it('targets exact Monitor and Analyze run evidence without treating artifact refs as URLs', () => {
         expect(fleetReportMonitorPatch(REPORT, 'agent/Δ exact')).toEqual({
             view: 'monitor',
@@ -161,6 +231,49 @@ describe('Recipe Console Fleet URL handoffs', () => {
         });
         expect(fleetAffectedAgentPatch('agent-b')).toEqual({
             agentId: 'agent-b',
+        });
+        expect(fleetReportSelectionPatch(REPORT)).toEqual({
+            controlRunId: 'control/Δ exact',
+            distributedRunId: 'distributed/Δ exact',
+        });
+    });
+
+    it('toggles map layers in canonical URL order with exact all and none states', () => {
+        const withoutFailures = fleetMapLayerTogglePatch(
+            undefined,
+            'failures',
+            false,
+        );
+        expect(withoutFailures).toEqual({
+            fleetMapLayers: [
+                'live-agents',
+                'historical-regions',
+                'observed-routes',
+            ],
+        });
+        expect(fleetMapLayerTogglePatch(
+            withoutFailures.fleetMapLayers,
+            'failures',
+            true,
+        )).toEqual({ fleetMapLayers: undefined });
+        expect(fleetMapLayerTogglePatch([], 'observed-routes', true)).toEqual({
+            fleetMapLayers: ['observed-routes'],
+        });
+        expect(fleetMapLayerTogglePatch(
+            ['observed-routes'],
+            'observed-routes',
+            false,
+        )).toEqual({ fleetMapLayers: [] });
+        expect(fleetMapLayerTogglePatch(
+            ['failures', 'live-agents', 'failures'],
+            'historical-regions',
+            true,
+        )).toEqual({
+            fleetMapLayers: [
+                'live-agents',
+                'historical-regions',
+                'failures',
+            ],
         });
     });
 

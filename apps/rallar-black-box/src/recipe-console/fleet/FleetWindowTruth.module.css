@@ -1,0 +1,24 @@
+.truth {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
+    color: var(--rc-muted);
+    font-size: 12px;
+}
+
+.truth span {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.truth span:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: 2px;
+}
+
+.truth p {
+    margin: 0;
+}

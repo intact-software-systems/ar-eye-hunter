@@ -842,18 +842,20 @@ describe('Recipe Console experience boundary', () => {
             'const inspectableSelection = inspectorContent !== undefined &&',
         );
         expect(workspace).toContain('onSelectionLabelChange={setSelectionLabel}');
-        expect(workspace).toContain(
-            'setInspectorTriggerFallback(owningWindowRangeAnchor(trigger))',
+        expect(workspace).toMatch(
+            /import\s*\{\s*owningWindowFocusAnchor\s*\}\s*from\s*['"]\.\.\/ui\/owning-window-focus-anchor\.ts['"]/,
         );
         expect(workspace).toContain(
-            "trigger.closest<HTMLElement>('[data-monitor-window-owner]')",
+            'setInspectorTriggerFallback(owningWindowFocusAnchor(trigger))',
         );
-        expect(workspace).toContain(
-            "trigger.closest<HTMLElement>('[data-recipe-console-shell]')",
+        const focusAnchor = source(
+            `${recipeConsoleRoot}/ui/owning-window-focus-anchor.ts`,
         );
-        expect(workspace).toContain(
-            'anchor.dataset.monitorWindowOwner === owner',
-        );
+        expect(focusAnchor).toContain('data-monitor-window-owner');
+        expect(focusAnchor).toContain('data-monitor-window-focus-anchor');
+        expect(focusAnchor).toContain('data-fleet-window-owner');
+        expect(focusAnchor).toContain('data-fleet-window-focus-anchor');
+        expect(focusAnchor).toContain('data-recipe-console-shell');
 
         const shell = source(`${recipeConsoleRoot}/shell/RecipeConsoleShell.tsx`);
         expect(shell).toMatch(
@@ -1009,9 +1011,8 @@ describe('Recipe Console experience boundary', () => {
         ))).toBe(false);
     });
 
-    test('routes focused Tune Fleet and Advanced modules through one switch', () => {
+    test('routes focused lazy Tune and Fleet plus Advanced through one switch', () => {
         const focusedModules = [
-            ['fleet/FleetPreview.tsx', "import { FleetPreview } from '../fleet/FleetPreview.tsx';", '<FleetPreview'],
             ['advanced/AdvancedPreview.tsx', "import { AdvancedPreview } from '../advanced/AdvancedPreview.tsx';", '<AdvancedPreview'],
         ] as const;
         const app = source(recipeConsoleActiveWorkPath);
@@ -1031,9 +1032,20 @@ describe('Recipe Console experience boundary', () => {
         expect(app).toContain(
             "const TuneWorkspace = lazy(() => import('../tune/TuneWorkspace.tsx'));",
         );
+        expect(app).toContain(
+            "const FleetWorkspace = lazy(() => import('../fleet/FleetWorkspace.tsx'));",
+        );
         expect(app).toMatch(
             /case 'tune':[\s\S]*<Suspense[\s\S]*<TuneWorkspace[\s\S]*<\/Suspense>/,
         );
+        expect(app).toMatch(
+            /case 'fleet':[\s\S]*<Suspense[\s\S]*<FleetWorkspace[\s\S]*<\/Suspense>/,
+        );
+        expect(existsSync(resolve(
+            repositoryRoot,
+            recipeConsoleRoot,
+            'fleet/FleetPreview.tsx',
+        ))).toBe(false);
         for (const removed of [
             'tune/TunePreview.tsx',
             'tune/TimingDistribution.tsx',

@@ -18,6 +18,8 @@ import { useRecipeConsoleUrlState } from '../routing/use-recipe-console-url-stat
 import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
 import { useRecipeConsolePresentation } from
     '../shell/use-responsive-presentation.ts';
+import { owningWindowFocusAnchor } from
+    '../ui/owning-window-focus-anchor.ts';
 import { RecipeConsoleActiveWork } from './RecipeConsoleActiveWork.tsx';
 
 export function RecipeConsoleWorkspace() {
@@ -51,7 +53,7 @@ export function RecipeConsoleWorkspace() {
 
     const inspectEvidence = useCallback((trigger: HTMLElement) => {
         setInspectorTrigger(trigger);
-        setInspectorTriggerFallback(owningWindowRangeAnchor(trigger));
+        setInspectorTriggerFallback(owningWindowFocusAnchor(trigger));
         setInspectorOpen(true);
     }, []);
     const selectMonitorControlRun = useCallback((controlRunId: string) => {
@@ -105,6 +107,16 @@ export function RecipeConsoleWorkspace() {
         <RecipeConsoleActiveWork
             analyzeWork={analyzeWork}
             executeWork={executeWork}
+            fleet={{
+                connection: control.connection,
+                selection: control.selection,
+                urlState: urlState.state,
+                navigate: urlState.navigate,
+                replace: urlState.replace,
+                onInspect: inspectEvidence,
+                onInspectorChange: setInspectorContent,
+                onSelectionLabelChange: setSelectionLabel,
+            }}
             monitorWork={monitorWork}
             tune={{
                 navigate: urlState.navigate,
@@ -197,14 +209,4 @@ export function RecipeConsoleWorkspace() {
             />
         </div>
     );
-}
-
-function owningWindowRangeAnchor(trigger: HTMLElement): HTMLElement | null {
-    const owner = trigger.closest<HTMLElement>('[data-monitor-window-owner]')
-        ?.dataset.monitorWindowOwner;
-    const shell = trigger.closest<HTMLElement>('[data-recipe-console-shell]');
-    if (!owner || !shell) return null;
-    return Array.from(shell.querySelectorAll<HTMLElement>(
-        '[data-monitor-window-focus-anchor][data-monitor-window-owner]',
-    )).find(anchor => anchor.dataset.monitorWindowOwner === owner) ?? null;
 }

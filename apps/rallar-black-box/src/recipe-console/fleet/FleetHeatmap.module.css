@@ -1,0 +1,132 @@
+.panel {
+    min-width: 0;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.heading {
+    display: flex;
+    min-width: 0;
+    align-items: end;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 15px;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.heading h2,
+.heading p {
+    margin: 0;
+}
+
+.heading p {
+    color: var(--rc-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.scroll {
+    max-width: 100%;
+    overflow: auto;
+}
+
+.scroll:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: -3px;
+}
+
+.scroll table {
+    min-width: 720px;
+    border-collapse: collapse;
+}
+
+.scroll th,
+.scroll td {
+    min-width: 104px;
+    padding: 0;
+    border-right: 1px solid var(--rc-border);
+    border-bottom: 1px solid var(--rc-border);
+    text-align: center;
+}
+
+.scroll th:first-child {
+    position: sticky;
+    z-index: 1;
+    left: 0;
+    min-width: 190px;
+    background: var(--rc-surface);
+}
+
+.scroll button {
+    display: grid;
+    width: 100%;
+    min-height: 48px;
+    place-items: center;
+    gap: 2px;
+    padding: 7px 9px;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+}
+
+.scroll th:first-child button {
+    place-items: start;
+    text-align: left;
+}
+
+.scroll small {
+    color: var(--rc-muted);
+}
+
+.scroll td span {
+    display: grid;
+    min-height: 48px;
+    place-items: center;
+    padding: 7px 9px;
+    color: var(--rc-status-stale-text);
+    background: var(--rc-status-stale-bg);
+    font-weight: 700;
+}
+
+.scroll td[data-state="passed"] span {
+    color: var(--rc-status-passed-text);
+    background: var(--rc-status-passed-bg);
+}
+
+.scroll td[data-state="failed"] span,
+.scroll td[data-state="timed-out"] span {
+    color: var(--rc-status-failed-text);
+    background: var(--rc-status-failed-bg);
+}
+
+.scroll td[data-state="running"] span {
+    color: var(--rc-status-running-text);
+    background: var(--rc-status-running-bg);
+}
+
+.scroll button:focus-visible {
+    position: relative;
+    z-index: 2;
+    outline: 3px solid var(--rc-focus);
+    outline-offset: -3px;
+}
+
+@media (max-width: 540px) {
+    .heading {
+        align-items: start;
+        flex-direction: column;
+    }
+
+    .scroll th:first-child {
+        min-width: 156px;
+    }
+}

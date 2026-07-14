@@ -274,6 +274,52 @@ describe('Recipe Console Fleet workspace model', () => {
         expect(model.selectionIssues).toEqual([]);
     });
 
+    it('reuses one indexed collection for summary, first window, and an off-window region selection', () => {
+        const agents = Array.from({ length: 30 }, (_, index) => outcome(
+            `agent-${String(index).padStart(2, '0')}`,
+            `region-${String(index).padStart(2, '0')}`,
+        ));
+        const manyRegions = {
+            ...report('run-many-regions', 3_000),
+            agents,
+            summary: {
+                agents: agents.length,
+                regions: agents.length,
+                passed: agents.length,
+                failed: 0,
+                missing: 0,
+                flaky: 0,
+                stale: 0,
+                passRate: 1,
+                failureGroups: 0,
+            },
+        } satisfies ControlFleetRunReport;
+
+        const model = deriveFleetWorkspaceModel({
+            query: query('live', [manyRegions]),
+            selection: { boardRows: [] },
+            urlState: { ...URL_STATE, fleetRegion: 'region-29' },
+        });
+
+        expect(model.analysis?.regions).toMatchObject({ total: 30, omitted: 6 });
+        expect(model.analysisCollection?.regions).toHaveLength(30);
+        expect(model.selectedRegionRows).toHaveLength(1);
+        expect(model.selectedRegionRows[0]?.region).toBe('region-29');
+        expect(model.analysis?.summary).toBe(model.analysisCollection?.summary);
+        expect(model.analysis?.regions.items[0])
+            .toBe(model.analysisCollection?.regions[0]);
+        expect(model.selectedRegionRows[0])
+            .toBe(model.analysisCollection?.regions[29]);
+        expect(model.analysisCollection?.work).toEqual({
+            reportVisits: 1,
+            outcomeVisits: 30,
+            indexInserts: 30,
+            cellLookups: 30,
+            failureSignatureVisits: 0,
+        });
+        expect(model.selectionIssues).toEqual([]);
+    });
+
     it('never substitutes another report when an exact URL identity is unavailable or incompatible', () => {
         const available = report('run-available', 3_000);
         const unavailable = deriveFleetWorkspaceModel({
@@ -299,6 +345,30 @@ describe('Recipe Console Fleet workspace model', () => {
         expect(incompatible.selectionIssues).toEqual([
             expect.objectContaining({ field: 'controlRunId', code: 'incompatible' }),
         ]);
+    });
+
+    it('keeps operator-controlled identifiers out of selection-issue prose', () => {
+        const runId = 'run-\u202e]exact';
+        const controlRunId = 'control-\u202e]wrong';
+        const available = report(runId, 3_000);
+        const model = deriveFleetWorkspaceModel({
+            query: query('live', [available]),
+            selection: { boardRows: [] },
+            urlState: {
+                ...URL_STATE,
+                distributedRunId: runId,
+                controlRunId,
+            },
+        });
+
+        expect(model.selectionIssues).toHaveLength(1);
+        expect(model.selectionIssues[0]).toMatchObject({
+            code: 'incompatible',
+            field: 'controlRunId',
+            value: controlRunId,
+        });
+        expect(model.selectionIssues[0]?.message).not.toContain(runId);
+        expect(model.selectionIssues[0]?.message).not.toContain(controlRunId);
     });
 
     it('resolves a control-run-only URL exactly and rejects missing or ambiguous evidence', () => {
