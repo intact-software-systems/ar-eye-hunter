@@ -3,6 +3,10 @@ name: Run GitHub Free Distributed Recipe
 on:
   workflow_dispatch:
     inputs:
+      rollout_control_plane:
+        description: Deploy and restart the Hetzner API/control services before the run
+        type: boolean
+        default: true
       manifest_path:
         description: Repo path to a distributed run manifest JSON file
         required: true
@@ -253,7 +257,7 @@ jobs:
     with:
       ref: ${{ github.sha }}
       operator_phase: prepare
-      rollout_before_run: true
+      rollout_before_run: ${{ inputs.rollout_control_plane }}
       agent_source: external
       agent_count: ${{ inputs.target_agent_count }}
       run_id: ${{ needs.plan.outputs.run_id }}
