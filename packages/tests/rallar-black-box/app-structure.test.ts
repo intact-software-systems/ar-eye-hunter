@@ -302,8 +302,15 @@ const runAnalysisModules = [
     },
 ] as const;
 
+const repositorySourceCache = new Map<string, string>();
+
 function repositorySource(path: string): string {
-    return readFileSync(resolve(repositoryRoot, path), 'utf8');
+    const cached = repositorySourceCache.get(path);
+    if (cached !== undefined) return cached;
+
+    const source = readFileSync(resolve(repositoryRoot, path), 'utf8');
+    repositorySourceCache.set(path, source);
+    return source;
 }
 
 function expectLazyNamedImport(
@@ -341,15 +348,27 @@ const task9aAstTextKinds = new Set<ts.SyntaxKind>([
     ts.SyntaxKind.TemplateTail,
     ts.SyntaxKind.JsxText,
 ]);
+const task9aSourceFileCache = new Map<
+    string,
+    Map<string, ts.SourceFile>
+>();
 
 function task9aSourceFile(path: string, source: string): ts.SourceFile {
-    return ts.createSourceFile(
+    const cachedBySource = task9aSourceFileCache.get(path);
+    const cached = cachedBySource?.get(source);
+    if (cached) return cached;
+
+    const sourceFile = ts.createSourceFile(
         path,
         source,
         ts.ScriptTarget.Latest,
         true,
         path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
     );
+    const sourceFiles = cachedBySource ?? new Map<string, ts.SourceFile>();
+    sourceFiles.set(source, sourceFile);
+    task9aSourceFileCache.set(path, sourceFiles);
+    return sourceFile;
 }
 
 function task9aAstShape(node: ts.Node, omittedNode?: ts.Node): string {
@@ -696,13 +715,27 @@ function appAndRunnerAdvancedSource(appSource: string): string {
         : `${appSource}\n${advancedSource}`;
 }
 
+const sourceFilesUnderCache = new Map<string, readonly string[]>();
+const directConsumersUnderCache = new Map<
+    string,
+    ReadonlyMap<string, readonly string[]>
+>();
+
 function sourceFilesUnder(path: string): readonly string[] {
+    const cached = sourceFilesUnderCache.get(path);
+    if (cached) return cached;
+
     const absolutePath = resolve(repositoryRoot, path);
     if (!existsSync(absolutePath)) {
-        return [];
+        const missing: readonly string[] = [];
+        sourceFilesUnderCache.set(path, missing);
+        return missing;
     }
 
-    return readdirSync(absolutePath, { withFileTypes: true }).flatMap((entry) => {
+    const sourcePaths = readdirSync(
+        absolutePath,
+        { withFileTypes: true },
+    ).flatMap((entry) => {
         const entryPath = join(absolutePath, entry.name);
         if (entry.isDirectory()) {
             return sourceFilesUnder(relative(repositoryRoot, entryPath));
@@ -711,9 +744,61 @@ function sourceFilesUnder(path: string): readonly string[] {
             ? [relative(repositoryRoot, entryPath)]
             : [];
     });
+    sourceFilesUnderCache.set(path, sourcePaths);
+    return sourcePaths;
+}
+
+function directConsumersUnder(
+    sourceRoot: string,
+): ReadonlyMap<string, readonly string[]> {
+    const cached = directConsumersUnderCache.get(sourceRoot);
+    if (cached) return cached;
+
+    const consumersByPath = new Map<string, string[]>();
+    for (const sourcePath of sourceFilesUnder(sourceRoot)) {
+        const sourceFile = task9aSourceFile(
+            sourcePath,
+            repositorySource(sourcePath),
+        );
+        for (const moduleImport of task9aModuleSpecifiers(sourceFile)) {
+            const dependencyPath = task9aResolveRelativeTypeScriptDependency(
+                sourcePath,
+                moduleImport,
+                (path) => existsSync(resolve(repositoryRoot, path)),
+            );
+            if (!dependencyPath || dependencyPath === sourcePath) continue;
+            const consumers = consumersByPath.get(dependencyPath) ?? [];
+            consumers.push(sourcePath);
+            consumersByPath.set(dependencyPath, consumers);
+        }
+    }
+    for (const consumers of consumersByPath.values()) consumers.sort();
+    directConsumersUnderCache.set(sourceRoot, consumersByPath);
+    return consumersByPath;
+}
+
+function directConsumersOf(path: string): readonly string[] {
+    return directConsumersUnder('apps/rallar-black-box/src').get(path) ?? [];
 }
 
 describe('rallar-black-box app source ownership', () => {
+    it('reuses source inventories and parsed ASTs within one test run', () => {
+        const firstSourcePaths = sourceFilesUnder('apps/rallar-black-box/src');
+        const secondSourcePaths = sourceFilesUnder('apps/rallar-black-box/src');
+        const appSource = repositorySource(appSourcePath);
+        const firstAppAst = task9aSourceFile(appSourcePath, appSource);
+        const secondAppAst = task9aSourceFile(
+            appSourcePath,
+            repositorySource(appSourcePath),
+        );
+
+        expect(secondSourcePaths).toBe(firstSourcePaths);
+        expect(secondAppAst).toBe(firstAppAst);
+        expect(directConsumersUnder('apps/rallar-black-box/src')).toBe(
+            directConsumersUnder('apps/rallar-black-box/src'),
+        );
+    });
+
     it('documents the Recipe Console and legacy extraction ownership boundary', () => {
         const source = repositorySource(appSourcePath).replace(/\s+/g, ' ');
 
@@ -14069,26 +14154,7 @@ describe('rallar-black-box app source ownership', () => {
             const consumers = new Map(
                 ownerPaths.map((ownerPath) => [
                     ownerPath,
-                    sourceFilesUnder('apps/rallar-black-box/src')
-                        .filter((sourcePath) => {
-                            if (sourcePath === ownerPath) return false;
-                            const sourceFile = task9aSourceFile(
-                                sourcePath,
-                                repositorySource(sourcePath),
-                            );
-                            return task9aModuleSpecifiers(sourceFile).some(
-                                (moduleImport) =>
-                                    task9aResolveRelativeTypeScriptDependency(
-                                        sourcePath,
-                                        moduleImport,
-                                        (path) =>
-                                            existsSync(
-                                                resolve(repositoryRoot, path),
-                                            ),
-                                    ) === ownerPath,
-                            );
-                        })
-                        .sort(),
+                    directConsumersOf(ownerPath),
                 ]),
             );
             expect.soft(consumers.get(restOwnerPath)).toEqual([
@@ -14551,24 +14617,7 @@ describe('rallar-black-box app source ownership', () => {
             const ownerConsumers = new Map(
                 ownerPaths.map((ownerPath) => [
                     ownerPath,
-                    sourceFilesUnder('apps/rallar-black-box/src')
-                        .filter((sourcePath) => {
-                            if (sourcePath === ownerPath) return false;
-                            const sourceFile = task9aSourceFile(
-                                sourcePath,
-                                repositorySource(sourcePath),
-                            );
-                            return task9aModuleSpecifiers(sourceFile).some(
-                                (moduleImport) =>
-                                    task9aResolveRelativeTypeScriptDependency(
-                                        sourcePath,
-                                        moduleImport,
-                                        (path) =>
-                                            existsSync(resolve(repositoryRoot, path)),
-                                    ) === ownerPath,
-                            );
-                        })
-                        .sort(),
+                    directConsumersOf(ownerPath),
                 ]),
             );
             expect.soft(
@@ -14880,24 +14929,7 @@ describe('rallar-black-box app source ownership', () => {
             const consumers = new Map(
                 ownerPaths.map((ownerPath) => [
                     ownerPath,
-                    sourceFilesUnder('apps/rallar-black-box/src')
-                        .filter((sourcePath) => {
-                            if (sourcePath === ownerPath) return false;
-                            const sourceFile = task9aSourceFile(
-                                sourcePath,
-                                repositorySource(sourcePath),
-                            );
-                            return task9aModuleSpecifiers(sourceFile).some(
-                                (moduleImport) =>
-                                    task9aResolveRelativeTypeScriptDependency(
-                                        sourcePath,
-                                        moduleImport,
-                                        (path) =>
-                                            existsSync(resolve(repositoryRoot, path)),
-                                    ) === ownerPath,
-                            );
-                        })
-                        .sort(),
+                    directConsumersOf(ownerPath),
                 ]),
             );
             expect.soft(consumers.get(roomsClientsRequestSourcePath)).toEqual([
@@ -15450,24 +15482,7 @@ describe('rallar-black-box app source ownership', () => {
             const consumers = new Map(
                 ownerPaths.map((ownerPath) => [
                     ownerPath,
-                    sourceFilesUnder('apps/rallar-black-box/src')
-                        .filter((sourcePath) => {
-                            if (sourcePath === ownerPath) return false;
-                            const sourceFile = task9aSourceFile(
-                                sourcePath,
-                                repositorySource(sourcePath),
-                            );
-                            return task9aModuleSpecifiers(sourceFile).some(
-                                (moduleImport) =>
-                                    task9aResolveRelativeTypeScriptDependency(
-                                        sourcePath,
-                                        moduleImport,
-                                        (path) =>
-                                            existsSync(resolve(repositoryRoot, path)),
-                                    ) === ownerPath,
-                            );
-                        })
-                        .sort(),
+                    directConsumersOf(ownerPath),
                 ]),
             );
             expect.soft(consumers.get(rallarServerContractsSourcePath)).toEqual([
@@ -16189,24 +16204,7 @@ describe('rallar-black-box app source ownership', () => {
             const consumers = new Map(
                 ownerPaths.map((ownerPath) => [
                     ownerPath,
-                    sourceFilesUnder('apps/rallar-black-box/src')
-                        .filter((sourcePath) => {
-                            if (sourcePath === ownerPath) return false;
-                            const sourceFile = task9aSourceFile(
-                                sourcePath,
-                                repositorySource(sourcePath),
-                            );
-                            return task9aModuleSpecifiers(sourceFile).some(
-                                (moduleImport) =>
-                                    task9aResolveRelativeTypeScriptDependency(
-                                        sourcePath,
-                                        moduleImport,
-                                        (path) =>
-                                            existsSync(resolve(repositoryRoot, path)),
-                                    ) === ownerPath,
-                            );
-                        })
-                        .sort(),
+                    directConsumersOf(ownerPath),
                 ]),
             );
             expect.soft(consumers.get(crdtContractsSourcePath)).toEqual([
@@ -16995,24 +16993,7 @@ describe('rallar-black-box app source ownership', () => {
                 /(?:App\.tsx['"]|\.css['"]|\/index\.(?:ts|tsx)['"]|\/mod\.(?:ts|tsx)['"]|^\s*export\s+(?:\*|{)[^;]*\s+from\s+)/m,
             );
 
-            const ownerConsumers = sourceFilesUnder(
-                'apps/rallar-black-box/src',
-            ).filter((sourcePath) => {
-                if (sourcePath === ownerPath) return false;
-                const sourceFile = task9aSourceFile(
-                    sourcePath,
-                    repositorySource(sourcePath),
-                );
-                return task9aModuleSpecifiers(sourceFile).some(
-                    (moduleImport) =>
-                        task9aResolveRelativeTypeScriptDependency(
-                            sourcePath,
-                            moduleImport,
-                            (path) =>
-                                existsSync(resolve(repositoryRoot, path)),
-                        ) === ownerPath,
-                );
-            });
+            const ownerConsumers = directConsumersOf(ownerPath);
             expect.soft(
                 ownerConsumers,
                 'DirectResourceTabPanels is the only Rallar Data owner consumer',
@@ -17478,24 +17459,7 @@ describe('rallar-black-box app source ownership', () => {
                 `${ownerPath}: no hidden ImportTypeNode edges`,
             ).toEqual([]);
 
-            const ownerConsumers = sourceFilesUnder(
-                'apps/rallar-black-box/src',
-            ).filter((sourcePath) => {
-                if (sourcePath === ownerPath) return false;
-                const sourceFile = task9aSourceFile(
-                    sourcePath,
-                    repositorySource(sourcePath),
-                );
-                return task9aModuleSpecifiers(sourceFile).some(
-                    (moduleImport) =>
-                        task9aResolveRelativeTypeScriptDependency(
-                            sourcePath,
-                            moduleImport,
-                            (path) =>
-                                existsSync(resolve(repositoryRoot, path)),
-                        ) === ownerPath,
-                );
-            });
+            const ownerConsumers = directConsumersOf(ownerPath);
             expect.soft(
                 ownerConsumers,
                 'DirectResourceTabPanels is the only Media console owner consumer',
