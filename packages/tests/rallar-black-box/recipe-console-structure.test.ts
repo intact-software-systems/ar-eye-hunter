@@ -1122,6 +1122,25 @@ describe('Recipe Console experience boundary', () => {
         expect(config).not.toMatch(/control-server|RALLAR_BLACK_BOX_CONTROL/i);
     });
 
+    test('routes Recipe Console specs through their dedicated CI project', () => {
+        const generalConfig = source(
+            'apps/rallar-black-box/playwright.config.ts',
+        );
+        const rootPackage = JSON.parse(source('package.json')) as {
+            scripts?: Record<string, string>;
+        };
+
+        expect(generalConfig).toContain(
+            'testIgnore: /recipe-console-.*\\.spec\\.ts/',
+        );
+        expect(rootPackage.scripts?.['test:rallar:recipe-console']).toBe(
+            'playwright test --config apps/rallar-black-box/playwright.recipe-console.config.ts',
+        );
+        expect(rootPackage.scripts?.['test:e2e']).toBe(
+            'npm run test:rallar && npm run test:rallar:recipe-console',
+        );
+    });
+
     test('includes emitted CSS in the executable experience closure proof', () => {
         const assertion = source(
             'apps/rallar-black-box/scripts/assert-experience-chunks.ts',

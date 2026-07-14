@@ -981,7 +981,7 @@ test('owns one poll timer across views and clears it when Recipe Console unmount
         history.pushState(
             {},
             '',
-            '/?provider=simulated&experience=legacy&workspace=black-box-runner&tab=recipes',
+            '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth',
         );
         dispatchEvent(new PopStateEvent('popstate'));
     });
