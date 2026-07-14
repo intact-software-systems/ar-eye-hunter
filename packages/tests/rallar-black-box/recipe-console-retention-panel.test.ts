@@ -73,6 +73,26 @@ function cleanupController(
     } as RetentionCleanupController;
 }
 
+async function clickSummary(
+    owner: ParentNode | undefined,
+    label: string,
+): Promise<void> {
+    const summary = [...owner?.querySelectorAll('summary') ?? []].find(row =>
+        row.textContent?.startsWith(label)
+    );
+    expect(summary, label).toBeDefined();
+    await act(async () => summary?.click());
+}
+
+function pressureRowCount(owner: ParentNode): number {
+    return owner.querySelectorAll([
+        '[data-retention-candidate-row]',
+        '[data-retention-linked-run-row]',
+        '[data-retention-linked-fleet-row]',
+        '[data-retention-total-id-row]',
+    ].join(',')).length;
+}
+
 describe('RetentionPanel', () => {
     let container: HTMLDivElement;
     let root: Root;
@@ -132,35 +152,61 @@ describe('RetentionPanel', () => {
                 canConfirm: true,
             }), onRequestConfirm);
 
-            const text = container.textContent ?? '';
+            let text = container.textContent ?? '';
             expect(text).toContain('5 current');
             expect(text).toContain('3 projected');
             expect(text).toContain('Cap 3');
             expect(text).toContain('2 control runs');
             expect(text).toContain('3 distributed runs');
             expect(text).toContain('2 fleet reports');
-            for (const id of [
-                ...preview.wouldDeleteRunIds,
-                ...preview.wouldDeleteDistributedRunIds,
-                ...preview.wouldDeleteFleetReportIds,
-            ]) expect(text).toContain(id);
+            expect(container.querySelectorAll('[data-retention-linked-run-row]'))
+                .toHaveLength(0);
+            expect(container.querySelectorAll('[data-retention-total-id-row]'))
+                .toHaveLength(0);
             expect(text).toContain('2 connected agents');
             expect(text).toContain('3 issued run tokens');
             expect(text).toContain('0 connected agents');
             expect(text).toContain('1 issued run token');
             expect(text).toContain('2026-01-02T03:04:05.000Z');
             expect(text).toContain('2026-01-02T04:05:06.000Z');
-            expect(text).toContain('distributed/one?unsafe=1');
-            expect(text).toContain('failed');
-            expect(text).toContain('distributed:two');
-            expect(text).toContain('running');
-            expect(text).toContain('fleet/report:one');
             expect(text).toContain(
                 'In-memory control, distributed, and fleet state is deleted.',
             );
             expect(text).toContain(
                 'Existing connected sockets and stored artifact files remain.',
             );
+
+            const candidates = [...container.querySelectorAll(
+                '[data-retention-candidate-row]',
+            )];
+            await clickSummary(candidates[0], 'Linked distributed runs');
+            text = container.textContent ?? '';
+            expect(text).toContain('distributed/one?unsafe=1');
+            expect(text).toContain('failed');
+            expect(text).toContain('distributed:two');
+            expect(text).toContain('running');
+            expect(pressureRowCount(container)).toBeLessThanOrEqual(100);
+
+            await clickSummary(candidates[0], 'Linked fleet reports');
+            expect(container.querySelectorAll('[data-retention-linked-run-row]'))
+                .toHaveLength(0);
+            expect(container.textContent).toContain('fleet/report:one');
+            expect(pressureRowCount(container)).toBeLessThanOrEqual(100);
+
+            await clickSummary(candidates[1], 'Linked distributed runs');
+            expect(container.textContent).toContain('distributed-three');
+            expect(container.textContent).not.toContain('fleet/report:one');
+            expect(pressureRowCount(container)).toBeLessThanOrEqual(100);
+
+            for (const [label, ids] of [
+                ['Control run IDs', preview.wouldDeleteRunIds],
+                ['Distributed run IDs', preview.wouldDeleteDistributedRunIds],
+                ['Fleet report IDs', preview.wouldDeleteFleetReportIds],
+            ] as const) {
+                await clickSummary(container, label);
+                for (const id of ids) expect(container.textContent).toContain(id);
+                expect(pressureRowCount(container)).toBeLessThanOrEqual(100);
+            }
 
             const details = [...container.querySelectorAll('details')];
             expect(details.length).toBeGreaterThanOrEqual(6);
@@ -175,6 +221,8 @@ describe('RetentionPanel', () => {
             expect(reviewButton).toBeDefined();
             await act(async () => reviewButton?.click());
             expect(onRequestConfirm).toHaveBeenCalledTimes(1);
+            expect(container.querySelectorAll('[data-retention-total-id-row]'))
+                .toHaveLength(0);
             expect(onRequestConfirm).toHaveBeenCalledWith(previewButton);
         });
 
@@ -246,6 +294,12 @@ describe('RetentionPanel', () => {
                 'The server state changed; preview cleanup again.',
             );
             expect(container.textContent).toContain('Stale preview · not current');
+            const linked = [...container.querySelectorAll('details')].find(details =>
+                details.querySelector('summary')?.textContent?.startsWith(
+                    'Linked distributed runs',
+                )
+            );
+            await act(async () => linked?.querySelector('summary')?.click());
             expect(container.textContent).toContain('distributed/one?unsafe=1');
             expect(container.textContent).not.toContain('Review cleanup');
         });
@@ -287,6 +341,13 @@ describe('RetentionPanel', () => {
                 },
             }));
 
+            const result = [...container.querySelectorAll('details')].find(details =>
+                details.querySelector('summary')?.textContent?.startsWith(
+                    'Deleted control run IDs',
+                )
+            );
+            expect(container.textContent).not.toContain('deleted/control:one');
+            await act(async () => result?.querySelector('summary')?.click());
             const text = container.textContent ?? '';
             expect(text).toContain('Cleanup completed');
             expect(text).toContain('2 control runs deleted');
@@ -301,15 +362,20 @@ describe('RetentionPanel', () => {
             'apps/rallar-black-box/src/recipe-console/history/RetentionPanel.tsx',
             'utf8',
         );
+        const consequenceSource = readFileSync(
+            'apps/rallar-black-box/src/recipe-console/history/RetentionConsequenceViews.tsx',
+            'utf8',
+        );
         expect(componentSource).toMatch(/import type[\s\S]*use-retention-cleanup/);
         expect(componentSource).toMatch(/controller:\s*RetentionCleanupController/);
         expect(componentSource).toMatch(
             /onRequestConfirm\(returnFocus:\s*HTMLButtonElement\):\s*void/,
         );
-        expect(componentSource).toMatch(/key=\{candidate\.key\}/);
-        expect(componentSource).not.toMatch(/planToken|rawToken|authorization/i);
-        expect(componentSource).not.toMatch(/localStorage|sessionStorage|console\.|fetch\s*\(/);
-        expect(componentSource).not.toMatch(/href=|new URL|encodeURI/);
+        expect(consequenceSource).toMatch(/itemKey=\{candidate => candidate\.key\}/);
+        const owners = `${componentSource}\n${consequenceSource}`;
+        expect(owners).not.toMatch(/planToken|rawToken|authorization/i);
+        expect(owners).not.toMatch(/localStorage|sessionStorage|console\.|fetch\s*\(/);
+        expect(owners).not.toMatch(/href=|new URL|encodeURI/);
     });
 
     it('keeps the flat responsive ledger and every action or summary at 44px',

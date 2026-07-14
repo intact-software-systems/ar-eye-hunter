@@ -82,6 +82,7 @@ export function HistoryRetentionWorkspace({
             <RetentionPanel
                 controller={cleanup}
                 onRequestConfirm={requestConfirm}
+                reviewing={dialogOpen}
             />
             <RetentionConfirmDialog
                 busy={cleanup.busy}

@@ -12,6 +12,10 @@ const retentionCleanup = `${historyRoot}/use-retention-cleanup.ts`;
 const retentionCleanupModel = `${historyRoot}/retention-cleanup-model.ts`;
 const retentionPanel = `${historyRoot}/RetentionPanel.tsx`;
 const retentionDialog = `${historyRoot}/RetentionConfirmDialog.tsx`;
+const retentionConsequences = `${historyRoot}/RetentionConsequenceViews.tsx`;
+const retentionCandidate = `${historyRoot}/RetentionCandidateRow.tsx`;
+const retentionDisclosure = `${historyRoot}/RetentionDisclosure.tsx`;
+const retentionWindow = `${historyRoot}/RetentionWindowedList.tsx`;
 const tuneWorkspace = `${recipeRoot}/tune/TuneWorkspace.tsx`;
 const workspace = `${recipeRoot}/app/RecipeConsoleWorkspace.tsx`;
 const activeWork = `${recipeRoot}/app/RecipeConsoleActiveWork.tsx`;
@@ -169,6 +173,10 @@ describe('Recipe Console History composition boundary', () => {
             retentionCleanupModel,
             retentionPanel,
             retentionDialog,
+            retentionConsequences,
+            retentionCandidate,
+            retentionDisclosure,
+            retentionWindow,
         ]) expect(existsSync(resolve(root, path)), path).toBe(true);
 
         const history = source(historyWorkspace);
@@ -184,6 +192,10 @@ describe('Recipe Console History composition boundary', () => {
             retentionCleanupModel,
             retentionPanel,
             retentionDialog,
+            retentionConsequences,
+            retentionCandidate,
+            retentionDisclosure,
+            retentionWindow,
         ].map(source).join('\n');
         const rootOwners = `${source(workspace)}\n${source(activeWork)}`;
 
@@ -218,6 +230,38 @@ describe('Recipe Console History composition boundary', () => {
         expect(refresh).toBeGreaterThan(-1);
         expect(selectionPatch).toBeGreaterThan(refresh);
         expect(replaceSelection).toBeGreaterThan(selectionPatch);
+    });
+
+    test('bounds every retention consequence without a replacement monolith', () => {
+        for (const [path, budget] of [
+            [retentionPanel, 140],
+            [retentionDialog, 190],
+            [retentionConsequences, 150],
+            [retentionCandidate, 110],
+            [retentionDisclosure, 110],
+            [retentionWindow, 140],
+            [`${historyRoot}/RetentionWindowedList.module.css`, 60],
+        ] as const) {
+            expect(lines(path), path).toBeLessThanOrEqual(budget);
+        }
+
+        const consequences = source(retentionConsequences);
+        const window = source(retentionWindow);
+        expect(window).toContain('RECIPE_CONSOLE_RETENTION_SURFACE_ROW_BUDGET = 100');
+        expect(window).toMatch(
+            /RECIPE_CONSOLE_RETENTION_WINDOW_SIZE\s*=\s*\n?\s*RECIPE_CONSOLE_RETENTION_SURFACE_ROW_BUDGET \/ 2/,
+        );
+        expect(window).toMatch(/useExplicitWindow[\s\S]*ExplicitWindowControls/);
+        expect(window).not.toMatch(/\.slice\(\s*0\s*,\s*100\s*\)/);
+        expect(consequences).toMatch(
+            /RetentionPreviewEvidence[\s\S]*<RetentionWindowedList/,
+        );
+        expect(consequences).toMatch(
+            /RetentionCleanupResult[\s\S]*Deleted control run IDs/,
+        );
+        expect(`${consequences}\n${window}`).not.toMatch(
+            /\bplanToken\b|registry|Registry|\/legacy\//,
+        );
     });
 
     test('keeps History reachable in short landscape with contained table overflow', () => {

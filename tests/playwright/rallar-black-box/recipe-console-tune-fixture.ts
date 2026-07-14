@@ -14,6 +14,11 @@ import {
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 
+export const RETENTION_LONG_BIDI_CONTROL_ID =
+    `history-control-\u202egnol-界-\u2066exact\u2069-${'control'.repeat(20)}`;
+const RETENTION_LONG_BIDI_DISTRIBUTED_ID =
+    `history-distributed-\u202egnol-界-\u2066exact\u2069-${'distributed'.repeat(14)}`;
+
 export type RecipeConsoleTuneFixture = Readonly<{
     artifactRequestCount(): number;
     mutationRequestCount(): number;
@@ -43,6 +48,8 @@ export type RecipeConsoleTuneFixtureOptions = Readonly<{
     initialReachability?: 'live' | 'offline';
     retention?: RetentionMode;
     retentionCandidateCount?: number;
+    retentionLinkedCount?: number;
+    retentionLongBidiId?: boolean;
     rightRecipe?: 'inline' | 'reference-only';
     shadowedRateHz?: boolean;
 }>;
@@ -74,8 +81,11 @@ export async function installRecipeConsoleTuneFixture(
         index < (options.retentionCandidateCount ?? 1);
         index += 1
     ) {
-        const runId = `history-overflow-control-${index}`;
-        const distributedRunId = `history-overflow-distributed-${index}`;
+        const { runId, distributedRunId } = retentionIds(
+            index,
+            options.retentionCandidateCount ?? 1,
+            options.retentionLongBidiId === true,
+        );
         controlRuns.push(historyOverflowControlRun(runId, index));
         distributedRuns.push(historyOverflowDistributedRun(
             distributedRunId,
@@ -156,6 +166,8 @@ export async function installRecipeConsoleTuneFixture(
                 currentPlan = retentionPreview(
                     ++retentionSequence,
                     options.retentionCandidateCount ?? 1,
+                    options.retentionLinkedCount ?? 1,
+                    options.retentionLongBidiId === true,
                 );
                 await fulfillJson(route, currentPlan);
                 return;
@@ -234,26 +246,34 @@ export async function installRecipeConsoleTuneFixture(
     };
 }
 
-function retentionPreview(sequence: number, candidateCount: number) {
+function retentionPreview(
+    sequence: number,
+    candidateCount: number,
+    linkedCount: number,
+    longBidiId: boolean,
+) {
     const candidates = Array.from({ length: candidateCount }, (_, index) => {
         const primary = index === 0;
-        const runId = primary
-            ? TUNE_RIGHT_CONTROL_RUN_ID
-            : `history-overflow-control-${index}`;
-        const distributedRunId = primary
-            ? TUNE_RIGHT_RUN_ID
-            : `history-overflow-distributed-${index}`;
+        const ids = primary
+            ? {
+                runId: TUNE_RIGHT_CONTROL_RUN_ID,
+                distributedRunId: TUNE_RIGHT_RUN_ID,
+            }
+            : retentionIds(index, candidateCount, longBidiId);
+        const linked = Array.from({ length: linkedCount }, (_, linkIndex) => ({
+            distributedRunId: linkIndex === 0
+                ? ids.distributedRunId
+                : `${ids.distributedRunId}-linked-${String(linkIndex).padStart(6, '0')}`,
+            state: primary ? 'failed' : 'passed',
+        }));
         return {
-            runId,
+            runId: ids.runId,
             createdAtEpochMs: TUNE_BASE_EPOCH_MS + index,
             updatedAtEpochMs: TUNE_BASE_EPOCH_MS + 4_800 + index,
             connectedAgentCount: primary ? 2 : 0,
             issuedRunTokenCount: primary ? 1 : 0,
-            distributedRuns: [{
-                distributedRunId,
-                state: primary ? 'failed' : 'passed',
-            }],
-            fleetReportIds: [distributedRunId],
+            distributedRuns: linked,
+            fleetReportIds: linked.map(run => run.distributedRunId),
         };
     });
     return {
@@ -263,8 +283,8 @@ function retentionPreview(sequence: number, candidateCount: number) {
         dryRun: true,
         wouldDeleteRuns: candidates,
         wouldDeleteRunIds: candidates.map(candidate => candidate.runId),
-        wouldDeleteDistributedRunIds: candidates.map(candidate =>
-            candidate.distributedRuns[0].distributedRunId
+        wouldDeleteDistributedRunIds: candidates.flatMap(candidate =>
+            candidate.distributedRuns.map(run => run.distributedRunId)
         ),
         wouldDeleteFleetReportIds: candidates.flatMap(candidate =>
             candidate.fleetReportIds
@@ -276,6 +296,23 @@ function retentionPreview(sequence: number, candidateCount: number) {
         },
         planToken: `history-plan-${sequence}`,
     } as const;
+}
+
+function retentionIds(
+    index: number,
+    candidateCount: number,
+    longBidiId: boolean,
+): Readonly<{ runId: string; distributedRunId: string }> {
+    const longBidiIndex = Math.floor(candidateCount * 3 / 4);
+    return longBidiId && index === longBidiIndex
+        ? {
+            runId: RETENTION_LONG_BIDI_CONTROL_ID,
+            distributedRunId: RETENTION_LONG_BIDI_DISTRIBUTED_ID,
+        }
+        : {
+            runId: `history-overflow-control-${index}`,
+            distributedRunId: `history-overflow-distributed-${index}`,
+        };
 }
 
 function historyOverflowControlRun(runId: string, index: number) {
