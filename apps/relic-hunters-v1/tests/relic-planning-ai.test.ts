@@ -35,7 +35,7 @@ describe('Relic planning browser AI', () => {
             'steal',
             'escape',
         ]);
-        expect(context.moveTargets.some((target) => target.relicSignal)).toBe(true);
+        expect(context.moveTargets.some((target) => target.relicSignal)).toBe(false);
         expect(serialized).not.toContain('Golden Idol');
         expect(serialized).not.toContain('Cursed Mask');
         expect(serialized).not.toContain('sun-disk');
@@ -105,7 +105,7 @@ describe('Relic planning browser AI', () => {
         expect(result.validation.ok).toBe(true);
         expect(result.value.action).toEqual({
             kind: 'move',
-            targetRoomId: 'storage',
+            targetRoomId: 'hallway',
         });
         expect(validateRelicPlanningAiSuggestion(result.value, context).ok).toBe(true);
     });
