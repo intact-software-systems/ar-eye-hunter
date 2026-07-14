@@ -409,7 +409,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
 | 8 — History, Compare, Saved Filters, Retention | **Complete** | Preview-first retention, shareable filters/presets, bounded History, comparison reuse, cleanup reconciliation, and exact copied-link/retention acceptance are qualified through `fd9055e` and `f762749`. Fresh focused/complete/server/browser/legacy gates and independent re-reviews are green; the configured live/Postgres lifecycle is explicitly skipped, not passed. Ready-State #8 and #9 are code-backed. No legacy surface is hidden or cut over. |
 | 9 — Large-Run Scale And Virtualization | **Complete** | One parsed shared pipeline, workerized Analyze, indexed Control/Monitor truth, and accessible deterministic windows now bound 15,000 artifact rows, 5,000 History/Tune pairs, 24,002 knobs, Execute/Monitor/retention pressure paths, and every mounted list. The exact production acceptance, same-machine candidate profile, 1,385-test app suite, 169 available Recipe Console browser cases, 28 legacy cases, four independent reviews, and final focus/fidelity repairs are green through `f8cef95`. Ready-State #10 is code-backed. Configured live remains an exact skip, not a pass; no legacy row, default, route, mount, public/control contract, or cutover changed. |
-| 10 — Fleet And Geographic Evidence | **In progress** | The reviewed [Fleet implementation plan](../docs/superpowers/plans/2026-07-14-rallar-recipe-console-fleet-geographic-implementation-plan.md) binds the exact acceptance, shared validation/report/geographic analysis, root-query authority, bounded UI, provenance rules, responsive/CSS/chunk proof, and no-cutover exit. Repository evidence supersedes the stale wrapper step: the stronger controller/view extraction already exists under `src/legacy/runner/fleet/**` through `9e5b4b5`, is exact-parity locked, and remains the active-only operational fallback. The 74-test unit and 3-case legacy browser baselines are green at `7d25ab9`; no runtime source has changed yet. |
+| 10 — Fleet And Geographic Evidence | **In progress** | Tasks 0–4 are code-backed through `0d046ca`: tolerant shared validation, deterministic report/geographic evidence, collision-safe identities, legacy parity adapters, bounded bundle transfer, a lazy authorized one-bundle capability, and exact pending-safe Fleet selection/handoff contracts pass a stable 267-test gate plus type/Deno/review proof. The reviewed [Fleet implementation plan](../docs/superpowers/plans/2026-07-14-rallar-recipe-console-fleet-geographic-implementation-plan.md) records the mandatory shared traversal correction before Task 5. The active-only legacy fallback and aliases remain unchanged; no row is hidden or cut over. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
 | 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
 
@@ -445,6 +445,31 @@ Fleet cases, covering 20-agent report/heatmap/failure/timing/export evidence,
 map-layer URL restoration, and 390×800 mobile use. This is planning and
 baseline evidence only: the new Fleet capability, its canonical browser owner,
 and the Iteration 10 exit remain open, and no row is hidden or cut over.
+
+#### Iteration 10 shared evidence and boundary milestone — `0d046ca`
+
+Tasks 1–4 add tolerant shared Fleet report/bundle validation, one-pass
+deterministic report analysis, provenance-bearing geography, collision-safe
+region/timing/route identities, and thin exact-parity legacy adapters. A
+backward-compatible bounded bytes client and lazy authorized capability load
+and retain at most one explicitly selected bundle without adding a poll,
+credential owner, endpoint, or required artifact file. The pure workspace and
+URL contracts preserve exact selections, keep unavailable truth pending until
+owning evidence is authoritative, and use a History-searchable run identity
+instead of incompatible Fleet signature/category filters.
+
+After RED/GREEN resolution of independent review findings, the stable gate
+passes 267/267 tests across 15 owner files, shared/app TypeScript, direct Deno
+checks of the three new modules, and whitespace validation. Two final
+re-audits are clean. No default, primary navigation, legacy visibility/mount,
+alias, rollback URL, existing public import, control-server contract, or
+cutover changed.
+
+Task 5 remains open. Its repository review found that the composed shared
+analysis permanently projects only the first bounded rows and the initial
+workspace model performs a second region index. The next prerequisite is one
+shared indexed collection with complete first/middle/final window projection;
+the UI must not duplicate aggregation or claim traversal before that lands.
 
 #### Iteration 9 Tasks 4–5 Analyze window checkpoint — `6d90061`
 

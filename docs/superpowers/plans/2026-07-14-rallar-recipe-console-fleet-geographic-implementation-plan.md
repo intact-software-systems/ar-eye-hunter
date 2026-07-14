@@ -1,7 +1,7 @@
 # Rallar Recipe Console Fleet And Geographic Evidence Implementation Plan
 
-Status: reviewed and ready for implementation; parent Iteration 10 is in
-progress from `7d25ab9`
+Status: in progress; Tasks 0–4 are code-backed through `0d046ca`, and the
+shared traversal correction required before Task 5 is in progress
 
 **Goal:** Replace the Recipe Console Fleet placeholder with a lean, bounded,
 live/last-known evidence workspace that answers which agents or regions fail
@@ -170,19 +170,19 @@ map-layer URL restoration, and 390×800 mobile operation. No source changed.
 
 ## Task 1: Add Tolerant Shared Fleet Report Validation
 
-- [ ] RED `rallar-bb-test-fleet-report-validation.test.ts` for valid responses,
+- [x] RED `rallar-bb-test-fleet-report-validation.test.ts` for valid responses,
   valid single reports and bundles, unknown-field tolerance, legacy labels
   without inner `agentId`, mixed valid/malformed arrays, unsupported versions,
   duplicate run identities, invalid coordinates, malformed required
   collections, wrong bundle identity/files, and UTF-8 file/aggregate limits.
-- [ ] Add `fleet-report-validation.ts` with the bound 64-issue budget, exact
+- [x] Add `fleet-report-validation.ts` with the bound 64-issue budget, exact
   omitted count, and all-duplicates-quarantined policy. Prove input permutation
   cannot choose a different report or issue order; retain exact source/
   accepted/quarantined cardinality without mutating input.
-- [ ] Use the validator at the Recipe Console Fleet boundary only; do not make
+- [x] Use the validator at the Recipe Console Fleet boundary only; do not make
   the optional collection a fatal root-query error or change existing server
   response semantics.
-- [ ] RED then GREEN `rallar-bb-test-fleet-public-surface.test.ts` importing the
+- [x] RED then GREEN `rallar-bb-test-fleet-public-surface.test.ts` importing the
   new APIs only from `mod.ts`; GREEN shared TypeScript and direct Deno checks of
   every new Fleet module.
 
@@ -197,23 +197,23 @@ deno check packages/shared-test/rallar-bb-test/fleet-report-validation.ts
 
 ## Task 2: Move Deterministic Fleet Report Analysis To Shared Test
 
-- [ ] RED `rallar-bb-test-fleet-report-analysis.test.ts` for shuffled-input
+- [x] RED `rallar-bb-test-fleet-report-analysis.test.ts` for shuffled-input
   determinism, stable tie-breaks, no mutation, all agent states, indexed
   heatmap joins/missing cells, regional aggregation, repeated signatures,
   exact affected evidence, nearest-rank timing, missing labels, and bounded
   agent/run detail.
-- [ ] Add a synthetic multi-report/multi-agent case with exact optional work
+- [x] Add a synthetic multi-report/multi-agent case with exact optional work
   counters for report/outcome visits, index inserts, and cell lookups. Prove
   linear source indexing, no per-cell `.find`, and bounded issue/detail output.
-- [ ] Add `fleet-report-analysis.ts` with focused public functions and a small
+- [x] Add `fleet-report-analysis.ts` with focused public functions and a small
   composed report-analysis model. Make every display/detail limit explicit.
-- [ ] Preserve the characterized legacy semantics through differential parity
+- [x] Preserve the characterized legacy semantics through differential parity
   fixtures, including first/newest report authority, timing results, failure
   aggregation, and exact identifiers. Then turn the old derivation/rollup/
   timing files into thin compatibility adapters over shared-test and replace
   historical implementation fingerprints with exact delegation plus output-
   parity locks; preserve every legacy import path and export.
-- [ ] Export only the new uniquely named analysis module from `mod.ts`.
+- [x] Export only the new uniquely named analysis module from `mod.ts`.
 
 Validation:
 
@@ -228,16 +228,16 @@ deno check packages/shared-test/rallar-bb-test/fleet-report-analysis.ts
 
 ## Task 3: Add Provenance-Bearing Shared Geographic Evidence
 
-- [ ] RED `rallar-bb-test-fleet-geography.test.ts` for explicit-coordinate,
+- [x] RED `rallar-bb-test-fleet-geography.test.ts` for explicit-coordinate,
   documented-datacenter, documented-region, and unresolved precedence; live
   versus historical field authority; separate live/historical states; stable
   regional evidence; explicit route aggregation; unresolved endpoints; failed
   counts; and peer-ID non-inference.
-- [ ] Add `fleet-geography.ts` with React-free location, region, agent, route,
+- [x] Add `fleet-geography.ts` with React-free location, region, agent, route,
   and summary evidence. Keep SVG projection and rendering app-local.
-- [ ] Extract route evidence only from documented explicit target-agent event
+- [x] Extract route evidence only from documented explicit target-agent event
   fields. Require both endpoints to have evidence-backed coordinates.
-- [ ] Make legacy location/route helpers thin compatibility delegates to the
+- [x] Make legacy location/route helpers thin compatibility delegates to the
   shared primitives and differentially prove existing world-map rules. The
   new shared combined model intentionally keeps current live status separate
   from historical outcome rather than inheriting the legacy stale-state merge.
@@ -255,27 +255,27 @@ deno check packages/shared-test/rallar-bb-test/fleet-geography.ts
 
 ## Task 4: Define The Fleet Workspace State And Handoff Contract
 
-- [ ] RED `recipe-console-control-fleet-api.test.ts` for lazy load, existing
+- [x] RED `recipe-console-control-fleet-api.test.ts` for lazy load, existing
   endpoint delegation, authorized retry, abort/current-generation rejection,
   selected-report identity validation, per-file/aggregate size bounds, one-
   bundle retention, explicit clear, and no background request. RED the additive
   bytes client for declared-length and chunked overflow cancellation, bounded
   error bodies, exact bytes, HTTP errors, and the unchanged typed client.
-- [ ] Add a narrow `control-fleet-api.ts` lazy capability to the existing
+- [x] Add a narrow `control-fleet-api.ts` lazy capability to the existing
   control connection. It reads only an explicitly requested report bundle and
   changes no endpoint or credential contract; rebuild/list remain legacy-owned.
-- [ ] RED `recipe-console-fleet-model.test.ts` for connecting, live, partial,
+- [x] RED `recipe-console-fleet-model.test.ts` for connecting, live, partial,
   stale, offline, empty, mixed-valid/schema-error, selected-region, selected-
   run, and selected-agent states using the root query and indexed selection.
-- [ ] RED `recipe-console-fleet-handoff.test.ts` for exact Monitor, Analyze,
+- [x] RED `recipe-console-fleet-handoff.test.ts` for exact Monitor, Analyze,
   Tune/History, and affected-agent URL patches; incompatible fields clear only
   where required and Fleet URL state survives a return trip.
-- [ ] Add small pure `fleet-workspace-model.ts`, `fleet-url-patches.ts`, and
+- [x] Add small pure `fleet-workspace-model.ts`, `fleet-url-patches.ts`, and
   feature-local adapters from `selection.boardRows` to shared live evidence.
-- [ ] Preserve last-known reports in stale state, distinguish absent optional
+- [x] Preserve last-known reports in stale state, distinguish absent optional
   collection from an empty collection, and expose validation issues without
   suppressing valid evidence.
-- [ ] Do not add a feature poll, token field, endpoint duplicate, global store,
+- [x] Do not add a feature poll, token field, endpoint duplicate, global store,
   or hidden retained component tree.
 
 Validation:
@@ -288,6 +288,44 @@ npx vitest run \
   packages/tests/rallar-black-box/recipe-console-fleet-handoff.test.ts \
   packages/tests/rallar-black-box/recipe-console-url-state.test.ts
 ```
+
+### Tasks 1–4 evidence — `0d046ca`
+
+The shared boundary now validates tolerant schema-v1 report collections and
+the exact four-file bundle, quarantines all duplicate identities, preserves
+unknown extensions, rejects non-finite wire numbers, and enforces the 64-issue,
+16 MiB per-file, and 48 MiB aggregate limits. The additive bytes client bounds
+declared and streamed responses at 64 MiB before the lazy authorized Fleet
+capability parses or retains one explicitly selected bundle.
+
+Shared report analysis, provenance-bearing geography, and the legacy
+compatibility adapters are deterministic and React-free. Exact legacy input,
+timed-out, tie, and locale behavior remains explicit. Region, timing, and route
+identities are collision-safe even when operator labels contain display
+separators; human labels and normal legacy output remain stable. Route evidence
+still requires explicit target-agent fields and two resolved endpoints.
+
+The pure Fleet workspace boundary distinguishes absent, empty, mixed-schema,
+partial, stale, offline, and live evidence; preserves exact run/control/agent
+selections; and defers unavailable cleanup truth until current, complete,
+present, fully valid owning evidence exists. History handoff uses the exact
+searchable distributed-run identity plus group/recipe and clears the Fleet
+failure category because Fleet and History category derivations are not
+equivalent for every runtime/diagnostic failure.
+
+The stable milestone gate passes 267/267 tests across 15 owner files, shared
+and app TypeScript, direct Deno checks of all three new shared modules, and
+`git diff --check`. Two independent final re-audits are clean after RED/GREEN
+fixes for non-finite values, locale parity, exhaustive barrel exports, exact
+selection authority, History filtering, and tuple-safe public identities.
+No endpoint, existing typed client, public legacy import, default, navigation
+row, rollback URL, legacy mount policy, or cutover changed.
+
+Task 5 review found one repository-authoritative prerequisite: the current
+composed analysis exposes only its first bounded rows and the workspace model
+performs a second region index. Before rendering, add one reusable shared
+indexed collection plus complete bounded window projection so first/middle/
+final traversal is possible without re-indexing or app-local aggregation.
 
 ## Task 5: Replace The Placeholder With A Lazy, Bounded Fleet Workspace
 
