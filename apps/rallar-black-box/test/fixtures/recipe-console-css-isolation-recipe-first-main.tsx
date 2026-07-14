@@ -7,6 +7,7 @@ async function renderFixture(): Promise<void> {
     await import('../../src/recipe-console/design/tokens.css');
     await import('../../src/recipe-console/design/reset.css');
     await import('../../src/styles.css');
+    await import('../../src/legacy/accessibility/legacy-accessibility.css');
     const { RecipeConsoleIsolationSamples } = await import('./RecipeConsoleIsolationSamples.tsx');
     const { LegacyIsolationSamples } = await import('./LegacyIsolationSamples.tsx');
 

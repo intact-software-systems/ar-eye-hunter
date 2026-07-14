@@ -200,16 +200,16 @@ stylesheet.
   Groups/Clients, and Rallar Server; narrow CRDT tracks collapse and wide tables
   scroll locally.
 
-- [ ] RED the legacy import inventory and browser matrix. Require the new
+- [x] RED the legacy import inventory and browser matrix. Require the new
   side-effect import immediately after `../../styles.css`, require both CSS
   fixtures to load it after legacy base CSS, then measure visible actions at
   1440×900, 430×932 touch, and 932×430 touch. Verify CRDT portrait currently
   overflows or keeps multi-column tracks and the registered targets are below
   44px.
-- [ ] Run the focused structure test and the new legacy accessibility case;
+- [x] Run the focused structure test and the new legacy accessibility case;
   confirm failures identify only the missing stylesheet/import and the recorded
   size/overflow debts.
-- [ ] Add only scoped rules rooted at `.app-shell` and the six panel classes.
+- [x] Add only scoped rules rooted at `.app-shell` and the six panel classes.
   The core contract is:
 
   ```css
@@ -220,7 +220,13 @@ stylesheet.
       .auth-command-center-panel,
       .rooms-clients-panel,
       .rallar-server-panel
-  ) button {
+  ) :is(
+      button,
+      input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+      select,
+      textarea,
+      label:has(input:is([type="checkbox"], [type="radio"]))
+  ) {
       min-block-size: 44px;
   }
 
@@ -247,19 +253,42 @@ stylesheet.
   measured wider boundary and record it in the test. Expand the action selector
   only when the RED matrix proves another actual interactive control is
   undersized. Do not use unscoped `button`, `input`, or `table` rules.
-- [ ] In the same new spec add exact Ready-State #14 acceptance `exposes
+- [x] In the same new spec add exact Ready-State #14 acceptance `exposes
   equivalent keyboard touch and persistent evidence at desktop portrait and
   landscape viewports`. Across the three required viewports, exercise primary
   keyboard navigation, a real visible selection/disclosure, persistent
   Advanced evidence without hover, 44px representative controls, reduced
   motion, and zero document overflow. The 900×900 tablet remains covered by the
   complete responsive suite.
-- [ ] GREEN the focused structure/browser tests, both CSS load orders, existing
+- [x] GREEN the focused structure/browser tests, both CSS load orders, existing
   responsive/accessibility cases, and legacy AppTabs focus tests. Inspect
   desktop/portrait/landscape screenshots at original resolution.
-- [ ] Dispatch fresh Task 2 specification and code-quality reviewers. Fix every
+- [x] Dispatch fresh Task 2 specification and code-quality reviewers. Fix every
   Critical or Important finding test-first and re-review before advancing.
-- [ ] Commit `fix: close final accessibility debt`.
+- [x] Commit `fix: close final accessibility debt`.
+
+### Task 2 qualification — 2026-07-14
+
+- Structure RED had the two intended missing-import/stylesheet failures. The
+  browser RED recorded 30px Media/Data/CRDT buttons, 42px Auth/Groups/Server
+  buttons, 18–40px form controls and checkbox labels, CRDT 5/6/2 tracks,
+  `overflow-x: visible`, 377px portrait escape, and 781px/287px stressed-table
+  escape in portrait/landscape.
+- The 44-line legacy-only stylesheet is imported after frozen legacy CSS and
+  loaded in both fixture orders. It is rooted under `.app-shell` and the six
+  registered panel classes, gives every measured action/form/checkbox-label hit
+  area at least 44×44 without enlarging checkbox/radio glyphs, collapses CRDT at
+  the measured landscape-inclusive 960px boundary, and contains the table
+  scroll locally. No global stylesheet or mount policy changed.
+- GREEN passes 14/14 focused structure/focus tests, the new canonical browser
+  matrix 2/2, existing responsive/CSS isolation 31/31, legacy AppTabs browser
+  focus 2/2, app TypeScript, and diff-check. Original-resolution desktop,
+  genuine-touch portrait/landscape, and stressed CRDT screenshots were
+  inspected without clipping or escape.
+- The specification review's actionable-form target finding was reproduced
+  RED and closed; re-review and a fresh code-quality review report no remaining
+  finding. Browser touch hardware is emulated through `hasTouch`, coarse
+  pointer, hover-none, and one touch point; no physical-device run is claimed.
 
 ## Task 3: Executable Contrast And Artifact-Missing Semantics
 

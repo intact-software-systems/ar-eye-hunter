@@ -19,6 +19,7 @@ import type {
 import { useCommandCenterGlobalContext } from './use-command-center-global-context.ts';
 import { useLegacyNavigation } from './use-legacy-navigation.ts';
 import '../../styles.css';
+import '../accessibility/legacy-accessibility.css';
 
 export type LegacyExperienceProps = Readonly<{
     runtime: LegacyShellRuntime;

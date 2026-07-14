@@ -1,0 +1,44 @@
+.app-shell :is(
+    .media-console-panel,
+    .rallar-data-panel,
+    .crdt-health-panel,
+    .auth-command-center-panel,
+    .rooms-clients-panel,
+    .rallar-server-panel
+) :is(
+    button,
+    input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea,
+    label:has(input:is([type="checkbox"], [type="radio"]))
+) {
+    min-block-size: 44px;
+}
+
+.app-shell :is(
+    .media-console-panel,
+    .rallar-data-panel,
+    .crdt-health-panel,
+    .auth-command-center-panel,
+    .rooms-clients-panel,
+    .rallar-server-panel
+) label:has(input:is([type="checkbox"], [type="radio"])) {
+    display: flex;
+    align-items: center;
+}
+
+@media (max-width: 960px) {
+    .app-shell .crdt-health-panel :is(
+        .crdt-editor-controls,
+        .crdt-editor-workbench .form-grid,
+        .crdt-editor-diagnostics
+    ) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .app-shell .crdt-health-panel .table-shell {
+        max-inline-size: 100%;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+    }
+}

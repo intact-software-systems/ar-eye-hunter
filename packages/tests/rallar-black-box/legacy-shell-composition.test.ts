@@ -8,6 +8,12 @@ const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const appPath = 'apps/rallar-black-box/src/App.tsx';
 const shellRoot = 'apps/rallar-black-box/src/legacy/shell';
 const legacyExperiencePath = `${shellRoot}/LegacyExperience.tsx`;
+const legacyAccessibilityPath =
+    'apps/rallar-black-box/src/legacy/accessibility/legacy-accessibility.css';
+const cssIsolationFixturePaths = [
+    'apps/rallar-black-box/test/fixtures/recipe-console-css-isolation-main.tsx',
+    'apps/rallar-black-box/test/fixtures/recipe-console-css-isolation-recipe-first-main.tsx',
+] as const;
 const compositionOwners = [
     { path: `${shellRoot}/legacy-shell-contracts.ts`, cap: 70 },
     { path: `${shellRoot}/LegacyAppShell.tsx`, cap: 180 },
@@ -526,6 +532,7 @@ describe('legacy shell composition boundary', () => {
             '../../auth-flow.ts|value:bootstrapMatchesAuthSession',
             '../../runtime-store.ts|value:rallarBlackBoxRuntimeStore',
             '../../styles.css|side-effect',
+            '../accessibility/legacy-accessibility.css|side-effect',
             '../diagnostics/context/LegacyDiagnosticContextBar.tsx|value:LegacyDiagnosticContextProvider',
             '../diagnostics/context/legacy-diagnostic-context.ts|value:parseLegacyDiagnosticContext',
             '../runner/shell/use-runner-shell-state.ts|value:useRunnerShellSelectionSync',
@@ -550,6 +557,77 @@ describe('legacy shell composition boundary', () => {
         expect(legacyExperienceSource).not.toMatch(
             /(?:from\s+['"][^'"]*App(?:\.tsx)?['"]|import\s*\([^)]*App)/,
         );
+    });
+
+    it('loads a narrow legacy accessibility repair after the frozen base styles', () => {
+        const legacyExperienceSource = repositorySource(legacyExperiencePath);
+        expect(legacyExperienceSource).toContain(
+            "import '../../styles.css';\n" +
+            "import '../accessibility/legacy-accessibility.css';",
+        );
+
+        for (const fixturePath of cssIsolationFixturePaths) {
+            expect.soft(
+                repositorySource(fixturePath),
+                `${fixturePath}: legacy accessibility CSS follows base legacy CSS`,
+            ).toMatch(
+                /await import\('\.\.\/\.\.\/src\/styles\.css'\);\n\s+await import\('\.\.\/\.\.\/src\/legacy\/accessibility\/legacy-accessibility\.css'\);/u,
+            );
+        }
+
+        const stylesheetExists = existsSync(
+            resolve(repositoryRoot, legacyAccessibilityPath),
+        );
+        expect.soft(
+            stylesheetExists,
+            'the legacy-only accessibility stylesheet exists',
+        ).toBe(true);
+        if (!stylesheetExists) return;
+
+        const stylesheet = repositorySource(legacyAccessibilityPath);
+        expect.soft(
+            stylesheet.trimEnd().split('\n').length,
+            'the focused accessibility repair stays small',
+        ).toBeLessThanOrEqual(50);
+        for (const panelClass of [
+            'media-console-panel',
+            'rallar-data-panel',
+            'crdt-health-panel',
+            'auth-command-center-panel',
+            'rooms-clients-panel',
+            'rallar-server-panel',
+        ]) {
+            expect.soft(
+                stylesheet,
+                `repair is scoped to ${panelClass}`,
+            ).toContain(`.${panelClass}`);
+        }
+        const unscopedSelectorGroups = [
+            ...stylesheet.replace(/\/\*[\s\S]*?\*\//gu, '').matchAll(/([^{}]+)\{/gu),
+        ]
+            .map((match) => match[1].trim())
+            .filter((selector) => !selector.startsWith('@'))
+            .filter((selector) => !selector.includes('.app-shell'));
+        expect.soft(
+            unscopedSelectorGroups,
+            'every selector group is rooted at the legacy shell',
+        ).toEqual([]);
+        expect.soft(
+            stylesheet,
+            'repair covers form controls without selecting checkbox/radio glyphs',
+        ).toContain(
+            'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])',
+        );
+        expect.soft(
+            stylesheet,
+            'repair expands checkbox/radio label hit areas',
+        ).toContain(
+            'label:has(input:is([type="checkbox"], [type="radio"]))',
+        );
+        expect.soft(
+            stylesheet,
+            'repair does not retain hidden legacy surfaces',
+        ).not.toMatch(/\[hidden\]|display\s*:\s*none|visibility\s*:\s*hidden/iu);
     });
 
     it('routes legacy composition through a lazy experience wrapper', () => {

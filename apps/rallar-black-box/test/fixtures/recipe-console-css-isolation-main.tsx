@@ -10,6 +10,7 @@ async function renderFixture(): Promise<void> {
     let recipeSample: ReactNode;
     if (mode === 'legacy' || mode === 'both') {
         await import('../../src/styles.css');
+        await import('../../src/legacy/accessibility/legacy-accessibility.css');
         const { LegacyIsolationSamples } = await import('./LegacyIsolationSamples.tsx');
         legacySample = <LegacyIsolationSamples />;
     }
