@@ -276,19 +276,24 @@ apps/rallar-black-box/src/recipe-console/
   ui/
 
 apps/rallar-black-box/src/legacy/
-  LegacyAppShell.tsx
-  LegacySurfaceRouter.tsx
-  legacy-surface-registry.ts
-  runner/LegacyRecipesRoute.tsx
-  runner/LegacyRunsRoute.tsx
-  runner/LegacyDistributedRecipesRoute.tsx
-  runner/LegacyRunManagerRoute.tsx
+  shell/LegacyExperience.tsx
+  shell/LegacyAppShell.tsx
+  shell/tabs/
+    RunnerWorkspaceTabPanels.tsx
+    DirectConnectionTabPanels.tsx
+    DirectResourceTabPanels.tsx
+    DiagnosticEvidenceTabPanels.tsx
+  runner/advanced/RunnerAdvancedPanel.tsx
+  runner/recipes/
+  runner/runs/
+  runner/distributed-recipes/
+  runner/run-manager/
   runner/fleet/RunnerFleetPanel.tsx
-  runner/LegacyBuilderRoute.tsx
   diagnostics/
 ```
 
-Proposed app responsibilities:
+Repository-qualified app responsibilities (superseding the original proposed
+registry/router wrappers):
 
 - `control-api.ts`: typed fetch wrappers around existing control server endpoints. It can start by wrapping functions from `src/control-run-manager.ts`.
 - `control-query.ts`: polling, stale state, refresh cadence, and snapshot bounds.
@@ -303,15 +308,32 @@ Proposed app responsibilities:
 - `fleet/`: fleet board, heatmap, region summaries, map, report export.
 - `advanced/`: compatibility bridge to legacy direct Rallar tools while they are hidden, extracted, or moved behind contextual diagnostics. It owns links and route context, not the legacy implementations.
 - `ui/`: compact reusable primitives: button, segmented control, metric, status pill, table, empty/error/stale state, disclosure, drawer, toolbar, inspector.
-- `legacy/LegacySurfaceRouter.tsx`: the only compatibility mounting boundary used by Recipe Console.
-- `legacy/legacy-surface-registry.ts`: stable IDs, labels, dynamic imports, old query aliases, context codecs, and cutover status.
-- `legacy/runner/**` and `legacy/diagnostics/**`: one route adapter per substantial existing surface. The adapter may compose smaller extracted files, but there is no aggregate mega-component.
+- `legacy/shell/LegacyExperience.tsx`: the mutually exclusive legacy experience
+  boundary. It owns the legacy stylesheet and shell imports and is absent from
+  a cold Recipe Console closure.
+- `legacy/shell/tabs/**`: focused composition boundaries that dynamically import
+  safe active-only surfaces and retain only migration-register stateful
+  exceptions while the legacy experience itself is active.
+- `legacy/runner/advanced/RunnerAdvancedPanel.tsx`: the bounded legacy Advanced
+  composition owner. It is not a route registry: Workbench and Manual are its
+  documented stateful children; other children are selected-only dynamic
+  imports.
+- `recipe-console/advanced/advanced-surface-catalog.ts`: a React-free data
+  catalog for labels, stable IDs, aliases, and contextual links. It owns no
+  component loader, request, timer, credential, or legacy runtime lifetime.
+- `legacy/runner/**` and `legacy/diagnostics/**`: focused implementation owners
+  composed by the existing shell boundaries; no duplicate per-surface wrapper
+  tree or aggregate mega-component.
 
 Target ownership:
 
 - `App.tsx`: app bootstrap, providers, auth gate, high-level routing. Below 1,500 lines is an intermediate extraction checkpoint; the final target before the Iteration 12 default flip is below 800 lines.
 - `RecipeConsoleApp.tsx`: compose new console routes and shared providers. Target below 400 lines.
-- `LegacySurfaceRouter.tsx`: resolve and lazy-load one legacy route. Target below 250 lines.
+- `LegacyExperience.tsx` and `LegacyAppShell.tsx`: mutually exclusive legacy
+  bootstrap/composition glue. Keep each focused and below the applicable
+  component target; do not add feature logic or a runtime registry.
+- Legacy tab-group boundaries: select and lazy-load safe routes locally while
+  keeping each documented stateful exception explicit and test-backed.
 - Feature route files: own orchestration for one workflow. Target below 700 lines.
 - Component files: presentational and focused. Target below 300 lines unless a table/chart renderer needs more.
 - CSS Modules: target below 400 lines. Split by feature or component when selectors stop sharing one ownership boundary.
@@ -327,7 +349,12 @@ Keep these in `packages/shared-test` or move them there if currently app-local:
 - compare-run derivation
 - fleet aggregation and failure signatures
 
-Do not import legacy React panels into new Recipe Console views except through `LegacySurfaceRouter` or an equivalent compatibility boundary. The imports behind that boundary should be dynamic so the default Recipe Console chunk does not eagerly include every legacy panel.
+Do not import legacy React panels into Recipe Console views. Recipe Console may
+emit typed same-origin links and bounded context from its React-free Advanced
+catalog, but only the active `LegacyExperience` may import legacy React or CSS.
+Safe legacy surfaces must be dynamically imported by their focused legacy
+shell owner so the default Recipe Console chunk does not eagerly include them;
+stateful exceptions remain limited to the migration register.
 
 ### `App.tsx` Decomposition Sequence
 
@@ -337,7 +364,10 @@ Do the split as behavior-preserving slices. Do not combine a panel move with its
 2. Extract the login/bootstrap/provider gates from `App()` into focused shell components. Keep runtime store and auth behavior unchanged.
 3. Extract the current tab composition into `LegacyAppShell.tsx`; `App.tsx` selects `RecipeConsoleApp` or `LegacyAppShell` and supplies only shared bootstrap context.
 4. Extract one leaf surface at a time, starting with the five distributed-run panels named in Iteration 1. Move its private controller hook, view components, and styles together.
-5. Replace static legacy imports in the route registry with dynamic imports. Verify that inactive surfaces no longer mount effects or appear in the initial Recipe Console bundle.
+5. Replace safe static legacy imports at the existing focused tab-group owners
+   with dynamic imports. Verify that inactive surfaces no longer mount effects
+   or appear in the initial Recipe Console bundle; do not introduce a runtime
+   registry to centralize component ownership.
 6. Move deterministic derivation used by both old and new views into `packages/shared-test`; keep app adapters thin and preserve public exports.
 7. Flip each workflow to Recipe Console only after its matrix cutover proof passes. Keep the old route and rollback switch.
 8. Make Recipe Console the default only after all core workflow gates pass; leave `Advanced Legacy` available.
@@ -410,7 +440,7 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 8 — History, Compare, Saved Filters, Retention | **Complete** | Preview-first retention, shareable filters/presets, bounded History, comparison reuse, cleanup reconciliation, and exact copied-link/retention acceptance are qualified through `fd9055e` and `f762749`. Fresh focused/complete/server/browser/legacy gates and independent re-reviews are green; the configured live/Postgres lifecycle is explicitly skipped, not passed. Ready-State #8 and #9 are code-backed. No legacy surface is hidden or cut over. |
 | 9 — Large-Run Scale And Virtualization | **Complete** | One parsed shared pipeline, workerized Analyze, indexed Control/Monitor truth, and accessible deterministic windows now bound 15,000 artifact rows, 5,000 History/Tune pairs, 24,002 knobs, Execute/Monitor/retention pressure paths, and every mounted list. The exact production acceptance, same-machine candidate profile, 1,385-test app suite, 169 available Recipe Console browser cases, 28 legacy cases, four independent reviews, and final focus/fidelity repairs are green through `f8cef95`. Ready-State #10 is code-backed. Configured live remains an exact skip, not a pass; no legacy row, default, route, mount, public/control contract, or cutover changed. |
 | 10 — Fleet And Geographic Evidence | **Complete** | Shared indexed Fleet evidence and the lazy bounded workspace are code-backed in `0088be0`; canonical browser, responsive, CSS/chunk, alias, and five-baseline proof is code-backed in `3ab86a9`. Fresh qualification passes 279 focused tests, 1,472 complete app tests, all shared/app type and Deno gates, a 758-module build, 7/7 Fleet and 3/3 visual cases, 65/65 broader Recipe Console cases, the complete Recipe Console configuration with 179 passed and one exact configured-live skip, 33/33 legacy Fleet/navigation cases, and 28/28 existing-owner regressions. Legacy Fleet remains visible, active-only, deep-linkable, and uncut; no default or contract changed. |
-| 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
+| 11 — Advanced Diagnostics Bridge | **Complete** | The complete contextual Advanced bridge, 22-surface alias contract, bounded return context, ten safe dynamic legacy targets, twelve documented stateful exceptions, reciprocal chunks, Direction A browser matrix, and fresh qualification are code-backed through `78e2c13`. Ready-State #11–#13 are satisfied. No legacy row or default changed; configured live remains skipped, not passed. |
 | 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
 
 #### Iteration 10 implementation start — `7d25ab9`
@@ -512,8 +542,71 @@ Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
 apps/rallar-black-box available.` No default, navigation row, legacy Fleet
 visibility or active-only mount, alias, rebuild/export path, rollback URL,
 public export, existing control-server contract, or cutover changed.
-Iterations 11–12 now own contextual Advanced diagnostics, safe lazy legacy
-ownership, the blank-URL default flip, and final cross-app accessibility.
+At that Iteration 10 checkpoint, Iterations 11–12 still owned contextual
+Advanced diagnostics, safe lazy legacy ownership, the blank-URL default flip,
+and final cross-app accessibility. The Iteration 11 result follows.
+
+#### Iteration 11 qualified Advanced diagnostics exit — `5ed54fc` through `78e2c13`
+
+The reviewed child plan corrected the proposed architecture before editing:
+the repository already owned mutually exclusive Recipe Console/legacy
+experience chunks and canonical alias normalization, so Iteration 11 did not
+add a legacy surface router, React registry, second shell, poller, credential
+owner, or broad stylesheet. A React-free additive shared classifier maps only
+bounded correlated auth/ticket, RTC route/peer, group/member, and explicit
+server failures. A data-only catalog enumerates 22 actionable legacy leaves,
+and versioned outbound/return builders preserve only allow-listed provider and
+bounded run/group/agent/recipe/command/transport context while excluding
+credentials, response bodies, arbitrary return URLs, and over-4,096-byte
+values.
+
+Recipe Console Advanced now presents every direct diagnostic and preserved
+workflow fallback without placing direct tools in its six-item primary
+navigation. Monitor opens the exact Auth, WebSocket, RTC Diagnostics,
+Groups/Clients, or Rallar Server owner from selected failure truth, and the
+visible legacy context bar returns to the same selected Recipe Console view and
+run. Exact same-origin/path/version return focus is one-shot per document and
+does not steal focus during ordinary SPA navigation. Every canonical route,
+old alias, `advancedSurface`/`advanced` child, runner-agent launch flow, and
+rollback URL remains operational with exactly one DOM owner.
+
+Recipes, Runs, Fleet, Builder, Distributed Recipes, Run Manager, Shared Test,
+Groups/Clients, Topology, and RTC Diagnostics are production-reachable dynamic
+chunks and unmount on exit. Strict Mode lifetime tests removed replay-
+suppressing initial-request latches from five guarded controllers, so their
+first real effect is not invalidated while stale and post-unmount writes remain
+rejected. Quick Test, Auth, WebSocket, RTC/Realtimes, Rallar Data, CRDT, Media,
+Local Workbench, Manual Rallar, Rallar Trace, Event Stream, and Rallar Server
+remain the twelve explicit hidden-mounted stateful exceptions only inside
+active `LegacyExperience`. Keyboard focus also recovers when either a safe
+panel unmounts or a retained panel becomes hidden/inert.
+
+Fresh qualification passes 1,564/1,564 app tests across 148 files; shared/app
+TypeScript; all seven shared Deno entries and the direct classifier/module Deno
+check; a 776-module production build; and reciprocal experience/chunk proof.
+The canonical Task 7 Recipe Console matrix passes 63/63. The complete Recipe
+Console configuration passes 190 with one configured-live skip; the preserved
+legacy matrix passes 30 with two exhaustive configured-stack skips. Native-
+resolution review approves four new Advanced Direction A baselines and the
+compact-nav correction, with 31/31 responsive/CSS and 4/4 no-update Advanced
+visual cases. Independent public-contract, URL/security, React/ownership,
+lifetime/chunk, browser/cutover, visual, and final reviews report no remaining
+Critical or Important issue. The final review found that the production legacy
+return anchor and browser-proven Advanced helper used divergent serializers.
+`78e2c13` consolidates them on one neutral 4,096-byte builder, prioritizes the
+canonical Advanced surface over lower-value selection at the aggregate budget,
+and adds exact unit/browser regression coverage; the focused re-review reports
+no finding.
+
+The in-app Browser remains unavailable exactly as `Browser runtime unavailable
+after setup failure: Cannot redefine property: process`; terminal Playwright
+is fallback evidence. Configured live/Postgres remains skipped, not passed,
+for exactly: `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed
+apps/api-v1, apps/rallar-black-box-control-server, and apps/rallar-black-box
+available.` Ready-State #11–#13 are code-backed. `DEFAULT_APP_EXPERIENCE`
+remains `legacy`, no legacy row is retired or hidden in the rollback
+experience, and Iteration 12 remains the sole owner of Ready-State #1, #14,
+the unavailable #3 live execution, final accessibility debt, and default flip.
 
 #### Iteration 9 Tasks 4–5 Analyze window checkpoint — `6d90061`
 
@@ -1751,7 +1844,6 @@ compatible, and nothing was pushed or opened as a PR.
 | Preserved legacy Media and Rallar Data controls can be only 30px high (including the 932x430 landscape QA viewport) | 12 | Keep the parity extractions unchanged, then require at least 44px touch targets without overflow or hover-only affordances in the Iteration 12 accessibility gate. |
 | Preserved legacy CRDT controls are 30px high at desktop and 932x430 landscape, and its fixed editor/diagnostic/table tracks create an 807px document at 430px portrait | 12 | Keep the exact parity extraction unchanged; add narrow-screen CRDT grid collapse and locally contained table scrolling, require 44px touch targets in touch viewports, and prove zero page overflow in `recipe-console-accessibility.spec.ts`. |
 | Preserved legacy Auth, Groups/Clients, and Rallar Server action controls measure 42px across the desktop, portrait, and landscape QA viewports | 12 | Keep the exact parity extractions unchanged, then raise every actionable touch target to at least 44px in the Iteration 12 accessibility gate. |
-| Legacy tab arrow keys update selection without transferring DOM focus to the selected tab | 12 | Preserve Iteration 1 parity, then make roving focus follow keyboard selection and encode the behavior in `recipe-console-accessibility.spec.ts`. |
 | Local Node 26 differs from CI Node 24 | 1 and every code-changing iteration | Run the focused tests, typecheck, and build on CI Node 24; retain the local Node `26.5.0` result separately so version-specific differences remain visible. |
 | The configured live/Postgres lifecycle remains unexecuted after the Iteration 5 code-backed exit | 8, 12, or the next available configured-service checkpoint | Run `npm run test:e2e:rallar-black-box:full-stack:real:distributed`, including `full-stack-recipe-console-monitor.spec.ts`; do not close Ready-State #3 from mock, discovery, no-environment skip, or sandbox-only evidence. |
 

@@ -1,10 +1,9 @@
 # Recipe Console Product Spec
 
-Status: canonical product contract; Ready-State #2 and #4–#10 are code-backed
-through `f8cef95`, and the Iteration 10 Fleet capability is code-backed through
-`0088be0` and `3ab86a9`; Ready-State #3 remains open for its unavailable
-configured-service execution and Ready-State #1 and #11–#14 remain owned by
-Iterations 11–12
+Status: canonical product contract; Ready-State #2 and #4–#13 are code-backed
+through Iterations 4–11 and `78e2c13`; Ready-State #3 remains open for its
+unavailable configured-service execution, while Ready-State #1 and #14 remain
+owned by Iteration 12
 Evidence date: 2026-07-14
 
 This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
@@ -435,5 +434,50 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
 - No legacy Fleet row was hidden or cut over. Its `fleet`, `fleet-report`, and
   `fleet-reports` links, active-only mount, rebuild/export behavior, rollback
   URL, and public/control contracts remain operational. No default changed.
-  Iterations 11–12 retain Advanced/contextual diagnostics, safe lazy legacy
-  ownership, final accessibility, and blank-URL default-flip work.
+  At this checkpoint Iterations 11–12 retained Advanced/contextual diagnostics,
+  safe lazy legacy ownership, final accessibility, and blank-URL default-flip
+  work. The qualified Iteration 11 result follows.
+
+### Iteration 11 qualified Advanced diagnostics exit — `5ed54fc` through `78e2c13`
+
+- Ready-State #11 is satisfied by the exact passing acceptance `keeps direct
+  Rallar diagnostics out of primary navigation and opens them from Advanced`.
+  The six primary destinations remain Execute, Monitor, Analyze, Tune, Fleet,
+  and Advanced; Advanced categorizes all 13 direct diagnostics plus nine
+  workflow/legacy fallback leaves without importing legacy React.
+- Ready-State #12 is satisfied by `opens every registered legacy surface from
+  its alias and contextual route`. All 22 catalog leaves, every registered
+  alias, `advancedSurface`/`advanced` child, runner-agent launch path, visible
+  owner, and rollback route pass. Selected Monitor failures open the exact
+  Auth, WebSocket, RTC Diagnostics, Groups/Clients, or Rallar Server tool with
+  bounded context and return to the same selected view/run.
+- Ready-State #13 is satisfied by `default Recipe Console does not load or
+  poll inactive legacy routes except registered stateful exceptions` and the
+  exact structure/chunk owner. Ten safe targets are distinct dynamic entries
+  and unmount on exit. Twelve explicitly documented stateful exceptions remain
+  hidden-mounted only while `LegacyExperience` is active; a cold Recipe Console
+  route loads, mounts, subscribes, and polls none of them.
+- Outbound/return context is versioned, same-origin on focus restoration,
+  provider allow-listed, UTF-8 bounded, and secret-free. It carries only
+  application/workspace/group plus safe run/agent/recipe/command/transport
+  identity. It never grants operation authority, persists credentials, or
+  accepts an arbitrary return URL.
+- Fresh qualification passes 1,564/1,564 app tests, shared/app TypeScript,
+  seven shared Deno entries plus the direct classifier/module check, a
+  776-module build, reciprocal chunk assertion, 190 complete Recipe Console
+  browser cases, 30 preserved legacy cases, 31 responsive/CSS cases, and four
+  no-update Advanced baselines. One Recipe Console configured-live case and
+  two exhaustive legacy cases are skipped, not passed, for exactly: `Set
+  RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+  apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+- The in-app Browser attempt remains unavailable exactly as `Browser runtime
+  unavailable after setup failure: Cannot redefine property: process`;
+  terminal Playwright is fallback evidence. Independent reviews report no
+  remaining Critical or Important finding. Their final production-return
+  builder finding is closed in `78e2c13`: production and Advanced callers now
+  share the same neutral bounded serializer, canonical `legacySurface` wins a
+  saturated return budget, and exact unit/browser regressions pass re-review.
+- No legacy row, alias, public export, existing control contract, destructive
+  behavior, or default changed. `DEFAULT_APP_EXPERIENCE` remains `legacy`.
+  Iteration 12 owns Ready-State #1 and #14, the unavailable #3 execution, final
+  accessibility repair, and the blank-URL default flip.

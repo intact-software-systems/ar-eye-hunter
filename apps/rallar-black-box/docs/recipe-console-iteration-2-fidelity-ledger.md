@@ -3,8 +3,9 @@
 Status: Iteration 2 visual direction preserved; Execute, live Monitor, offline
 Analyze, real-evidence Tune, bounded History/retention, and full Iteration 9
 large-run composition are qualified through `f8cef95`; the Iteration 10 Fleet
-workspace is qualified through `0088be0` and `3ab86a9`; Ready-State #10 is
-code-backed
+workspace is qualified through `0088be0` and `3ab86a9`; and the Iteration 11
+Advanced diagnostics bridge is qualified through `78e2c13`; Ready-State
+#10–#13 are code-backed
 
 Evidence date: 2026-07-14
 Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
@@ -13,17 +14,18 @@ Implementation heads: `a397642` (Iteration 2), `8d44a99`, `bddde71`
 `cc17169`, `382df72` (Iteration 7 Tune), `fd9055e`, `f762749`
 (Iteration 8 History/retention), `8c630fc` (Iteration 9 Task 6 Monitor scale),
 `796fa59`, `66a16fd`, `12999dd`, `f8cef95` (Iteration 9 scale/fidelity exit)
-and `0088be0`, `3ab86a9` (Iteration 10 Fleet)
+and `0088be0`, `3ab86a9` (Iteration 10 Fleet), plus `75ab910`, `84493f3`,
+`2502f50`, `78e2c13` (Iteration 11 Advanced diagnostics)
 Approved direction: Signal Ledger (Direction A)
 
 This ledger preserves the approved Iteration 2 visual contract and its
 historical seeded Monitor/Tune evidence, then records the Iteration 4 Execute,
 Iteration 5 live Monitor, Iteration 6 Analyze, Iteration 7 Tune, and Iteration 8
 History/retention baseline advances, then records the Iteration 9 bounded
-Analyze/Monitor/History/Execute/Tune extension and the Iteration 10 bounded
-Fleet/geographic evidence workspace. It does not claim the unavailable
-configured live/Postgres acceptance, a legacy navigation hide, or the
-Iteration 12 default flip.
+Analyze/Monitor/History/Execute/Tune extension, the Iteration 10 bounded
+Fleet/geographic evidence workspace, and the Iteration 11 contextual Advanced
+bridge. It does not claim the unavailable configured live/Postgres acceptance,
+a legacy-row retirement, final Iteration 12 accessibility, or the default flip.
 
 ## Iteration 4 Execute fidelity addendum
 
@@ -666,6 +668,64 @@ This qualifies the bounded Recipe Console Fleet capability and its approved
 Direction A visual baseline. It does not qualify Ready-State #3, hide or cut
 over the legacy Fleet row, change the default, or retire any alias, rebuild,
 export, rollback, public export, or existing control contract. Iterations
-11–12 still own contextual Advanced diagnostics, safe lazy legacy routes and
-documented stateful exceptions, the default flip, and final desktop/mobile/
-keyboard/reduced-motion/non-hover accessibility proof.
+At that checkpoint Iterations 11–12 still owned contextual Advanced
+diagnostics, safe lazy legacy routes and documented stateful exceptions, the
+default flip, and final desktop/mobile/keyboard/reduced-motion/non-hover
+accessibility proof. The qualified Iteration 11 result follows.
+
+## Iteration 11 Advanced diagnostics fidelity addendum
+
+Direction A remains unchanged. Advanced replaces the old nine-link preview
+with one quiet evidence ledger: a bounded exact context table followed by
+Direct Diagnostics, Workflow Fallbacks, and Advanced Legacy lists. The primary
+rail remains Execute, Monitor, Analyze, Tune, Fleet, and Advanced. Exact IDs use
+monospace/ltr presentation, contextual links remain persistent without hover,
+and the compact rail/bottom navigation preserves labeled selected states.
+
+Four deterministic Darwin baselines were added and inspected at original
+resolution:
+
+- desktop 1440×900:
+  `28db7746c79ab0a69066bb0cf0c87840b1e1029fe5b224940b818c36a9f03555`
+- tablet 900×900:
+  `6a48242bd188d35de40895234776e41c6aa8c952609bf6d0c8c9df6e5e598f57`
+- genuine-touch landscape 932×430:
+  `fc9c6c22820dfa69f478419ca7ecb886eddc677217d55852f7819fe798fe24ff`
+- genuine-touch portrait 430×932:
+  `8bba8b60bbe96719258544d3b2e0d202d363a9cb101ac4de275e76fec52ed219`
+
+The initial tablet/landscape captures exposed selected `Advanced` text
+clipping because a global button rule outranked the compact module selector.
+The corrected selector produces exact 10px tablet and 9px landscape labels
+inside both button and navigation bounds. The same intentional correction
+changed the existing Tune short-landscape baseline; native inspection found no
+content/hierarchy drift and approved hash
+`4e4ae5c8bf5b3f81de35d914d44c7921793c9e3eb7430a93e3e957c9d8057468`.
+Advanced short-landscape content owns a local scroller rather than escaping the
+shell. The final no-update Advanced baseline gate passes 4/4 and the full
+responsive/CSS gate passes 31/31.
+
+Keyboard-only evidence covers roving primary and legacy tabs, all five Monitor
+handoffs, exact legacy return, one-shot current-view focus restoration, ordinary
+SPA focus non-steal, safe-panel unmount, and retained-hidden/inert panel focus
+recovery. Genuine touch, 44px targets, reduced motion, zero document overflow,
+long/bidi identity, loading/empty/partial/stale/offline/permission/schema and
+missing-context states, and both CSS load orders pass.
+
+The complete Recipe Console configuration passes 190 with one configured-live
+skip; the preserved legacy matrix passes 30 with two exhaustive configured-
+stack skips. The exact prerequisite is `Set RALLAR_BLACK_BOX_FULL_STACK=1 with
+Postgres-backed apps/api-v1, apps/rallar-black-box-control-server, and
+apps/rallar-black-box available.` The in-app Browser was unavailable exactly
+as `Browser runtime unavailable after setup failure: Cannot redefine property:
+process`; terminal Playwright remains fallback evidence. Independent visual,
+browser, React/accessibility, URL/security, and lifetime reviews report no
+remaining Critical or Important finding. The final review's production-return
+builder finding is closed in `78e2c13`: both return callers now share one
+neutral bounded builder, the canonical Advanced surface wins the aggregate
+4,096-byte budget, and exact unit/browser regressions pass re-review.
+
+This qualifies Ready-State #11–#13 and the Advanced visual bridge. It does not
+qualify configured-live #3, final Ready-State #1/#14, retire a legacy row,
+change a public/control contract, or flip the default. Iteration 12 owns those
+remaining proofs and the registered legacy touch/overflow debts.
