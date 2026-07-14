@@ -802,6 +802,8 @@ function telemetry() {
     return {
         durationMs: 1, parseDurationMs: 0.25,
         sourceFileCount: 1, sourceBytes: 2,
+        pipelinePassCount: 1, sourceCollectionPassCount: 1,
+        sourceFileVisitCount: 1,
         documentParseCount: 1, jsonlFilePassCount: 0, jsonlRowParseCount: 0,
         totalEntryCount: 0, retainedEntryCount: 0, indexOmittedEntryCount: 0,
         matchedEntryCount: 0, projectedEntryCount: 0,

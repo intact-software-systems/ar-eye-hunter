@@ -95,6 +95,9 @@ export type AnalyzeWorkerTelemetry = Readonly<{
     parseDurationMs: number;
     sourceFileCount: number;
     sourceBytes: number;
+    pipelinePassCount: number;
+    sourceCollectionPassCount: number;
+    sourceFileVisitCount: number;
     documentParseCount: number;
     jsonlFilePassCount: number;
     jsonlRowParseCount: number;

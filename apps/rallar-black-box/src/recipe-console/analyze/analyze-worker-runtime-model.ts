@@ -35,6 +35,10 @@ export function analyzeWorkerTelemetry(
         parseDurationMs: active.parseDurationMs,
         sourceFileCount: active.sourceFileCount,
         sourceBytes: active.sourceBytes,
+        pipelinePassCount: active.pipelineTelemetry.pipelinePassCount,
+        sourceCollectionPassCount:
+            active.pipelineTelemetry.sourceCollectionPassCount,
+        sourceFileVisitCount: active.pipelineTelemetry.sourceFileVisitCount,
         documentParseCount: active.pipelineTelemetry.jsonDocumentParseCount,
         jsonlFilePassCount: active.pipelineTelemetry.jsonlFilePassCount,
         jsonlRowParseCount: active.pipelineTelemetry.jsonlRowParseCount,
