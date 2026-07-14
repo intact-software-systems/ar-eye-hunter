@@ -1,10 +1,10 @@
+import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     GroupSpaStatisticsResponse,
     MyRealtimeSpaStatisticsResponse,
     WorkspaceSpaStatisticsResponse,
 } from '@shared/api/spa-statistics-types.ts';
-import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar.ts';
 
 export type RallarStatsReadOptions = RallarScopedOperationOptions;
 
