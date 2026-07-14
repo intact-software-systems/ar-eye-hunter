@@ -1,0 +1,136 @@
+.verdict {
+    display: grid;
+    min-width: 0;
+    gap: 14px;
+    padding: 18px;
+    border: 1px solid var(--rc-status-running-border);
+    border-left-width: 5px;
+    background: var(--rc-status-running-bg);
+}
+
+.verdict[data-tone="bad"] {
+    border-color: var(--rc-status-failed-border);
+    background: var(--rc-status-failed-bg);
+}
+
+.verdict[data-tone="good"] {
+    border-color: var(--rc-status-passed-border);
+    background: var(--rc-status-passed-bg);
+}
+
+.verdict[data-tone="warn"] {
+    border-color: var(--rc-status-warning-border);
+    background: var(--rc-status-warning-bg);
+}
+
+.heading {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.heading > div {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+
+.heading h2,
+.heading p {
+    margin: 0;
+}
+
+.heading h2 {
+    font-size: 23px;
+    line-height: 1.2;
+}
+
+.eyebrow {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.answers {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: 0;
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+    background: color-mix(in srgb, var(--rc-surface) 78%, transparent);
+}
+
+.answers > div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+    padding: 10px 12px;
+    border-right: 1px solid var(--rc-border);
+}
+
+.answers > div:last-child {
+    border-right: 0;
+}
+
+.answers dt {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.answers dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-weight: 700;
+}
+
+.warnings {
+    display: grid;
+    gap: 3px;
+    padding: 9px 11px;
+    border: 1px solid var(--rc-status-warning-border);
+    color: var(--rc-status-warning-text);
+    background: var(--rc-status-warning-bg);
+}
+
+@media (max-width: 900px) {
+    .answers {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .answers > div:nth-child(2) {
+        border-right: 0;
+    }
+}
+
+@media (max-width: 520px) {
+    .verdict {
+        gap: 10px;
+        padding: 14px 12px;
+    }
+
+    .heading {
+        align-items: flex-start;
+    }
+
+    .answers {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .answers > div {
+        border-bottom: 0;
+    }
+
+    .answers > div:first-child,
+    .answers > div:last-child {
+        display: none;
+    }
+
+    .answers > div:nth-child(2) {
+        border-right: 1px solid var(--rc-border);
+    }
+}

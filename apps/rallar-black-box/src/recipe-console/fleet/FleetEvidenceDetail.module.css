@@ -1,0 +1,144 @@
+.root {
+    display: grid;
+    min-width: 0;
+    gap: 0;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.root > header,
+.section,
+.issue,
+.empty {
+    padding: 13px 14px;
+}
+
+.root > header,
+.section {
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.root > header span {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.root h2,
+.root h3,
+.section p,
+.issue,
+.empty {
+    margin: 0;
+}
+
+.root h3 {
+    margin-bottom: 9px;
+}
+
+.recipeDetail {
+    display: grid;
+    min-width: 0;
+    gap: 7px;
+    margin-top: 10px;
+}
+
+.recipeDetail h4 {
+    margin: 0;
+}
+
+.identifiers {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.issue {
+    border-bottom: 1px solid var(--rc-status-warning-border);
+    color: var(--rc-status-warning-text);
+    background: var(--rc-status-warning-bg);
+}
+
+.section dl,
+.metrics {
+    display: grid;
+    gap: 7px;
+    margin: 0;
+}
+
+.runs {
+    display: grid;
+    margin: 9px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.runs li {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.runs li span {
+    color: var(--rc-muted);
+}
+
+.section dl > div {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(90px, .45fr) minmax(0, 1fr);
+    gap: 8px;
+}
+
+.section dt {
+    color: var(--rc-muted);
+}
+
+.section dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 9px !important;
+}
+
+.metrics > div {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 1px !important;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 11px;
+}
+
+.actions button {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--rc-primary);
+    border-radius: 6px;
+    color: var(--rc-primary);
+    background: var(--rc-surface);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.actions button:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: 2px;
+}
+
+.empty {
+    color: var(--rc-muted);
+}

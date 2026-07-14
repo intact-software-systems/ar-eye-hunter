@@ -1,0 +1,297 @@
+.icon {
+    display: block;
+    flex: 0 0 auto;
+}
+
+.iconButton,
+.primaryButton,
+.segment,
+.selectableRow,
+.matrixCell {
+    min-width: 44px;
+    min-height: 44px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    background: var(--rc-surface);
+    cursor: pointer;
+}
+
+.iconButton {
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+}
+
+.primaryButton {
+    padding: 0 14px;
+    border-color: var(--rc-primary);
+    color: #FFFFFF;
+    background: var(--rc-primary);
+    font-weight: 700;
+}
+
+.primaryButton:hover {
+    border-color: var(--rc-primary-hover);
+    background: var(--rc-primary-hover);
+}
+
+.commandBarItem {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+    padding: 0 10px;
+    overflow: hidden;
+    border-left: 1px solid var(--rc-border);
+}
+
+.commandBarLabel {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--rc-muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.commandBarValue,
+.metricValue {
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (min-width: 768px) and (max-width: 1100px) and (max-height: 520px) {
+    .commandBarItem {
+        padding-inline: 4px;
+    }
+
+    .commandBarItem:nth-child(4) {
+        flex: 0 0 64px;
+    }
+}
+
+.statusMark {
+    --status-bg: var(--rc-status-stale-bg);
+    --status-text: var(--rc-status-stale-text);
+    --status-border: var(--rc-status-stale-border);
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 9px;
+    border: 1px solid var(--status-border);
+    border-radius: 999px;
+    color: var(--status-text);
+    background: var(--status-bg);
+    font-weight: 700;
+}
+
+.statusMark[data-status="running"] {
+    --status-bg: var(--rc-status-running-bg);
+    --status-text: var(--rc-status-running-text);
+    --status-border: var(--rc-status-running-border);
+}
+
+.statusMark[data-status="passed"] {
+    --status-bg: var(--rc-status-passed-bg);
+    --status-text: var(--rc-status-passed-text);
+    --status-border: var(--rc-status-passed-border);
+}
+
+.statusMark[data-status="failed"] {
+    --status-bg: var(--rc-status-failed-bg);
+    --status-text: var(--rc-status-failed-text);
+    --status-border: var(--rc-status-failed-border);
+}
+
+.statusMark[data-status="warning"] {
+    --status-bg: var(--rc-status-warning-bg);
+    --status-text: var(--rc-status-warning-text);
+    --status-border: var(--rc-status-warning-border);
+}
+
+.statusMark[data-status="stale"] {
+    --status-bg: var(--rc-status-stale-bg);
+    --status-text: var(--rc-status-stale-text);
+    --status-border: var(--rc-status-stale-border);
+}
+
+.statusMark[data-status="partial"] {
+    --status-bg: var(--rc-status-partial-bg);
+    --status-text: var(--rc-status-partial-text);
+    --status-border: var(--rc-status-partial-border);
+}
+
+.statusMark[data-status="disabled"] {
+    --status-bg: var(--rc-status-disabled-bg);
+    --status-text: var(--rc-status-disabled-text);
+    --status-border: var(--rc-status-disabled-border);
+}
+
+.statusShape {
+    display: block;
+    width: 14px;
+    height: 14px;
+    overflow: visible;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+}
+
+.statusMark[data-status="failed"] {
+    border-left-width: 4px;
+}
+
+.metricStrip {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    border-block: 1px solid var(--rc-border);
+}
+
+.metric {
+    display: grid;
+    min-width: 100px;
+    flex: 1;
+    gap: 2px;
+    padding: 10px 12px;
+    border-right: 1px solid var(--rc-border);
+}
+
+.metricLabel {
+    color: var(--rc-muted);
+    font-size: 12px;
+}
+
+.selectableRow {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 3px minmax(0, 1fr);
+    align-items: stretch;
+    overflow: hidden;
+    padding: 0;
+    text-align: left;
+}
+
+.selectableRow[aria-selected="true"] {
+    border-color: var(--rc-selected-border);
+    color: var(--rc-selected-text);
+    background: var(--rc-selected-bg);
+}
+
+.selectionRail {
+    background: transparent;
+}
+
+.selectableRow[aria-selected="true"] .selectionRail {
+    background: var(--rc-selected-border);
+}
+
+.rowContent {
+    min-width: 0;
+    padding: 9px 11px;
+}
+
+.matrixCell {
+    position: relative;
+    display: grid;
+    place-items: center;
+    border-radius: 2px;
+}
+
+.matrixCell[aria-selected="true"] {
+    border: 2px solid var(--rc-selected-border);
+    background: var(--rc-selected-bg);
+}
+
+.segmentedControl {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    background: var(--rc-rail);
+}
+
+.segment {
+    min-height: 44px;
+    padding: 0 10px;
+    border-color: transparent;
+    background: transparent;
+}
+
+.segment[aria-pressed="true"] {
+    border-color: var(--rc-selected-border);
+    color: var(--rc-selected-text);
+    background: var(--rc-selected-bg);
+}
+
+.overlaySheet {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    border-left: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+    transition: transform 180ms ease-out;
+}
+
+.overlayBackdrop {
+    position: absolute;
+    z-index: 7;
+    inset: 0;
+    background: rgb(23 32 51 / 42%);
+}
+
+.overlaySheet[data-inspector-host][data-mode="overlay"],
+.overlaySheet[data-inspector-host][data-mode="sheet"] {
+    z-index: 8;
+}
+
+.overlayHeader {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.overlayContent {
+    min-width: 0;
+    padding: 16px;
+}
+
+.statePanel,
+.surface {
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.statePanel {
+    display: grid;
+    gap: 8px;
+    padding: 16px;
+}
+
+.statePanel[data-state="error"] {
+    border-left: 4px solid var(--rc-status-failed-border);
+}
+
+.statePanel[data-state="stale"] {
+    border-left: 4px solid var(--rc-status-stale-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .overlaySheet,
+    .iconButton,
+    .primaryButton,
+    .segment,
+    .selectableRow,
+    .matrixCell {
+        transition-duration: 0s;
+        animation: none;
+    }
+}

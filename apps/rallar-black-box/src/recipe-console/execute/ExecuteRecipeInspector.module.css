@@ -1,0 +1,130 @@
+.inspector {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 16px;
+}
+
+.header {
+    display: grid;
+    gap: 4px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.header h2 {
+    font-size: 19px;
+}
+
+.header code,
+.sequence code {
+    color: var(--rc-muted);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 11px;
+    overflow-wrap: anywhere;
+}
+
+.eyebrow,
+.facts dt,
+.empty {
+    color: var(--rc-muted);
+    font-size: 12px;
+}
+
+.statuses {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.facts {
+    display: grid;
+    grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
+    gap: 7px 12px;
+}
+
+.facts div {
+    display: contents;
+}
+
+.facts dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.requirements,
+.sequence,
+.prerequisites {
+    display: grid;
+    gap: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rc-border);
+}
+
+.requirements h3,
+.sequence h3,
+.prerequisites h3 {
+    font-size: 13px;
+}
+
+.requirements ul,
+.prerequisites ul {
+    display: grid;
+    gap: 5px;
+    margin: 0;
+    padding-left: 18px;
+}
+
+.sequence ol {
+    display: grid;
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sequence li {
+    position: relative;
+    display: grid;
+    min-height: 54px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 9px;
+}
+
+.sequence li:not(:last-child)::after {
+    position: absolute;
+    top: 24px;
+    bottom: 0;
+    left: 12px;
+    width: 1px;
+    content: "";
+    background: var(--rc-selected-border);
+}
+
+.sequenceNumber {
+    z-index: 1;
+    display: grid;
+    width: 25px;
+    height: 25px;
+    place-items: center;
+    border: 1px solid var(--rc-selected-border);
+    border-radius: 50%;
+    color: var(--rc-selected-text);
+    background: var(--rc-surface);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.sequence li > span:last-child {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 2px;
+    padding-top: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .inspector {
+        scroll-behavior: auto;
+    }
+}

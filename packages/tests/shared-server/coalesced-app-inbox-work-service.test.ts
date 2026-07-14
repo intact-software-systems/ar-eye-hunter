@@ -13,6 +13,47 @@ type TestWork = Readonly<{
 }>;
 
 describe('CoalescedAppInboxWorkService', () => {
+    it('fits scoped RTC topology work keys into the durable app-inbox columns', async () => {
+        const queue = new InMemoryQueueBox();
+        const reader = new InboxQueueReader(queue);
+        const serviceId = 'rallar-server-instance-with-a-long-identity';
+        const service = new CoalescedAppInboxWorkService(
+            reader,
+            serviceId,
+            () => 500,
+        );
+        const groupId =
+            'rallar-bb-group-chromium-w0-configured-live-distributed-run-1234567890';
+        const overlayId = JSON.stringify([
+            'rallar-server',
+            'default',
+            groupId,
+        ]);
+        const contextId = `rallar-server:default:${groupId}`;
+        const input = {
+            type: AppInboxType.RTC_TOPOLOGY_RECOMPUTE,
+            topicId: 'app-inbox.rtc-topology',
+            resourceId: overlayId,
+            contextId,
+            data: { overlayId },
+        } as const;
+
+        const result = await service.enqueue<TestWork>(input);
+
+        expect(result.entry.key.topicId.length).toBeLessThanOrEqual(36);
+        expect(result.entry.key.resourceId.length).toBeLessThanOrEqual(36);
+        expect(result.entry.key.contextId.length).toBeLessThanOrEqual(35);
+        expect(result.entry.audit.createdBy.length).toBeLessThanOrEqual(16);
+        expect(service.toKey(input)).toEqual(result.entry.key);
+        expect(result.envelope).toMatchObject({
+            topicId: input.topicId,
+            resourceId: overlayId,
+            contextId,
+            senderId: serviceId,
+            data: { overlayId },
+        });
+    });
+
     it('coalesces repeated work onto one active keyed app-inbox row', async () => {
         let now = 1_000;
         const queue = new InMemoryQueueBox();

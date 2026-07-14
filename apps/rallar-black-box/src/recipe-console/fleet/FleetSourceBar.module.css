@@ -1,0 +1,74 @@
+.root {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(180px, .55fr) minmax(0, 1.45fr);
+    align-items: end;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.truth {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+}
+
+.truth span {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.truth strong,
+.truth small {
+    overflow-wrap: anywhere;
+}
+
+.truth small {
+    color: var(--rc-muted);
+}
+
+.selectionIssue,
+.selectedContext {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--rc-border);
+}
+
+.selectionIssue {
+    color: var(--rc-status-failed-text);
+}
+
+.selectedContext {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    color: var(--rc-muted);
+}
+
+.recipes {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.recipeWindow {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    gap: 6px;
+}
+
+@media (max-width: 720px) {
+    .root {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

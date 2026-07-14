@@ -1,0 +1,237 @@
+.root {
+    min-width: 0;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.heading {
+    display: flex;
+    min-width: 0;
+    align-items: end;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 15px;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.heading h2,
+.heading span,
+.layerEvidence h3,
+.layerEvidence p,
+.provenance h3,
+.provenance p {
+    margin: 0;
+}
+
+.heading > div:first-child > span {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.layers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.layers button,
+.layerEvidence button {
+    min-height: 44px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    font: inherit;
+    cursor: pointer;
+}
+
+.layers button {
+    padding: 0 11px;
+    font-weight: 700;
+}
+
+.layers button[aria-pressed="true"],
+.layerEvidence button[aria-pressed="true"] {
+    border-color: var(--rc-selected-border);
+    color: var(--rc-selected-text);
+    background: var(--rc-selected-bg);
+}
+
+.mapFrame {
+    min-width: 0;
+    padding: 12px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--rc-border);
+    background: var(--rc-canvas);
+}
+
+.map {
+    display: block;
+    width: 100%;
+    max-height: 420px;
+    border: 1px solid var(--rc-border);
+    background: #F6F9FC;
+}
+
+.ocean {
+    fill: #F6F9FC;
+}
+
+.graticule {
+    fill: none;
+    stroke: #DCE3EC;
+    stroke-width: 1;
+}
+
+.land {
+    fill: #E7ECF2;
+    stroke: #B9C4D1;
+    stroke-width: 2;
+}
+
+.route {
+    fill: none;
+    stroke: var(--rc-primary);
+    stroke-dasharray: 7 5;
+    stroke-width: 3;
+}
+
+.route[data-severity="critical"] {
+    stroke: var(--rc-status-failed-border);
+}
+
+.region {
+    fill: color-mix(in srgb, var(--rc-status-warning-bg) 80%, transparent);
+    stroke: var(--rc-status-warning-border);
+    stroke-width: 3;
+}
+
+.region[data-severity="critical"] {
+    fill: color-mix(in srgb, var(--rc-status-failed-bg) 78%, transparent);
+    stroke: var(--rc-status-failed-border);
+}
+
+.region[data-selected="true"],
+.agent[data-selected="true"] {
+    stroke: var(--rc-focus);
+    stroke-width: 5;
+}
+
+.agent {
+    fill: var(--rc-status-passed-border);
+    stroke: #FFFFFF;
+    stroke-width: 3;
+}
+
+.agent[data-severity="warning"] {
+    fill: var(--rc-status-warning-border);
+}
+
+.agent[data-severity="critical"] {
+    fill: var(--rc-status-failed-border);
+}
+
+.failure {
+    fill: none;
+    stroke: var(--rc-status-failed-border);
+    stroke-linecap: round;
+    stroke-width: 4;
+}
+
+.mapSummary {
+    fill: var(--rc-text);
+    paint-order: stroke;
+    stroke: var(--rc-surface);
+    stroke-width: 5px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.evidence {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.layerEvidence,
+.provenance {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 8px;
+    padding: 12px 14px;
+    border-right: 1px solid var(--rc-border);
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.layerEvidence:nth-child(2n) {
+    border-right: 0;
+}
+
+.layerEvidence > p,
+.provenance > p {
+    color: var(--rc-muted);
+}
+
+.layerEvidence > div {
+    display: grid;
+    gap: 6px;
+}
+
+.layerEvidence button {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+    padding: 7px 9px;
+    text-align: left;
+}
+
+.layerEvidence button span,
+.layerEvidence > div > p {
+    overflow-wrap: anywhere;
+    color: var(--rc-muted);
+}
+
+.layerEvidence > div > p {
+    margin: 0;
+    padding: 7px 0;
+}
+
+.provenance {
+    grid-column: 1 / -1;
+    border-right: 0;
+    border-bottom: 0;
+}
+
+.identifiers {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+
+.layers button:focus-visible,
+.layerEvidence button:focus-visible {
+    outline: 3px solid var(--rc-focus);
+    outline-offset: 2px;
+}
+
+@media (max-width: 820px) {
+    .heading {
+        align-items: start;
+        flex-direction: column;
+    }
+
+    .evidence {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .layerEvidence,
+    .layerEvidence:nth-child(2n) {
+        border-right: 0;
+    }
+}

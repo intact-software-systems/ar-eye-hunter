@@ -4,6 +4,7 @@ const reuseExistingServer = !process.env.CI;
 
 export default defineConfig({
     testDir: '../../tests/playwright/rallar-black-box',
+    testIgnore: /recipe-console-.*\.spec\.ts/,
     timeout: 30_000,
     expect: {
         timeout: 10_000,

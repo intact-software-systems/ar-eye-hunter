@@ -1,0 +1,119 @@
+.inventory {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--rc-border);
+}
+
+.inventory header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.inventory h3,
+.inventory p,
+.inventory ul {
+    margin: 0;
+}
+
+.inventory p,
+.inventory span {
+    color: var(--rc-muted);
+}
+
+.truth {
+    font-size: 12px;
+}
+
+.focusAnchor {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.focusAnchor:focus-visible {
+    position: relative;
+    inline-size: auto;
+    block-size: auto;
+    margin: 0;
+    padding: 8px 10px;
+    overflow: visible;
+    clip-path: none;
+    border: 1px solid var(--rc-focus);
+    color: var(--rc-text);
+    background: var(--rc-selected-bg);
+    white-space: normal;
+}
+
+.inventory ul {
+    display: grid;
+    padding: 0;
+    border: 1px solid var(--rc-border);
+    list-style: none;
+}
+
+.inventory li {
+    display: grid;
+    min-width: 0;
+    min-height: 52px;
+    grid-template-columns: minmax(240px, 1.2fr) auto minmax(240px, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.inventory li:last-child {
+    border-bottom: 0;
+}
+
+.inventory code,
+.inventory span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.inventory button {
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--rc-primary);
+    border-radius: 6px;
+    color: var(--rc-primary);
+    background: var(--rc-surface);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 800;
+}
+
+@media (max-width: 900px) {
+    .inventory li {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .inventory span {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 640px) {
+    .inventory header,
+    .inventory li {
+        align-items: flex-start;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .inventory header {
+        flex-direction: column;
+    }
+
+    .inventory span {
+        grid-column: auto;
+    }
+}

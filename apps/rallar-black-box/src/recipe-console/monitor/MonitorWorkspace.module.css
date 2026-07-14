@@ -1,0 +1,141 @@
+.workspace {
+    display: grid;
+    min-width: 0;
+    gap: 14px;
+    padding-bottom: 92px;
+}
+
+.selector {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(180px, .55fr) minmax(0, 1.45fr);
+    align-items: end;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.selectorHeading,
+.selectorFields {
+    display: flex;
+    min-width: 0;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.selectorHeading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.selectorHeading h2,
+.selectorHeading p {
+    margin: 0;
+}
+
+.selectorHeading > span {
+    color: var(--rc-muted);
+    font-weight: 700;
+}
+
+.selectorHeading > span[data-query-status="live"] {
+    color: var(--rc-status-passed-text);
+}
+
+.selectorHeading > span[data-query-status="partial"] {
+    color: var(--rc-status-partial-text);
+}
+
+.selectorHeading > span[data-query-status="offline"] {
+    color: var(--rc-status-failed-text);
+}
+
+.selectorFields label {
+    display: grid;
+    min-width: 0;
+    flex: 1;
+    gap: 5px;
+    color: var(--rc-muted);
+    font-weight: 700;
+}
+
+.selectorFields select {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 10px;
+    border: 1px solid var(--rc-border);
+    border-radius: 6px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+}
+
+.selectionIssue {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 9px 11px;
+    border-left: 3px solid var(--rc-status-warning-border);
+    color: var(--rc-status-warning-text);
+    background: var(--rc-status-warning-bg);
+}
+
+.eyebrow {
+    color: var(--rc-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+@media (max-width: 767px) {
+    .workspace {
+        gap: 10px;
+        padding-bottom: 76px;
+    }
+
+    .selector {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+        padding-block: 10px;
+        padding-inline: 12px;
+    }
+
+    .selectorHeading {
+        align-items: center;
+        flex-direction: row;
+    }
+
+    .selectorHeading h2 {
+        font-size: 14px;
+    }
+
+    .selectorHeading .eyebrow {
+        display: none;
+    }
+
+    .selectorFields {
+        align-items: stretch;
+    }
+
+    .selectorFields label > span {
+        display: none;
+    }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+    .workspace {
+        padding-bottom: 16px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .workspace *,
+    .workspace *::before,
+    .workspace *::after {
+        scroll-behavior: auto;
+        transition-duration: 0s !important;
+        animation: none !important;
+    }
+}

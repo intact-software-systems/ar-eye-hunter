@@ -1,12 +1,14 @@
 # Examples Index
 
-This index lists the examples that are useful from the command center today and where the richer shared-test runner
-recipes live.
+This index lists the examples that are useful from Recipe Console and the preserved legacy workbenches, and where the
+richer shared-test runner recipes live. Blank and provider-only URLs open Recipe Console `Execute`; its other primary
+views are `Monitor`, `Analyze`, `Tune`, `Fleet`, and `Advanced`.
 
 ## App-local Recipes
 
-These recipes live in `apps/rallar-black-box/examples/` and are intended for the SPA `Local Workbench` while running
-with `provider=browser-rallar`.
+These recipes live in `apps/rallar-black-box/examples/` and are intended for the preserved SPA `Local Workbench` while
+running with `provider=browser-rallar`. Open it from Recipe Console `Advanced` or directly with
+`/?experience=legacy&workspace=black-box-runner&tab=local-workbench`.
 
 | Recipe | Purpose | Requirements | Expected Result |
 | --- | --- | --- | --- |
@@ -47,8 +49,10 @@ That bridge exposes:
 - `validateRallarBlackBoxSharedTestRecipeCatalog(...)`
 - `validateRallarBlackBoxSharedTestRecipeCatalogEntryFixture(...)`
 
-The SPA `Shared Test` tab renders the browser-safe fixture catalog and validates imported runner artifact bundles. It
-does not yet load the full `recipe-matrix.json` dynamically from disk or execute runner commands from the browser.
+The preserved SPA `Shared Test` tab, available from Recipe Console `Advanced` or
+`/?experience=legacy&workspace=black-box-runner&tab=shared-test`, renders the browser-safe fixture catalog and validates
+imported runner artifact bundles. It does not load the full `recipe-matrix.json` dynamically from disk or execute runner
+commands from the browser.
 
 ## Shared-test Recipe Families
 

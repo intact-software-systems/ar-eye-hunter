@@ -1,0 +1,9 @@
+.root {
+    display: grid;
+    min-width: 0;
+    gap: 7px;
+    padding: 8px 12px;
+    border: 1px solid var(--rc-border);
+    border-bottom: 0;
+    background: var(--rc-surface);
+}

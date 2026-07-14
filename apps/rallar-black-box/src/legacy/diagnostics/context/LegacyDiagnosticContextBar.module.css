@@ -1,0 +1,126 @@
+.root {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0.875rem;
+    border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, Canvas 94%, currentColor 6%);
+    color: CanvasText;
+}
+
+.heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.heading h2 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.status {
+    padding: 0.2rem 0.45rem;
+    border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+    border-radius: 999px;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+.summary,
+.notice {
+    margin: 0;
+    color: color-mix(in srgb, currentColor 74%, transparent);
+    font-size: 0.8125rem;
+}
+
+.values {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    gap: 0.5rem;
+    margin: 0;
+}
+
+.valueRow {
+    min-width: 0;
+    padding-block: 0.4rem;
+    border-block-start: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.valueRow dt {
+    margin-block-end: 0.2rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.valueRow dd {
+    min-width: 0;
+    margin: 0;
+}
+
+.identifier {
+    display: block;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    direction: ltr;
+    unicode-bidi: isolate-override;
+}
+
+.identifier code {
+    white-space: pre-wrap;
+}
+
+.agentNote {
+    display: block;
+    margin-block-start: 0.25rem;
+    color: color-mix(in srgb, currentColor 68%, transparent);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.625rem 1rem;
+}
+
+.returnLink {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    padding-inline: 0.75rem;
+    border: 1px solid currentColor;
+    border-radius: 0.4rem;
+    color: inherit;
+    font-weight: 700;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.16em;
+}
+
+.returnLink:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: 2px;
+}
+
+@media (max-width: 36rem) {
+    .heading,
+    .actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .status {
+        align-self: flex-start;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .root,
+    .returnLink {
+        animation: none;
+        scroll-behavior: auto;
+        transition: none;
+    }
+}

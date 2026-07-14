@@ -29,6 +29,7 @@ import {
 import { manualRecipeSnippet, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-presets.ts';
+import { projectDistributedRecipeCatalog } from '../../shared-test/rallar-bb-test/mod.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const appExamplesRoot = path.join(repoRoot, 'apps/rallar-black-box/examples');
@@ -134,6 +135,34 @@ function jsonCodeBlocks(markdown: string): readonly unknown[] {
 }
 
 describe('rallar-bb-test capability and schema contract', () => {
+    it('keeps catalog compatibility badges authoritative when preflight alone is clean', () => {
+        const projection = projectDistributedRecipeCatalog({
+            items: [{
+                itemId: 'schema-invalid-preflight-clean',
+                title: 'Schema invalid',
+                description: 'Preflight does not validate the recipe schema version.',
+                providerMode: 'simulated',
+                profiles: ['negative'],
+                prerequisites: ['connected browser control agents'],
+                live: false,
+                source: 'app-local',
+                recipe: {
+                    schemaVersion: 2,
+                    recipeId: 'schema-invalid-preflight-clean',
+                    commands: [{ kind: 'health' }],
+                } as unknown as RallarBlackBoxTestRecipe,
+            }],
+        });
+
+        expect(projection.entries[0]?.preflight.errors).toEqual([]);
+        expect(projection.entries[0]?.schema).toMatchObject({
+            ok: false,
+            status: 'invalid',
+            legacy: false,
+        });
+        expect(projection.entries[0]?.schema.errors.join('\n')).toContain('$.schemaVersion');
+    });
+
     it('keeps command capability metadata in lockstep with command kinds', () => {
         expect(RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => capability.kind)).toEqual(
             RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,

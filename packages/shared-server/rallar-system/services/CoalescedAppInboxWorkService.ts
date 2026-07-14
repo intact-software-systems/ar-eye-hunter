@@ -9,6 +9,10 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import {
+    toAppInboxQueueCreatedBy,
+    toAppInboxQueueKey,
+} from './app-inbox-queue-key.ts';
 
 export const COALESCED_APP_INBOX_WORK_FIELD = '__rallarCoalescedWork';
 
@@ -179,11 +183,11 @@ export class CoalescedAppInboxWorkService {
         CoalescedAppInboxWorkEnqueueInput<object>,
         'topicId' | 'resourceId' | 'contextId'
     >): Key {
-        return {
+        return toAppInboxQueueKey({
             topicId: input.topicId,
             resourceId: input.resourceId,
             contextId: input.contextId,
-        };
+        });
     }
 
     private createEnvelope<T extends object>(
@@ -213,13 +217,14 @@ export class CoalescedAppInboxWorkService {
     private toQueueEntry<T extends object>(
         envelope: CoalescedAppInboxWorkEnvelope<T>,
     ): ResourceEntry {
+        const key = this.toKey(envelope);
         return QueueBoxUtilities.toResourceEntryFromMsg(
             newALUntargetedMessage(
-                envelope.senderId,
+                toAppInboxQueueCreatedBy(envelope.senderId),
                 newALRoute(
-                    envelope.topicId,
-                    envelope.contextId,
-                    envelope.resourceId,
+                    key.topicId,
+                    key.contextId,
+                    key.resourceId,
                 ),
                 envelope.type,
                 envelope,

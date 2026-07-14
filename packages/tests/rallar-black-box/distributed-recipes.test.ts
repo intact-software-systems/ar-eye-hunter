@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import * as distributedRecipeCompatibility from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
     buildDistributedRunManifest,
     compareDistributedRuns,
     defaultDistributedRecipeTargetIds,
+    deriveDistributedRunFailureEvidenceDestinations,
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     deriveRunVerdictView,
@@ -10,7 +12,9 @@ import {
     deriveDistributedWorldFleetTargetGate,
     distributedRecipeCommandKinds,
     distributedRecipeCommandPreview,
+    distributedRecipeCrdtTransports,
     distributedRecipePreflight,
+    reconcileDistributedRecipeTargetIds,
     distributedRecipeStateTone,
     distributedRecipeTargetRows,
     filterDistributedRuns,
@@ -18,9 +22,13 @@ import {
 } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
     RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
+    createRallarBlackBoxEnsureGroupRequestId,
     createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
     createRallarBlackBoxRtcRealtimeStabilityRecipe,
@@ -32,9 +40,22 @@ import type {
     ControlRunSnapshot,
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import {
+    DISTRIBUTED_RECIPE_CATALOG as SHARED_DISTRIBUTED_RECIPE_CATALOG,
+    configuredDistributedRecipeCatalogItem as sharedConfiguredDistributedRecipeCatalogItem,
     createRallarBlackBoxTestRuntime,
+    deriveAdvancedDiagnosticHandoffTargets as deriveSharedAdvancedDiagnosticHandoffTargets,
+    deriveDistributedRunFailureEvidenceDestinations as deriveSharedDistributedRunFailureEvidenceDestinations,
+    distributedRecipeMatches as sharedDistributedRecipeMatches,
+    projectDistributedRecipeCatalog,
     selectRallarBlackBoxCommandHistory,
+    validateDistributedRunManifest,
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/types.ts';
+import {
+    DISTRIBUTED_RECIPE_CATALOG,
+    configuredDistributedRecipeCatalogItem,
+    distributedRecipeMatches,
+} from '../../../apps/rallar-black-box/src/legacy/runner/distributed-recipes/distributed-recipe-catalog.ts';
 
 const runSnapshot: ControlRunSnapshot = {
     runId: 'run-1',
@@ -361,6 +382,29 @@ const distributedArtifactBundle: ControlDistributedRunArtifactBundle = {
 };
 
 describe('distributed recipes helpers', () => {
+    it('preflights 200,000 commands while preserving first frame-count priority', () => {
+        const commandCount = 200_000;
+        const largeRecipe: RallarBlackBoxTestRecipe = {
+            recipeId: 'large-preflight',
+            commands: Array.from({ length: commandCount }, (_, index) => index === 0
+                ? { kind: 'rtc.stream' as const, count: 7, send: {} }
+                : { kind: 'health' as const }),
+        };
+
+        const preflight = distributedRecipePreflight(largeRecipe);
+
+        expect(preflight).toMatchObject({
+            recipeId: 'large-preflight',
+            manifestCommandCount: commandCount,
+            effectiveCommandCount: commandCount,
+            effectiveFrameCount: 7,
+            maxDepth: 1,
+            commandKinds: ['health', 'rtc.stream'],
+            errors: [],
+        });
+        expect(preflight.tree).toHaveLength(commandCount);
+    }, 60_000);
+
     it('builds the configurable RTC realtime recipe with a compact looped 20 Hz command cadence', () => {
         const recipe = createRallarBlackBoxRtcRealtimeRecipe({
             durationSeconds: 2,
@@ -391,6 +435,17 @@ describe('distributed recipes helpers', () => {
             data?: Record<string, unknown>;
         } | undefined;
         const preview = distributedRecipeCommandPreview(recipe);
+
+        expect(createGroupCommand?.request.body).toMatchObject({
+            requestId: createRallarBlackBoxEnsureGroupRequestId({
+                requestPrefix: 'rtc-realtime',
+                group: {
+                    applicationId: 'game-app',
+                    workspaceId: 'live',
+                    groupId: 'arena-1',
+                },
+            }),
+        });
 
         expect(recipe.recipeId).toBe('rtc-realtime');
         expect(recipe.commands).toHaveLength(5);
@@ -1110,6 +1165,105 @@ describe('distributed recipes helpers', () => {
         expect(runtime.state().resultCache['assert-wait-succeeded'].ok).toBe(true);
     });
 
+    it('projects the shared fixture catalog with configured recipes and searchable execution facts', () => {
+        const configuration = {
+            group: {
+                applicationId: 'game-app',
+                workspaceId: 'live',
+                groupId: 'arena-1',
+            },
+            apiBaseUrl: 'https://api.example.test',
+            rtcRealtimeDurationSeconds: 7,
+        } as const;
+
+        const projection = projectDistributedRecipeCatalog({ configuration });
+        const rtcSmoke = projection.entries.find(entry => entry.item.itemId === 'rtc-smoke');
+        const providerParity = projection.entries.find(entry => entry.item.itemId === 'provider-parity');
+        const realtime = projection.entries.find(entry =>
+            entry.item.itemId === RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
+        );
+        const configuredMulticastRecipes = [
+            RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
+            RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
+            RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
+        ].map((fixtureId) =>
+            projection.entries.find((entry) => entry.item.itemId === fixtureId)?.item.recipe
+        );
+
+        expect(DISTRIBUTED_RECIPE_CATALOG).toBe(SHARED_DISTRIBUTED_RECIPE_CATALOG);
+        expect(configuredDistributedRecipeCatalogItem)
+            .toBe(sharedConfiguredDistributedRecipeCatalogItem);
+        expect(distributedRecipeMatches).toBe(sharedDistributedRecipeMatches);
+        expect(projection.entries).toHaveLength(RALLAR_BLACK_BOX_RECIPE_FIXTURES.length);
+        expect(projection.profiles).toEqual(expect.arrayContaining([
+            'green',
+            'negative',
+            'rtc-realtime-stability',
+            'smoke',
+        ]));
+        expect(projection.providerModes).toEqual(['browser-rallar', 'simulated']);
+        expect(rtcSmoke?.item.recipe.commands[0]).toMatchObject({
+            kind: 'http.request',
+            request: {
+                path: '/api/state/apps/game-app/workspaces/live/groups',
+            },
+        });
+        expect(providerParity?.item.recipe.commands[0]).toMatchObject({
+            kind: 'configure',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                rallar: {
+                    apiBaseUrl: 'https://api.example.test',
+                },
+            },
+        });
+        expect(realtime?.schema).toMatchObject({
+            ok: true,
+            status: 'legacy-compatible',
+            legacy: true,
+            label: 'Schema valid (compatible v1)',
+        });
+        expect(realtime?.preflight.liveServiceRequirements).toEqual(expect.arrayContaining([
+            'Rallar API and signaling when provider mode is browser-rallar or rallar-browser',
+            'active RTC connection',
+        ]));
+        for (const configuredRecipe of configuredMulticastRecipes) {
+            expect(configuredRecipe).toBeDefined();
+            expect(configuredRecipe?.commands[0]).toMatchObject({
+                kind: 'http.request',
+                request: {
+                    path: '/api/state/apps/game-app/workspaces/live/groups',
+                },
+            });
+            expect(configuredRecipe?.commands.find(command => command.kind === 'rtc.connect'))
+                .toMatchObject({
+                    applicationId: 'game-app',
+                    workspaceId: 'live',
+                    roomId: 'arena-1',
+                    roomRef: configuration.group,
+                });
+            const stream = configuredRecipe?.commands.find(command => command.kind === 'rtc.stream');
+            if (stream) {
+                expect(stream).toMatchObject({
+                    applicationId: 'game-app',
+                    workspaceId: 'live',
+                    roomId: 'arena-1',
+                    roomRef: configuration.group,
+                    send: {
+                        roomId: 'arena-1',
+                        roomRef: configuration.group,
+                    },
+                });
+            }
+            expect(JSON.stringify(configuredRecipe)).not.toContain('rallar-black-box-room');
+        }
+        expect(configuredMulticastRecipes.filter((configuredRecipe) =>
+            configuredRecipe?.commands.some(command => command.kind === 'rtc.stream')
+        )).toHaveLength(2);
+        expect(distributedRecipeMatches(realtime!.item, 'stability stream', 'green')).toBe(true);
+        expect(distributedRecipeMatches(realtime!.item, 'stability stream', 'negative')).toBe(false);
+    });
+
     it('derives target rows from control-agent Rallar identity', () => {
         const rows = distributedRecipeTargetRows({
             run: runSnapshot,
@@ -1127,6 +1281,80 @@ describe('distributed recipes helpers', () => {
             ['agent-c', 'different-group', false],
         ]);
         expect(defaultDistributedRecipeTargetIds(rows)).toEqual(['agent-a']);
+    });
+
+    it('blocks duplicate fresh normalized identities without collapsing other target evidence', () => {
+        const duplicateRun: ControlRunSnapshot = {
+            ...runSnapshot,
+            agents: [
+                {
+                    ...runSnapshot.agents[0],
+                    agentId: 'duplicate-a',
+                    identity: {
+                        ...runSnapshot.agents[0].identity,
+                        principalId: ' Alice ',
+                        sessionId: ' SESSION-A ',
+                    },
+                },
+                {
+                    ...runSnapshot.agents[0],
+                    agentId: 'duplicate-b',
+                    identity: {
+                        ...runSnapshot.agents[0].identity,
+                        principalId: 'alice',
+                        sessionId: 'session-a',
+                    },
+                },
+                {
+                    ...runSnapshot.agents[0],
+                    agentId: 'stale-duplicate',
+                    lastHeartbeatAtEpochMs: 1_000,
+                    identity: {
+                        ...runSnapshot.agents[0].identity,
+                        principalId: 'alice',
+                        sessionId: 'session-a',
+                    },
+                },
+                {
+                    ...runSnapshot.agents[1],
+                    agentId: 'offline-agent',
+                },
+                {
+                    ...runSnapshot.agents[2],
+                    agentId: 'wrong-group-agent',
+                },
+                {
+                    ...runSnapshot.agents[0],
+                    agentId: 'missing-identity-agent',
+                    identity: {
+                        principalId: 'missing-scope',
+                        sessionId: 'missing-scope-session',
+                    },
+                },
+            ],
+        };
+
+        const rows = distributedRecipeTargetRows({
+            run: duplicateRun,
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'bb-group',
+            },
+            nowEpochMs: 2_500,
+            staleAfterMs: 1_000,
+        });
+
+        expect(rows.map(row => [row.agentId, row.status, row.targetable])).toEqual([
+            ['duplicate-a', 'duplicate-session', false],
+            ['duplicate-b', 'duplicate-session', false],
+            ['missing-identity-agent', 'missing-identity', false],
+            ['offline-agent', 'offline', false],
+            ['stale-duplicate', 'stale', false],
+            ['wrong-group-agent', 'different-group', false],
+        ]);
+        expect(rows[0]?.reason).toContain('same normalized Rallar identity and session');
+        expect(defaultDistributedRecipeTargetIds(rows)).toEqual([]);
     });
 
     it('requires reported CRDT capability when selected recipes use CRDT commands', () => {
@@ -1188,6 +1416,255 @@ describe('distributed recipes helpers', () => {
             status: 'missing-crdt-runtime',
             targetable: false,
         });
+    });
+
+    it('requires only CRDT transports explicitly selected by recipe commands', () => {
+        const crdtRun: ControlRunSnapshot = {
+            ...runSnapshot,
+            agents: [{
+                ...runSnapshot.agents[0],
+                identity: {
+                    ...runSnapshot.agents[0].identity,
+                    capabilities: {
+                        crdt: {
+                            supported: true,
+                            transports: ['ws'],
+                        },
+                    },
+                },
+            }],
+        };
+        const wsRecipe: RallarBlackBoxTestRecipe = {
+            schemaVersion: 1,
+            recipeId: 'crdt-ws-only',
+            commands: [{
+                kind: 'crdt.open',
+                commandId: 'open-ws-document',
+                handle: 'document',
+                name: 'document',
+                transport: 'ws',
+            }],
+        };
+        const rtcRecipe: RallarBlackBoxTestRecipe = {
+            ...wsRecipe,
+            recipeId: 'crdt-rtc-only',
+            commands: [{
+                ...wsRecipe.commands[0],
+                kind: 'crdt.open',
+                transport: 'rtc',
+            }],
+        };
+
+        const wsRows = distributedRecipeTargetRows({
+            run: crdtRun,
+            group: distributedRun.manifest.group,
+            requiredCommandKinds: distributedRecipeCommandKinds(wsRecipe),
+            requiredRecipes: [wsRecipe],
+            nowEpochMs: 2_500,
+        });
+        const rtcRows = distributedRecipeTargetRows({
+            run: crdtRun,
+            group: distributedRun.manifest.group,
+            requiredCommandKinds: distributedRecipeCommandKinds(rtcRecipe),
+            requiredRecipes: [rtcRecipe],
+            nowEpochMs: 2_500,
+        });
+        const kindOnlyRows = distributedRecipeTargetRows({
+            run: crdtRun,
+            group: distributedRun.manifest.group,
+            requiredCommandKinds: ['crdt.health'],
+            nowEpochMs: 2_500,
+        });
+
+        expect(wsRows[0]).toMatchObject({
+            status: 'matched',
+            targetable: true,
+            crdtTransports: ['ws'],
+        });
+        expect(rtcRows[0]).toMatchObject({
+            status: 'missing-crdt-transport',
+            targetable: false,
+            reason: 'Agent CRDT runtime does not report rtc transport support.',
+        });
+        expect(kindOnlyRows[0]).toMatchObject({
+            status: 'matched',
+            targetable: true,
+        });
+    });
+
+    it('keeps legacy selected-recipe target gating bound to the exact CRDT transport', () => {
+        const group = distributedRun.manifest.group;
+        const run: ControlRunSnapshot = {
+            ...runSnapshot,
+            agents: [{
+                ...runSnapshot.agents[0],
+                identity: {
+                    ...runSnapshot.agents[0].identity,
+                    capabilities: {
+                        crdt: {
+                            supported: true,
+                            transports: ['ws'],
+                        },
+                    },
+                },
+            }],
+        };
+        const selectedItem = (transport: 'rtc' | 'ws') =>
+            configuredDistributedRecipeCatalogItem({
+                ...recipe,
+                itemId: `legacy-crdt-${transport}`,
+                recipe: {
+                    schemaVersion: 1,
+                    recipeId: `legacy-crdt-${transport}`,
+                    commands: [{
+                        kind: 'crdt.open',
+                        handle: 'document',
+                        name: 'document',
+                        transport,
+                    }],
+                },
+            }, {
+                group,
+                apiBaseUrl: 'https://api.example.test',
+                rtcRealtimeDurationSeconds: 5,
+            });
+        const rowsForSelection = (selected: DistributedRecipeCatalogItem) =>
+            distributedRecipeTargetRows({
+                run,
+                group,
+                requiredCommandKinds: distributedRecipeCommandKinds(selected.recipe),
+                requiredRecipes: [selected.recipe],
+                nowEpochMs: 2_500,
+            });
+
+        expect(rowsForSelection(selectedItem('rtc'))[0]).toMatchObject({
+            status: 'missing-crdt-transport',
+            targetable: false,
+        });
+        expect(rowsForSelection(selectedItem('ws'))[0]).toMatchObject({
+            status: 'matched',
+            targetable: true,
+        });
+    });
+
+    it('synchronously excludes newly unsafe retained targets from manifests', () => {
+        const group = distributedRun.manifest.group;
+        const run: ControlRunSnapshot = {
+            ...runSnapshot,
+            agents: [{
+                ...runSnapshot.agents[0],
+                identity: {
+                    ...runSnapshot.agents[0].identity,
+                    capabilities: {
+                        crdt: {
+                            supported: true,
+                            transports: ['ws'],
+                        },
+                    },
+                },
+            }],
+        };
+        const selectedRecipe = (transport: 'rtc' | 'ws'): RallarBlackBoxTestRecipe => ({
+            schemaVersion: 1,
+            recipeId: `safe-manifest-crdt-${transport}`,
+            commands: [{
+                kind: 'crdt.open',
+                handle: 'document',
+                name: 'document',
+                transport,
+            }],
+        });
+        const manifestFor = (transport: 'rtc' | 'ws') => {
+            const selected = selectedRecipe(transport);
+            const rows = distributedRecipeTargetRows({
+                run,
+                group,
+                requiredCommandKinds: distributedRecipeCommandKinds(selected),
+                requiredRecipes: [selected],
+                nowEpochMs: 2_500,
+            });
+            const targetAgentIds = reconcileDistributedRecipeTargetIds(['agent-a'], rows);
+            return buildDistributedRunManifest({
+                distributedRunId: `safe-manifest-${transport}`,
+                controlRunId: run.runId,
+                group,
+                recipes: [{ ...recipe, recipe: selected }],
+                targetAgentIds,
+                targetPolicyMode: 'selected-agents',
+                rolePattern: 'all-agents',
+                ackTimeoutMs: 15_000,
+                startMode: 'manual',
+                expectedParticipantCount: targetAgentIds.length || undefined,
+            });
+        };
+
+        const rtcManifest = manifestFor('rtc');
+        const wsManifest = manifestFor('ws');
+
+        expect(rtcManifest.targetPolicy.agentIds).toEqual([]);
+        expect(validateDistributedRunManifest(rtcManifest)).toMatchObject({
+            ok: false,
+            errors: [expect.objectContaining({
+                source: 'contract',
+                path: '$.targetPolicy.agentIds',
+            })],
+        });
+        expect(wsManifest.targetPolicy.agentIds).toEqual(['agent-a']);
+        expect(validateDistributedRunManifest(wsManifest).ok).toBe(true);
+    });
+
+    it('derives explicit CRDT transports through every nested recipe container', () => {
+        const nestedRecipe: RallarBlackBoxTestRecipe = {
+            schemaVersion: 1,
+            recipeId: 'nested-crdt-transports',
+            commands: [
+                {
+                    kind: 'loop',
+                    count: 1,
+                    commands: [{
+                        kind: 'crdt.sync',
+                        handle: 'document',
+                        transport: 'local-only',
+                    }],
+                },
+                {
+                    kind: 'parallel',
+                    groups: [{
+                        groupId: 'wait',
+                        commands: [{
+                            kind: 'crdt.wait',
+                            handle: 'document',
+                            sync: {
+                                transport: 'rtc',
+                            },
+                            conditions: [{
+                                source: 'health',
+                                operator: 'exists',
+                            }],
+                        }],
+                    }],
+                },
+                {
+                    kind: 'recipe.run',
+                    recipe: {
+                        schemaVersion: 1,
+                        recipeId: 'nested-child',
+                        commands: [{
+                            kind: 'crdt.open',
+                            handle: 'child-document',
+                            name: 'child-document',
+                            transport: 'ws-then-rtc',
+                        }],
+                    },
+                },
+            ],
+        };
+
+        expect(distributedRecipeCrdtTransports(nestedRecipe)).toEqual([
+            'local-only',
+            'rtc',
+            'ws-then-rtc',
+        ]);
     });
 
     it('builds role-map distributed manifests for sender receiver patterns', () => {
@@ -1416,6 +1893,371 @@ describe('distributed recipes helpers', () => {
         expect(monitor.events[0].payloadSummary).toContain('topic=message.received');
         expect(monitor.failures.map(failure => failure.code)).toContain('ASSERTION_FAILED');
         expect(monitor.timeline.map(item => item.label)).toContain('result failed');
+    });
+
+    it('scopes recipe progress to the same resolved and manifest assignments used by the control service', () => {
+        const recipes = [
+            {
+                recipeId: 'sender-recipe',
+                role: 'sender',
+                recipe: { recipeId: 'sender-recipe', commands: [{ kind: 'health' }] },
+            },
+            {
+                recipeId: 'receiver-recipe',
+                role: 'receiver',
+                recipe: { recipeId: 'receiver-recipe', commands: [{ kind: 'health' }] },
+            },
+            {
+                recipeId: 'shared-recipe',
+                recipe: { recipeId: 'shared-recipe', commands: [{ kind: 'health' }] },
+            },
+        ] satisfies ControlDistributedRunSnapshot['manifest']['recipes'];
+        const resolvedAssignments = [
+            { agentId: 'agent-a', role: 'sender', recipeIds: ['sender-recipe'] },
+            { agentId: 'agent-b', role: 'receiver' },
+            { agentId: 'agent-c', role: 'observer', recipeIds: ['shared-recipe'] },
+        ] as const;
+        const commandLinks = [
+            { phase: 'stage', agentId: 'agent-a', commandId: 'sender-a', recipeId: 'sender-recipe', role: 'sender', queuedAtEpochMs: 1_100 },
+            { phase: 'stage', agentId: 'agent-b', commandId: 'receiver-b', recipeId: 'receiver-recipe', role: 'receiver', queuedAtEpochMs: 1_110 },
+            { phase: 'stage', agentId: 'agent-b', commandId: 'shared-b', recipeId: 'shared-recipe', queuedAtEpochMs: 1_120 },
+            { phase: 'stage', agentId: 'agent-c', commandId: 'shared-c', recipeId: 'shared-recipe', queuedAtEpochMs: 1_130 },
+        ] satisfies ControlDistributedRunSnapshot['commandLinks'];
+        const roleScopedRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            state: 'staging',
+            targetAgentIds: ['agent-a', 'agent-b', 'agent-c'],
+            manifest: {
+                ...distributedRun.manifest,
+                recipes,
+                targetPolicy: {
+                    mode: 'role-map',
+                    roles: {
+                        sender: ['agent-c'],
+                        receiver: ['agent-a'],
+                    },
+                },
+                roleAssignments: [
+                    { agentId: 'agent-a', role: 'receiver' },
+                    { agentId: 'agent-b', role: 'sender' },
+                ],
+            },
+            targetResolution: {
+                group: distributedRun.manifest.group,
+                resolvedAtEpochMs: 1_050,
+                staleAfterMs: 30_000,
+                targetPolicyMode: 'role-map',
+                targetAgentIds: ['agent-a', 'agent-b', 'agent-c'],
+                roleAssignments: resolvedAssignments,
+                blockers: [],
+                summary: {
+                    agents: 3,
+                    targetable: 3,
+                    selected: 3,
+                    expectedParticipantCount: 3,
+                    missingExpectedParticipants: 0,
+                    staleAgents: 0,
+                    offlineAgents: 0,
+                    wrongGroupAgents: 0,
+                    agentsWithoutIdentity: 0,
+                    roleCounts: { sender: 1, receiver: 1, observer: 1 },
+                    regions: {},
+                    providers: {},
+                },
+            },
+            commandLinks,
+        };
+
+        const resolvedProgress = deriveDistributedRunMonitor({
+            distributedRun: roleScopedRun,
+        }).recipeProgress;
+
+        expect(resolvedProgress.map(row => [row.recipeId, row.targetCount, row.missingCount])).toEqual([
+            ['sender-recipe', 1, 0],
+            ['receiver-recipe', 1, 0],
+            ['shared-recipe', 2, 0],
+        ]);
+
+        const manifestProgress = deriveDistributedRunMonitor({
+            distributedRun: {
+                ...roleScopedRun,
+                targetResolution: undefined,
+                manifest: {
+                    ...roleScopedRun.manifest,
+                    targetPolicy: {
+                        mode: 'selected-agents',
+                        agentIds: ['agent-a', 'agent-b', 'agent-c'],
+                    },
+                    roleAssignments: resolvedAssignments,
+                },
+            },
+        }).recipeProgress;
+
+        expect(manifestProgress.map(row => [row.recipeId, row.targetCount, row.missingCount])).toEqual([
+            ['sender-recipe', 1, 0],
+            ['receiver-recipe', 1, 0],
+            ['shared-recipe', 2, 0],
+        ]);
+    });
+
+    it('exports deterministic selected-failure evidence from the app compatibility barrel', () => {
+        expect(Reflect.get(
+            distributedRecipeCompatibility,
+            'deriveDistributedRunFailureEvidenceDestinations',
+        )).toBeTypeOf('function');
+        expect(deriveDistributedRunFailureEvidenceDestinations).toBe(
+            deriveSharedDistributedRunFailureEvidenceDestinations,
+        );
+    });
+
+    it('exports deterministic Advanced diagnostic handoffs from the app compatibility barrel', () => {
+        const compatibilityExport = Reflect.get(
+            distributedRecipeCompatibility,
+            'deriveAdvancedDiagnosticHandoffTargets',
+        );
+
+        expect(compatibilityExport).toBeTypeOf('function');
+        expect(compatibilityExport).toBe(deriveSharedAdvancedDiagnosticHandoffTargets);
+    });
+
+    it('derives available evidence destinations for each selected failure instead of the first failure', () => {
+        const evidenceRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            error: {
+                code: 'RUN_FAILED',
+                message: 'Distributed orchestration failed.',
+            },
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [
+                    {
+                        kind: 'participant',
+                        key: 'agent-a',
+                        state: 'failed',
+                        required: true,
+                        error: {
+                            code: 'PARTICIPANT_FAILED',
+                            message: 'Sender disconnected.',
+                        },
+                    },
+                    {
+                        kind: 'participant',
+                        key: 'start-b',
+                        state: 'failed',
+                        required: true,
+                        error: {
+                            code: 'PARTICIPANT_ID_COLLISION',
+                            message: 'A participant ID collides with another failure key.',
+                        },
+                    },
+                    {
+                        kind: 'recipe',
+                        key: 'start-b',
+                        state: 'failed',
+                        required: true,
+                        error: {
+                            code: 'RECIPE_ID_COLLISION',
+                            message: 'A recipe ID collides with another failure key.',
+                        },
+                    },
+                    ...distributedRun.rollup.failures,
+                ],
+            },
+        };
+        const evidenceControlRun: ControlRunSnapshot = {
+            ...distributedControlRun,
+            events: [
+                ...distributedControlRun.events,
+                {
+                    kind: 'event',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    commandId: 'start-b',
+                    eventId: 'event-start-b',
+                    atEpochMs: 1_980,
+                    payload: {
+                        distributedRunId: 'dist-1',
+                        topic: 'recipe.failure',
+                        message: 'receiver evidence',
+                    },
+                },
+                {
+                    kind: 'diagnostic',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-a',
+                    commandId: 'start-a',
+                    eventId: 'diagnostic-agent-a',
+                    atEpochMs: 1_990,
+                    payload: {
+                        diagnosticSchemaVersion: 1,
+                        diagnosticTypeId: 'rallar.test.sender_failure',
+                        topic: 'rallar.test.sender_failure',
+                        severity: 'error',
+                        message: 'Sender disconnected.',
+                        commandId: 'start-a',
+                    },
+                },
+                {
+                    kind: 'diagnostic',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    commandId: 'start-b',
+                    eventId: 'diagnostic-start-b',
+                    atEpochMs: 1_990,
+                    payload: {
+                        diagnosticSchemaVersion: 1,
+                        diagnosticTypeId: 'rallar.test.receiver_failure',
+                        topic: 'rallar.test.receiver_failure',
+                        severity: 'error',
+                        message: 'Receiver did not observe payload.',
+                        transport: 'realtime',
+                        commandId: 'start-b',
+                    },
+                },
+            ],
+        };
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun: evidenceRun,
+            controlRun: evidenceControlRun,
+            artifactBundle: distributedArtifactBundle,
+        });
+        const failure = (kind: 'run' | 'participant' | 'recipe' | 'command', key: string) => {
+            const row = monitor.failures.find(candidate =>
+                candidate.kind === kind && candidate.key === key
+            );
+            expect(row, `${kind}:${key}`).toBeDefined();
+            if (!row) {
+                throw new Error(`Missing test failure ${kind}:${key}.`);
+            }
+            return row;
+        };
+        const destinations = (kind: 'run' | 'participant' | 'recipe' | 'command', key: string) =>
+            deriveDistributedRunFailureEvidenceDestinations({
+                failure: failure(kind, key),
+                monitor,
+            });
+
+        const runDestinations = destinations('run', 'dist-1');
+        expect(runDestinations.map(destination => destination.kind)).not.toEqual(
+            expect.arrayContaining(['agent', 'recipe', 'command', 'diagnostic']),
+        );
+        expect(runDestinations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'timeline' }),
+            expect.objectContaining({ kind: 'event', id: 'message-a' }),
+            expect.objectContaining({ kind: 'artifact', id: 'valid' }),
+        ]));
+
+        const participantDestinations = destinations('participant', 'agent-a');
+        expect(participantDestinations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'agent', id: 'agent-a' }),
+            expect.objectContaining({ kind: 'recipe', id: 'health-only' }),
+            expect.objectContaining({ kind: 'command', id: 'stage-a' }),
+            expect.objectContaining({ kind: 'command', id: 'start-a' }),
+            expect.objectContaining({ kind: 'diagnostic', id: 'diagnostic-agent-a' }),
+            expect.objectContaining({ kind: 'timeline', agentId: 'agent-a' }),
+            expect.objectContaining({ kind: 'event', id: 'message-a' }),
+            expect.objectContaining({ kind: 'artifact', id: 'valid' }),
+        ]));
+        expect(participantDestinations.some(destination => destination.id === 'agent-b')).toBe(false);
+
+        const recipeDestinations = destinations('recipe', 'health-only');
+        expect(recipeDestinations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'agent', id: 'agent-a' }),
+            expect.objectContaining({ kind: 'agent', id: 'agent-b' }),
+            expect.objectContaining({ kind: 'recipe', id: 'health-only' }),
+            expect.objectContaining({ kind: 'command', id: 'stage-a' }),
+            expect.objectContaining({ kind: 'command', id: 'stage-b' }),
+            expect.objectContaining({ kind: 'command', id: 'start-a' }),
+            expect.objectContaining({ kind: 'command', id: 'start-b' }),
+            expect.objectContaining({ kind: 'timeline', recipeId: 'health-only' }),
+            expect.objectContaining({ kind: 'event', id: 'event-start-b' }),
+            expect.objectContaining({ kind: 'artifact', id: 'valid' }),
+        ]));
+
+        const commandDestinations = destinations('command', 'start-b');
+        expect(commandDestinations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'agent', id: 'agent-b' }),
+            expect.objectContaining({ kind: 'recipe', id: 'health-only' }),
+            expect.objectContaining({ kind: 'command', id: 'start-b' }),
+            expect.objectContaining({ kind: 'diagnostic', id: 'diagnostic-start-b' }),
+            expect.objectContaining({ kind: 'timeline', commandId: 'start-b' }),
+            expect.objectContaining({ kind: 'event', id: 'event-start-b' }),
+            expect.objectContaining({ kind: 'artifact', id: 'valid' }),
+        ]));
+        const collidingParticipantDestinations = destinations('participant', 'start-b');
+        expect(collidingParticipantDestinations.some(destination =>
+            destination.kind === 'diagnostic' && destination.id === 'diagnostic-start-b'
+        )).toBe(false);
+        const collidingRecipeDestinations = destinations('recipe', 'start-b');
+        expect(collidingRecipeDestinations.some(destination =>
+            destination.kind === 'diagnostic' && destination.id === 'diagnostic-start-b'
+        )).toBe(false);
+        const receiverDiagnostic = monitor.runtimeDiagnostics.find(diagnostic =>
+            diagnostic.eventId === 'diagnostic-start-b'
+        );
+        expect(receiverDiagnostic).toBeDefined();
+        if (!receiverDiagnostic) {
+            throw new Error('Missing receiver diagnostic.');
+        }
+        const monitorWithDimensionalDiagnostics = {
+            ...monitor,
+            runtimeDiagnostics: [
+                ...monitor.runtimeDiagnostics,
+                {
+                    ...receiverDiagnostic,
+                    eventId: 'diagnostic-health-only',
+                    agentId: 'agent-a',
+                    commandId: 'start-a',
+                    correlatedFailureKeys: ['health-only'],
+                },
+                {
+                    ...receiverDiagnostic,
+                    eventId: 'diagnostic-start-b-wrong-agent',
+                    agentId: 'agent-a',
+                    correlatedFailureKeys: ['start-b'],
+                },
+            ],
+        };
+        expect(deriveDistributedRunFailureEvidenceDestinations({
+            failure: failure('recipe', 'health-only'),
+            monitor: monitorWithDimensionalDiagnostics,
+        })).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'diagnostic', id: 'diagnostic-health-only' }),
+        ]));
+        expect(deriveDistributedRunFailureEvidenceDestinations({
+            failure: failure('command', 'start-b'),
+            monitor: monitorWithDimensionalDiagnostics,
+        }).some(destination =>
+            destination.kind === 'diagnostic' &&
+            destination.id === 'diagnostic-start-b-wrong-agent'
+        )).toBe(false);
+
+        const monitorWithoutArtifact = deriveDistributedRunMonitor({
+            distributedRun: evidenceRun,
+            controlRun: evidenceControlRun,
+        });
+        expect(deriveDistributedRunFailureEvidenceDestinations({
+            failure: failure('command', 'start-b'),
+            monitor: monitorWithoutArtifact,
+        }).some(destination => destination.kind === 'artifact')).toBe(false);
+        const monitorWithInvalidArtifact = deriveDistributedRunMonitor({
+            distributedRun: evidenceRun,
+            controlRun: evidenceControlRun,
+            artifactBundle: {
+                ...distributedArtifactBundle,
+                files: {
+                    ...distributedArtifactBundle.files,
+                    'control-run.json': '{invalid',
+                },
+            },
+        });
+        expect(deriveDistributedRunFailureEvidenceDestinations({
+            failure: failure('command', 'start-b'),
+            monitor: monitorWithInvalidArtifact,
+        }).some(destination => destination.kind === 'artifact')).toBe(false);
     });
 
     it('derives a human-readable analysis report with first failure and truncation warnings', () => {
@@ -2153,6 +2995,40 @@ describe('distributed recipes helpers', () => {
                     result: compositeResult,
                 }
                 : result),
+            events: [
+                ...distributedControlRun.events,
+                {
+                    kind: 'event',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    commandId: 'start-b',
+                    eventId: 'composite-event',
+                    atEpochMs: 3_090,
+                    payload: {
+                        distributedRunId: 'dist-1',
+                        topic: 'composite.failure',
+                        message: 'Composite child failed.',
+                    },
+                },
+                {
+                    kind: 'diagnostic',
+                    protocolVersion: 1,
+                    runId: 'run-1',
+                    agentId: 'agent-b',
+                    commandId: 'start-b',
+                    eventId: 'composite-diagnostic',
+                    atEpochMs: 3_100,
+                    payload: {
+                        diagnosticSchemaVersion: 1,
+                        diagnosticTypeId: 'rallar.test.composite_failure',
+                        topic: 'rallar.test.composite_failure',
+                        severity: 'error',
+                        message: 'Composite child failed.',
+                        commandId: 'start-b',
+                    },
+                },
+            ],
         };
 
         const monitor = deriveDistributedRunMonitor({
@@ -2207,6 +3083,28 @@ describe('distributed recipes helpers', () => {
                 message: expect.stringContaining('RALLAR_BLACK_BOX_ASSERT_FAILED'),
             }),
         ]));
+        const compositeFailure = monitor.failures.find(failure =>
+            failure.commandId === drilldown.firstFailure?.commandId &&
+            failure.key !== 'start-b'
+        );
+        expect(compositeFailure).toBeDefined();
+        if (!compositeFailure) {
+            throw new Error('Missing composite child failure.');
+        }
+        const evidenceDestinations = deriveDistributedRunFailureEvidenceDestinations({
+            failure: compositeFailure,
+            monitor,
+        });
+        expect(evidenceDestinations).toEqual(expect.arrayContaining([
+            expect.objectContaining({ kind: 'agent', id: 'agent-b' }),
+            expect.objectContaining({ kind: 'recipe', id: 'composite-evidence' }),
+            expect.objectContaining({ kind: 'command', id: drilldown.firstFailure?.commandId }),
+            expect.objectContaining({ kind: 'command', id: 'start-b' }),
+            expect.objectContaining({ kind: 'diagnostic', id: 'composite-diagnostic' }),
+            expect.objectContaining({ kind: 'timeline', commandId: 'start-b' }),
+            expect.objectContaining({ kind: 'event', id: 'composite-event' }),
+        ]));
+        expect(evidenceDestinations.some(destination => destination.kind === 'artifact')).toBe(false);
     });
 
     it('extracts WS and RTC runtime diagnostics for distributed run monitor filtering and failure correlation', () => {
@@ -2597,6 +3495,290 @@ describe('distributed recipes helpers', () => {
         expect(filterDistributedRuns([otherRun, distributedRun], {
             query: 'regression',
         }).map(run => run.distributedRunId)).toEqual(['dist-2']);
+    });
+
+    it('filters actual run and rollup failures by their semantic explanation category', () => {
+        const targetingRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-targeting',
+            updatedAtEpochMs: 4_000,
+            error: {
+                code: 'RALLAR_BB_DISTRIBUTED_NO_TARGET_AGENTS',
+                message: 'No target agents resolved.',
+            },
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [],
+            },
+        };
+        const barrierRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-barrier',
+            updatedAtEpochMs: 3_000,
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [{
+                    kind: 'participant',
+                    key: 'agent-a',
+                    state: 'failed',
+                    required: true,
+                    error: {
+                        code: 'RALLAR_BB_DISTRIBUTED_BARRIER_TIMEOUT',
+                        message: 'Barrier timed out.',
+                    },
+                }],
+            },
+        };
+        const readinessRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-readiness',
+            updatedAtEpochMs: 2_500,
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [{
+                    kind: 'participant',
+                    key: 'agent-b',
+                    state: 'failed',
+                    required: true,
+                    error: {
+                        code: 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT',
+                        message: 'Agent ACK timeout.',
+                    },
+                }],
+            },
+        };
+        const rtcStreamRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-rtc-stream',
+            updatedAtEpochMs: 2_750,
+            error: {
+                code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
+                message: 'RTC stream pacing exceeded maxDroppedFrames.',
+            },
+            rollup: {
+                ...distributedRun.rollup,
+                failures: [],
+            },
+        };
+        const multipleCategoryRun: ControlDistributedRunSnapshot = {
+            ...targetingRun,
+            distributedRunId: 'dist-multiple-categories',
+            updatedAtEpochMs: 4_500,
+            rollup: barrierRun.rollup,
+        };
+
+        const runs = [
+            readinessRun,
+            distributedRun,
+            targetingRun,
+            barrierRun,
+            rtcStreamRun,
+            multipleCategoryRun,
+        ];
+        expect(filterDistributedRuns(runs, {
+            failureCategory: ' TARGETING ',
+        }).map(run => run.distributedRunId)).toEqual([
+            'dist-multiple-categories',
+            'dist-targeting',
+        ]);
+        expect(filterDistributedRuns(runs, {
+            failureCategory: 'barrier',
+        }).map(run => run.distributedRunId)).toEqual([
+            'dist-multiple-categories',
+            'dist-barrier',
+        ]);
+        expect(filterDistributedRuns(runs, {
+            failureCategory: 'readiness',
+        }).map(run => run.distributedRunId)).toEqual(['dist-readiness']);
+        expect(filterDistributedRuns(runs, {
+            failureCategory: 'rtc-stream-performance',
+        }).map(run => run.distributedRunId)).toEqual(['dist-rtc-stream']);
+        expect(filterDistributedRuns(runs, {
+            failureCategory: 'unknown',
+        }).map(run => run.distributedRunId)).toEqual(['dist-1']);
+        expect(filterDistributedRuns(runs, {
+            failureCategory: 'any',
+        }).map(run => run.distributedRunId)).toEqual([
+            'dist-multiple-categories',
+            'dist-targeting',
+            'dist-barrier',
+            'dist-rtc-stream',
+            'dist-readiness',
+            'dist-1',
+        ]);
+    });
+
+    it('does not synthesize a readiness failure category for a nonterminal run without actual failures', () => {
+        const runningRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-running',
+            state: 'running',
+            rollup: {
+                ...distributedRun.rollup,
+                state: 'running',
+                ok: true,
+                failures: [],
+                summary: {
+                    ...distributedRun.rollup.summary,
+                    failedParticipants: 0,
+                    failedRecipes: 0,
+                    blockingFailures: 0,
+                },
+            },
+        };
+
+        expect(filterDistributedRuns([runningRun], {
+            failureCategory: 'readiness',
+        })).toEqual([]);
+    });
+
+    it('preserves raw failure text matching, inclusive dates, combined filters, and empty results', () => {
+        expect(filterDistributedRuns([distributedRun], {
+            query: 'RECEIVER DID NOT OBSERVE',
+            groupId: 'BB-GROUP',
+            recipeId: 'HEALTH',
+            profile: 'SMOKE',
+            user: 'ALICE',
+            status: 'FAILED',
+            failureType: ' RECIPE_FAILED ',
+            failureCategory: 'UNKNOWN',
+            fromEpochMs: distributedRun.createdAtEpochMs,
+            toEpochMs: distributedRun.createdAtEpochMs,
+        }).map(run => run.distributedRunId)).toEqual(['dist-1']);
+
+        expect(filterDistributedRuns([distributedRun], {
+            failureType: 'any',
+        }).map(run => run.distributedRunId)).toEqual(['dist-1']);
+        expect(filterDistributedRuns([distributedRun], {
+            fromEpochMs: distributedRun.createdAtEpochMs + 1,
+        })).toEqual([]);
+        expect(filterDistributedRuns([distributedRun], {
+            toEpochMs: distributedRun.createdAtEpochMs - 1,
+        })).toEqual([]);
+        expect(filterDistributedRuns([distributedRun], {
+            fromEpochMs: distributedRun.createdAtEpochMs + 1,
+            toEpochMs: distributedRun.createdAtEpochMs - 1,
+        })).toEqual([]);
+        expect(filterDistributedRuns([distributedRun], {
+            failureCategory: 'targeting',
+        })).toEqual([]);
+    });
+
+    it('keeps descending history order stable when updated timestamps tie', () => {
+        const firstTie = {
+            ...distributedRun,
+            distributedRunId: 'dist-first-tie',
+            updatedAtEpochMs: 4_000,
+        };
+        const secondTie = {
+            ...distributedRun,
+            distributedRunId: 'dist-second-tie',
+            updatedAtEpochMs: 4_000,
+        };
+        const newest = {
+            ...distributedRun,
+            distributedRunId: 'dist-newest',
+            updatedAtEpochMs: 5_000,
+        };
+
+        expect(filterDistributedRuns(
+            [firstTie, newest, secondTie],
+            {},
+        ).map(run => run.distributedRunId)).toEqual([
+            'dist-newest',
+            'dist-first-tie',
+            'dist-second-tie',
+        ]);
+    });
+
+    it('treats malformed manifest fields as absent without losing top-level history evidence', () => {
+        const malformedManifestRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-malformed-manifest',
+            manifest: undefined as unknown as ControlDistributedRunSnapshot['manifest'],
+        };
+        const malformedFieldsRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-malformed-fields',
+            manifest: {
+                displayName: { text: 'not searchable' },
+                group: {
+                    applicationId: { text: 'not searchable' },
+                    workspaceId: { text: 'not searchable' },
+                    groupId: { text: 'not searchable' },
+                },
+                recipes: { recipeId: 'not-an-array' },
+                metadata: { createdBy: { name: 'not searchable' } },
+            } as unknown as ControlDistributedRunSnapshot['manifest'],
+        };
+        const independentSelectionRun: ControlDistributedRunSnapshot = {
+            ...distributedRun,
+            distributedRunId: 'dist-independent-selections',
+            manifest: {
+                ...distributedRun.manifest,
+                recipes: [
+                    null,
+                    { profile: 'regression' },
+                    { recipeId: 'other-recipe', profile: 'smoke' },
+                    {
+                        recipeId: 'malformed-profile',
+                        profile: { text: 'not searchable' },
+                        role: { text: 'not searchable' },
+                    },
+                ],
+            } as unknown as ControlDistributedRunSnapshot['manifest'],
+        };
+
+        expect(filterDistributedRuns([
+            malformedManifestRun,
+            malformedFieldsRun,
+        ], {
+            query: 'DIST-MALFORMED-MANIFEST',
+            status: 'failed',
+            failureType: 'recipe',
+            failureCategory: 'unknown',
+        }).map(run => run.distributedRunId)).toEqual([
+            'dist-malformed-manifest',
+        ]);
+        expect(filterDistributedRuns([malformedManifestRun], {
+            groupId: 'bb-group',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedManifestRun], {
+            recipeId: 'health-only',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedManifestRun], {
+            profile: 'smoke',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedManifestRun], {
+            user: 'alice',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedFieldsRun], {
+            groupId: 'bb-group',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedFieldsRun], {
+            recipeId: 'not-an-array',
+        })).toEqual([]);
+        expect(filterDistributedRuns([
+            malformedFieldsRun,
+            independentSelectionRun,
+        ], {
+            query: '[object object]',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedFieldsRun], {
+            groupId: '[object object]',
+        })).toEqual([]);
+        expect(filterDistributedRuns([malformedFieldsRun], {
+            user: '[object object]',
+        })).toEqual([]);
+        expect(filterDistributedRuns([independentSelectionRun], {
+            profile: '[object object]',
+        })).toEqual([]);
+        expect(filterDistributedRuns([independentSelectionRun], {
+            recipeId: 'recipe-2',
+            profile: 'smoke',
+        }).map(run => run.distributedRunId)).toEqual([
+            'dist-independent-selections',
+        ]);
     });
 
     it('compares distributed runs by recipe, participants, failures, timing, and received messages', () => {

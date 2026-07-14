@@ -1,0 +1,17 @@
+.workspace {
+    display: grid;
+    min-width: 0;
+    gap: 16px;
+    padding-bottom: 24px;
+}
+
+.workspace > section {
+    min-width: 0;
+}
+
+@media (max-width: 640px) {
+    .workspace {
+        gap: 12px;
+        padding-bottom: 72px;
+    }
+}

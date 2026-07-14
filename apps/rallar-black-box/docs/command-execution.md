@@ -281,6 +281,30 @@ RALLAR_BLACK_BOX_RETENTION_MAX_RUNS=20 npm run start:rallar:control
 curl -X POST http://localhost:5180/retention/cleanup
 ```
 
+The bare request above remains the legacy destructive operation. New operator
+flows must preview first; the server does not read a request body for any of
+these forms:
+
+```sh
+curl -X POST 'http://localhost:5180/retention/cleanup?dryRun=true'
+
+# Copy the opaque planToken from the preview only after reviewing every
+# wouldDeleteRuns, linked distributed run, and fleet report consequence.
+PLAN_TOKEN='v1...'
+curl -X POST --get \
+  --data-urlencode "planToken=${PLAN_TOKEN}" \
+  http://localhost:5180/retention/cleanup
+```
+
+Confirmation succeeds only while the authorized server process, configured
+cap, candidates, connected-agent/token state, and full linked contents still
+match the preview. Drift or expiry returns `409` without deletion and requires
+a new dry run. A dry run removes nothing. Successful legacy cleanup or guarded
+confirmation removes in-memory control, distributed, and linked fleet state
+only; it does not close current agent sockets or delete stored artifact files.
+Use the existing admin/operator authorization when the server is configured to
+require it.
+
 ## Example Commands
 
 Configure:

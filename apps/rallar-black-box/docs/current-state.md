@@ -1,8 +1,10 @@
 # Current State
 
-`apps/rallar-black-box` is currently a deployable Vite/React SPA for visible black-box test operation and remote browser
-agent orchestration. It is built around the shared `packages/shared-test/rallar-bb-test` facade so recipes, local UI
-actions, remote control commands, runtime events, stats, and reports use one command vocabulary.
+`apps/rallar-black-box` is currently a deployable Vite/React Recipe Console for visible black-box test operation and
+remote browser-agent orchestration. Blank and provider-only URLs canonicalize to Recipe Console `Execute`; its primary
+views are `Execute`, `Monitor`, `Analyze`, `Tune`, `Fleet`, and `Advanced`. It is built around the shared
+`packages/shared-test/rallar-bb-test` facade so recipes, local UI actions, remote control commands, runtime events,
+stats, and reports use one command vocabulary.
 
 ## Implemented
 
@@ -14,6 +16,11 @@ RTC matrix baseline are in place. The
 shared-test runner and command-center handoff
 work is complete through Iteration 19 in
 `packages/shared-test/rallar-shared-test-gap-analysis.md`.
+
+The Recipe Console SPA reimplementation is complete through Iteration 12. The new experience owns guided distributed
+execution, live monitoring, bounded artifact analysis, timing and recipe comparison, History and preview-first
+retention, large-run windows, Fleet evidence, and contextual Advanced handoffs. The extracted legacy experience remains
+operational through explicit deep links and those handoffs.
 
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
@@ -41,14 +48,22 @@ The shared-test runner now provides the external JSON recipe layer for HTTP, WS,
 
 The SPA currently provides:
 
-- local workbench startup with a sample recipe
+- Recipe Console `Execute` as the blank/provider-only URL default, with `Monitor`, `Analyze`, `Tune`, `Fleet`, and
+  `Advanced` as the other primary views
+- repository recipe selection, target resolution, manifest preflight, and visible create/stage/start/cancel/refresh and
+  export controls for distributed runs
+- failure-first monitoring, correlated evidence navigation, bounded artifact search/import/export, run timing and recipe
+  comparison, saved History filters, guarded retention preview/confirmation, and accessible large-run windows
+- explicit legacy Local Workbench startup with a sample recipe at
+  `/?experience=legacy&workspace=black-box-runner&tab=local-workbench`
 - URL and Vite-env bootstrap for control-agent mode
 - WebSocket control client with registration, heartbeat, reconnect, command dispatch, duplicate result replay, stats, and
   final report streaming
 - visible panels for configuration, recipes, command queue, active command, command history, events, stats, failures, and
   report JSON
 - authenticated login gate for `browser-rallar` mode with browser-session restore and logout cleanup
-- tabbed operational shell split into direct `Rallar` tabs (`Quick Test`, `Auth`, `Groups/Clients`, `WebSocket`,
+- preserved legacy tabbed operational shell split into direct `Rallar` tabs (`Quick Test`, `Auth`, `Groups/Clients`,
+  `WebSocket`,
   `RTC/Realtimes`, `Topology`, `RTC Diagnostics`, `Rallar Data`, `Media`, `Rallar Server`, `Rallar Trace`, and
   `Event Stream`) and
   black-box-runner tabs (`Shared Test`, `Manual Rallar`, `Local Workbench`, `Flow Builder`, `Run Manager`, and
@@ -76,12 +91,14 @@ The SPA currently provides:
   authenticated API-v1 ticket creation, browser-rallar room-scoped subscribe joining, signaling-socket
   `rallar.messages.ws.send(...)` delivery for Rallar app WS envelopes without using `browser-rallar-runtime.ts`,
   missing-ticket negative checks, status/event diagnostics, payload presets, and WS/RTC comparison recipe snippets
-- persistent global header state for provider, control, runtime, room, active command, first failure, user, and session
-- top-level workspace mode switch for direct `Rallar` operations versus `Rallar black-box-runner` recipes/control
+- persistent legacy global header state for provider, control, runtime, room, active command, first failure, user, and
+  session
+- legacy workspace mode switch for direct `Rallar` operations versus `Rallar black-box-runner` recipes/control
   runs/artifacts; the mode is stored in `workspace` and existing `tab` deep links infer the correct workspace
 - direct Rallar operation boundary with a facade-backed `status.check` action, explicit real-backend-required state for
   simulated provider mode, and `rallar.direct.*` diagnostics in the trace/event stream
-- default Rallar-mode Quick Test flow for real WS group data: create/join a group using the current Group text as the
+- preserved legacy Rallar-mode Quick Test flow for real WS group data: create/join a group using the current Group text
+  as the
   explicit Rallar group ID, subscribe this browser with `rallar.messages.ws.onMessage(...)`, send JSON through
   `rallar.messages.ws.send(...)`, wait for receives, inspect sender/group/type/topic/context/resource details, and copy
   redacted diagnostics
@@ -160,7 +177,11 @@ The SPA currently provides:
 The control server in `apps/rallar-black-box-control-server` currently provides:
 
 - `GET /health`
-- `POST /retention/cleanup`
+- `POST /retention/cleanup`: the bare request preserves the existing
+  destructive cleanup behavior; `?dryRun=true` returns bounded exact control,
+  distributed-run, and fleet-report consequences plus a short-lived plan
+  token; `?planToken=...` confirms only an unchanged authorized preview. Manual
+  preview/cleanup leaves current sockets and stored artifact files intact.
 - `GET /runs` with bounded snapshot query parameters
 - `GET /runs/:runId` with bounded snapshot query parameters
 - `POST /runs/:runId/commands` for bulk enqueue to selected agents
@@ -183,13 +204,13 @@ ingestion remains a separate backend concern.
 
 ## Runtime Reality
 
-The SPA runtime store defaults to the local/fake command executor from `src/runtime-store.ts` for black-box-runner
-workflows and offline UI work. That executor emits realistic command results, diagnostics, message events, stats, and
+The SPA runtime store defaults to the local/fake command executor from `src/runtime-store.ts` for Recipe Console,
+black-box-runner workflows, and offline UI work. That executor emits realistic command results, diagnostics, message events, stats, and
 topology inputs for runner surfaces. Direct `Rallar` mode tabs call `@shared-web/browser/rallar.ts` or Rallar Server
 REST APIs directly. The `src/browser-rallar-runtime.ts` bridge remains for runner-owned command execution, such as the
 Manual Rallar scratchpad and imported recipes, not for direct Rallar-mode WebSocket/RTC/Data/Media actions. The local
-sample recipe bootstrap and `Replay Sample` control are also runner-only, so opening the default Rallar workspace does
-not execute the fake black-box runtime scaffold.
+sample recipe bootstrap and `Replay Sample` control are also legacy runner-only, so opening the default Recipe Console
+does not auto-run that legacy sample.
 
 The client has complete local defaults in `src/client-defaults.ts`:
 
@@ -220,10 +241,11 @@ Real-provider close/reset cleanup unsubscribes browser listeners, leaves the joi
 out when `rallarLogoutOnClose=1`, and records cleanup diagnostics. Remote reset commands also clear browser
 `localStorage` and `sessionStorage` on a best-effort basis.
 
-The app shell is tabbed. The active tab is stored in the `tab` query parameter and in local browser storage, so a fresh
-load without `tab` returns to the last selected workspace. Inactive tab panes remain mounted while hidden, so manual form
-edits, recipe JSON, selected commands, topology filters, and event filters survive normal navigation. Selected command
-ID, Manual Rallar values/payload draft, Event Stream filters, and Rallar Server request drafts also survive reloads.
+The preserved legacy shell is tabbed. Its active tab is stored in the `tab` query parameter and local browser storage,
+but a fresh blank URL ignores stale legacy navigation and opens Recipe Console `Execute`. Documented stateful legacy
+panes remain mounted only while the legacy experience is active so their drafts or live state survive legacy
+navigation; other inactive surfaces are lazy or unmounted. Selected command ID, Manual Rallar values/payload draft,
+Event Stream filters, and Rallar Server request drafts also survive reloads.
 Secret-shaped draft fields are not stored raw: Manual Rallar passwords are stripped, JSON editor drafts are redacted, and
 invalid JSON editor drafts are dropped instead of being persisted with possible secrets.
 
@@ -251,8 +273,8 @@ uses the active auth session for API-v1 state calls and displays server evidence
 diagnostics. The group and client tables now include local filters for groups with members and online clients plus
 sorting by activity, mutation time, creation time, counts, status, or name.
 
-The default `Quick Test` tab is the shortest real-data path in Rallar mode. It uses Global Context for API base URL,
-application, workspace, and group; can create-and-join or join a group through the browser Rallar facade; subscribes the
+The legacy Rallar workspace's `Quick Test` tab is the shortest real-data path in that mode. It uses Global Context for
+API base URL, application, workspace, and group; can create-and-join or join a group through the browser Rallar facade; subscribes the
 current browser to room-scoped WS messages; sends JSON to the group; waits for a new receive; and shows received payloads
 with sender, group, type, topic, context, and resource metadata. Create-and-join passes the typed Group value as the
 explicit Rallar group ID, so Global Context stays on the value the tester selected. It requires `provider=browser-rallar`;
@@ -285,8 +307,10 @@ connect/send commands and generated recipes. The Delivery Matrix can run direct,
 both `realtime` and `messages.rtc`, while the NACK probe and negative recipe output provide repeatable starting points
 for missing-peer, stale-agent, duplicate-session, permission, closed-transport, and not-yet-in-sync investigations.
 
-The SPA imports shared-test handoff types at build time and renders the browser-safe fixture catalog in the `Shared Test`
-tab. Uploaded runner artifact bundles are parsed with `parseRallarBlackBoxSharedTestArtifactBundle(...)` and projected
+The SPA imports shared-test handoff types at build time and renders the browser-safe fixture catalog in the preserved
+legacy `Shared Test` tab, available from Recipe Console `Advanced` or
+`/?experience=legacy&workspace=black-box-runner&tab=shared-test`. Uploaded runner artifact bundles are parsed with
+`parseRallarBlackBoxSharedTestArtifactBundle(...)` and projected
 into imported event stream, RTC diagnostics, failure-focus, summary, and replay-recipe views. The browser still does not
 execute shell commands; runner execution remains explicit local tooling or control-server work.
 
@@ -325,14 +349,16 @@ The main gaps are:
   services are supplied
 - permission-denied, forbidden, expiry, CORS, missing-peer, stale-agent, duplicate-session, and exact server-provided
   NACK assertions still need stable provisioned-environment fixtures
-- the control server has optional snapshot persistence, but retention policy, artifact search, and production-grade
-  durable storage remain planned; Run Manager reset/delete affects only local control snapshots and connected control
-  sockets
+- the control server has optional snapshot persistence plus bounded automatic
+  retention and authorization-first preview/guarded manual cleanup; Recipe
+  Console exposes bounded artifact search and preview-first retention, but
+  production-grade durable storage and server-side search remain planned; Run
+  Manager reset/delete affects only local control snapshots and connected
+  control sockets
 - monitor-server ingestion is not connected
 - long-running, seeded-traffic, and bounded-parallel runner support exists in shared-test and selected entries are
-  visible in the SPA, but full matrix browsing, large-run virtualization, and durable artifact retention are not
-  implemented yet
-- large run artifact search and retention policy are not implemented
+  visible in the SPA. Recipe Console bounds large collections with accessible deterministic windows; loading the full
+  runner matrix dynamically and production-grade durable artifact retention remain future work
 - Flow Builder is implemented for command composition and export, but full shared-runner assertion execution, richer
   recording from other tabs, and durable flow storage are still planned
 - auth and permission negative testing is visible in the Auth tab, but expiry/forbidden/CORS matrices still need real
@@ -344,8 +370,8 @@ The main gaps are:
   large event streams
 - Fleet World Map v1 is a report-snapshot and live-agent operational map, not a 3D globe or animated historical replay;
   observed route arcs appear only when control events explicitly name source and target agents with resolvable locations
-- Event Stream has bounded windows, but true virtualization/cursor pagination and the deeper accessibility/viewport QA
-  pass remain future work
+- the legacy Event Stream uses bounded windows rather than cursor pagination; Recipe Console uses tested accessible
+  deterministic windows for its large-run lists
 
 ## Verification Commands
 

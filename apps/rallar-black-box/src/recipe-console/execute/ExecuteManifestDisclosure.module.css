@@ -1,0 +1,103 @@
+.disclosure {
+    min-width: 0;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+}
+
+.disclosure summary {
+    display: flex;
+    min-height: 56px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 14px;
+    cursor: pointer;
+    list-style-position: inside;
+}
+
+.disclosure summary > span {
+    display: inline-grid;
+    gap: 2px;
+}
+
+.disclosure summary small,
+.empty,
+.facts dt {
+    color: var(--rc-muted);
+    font-size: 12px;
+}
+
+.body {
+    display: grid;
+    min-width: 0;
+    gap: 12px;
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--rc-border);
+}
+
+.facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 14px;
+}
+
+.facts div {
+    min-width: 0;
+}
+
+.facts dd {
+    overflow-wrap: anywhere;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 11px;
+}
+
+.errors {
+    display: grid;
+    gap: 5px;
+    padding: 10px 12px;
+    border-left: 4px solid var(--rc-status-failed-border);
+    color: var(--rc-status-failed-text);
+    background: var(--rc-status-failed-bg);
+}
+
+.errors h3 {
+    font-size: 13px;
+}
+
+.errors ul {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding-left: 18px;
+}
+
+.body pre {
+    max-height: 360px;
+    margin: 0;
+    padding: 12px;
+    overflow: auto;
+    border: 1px solid var(--rc-border);
+    border-radius: 4px;
+    color: var(--rc-text);
+    background: var(--rc-canvas);
+    font: 11px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+    overscroll-behavior: contain;
+    white-space: pre;
+}
+
+.empty {
+    padding: 0 14px 14px;
+}
+
+@media (max-width: 767px) {
+    .facts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .disclosure,
+    .body pre {
+        scroll-behavior: auto;
+    }
+}

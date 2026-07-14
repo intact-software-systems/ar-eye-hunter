@@ -79,6 +79,7 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
         'runtime_state_store_namespace_key_c_ix',
         'runtime_state_store_namespace_expire_at_ix',
         'runtime_state_store_namespace_ix',
+        'runtime_state_store_namespace_key_c_ix',
         'runtime_state_store_pk',
       ]
     ) {
@@ -130,6 +131,46 @@ Deno.test('schema bootstrap only runs for PGlite backends', async () => {
     false,
   );
   assert.equal(calls.length, 4);
+});
+
+Deno.test('runtime-state prefix ranges use the composite C-collated index', async () => {
+  const db = new PGlite();
+  try {
+    await applyApiV1InMemorySchema(db, await readApiV1InMemorySchemaSql());
+
+    const indexes = await db.query<{ indexdef: string; indexname: string }>(
+      `select indexdef, indexname
+         from pg_indexes
+         where schemaname = 'public'
+           and indexname = 'runtime_state_store_namespace_key_c_ix'`,
+    );
+
+    assert.equal(indexes.rows.length, 1);
+    assert.match(
+      indexes.rows[0].indexdef,
+      /\(store_namespace, store_key COLLATE "C"\)/,
+    );
+
+    await db.query(`set enable_seqscan = off`);
+    await db.query(`set enable_bitmapscan = off`);
+    const plan = await db.query<{ 'QUERY PLAN': string }>(
+      `explain
+         select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
+         from runtime_state_store
+         where store_namespace = $1
+           and store_key collate "C" >= $2
+           and store_key collate "C" < $3
+         order by store_key collate "C"`,
+      ['runtime-prefix', 'app=ops:', 'app=ops;'],
+    );
+
+    assert.match(
+      plan.rows.map((row) => row['QUERY PLAN']).join('\n'),
+      /Index Scan using runtime_state_store_namespace_key_c_ix/,
+    );
+  } finally {
+    await db.close();
+  }
 });
 
 Deno.test('in-memory schema supports repository-shaped SQL smoke operations', async () => {

@@ -1,26 +1,38 @@
 # UI User Manual
 
-The Rallar Black Box UI is an operational test surface. It is not a landing page. In simulated mode the first screen is
-the app shell for the current browser agent. In `browser-rallar` mode the first screen is the Rallar Server login gate
-unless a browser auth session can be restored.
+The Rallar Black Box UI is an operational test surface. It is not a landing page. In simulated mode the blank URL and
+provider-only URLs open Recipe Console `Execute`. In `browser-rallar` mode the first screen is the Rallar Server login
+gate unless a browser auth session can be restored; after authentication the requested experience opens.
 
 ## Startup Modes
 
-Local workbench mode is the default:
+Recipe Console is the default:
 
 ```text
 http://localhost:5176/
 ```
 
-In this mode the app loads and runs a local sample recipe so the panels show useful state immediately.
+The URL canonicalizes to the versioned Recipe Console `Execute` route. The
+repository catalog and simulated provider let you prepare a deterministic
+recipe without editing JSON. Start the local control server to resolve live
+agent evidence and exercise create/stage/start lifecycle mutations. A URL
+containing only a provider selection, such as `/?provider=simulated`, follows
+the same default and keeps that selection.
 
 The local UI does not require login. It uses demo defaults and the simulated provider. Login/auth values are only needed
 when `provider=browser-rallar` targets a real environment. After login, REST-capable commands use the stored access
 token and client ID.
 
-The header, bootstrap panel, configuration panel, and report snapshot show the active provider mode. `browser-rallar`
-requires a real API base URL plus username/password or `restoreSession=true`; it does not fall back to simulated RTC
-loopback.
+The Recipe Console command bar shows the active provider mode. The preserved Local Workbench header, bootstrap panel,
+configuration panel, and report snapshot show it too. `browser-rallar` requires a real API base URL plus
+username/password or `restoreSession=true`; it does not fall back to simulated RTC loopback.
+
+Local Workbench, Shared Test, and the direct diagnostic tabs remain operational, but they are not the blank-URL
+experience. Open them from Recipe Console `Advanced` or use an explicit legacy deep link. Local Workbench is:
+
+```text
+http://localhost:5176/?experience=legacy&workspace=black-box-runner&tab=local-workbench
+```
 
 Control-agent mode configures the browser as a remote agent:
 
@@ -30,6 +42,9 @@ http://localhost:5176/?mode=control&controlUrl=ws%3A%2F%2Flocalhost%3A5180%2Fcon
 
 Useful query parameters:
 
+- `v=1`: select the current Recipe Console URL schema
+- `experience=recipe-console` or `experience=legacy`: select the product or preserved diagnostic experience
+- `view=execute`, `monitor`, `analyze`, `tune`, `fleet`, or `advanced`: select a Recipe Console primary view
 - `mode=control` or `mode=control-agent`: start in remote control mode
 - `autoConnect=1`: connect to the control server after bootstrap
 - `provider=simulated` or `provider=browser-rallar`: select simulated or real-provider execution mode
@@ -43,7 +58,8 @@ Useful query parameters:
 - `sessionId`: browser session/client identity
 - `roomId`: Rallar group or room ID
 - `transport`: `realtime`, `messages.rtc`, `ws`, or `http`
-- `tab`: `auth`, `manual-rallar`, `rooms-clients`, `websocket`, `topology`, `rtc-diagnostics`, `local-workbench`,
+- `tab` (legacy experience): `auth`, `manual-rallar`, `rooms-clients`, `websocket`, `topology`, `rtc-diagnostics`,
+  `local-workbench`,
   `run-manager`, `event-stream`, `rallar-server`, `flow-builder`, or `shared-test`
 - `rallarUsername` and `rallarPassword`: login credentials for `browser-rallar`
 - `rallarRestoreSession=1`: restore an existing browser auth session for `browser-rallar`
@@ -53,7 +69,27 @@ Useful query parameters:
 - `statsIntervalMs`: periodic control stats interval
 - `reportUploadUrl`: optional REST endpoint for final reports
 
-## Header And Tabs
+## Recipe Console Navigation
+
+Recipe Console keeps the current provider, control state, operational run, and URL normalization state in its top
+command bar. Its primary views are:
+
+- `Execute`: choose a repository recipe, resolve targets, inspect preflight and the manifest, then create, stage,
+  start, cancel, refresh, or export a run
+- `Monitor`: follow lifecycle and participant progress with the first failure and correlated evidence kept prominent
+- `Analyze`: import or load bounded artifacts, search evidence, inspect failures, and export redacted findings
+- `Tune`: inspect timing distributions and cadence, compare runs and recipe knobs, browse History, apply saved filters,
+  and preview retention before an explicit cleanup confirmation
+- `Fleet`: inspect bounded cross-run agent, region, route, timing, and failure evidence
+- `Advanced`: open preserved direct Rallar and black-box-runner diagnostics with Recipe Console context and a return path
+
+The active view and shareable filters are stored in the versioned URL. Recipe Console views and preserved legacy
+surfaces are loaded at their route boundaries rather than retained as one hidden application tree.
+
+## Legacy Header And Tabs
+
+The following header and tab controls belong to the explicit legacy experience. They remain available for diagnostic
+and compatibility workflows, including existing deep links.
 
 The header summarizes the current runtime:
 
@@ -87,9 +123,9 @@ The top tabs split the workspace into:
 - `Flow Builder`
 - `Shared Test`
 
-The active tab is written to `?tab=...` and saved in browser storage. If you later open the app without a `tab`
-parameter, it returns to the last selected tab. Tab panes stay mounted while hidden, so form edits, recipe text, selected
-commands, topology filters, and event filters remain in place when moving between tabs.
+Within the legacy experience, the active tab is written to `?tab=...` and saved in browser storage. A blank URL does
+not restore that legacy tab; it opens Recipe Console `Execute`. Documented stateful legacy panes retain drafts and live
+state while moving between legacy tabs, while other inactive surfaces are lazy or unmounted.
 
 Above the tabs, the `Global Context` bar holds the common values used by the command-center panels:
 
@@ -119,7 +155,7 @@ every command-center event.
 The trace strip can be collapsed with `Hide` when you need more vertical space. Its heading remains visible with mode
 and latest severity, and `Show` restores the status summary and recent event rows.
 
-Between Global Context and the trace strip, the `Workspace Mode` switch separates direct live Rallar work from
+Between Global Context and the trace strip, the legacy `Workspace Mode` switch separates direct live Rallar work from
 black-box-runner work:
 
 - `Rallar`: Quick Test, Auth, Groups/Clients, WebSocket, RTC/Realtimes, Topology, RTC Diagnostics, Rallar Data, Media,
@@ -134,7 +170,8 @@ runner-owned tab such as `shared-test` or `run-manager` automatically selects th
 
 ## Mobile And Tablet Use
 
-The UI supports phone, tablet, laptop, and large desktop widths. On iPhone Max-sized screens the command-center panels
+Recipe Console and the preserved legacy experience support phone, tablet, laptop, and large desktop widths. On iPhone
+Max-sized screens the command-center panels
 collapse to one-column controls, action buttons use touch-friendly heights, JSON editors stay full width, and dense
 state/event rows render as stacked cards instead of compressed tables. Inputs use mobile-safe font sizes to avoid iOS
 auto-zoom while editing API URLs, groups, selectors, and JSON.
@@ -153,9 +190,9 @@ Rallar, and emits `rallar.direct.*` diagnostics into the trace and event stream.
 simulated provider, the panel shows `real backend required` and does not fall back to fake data. The panel is
 collapsible; the boundary/status heading remains visible when its details are hidden.
 
-The default Rallar tab is `Quick Test`. It is the fastest path for real WS group traffic with two browser sessions:
-create or join the group, subscribe the receiving browser, send JSON from either browser, and inspect received messages
-in the same tab.
+Within the legacy Rallar workspace, `Quick Test` is the default tab and the fastest path for real WS group traffic with
+two browser sessions: create or join the group, subscribe the receiving browser, send JSON from either browser, and
+inspect received messages in the same tab.
 
 The UI also persists selected command ID, Manual Rallar drafts, Event Stream filters, and Rallar Server request drafts
 across reloads. Persisted drafts are sanitized first: Manual Rallar passwords are not stored, JSON editor drafts are
@@ -367,7 +404,9 @@ clutter message/data testing.
 
 ## Local Recipe Workbench
 
-The `Local Workbench` tab is for quick recipe testing without a server.
+The preserved `Local Workbench` tab is for quick recipe testing without a server. Open it from Recipe Console
+`Advanced` or directly with
+`/?experience=legacy&workspace=black-box-runner&tab=local-workbench`.
 
 Use it to:
 
@@ -891,7 +930,8 @@ scenario uses the provider-neutral black-box-runner scenario schema.
 
 ## Shared Test
 
-The `Shared Test` tab bridges the SPA command center to `packages/shared-test/black-box-runner`.
+The preserved `Shared Test` tab bridges the SPA to `packages/shared-test/black-box-runner`. Open it from Recipe Console
+`Advanced` or directly with `/?experience=legacy&workspace=black-box-runner&tab=shared-test`.
 
 The recipe catalog shows:
 
