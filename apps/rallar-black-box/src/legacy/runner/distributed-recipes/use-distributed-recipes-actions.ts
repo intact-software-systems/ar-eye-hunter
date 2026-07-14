@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     cancelDistributedRun, createDistributedRun,
@@ -44,7 +44,6 @@ export function useDistributedRecipesActions({
         usesWorldFleetTargets, manifest, manifestValidation,
         worldFleetBlockReason, setSelectedRecipeIds,
     } = builder;
-    const didInitialRefresh = useRef(false);
     const selectionActions = useDistributedRecipesSelectionActions({
         bootstrap, control, remote, builder,
     });
@@ -53,10 +52,6 @@ export function useDistributedRecipesActions({
     const loadDistributedRun = selectionActions.loadDistributedRun;
 
     useEffect(() => {
-        if (didInitialRefresh.current) {
-            return;
-        }
-        didInitialRefresh.current = true;
         void refresh();
         // The initial refresh intentionally uses the first rendered form values.
         // eslint-disable-next-line react-hooks/exhaustive-deps

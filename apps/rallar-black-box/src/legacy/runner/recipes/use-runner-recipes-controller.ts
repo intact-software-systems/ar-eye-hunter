@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     selectRallarBlackBoxCommandHistory,
@@ -167,7 +167,6 @@ export function useRunnerRecipesController({
         'Choose a recipe and run it from this page.',
     );
     const [launchError, setLaunchError] = useState<string | undefined>();
-    const didInitialRefresh = useRef(false);
     const readinessRequests = useLatestRequestGuard();
     const targetRows = useMemo(
         () =>
@@ -416,10 +415,6 @@ export function useRunnerRecipesController({
     };
 
     useEffect(() => {
-        if (didInitialRefresh.current) {
-            return;
-        }
-        didInitialRefresh.current = true;
         void refreshReadiness();
         // The initial readiness probe intentionally uses the first rendered form values.
         // eslint-disable-next-line react-hooks/exhaustive-deps

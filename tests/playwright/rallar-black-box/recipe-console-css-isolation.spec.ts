@@ -14,6 +14,7 @@ const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 const RECIPE_URL =
     '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
     '&controlRunId=execute-control-a';
+const ADVANCED_URL = RECIPE_URL.replace('view=execute', 'view=advanced');
 const MATCHED_REASON = 'Agent is connected and reports the selected global group.';
 const TUNE_CSS_FIXTURE = {
     retention: 'ready',
@@ -273,6 +274,74 @@ async function captureRealFleetStyles(page: Page) {
         ]),
         artifact: await style(artifact, [
             'background-color', 'border-top-color', 'display', 'min-width',
+        ]),
+    };
+}
+
+async function captureRealAdvancedStyles(page: Page) {
+    const workspace = page.locator('[data-advanced-workspace]');
+    const context = workspace.locator('[data-advanced-context]');
+    const contextGrid = context.locator('dl');
+    const providerRow = context.locator('[data-context-field="provider"]');
+    const catalog = workspace.locator('[data-advanced-catalog]');
+    const category = catalog.locator(
+        '[data-advanced-category="direct-diagnostics"]',
+    );
+    const surfaceLink = category.locator('[data-surface-id="direct.auth"]');
+    const routeLabel = surfaceLink.locator('span').nth(1);
+    for (const owner of [
+        workspace,
+        context,
+        contextGrid,
+        providerRow,
+        catalog,
+        category,
+        surfaceLink,
+        routeLabel,
+    ]) {
+        await expect(owner).toBeVisible();
+    }
+    await expect(workspace.locator('[data-advanced-category]')).toHaveCount(3);
+    await expect(workspace.locator('[data-advanced-surface-link]')).toHaveCount(22);
+
+    const style = async (
+        owner: ReturnType<Page['locator']>,
+        properties: readonly string[],
+    ) => owner.evaluate((node, names) => {
+        const computed = getComputedStyle(node);
+        return Object.fromEntries(names.map(name => [
+            name,
+            computed.getPropertyValue(name),
+        ]));
+    }, properties);
+    return {
+        workspace: await style(workspace, [
+            'display', 'gap', 'min-width', 'padding-bottom',
+        ]),
+        context: await style(context, [
+            'background-color', 'border-bottom-color', 'border-top-color',
+            'display', 'min-width',
+        ]),
+        contextGrid: await style(contextGrid, [
+            'border-top-color', 'display', 'grid-template-columns', 'min-width',
+        ]),
+        providerRow: await style(providerRow, [
+            'background-color', 'border-bottom-color', 'border-right-color',
+            'display', 'grid-template-columns', 'padding',
+        ]),
+        catalog: await style(catalog, [
+            'display', 'gap', 'min-width',
+        ]),
+        category: await style(category, [
+            'background-color', 'border-bottom-color', 'border-top-color',
+            'min-width',
+        ]),
+        surfaceLink: await style(surfaceLink, [
+            'background-color', 'border-radius', 'color', 'display',
+            'grid-template-columns', 'min-height', 'padding',
+        ]),
+        routeLabel: await style(routeLabel, [
+            'color', 'font-family', 'font-size', 'line-height', 'overflow-wrap',
         ]),
     };
 }
@@ -646,6 +715,45 @@ test('matches cold Fleet styles when legacy Fleet loads first', async ({
     await expect(legacyFirst.locator('.app-shell')).toHaveCount(0);
 
     expect(await captureRealFleetStyles(legacyFirst)).toEqual(coldFleet);
+    await legacyFirst.close();
+});
+
+test('preserves real Advanced styles across a Recipe-first legacy round trip',
+    async ({ context, page }) => {
+        await routeLiveExecuteControl(context);
+        await page.goto(ADVANCED_URL);
+        const before = await captureRealAdvancedStyles(page);
+
+        await navigateInApp(
+            page,
+            '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth',
+        );
+        await expect(page.locator('#panel-auth')).toBeVisible();
+        await expect(page.locator('[data-advanced-workspace]')).toHaveCount(0);
+
+        await navigateInApp(page, ADVANCED_URL);
+        await expect(page.locator('.app-shell')).toHaveCount(0);
+        expect(await captureRealAdvancedStyles(page)).toEqual(before);
+    });
+
+test('matches cold Advanced styles when legacy components load first', async ({
+    context,
+    page,
+}) => {
+    await routeLiveExecuteControl(context);
+    await page.goto(ADVANCED_URL);
+    const coldAdvanced = await captureRealAdvancedStyles(page);
+
+    const legacyFirst = await context.newPage();
+    await legacyFirst.goto(
+        '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth',
+    );
+    await expect(legacyFirst.locator('#panel-auth')).toBeVisible();
+    await expect(legacyFirst.locator('[data-advanced-workspace]')).toHaveCount(0);
+    await navigateInApp(legacyFirst, ADVANCED_URL);
+    await expect(legacyFirst.locator('.app-shell')).toHaveCount(0);
+
+    expect(await captureRealAdvancedStyles(legacyFirst)).toEqual(coldAdvanced);
     await legacyFirst.close();
 });
 

@@ -94,7 +94,7 @@ async function expectVisibleView(page: Page, view: RecipeConsoleView): Promise<v
             break;
         case 'advanced':
             await expect(page.locator('[data-preview-view="advanced"]'))
-                .toContainText('Legacy compatibility bridge');
+                .toContainText('Current diagnostic context');
             break;
     }
 }

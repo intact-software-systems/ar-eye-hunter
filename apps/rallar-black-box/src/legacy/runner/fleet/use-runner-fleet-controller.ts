@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
@@ -95,7 +95,6 @@ export function useRunnerFleetController({
     const [lastExport, setLastExport] = useState<
         ControlFleetReportBundle | undefined
     >();
-    const didInitialRefresh = useRef(false);
     const fleetRefreshRequests = useLatestRequestGuard();
     const overrides = useMemo(
         () => parseFleetLabelOverrides(overrideText),
@@ -255,10 +254,6 @@ export function useRunnerFleetController({
     };
 
     useEffect(() => {
-        if (didInitialRefresh.current) {
-            return;
-        }
-        didInitialRefresh.current = true;
         void refreshFleet({ quiet: true });
         // Initial fleet refresh uses first rendered control values.
         // eslint-disable-next-line react-hooks/exhaustive-deps

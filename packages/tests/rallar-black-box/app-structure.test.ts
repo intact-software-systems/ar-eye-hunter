@@ -1913,15 +1913,22 @@ describe('rallar-black-box app source ownership', () => {
         expect(actionsSource, 'actions runtime model import').not.toMatch(
             /import(?!\s+type\b)[^;]*?from\s*['"]\.\/use-distributed-recipe(?:s-remote-state|-builder)\.ts['"];/,
         );
-        expect(actionsSource, 'initial refresh ref owner').toMatch(
-            /const\s+didInitialRefresh\s*=\s*useRef\(false\);/,
-        );
+        expect(
+            task9aImportEdges(task9aSourceFile(actionsPath, actionsSource)).filter(
+                (edge) => edge.startsWith('react|'),
+            ),
+            'actions exact React hook imports',
+        ).toEqual(['react|value:useEffect']);
+        expect(
+            actionsSource,
+            'Strict Mode replay-safe initial refresh has no didInitial latch',
+        ).not.toMatch(/\bdidInitialRefresh\b|\buseRef\b/);
         expect(
             [...actionsSource.matchAll(/\buseEffect\s*\(/g)],
             'actions exact effect count',
         ).toHaveLength(3);
         const effectMarkers = [
-            'if (didInitialRefresh.current)',
+            'void refresh();',
             'setTargetResolutionPreview(undefined);',
             'reconcileDistributedRecipeTargetIds(previous, targetRows)',
         ].map((marker) => actionsSource.indexOf(marker));
@@ -1931,7 +1938,7 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(effectMarkers, 'effect registration order').toEqual(
             [...effectMarkers].sort((left, right) => left - right),
         );
-        expect(actionsSource, 'initial effect comment and suppression').toContain(
+        expect(actionsSource, 'initial effect comment and dependency suppression').toContain(
             `// The initial refresh intentionally uses the first rendered form values.\n        // eslint-disable-next-line react-hooks/exhaustive-deps\n    }, []);`,
         );
         expect(actionsSource, 'preview invalidation dependencies').toMatch(
@@ -5403,10 +5410,11 @@ describe('rallar-black-box app source ownership', () => {
         expect(
             [...controllerSource.matchAll(/\buseRef\s*\(/g)],
             'RunnerRecipes exact ref count',
-        ).toHaveLength(1);
-        expect(controllerSource, 'RunnerRecipes initial refresh ref').toContain(
-            'const didInitialRefresh = useRef(false);',
-        );
+        ).toHaveLength(0);
+        expect(
+            controllerSource,
+            'RunnerRecipes Strict Mode replay-safe initial refresh has no didInitial latch',
+        ).not.toMatch(/\bdidInitialRefresh\b/);
         const actionMarkers = [
             'const resolveDistributedControlToken = async',
             'const refreshReadiness = async',
@@ -5946,8 +5954,12 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft([...aggregate.matchAll(/\buseState(?:<|\s*\()/g)]).toHaveLength(27);
         expect.soft([...aggregate.matchAll(/\buseMemo\s*\(/g)]).toHaveLength(10);
         expect.soft([...aggregate.matchAll(/\buseEffect\s*\(/g)]).toHaveLength(4);
-        expect.soft([...aggregate.matchAll(/\buseRef\s*\(/g)]).toHaveLength(1);
+        expect.soft([...aggregate.matchAll(/\buseRef\s*\(/g)]).toHaveLength(0);
         expect.soft([...aggregate.matchAll(/\buseCallback\s*\(/g)]).toHaveLength(0);
+        expect.soft(
+            controller,
+            'central Strict Mode replay-safe initial refresh has no didInitial latch',
+        ).not.toMatch(/\bdidInitialRefresh\b/);
 
         expect.soft(agentActions, 'actions have no React import').not.toMatch(
             /\bfrom\s*['"]react['"]|\buse[A-Z]\w*\b/,
@@ -6049,7 +6061,7 @@ describe('rallar-black-box app source ownership', () => {
                     '@shared-test/rallar-bb-test/selectors.ts|value:selectRallarBlackBoxCommandHistory,value:selectRallarBlackBoxFailures,value:selectRallarBlackBoxFirstFailure',
                     '@shared-test/rallar-bb-test/types.ts|type:RallarBlackBoxTestState',
                     '@shared/api/api-config.ts|type:AuthSession',
-                    'react|value:useEffect,value:useMemo,value:useRef,value:useState',
+                    'react|value:useEffect,value:useMemo,value:useState',
                 ],
             ],
             [
@@ -6153,7 +6165,7 @@ describe('rallar-black-box app source ownership', () => {
             [catalogHookPath, 'useRunnerRecipeCatalog', '4bf50cb94592de66fdc974223a5659e76ed261a3932d647acd7225650b79a584'],
             [agentHookPath, 'useRunnerAgentLaunchState', 'a01124ddab504f883eedc382ba31afb593e406a7884a6331ef62072999ba02c1'],
             [agentActionsPath, 'createRunnerAgentLaunchActions', '3501b2153573cdfed7b3e8d2f47dc512217d12562e0fad6de7c526c71c8e181f'],
-            [controllerPath, 'useRunnerRecipesController', '18f39de90321d7a3380fad86e9ad1a1f3e301858b881e075fb2043fb074b4571'],
+            [controllerPath, 'useRunnerRecipesController', '6121cf9bbf951a489136c9fe713d79891ead218be988ab98f1f92bccd32b18d1'],
             [panelPath, 'RunnerRecipesPanel', 'ec8f1d339081250a5760d16b43587177836f9bf10cfbc22bbd94161096e6d650'],
         ] as const) {
             const declaration = functionDeclaration(path, name);
@@ -6189,7 +6201,7 @@ describe('rallar-black-box app source ownership', () => {
             '8f43bfaf1fd16a64b47556e02ceadb351e0b06ea1734f97956c8cfd93892f80f',
             '8af41adc7940438971685cd314d6aa15304ee5871c71bc18d213381b103ad364',
             '8afcc03c7abec76625fb5ffa951197e83e83c542c4f91dc171db7fae4e7bdd1f',
-            '7f42af89a9324e46ef01e5221f32d622e8a02e95545e2f7336efb0ed8d227e1a',
+            '8ff6d31dc92471dafb23d1fdb4b9576c55db2e6560da8f88de686d1d70170b6c',
         ]);
 
         const panelDeclaration = functionDeclaration(
@@ -6567,12 +6579,15 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             [...controllerSource.matchAll(/const (\w+) = useRef(?:<|\s*\()/g)]
                 .map((match) => match[1]),
-            'Runs exact three-ref order',
+            'Runs exact two-ref order',
         ).toEqual([
-            'didInitialDistributedRefresh',
             'manualDistributedRefreshActive',
             'activeSyntheticSeedRef',
         ]);
+        expect.soft(
+            controllerSource,
+            'Runs Strict Mode replay-safe initial refresh has no didInitial latch',
+        ).not.toMatch(/\bdidInitialDistributedRefresh\b/);
         expect.soft(
             [...controllerSource.matchAll(/\buseEffect\s*\(/g)],
             'Runs exact effect count',
@@ -6594,7 +6609,7 @@ describe('rallar-black-box app source ownership', () => {
             ),
             'Runs exact token-complete pre-return controller AST',
         ).toBe(
-            'ec63a6d1af3b0fa693682e7ec8172b59c368c4b35f565c0b88ac96492f84288d',
+            'e35f84b999b9f1dfe72f505ee66cf228c481b3b4035de543eb20c728a925691a',
         );
         const effectCalls = controller.body!.statements.flatMap((statement) =>
             ts.isExpressionStatement(statement) &&
@@ -6609,7 +6624,7 @@ describe('rallar-black-box app source ownership', () => {
             'Runs exact effect registration/body/dependency order',
         ).toEqual([
             'e499a588e7200c463fd6a29cacaefd64ea1edcc79530576996e7ff4565a98e59',
-            'a04e6d0f649507f3116b16e4d910e77bdf4c7db4d41d7ed081f63ef19d5ad2b7',
+            'a2a57e31816d65afa1ef6a2ffd2fc319d330ba4804b7d8bf0634a9b511aec896',
             'f14b8abfc30204050a31d70d5f7b9426d550864b14b41778ee769637fe234b95',
             '70a26a1d15c03b8f1e725637858bdb7b672cb18e3a2190d627b5eb0080b95c08',
         ]);
@@ -7157,12 +7172,15 @@ describe('rallar-black-box app source ownership', () => {
         expect.soft(
             [...controllerText.matchAll(/const (\w+) = useRef(?:<|\s*\()/g)]
                 .map((match) => match[1]),
-            'controller exact three-ref order',
+            'controller exact two-ref order',
         ).toEqual([
-            'didInitialDistributedRefresh',
             'manualDistributedRefreshActive',
             'activeSyntheticSeedRef',
         ]);
+        expect.soft(
+            controllerText,
+            'controller Strict Mode replay-safe initial refresh has no didInitial latch',
+        ).not.toMatch(/\bdidInitialDistributedRefresh\b/);
         expect.soft(
             [...controllerText.matchAll(/\buseEffect\s*\(/g)],
             'controller exact effects',
@@ -7180,13 +7198,13 @@ describe('rallar-black-box app source ownership', () => {
                       controllerReturnIndex,
                   )
                 : [];
-        expect.soft(preReturnStatements, 'all 48 controller statements')
-            .toHaveLength(48);
+        expect.soft(preReturnStatements, 'all 47 controller statements')
+            .toHaveLength(47);
         expect.soft(
             task9aAstFingerprint(preReturnStatements),
             'controller exact token-complete pre-return AST',
         ).toBe(
-            'ec63a6d1af3b0fa693682e7ec8172b59c368c4b35f565c0b88ac96492f84288d',
+            'e35f84b999b9f1dfe72f505ee66cf228c481b3b4035de543eb20c728a925691a',
         );
 
         const statementsByName = new Map<string, ts.VariableStatement>();
@@ -7280,7 +7298,7 @@ describe('rallar-black-box app source ownership', () => {
             'controller exact effect bodies/dependencies/order',
         ).toEqual([
             'e499a588e7200c463fd6a29cacaefd64ea1edcc79530576996e7ff4565a98e59',
-            'a04e6d0f649507f3116b16e4d910e77bdf4c7db4d41d7ed081f63ef19d5ad2b7',
+            'a2a57e31816d65afa1ef6a2ffd2fc319d330ba4804b7d8bf0634a9b511aec896',
             'f14b8abfc30204050a31d70d5f7b9426d550864b14b41778ee769637fe234b95',
             '70a26a1d15c03b8f1e725637858bdb7b672cb18e3a2190d627b5eb0080b95c08',
         ]);
@@ -7792,6 +7810,20 @@ describe('rallar-black-box app source ownership', () => {
         const runManagerSource = existsSync(resolve(repositoryRoot, runManagerPath))
             ? repositorySource(runManagerPath)
             : '';
+        expect(
+            [...runManagerSource.matchAll(/\buseRef(?:<|\s*\()/g)],
+            'Run Manager retains only the diagnostic selection ref',
+        ).toHaveLength(1);
+        expect(
+            runManagerSource,
+            'Run Manager diagnostic selection ref owner',
+        ).toContain(
+            'const lastDiagnosticControlRunId = useRef(diagnosticControlRunId);',
+        );
+        expect(
+            runManagerSource,
+            'Run Manager Strict Mode replay-safe initial refresh has no didInitial latch',
+        ).not.toMatch(/\bdidInitialRefresh\b/);
         const importedLocalDuplicates = [
             'RunManagerAgentRow',
             'RunManagerCommandList',
@@ -8555,7 +8587,7 @@ describe('rallar-black-box app source ownership', () => {
                 './fleet-rollups.ts|value:fleetDisplaySummary,value:fleetFailureRows',
                 './fleet-timing.ts|value:fleetTimingGroupsByRecipe,value:fleetTimingGroupsByRegion',
                 './fleet-types.ts|type:FleetFilterState',
-                'react|value:useEffect,value:useMemo,value:useRef,value:useState',
+                'react|value:useEffect,value:useMemo,value:useState',
             ]],
             [panelPath, [
                 './use-runner-fleet-controller.ts|type:UseRunnerFleetControllerInput,value:useRunnerFleetController',
@@ -8822,17 +8854,17 @@ describe('rallar-black-box app source ownership', () => {
         const preReturn = returnIndex >= 0
             ? controllerStatements.slice(0, returnIndex)
             : [];
-        expect.soft(preReturn, '47 exact pre-return controller statements').toHaveLength(47);
+        expect.soft(preReturn, '46 exact pre-return controller statements').toHaveLength(46);
         expect.soft(
             task9aAstFingerprint(preReturn),
             'token-complete Fleet controller hook',
-        ).toBe('12276c3a0e87b70e2ea10c43cadd96f66222d841e6db5446c2a9816f0ab1a664');
+        ).toBe('d56d3d089903d042e0702983cf4071e0f7ed52f4877725a59f40a2f3e5bf7a14');
         expect.soft(
             task9aAstFingerprint(preReturn.filter((statement) =>
                 /\buse(?:State|Memo|Ref|Effect)\s*(?:<|\()/.test(statement.getText()),
             )),
             'exact Fleet hook-bearing statements',
-        ).toBe('dc15e915d5585804686e36a0844e70986bfdbe12aed6e83ec8a8aa911ab17b7b');
+        ).toBe('ccffb03efef237b861a74edf49643ae13b8b37b3b0eb13eb39baac510833804e');
         const hookCalls = { useState: 0, useMemo: 0, useRef: 0, useEffect: 0, useCallback: 0 };
         const visitControllerHooks = (node: ts.Node): void => {
             if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text in hookCalls) {
@@ -8842,8 +8874,12 @@ describe('rallar-black-box app source ownership', () => {
         };
         visitControllerHooks(controller);
         expect.soft(hookCalls, 'Fleet controller hook topology').toEqual({
-            useState: 15, useMemo: 17, useRef: 1, useEffect: 4, useCallback: 0,
+            useState: 15, useMemo: 17, useRef: 0, useEffect: 4, useCallback: 0,
         });
+        expect.soft(
+            controllerSource,
+            'Fleet Strict Mode replay-safe initial refresh has no didInitial latch',
+        ).not.toMatch(/\bdidInitialRefresh\b/);
         const effects: ts.CallExpression[] = [];
         const visitControllerEffects = (node: ts.Node): void => {
             if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'useEffect') effects.push(node);
@@ -8851,7 +8887,7 @@ describe('rallar-black-box app source ownership', () => {
         };
         visitControllerEffects(controller);
         expect.soft(effects.map((effect) => task9aAstFingerprint([effect])), 'exact Fleet effects').toEqual([
-            '12a49a857f746ca8e6fcdc92ad09893d333631bf88dad1bdeffe380b74b91ba4',
+            'fcf6243b86af4960265ba8e94ee29bda5627b69c8647c845460d39094c5a653b',
             '9016a31a96ecc30de10cc5047a74e80b9ebb6eebec46e2a06ce1fe39f11acb50',
             'afcd6dbc355b0833cf12a8cd8bd0d872ae93c7d2bbfb140c4f4770394fb90ab5',
             '568263a7b6f1fafd7e1566e41530534bcae773d9aafc8c0196fa272906198890',
@@ -8867,7 +8903,7 @@ describe('rallar-black-box app source ownership', () => {
                 .map((statement) => task9aAstFingerprint([statement])),
             'exact Fleet effect statements',
         ).toEqual([
-            'e105809fc0853fd897ef3af0f7651efffd9191965562c1a56584b9f657aa3f80',
+            '405efb7ed7e05381925d29862488f87d91b520dcf3469f0292eb7ea47b85e90e',
             'a6a50c52b0f7061c6327bae9af01dfcf710c1e9d4fdf5a2aeb27783eb3b6cf00',
             '9cd28a1de469aee9cc5a98be7938479156c3a6740d406ddbdc529e28985389a7',
             'c05e7daa34881115888d79c0c1e8cb77de5119e800815bff35bbdc8e5e698912',

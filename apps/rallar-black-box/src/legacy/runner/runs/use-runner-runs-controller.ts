@@ -139,7 +139,6 @@ export function useRunnerRunsController({
         initialSyntheticSeed?.distributedRun.distributedRunId ?? '',
     );
     const [compareRightId, setCompareRightId] = useState('');
-    const didInitialDistributedRefresh = useRef(false);
     const distributedRefreshRequests = useLatestRequestGuard();
     const manualDistributedRefreshActive = useRef(false);
     const activeSyntheticSeedRef = useRef<SyntheticDistributedRunSeed | undefined>(
@@ -505,13 +504,11 @@ export function useRunnerRunsController({
 
     useEffect(() => {
         if (
-            didInitialDistributedRefresh.current ||
             preferredDistributedRun ||
             activeSyntheticSeedRef.current
         ) {
             return;
         }
-        didInitialDistributedRefresh.current = true;
         void refreshDistributedAnalysis(undefined, { quiet: true });
         // Initial distributed analysis uses first rendered control values.
         // eslint-disable-next-line react-hooks/exhaustive-deps

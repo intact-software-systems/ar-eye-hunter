@@ -45,6 +45,72 @@ async function openRunnerSurface(page: Page, tab: RunnerSurfaceTab): Promise<voi
     await expect(page.locator(`#panel-${tab}`)).toBeVisible();
 }
 
+test('moves legacy tab focus with roving keys and recovers it after panel navigation', async ({ page }) => {
+    await page.goto('/?provider=simulated&workspace=black-box-runner&tab=recipes');
+
+    const recipes = page.getByRole('tab', { name: 'Recipes', exact: true });
+    const runs = page.getByRole('tab', { name: 'Runs', exact: true });
+    const eventStream = page.getByRole('tab', { name: 'Event Stream', exact: true });
+    const advanced = page.getByRole('tab', { name: 'Advanced', exact: true });
+    await recipes.focus();
+
+    await page.keyboard.press('ArrowRight');
+    await expect(runs).toHaveAttribute('aria-selected', 'true');
+    await expect(runs).toBeFocused();
+    await expect(page.locator('#panel-runs')).toBeVisible();
+
+    await page.keyboard.press('Home');
+    await expect(recipes).toHaveAttribute('aria-selected', 'true');
+    await expect(recipes).toBeFocused();
+    await expect(page.locator('#panel-recipes')).toBeVisible();
+
+    await page.keyboard.press('End');
+    await expect(advanced).toHaveAttribute('aria-selected', 'true');
+    await expect(advanced).toBeFocused();
+    await expect(page.locator('#panel-advanced')).toBeVisible();
+
+    await page.keyboard.press('ArrowLeft');
+    await expect(eventStream).toHaveAttribute('aria-selected', 'true');
+    await expect(eventStream).toBeFocused();
+    await expect(page.locator('#panel-event-stream')).toBeVisible();
+
+    await recipes.click();
+    const openAdvanced = page.locator('#panel-recipes')
+        .getByRole('button', { name: 'Open Advanced', exact: true });
+    await expect(openAdvanced).toBeVisible();
+    await openAdvanced.click();
+    await expect(openAdvanced).toHaveCount(0);
+    await expect(advanced).toHaveAttribute('aria-selected', 'true');
+    await expect(advanced).toBeFocused();
+    await expect(page.locator('#panel-advanced')).toBeVisible();
+});
+
+test('recovers tab focus when a retained legacy panel becomes hidden', async ({ page }) => {
+    await page.goto('/?provider=simulated&workspace=rallar&tab=quick-test');
+
+    const quickPanel = page.locator('#panel-quick-test');
+    const quickControl = quickPanel.getByRole('button', {
+        includeHidden: true,
+        name: 'Hide Quick Test Info',
+        exact: true,
+    });
+    await quickControl.focus();
+    await expect(quickControl).toBeFocused();
+    await page.evaluate(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', 'auth');
+        window.history.pushState({}, '', url);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+
+    await expect(quickControl).toHaveCount(1);
+    await expect(quickPanel).toBeHidden();
+    const auth = page.getByRole('tab', { name: 'Auth', exact: true });
+    await expect(auth).toHaveAttribute('aria-selected', 'true');
+    await expect(auth).toBeFocused();
+    await expect(page.locator('#panel-auth')).toBeVisible();
+});
+
 test('opens a tab from the URL and updates tab state in the address bar', async ({ page }) => {
     await page.goto('/?provider=simulated&tab=rtc-diagnostics');
 

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act, createElement } from 'react';
+import { act, createElement, StrictMode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
@@ -40,6 +40,7 @@ describe('legacy safe-surface effect lifetime', () => {
         originalFetch = globalThis.fetch;
         sigmaLifecycle.constructed = 0;
         sigmaLifecycle.killed = 0;
+        window.history.replaceState(null, '', '/');
         container = document.createElement('div');
         document.body.append(container);
         root = createRoot(container);
@@ -214,6 +215,143 @@ describe('legacy safe-surface effect lifetime', () => {
 
         expect(paths).toEqual(['/distributed-runs']);
     });
+
+    it('completes a Runs URL-ticket refresh after the Strict Mode effect replay', async () => {
+        const paths: string[] = [];
+        window.history.replaceState(
+            null,
+            '',
+            '/?experience=legacy&workspace=black-box-runner&tab=runs' +
+                '&controlRunId=control-a&distributedRunId=distributed-a',
+        );
+        globalThis.fetch = vi.fn(async (input) => {
+            const pathname = new URL(String(input)).pathname;
+            paths.push(pathname);
+            if (pathname === '/distributed-runs') {
+                return jsonResponse({
+                    distributedRuns: [distributedRunSnapshot()],
+                });
+            }
+            if (pathname === '/distributed-runs/distributed-a') {
+                return jsonResponse(distributedRunSnapshot());
+            }
+            if (pathname === '/runs/control-a') {
+                return jsonResponse(controlRunSnapshot('control-a'));
+            }
+            throw new Error(`Unexpected request: ${pathname}`);
+        }) as typeof globalThis.fetch;
+
+        await act(async () => {
+            root.render(createElement(
+                StrictMode,
+                undefined,
+                createElement(RunnerRunsPanel, {
+                    state: baseState(),
+                    bootstrap: { controlUrl: 'ws://control.test/control' },
+                    control: controlSnapshot('control-a'),
+                }),
+            ));
+            await flushAsyncWork();
+        });
+
+        const distributedRunSelect = [...container.querySelectorAll('select')]
+            .find((select) => select.previousElementSibling?.textContent ===
+                'Distributed Run');
+        expect(distributedRunSelect?.value).toBe('distributed-a');
+        expect(paths).toContain('/distributed-runs/distributed-a');
+        expect(paths).toContain('/runs/control-a');
+    });
+
+    it.each([
+        [
+            'Run Manager',
+            () => createElement(RunManagerPanel, {
+                state: baseState(),
+                bootstrap: { controlUrl: 'ws://control.test/control' },
+                control: controlSnapshot('control-a'),
+            }),
+            '/runs/control-a',
+        ],
+        [
+            'Distributed Recipes',
+            () => createElement(DistributedRecipesPanel, {
+                state: baseState(),
+                bootstrap: {
+                    controlUrl: 'ws://control.test/control',
+                    providerMode: 'simulated',
+                },
+                control: controlSnapshot('control-a'),
+                globalValues: globalValues(),
+            }),
+            '/runs/control-a',
+        ],
+        [
+            'Recipes',
+            () => createElement(RunnerRecipesPanel, {
+                state: baseState(),
+                bootstrap: {
+                    controlUrl: 'ws://control.test/control',
+                    providerMode: 'simulated',
+                },
+                control: controlSnapshot('control-a'),
+                globalValues: globalValues(),
+                busy: false,
+                runState: 'idle',
+                onDistributedRunStarted: vi.fn(),
+                onOpenTab: vi.fn(),
+            }),
+            '/runs/control-a',
+        ],
+        [
+            'Fleet',
+            () => createElement(RunnerFleetPanel, {
+                bootstrap: { controlUrl: 'ws://control.test/control' },
+                control: controlSnapshot('control-a'),
+                globalValues: globalValues(),
+            }),
+            '/runs',
+        ],
+    ] as const)(
+        'completes the %s initial refresh after the Strict Mode effect replay',
+        async (_name, component, expectedFollowUpPath) => {
+            const paths: string[] = [];
+            globalThis.fetch = vi.fn(async (input) => {
+                const pathname = new URL(String(input)).pathname;
+                paths.push(pathname);
+                if (pathname === '/runs') {
+                    return jsonResponse({
+                        runs: [controlRunSnapshot('control-a')],
+                    });
+                }
+                if (pathname === '/runs/control-a') {
+                    return jsonResponse(controlRunSnapshot('control-a'));
+                }
+                if (pathname === '/distributed-runs') {
+                    return jsonResponse({
+                        distributedRuns: [distributedRunSnapshot()],
+                    });
+                }
+                if (pathname === '/fleet/reports') {
+                    return jsonResponse(emptyFleetReportsResponse());
+                }
+                if (pathname.startsWith('/api/')) {
+                    return jsonResponse({});
+                }
+                throw new Error(`Unexpected request: ${pathname}`);
+            }) as typeof globalThis.fetch;
+
+            await act(async () => {
+                root.render(createElement(StrictMode, undefined, component()));
+                await flushAsyncWork();
+            });
+
+            expect(paths).toContain(expectedFollowUpPath);
+            if (expectedFollowUpPath === '/runs') {
+                expect(paths.filter(path => path === '/runs').length)
+                    .toBeGreaterThan(0);
+            }
+        },
+    );
 
     it('does not let a Runs poll supersede an in-flight operator refresh', async () => {
         const operatorResponse = deferred<Response>();
@@ -424,6 +562,29 @@ function globalValues() {
         clientId: 'client-a',
         sessionId: 'session-a',
         roomId: 'group-a',
+    } as const;
+}
+
+function emptyFleetReportsResponse() {
+    return {
+        reports: [],
+        aggregate: {
+            generatedAtEpochMs: 1,
+            reportCount: 0,
+            runCount: 0,
+            agentCount: 0,
+            regionCount: 0,
+            passRate: 0,
+            staleAgentCount: 0,
+            flakyAgentCount: 0,
+            failureGroupCount: 0,
+            timing: {
+                runs: { count: 0, p95Ms: 0 },
+                commands: { count: 0, p95Ms: 0 },
+            },
+            regions: [],
+            failureSignatures: [],
+        },
     } as const;
 }
 

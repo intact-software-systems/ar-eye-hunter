@@ -83,7 +83,6 @@ export function RunManagerPanel({
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [lastAction, setLastAction] = useState<string | undefined>();
-    const didInitialRefresh = useRef(false);
     const lastDiagnosticControlRunId = useRef(diagnosticControlRunId);
     const selectionRequests = useLatestRequestGuard();
     const stats = useMemo(() => controlRunManagerStats(snapshot), [snapshot]);
@@ -186,11 +185,6 @@ export function RunManagerPanel({
     };
 
     useEffect(() => {
-        if (didInitialRefresh.current) {
-            return;
-        }
-
-        didInitialRefresh.current = true;
         void refresh();
         // The initial refresh intentionally uses the first rendered form values.
         // eslint-disable-next-line react-hooks/exhaustive-deps

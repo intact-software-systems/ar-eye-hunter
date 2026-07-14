@@ -221,24 +221,45 @@ test('routes bounded Analyze Fleet and Advanced workspaces', async ({ page }) =>
     await expect(page).toHaveURL(/view=advanced/);
     await expect(page.locator('[data-analyze-workspace]')).toHaveCount(0);
     const advanced = page.locator('[data-preview-view="advanced"]');
-    await expect(advanced.getByRole('heading', { name: 'Legacy compatibility bridge' }))
+    await expect(advanced.getByRole('heading', { name: 'Current diagnostic context' }))
         .toBeVisible();
-    for (const [label, tab] of [
-        ['Auth', 'auth'],
-        ['Groups', 'rooms-clients'],
-        ['WebSocket', 'websocket'],
-        ['RTC', 'rtc-diagnostics'],
-        ['Data', 'rallar-data'],
-        ['CRDT', 'crdt-health'],
-        ['Media', 'media'],
-        ['Server', 'rallar-server'],
-        ['Tracing', 'rallar-trace'],
+    for (const heading of [
+        'Direct Diagnostics',
+        'Preserved Workflow Fallbacks',
+        'Advanced Legacy',
+    ]) {
+        await expect(advanced.getByRole('heading', { name: heading }))
+            .toBeVisible();
+    }
+    const advancedLinks = advanced.locator('[data-advanced-surface-link]');
+    await expect(advancedLinks).toHaveCount(22);
+    for (const [label, route] of [
+        ['Auth', { workspace: 'rallar', tab: 'auth', surface: 'direct.auth' }],
+        ['Runs', {
+            workspace: 'black-box-runner',
+            tab: 'runs',
+            surface: 'runner.runs',
+        }],
+        ['Shared Test', {
+            workspace: 'black-box-runner',
+            tab: 'advanced',
+            advancedSurface: 'shared-test',
+            surface: 'legacy.shared-test-catalog',
+        }],
     ] as const) {
-        await expect(advanced.getByRole('link', { name: label, exact: true }))
-            .toHaveAttribute(
-                'href',
-                `/?provider=simulated&experience=legacy&tab=${tab}`,
-            );
+        const href = await advanced.getByRole('link', { name: new RegExp(`^${label}`) })
+            .getAttribute('href');
+        const target = new URL(href ?? '', page.url());
+        expect(target.searchParams.get('experience')).toBe('legacy');
+        expect(target.searchParams.get('workspace')).toBe(route.workspace);
+        expect(target.searchParams.get('tab')).toBe(route.tab);
+        expect(target.searchParams.get('legacySurface')).toBe(route.surface);
+        expect(target.searchParams.get('diagnosticContext')).toBe('1');
+        expect(target.searchParams.get('provider')).toBe('simulated');
+        if ('advancedSurface' in route) {
+            expect(target.searchParams.get('advancedSurface'))
+                .toBe(route.advancedSurface);
+        }
     }
     await expect(page.locator('.app-shell')).toHaveCount(0);
     expect(await page.evaluate(() => history.length)).toBeGreaterThanOrEqual(initialHistoryLength + 2);

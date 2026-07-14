@@ -188,7 +188,7 @@
         padding-inline: 6px;
     }
 
-    .navigationItem {
+    .primaryNavigation .navigationItem {
         flex-direction: column;
         justify-content: center;
         gap: 2px;
@@ -261,7 +261,7 @@
         border-right: 0;
     }
 
-    .navigationItem {
+    .primaryNavigation .navigationItem {
         min-width: 44px;
         min-height: 44px;
         flex: 1;
@@ -331,7 +331,7 @@
         border-right: 1px solid var(--rc-border);
     }
 
-    .navigationItem {
+    .primaryNavigation .navigationItem {
         flex: 0 0 44px;
         font-size: 9px;
     }

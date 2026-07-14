@@ -1,4 +1,9 @@
-import { expect, test, type Locator } from '@playwright/test';
+import {
+    expect,
+    test,
+    type BrowserContext,
+    type Locator,
+} from '@playwright/test';
 import { chooseAnalyzeFiles } from './recipe-console-analyze-helpers.ts';
 import {
     installRecipeConsoleMonitorFixture,
@@ -18,6 +23,35 @@ import {
 import { chooseTuneListboxOptionWithKeyboard } from
     './recipe-console-tune-listbox-helpers.ts';
 
+const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
+const ADVANCED_ROUTE =
+    '/?provider=simulated&v=1&experience=recipe-console&view=advanced' +
+    '&controlRunId=advanced-control&distributedRunId=advanced-distributed' +
+    '&agentId=advanced-agent&recipeId=advanced-recipe&commandId=advanced-command';
+
+async function installEmptyControlFixture(
+    context: BrowserContext,
+): Promise<void> {
+    await context.route(CONTROL_ROUTE, route => {
+        if (route.request().method() === 'OPTIONS') {
+            return route.fulfill({
+                status: 204,
+                headers: {
+                    'access-control-allow-headers': 'content-type',
+                    'access-control-allow-methods': 'GET,POST,OPTIONS',
+                    'access-control-allow-origin': '*',
+                },
+            });
+        }
+        return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            headers: { 'access-control-allow-origin': '*' },
+            body: JSON.stringify({ runs: [], distributedRuns: [] }),
+        });
+    });
+}
+
 async function expectMinimumTargetHeight(locator: Locator, label: string): Promise<void> {
     await expect(locator.first(), `${label} should resolve a visible control`).toBeVisible();
     const count = await locator.count();
@@ -32,6 +66,49 @@ async function expectMinimumTargetHeight(locator: Locator, label: string): Promi
                 .toBeGreaterThanOrEqual(44);
         }
     }
+}
+
+async function expectSelectedNavigationLabelContained(
+    navigation: Locator,
+    expectedFontSize: string,
+    label: string,
+): Promise<void> {
+    const button = navigation.locator('button[aria-current="page"]');
+    await expect(button).toHaveCSS('font-size', expectedFontSize);
+    const geometry = await button.evaluate(node => {
+        const text = node.querySelector(':scope > span');
+        const nav = node.closest('nav');
+        if (!(text instanceof HTMLElement) || !(nav instanceof HTMLElement)) {
+            throw new Error('Missing selected navigation label geometry owner.');
+        }
+        const rect = (element: Element) => {
+            const bounds = element.getBoundingClientRect();
+            return {
+                bottom: bounds.bottom,
+                left: bounds.left,
+                right: bounds.right,
+                top: bounds.top,
+            };
+        };
+        return {
+            button: rect(node),
+            label: rect(text),
+            navigation: rect(nav),
+        };
+    });
+    const epsilon = 0.01;
+    expect(geometry.label.left, `${label} label left inside button`)
+        .toBeGreaterThanOrEqual(geometry.button.left - epsilon);
+    expect(geometry.label.right, `${label} label right inside button`)
+        .toBeLessThanOrEqual(geometry.button.right + epsilon);
+    expect(geometry.label.top, `${label} label top inside button`)
+        .toBeGreaterThanOrEqual(geometry.button.top - epsilon);
+    expect(geometry.label.bottom, `${label} label bottom inside button`)
+        .toBeLessThanOrEqual(geometry.button.bottom + epsilon);
+    expect(geometry.label.left, `${label} label left inside navigation`)
+        .toBeGreaterThanOrEqual(geometry.navigation.left - epsilon);
+    expect(geometry.label.right, `${label} label right inside navigation`)
+        .toBeLessThanOrEqual(geometry.navigation.right + epsilon);
 }
 
 test('renders scoped shell geometry at every contract viewport', async ({
@@ -487,6 +564,223 @@ test('keeps real History and retention coarse targets at least 44px', async ({
         'Retention dialog action',
     );
     await context.close();
+});
+
+test('keeps Direction A Advanced contained across desktop, tablet, and genuine touch',
+    async ({ browser }) => {
+        test.setTimeout(60_000);
+        for (const contract of [
+            {
+                name: 'desktop',
+                viewport: { width: 1440, height: 900 },
+                navigation: 'rail',
+                inspector: 'rail',
+                contextColumns: 2,
+                linkColumns: 2,
+                navigationFontSize: '13px',
+                scrollOwner: 'work',
+                touch: false,
+            },
+            {
+                name: 'tablet',
+                viewport: { width: 900, height: 900 },
+                navigation: 'compact-rail',
+                inspector: 'overlay',
+                contextColumns: 2,
+                linkColumns: 2,
+                navigationFontSize: '10px',
+                scrollOwner: 'work',
+                touch: false,
+            },
+            {
+                name: 'touch portrait',
+                viewport: { width: 430, height: 932 },
+                navigation: 'bottom',
+                inspector: 'sheet',
+                contextColumns: 1,
+                linkColumns: 1,
+                navigationFontSize: '9px',
+                scrollOwner: 'work',
+                touch: true,
+            },
+            {
+                name: 'touch landscape',
+                viewport: { width: 932, height: 430 },
+                navigation: 'compact-rail',
+                inspector: 'overlay',
+                contextColumns: 2,
+                linkColumns: 2,
+                navigationFontSize: '9px',
+                scrollOwner: 'advanced',
+                touch: true,
+            },
+        ] as const) {
+            const context = await browser.newContext({
+                baseURL: 'http://127.0.0.1:5176',
+                hasTouch: contract.touch,
+                viewport: contract.viewport,
+            });
+            await installEmptyControlFixture(context);
+            const page = await context.newPage();
+            try {
+                await page.goto(ADVANCED_ROUTE);
+                const shell = page.locator('[data-recipe-console-shell]');
+                const advanced = page.locator('[data-advanced-workspace]');
+                const contextGrid = advanced.locator('[data-advanced-context] dl');
+                const links = advanced.locator('[data-advanced-surface-link]');
+                const firstLink = links.first();
+
+                const viewHeading = page.getByRole('heading', {
+                    level: 1,
+                    name: 'Advanced',
+                });
+                await expect(viewHeading).toHaveText('Advanced');
+                if (contract.navigation === 'bottom') {
+                    await expect(viewHeading).toBeVisible();
+                }
+                await expect(advanced).toBeVisible();
+                await expect(shell).toHaveAttribute(
+                    'data-navigation',
+                    contract.navigation,
+                );
+                await expect(shell).toHaveAttribute(
+                    'data-inspector-mode',
+                    contract.inspector,
+                );
+                await expect(advanced.locator('[data-advanced-category]'))
+                    .toHaveCount(3);
+                await expect(links).toHaveCount(22);
+                expect(await contextGrid.evaluate(element =>
+                    getComputedStyle(element).gridTemplateColumns
+                        .split(/\s+/u)
+                        .filter(Boolean)
+                ), `${contract.name} context columns`).toHaveLength(
+                    contract.contextColumns,
+                );
+                expect(await firstLink.evaluate(element =>
+                    getComputedStyle(element).gridTemplateColumns
+                        .split(/\s+/u)
+                        .filter(Boolean)
+                ), `${contract.name} link columns`).toHaveLength(
+                    contract.linkColumns,
+                );
+                await expectMinimumTargetHeight(
+                    page.locator('[data-primary-navigation] button'),
+                    `${contract.name} primary navigation`,
+                );
+                await expectSelectedNavigationLabelContained(
+                    page.locator('[data-primary-navigation]'),
+                    contract.navigationFontSize,
+                    contract.name,
+                );
+                const clippedNavigationLabels = await page.locator(
+                    '[data-primary-navigation] button',
+                ).evaluateAll(buttons => buttons.flatMap(button => {
+                    const label = button.querySelector('span');
+                    if (!label) return [];
+                    const buttonRect = button.getBoundingClientRect();
+                    const labelRect = label.getBoundingClientRect();
+                    const contained = labelRect.left >= buttonRect.left - 0.5 &&
+                        labelRect.right <= buttonRect.right + 0.5;
+                    return contained ? [] : [{
+                        buttonWidth: buttonRect.width,
+                        label: label.textContent ?? '',
+                        labelWidth: labelRect.width,
+                        leftOverflow: buttonRect.left - labelRect.left,
+                        rightOverflow: labelRect.right - buttonRect.right,
+                    }];
+                }));
+                expect(
+                    clippedNavigationLabels,
+                    `${contract.name} navigation labels stay inside their controls`,
+                ).toEqual([]);
+                await expectMinimumTargetHeight(
+                    links,
+                    `${contract.name} Advanced link`,
+                );
+                expect(await page.evaluate(() => ({
+                    x: document.documentElement.scrollWidth -
+                        document.documentElement.clientWidth,
+                    y: document.documentElement.scrollHeight -
+                        document.documentElement.clientHeight,
+                })), `${contract.name} document overflow`).toEqual({ x: 0, y: 0 });
+                const scrollOwner = contract.scrollOwner === 'advanced'
+                    ? advanced
+                    : page.locator('[data-work-surface]');
+                expect(await scrollOwner.evaluate(element =>
+                    element.scrollHeight > element.clientHeight
+                ), `${contract.name} internal work scrolling`).toBe(true);
+                if (contract.scrollOwner === 'advanced') {
+                    await expect(scrollOwner).toHaveCSS('overflow-y', 'auto');
+                }
+
+                const modality = await page.evaluate(() => ({
+                    coarse: matchMedia('(pointer: coarse)').matches,
+                    hoverNone: matchMedia('(hover: none)').matches,
+                    touchPoints: navigator.maxTouchPoints,
+                }));
+                if (contract.touch) {
+                    expect(modality, `${contract.name} touch emulation`).toEqual({
+                        coarse: true,
+                        hoverNone: true,
+                        touchPoints: 1,
+                    });
+                    const selectedNavigation = page.locator(
+                        '[data-primary-navigation] button[aria-current="page"]',
+                    );
+                    await selectedNavigation.focus();
+                    await page.keyboard.press('Tab');
+                    await expect(firstLink).toBeFocused();
+                    await page.keyboard.press('Tab');
+                    await expect(links.nth(1)).toBeFocused();
+                    await expect(links.nth(1)).toHaveCSS('outline-style', 'solid');
+                    expect(await links.nth(1).evaluate(element =>
+                        element.matches(':hover')
+                    )).toBe(false);
+                } else {
+                    expect(modality.touchPoints).toBe(0);
+                }
+            } finally {
+                await context.close();
+            }
+        }
+    });
+
+test('keeps Advanced motionless and keyboard-operable without hover', async ({
+    browser,
+}) => {
+    const context = await browser.newContext({
+        baseURL: 'http://127.0.0.1:5176',
+        hasTouch: true,
+        reducedMotion: 'reduce',
+        viewport: { width: 430, height: 932 },
+    });
+    await installEmptyControlFixture(context);
+    const page = await context.newPage();
+    try {
+        await page.goto(ADVANCED_ROUTE);
+        const advanced = page.locator('[data-advanced-workspace]');
+        const auth = advanced.locator('[data-surface-id="direct.auth"]');
+        await expect(advanced).toBeVisible();
+        await page.locator(
+            '[data-primary-navigation] button[aria-current="page"]',
+        ).focus();
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Tab');
+        await expect(auth).toBeFocused();
+        await expect(auth).toHaveCSS('transition-duration', '0s');
+        await expect(auth).toHaveCSS('animation-name', 'none');
+        expect(await page.evaluate(() => ({
+            hoverNone: matchMedia('(hover: none)').matches,
+            reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+        }))).toEqual({ hoverNone: true, reduced: true });
+
+        await auth.press('Enter');
+        await expect(page.locator('#panel-auth')).toBeVisible();
+        await expect(page.locator('.recipe-console')).toHaveCount(0);
+    } finally {
+        await context.close();
+    }
 });
 
 test('keeps representative portrait touch controls at least 44px high', async ({

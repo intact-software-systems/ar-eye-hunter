@@ -12,6 +12,10 @@ import {
 } from './recipe-console-tune-run-data.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
+const ADVANCED_ROUTE =
+    '/?provider=simulated&v=1&experience=recipe-console&view=advanced' +
+    '&controlRunId=execute-control-a&agentId=execute-agent-a' +
+    '&recipeId=rtc-realtime-stability&commandId=stability-phase&transport=rtc';
 
 function liveExecuteSnapshot() {
     const runId = 'execute-control-a';
@@ -74,8 +78,17 @@ type ConceptCase = Readonly<{
     name: string;
     snapshot: string;
     viewport: Readonly<{ width: number; height: number }>;
-    view: 'execute' | 'monitor' | 'tune';
+    view: 'advanced' | 'execute' | 'monitor' | 'tune';
     ready(page: Page): Promise<void>;
+}>;
+
+type AdvancedConceptLayout = Readonly<{
+    contextColumns: 1 | 2;
+    inspector: 'overlay' | 'rail' | 'sheet';
+    linkColumns: 1 | 2;
+    localScroll: boolean;
+    navigation: 'bottom' | 'compact-rail' | 'rail';
+    navigationFontSize: '9px' | '10px' | '13px';
 }>;
 
 const CONCEPT_CASES: readonly ConceptCase[] = [
@@ -266,14 +279,76 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
             });
         },
     },
+    {
+        name: 'matches the approved Advanced desktop hierarchy',
+        snapshot: 'signal-ledger-advanced-desktop.png',
+        viewport: { width: 1440, height: 900 },
+        view: 'advanced',
+        ready: page => expectAdvancedHierarchy(page, {
+            contextColumns: 2,
+            inspector: 'rail',
+            linkColumns: 2,
+            localScroll: false,
+            navigation: 'rail',
+            navigationFontSize: '13px',
+        }),
+    },
+    {
+        name: 'matches the approved Advanced tablet hierarchy',
+        snapshot: 'signal-ledger-advanced-tablet.png',
+        viewport: { width: 900, height: 900 },
+        view: 'advanced',
+        ready: page => expectAdvancedHierarchy(page, {
+            contextColumns: 2,
+            inspector: 'overlay',
+            linkColumns: 2,
+            localScroll: false,
+            navigation: 'compact-rail',
+            navigationFontSize: '10px',
+        }),
+    },
 ];
+
+const ADVANCED_TOUCH_CASES = [
+    {
+        name: 'matches the approved Advanced touch portrait hierarchy',
+        snapshot: 'signal-ledger-advanced-touch-portrait.png',
+        viewport: { width: 430, height: 932 },
+        layout: {
+            contextColumns: 1,
+            inspector: 'sheet',
+            linkColumns: 1,
+            localScroll: false,
+            navigation: 'bottom',
+            navigationFontSize: '9px',
+        },
+    },
+    {
+        name: 'matches the approved Advanced touch landscape hierarchy',
+        snapshot: 'signal-ledger-advanced-touch-landscape.png',
+        viewport: { width: 932, height: 430 },
+        layout: {
+            contextColumns: 2,
+            inspector: 'overlay',
+            linkColumns: 2,
+            localScroll: true,
+            navigation: 'compact-rail',
+            navigationFontSize: '9px',
+        },
+    },
+] as const satisfies readonly Readonly<{
+    name: string;
+    snapshot: string;
+    viewport: Readonly<{ width: number; height: number }>;
+    layout: AdvancedConceptLayout;
+}>[];
 
 test.describe('approved Signal Ledger concept fidelity', () => {
     for (const concept of CONCEPT_CASES) {
         test(concept.name, async ({ context, page }) => {
             await page.setViewportSize(concept.viewport);
             await page.clock.setFixedTime(new Date('2026-07-12T00:00:00.000Z'));
-            if (concept.view === 'execute') {
+            if (concept.view === 'execute' || concept.view === 'advanced') {
                 await routeLiveExecuteControl(page);
             } else if (concept.view === 'monitor') {
                 await installRecipeConsoleMonitorFixture(context);
@@ -288,7 +363,9 @@ test.describe('approved Signal Ledger concept fidelity', () => {
             } else {
                 await page.goto(concept.view === 'monitor'
                     ? MONITOR_ROUTE
-                    : `/?provider=simulated&v=1&experience=recipe-console&view=${concept.view}`);
+                    : concept.view === 'advanced'
+                        ? ADVANCED_ROUTE
+                        : `/?provider=simulated&v=1&experience=recipe-console&view=${concept.view}`);
             }
             await expect(page.locator('.recipe-console')).toHaveAttribute(
                 'data-view',
@@ -312,3 +389,173 @@ test.describe('approved Signal Ledger concept fidelity', () => {
         });
     }
 });
+
+test.describe('approved Direction A Advanced touch concept fidelity', () => {
+    test.use({ hasTouch: true });
+
+    for (const concept of ADVANCED_TOUCH_CASES) {
+        test(concept.name, async ({ page }) => {
+            await page.setViewportSize(concept.viewport);
+            await page.emulateMedia({ reducedMotion: 'reduce' });
+            await page.clock.setFixedTime(new Date('2026-07-12T00:00:00.000Z'));
+            await routeLiveExecuteControl(page);
+            await page.goto(ADVANCED_ROUTE);
+            await expect(page.locator('.recipe-console')).toHaveAttribute(
+                'data-view',
+                'advanced',
+            );
+            expect(await page.evaluate(() => ({
+                coarse: matchMedia('(pointer: coarse)').matches,
+                reduced: matchMedia('(prefers-reduced-motion: reduce)').matches,
+                touchPoints: navigator.maxTouchPoints,
+            }))).toEqual({ coarse: true, reduced: true, touchPoints: 1 });
+            await expectAdvancedHierarchy(page, concept.layout);
+            await page.evaluate(() => document.fonts.ready.then(() => undefined));
+
+            test.skip(
+                process.platform !== 'darwin',
+                'Pixel baselines use the controlled Darwin render platform; semantic and geometry assertions completed before this skip.',
+            );
+
+            await expect(page).toHaveScreenshot(concept.snapshot, {
+                animations: 'disabled',
+                caret: 'hide',
+                fullPage: false,
+                maxDiffPixelRatio: 0.01,
+                scale: 'css',
+            });
+        });
+    }
+});
+
+async function expectAdvancedHierarchy(
+    page: Page,
+    layout: AdvancedConceptLayout,
+): Promise<void> {
+    const shell = page.locator('[data-recipe-console-shell]');
+    const advanced = page.locator('[data-advanced-workspace]');
+    const context = advanced.locator('[data-advanced-context]');
+    const contextGrid = context.locator('dl');
+    const catalog = advanced.getByRole('navigation', {
+        name: 'Advanced legacy tools',
+    });
+    const links = catalog.locator('[data-advanced-surface-link]');
+
+    const viewHeading = page.getByRole('heading', {
+        level: 1,
+        name: 'Advanced',
+    });
+    await expect(viewHeading).toHaveText('Advanced');
+    if (layout.navigation === 'bottom') {
+        await expect(viewHeading).toBeVisible();
+    }
+    await expect(context.getByRole('heading', {
+        name: 'Current diagnostic context',
+    })).toBeVisible();
+    await expect(page.locator('[data-command-bar] [data-status="passed"]'))
+        .toContainText('Live · reachable');
+    await expect(context.locator(
+        '[data-context-field="controlRunId"] [data-exact-identifier]',
+    )).toHaveText('execute-control-a');
+    await expect(context.locator(
+        '[data-context-field="agentId"] [data-exact-identifier]',
+    )).toHaveText('execute-agent-a');
+    await expect(catalog.getByRole('heading', { name: 'Direct Diagnostics' }))
+        .toBeVisible();
+    await expect(catalog.getByRole('heading', {
+        name: 'Preserved Workflow Fallbacks',
+    })).toBeVisible();
+    await expect(catalog.getByRole('heading', { name: 'Advanced Legacy' }))
+        .toBeVisible();
+    await expect(advanced.locator('[data-advanced-category]')).toHaveCount(3);
+    await expect(links).toHaveCount(22);
+    await expect(shell).toHaveAttribute('data-navigation', layout.navigation);
+    await expect(shell).toHaveAttribute('data-inspector-mode', layout.inspector);
+    const primaryNavigation = page.locator('[data-primary-navigation]');
+    const selectedNavigation = primaryNavigation.getByRole('button', {
+        name: 'Advanced',
+        exact: true,
+    });
+    await expect(selectedNavigation).toHaveAttribute('aria-current', 'page');
+    await expect(selectedNavigation).toHaveCSS(
+        'font-size',
+        layout.navigationFontSize,
+    );
+    const navigationGeometry = await selectedNavigation.evaluate(node => {
+        const label = node.querySelector(':scope > span');
+        const navigation = node.closest('nav');
+        if (!(label instanceof HTMLElement) ||
+            !(navigation instanceof HTMLElement)) {
+            throw new Error('Missing selected navigation label geometry owner.');
+        }
+        const rect = (element: Element) => {
+            const bounds = element.getBoundingClientRect();
+            return {
+                bottom: bounds.bottom,
+                left: bounds.left,
+                right: bounds.right,
+                top: bounds.top,
+            };
+        };
+        return {
+            button: rect(node),
+            label: rect(label),
+            navigation: rect(navigation),
+        };
+    });
+    const containmentEpsilon = 0.01;
+    expect(navigationGeometry.label.left)
+        .toBeGreaterThanOrEqual(
+            navigationGeometry.button.left - containmentEpsilon,
+        );
+    expect(navigationGeometry.label.right)
+        .toBeLessThanOrEqual(
+            navigationGeometry.button.right + containmentEpsilon,
+        );
+    expect(navigationGeometry.label.top)
+        .toBeGreaterThanOrEqual(
+            navigationGeometry.button.top - containmentEpsilon,
+        );
+    expect(navigationGeometry.label.bottom)
+        .toBeLessThanOrEqual(
+            navigationGeometry.button.bottom + containmentEpsilon,
+        );
+    expect(navigationGeometry.label.left)
+        .toBeGreaterThanOrEqual(
+            navigationGeometry.navigation.left - containmentEpsilon,
+        );
+    expect(navigationGeometry.label.right)
+        .toBeLessThanOrEqual(
+            navigationGeometry.navigation.right + containmentEpsilon,
+        );
+    await expect(page.locator('.app-shell')).toHaveCount(0);
+
+    expect(await contextGrid.evaluate(element =>
+        getComputedStyle(element).gridTemplateColumns
+            .split(/\s+/u)
+            .filter(Boolean)
+    )).toHaveLength(layout.contextColumns);
+    expect(await links.first().evaluate(element =>
+        getComputedStyle(element).gridTemplateColumns
+            .split(/\s+/u)
+            .filter(Boolean)
+    )).toHaveLength(layout.linkColumns);
+    expect(await page.evaluate(() => ({
+        x: document.documentElement.scrollWidth -
+            document.documentElement.clientWidth,
+        y: document.documentElement.scrollHeight -
+            document.documentElement.clientHeight,
+    }))).toEqual({ x: 0, y: 0 });
+    const scrollOwner = layout.localScroll
+        ? advanced
+        : page.locator('[data-work-surface]');
+    expect(await scrollOwner.evaluate(element =>
+        element.scrollHeight > element.clientHeight
+    )).toBe(true);
+    if (layout.localScroll) {
+        await expect(scrollOwner).toHaveCSS('overflow-y', 'auto');
+    }
+    await scrollOwner.evaluate(element => {
+        element.scrollTop = 0;
+    });
+}

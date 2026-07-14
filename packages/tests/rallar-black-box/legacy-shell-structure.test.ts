@@ -68,7 +68,7 @@ const shellOwners = [
         consumerModuleImport: './AppTabs.tsx',
         declaration: 'AppTabs',
         fingerprint:
-            '262e375113bf1e7a6407eb8c23b78e0f2276199cb5640fd805ea6de67585fe25',
+            'a3e6c5a4502f1224c1b5b2afbba4b0e52fe634cae98c04479aa9f7aa4a77b2c6',
         useState: 0,
         lineCap: 65,
         imports: [
@@ -78,6 +78,8 @@ const shellOwners = [
             '../../app-tabs.ts|value:appTabsForMode',
             '../../app-tabs.ts|value:nextAppTab',
             'react|type:KeyboardEvent',
+            'react|value:useLayoutEffect',
+            'react|value:useRef',
         ],
     },
     {

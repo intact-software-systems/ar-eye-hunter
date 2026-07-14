@@ -47,8 +47,7 @@ test(
         await expect(page).toHaveURL(/advancedSurface=shared-test/);
         const fallbackUrl = page.url();
         await expect(page.locator('.recipe-console')).toHaveCount(0);
-        await expect(page.locator('#legacy-panel-shared-test')).toHaveCount(1);
-        await expect(page.locator('#legacy-panel-shared-test')).toBeHidden();
+        await expect(page.locator('#legacy-panel-shared-test')).toHaveCount(0);
 
         const advanced = page.locator('#panel-advanced');
         await expect(advanced).toBeVisible();

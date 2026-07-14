@@ -10,6 +10,7 @@ import {
     type RovingNavigationKey,
 } from '../app/navigation-keyboard.ts';
 import { RECIPE_CONSOLE_NAVIGATION } from '../app/recipe-console-navigation.ts';
+import { claimDiagnosticReturnFocus } from '../routing/diagnostic-return-focus.ts';
 import type { RecipeConsoleView } from '../routing/url-state-contract.ts';
 import { Icon } from '../ui/Icon.tsx';
 import type { RecipeConsolePresentation } from './responsive-presentation.ts';
@@ -46,6 +47,19 @@ export function PrimaryNavigation({
     useEffect(() => {
         setActiveIndex(navigationIndexForView(currentView));
     }, [currentView]);
+
+    useEffect(() => {
+        if (
+            typeof document === 'undefined'
+            || typeof window === 'undefined'
+            || !claimDiagnosticReturnFocus(document, window.location.href)
+        ) {
+            return;
+        }
+        const currentIndex = navigationIndexForView(currentView);
+        setActiveIndex(currentIndex);
+        itemRefs.current[currentIndex]?.focus({ preventScroll: true });
+    }, []);
 
     const activate = (index: number): void => {
         setActiveIndex(index);
