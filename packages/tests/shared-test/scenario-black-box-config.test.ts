@@ -1484,6 +1484,76 @@ describe('scenario-black-box CLI', () => {
         ]);
     });
 
+    it('keeps delimiter-containing producer tuples distinct in compact success summaries', async () => {
+        const workingDirectory = await writeTempConfig({
+            execution: {
+                dryRun: true,
+                artifacts: {
+                    maxEventsByKind: {
+                        'step-result': 1,
+                    },
+                },
+            },
+            steps: [
+                {
+                    name: 'retainedProducer',
+                    type: 'crdt',
+                    action: 'open',
+                    connection: 'east',
+                },
+                {
+                    name: 'producer|CRDT',
+                    type: 'crdt',
+                    action: 'ship',
+                    connection: 'east',
+                },
+                {
+                    name: 'producer',
+                    type: 'crdt',
+                    action: 'CRDT|ship',
+                    connection: 'east',
+                },
+            ],
+        });
+        const artifactDir = path.join(workingDirectory, 'delimiter-artifacts');
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+            '--artifact-dir',
+            artifactDir,
+        ]);
+
+        expect(result.code).toBe(0);
+
+        const artifactIndex = JSON.parse(await readFile(path.join(artifactDir, 'artifact-index.json'), 'utf8'));
+
+        expect(artifactIndex.compaction.repeatedSuccessSummaries).toEqual([
+            {
+                name: 'producer|CRDT',
+                transport: 'CRDT',
+                action: 'ship',
+                connection: 'east',
+                status: 'SUCCESS',
+                count: 1,
+                firstSequence: 2,
+                lastSequence: 2,
+            },
+            {
+                name: 'producer',
+                transport: 'CRDT',
+                action: 'CRDT|ship',
+                connection: 'east',
+                status: 'SUCCESS',
+                count: 1,
+                firstSequence: 3,
+                lastSequence: 3,
+            },
+        ]);
+    });
+
     it('injects opt-in runner correlation headers and RTC payload fields into artifacts', async () => {
         const server = await tryStartHeaderEchoServer();
         if (!server) {

@@ -7,6 +7,8 @@ import {
 import { Metric } from '../../shared/Metric.tsx';
 import { json } from '../../shared/json-presentation.ts';
 import { artifactIssueText } from '../shared/artifact-issue-presentation.ts';
+import { SharedTestArtifactIndexPanel } from
+    './SharedTestArtifactIndexPanel.tsx';
 
 const SHARED_TEST_ARTIFACT_FILE_NAMES = [
     ...RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.requiredFiles,
@@ -208,6 +210,11 @@ export function SharedTestArtifactImportPanel() {
                             />
                         </div>
                     </section>
+                    {parsed.views.artifactIndex ? (
+                        <SharedTestArtifactIndexPanel
+                            artifactIndex={parsed.views.artifactIndex}
+                        />
+                    ) : null}
                     <section className="shared-test-subpanel">
                         <div className="section-heading">
                             <h3>Imported Event Stream</h3>

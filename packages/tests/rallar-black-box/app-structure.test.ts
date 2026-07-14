@@ -3970,6 +3970,10 @@ describe('rallar-black-box app source ownership', () => {
             'apps/rallar-black-box/src/legacy/runner/shared-test/SharedTestCatalogPanel.tsx';
         const artifactPanelPath =
             'apps/rallar-black-box/src/legacy/runner/shared-test/SharedTestArtifactImportPanel.tsx';
+        const artifactIndexPresentationPath =
+            'apps/rallar-black-box/src/legacy/runner/shared-test/shared-test-artifact-index-presentation.ts';
+        const artifactIndexPanelPath =
+            'apps/rallar-black-box/src/legacy/runner/shared-test/SharedTestArtifactIndexPanel.tsx';
         const panelPath =
             'apps/rallar-black-box/src/legacy/runner/shared-test/SharedTestPanel.tsx';
         const owners = [
@@ -3992,6 +3996,24 @@ describe('rallar-black-box app source ownership', () => {
                 path: artifactPanelPath,
                 exports: ['SharedTestArtifactImportPanel'],
                 lineCap: 310,
+            },
+            {
+                path: artifactIndexPresentationPath,
+                exports: [
+                    'SHARED_TEST_COMPACTION_SUMMARY_WINDOW_SIZE',
+                    'SharedTestCompactionSummary',
+                    'SharedTestArtifactIndexPresentation',
+                    'SharedTestCompactionSummaryWindow',
+                    'deriveSharedTestArtifactIndexPresentation',
+                    'deriveSharedTestCompactionSummaryWindow',
+                    'moveSharedTestCompactionSummaryWindow',
+                ],
+                lineCap: 160,
+            },
+            {
+                path: artifactIndexPanelPath,
+                exports: ['SharedTestArtifactIndexPanel'],
+                lineCap: 220,
             },
             {
                 path: panelPath,
@@ -4090,6 +4112,32 @@ describe('rallar-black-box app source ownership', () => {
                 seams: ['artifactIssueText'],
             },
             {
+                importerPath: artifactPanelPath,
+                moduleImport: './SharedTestArtifactIndexPanel.tsx',
+                seams: ['SharedTestArtifactIndexPanel'],
+            },
+            {
+                importerPath: artifactIndexPresentationPath,
+                moduleImport: '../../../shared-test-handoff-fixtures.ts',
+                seams: ['RallarBlackBoxSharedTestParsedArtifactBundle'],
+            },
+            {
+                importerPath: artifactIndexPanelPath,
+                moduleImport: '../../../shared-test-handoff-fixtures.ts',
+                seams: ['RallarBlackBoxSharedTestParsedArtifactBundle'],
+            },
+            {
+                importerPath: artifactIndexPanelPath,
+                moduleImport: './shared-test-artifact-index-presentation.ts',
+                seams: [
+                    'deriveSharedTestArtifactIndexPresentation',
+                    'deriveSharedTestCompactionSummaryWindow',
+                    'moveSharedTestCompactionSummaryWindow',
+                    'SHARED_TEST_COMPACTION_SUMMARY_WINDOW_SIZE',
+                    'SharedTestCompactionSummary',
+                ],
+            },
+            {
                 importerPath: panelPath,
                 moduleImport: './SharedTestCatalogPanel.tsx',
                 seams: ['SharedTestCatalogPanel'],
@@ -4137,6 +4185,8 @@ describe('rallar-black-box app source ownership', () => {
             /^\s*const\s+SHARED_TEST_ARTIFACT_FILE_NAMES\b/m,
             /\bfunction\s+SharedTestCatalogPanel\s*\(/,
             /\bfunction\s+SharedTestArtifactImportPanel\s*\(/,
+            /\bfunction\s+SharedTestArtifactIndexPanel\s*\(/,
+            /\bfunction\s+deriveSharedTestArtifactIndexPresentation\s*\(/,
             /\bfunction\s+SharedTestPanel\s*\(/,
         ] as const) {
             expect.soft(appSource, `App.tsx local ${declaration.source}`).not.toMatch(
@@ -4235,6 +4285,12 @@ describe('rallar-black-box app source ownership', () => {
             [...artifactSource.matchAll(/\.slice\(0, 12\)/g)],
             'artifact diagnostic and failure caps',
         ).toHaveLength(2);
+        expect(
+            artifactSource,
+            'artifact index compaction follows Imported Summary conditionally',
+        ).toMatch(
+            /<h3>Imported Summary<\/h3>[\s\S]*?<\/section>\s*{parsed\.views\.artifactIndex \? \(\s*<SharedTestArtifactIndexPanel\s+artifactIndex={parsed\.views\.artifactIndex}\s*\/>\s*\) : null}/,
+        );
 
         const panelSource = sourceFor(panelPath);
         expect(panelSource, 'SharedTestPanel is stateless').not.toMatch(
