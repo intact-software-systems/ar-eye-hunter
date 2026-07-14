@@ -42,6 +42,7 @@ import {
     DISTRIBUTED_RECIPE_CATALOG as SHARED_DISTRIBUTED_RECIPE_CATALOG,
     configuredDistributedRecipeCatalogItem as sharedConfiguredDistributedRecipeCatalogItem,
     createRallarBlackBoxTestRuntime,
+    deriveAdvancedDiagnosticHandoffTargets as deriveSharedAdvancedDiagnosticHandoffTargets,
     deriveDistributedRunFailureEvidenceDestinations as deriveSharedDistributedRunFailureEvidenceDestinations,
     distributedRecipeMatches as sharedDistributedRecipeMatches,
     projectDistributedRecipeCatalog,
@@ -1995,6 +1996,16 @@ describe('distributed recipes helpers', () => {
         expect(deriveDistributedRunFailureEvidenceDestinations).toBe(
             deriveSharedDistributedRunFailureEvidenceDestinations,
         );
+    });
+
+    it('exports deterministic Advanced diagnostic handoffs from the app compatibility barrel', () => {
+        const compatibilityExport = Reflect.get(
+            distributedRecipeCompatibility,
+            'deriveAdvancedDiagnosticHandoffTargets',
+        );
+
+        expect(compatibilityExport).toBeTypeOf('function');
+        expect(compatibilityExport).toBe(deriveSharedAdvancedDiagnosticHandoffTargets);
     });
 
     it('derives available evidence destinations for each selected failure instead of the first failure', () => {

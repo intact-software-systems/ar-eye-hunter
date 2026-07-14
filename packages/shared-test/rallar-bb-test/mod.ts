@@ -10,6 +10,7 @@ export * from './control-retention.ts';
 export * from './fleet-report-validation.ts';
 export * from './fleet-report-analysis.ts';
 export * from './fleet-geography.ts';
+export * from './advanced-diagnostic-handoff.ts';
 export * from './distributed-run-monitor.ts';
 export * from './distributed-run-tuning.ts';
 export * from './distributed-run-tuning-candidate.ts';

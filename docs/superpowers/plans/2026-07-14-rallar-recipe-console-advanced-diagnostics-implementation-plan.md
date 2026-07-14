@@ -133,13 +133,13 @@ Files:
   chunk assertion, and Advanced/Monitor code.
 - Update only this child plan with actual Task 0 evidence during execution.
 
-- [ ] Confirm the repository-authoritative corrections and lifetime register
+- [x] Confirm the repository-authoritative corrections and lifetime register
   before changing code.
-- [ ] Record exact old alias-to-owner mappings and current production chunk
+- [x] Record exact old alias-to-owner mappings and current production chunk
   closures.
-- [ ] GREEN the focused unit, type, build, chunk, Recipe Console, and legacy
+- [x] GREEN the focused unit, type, build, chunk, Recipe Console, and legacy
   navigation baselines. Record unavailable browser/live evidence exactly.
-- [ ] Do not make a baseline commit unless evidence itself changes this plan.
+- [x] Do not make a baseline commit unless evidence itself changes this plan.
 
 Validation:
 
@@ -157,6 +157,21 @@ npm run build:rallar-black-box
 npx tsx apps/rallar-black-box/scripts/assert-experience-chunks.ts
 ```
 
+### Task 0 baseline — `b8751e4`
+
+The repository corrections and lifetime register above are binding. The exact
+seven-file structure/route baseline passes 106/106; the wider context baseline
+passes 217/217. App TypeScript, the unchanged 758-module production build, and
+reciprocal Recipe Console/LegacyExperience chunk assertion pass. The immediately
+preceding complete Recipe Console configuration passes 179 available cases with
+one exact configured-live skip, and preserved legacy Fleet/navigation passes
+33/33. The in-app Browser remains unavailable exactly as `Browser runtime
+unavailable after setup failure: Cannot redefine property: process`; terminal
+Playwright is the browser fallback. Configured live/Postgres remains skipped,
+not passed, for the exact prerequisite statement recorded under Task 8. No
+runtime behavior, default, alias, legacy visibility, or mount policy changed in
+Task 0.
+
 ## Task 1: Add Deterministic Shared Diagnostic Classification
 
 Files:
@@ -167,17 +182,17 @@ Files:
 - Create
   `packages/tests/shared-test/rallar-bb-test-advanced-diagnostic-handoff.test.ts`
 
-- [ ] RED auth/ticket/unauthorized/forbidden/`BAD_AUTH` to ordered Auth then
+- [x] RED auth/ticket/unauthorized/forbidden/`BAD_AUTH` to ordered Auth then
   WebSocket targets.
-- [ ] RED `RALLAR_BB_RTC_NO_PEERS`, `RTC_NO_ROUTE`, and correlated
+- [x] RED `RALLAR_BB_RTC_NO_PEERS`, `RTC_NO_ROUTE`, and correlated
   `no_peer`/`no_route` diagnostics to RTC Diagnostics.
-- [ ] RED missing group/member to Groups/Clients and explicit
+- [x] RED missing group/member to Groups/Clients and explicit
   `HTTP_SERVICE_UNAVAILABLE`/server-status failures to Rallar Server.
-- [ ] RED correlation isolation, stable deduplication, shuffled-input
+- [x] RED correlation isolation, stable deduplication, shuffled-input
   determinism, non-mutation, false-positive phrases, and unknown failures.
-- [ ] GREEN a React-free additive public API imported through `mod.ts` and
+- [x] GREEN a React-free additive public API imported through `mod.ts` and
   the existing app compatibility barrel.
-- [ ] Commit `feat: classify advanced diagnostic handoffs` after all gates
+- [x] Commit `feat: classify advanced diagnostic handoffs` after all gates
   are green.
 
 Validation:
@@ -192,6 +207,13 @@ deno check --node-modules-dir=none \
   packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts \
   packages/shared-test/rallar-bb-test/mod.ts
 ```
+
+Task 1 adds one bounded, React-free, correlation-safe classifier with a stable
+Auth → WebSocket → RTC Diagnostics → Groups/Clients → Rallar Server order.
+Malformed, over-limit, uncorrelated, generic-word, and frozen non-mutation
+cases pass. The shared and existing app compatibility barrels remain additive.
+The final focused gate passes 62/62 with shared/app TypeScript, direct and full
+shared Deno, and diff-check proof.
 
 ## Task 2: Define The Advanced Catalog And Safe Bridge URLs
 
