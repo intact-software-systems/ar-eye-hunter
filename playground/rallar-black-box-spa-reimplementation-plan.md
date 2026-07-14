@@ -283,7 +283,7 @@ apps/rallar-black-box/src/legacy/
   runner/LegacyRunsRoute.tsx
   runner/LegacyDistributedRecipesRoute.tsx
   runner/LegacyRunManagerRoute.tsx
-  runner/LegacyFleetRoute.tsx
+  runner/fleet/RunnerFleetPanel.tsx
   runner/LegacyBuilderRoute.tsx
   diagnostics/
 ```
@@ -409,9 +409,42 @@ The canonical product contract is the [Recipe Console product spec](../apps/rall
 | 7 — Timing And Recipe Tuning Lab | **Complete** | Shared deterministic tuning truth (`cc17169`) and the real-evidence lazy Tune workspace (`382df72`) pass the exact timing, comparison, no-mutation, responsive/accessibility, CSS-isolation, chunk, legacy-handoff, review, and qualified full-suite exit below. Ready-State #7 and the bounded comparison evidence for #8 are code-backed. No legacy row is hidden or cut over. |
 | 8 — History, Compare, Saved Filters, Retention | **Complete** | Preview-first retention, shareable filters/presets, bounded History, comparison reuse, cleanup reconciliation, and exact copied-link/retention acceptance are qualified through `fd9055e` and `f762749`. Fresh focused/complete/server/browser/legacy gates and independent re-reviews are green; the configured live/Postgres lifecycle is explicitly skipped, not passed. Ready-State #8 and #9 are code-backed. No legacy surface is hidden or cut over. |
 | 9 — Large-Run Scale And Virtualization | **Complete** | One parsed shared pipeline, workerized Analyze, indexed Control/Monitor truth, and accessible deterministic windows now bound 15,000 artifact rows, 5,000 History/Tune pairs, 24,002 knobs, Execute/Monitor/retention pressure paths, and every mounted list. The exact production acceptance, same-machine candidate profile, 1,385-test app suite, 169 available Recipe Console browser cases, 28 legacy cases, four independent reviews, and final focus/fidelity repairs are green through `f8cef95`. Ready-State #10 is code-backed. Configured live remains an exact skip, not a pass; no legacy row, default, route, mount, public/control contract, or cutover changed. |
-| 10 — Fleet And Geographic Evidence | Pending | Existing consolidated Fleet navigation is not a new Fleet cutover. |
+| 10 — Fleet And Geographic Evidence | **In progress** | The reviewed [Fleet implementation plan](../docs/superpowers/plans/2026-07-14-rallar-recipe-console-fleet-geographic-implementation-plan.md) binds the exact acceptance, shared validation/report/geographic analysis, root-query authority, bounded UI, provenance rules, responsive/CSS/chunk proof, and no-cutover exit. Repository evidence supersedes the stale wrapper step: the stronger controller/view extraction already exists under `src/legacy/runner/fleet/**` through `9e5b4b5`, is exact-parity locked, and remains the active-only operational fallback. The 74-test unit and 3-case legacy browser baselines are green at `7d25ab9`; no runtime source has changed yet. |
 | 11 — Advanced Diagnostics Bridge | Pending | Legacy surfaces remain preserved with the mount exceptions in the migration register. |
 | 12 — Polish, Accessibility, And Default Flip | Pending | The default remains legacy/current behavior until all 14 Ready-State items have evidence. |
+
+#### Iteration 10 implementation start — `7d25ab9`
+
+Three independent repository audits and a direct source/test review confirm
+that the plan's intended behavior-preserving Fleet extraction already landed
+in a stronger form at `9e5b4b5`: `RunnerFleetPanel`, its controller, pure
+helpers, and controlled views live under `src/legacy/runner/fleet/**`; `App.tsx`
+owns no Fleet behavior; the panel mounts only for the active legacy Fleet tab;
+and exact structure fingerprints require the shell to import that feature root
+directly. Iteration 10 will not add the obsolete filename-only
+`LegacyFleetRoute.tsx` wrapper. The legacy route and `fleet-report`/
+`fleet-reports` aliases remain unchanged.
+
+The child plan makes shared-test the canonical owner of new tolerant report
+validation, stable report aggregation, indexed heatmap truth, timing, repeated
+failure evidence, and provenance-bearing geography. The new Recipe Console
+Fleet consumes the existing root query and indexed selection, adds no second
+poll or credential owner, and is lazy/unmounted while inactive. Its map remains
+secondary, routes require explicit target-agent fields plus two resolved
+endpoints, and every potentially pressured evidence surface receives an exact
+browseable window. Rebuild stays operational in the preserved legacy fallback.
+The existing selected-report bundle endpoint is exposed only through a narrow
+authorized lazy capability so exact Fleet artifact files—not merely their
+opaque references—can be inspected/exported without a second poll. No existing
+endpoint or artifact profile changes.
+
+The clean `7d25ab9` baseline passes 74/74 focused legacy Fleet, map, URL, and
+structure tests. A sandbox browser attempt was unavailable because Vite could
+not bind `127.0.0.1:5176`; the identical authorized rerun passes all 3 legacy
+Fleet cases, covering 20-agent report/heatmap/failure/timing/export evidence,
+map-layer URL restoration, and 390×800 mobile use. This is planning and
+baseline evidence only: the new Fleet capability, its canonical browser owner,
+and the Iteration 10 exit remain open, and no row is hidden or cut over.
 
 #### Iteration 9 Tasks 4–5 Analyze window checkpoint — `6d90061`
 
@@ -625,7 +658,7 @@ hidden. Iterations 10–12 remain open.
   and event-loop-progress invariants are executable gates.
 - No Canvas timing plot is added without measured dense-DOM pressure. Current
   Recipe Console has no such plot, so Canvas is explicitly deferred.
-- Fleet first receives a behavior-preserving legacy extraction. The new Fleet view consumes shared deterministic helpers and must not import a legacy panel.
+- Fleet's behavior-preserving legacy controller/view extraction already lives under `src/legacy/runner/fleet/**`. The new Fleet view consumes shared deterministic helpers and must not import a legacy panel.
 - Existing mounted-state guarantees are temporary documented exceptions. Draft, polling, subscription, media, and execution ownership must migrate before the corresponding view is lazily unmounted.
 - Old aliases deterministically open the documented legacy surface during migration. New Recipe Console URLs use the versioned codec.
 - The default flip is an explicit Iteration 12 cutover and occurs only after all 14 Ready-State items have evidence.
@@ -1914,7 +1947,7 @@ Goal: keep fleet analysis useful without turning the SPA into a map app.
 
 Work:
 
-- First extract the current Fleet panel behavior-preservingly to `src/legacy/runner/LegacyFleetRoute.tsx`.
+- Treat the existing behavior-preserving `src/legacy/runner/fleet/**` controller/view extraction as the legacy route owner; preserve its exact active-only mount and parity locks.
 - Build the new `recipe-console/fleet` view from shared deterministic helpers; do not import the legacy panel.
 - Keep live board, heatmap, region summaries, repeated failure signatures, timing distributions, and deterministic SVG map.
 - Add links from failure signatures to filtered history and affected agents.
