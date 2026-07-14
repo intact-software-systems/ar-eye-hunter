@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { act, createElement, Fragment } from 'react';
+import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -355,18 +355,21 @@ describe('ExplicitWindowControls', () => {
         expect(status?.tabIndex).toBe(-1);
         expect(buttons.map(button => ({
             controls: button.getAttribute('aria-controls'),
+            direction: button.dataset.explicitWindowDirection,
             disabled: button.disabled,
             text: button.textContent,
             type: button.type,
         }))).toEqual([
             {
                 controls: 'artifact-evidence-results',
+                direction: 'previous',
                 disabled: false,
                 text: 'Previous',
                 type: 'button',
             },
             {
                 controls: 'artifact-evidence-results',
+                direction: 'next',
                 disabled: false,
                 text: 'Next',
                 type: 'button',
@@ -488,7 +491,7 @@ describe('explicit window focus recovery', () => {
         const rows = Array.from({
             length: window.model.endIndexExclusive - window.model.startIndex,
         }, (_, offset) => window.model.startIndex + offset);
-        return createElement(Fragment, {},
+        return createElement('div', focus.contentFocusProps,
             createElement(ExplicitWindowControls, {
                 contentId: 'focus-results',
                 focusFallbackRef: focus.fallbackFocusRef,
@@ -499,7 +502,6 @@ describe('explicit window focus recovery', () => {
             }),
             createElement('ol', {
                 id: 'focus-results',
-                ...focus.contentFocusProps,
             }, rows.map(row => createElement('li', { key: row },
                 createElement('button', {
                     'data-row': row,
@@ -549,6 +551,40 @@ describe('explicit window focus recovery', () => {
             .toBe('Showing 65–128 of 150 items.');
     });
 
+    it('does not recover a pending boundary action that navigation rejects',
+        async () => {
+            function PendingBoundary() {
+                const model = deriveExplicitWindowModel({
+                    fingerprint: 'pending-boundary', total: 128, windowSize: 64,
+                }, createExplicitWindowState('pending-boundary'));
+                const focus = useExplicitWindowFocusRecovery(model);
+                return createElement('div', focus.contentFocusProps,
+                    createElement(ExplicitWindowControls, {
+                        contentId: 'pending-results',
+                        label: 'Pending results',
+                        model,
+                        onNext: vi.fn(),
+                        onPrevious: vi.fn(),
+                        pending: true,
+                    }),
+                    createElement('span', {
+                        'data-pending-fallback': true,
+                        ref: focus.fallbackFocusRef,
+                        tabIndex: -1,
+                    }),
+                );
+            }
+            if (!root) root = createRoot(container);
+            await act(async () => root?.render(createElement(PendingBoundary)));
+            const next = [...container.querySelectorAll<HTMLButtonElement>('button')]
+                .find(button => button.textContent === 'Next');
+            next?.focus();
+            await act(async () => next?.click());
+            expect(document.activeElement).toBe(next);
+            expect(container.querySelector('[data-pending-fallback]'))
+                .not.toBe(document.activeElement);
+        });
+
     it('does not recover stale row focus after focus left the content', async () => {
         await render('artifact:a', 150);
         const next = [...container.querySelectorAll<HTMLButtonElement>('button')]
@@ -566,4 +602,27 @@ describe('explicit window focus recovery', () => {
             container.querySelector('[role="status"]'),
         );
     });
+
+    it('does not recover an unavailable row after focus legitimately moved outside',
+        async () => {
+            await render('artifact:a', 150);
+            const row = container.querySelector<HTMLButtonElement>('[data-row="0"]');
+            const outside = document.createElement('button');
+            outside.type = 'button';
+            document.body.append(outside);
+            row?.focus();
+            if (!row) throw new Error('Expected focused row.');
+            row.disabled = true;
+            row.dispatchEvent(new FocusEvent('focusout', {
+                bubbles: true,
+                relatedTarget: outside,
+            }));
+            outside.focus();
+            expect(document.activeElement).toBe(outside);
+
+            await render('artifact:a', 150);
+
+            expect(document.activeElement).toBe(outside);
+            outside.remove();
+        });
 });

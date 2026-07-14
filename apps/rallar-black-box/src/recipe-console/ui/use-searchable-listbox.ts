@@ -19,10 +19,8 @@ import {
     type SearchableListboxOption,
     type SearchableListboxRow,
 } from './searchable-listbox-model.ts';
-import {
-    useExplicitWindow,
-    useExplicitWindowFocusRecovery,
-} from './use-explicit-window.ts';
+import { useExplicitWindow, useExplicitWindowFocusRecovery } from
+    './use-explicit-window.ts';
 export type SearchableListboxInput = Readonly<{
     contextKey: string;
     disabled: boolean;
@@ -176,7 +174,11 @@ export function useSearchableListbox(input: SearchableListboxInput) {
         revision,
     ]);
     useLayoutEffect(() => {
-        if (input.disabled && open) close(false);
+        if (!input.disabled || !open) return;
+        const root = rootRef.current;
+        const ownsFocus = Boolean(root?.contains(document.activeElement));
+        close(false);
+        if (ownsFocus) root?.focus({ preventScroll: true });
     }, [close, input.disabled, open]);
     useEffect(() => {
         if (!open) return;

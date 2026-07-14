@@ -42,23 +42,13 @@
 }
 
 .runChoice {
-    display: grid;
-    grid-template-columns: minmax(90px, .35fr) minmax(180px, 1fr);
-    align-items: center;
-    gap: 10px;
+    display: block;
     padding: 10px 12px;
     border-bottom: 1px solid var(--rc-border);
-    font-size: 12px;
-    font-weight: 700;
 }
 
-.runChoice select {
+.runChoice > [data-searchable-windowed-listbox] {
     width: 100%;
-    min-height: 44px;
-    padding: 0 10px;
-    border: 1px solid var(--rc-border);
-    border-radius: 4px;
-    background: var(--rc-surface);
 }
 
 .runIssue {
@@ -88,6 +78,43 @@
     min-width: 0;
     overflow: auto;
     overscroll-behavior: contain;
+}
+
+.windowControls,
+.windowTruth {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.windowTruth {
+    margin: 0;
+    color: var(--rc-muted);
+    font-size: 12px;
+}
+
+.windowFocusAnchor {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    border: 0;
+    white-space: nowrap;
+}
+
+.windowFocusAnchor:focus-visible {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: 8px 12px;
+    overflow: visible;
+    clip-path: none;
+    color: var(--rc-text);
+    background: var(--rc-selected-bg);
+    white-space: normal;
+    outline: 2px solid var(--rc-focus);
+    outline-offset: -2px;
 }
 
 .tableWrap:focus-visible {
@@ -217,9 +244,6 @@
         min-width: 720px;
     }
 
-    .runChoice {
-        grid-template-columns: minmax(0, 1fr);
-    }
 }
 
 @media (prefers-reduced-motion: reduce) {

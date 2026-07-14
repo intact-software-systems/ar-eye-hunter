@@ -104,6 +104,7 @@
 }
 
 .option:focus-visible,
+.root:focus-visible,
 .trigger:focus-visible,
 .search input:focus-visible {
     outline: 2px solid var(--rc-focus);
@@ -141,7 +142,7 @@
     white-space: nowrap;
 }
 
-.focusAnchor:focus {
+.focusAnchor:focus-visible {
     position: relative;
     inline-size: auto;
     block-size: auto;

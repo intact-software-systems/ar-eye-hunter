@@ -2,9 +2,11 @@ import type {
     DistributedRecipeTargetRow,
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { StatusMark, type OperationalStatus } from '../ui/StatusMark.tsx';
 import type { ExecuteConnectionTruth } from './execute-action-policy.ts';
 import type { ExecuteTargetResolutionEvidence } from './execute-manifest.ts';
+import { ExecuteControlRunPicker } from './ExecuteControlRunPicker.tsx';
+import { ExecuteResolutionWindow } from './ExecuteResolutionWindow.tsx';
+import { ExecuteTargetWindow } from './ExecuteTargetWindow.tsx';
 import styles from './ExecuteTargets.module.css';
 
 export type ExecuteTargetsProps = Readonly<{
@@ -42,8 +44,10 @@ export function ExecuteTargets({
         : current
         ? `${safeCount}/${rows.length} current-safe`
         : `Last-known evidence · ${connectionLabel(connection)}`;
-    const resolutionBlockers = resolution?.resolution.blockers ?? [];
-    const resolutionIssues = resolution?.comparison.issues ?? [];
+    const targetContextKey = JSON.stringify([
+        'execute-targets-v1',
+        controlRunId ?? null,
+    ]);
 
     return (
         <section
@@ -61,33 +65,13 @@ export function ExecuteTargets({
                     <span>{evidenceLabel}</span>
                 </div>
             </header>
-            <label className={styles.runChoice}>
-                <span>Control run</span>
-                <select
-                    aria-describedby={controlRunIssue ? 'execute-control-run-issue' : undefined}
-                    aria-invalid={controlRunIssue ? true : undefined}
-                    disabled={disabled}
-                    onChange={event => {
-                        if (event.currentTarget.value) {
-                            onSelectControlRun(event.currentTarget.value);
-                        }
-                    }}
-                    value={controlRuns.some(run => run.runId === controlRunId)
-                        ? controlRunId
-                        : ''}
-                >
-                    <option value="">
-                        {controlRuns.length === 0
-                            ? 'Control runs unavailable'
-                            : 'Select a control run'}
-                    </option>
-                    {controlRuns.map(run => (
-                        <option key={run.runId} value={run.runId}>
-                            {run.runId} · {run.agents.length} agent{run.agents.length === 1 ? '' : 's'}
-                        </option>
-                    ))}
-                </select>
-            </label>
+            <ExecuteControlRunPicker
+                controlRunId={controlRunId}
+                controlRuns={controlRuns}
+                disabled={disabled}
+                issueId={controlRunIssue ? 'execute-control-run-issue' : undefined}
+                onSelect={onSelectControlRun}
+            />
             {controlRunIssue ? (
                 <p className={styles.runIssue} id="execute-control-run-issue" role="alert">
                     {controlRunIssue}
@@ -104,105 +88,30 @@ export function ExecuteTargets({
                 </p>
             ) : null}
             {rows.length > 0 ? (
-                <div
-                    aria-label="Target evidence table"
-                    className={styles.tableWrap}
-                    data-execute-target-scroller
-                    role="region"
-                    tabIndex={0}
-                >
-                    <table className={styles.table}>
-                        <thead>
-                            <tr>
-                                <th scope="col">Select</th>
-                                <th scope="col">Agent</th>
-                                <th scope="col">Identity</th>
-                                <th scope="col">Group</th>
-                                <th scope="col">Last evidence</th>
-                                <th scope="col">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {rows.map(row => {
-                                const selectable = current && row.targetable;
-                                return (
-                                    <tr
-                                        data-execute-target
-                                        data-target-status={row.status}
-                                        key={row.agentId}
-                                    >
-                                        <td className={styles.selectCell}>
-                                            {selectable ? (
-                                                <input
-                                                    aria-label={`Select ${row.agentId}`}
-                                                    checked={selected.has(row.agentId)}
-                                                    disabled={disabled || selectionLocked}
-                                                    onChange={() => onToggle(row.agentId)}
-                                                    type="checkbox"
-                                                />
-                                            ) : (
-                                                <span aria-label="Not selectable" className={styles.notSelectable}>—</span>
-                                            )}
-                                        </td>
-                                        <th scope="row"><code>{row.agentId}</code></th>
-                                        <td>
-                                            <span className={styles.identity}>
-                                                <span>{row.principalId ?? 'Identity unavailable'}</span>
-                                                <small>{row.sessionId ?? 'No session'}</small>
-                                            </span>
-                                        </td>
-                                        <td><code>{groupLabel(row)}</code></td>
-                                        <td>{lastEvidence(row)}</td>
-                                        <td>
-                                            <div className={styles.state}>
-                                                <StatusMark
-                                                    label={statusLabel(row.status)}
-                                                    status={statusTone(row.status)}
-                                                />
-                                                <span className={styles.reason}>{row.reason}</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                <ExecuteTargetWindow
+                    contextKey={targetContextKey}
+                    current={current}
+                    disabled={disabled}
+                    onToggle={onToggle}
+                    rows={rows}
+                    selected={selected}
+                    selectionLocked={selectionLocked}
+                />
             ) : (
                 <div className={styles.empty} role="status">
                     <strong>No current target evidence</strong>
                     <span>{unavailableLabel(connection)}</span>
                 </div>
             )}
-            {resolutionBlockers.length > 0 || resolutionIssues.length > 0 ? (
-                <div className={styles.blockers} role="alert">
-                    <h3>Resolution blockers</h3>
-                    <ul>
-                        {resolutionBlockers.map((blocker, index) => (
-                            <li key={`${blocker.agentId}-${blocker.status}-${index}`}>
-                                <code>{blocker.agentId}</code> · {blocker.reason}
-                            </li>
-                        ))}
-                        {resolutionIssues.map((issue, index) => (
-                            <li key={`${issue.code}-${issue.agentId ?? 'run'}-${index}`}>
-                                {issue.agentId ? <><code>{issue.agentId}</code> · </> : null}
-                                {issue.message}
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            ) : null}
+            {resolution ? <ExecuteResolutionWindow
+                contextKey={JSON.stringify([
+                    'execute-resolution-v2',
+                    controlRunId ?? null,
+                ])}
+                resolution={resolution}
+            /> : null}
         </section>
     );
-}
-
-function statusTone(status: DistributedRecipeTargetRow['status']): OperationalStatus {
-    if (status === 'matched') return 'passed';
-    if (status === 'stale') return 'stale';
-    if (status === 'offline') return 'disabled';
-    return status === 'different-group' || status === 'missing-identity'
-        ? 'partial'
-        : 'warning';
 }
 
 function statusLabel(status: DistributedRecipeTargetRow['status']): string {
@@ -229,17 +138,4 @@ function unavailableLabel(connection: ExecuteConnectionTruth): string {
         case 'partial': return 'The partial snapshot contains no target agents.';
         case 'live': return 'The selected live control run contains no target agents.';
     }
-}
-
-function groupLabel(row: DistributedRecipeTargetRow): string {
-    const group = [row.applicationId, row.workspaceId, row.groupId]
-        .filter((value): value is string => Boolean(value));
-    return group.length > 0 ? group.join(' / ') : 'Unavailable';
-}
-
-function lastEvidence(row: DistributedRecipeTargetRow): string {
-    const epochMs = row.lastHeartbeatAtEpochMs ?? row.lastSeenAtEpochMs;
-    return epochMs === undefined
-        ? 'Unavailable'
-        : new Date(epochMs).toLocaleTimeString();
 }

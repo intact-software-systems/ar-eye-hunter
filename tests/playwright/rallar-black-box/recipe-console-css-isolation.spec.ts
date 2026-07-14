@@ -150,9 +150,9 @@ async function captureRealRecipeStyles(page: Page) {
         actionBand: await style(actionBand, [
             'background-color', 'border-top-color', 'display', 'grid-template-columns',
         ]),
-        controlRunSelect: await style(targets.getByRole('combobox', {
-            name: 'Control run',
-        }), [
+        controlRunSelect: await style(targets.locator(
+            '[data-execute-control-run-picker] [data-searchable-listbox-trigger]',
+        ), [
             'background-color', 'border-radius', 'border-top-color', 'min-height',
         ]),
         checkbox: await style(targetRow.getByRole('checkbox'), [

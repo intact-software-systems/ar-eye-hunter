@@ -1,8 +1,9 @@
 import type {
     DistributedRecipeCatalogEntryProjection,
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import type { CSSProperties } from 'react';
 import { StatusMark } from '../ui/StatusMark.tsx';
+import { ExecutePreflightIssueList } from './ExecutePreflightIssueList.tsx';
+import { ExecutePreflightTree } from './ExecutePreflightTree.tsx';
 import styles from './ExecutePreflight.module.css';
 
 export type ExecutePreflightProps = Readonly<{
@@ -27,6 +28,10 @@ export function ExecutePreflight({ entry }: ExecutePreflightProps) {
 
     const { preflight, schema } = entry;
     const ready = schema.ok && preflight.errors.length === 0;
+    const contextKey = JSON.stringify([
+        'execute-preflight-v2',
+        entry.item.recipe.recipeId,
+    ]);
     return (
         <section
             aria-labelledby="execute-preflight-heading"
@@ -69,42 +74,11 @@ export function ExecutePreflight({ entry }: ExecutePreflightProps) {
                     ))}
                 </div>
             ) : null}
-            <IssueList label="Schema errors" tone="error" values={schema.errors} />
-            <IssueList label="Schema warnings" tone="warning" values={schema.warnings} />
-            <IssueList label="Preflight errors" tone="error" values={preflight.errors} />
-            <IssueList label="Preflight warnings" tone="warning" values={preflight.warnings} />
-            <div className={styles.tree}>
-                <h3>Command tree</h3>
-                {preflight.tree.length > 0 ? (
-                    <ol>
-                        {preflight.tree.map((row, index) => (
-                            <li
-                                className={styles.treeRow}
-                                data-command-kind={row.kind}
-                                key={`${row.path}-${row.commandId ?? row.kind}-${index}`}
-                                style={{ '--tree-depth': row.depth } as CSSProperties}
-                            >
-                                <span className={styles.branch} aria-hidden="true" />
-                                <span className={styles.treeBody}>
-                                    <span className={styles.treeHeading}>
-                                        <strong>{row.label}</strong>
-                                        <code>{row.commandId ?? row.kind}</code>
-                                    </span>
-                                    <span>{row.summary}</span>
-                                    {row.details.map((detail, detailIndex) => (
-                                        <small key={`${detail}-${detailIndex}`}>{detail}</small>
-                                    ))}
-                                    {row.warnings.map((warning, warningIndex) => (
-                                        <small className={styles.inlineWarning} key={`${warning}-${warningIndex}`}>
-                                            {warning}
-                                        </small>
-                                    ))}
-                                </span>
-                            </li>
-                        ))}
-                    </ol>
-                ) : <p className={styles.empty}>No command rows are available.</p>}
-            </div>
+            <ExecutePreflightIssueList contextKey={contextKey} id="schema-errors" label="Schema errors" tone="error" values={schema.errors} />
+            <ExecutePreflightIssueList contextKey={contextKey} id="schema-warnings" label="Schema warnings" tone="warning" values={schema.warnings} />
+            <ExecutePreflightIssueList contextKey={contextKey} id="errors" label="Preflight errors" tone="error" values={preflight.errors} />
+            <ExecutePreflightIssueList contextKey={contextKey} id="warnings" label="Preflight warnings" tone="warning" values={preflight.warnings} />
+            <ExecutePreflightTree contextKey={contextKey} rows={preflight.tree} />
         </section>
     );
 }
@@ -122,20 +96,6 @@ function FactList({ label, values, emptyLabel = 'None' }: Readonly<{
         <div>
             <h3>{label}</h3>
             <p>{values.length > 0 ? values.join(' · ') : emptyLabel}</p>
-        </div>
-    );
-}
-
-function IssueList({ label, tone, values }: Readonly<{
-    label: string;
-    tone: 'error' | 'warning';
-    values: readonly string[];
-}>) {
-    if (values.length === 0) return null;
-    return (
-        <div className={styles.issues} data-tone={tone} role={tone === 'error' ? 'alert' : 'status'}>
-            <h3>{label}</h3>
-            <ul>{values.map((value, index) => <li key={`${value}-${index}`}>{value}</li>)}</ul>
         </div>
     );
 }

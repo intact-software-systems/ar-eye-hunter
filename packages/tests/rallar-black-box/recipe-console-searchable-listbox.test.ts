@@ -132,6 +132,32 @@ describe('SearchableWindowedListbox', () => {
             expect(onSelect).not.toHaveBeenCalled();
         });
 
+    it('keeps one stable polite atomic range status across filtered count bands',
+        async () => {
+            await renderSelector({ options: fixtureOptions(250) });
+            await clickTrigger(container);
+            const statuses = () => container.querySelectorAll(
+                '[role="status"][aria-live="polite"][aria-atomic="true"]',
+            );
+            expect(statuses()).toHaveLength(1);
+            const status = statuses()[0];
+            expect(status?.getAttribute('data-searchable-listbox-range'))
+                .not.toBeNull();
+            expect(status?.textContent).toBe('Showing 1–100 of 250 options.');
+
+            await setSearch(container, 'key-24');
+            expect(statuses()).toHaveLength(1);
+            expect(statuses()[0]).toBe(status);
+            expect(status?.textContent).toBe('Showing 1–11 of 11 options.');
+
+            await setSearch(container, 'missing-needle');
+            expect(statuses()).toHaveLength(1);
+            expect(statuses()[0]).toBe(status);
+            expect(status?.textContent).toBe('No options match this search.');
+            expect(container.querySelector('[data-searchable-listbox-empty]')
+                ?.getAttribute('aria-hidden')).toBe('true');
+        });
+
     it('blocks a stale search commit, then commits only Enter and touch click once',
         async () => {
             const onSelect = vi.fn();
@@ -475,6 +501,52 @@ describe('SearchableWindowedListbox', () => {
             await clickTrigger(container);
             expect(rangeText(container)).toBe('No options available.');
             expect(container.querySelectorAll('[role="option"]')).toHaveLength(0);
+        });
+
+    it('hands focus to a persistent enabled fallback when an open picker is disabled',
+        async () => {
+            const options = fixtureOptions(101);
+            await renderSelector({ options });
+            await clickTrigger(container);
+            expect(document.activeElement).toBe(searchInput(container));
+
+            await renderSelector({ disabled: true, options });
+
+            const trigger = container.querySelector<HTMLButtonElement>(
+                '[data-searchable-listbox-trigger]',
+            );
+            const fallback = container.querySelector<HTMLElement>(
+                '[data-searchable-listbox-disabled-focus]',
+            );
+            expect(trigger?.disabled).toBe(true);
+            expect(container.querySelector('[data-searchable-listbox-popup]')).toBeNull();
+            expect(fallback).not.toBeNull();
+            expect(fallback?.matches(':disabled')).toBe(false);
+            expect(document.activeElement).toBe(fallback);
+            expect(document.activeElement).not.toBe(document.body);
+        });
+
+    it('does not steal external focus when an open picker becomes disabled',
+        async () => {
+            const options = fixtureOptions(101);
+            await renderSelector({ options });
+            await clickTrigger(container);
+            const outside = container.querySelector<HTMLButtonElement>(
+                '[data-test-outside-target]',
+            );
+            if (!outside) throw new Error('Expected outside target.');
+            const retainOpen = (event: Event) => event.stopImmediatePropagation();
+            window.addEventListener('focusin', retainOpen, true);
+            outside.focus();
+            window.removeEventListener('focusin', retainOpen, true);
+            expect(document.activeElement).toBe(outside);
+            expect(container.querySelector('[data-searchable-listbox-popup]'))
+                .not.toBeNull();
+
+            await renderSelector({ disabled: true, options });
+
+            expect(container.querySelector('[data-searchable-listbox-popup]')).toBeNull();
+            expect(document.activeElement).toBe(outside);
         });
 
     it('recovers focused window controls when an option revision crosses the budget',

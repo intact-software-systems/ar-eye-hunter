@@ -82,6 +82,24 @@ function liveSnapshot(): ControlServerSnapshot {
     return { runs: [run], distributedRuns: [] };
 }
 
+function pressureSnapshot(): ControlServerSnapshot {
+    const now = Date.now();
+    const runs = Array.from({ length: 250 }, (_, index): ControlRunSnapshot => {
+        const runId = `execute-pressure-${String(index).padStart(4, '0')}`;
+        const agentCount = index === 249 ? 240 : 1;
+        return {
+            runId,
+            createdAtEpochMs: now - (250 - index) * 1_000,
+            updatedAtEpochMs: now - 500,
+            agents: Array.from({ length: agentCount }, (_unused, agentIndex) =>
+                agent(runId, `pressure-agent-${String(agentIndex).padStart(4, '0')}`)
+            ),
+            commands: [], results: [], events: [], stats: [], reports: [], heartbeats: [],
+        };
+    });
+    return { runs, distributedRuns: [] };
+}
+
 async function fulfillJson(
     route: Route,
     body: unknown,
@@ -200,6 +218,8 @@ type LifecycleControl = Readonly<{
 }>;
 
 type LifecycleOptions = Readonly<{
+    snapshot?: ControlServerSnapshot;
+    refreshAgentEvidence?: boolean;
     resolutionTargetIds?(
         call: number,
         manifest: RallarBlackBoxDistributedRunManifest,
@@ -217,7 +237,7 @@ async function installLifecycleControl(
     context: BrowserContext,
     options: LifecycleOptions = {},
 ): Promise<LifecycleControl> {
-    const base = liveSnapshot();
+    const base = options.snapshot ?? liveSnapshot();
     const successfulWrites: LifecycleControl['successfulWrites'] = [];
     const brokerAuthorizations: string[] = [];
     let run: ControlDistributedRunSnapshot | undefined;
@@ -283,12 +303,15 @@ async function installLifecycleControl(
         if (request.method() === 'GET' && url.pathname === '/runs') {
             runReads += 1;
             const snapshotRun = run;
+            const responseBase = options.refreshAgentEvidence
+                ? refreshControlAgentEvidence(base)
+                : base;
             if (shouldDeferNextRunRead) {
                 shouldDeferNextRunRead = false;
                 markRunReadStarted();
                 await runReadGate;
                 await fulfillJson(route, {
-                    ...base,
+                    ...responseBase,
                     distributedRuns: snapshotRun ? [snapshotRun] : [],
                 });
                 return;
@@ -299,7 +322,7 @@ async function installLifecycleControl(
                 run = distributedRun(run.manifest, 'passed', ++version);
             }
             await fulfillJson(route, {
-                ...base,
+                ...responseBase,
                 distributedRuns: run ? [run] : [],
             });
             return;
@@ -474,6 +497,24 @@ async function installLifecycleControl(
     };
 }
 
+function refreshControlAgentEvidence(
+    snapshot: ControlServerSnapshot,
+): ControlServerSnapshot {
+    const now = Date.now();
+    return {
+        ...snapshot,
+        runs: snapshot.runs.map(run => ({
+            ...run,
+            updatedAtEpochMs: now,
+            agents: run.agents.map(agentSnapshot => ({
+                ...agentSnapshot,
+                lastSeenAtEpochMs: now,
+                lastHeartbeatAtEpochMs: now,
+            })),
+        })),
+    };
+}
+
 async function installAbortIgnoringFetchGate(
     context: BrowserContext,
     pathname: string,
@@ -543,9 +584,12 @@ async function changeExecuteRecipeFromHistory(
 async function visibleExecuteManifest(
     page: Page,
 ): Promise<RallarBlackBoxDistributedRunManifest> {
-    const raw = await page
-        .getByLabel('Generated distributed run manifest')
-        .textContent();
+    const manifest = page.getByLabel('Generated distributed run manifest');
+    if (await manifest.count() === 0) {
+        await page.locator('[data-execute-manifest] summary').click();
+        await expect(manifest).toHaveCount(1);
+    }
+    const raw = await manifest.textContent();
     if (!raw) throw new Error('Generated Execute manifest is unavailable.');
     return JSON.parse(raw) as RallarBlackBoxDistributedRunManifest;
 }
@@ -1133,8 +1177,22 @@ test('aborts an in-flight action when Execute configuration changes', async ({
         )
         .click();
     const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Resolve targets' }).click();
+    const targets = page.locator('[data-execute-targets]');
+    const runTrigger = targets.locator('[data-searchable-listbox-trigger]');
+    await runTrigger.click();
+    await expect(targets.getByRole('combobox', { name: 'Search Control run' }))
+        .toBeFocused();
+    await actions.getByRole('button', { name: 'Resolve targets' })
+        .evaluate((button: HTMLButtonElement) => button.click());
     await mock.waitForDeferredResolution();
+    await expect(runTrigger).toBeDisabled();
+    await expect(targets.locator('[data-searchable-listbox-popup]')).toHaveCount(0);
+    const disabledFocus = targets.locator(
+        '[data-searchable-listbox-disabled-focus]',
+    );
+    await expect(disabledFocus).toBeFocused();
+    await expect.poll(() => page.evaluate(() => document.activeElement !== document.body))
+        .toBe(true);
     const readsBeforeChange = mock.runRequestCount();
 
     await page.evaluate(() => {
@@ -1374,7 +1432,8 @@ test('renders waiting-for-barrier truth with bounded Start Cancel and Export pol
 
     const status = page.locator('[data-execute-run-status]');
     const actions = page.locator('[data-execute-action-band]');
-    await expect(status).toHaveAttribute('aria-live', 'polite');
+    await expect(status.locator('[data-execute-run-live-summary]'))
+        .toHaveAttribute('aria-live', 'polite');
     await expect(status).toHaveAttribute('data-run-state', 'waiting-for-barrier');
     await expect(status).toContainText('Waiting For Barrier');
     await expect(
@@ -1417,7 +1476,8 @@ test('closes Cancel on terminal failed truth and announces the authoritative err
     );
 
     const status = page.locator('[data-execute-run-status]');
-    await expect(status).toHaveAttribute('aria-live', 'polite');
+    await expect(status.locator('[data-execute-run-live-summary]'))
+        .toHaveAttribute('aria-live', 'polite');
     await expect(status).toHaveAttribute('data-run-state', 'failed');
     await expect(status.getByRole('alert')).toContainText(
         'Authoritative terminal failure from control truth.',
@@ -1455,12 +1515,13 @@ test('selects an explicit control run inside the single target plane', async ({
     await page.goto(EXECUTE_ROUTE);
 
     const targets = page.locator('[data-execute-targets]');
-    const runPicker = targets.getByRole('combobox', { name: 'Control run' });
+    const runPicker = targets.locator('[data-searchable-listbox-trigger]');
     await expect(runPicker).toBeVisible();
-    await expect(runPicker.locator('option')).toHaveCount(3);
     await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
 
-    await runPicker.selectOption(secondRunId);
+    await runPicker.click();
+    await expect(targets.getByRole('option')).toHaveCount(2);
+    await targets.locator(`[data-option-key="${secondRunId}"]`).click();
     await expect(page).toHaveURL(new RegExp(`controlRunId=${secondRunId}`));
     await expect(targets.locator('[data-execute-target]')).toHaveCount(1);
     await expect(
@@ -1477,12 +1538,202 @@ test('restores safe targets when an explicit control run becomes live', async ({
 
     const targets = page.locator('[data-execute-targets]');
     await expect(
-        targets.getByRole('combobox', { name: 'Control run' }),
-    ).toHaveValue('execute-control-a');
+        targets.locator('[data-searchable-listbox-trigger]'),
+    ).toContainText('execute-control-a');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(2);
     await expect(targets.getByRole('checkbox')).toHaveCount(2);
     await expect(targets.getByRole('checkbox').first()).toBeChecked();
     await expect(targets.getByRole('checkbox').last()).toBeChecked();
+});
+
+test('keeps late Execute pressure evidence operable without changing lifecycle authority', async ({
+    browser,
+}) => {
+    test.setTimeout(60_000);
+    const context = await browser.newContext({
+        hasTouch: true,
+        viewport: { width: 430, height: 932 },
+    });
+    try {
+        const snapshot = pressureSnapshot();
+        const mock = await installLifecycleControl(context, {
+            refreshAgentEvidence: true,
+            snapshot,
+        });
+        const page = await context.newPage();
+        const selectedRunId = snapshot.runs[249]!.runId;
+        const keyboardRunId = snapshot.runs[248]!.runId;
+        await page.goto(`${EXECUTE_ROUTE}&controlRunId=${selectedRunId}`);
+
+        const targets = page.locator('[data-execute-targets]');
+        const actions = page.locator('[data-execute-action-band]');
+        const runTrigger = targets.locator('[data-searchable-listbox-trigger]');
+        await expect(page).toHaveURL(/recipeId=rtc-realtime-stability/);
+        const stableUrl = page.url();
+        await expect(targets.locator('[data-execute-target]')).toHaveCount(100);
+        await expect(actions.getByRole('button', { name: 'Resolve targets' }))
+            .toBeEnabled();
+        await expect(actions.getByRole('button', { name: 'Create draft' }))
+            .toBeDisabled();
+
+        await runTrigger.focus();
+        await page.keyboard.press('Enter');
+        await expect(targets.getByRole('option')).toHaveCount(50);
+        const runWindow = targets.getByRole('group', {
+            name: 'Control run options window',
+        });
+        await runWindow.getByRole('button', { name: 'Previous' }).focus();
+        await page.keyboard.press('Enter');
+        await expect(targets.getByRole('option')).toHaveCount(100);
+        await runWindow.getByRole('button', { name: 'Next' }).focus();
+        await page.keyboard.press('Enter');
+        await expect(targets.getByRole('option')).toHaveCount(50);
+        await expect(targets.locator('[data-searchable-listbox-focus-anchor]'))
+            .toBeFocused();
+        await page.getByRole('button', { name: 'Refresh control data' })
+            .evaluate((button: HTMLButtonElement) => button.click());
+        await expect(targets.locator('[data-searchable-listbox-range]'))
+            .toHaveText('Showing 201–250 of 250 options.');
+        expect(page.url()).toBe(stableUrl);
+        expect(mock.successfulWrites).toHaveLength(0);
+
+        const runSearch = targets.getByRole('combobox', {
+            name: 'Search Control run',
+        });
+        const runPopup = targets.locator('[data-searchable-listbox-popup]');
+        const rangeStatus = runPopup.locator('[data-searchable-listbox-range]');
+        await expect(runPopup.locator('[role="status"]')).toHaveCount(1);
+        await expect(rangeStatus).toHaveAttribute('aria-live', 'polite');
+        await expect(rangeStatus).toHaveAttribute('aria-atomic', 'true');
+        await rangeStatus.evaluate((element) => {
+            element.setAttribute('data-stable-live-region', 'true');
+        });
+        await runSearch.fill(keyboardRunId);
+        await expect(runPopup.locator('[role="status"]')).toHaveCount(1);
+        await expect(rangeStatus).toHaveAttribute('data-stable-live-region', 'true');
+        await expect(rangeStatus).toHaveText('Showing 1–1 of 1 options.');
+        await runSearch.fill('missing-control-run');
+        await expect(runPopup.locator('[role="status"]')).toHaveCount(1);
+        await expect(rangeStatus).toHaveAttribute('data-stable-live-region', 'true');
+        await expect(rangeStatus).toHaveText('No options match this search.');
+        await expect(runPopup.locator('[data-searchable-listbox-empty]'))
+            .toHaveAttribute('aria-hidden', 'true');
+        await runSearch.fill(keyboardRunId);
+        await expect(targets.getByRole('option')).toHaveCount(1);
+        await runSearch.press('Enter');
+        await expect(page).toHaveURL(new RegExp(`controlRunId=${keyboardRunId}`));
+
+        await runTrigger.tap();
+        await targets.getByRole('combobox', { name: 'Search Control run' })
+            .fill(selectedRunId);
+        const selectedOption = targets.locator(
+            `[data-option-key="${selectedRunId}"]`,
+        );
+        await expect(selectedOption).toHaveCount(1);
+        await selectedOption.tap();
+        await expect(page).toHaveURL(new RegExp(`controlRunId=${selectedRunId}`));
+        await expect(targets.locator('[data-execute-target]')).toHaveCount(100);
+        expect(mock.successfulWrites).toHaveLength(0);
+
+        const targetWindowUrl = page.url();
+        const targetWindow = targets.getByRole('group', { name: 'Targets window' });
+        const targetAnchor = targets.locator(
+            '[data-execute-window-focus-anchor="targets"]',
+        );
+        await targetWindow.getByRole('button', { name: 'Next' }).tap();
+        await expect(targetAnchor).toHaveText('Showing 101–200 of 240 targets.');
+        await targetWindow.getByRole('button', { name: 'Next' }).click();
+        await expect(targetAnchor).toHaveText('Showing 201–240 of 240 targets.');
+        await expect(targetAnchor).toBeFocused();
+
+        await targetWindow.getByRole('button', { name: 'Previous' }).focus();
+        await page.keyboard.press('Space');
+        await expect(targetAnchor).toHaveText('Showing 101–200 of 240 targets.');
+        await expect(targetWindow.getByRole('button', { name: 'Previous' }))
+            .toBeFocused();
+        await page.keyboard.press('Space');
+        await expect(targetAnchor).toHaveText('Showing 1–100 of 240 targets.');
+        await expect(targetAnchor).toBeFocused();
+
+        await targetWindow.getByRole('button', { name: 'Next' }).focus();
+        await targetWindow.getByRole('button', { name: 'Next' }).click();
+        await expect(targetAnchor).toHaveText('Showing 101–200 of 240 targets.');
+        await expect(targetWindow.getByRole('button', { name: 'Next' }))
+            .toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(targets.locator('[data-execute-target]')).toHaveCount(40);
+        await expect(targetAnchor).toBeFocused();
+        const lateAgentId = 'pressure-agent-0239';
+        const lateTarget = targets.getByRole('checkbox', {
+            name: `Select ${lateAgentId}`,
+        });
+        await expect(lateTarget).toBeChecked();
+        await lateTarget.focus();
+        await lateTarget.tap();
+        await expect(targets.getByText('239 selected', { exact: true })).toBeVisible();
+        await lateTarget.tap();
+        await expect(targets.getByText('240 selected', { exact: true })).toBeVisible();
+        expect(page.url()).toBe(targetWindowUrl);
+        expect(mock.successfulWrites).toHaveLength(0);
+        await expect(actions.getByRole('button', { name: 'Resolve targets' }))
+            .toBeEnabled();
+        await expect(actions.getByRole('button', { name: 'Create draft' }))
+            .toBeDisabled();
+
+    } finally {
+        await context.close();
+    }
+});
+
+test('preserves the complete 240-target manifest through pressure lifecycle mutations', async ({
+    context,
+    page,
+}) => {
+    test.setTimeout(60_000);
+    const snapshot = pressureSnapshot();
+    const mock = await installLifecycleControl(context, {
+        refreshAgentEvidence: true,
+        snapshot,
+    });
+    const selectedRunId = snapshot.runs[249]!.runId;
+    await page.goto(`${EXECUTE_ROUTE}&controlRunId=${selectedRunId}`);
+    const targets = page.locator('[data-execute-targets]');
+    const actions = page.locator('[data-execute-action-band]');
+    await expect(targets.getByText('240 selected', { exact: true })).toBeVisible();
+
+    await actions.getByRole('button', { name: 'Resolve targets' }).click();
+    await expect(actions.getByRole('button', { name: 'Arm Create draft' }))
+        .toBeVisible();
+    expect(mock.successfulWrites).toHaveLength(1);
+    await actions.getByRole('button', { name: 'Arm Create draft' }).click();
+    await actions.getByRole('button', { name: 'Create draft', exact: true }).click();
+    await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
+        'data-run-state',
+        'draft',
+    );
+    const create = mock.successfulWrites.find(request =>
+        request.path === '/distributed-runs'
+    );
+    expect(create?.manifest?.targetPolicy).toEqual({
+        mode: 'selected-agents',
+        agentIds: Array.from({ length: 240 }, (_unused, index) =>
+            `pressure-agent-${String(index).padStart(4, '0')}`
+        ),
+        expectedParticipantCount: 240,
+    });
+    await actions.getByRole('button', { name: 'Arm Stage run' }).click();
+    await actions.getByRole('button', { name: 'Stage run', exact: true }).click();
+    await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
+        'data-run-state',
+        'waiting-for-ack',
+    );
+    expect(mock.successfulWrites.map(request => request.path)).toEqual([
+        '/distributed-runs/resolve-targets',
+        '/distributed-runs/resolve-targets',
+        '/distributed-runs',
+        '/distributed-runs/resolve-targets',
+        expect.stringMatching(/\/stage$/),
+    ]);
 });
 
 test('renders one live recipe-aware target plane without seeded fallback', async ({

@@ -6,6 +6,8 @@ import type {
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { StatusMark } from '../ui/StatusMark.tsx';
 import type { ExecuteManifestDraft } from './execute-manifest.ts';
+import { ExecuteInspectorPrerequisites } from './ExecuteInspectorPrerequisites.tsx';
+import { ExecuteInspectorSequence } from './ExecuteInspectorSequence.tsx';
 import styles from './ExecuteRecipeInspector.module.css';
 
 export type ExecuteRecipeInspectorProps = Readonly<{
@@ -31,6 +33,10 @@ export function ExecuteRecipeInspector({
     }
 
     const recipe = entry.item.recipe;
+    const contextKey = JSON.stringify([
+        'execute-inspector-v2',
+        recipe.recipeId,
+    ]);
     return (
         <section
             className={styles.inspector}
@@ -71,26 +77,8 @@ export function ExecuteRecipeInspector({
                     ))}</ul>
                 ) : <p>No live service dependency.</p>}
             </div>
-            <div className={styles.sequence}>
-                <h3>Command sequence</h3>
-                <ol>
-                    {recipe.commands.map((command, index) => (
-                        <li key={`${command.commandId ?? command.kind}-${index}`}>
-                            <span className={styles.sequenceNumber}>{index + 1}</span>
-                            <span>
-                                <strong>{command.label ?? command.kind}</strong>
-                                <code>{command.commandId ?? command.kind}</code>
-                            </span>
-                        </li>
-                    ))}
-                </ol>
-            </div>
-            <div className={styles.prerequisites}>
-                <h3>Catalog prerequisites</h3>
-                <ul>{entry.item.prerequisites.map(prerequisite => (
-                    <li key={prerequisite}>{prerequisite}</li>
-                ))}</ul>
-            </div>
+            <ExecuteInspectorSequence commands={recipe.commands} contextKey={contextKey} />
+            <ExecuteInspectorPrerequisites contextKey={contextKey} prerequisites={entry.item.prerequisites} />
         </section>
     );
 }

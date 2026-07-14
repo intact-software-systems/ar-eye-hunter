@@ -5,6 +5,16 @@
     background: var(--rc-surface);
 }
 
+.liveSummary {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
 .header {
     display: flex;
     min-height: 62px;

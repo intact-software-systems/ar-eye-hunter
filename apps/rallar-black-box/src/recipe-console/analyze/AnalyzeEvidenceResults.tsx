@@ -36,7 +36,11 @@ export function AnalyzeEvidenceResults({
     const pending = controller.evidenceWindowPending ?? false;
 
     return (
-        <div className={styles.windowRegion} data-analyze-evidence-window>
+        <div
+            className={styles.windowRegion}
+            data-analyze-evidence-window
+            {...focus.contentFocusProps}
+        >
             <EvidenceWindowTruth
                 error={controller.evidenceWindowError}
                 pending={pending}
@@ -82,7 +86,6 @@ export function AnalyzeEvidenceResults({
             <ol
                 className={styles.results}
                 id={RESULTS_ID}
-                {...focus.contentFocusProps}
                 aria-label="Artifact evidence results"
             >
                 {current?.entries.map(entry => (

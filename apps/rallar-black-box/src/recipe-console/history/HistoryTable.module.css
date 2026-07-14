@@ -53,7 +53,7 @@
     white-space: nowrap;
 }
 
-.focusAnchor:focus {
+.focusAnchor:focus-visible {
     position: relative;
     inline-size: auto;
     block-size: auto;

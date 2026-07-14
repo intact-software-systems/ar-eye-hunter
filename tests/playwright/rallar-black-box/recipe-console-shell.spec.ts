@@ -523,7 +523,9 @@ test('keeps selected recipe truth aligned across Execute surfaces', async ({ pag
     const preflight = page.getByRole('region', { name: 'Preflight' });
     await expect(preflight.getByText('Manifest commands', { exact: true }).locator('..'))
         .toContainText('10');
-    await expect(page.locator('[data-execute-manifest]'))
+    const manifest = page.locator('[data-execute-manifest]');
+    await manifest.locator('summary').click();
+    await expect(manifest)
         .toContainText('rallar-provider-parity-recipe');
 
     const targets = page.getByRole('region', { name: 'Targets' });
@@ -566,6 +568,7 @@ test('refreshes Execute control truth without discarding the uncreated draft', a
     await expect(firstTarget).toBeChecked();
     await firstTarget.uncheck();
     await expect(targets.getByText('1 selected', { exact: true })).toBeVisible();
+    await page.locator('[data-execute-manifest] summary').click();
     const manifestJson = page.locator('[data-execute-manifest] pre code');
     await expect(manifestJson).toContainText('"distributedRunId"');
     const draftBeforeRefresh = await manifestJson.textContent();

@@ -3,6 +3,7 @@ import type { ExplicitWindowModel } from './explicit-window-model.ts';
 import styles from './ExplicitWindowControls.module.css';
 
 export type ExplicitWindowControlsProps = Readonly<{
+    announceRange?: boolean;
     contentId: string;
     emptyLabel?: string;
     focusFallbackRef?: Ref<HTMLSpanElement>;
@@ -15,6 +16,7 @@ export type ExplicitWindowControlsProps = Readonly<{
 }>;
 
 export function ExplicitWindowControls({
+    announceRange = true,
     contentId,
     emptyLabel,
     focusFallbackRef,
@@ -39,6 +41,7 @@ export function ExplicitWindowControls({
             <button
                 aria-controls={contentId}
                 aria-disabled={pending || undefined}
+                data-explicit-window-direction="previous"
                 disabled={!model.canPrevious}
                 onClick={() => invoke(onPrevious)}
                 type="button"
@@ -46,11 +49,11 @@ export function ExplicitWindowControls({
                 Previous
             </button>
             <span
-                aria-atomic="true"
-                aria-live="polite"
+                aria-atomic={announceRange ? 'true' : undefined}
+                aria-live={announceRange ? 'polite' : undefined}
                 className={styles.range}
                 ref={focusFallbackRef}
-                role="status"
+                role={announceRange ? 'status' : undefined}
                 tabIndex={-1}
             >
                 {rangeLabel(model, itemLabel, emptyLabel)}{pending ? ' Updating…' : ''}
@@ -58,6 +61,7 @@ export function ExplicitWindowControls({
             <button
                 aria-controls={contentId}
                 aria-disabled={pending || undefined}
+                data-explicit-window-direction="next"
                 disabled={!model.canNext}
                 onClick={() => invoke(onNext)}
                 type="button"

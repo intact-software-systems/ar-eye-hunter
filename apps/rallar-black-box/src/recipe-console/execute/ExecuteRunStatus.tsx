@@ -28,7 +28,6 @@ export function ExecuteRunStatus({
     return (
         <section
             aria-labelledby="execute-run-status-heading"
-            aria-live="polite"
             className={styles.runStatus}
             data-execute-run-status
             data-run-state={state ?? 'uncreated'}
@@ -43,6 +42,13 @@ export function ExecuteRunStatus({
                     status={state ? stateTone(state) : 'disabled'}
                 />
             </header>
+            <p
+                aria-atomic="true"
+                aria-live="polite"
+                className={styles.liveSummary}
+                data-execute-run-live-summary
+                role="status"
+            >Run state: {state ? stateLabel(state) : 'Not created'}.</p>
             {unknownDistributedRunId ? (
                 <p className={styles.error} role="alert">
                     Distributed run <code>{requestedDistributedRunId}</code> is not available in current control truth.

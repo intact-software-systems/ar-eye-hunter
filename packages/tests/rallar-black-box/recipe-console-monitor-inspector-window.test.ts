@@ -84,7 +84,10 @@ describe('Recipe Console Monitor inspector windows', () => {
             const next = controlButton('Command evidence', 'Next');
             next.focus();
             await act(async () => next.click());
-            expect(document.activeElement).toBe(next);
+            expect(next.disabled).toBe(true);
+            expect(document.activeElement).toBe(container.querySelector(
+                '[data-monitor-window-focus-anchor="Command evidence"]',
+            ));
             expect(windowStatus('Command evidence')?.textContent)
                 .toBe('Showing 17–20 of 20 linked items.');
             expect(windowButtons('monitor-inspector-command-evidence')).toHaveLength(4);

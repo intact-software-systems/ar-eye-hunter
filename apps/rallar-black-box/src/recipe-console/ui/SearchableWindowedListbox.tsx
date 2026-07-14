@@ -19,6 +19,8 @@ export type SearchableWindowedListboxProps = Readonly<{
     selectedKey?: string;
     placeholder: string;
     disabled?: boolean;
+    describedBy?: string;
+    invalid?: boolean;
     onSelect(option: SearchableListboxOption): void;
 }>;
 
@@ -31,15 +33,12 @@ export function SearchableWindowedListbox({
     selectedKey,
     placeholder,
     disabled = false,
+    describedBy,
+    invalid = false,
     onSelect,
 }: SearchableWindowedListboxProps) {
     const state = useSearchableListbox({
-        contextKey,
-        disabled,
-        onSelect,
-        options,
-        revision,
-        selectedKey,
+        contextKey, disabled, onSelect, options, revision, selectedKey,
     });
     const selected = selectedKey === undefined || state.duplicateKey !== undefined
         ? undefined
@@ -71,15 +70,21 @@ export function SearchableWindowedListbox({
 
     return (
         <div
+            aria-labelledby={`${id}-label`}
             className={styles.root}
+            data-searchable-listbox-disabled-focus
             data-searchable-windowed-listbox
             ref={state.rootRef}
+            role="group"
+            tabIndex={-1}
         >
             <span className={styles.label} id={`${id}-label`}>{label}</span>
             <button
                 aria-controls={state.open ? listboxId : undefined}
+                aria-describedby={describedBy}
                 aria-expanded={state.open}
                 aria-haspopup="listbox"
+                aria-invalid={invalid || undefined}
                 aria-labelledby={`${id}-label ${id}-selection`}
                 className={styles.trigger}
                 data-searchable-listbox-trigger
@@ -138,6 +143,7 @@ export function SearchableWindowedListbox({
                     {state.window.model.total > state.window.model.windowSize ? (
                         <div {...state.contentFocusProps}>
                             <ExplicitWindowControls
+                                announceRange={false}
                                 contentId={listboxId}
                                 itemLabel="options"
                                 label={`${label} options`}
@@ -149,10 +155,13 @@ export function SearchableWindowedListbox({
                         </div>
                     ) : null}
                     <span
+                        aria-atomic="true"
+                        aria-live="polite"
                         className={styles.focusAnchor}
                         data-searchable-listbox-focus-anchor
                         data-searchable-listbox-range
                         ref={state.focusFallbackRef}
+                        role="status"
                         tabIndex={-1}
                     >{range}</span>
                     {state.window.model.total > state.window.model.windowSize ? (
@@ -185,7 +194,11 @@ export function SearchableWindowedListbox({
                         ))}
                     </div>
                     {state.window.model.total === 0 ? (
-                        <p className={styles.empty} data-searchable-listbox-empty>{range}</p>
+                        <p
+                            aria-hidden="true"
+                            className={styles.empty}
+                            data-searchable-listbox-empty
+                        >{range}</p>
                     ) : null}
                 </div>
             ) : null}

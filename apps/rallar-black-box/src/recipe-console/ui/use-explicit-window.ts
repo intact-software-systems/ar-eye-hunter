@@ -1,11 +1,7 @@
 import {
     useCallback,
     useLayoutEffect,
-    useMemo,
-    useRef,
     useState,
-    type FocusEventHandler,
-    type RefObject,
 } from 'react';
 import {
     createExplicitWindowState,
@@ -15,6 +11,8 @@ import {
     type ExplicitWindowInput,
     type ExplicitWindowModel,
 } from './explicit-window-model.ts';
+import { useExplicitWindowFocusRecovery } from
+    './use-explicit-window-focus-recovery.ts';
 
 export type ExplicitWindowController = Readonly<{
     model: ExplicitWindowModel;
@@ -22,14 +20,6 @@ export type ExplicitWindowController = Readonly<{
     next(): void;
     revealIndex(index: number): void;
     reset(): void;
-}>;
-
-export type ExplicitWindowFocusRecovery = Readonly<{
-    fallbackFocusRef: RefObject<HTMLSpanElement | null>;
-    contentFocusProps: Readonly<{
-        onFocusCapture: FocusEventHandler<HTMLElement>;
-        onBlurCapture: FocusEventHandler<HTMLElement>;
-    }>;
 }>;
 
 export function useExplicitWindow(
@@ -79,40 +69,6 @@ export function useExplicitWindow(
     return { model, previous, next, revealIndex, reset };
 }
 
-export function useExplicitWindowFocusRecovery(
-    model: ExplicitWindowModel,
-): ExplicitWindowFocusRecovery {
-    const fallbackFocusRef = useRef<HTMLSpanElement>(null);
-    const focusedContentElementRef = useRef<HTMLElement | undefined>(undefined);
-    const onFocusCapture = useCallback<FocusEventHandler<HTMLElement>>(event => {
-        if (event.target instanceof HTMLElement) {
-            focusedContentElementRef.current = event.target;
-        }
-    }, []);
-    const onBlurCapture = useCallback<FocusEventHandler<HTMLElement>>(event => {
-        const next = event.relatedTarget;
-        if (next instanceof Node && event.currentTarget.contains(next)) return;
-        if (!(event.target instanceof HTMLElement) || event.target.isConnected) {
-            focusedContentElementRef.current = undefined;
-        }
-    }, []);
-
-    useLayoutEffect(() => {
-        const previous = focusedContentElementRef.current;
-        if (!previous || previous.isConnected) return;
-        fallbackFocusRef.current?.focus();
-        focusedContentElementRef.current = undefined;
-    }, [
-        model.fingerprint,
-        model.revision,
-        model.startIndex,
-        model.endIndexExclusive,
-        model.total,
-    ]);
-
-    const contentFocusProps = useMemo(() => ({
-        onFocusCapture,
-        onBlurCapture,
-    }), [onBlurCapture, onFocusCapture]);
-    return { fallbackFocusRef, contentFocusProps };
-}
+export { useExplicitWindowFocusRecovery };
+export type { ExplicitWindowFocusRecovery } from
+    './use-explicit-window-focus-recovery.ts';
