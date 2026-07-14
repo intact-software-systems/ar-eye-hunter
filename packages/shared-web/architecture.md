@@ -34,6 +34,33 @@ New app code should prefer the smallest browser entry point that matches the
 feature area. Existing app imports from `browser/rallar.ts` and `mod.ts` remain
 compatible; migration is intentionally gradual.
 
+## Browser Facade Runtime
+
+`browser/rallar.ts` is a compatibility entry point. It re-exports the existing
+public contract and delegates construction to `browser/rallar-runtime/compose.ts`.
+The implementation lives in unexported capability controllers under
+`browser/rallar-runtime/`; public barrels and narrow entry points must not
+export these modules.
+
+Public capability types are owned by their existing `rallar-*-facade.ts`
+modules. `rallar-shared-contracts.ts` contains only shared subscription and
+listener primitives, while `rallar-facade-contract.ts` composes the aggregate
+`RallarFacade` type and re-exports the compatibility type set.
+
+Runtime dependencies point inward from the composer to narrow controller
+ports. State, messages, WS inbox, WS, RTC, realtime, rooms/people/stats,
+media/calls, and director do not import the compatibility entry point or the
+composer. Higher-level controllers receive lower-level facade or state ports;
+state notifies director through an after-emit observer, and state events plus
+ordinary WS messages share the ordered WS inbox multiplexer.
+
+Connection and auth are owned by the session controller. Its ordered lifecycle
+participants attach and detach in this fixed order: director cleanup, state
+cache, RTC message inbox, WS inbox, WS status, realtime peer lifecycle, RTC
+status, realtime lanes, and media. Detach is deliberately not reversed.
+Connected notification remains state, then WS, then RTC; disconnected
+notification runs only after middleware shutdown and runtime clearing.
+
 ## Room Transport Product Helpers
 
 - `rallar.setup(input)` is the browser golden-path bootstrap. It combines
@@ -117,13 +144,13 @@ Current browser simplification measurement and budgets:
 
 | Entry | Minified | Gzip | Brotli | Budget |
 |---|---:|---:|---:|---:|
-| `browser/rallar.ts` | 674.3 KiB | 166.9 KiB | 139.6 KiB | < 160.0 KiB |
-| `browser/rallar-core.ts` | 2.4 KiB | 0.8 KiB | 0.7 KiB | < 100.0 KiB |
-| `browser/rallar-realtime.ts` | 3.5 KiB | 1.1 KiB | 0.9 KiB | < 100.0 KiB |
-| `browser/rallar-data.ts` | 28.5 KiB | 6.7 KiB | 6.0 KiB | < 20.0 KiB |
+| `browser/rallar.ts` | 648.2 KiB | 165.5 KiB | 137.9 KiB | < 160.0 KiB |
+| `browser/rallar-core.ts` | 3.2 KiB | 1.0 KiB | 0.9 KiB | < 100.0 KiB |
+| `browser/rallar-realtime.ts` | 4.3 KiB | 1.2 KiB | 1.1 KiB | < 100.0 KiB |
+| `browser/rallar-data.ts` | 28.9 KiB | 6.8 KiB | 6.1 KiB | < 20.0 KiB |
 | `browser/rallar-crdt.ts` | 73.7 KiB | 17.4 KiB | 15.7 KiB | < 30.0 KiB |
 | `browser/rallar-media-calls.ts` | 0.5 KiB | 0.3 KiB | 0.2 KiB | < 10.0 KiB |
-| `shared-web/mod.ts` | 713.8 KiB | 176.1 KiB | 147.8 KiB | - |
+| `shared-web/mod.ts` | 699.1 KiB | 177.5 KiB | 148.8 KiB | - |
 
 ## Dependency Boundaries
 

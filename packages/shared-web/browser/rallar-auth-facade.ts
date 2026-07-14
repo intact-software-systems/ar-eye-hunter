@@ -1,3 +1,9 @@
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
+import type {
+    RallarOnChangeOptions,
+    RallarStateListener,
+    RallarUnsubscribe,
+} from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     AuthSession,
     LoginRequest,
@@ -5,13 +11,28 @@ import type {
     RegisterRequest,
     RegisterResponse,
 } from '@shared/api/api-config.ts';
-import type {
-    RallarAuthChangeListener,
-    RallarOnChangeOptions,
-    RallarOperationOptions,
-    RallarRegisterOptions,
-    RallarUnsubscribe,
-} from '@shared-web/browser/rallar.ts';
+
+export type RallarAuthChangeReason =
+    | 'current'
+    | 'login'
+    | 'logout'
+    | 'expired'
+    | 'unauthorized';
+
+export type RallarAuthState = Readonly<{
+    authenticated: boolean;
+    reason: RallarAuthChangeReason;
+    session?: AuthSession;
+}>;
+
+export type RallarAuthChangeListener =
+    RallarStateListener<RallarAuthState>;
+
+export type RallarRegisterOptions =
+    & RallarOperationOptions
+    & Readonly<{
+    adminSession?: AuthSession | null;
+}>;
 
 export type RallarAuthFacade = Readonly<{
     login(
