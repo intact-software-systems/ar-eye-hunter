@@ -46,6 +46,8 @@ import { useLegacyDiagnosticContext } from
     '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
 import { resolveRunManagerRefreshSelection } from
     '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
+import { useLatestRequestGuard } from
+    '../shared/use-latest-request-guard.ts';
 
 export function RunManagerPanel({
     state,
@@ -83,7 +85,7 @@ export function RunManagerPanel({
     const [lastAction, setLastAction] = useState<string | undefined>();
     const didInitialRefresh = useRef(false);
     const lastDiagnosticControlRunId = useRef(diagnosticControlRunId);
-    const refreshGeneration = useRef(0);
+    const selectionRequests = useLatestRequestGuard();
     const stats = useMemo(() => controlRunManagerStats(snapshot), [snapshot]);
     const agentRows = useMemo(() => controlRunAgentRows(run), [run]);
     const agentRowsKey = agentRows.map((row) => row.agentId).join('\u0000');
@@ -126,8 +128,7 @@ export function RunManagerPanel({
     const canTargetAgents = Boolean(run && selectedAgentIds.length > 0);
 
     const refresh = async (preferredRunId = selectedRunId): Promise<void> => {
-        const generation = refreshGeneration.current + 1;
-        refreshGeneration.current = generation;
+        const request = selectionRequests.begin();
         setBusyAction('refresh');
         setError(undefined);
         try {
@@ -136,7 +137,7 @@ export function RunManagerPanel({
                 token,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
             });
-            if (generation !== refreshGeneration.current) {
+            if (!request.isCurrent()) {
                 return;
             }
             setSnapshot(serverSnapshot);
@@ -163,7 +164,7 @@ export function RunManagerPanel({
                     runId: nextRunId,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
                 });
-                if (generation !== refreshGeneration.current) {
+                if (!request.isCurrent()) {
                     return;
                 }
                 setRun(nextRun);
@@ -174,11 +175,11 @@ export function RunManagerPanel({
             }
             setLastAction(`Refreshed ${serverSnapshot.runs.length} run(s).`);
         } catch (caught) {
-            if (generation === refreshGeneration.current) {
+            if (request.isCurrent()) {
                 setError(caught instanceof Error ? caught.message : String(caught));
             }
         } finally {
-            if (generation === refreshGeneration.current) {
+            if (request.isCurrent()) {
                 setBusyAction(undefined);
             }
         }
@@ -222,29 +223,38 @@ export function RunManagerPanel({
     }, [agentRowsKey]);
 
     const loadRun = async (runId: string): Promise<void> => {
+        const request = selectionRequests.begin();
         setSelectedRunId(runId);
         setArtifactBundle(undefined);
         if (!runId) {
             setRun(undefined);
+            setBusyAction(undefined);
+            setError(undefined);
             return;
         }
 
         setBusyAction('load-run');
         setError(undefined);
         try {
-            setRun(
-                await fetchControlRunSnapshot({
-                    baseUrl,
-                    token,
-                    runId,
-                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
-                }),
-            );
+            const loaded = await fetchControlRunSnapshot({
+                baseUrl,
+                token,
+                runId,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+            });
+            if (!request.isCurrent()) {
+                return;
+            }
+            setRun(loaded);
             setLastAction(`Loaded ${runId}.`);
         } catch (caught) {
-            setError(caught instanceof Error ? caught.message : String(caught));
+            if (request.isCurrent()) {
+                setError(caught instanceof Error ? caught.message : String(caught));
+            }
         } finally {
-            setBusyAction(undefined);
+            if (request.isCurrent()) {
+                setBusyAction(undefined);
+            }
         }
     };
 

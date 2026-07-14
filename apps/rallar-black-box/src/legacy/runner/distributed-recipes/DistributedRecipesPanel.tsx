@@ -13,8 +13,7 @@ import { DistributedRecipeCatalogPanel } from './views/DistributedRecipeCatalogP
 import { DistributedRecipesHeader } from './views/DistributedRecipesHeader.tsx';
 import { DistributedRunControlPanel } from './views/DistributedRunControlPanel.tsx';
 import { DistributedTargetResolutionPanel } from './views/DistributedTargetResolutionPanel.tsx';
-import { useLegacyDiagnosticContext } from
-    '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
+import { useLegacyDiagnosticContext } from '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
 
 type DistributedRecipesPanelProps = Readonly<{
     state: RallarBlackBoxTestState;
@@ -29,10 +28,7 @@ export function DistributedRecipesPanel({
     const diagnosticContext = useLegacyDiagnosticContext().context;
     const initialControlRunId = diagnosticContext?.controlRunId;
     const initialDistributedRunId = diagnosticContext?.distributedRunId;
-    const contextKey = JSON.stringify([
-        initialControlRunId,
-        initialDistributedRunId,
-    ]);
+    const contextKey = JSON.stringify([initialControlRunId, initialDistributedRunId]);
     return (
         <DistributedRecipesPanelVisit
             key={contextKey}
@@ -47,11 +43,7 @@ export function DistributedRecipesPanel({
 }
 
 function DistributedRecipesPanelVisit({
-    state,
-    bootstrap,
-    control,
-    globalValues,
-    initialControlRunId,
+    state, bootstrap, control, globalValues, initialControlRunId,
     initialDistributedRunId,
 }: DistributedRecipesPanelProps & Readonly<{
     initialControlRunId?: string;
@@ -76,11 +68,7 @@ function DistributedRecipesPanelVisit({
         diagnosticSelectionIssue: remote.diagnosticSelectionIssue,
     });
     const actions = useDistributedRecipesActions({
-        bootstrap,
-        control,
-        roomId: globalValues.roomId,
-        remote,
-        builder,
+        bootstrap, control, roomId: globalValues.roomId, remote, builder,
     });
 
     return (
@@ -102,9 +90,7 @@ function DistributedRecipesPanelVisit({
                 selectedAgentCount={builder.selectedAgentIds.length}
                 targetableAgentCount={builder.targetableRows.length}
                 distributedRunCount={remote.distributedRuns.length}
-                redactedError={
-                    remote.diagnosticSelectionIssue ?? remote.redactedError
-                }
+                redactedError={remote.diagnosticSelectionIssue ?? remote.redactedError}
                 manifestValidation={builder.manifestValidation}
                 onBaseUrlChange={remote.setBaseUrl}
                 onTokenChange={remote.setToken}

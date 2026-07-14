@@ -1,9 +1,8 @@
 import { useEffect, useRef } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
-    cancelDistributedRun, createDistributedRun, fetchControlRunSnapshot,
-    fetchControlServerSnapshot, fetchDistributedRun,
-    fetchDistributedRunArtifactBundle, fetchDistributedRuns,
+    cancelDistributedRun, createDistributedRun,
+    fetchDistributedRunArtifactBundle,
     resolveDistributedTargets, stageDistributedRun, startDistributedRun,
     type ControlDistributedRunSnapshot,
 } from '../../../control-run-manager.ts';
@@ -16,9 +15,10 @@ import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { safeIdSegment } from '../../shared/safe-id-segment.ts';
 import { sameStringArray } from '../../shared/same-string-array.ts';
-import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
 import type { DistributedRecipeBuilderModel } from './use-distributed-recipe-builder.ts';
 import type { DistributedRecipesRemoteStateModel } from './use-distributed-recipes-remote-state.ts';
+import { useDistributedRecipesSelectionActions } from
+    './use-distributed-recipes-selection-actions.ts';
 
 type UseDistributedRecipesActionsInput = Readonly<{
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -32,7 +32,7 @@ export function useDistributedRecipesActions({
     bootstrap, control, roomId, remote, builder,
 }: UseDistributedRecipesActionsInput) {
     const {
-        baseUrl, token, selectedRunId, setSelectedRunId, setSnapshot, setRun,
+        baseUrl, token, selectedRunId,
         distributedRuns, setDistributedRuns, selectedDistributedRun,
         setSelectedDistributedRun, setTargetResolutionPreview, artifactBundle,
         setArtifactBundle, setBusyAction, setError, setLastAction,
@@ -45,65 +45,12 @@ export function useDistributedRecipesActions({
         worldFleetBlockReason, setSelectedRecipeIds,
     } = builder;
     const didInitialRefresh = useRef(false);
-    const refresh = async (
-        preferredRunId = selectedRunId,
-        preferredDistributedRunId = distributedRunId,
-    ): Promise<void> => {
-        setBusyAction('refresh');
-        setError(undefined);
-        try {
-            const [serverSnapshot, distributedList] = await Promise.all([
-                fetchControlServerSnapshot({
-                    baseUrl,
-                    token,
-                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
-                }),
-                fetchDistributedRuns({
-                    baseUrl,
-                    token,
-                }),
-            ]);
-            setSnapshot(serverSnapshot);
-            setDistributedRuns(distributedList);
-            const knownRunIds = new Set(
-                serverSnapshot.runs.map((option) => option.runId),
-            );
-            const nextRunId =
-                [
-                    preferredRunId,
-                    control.runId,
-                    bootstrap.runId,
-                    serverSnapshot.runs[0]?.runId,
-                ].find(
-                    (candidate) => candidate && knownRunIds.has(candidate),
-                ) ?? '';
-            setSelectedRunId(nextRunId);
-            if (nextRunId) {
-                setRun(
-                    await fetchControlRunSnapshot({
-                        baseUrl,
-                        token,
-                        runId: nextRunId,
-                        bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
-                    }),
-                );
-            } else {
-                setRun(undefined);
-            }
-            const nextDistributedRun = distributedList.find(
-                (item) => item.distributedRunId === preferredDistributedRunId,
-            );
-            setSelectedDistributedRun(nextDistributedRun);
-            setArtifactBundle(undefined);
-            setLastAction(
-                `Refreshed ${serverSnapshot.runs.length} run(s), ${distributedList.length} distributed run(s).`,
-            );
-        } catch (caught) {
-            setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
-            setBusyAction(undefined);
-        }
-    };
+    const selectionActions = useDistributedRecipesSelectionActions({
+        bootstrap, control, remote, builder,
+    });
+    const refresh = selectionActions.refresh;
+    const loadRun = selectionActions.loadRun;
+    const loadDistributedRun = selectionActions.loadDistributedRun;
 
     useEffect(() => {
         if (didInitialRefresh.current) {
@@ -134,32 +81,6 @@ export function useDistributedRecipesActions({
             return sameStringArray(previous, next) ? previous : next;
         });
     }, [targetRows]);
-
-    const loadRun = async (runId: string): Promise<void> => {
-        setSelectedRunId(runId);
-        setArtifactBundle(undefined);
-        setError(undefined);
-        if (!runId) {
-            setRun(undefined);
-            return;
-        }
-        setBusyAction('load-run');
-        try {
-            setRun(
-                await fetchControlRunSnapshot({
-                    baseUrl,
-                    token,
-                    runId,
-                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
-                }),
-            );
-            setLastAction(`Loaded ${runId}.`);
-        } catch (caught) {
-            setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
-            setBusyAction(undefined);
-        }
-    };
 
     const resolveTargets = async (): Promise<void> => {
         setBusyAction('resolve-targets');
@@ -356,27 +277,6 @@ export function useDistributedRecipesActions({
         }
         await navigator.clipboard?.writeText(json(bundle.files));
         setLastAction('Copied distributed artifact files.');
-    };
-
-    const loadDistributedRun = async (id: string): Promise<void> => {
-        setDistributedRunId(id);
-        setBusyAction('load-distributed-run');
-        setError(undefined);
-        try {
-            const loaded = await fetchDistributedRun({
-                baseUrl,
-                token,
-                distributedRunId: id,
-            });
-            setSelectedDistributedRun(loaded);
-            setSelectedRunId(loaded.controlRunId);
-            await loadRun(loaded.controlRunId);
-            setLastAction(`Loaded ${id}.`);
-        } catch (caught) {
-            setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
-            setBusyAction(undefined);
-        }
     };
 
     const toggleRecipe = (itemId: string): void => {

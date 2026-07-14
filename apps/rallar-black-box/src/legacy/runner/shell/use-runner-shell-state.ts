@@ -89,16 +89,35 @@ export function useRunnerShellSelectionSync({
     setSelectedCommandId: Dispatch<SetStateAction<string | undefined>>;
     diagnosticCommandId?: string;
 }>): void {
+    const activeCommandId = activeCommand?.commandId;
+    const didInitializeSync = useRef(false);
+    const lastActiveCommandId = useRef<string | undefined>(undefined);
+    const lastDiagnosticCommandId = useRef(diagnosticCommandId);
+
     useEffect(() => {
-        if (activeCommand) {
-            setSelectedCommandId(activeCommand.commandId);
+        const initialSync = !didInitializeSync.current;
+        const diagnosticContextChanged =
+            diagnosticCommandId !== lastDiagnosticCommandId.current;
+        const activeCommandChanged =
+            activeCommandId !== lastActiveCommandId.current;
+
+        didInitializeSync.current = true;
+        lastDiagnosticCommandId.current = diagnosticCommandId;
+        lastActiveCommandId.current = activeCommandId;
+
+        if ((initialSync && diagnosticCommandId) || diagnosticContextChanged) {
+            return;
+        }
+
+        if (activeCommandId && (initialSync || activeCommandChanged)) {
+            setSelectedCommandId(activeCommandId);
             return;
         }
 
         if (!selectedCommandId && history.length > 0) {
             setSelectedCommandId(history.at(-1)?.commandId);
         }
-    }, [activeCommand, diagnosticCommandId, history, selectedCommandId]);
+    }, [activeCommandId, diagnosticCommandId, history, selectedCommandId]);
 
     useEffect(() => {
         if (!diagnosticCommandId) {
@@ -119,7 +138,10 @@ export function selectedRunnerResult(
     selectedCommandId: string | undefined,
     diagnosticContext: LegacyDiagnosticContext | undefined,
 ): RallarBlackBoxTestResult | undefined {
-    if (diagnosticContext?.commandId) {
+    if (
+        diagnosticContext?.commandId &&
+        selectedCommandId === diagnosticContext.commandId
+    ) {
         return history.find(
             result => result.commandId === diagnosticContext.commandId,
         );
