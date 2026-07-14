@@ -89,6 +89,20 @@ describe('Rallar server storage schema docs', () => {
         expect(migration).toContain('ANALYZE resource_inbox');
     });
 
+    it('widens QueueBox keys for scoped group identifiers', () => {
+        const migration = readWorkspaceFile(
+            'apps/api-v1/prisma/migrations/20260714093000_resource_inbox_scoped_queue_keys/migration.sql',
+        );
+        const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');
+
+        expect(migration).toContain('ALTER COLUMN ri_resource_id TYPE varchar(128)');
+        expect(migration).toContain('ALTER COLUMN ris_resource_id TYPE varchar(128)');
+        expect(migration).toContain('ALTER COLUMN fk_ext_bank_id TYPE varchar(128)');
+        expect(schema).toContain('ri_resource_id String    @db.VarChar(128)');
+        expect(schema).toContain('ris_resource_id String   @db.VarChar(128)');
+        expect(schema.match(/fk_ext_bank_id\s+String\s+@db\.VarChar\(128\)/g)).toHaveLength(2);
+    });
+
     it('builds the runtime-state prefix index with retry-safe transactional DDL', () => {
         const migration = readWorkspaceFile(
             'apps/api-v1/prisma/migrations/20260710221500_runtime_state_store_c_prefix_index/migration.sql',

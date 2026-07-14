@@ -12,12 +12,12 @@ CREATE SEQUENCE IF NOT EXISTS trans_inbox_seq
 CREATE TABLE IF NOT EXISTS resource_inbox
 (
     ri_row_id      bigint       NOT NULL DEFAULT nextval('trans_inbox_seq'),
-    ri_resource_id varchar(36)  NOT NULL,
+    ri_resource_id varchar(128) NOT NULL,
     ri_topic_id    varchar(36)  NOT NULL,
     ri_resource    text         NOT NULL,
     ri_type_id     varchar(36)  NOT NULL,
     ri_status      varchar(36)  NOT NULL,
-    fk_ext_bank_id varchar(35)  NOT NULL,
+    fk_ext_bank_id varchar(128) NOT NULL,
     system_date    date         NOT NULL,
     created_by     varchar(16)  NOT NULL,
     created_ts     timestamp(6) NOT NULL,
@@ -50,12 +50,12 @@ CREATE SEQUENCE IF NOT EXISTS trans_inbox_results_seq
 CREATE TABLE IF NOT EXISTS resource_inbox_results
 (
     ris_row_id      bigint       NOT NULL DEFAULT nextval('trans_inbox_results_seq'),
-    ris_resource_id varchar(36)  NOT NULL,
+    ris_resource_id varchar(128) NOT NULL,
     ris_topic_id    varchar(36)  NOT NULL,
     ris_resource    text         NOT NULL,
     ris_type_id     varchar(36)  NOT NULL,
     ris_status      varchar(36)  NOT NULL,
-    fk_ext_bank_id  varchar(35)  NOT NULL,
+    fk_ext_bank_id  varchar(128) NOT NULL,
     system_date     date         NOT NULL,
     created_by      varchar(16)  NOT NULL,
     created_ts      timestamp(6) NOT NULL,

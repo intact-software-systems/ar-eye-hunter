@@ -95,10 +95,10 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
 });
 
 Deno.test('schema bootstrap only runs for PGlite backends', async () => {
-  let calls = 0;
+  const calls: string[] = [];
   const client = {
-    exec(_sql: string): Promise<void> {
-      calls += 1;
+    exec(sql: string): Promise<void> {
+      calls.push(sql);
       return Promise.resolve();
     },
   };
@@ -107,19 +107,20 @@ Deno.test('schema bootstrap only runs for PGlite backends', async () => {
     await bootstrapApiV1InMemorySchemaIfNeeded(client, { sqlBackend: 'postgres' }),
     false,
   );
-  assert.equal(calls, 0);
+  assert.equal(calls.length, 0);
 
   assert.equal(
     await bootstrapApiV1InMemorySchemaIfNeeded(client, { sqlBackend: 'pglite-memory' }),
     true,
   );
-  assert.equal(calls, 1);
+  assert.equal(calls.length, 2);
+  assert.match(calls[1], /ALTER TABLE resource_inbox/);
 
   assert.equal(
     await bootstrapApiV1InMemorySchemaIfNeeded(client, { sqlBackend: 'pglite-file' }),
     true,
   );
-  assert.equal(calls, 2);
+  assert.equal(calls.length, 4);
 
   assert.equal(
     await bootstrapApiV1InMemorySchemaIfNeeded(client, {
@@ -128,7 +129,7 @@ Deno.test('schema bootstrap only runs for PGlite backends', async () => {
     }),
     false,
   );
-  assert.equal(calls, 2);
+  assert.equal(calls.length, 4);
 });
 
 Deno.test('in-memory schema supports repository-shaped SQL smoke operations', async () => {
@@ -146,7 +147,35 @@ Deno.test('in-memory schema supports repository-shaped SQL smoke operations', as
   }
 });
 
+Deno.test('PGlite bootstrap upgrades legacy queue tables for scoped keys', async () => {
+  const db = new PGlite();
+  try {
+    const legacySchemaSql = (await readApiV1InMemorySchemaSql())
+      .replace('ri_resource_id varchar(128)', 'ri_resource_id varchar(36)')
+      .replace('fk_ext_bank_id varchar(128)', 'fk_ext_bank_id varchar(35)')
+      .replace('ris_resource_id varchar(128)', 'ris_resource_id varchar(36)')
+      .replace('fk_ext_bank_id  varchar(128)', 'fk_ext_bank_id  varchar(35)');
+
+    await db.exec(legacySchemaSql);
+    assert.equal(
+      await bootstrapApiV1InMemorySchemaIfNeeded(db, { sqlBackend: 'pglite-file' }),
+      true,
+    );
+    assert.equal(
+      await bootstrapApiV1InMemorySchemaIfNeeded(db, { sqlBackend: 'pglite-file' }),
+      true,
+    );
+
+    await smokeResourceInbox(db);
+    await smokeResourceInboxResults(db);
+  } finally {
+    await db.close();
+  }
+});
+
 async function smokeResourceInbox(db: PGlite): Promise<void> {
+  const resourceId = '["rallar-server","default","hetzner-headless-room"]';
+  const contextId = 'rallar-server:default:hetzner-headless-room';
   const inserted = await db.query<{ ri_row_id: number }>(
     `insert into resource_inbox (ri_resource_id,
                                      ri_topic_id,
@@ -161,12 +190,12 @@ async function smokeResourceInbox(db: PGlite): Promise<void> {
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          returning ri_row_id`,
     [
-      'resource-1',
+      resourceId,
       'topic-1',
       'payload',
       'WS_INBOX',
       'PENDING',
-      'bank-1',
+      contextId,
       '2026-06-01',
       'test',
       '2026-06-01 12:00:00',
@@ -195,12 +224,12 @@ async function smokeResourceInbox(db: PGlite): Promise<void> {
                            expire_ts   = excluded.expire_ts
          returning ri_resource, ri_status`,
     [
-      'resource-1',
+      resourceId,
       'topic-1',
       'payload-updated',
       'WS_INBOX',
       'COMPLETED',
-      'bank-1',
+      contextId,
       '2026-06-01',
       'test',
       '2026-06-01 12:00:01',
@@ -219,7 +248,7 @@ async function smokeResourceInbox(db: PGlite): Promise<void> {
          where fk_ext_bank_id = $1
            and ri_resource_id = $2
            and ri_topic_id = $3`,
-    ['bank-1', 'resource-1', 'topic-1'],
+    [contextId, resourceId, 'topic-1'],
   );
 
   assert.deepEqual(selected.rows, [
@@ -238,6 +267,8 @@ async function smokeResourceInbox(db: PGlite): Promise<void> {
 }
 
 async function smokeResourceInboxResults(db: PGlite): Promise<void> {
+  const resourceId = '["rallar-server","default","hetzner-headless-room"]';
+  const contextId = 'rallar-server:default:hetzner-headless-room';
   const inserted = await db.query<{ ris_row_id: number }>(
     `insert into resource_inbox_results (ris_resource_id,
                                              ris_topic_id,
@@ -252,12 +283,12 @@ async function smokeResourceInboxResults(db: PGlite): Promise<void> {
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          returning ris_row_id`,
     [
-      'result-resource-1',
+      resourceId,
       'result-topic-1',
       'result-payload',
       'WS_INBOX_RESULT',
       'COMPLETED',
-      'bank-1',
+      contextId,
       '2026-06-01',
       'test',
       '2026-06-01 12:00:00',
@@ -286,12 +317,12 @@ async function smokeResourceInboxResults(db: PGlite): Promise<void> {
                            expire_ts    = excluded.expire_ts
          returning ris_resource, ris_status`,
     [
-      'result-resource-1',
+      resourceId,
       'result-topic-1',
       'result-payload-updated',
       'WS_INBOX_RESULT',
       'FAILED',
-      'bank-1',
+      contextId,
       '2026-06-01',
       'test',
       '2026-06-01 12:00:01',
@@ -310,7 +341,7 @@ async function smokeResourceInboxResults(db: PGlite): Promise<void> {
          where fk_ext_bank_id = $1
            and ris_resource_id = $2
            and ris_topic_id = $3`,
-    ['bank-1', 'result-resource-1', 'result-topic-1'],
+    [contextId, resourceId, 'result-topic-1'],
   );
 
   assert.deepEqual(selected.rows, [

@@ -4,12 +4,12 @@ datasource db {
 
 model resource_inbox {
   ri_row_id      BigInt    @id(map: "ri_pk") @default(autoincrement())
-  ri_resource_id String    @db.VarChar(36)
+  ri_resource_id String    @db.VarChar(128)
   ri_topic_id    String    @db.VarChar(36)
   ri_resource    String
   ri_type_id     String    @db.VarChar(36)
   ri_status      String    @db.VarChar(36)
-  fk_ext_bank_id String    @db.VarChar(35)
+  fk_ext_bank_id String    @db.VarChar(128)
   system_date    DateTime  @db.Date
   created_by     String    @db.VarChar(16)
   created_ts     DateTime  @db.Timestamp(6)
@@ -58,12 +58,12 @@ model app_data_store {
 
 model resource_inbox_results {
   ris_row_id      BigInt   @id(map: "ris_pk") @default(autoincrement())
-  ris_resource_id String   @db.VarChar(36)
+  ris_resource_id String   @db.VarChar(128)
   ris_topic_id    String   @db.VarChar(36)
   ris_resource    String
   ris_type_id     String   @db.VarChar(36)
   ris_status      String   @db.VarChar(36)
-  fk_ext_bank_id  String   @db.VarChar(35)
+  fk_ext_bank_id  String   @db.VarChar(128)
   system_date     DateTime @db.Date
   created_by      String   @db.VarChar(16)
   created_ts      DateTime @db.Timestamp(6)
