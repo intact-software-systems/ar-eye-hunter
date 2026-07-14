@@ -1,0 +1,485 @@
+# Rallar Recipe Console Advanced Diagnostics Implementation Plan
+
+Status: ready for execution; Iteration 11 active; Tasks 0–8 unchecked
+Evidence date: 2026-07-14
+Branch: `codex/rallar-black-box-spa-reimplementation`
+Worktree: `tmp/worktrees/rallar-black-box-spa`
+
+**Goal:** Make Recipe Console Advanced the complete, contextual bridge to every
+preserved direct diagnostic and advanced legacy workflow while keeping the core
+SPA lean. Failure evidence must open the relevant legacy tool with safe
+run/group/command context and return to the same selected Recipe Console run.
+Old aliases and the complete legacy experience remain operational.
+
+**Architecture:** Add one small React-free diagnostic classifier under
+`packages/shared-test/rallar-bb-test/**`. Keep a data-only Advanced catalog,
+pure outbound/return URL builders, and bounded UI leaves under
+`src/recipe-console/advanced/**`. Add a versioned, bounded context parser and
+visible return bar under `src/legacy/diagnostics/context/**`; pass its values
+through existing legacy owners. Preserve the mutually exclusive lazy
+`RecipeConsoleApp`/`LegacyExperience` boundary. Dynamically import only
+legacy surfaces that are safe to unmount, and retain the documented stateful
+exceptions only inside active `LegacyExperience`.
+
+## Repository-Authoritative Corrections
+
+- `AdvancedPreview.tsx` is a 36-line placeholder with nine hard-coded links.
+  It forces `provider=simulated`, drops run/group/agent/command context, omits
+  Quick Test, RTC/Realtimes, Topology, Event Stream, and every Advanced Legacy
+  workflow, and provides no safe return path.
+- Recipe Console primary navigation is already exactly Execute, Monitor,
+  Analyze, Tune, Fleet, and Advanced. Direct Rallar tabs exist only inside
+  `LegacyExperience`; Iteration 11 must not hide or rewrite that rollback
+  navigation.
+- `App.tsx` already lazy-loads mutually exclusive Recipe Console and legacy
+  experience closures. Cold Recipe Console therefore cannot mount legacy
+  effects today; extend this proof instead of introducing another router.
+- The proposed `LegacySurfaceRouter`, per-surface route wrappers, and registry
+  do not exist. Do not create them. A feature-local data catalog may describe
+  links, but it must not import React surfaces or become runtime ownership.
+- `app-tabs.ts` already canonicalizes `manual-rallar`,
+  `local-workbench`, `run-manager`, `distributed-recipes`, and
+  `shared-test` into Advanced children, and `flow-builder` into Builder.
+  The old aliases remain authoritative.
+- `RunnerCompatibilityTabPanels`,
+  `LegacyCompatibilityTailTabPanels`, and the direct Manual Rallar pane are
+  unreachable duplicates after that normalization. They are not valid state
+  owners. Remove them only after alias and user-visible behavior tests are RED
+  then GREEN against the actual Advanced/Builder owner.
+- `RunnerAdvancedPanel` remains mounted while its tab is hidden. Workbench and
+  Manual are documented exceptions; Distributed Recipes, Run Manager, and
+  Shared Test incorrectly remain mounted after first selection. Add an
+  explicit `active` boundary before making those three dynamic.
+- Recipes, Runs, Fleet, and Builder are already active-only but statically
+  imported. Runs polls only while active. Distributed Recipes and Run Manager
+  perform initial refresh work. Groups/Clients, Topology, and RTC Diagnostics
+  are safe to unmount after their focused cleanup/ownership proof.
+- `legacy-shell-composition.test.ts` deliberately locks the old six-group,
+  24-section, no-lazy composition. Iteration 11 must update that stale contract,
+  not evade it. Keep component implementation fingerprints unrelated to
+  lifetime/import ownership.
+- `assert-experience-chunks.ts` currently expects several safe surfaces in
+  the legacy static closure. Update it to prove dynamic reachability and static
+  absence while continuing to prove all production entries exist.
+- Monitor's existing evidence destinations are internal inspector targets.
+  External diagnostic classification is a separate shared deterministic
+  helper; do not widen or overload the internal destination union.
+- No legacy direct surface consumes Recipe Console bridge context today.
+  Groups/WebSocket/RTC/Server can use existing global values; runner command,
+  Run Manager, and Distributed Recipes need narrow initial-selection inputs.
+
+## Binding Guardrails
+
+- Keep `DEFAULT_APP_EXPERIENCE = 'legacy'`. Iteration 12 alone owns the final
+  default flip. Iteration 11 hides no legacy row and declares no surface
+  retired.
+- Preserve every public export, import path, old alias, rollback URL, control
+  endpoint, request/response shape, and destructive-operation behavior.
+- Do not add a poller, credential owner, control client, global registry,
+  global stylesheet, legacy component import in Recipe Console, or hidden CSS
+  mount for a safe surface.
+- Keep `App.tsx`, `RecipeConsoleWorkspace`,
+  `RecipeConsoleActiveWork`, `AdvancedWorkspace`,
+  `RunnerAdvancedPanel`, and `LegacyAppShell` as bounded composition glue.
+  Split URL, classification, context, and visual ownership into focused files.
+- Preserve only allow-listed `simulated` or `browser-rallar` provider
+  values. Never serialize credentials, `controlUrl`, response bodies, or an
+  arbitrary `returnTo` URL.
+- Use versioned marker `diagnosticContext=1`; bounded context keys
+  `contextApplicationId`, `contextWorkspaceId`, and `contextGroupId`;
+  existing safe IDs `controlRunId`, `distributedRunId`, `agentId`,
+  `recipeId`, `commandId`, and `transport`; and the source Recipe Console
+  `view`. Reject values over 4,096 UTF-8 bytes.
+- Explicit bridge context wins legacy defaults for that visit without
+  persisting secrets. `agentId` is displayed but never reinterpreted as a
+  legacy client/principal ID.
+- Unknown failures receive no invented diagnostic recommendation. Match exact
+  codes and bounded phrases, not generic words such as “route” or “server”.
+
+## Iteration 11 Lifetime Register
+
+The following exceptions may remain hidden-mounted only while
+`LegacyExperience` itself is active. Cold Recipe Console loads and mounts none
+of them.
+
+| Surface | Retained view-owned reason | Iteration 11 policy |
+| --- | --- | --- |
+| Quick Test | editable values, subscription, messages, wait state | preserve |
+| Auth diagnostic | drafts, ticket, action history | preserve; never persist credentials |
+| WebSocket | socket/subscription and forms | preserve |
+| RTC/Realtimes | RTC subscription and received evidence | preserve |
+| Rallar Data | open store and change listener | preserve |
+| CRDT | active document/subscription and editor/admin state | preserve |
+| Media | active tracks and remote subscription | preserve |
+| Local Workbench | drafts and active local execution | preserve actual Advanced owner |
+| Manual Rallar | payload drafts and active runtime work | preserve actual Advanced owner |
+| Rallar Trace full panel | filters and event limit | preserve; service-owned trace bar stays shared |
+| Event Stream | filters, selection, runtime subscription | preserve |
+| Rallar Server | redacted drafts, invalid JSON, feedback/results, busy/error | preserve |
+
+Safe dynamic/unmounted targets are Recipes, Runs, Fleet, Builder, Distributed
+Recipes, Run Manager, Shared Test, Groups/Clients, Topology, and RTC
+Diagnostics. Flow Builder draft behavior must be characterized before deleting
+its unreachable duplicate; if an actual visible persistence contract exists,
+extract or retain its real owner rather than claiming the duplicate preserved
+it.
+
+## Task 0: Freeze Baseline, Ownership, And Exit Contract
+
+Files:
+
+- Read the parent plan, product spec, migration register, fidelity ledger,
+  `app-tabs.ts`, both experience roots, shell composition, effect owners,
+  chunk assertion, and Advanced/Monitor code.
+- Update only this child plan with actual Task 0 evidence during execution.
+
+- [ ] Confirm the repository-authoritative corrections and lifetime register
+  before changing code.
+- [ ] Record exact old alias-to-owner mappings and current production chunk
+  closures.
+- [ ] GREEN the focused unit, type, build, chunk, Recipe Console, and legacy
+  navigation baselines. Record unavailable browser/live evidence exactly.
+- [ ] Do not make a baseline commit unless evidence itself changes this plan.
+
+Validation:
+
+```bash
+npx vitest run \
+  packages/tests/rallar-black-box/app-tabs.test.ts \
+  packages/tests/rallar-black-box/rallar-mode-boundary.test.ts \
+  packages/tests/rallar-black-box/app-structure.test.ts \
+  packages/tests/rallar-black-box/legacy-shell-composition.test.ts \
+  packages/tests/rallar-black-box/legacy-shell-structure.test.ts \
+  packages/tests/rallar-black-box/recipe-console-structure.test.ts \
+  packages/tests/rallar-black-box/experience-route.test.ts
+npm --workspace rallar-black-box run typecheck
+npm run build:rallar-black-box
+npx tsx apps/rallar-black-box/scripts/assert-experience-chunks.ts
+```
+
+## Task 1: Add Deterministic Shared Diagnostic Classification
+
+Files:
+
+- Create `packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts`
+- Modify `packages/shared-test/rallar-bb-test/mod.ts`
+- Modify `apps/rallar-black-box/src/distributed-recipes.ts`
+- Create
+  `packages/tests/shared-test/rallar-bb-test-advanced-diagnostic-handoff.test.ts`
+
+- [ ] RED auth/ticket/unauthorized/forbidden/`BAD_AUTH` to ordered Auth then
+  WebSocket targets.
+- [ ] RED `RALLAR_BB_RTC_NO_PEERS`, `RTC_NO_ROUTE`, and correlated
+  `no_peer`/`no_route` diagnostics to RTC Diagnostics.
+- [ ] RED missing group/member to Groups/Clients and explicit
+  `HTTP_SERVICE_UNAVAILABLE`/server-status failures to Rallar Server.
+- [ ] RED correlation isolation, stable deduplication, shuffled-input
+  determinism, non-mutation, false-positive phrases, and unknown failures.
+- [ ] GREEN a React-free additive public API imported through `mod.ts` and
+  the existing app compatibility barrel.
+- [ ] Commit `feat: classify advanced diagnostic handoffs` after all gates
+  are green.
+
+Validation:
+
+```bash
+npx vitest run \
+  packages/tests/shared-test/rallar-bb-test-advanced-diagnostic-handoff.test.ts \
+  packages/tests/rallar-black-box/distributed-recipes.test.ts
+npm --workspace @ar-eye-hunter/shared-test run check:ts
+npm --workspace @ar-eye-hunter/shared-test run check:deno
+deno check --node-modules-dir=none \
+  packages/shared-test/rallar-bb-test/advanced-diagnostic-handoff.ts \
+  packages/shared-test/rallar-bb-test/mod.ts
+```
+
+## Task 2: Define The Advanced Catalog And Safe Bridge URLs
+
+Files:
+
+- Create
+  `apps/rallar-black-box/src/recipe-console/advanced/advanced-surface-catalog.ts`
+- Create
+  `apps/rallar-black-box/src/recipe-console/advanced/advanced-legacy-href.ts`
+- Create
+  `packages/tests/rallar-black-box/recipe-console-advanced-routing.test.ts`
+- Modify `packages/tests/rallar-black-box/app-tabs.test.ts`
+- Modify `packages/tests/rallar-black-box/experience-route.test.ts`
+
+- [ ] RED a complete data-only catalog for all 13 direct surfaces and the six
+  Advanced Legacy workflows: Manual, Local Workbench, Run Manager,
+  Distributed Recipes, Flow Builder, and Shared Test.
+- [ ] RED every canonical route and every existing alias, including
+  `advancedSurface`/`advanced`, `flow-builder`, and runner launch routes.
+- [ ] RED provider allow-listing, secret/non-shareable scrubbing, 4,096-byte
+  bounds, URL encoding, long/bidi IDs, and preservation of safe context.
+- [ ] RED a structural return builder that restores the exact Recipe Console
+  view/run selection, removes legacy aliases/bridge fields, and cannot become
+  an open redirect.
+- [ ] GREEN pure catalog/URL modules with no React, legacy imports, history
+  mutation, runtime registry, or new URL authority.
+- [ ] Commit `feat: define advanced legacy routing contracts`.
+
+Validation:
+
+```bash
+npx vitest run \
+  packages/tests/rallar-black-box/recipe-console-advanced-routing.test.ts \
+  packages/tests/rallar-black-box/app-tabs.test.ts \
+  packages/tests/rallar-black-box/experience-route.test.ts \
+  packages/tests/rallar-black-box/recipe-console-url-state.test.ts
+```
+
+## Task 3: Build Advanced And Contextual Monitor Handoffs
+
+Files:
+
+- Create `src/recipe-console/advanced/advanced-workspace-contract.ts`
+- Create `src/recipe-console/advanced/AdvancedWorkspace.tsx`
+- Create `src/recipe-console/advanced/AdvancedWorkspace.module.css`
+- Remove `src/recipe-console/advanced/AdvancedPreview.tsx`
+- Create `src/recipe-console/monitor/MonitorDiagnosticHandoffs.tsx`
+- Create `src/recipe-console/monitor/MonitorDiagnosticHandoffs.module.css`
+- Modify `RecipeConsoleActiveWork.tsx`, `RecipeConsoleWorkspace.tsx`,
+  `MonitorInspector.tsx`, and `MonitorWorkspace.tsx`
+- Create `recipe-console-advanced-ui.test.ts` and
+  `recipe-console-monitor-diagnostic-handoff.test.ts`
+
+- [ ] RED lazy Advanced loading, complete categorized links, preserved provider
+  and selection context, visible empty/invalid context, and no forced
+  simulation.
+- [ ] RED selected-failure mappings, exact group/run/agent/recipe/command/
+  transport handoff, correlated-diagnostic filtering, stable link order,
+  unknown omission, and return to selected Monitor run.
+- [ ] GREEN bounded feature-local leaves. Advanced consumes existing URL and
+  root selection only; Monitor adds no fetch, timer, credential owner, or
+  duplicate derivation.
+- [ ] GREEN structure tests proving Recipe Console imports no legacy React/CSS
+  and `RecipeConsoleActiveWork` remains composition glue.
+- [ ] Commit `feat: build contextual advanced diagnostics`.
+
+Validation:
+
+```bash
+npx vitest run \
+  packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts \
+  packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts \
+  packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts \
+  packages/tests/rallar-black-box/recipe-console-structure.test.ts
+npm --workspace rallar-black-box run typecheck
+```
+
+## Task 4: Consume Legacy Context And Restore Recipe Console
+
+Files:
+
+- Create `src/legacy/diagnostics/context/legacy-diagnostic-context.ts`
+- Create `src/legacy/diagnostics/context/LegacyDiagnosticContextBar.tsx`
+- Create `src/legacy/diagnostics/context/LegacyDiagnosticContextBar.module.css`
+- Modify `LegacyExperience.tsx`, `LegacyAppShell.tsx`,
+  `legacy-shell-contracts.ts`, `global-context-model.ts`,
+  `use-command-center-global-context.ts`, and
+  `use-runner-shell-state.ts`
+- Modify `RunManagerPanel.tsx`, `DistributedRecipesPanel.tsx`,
+  `use-distributed-recipes-remote-state.ts`, and
+  `use-distributed-recipe-builder.ts`
+- Create `packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts`
+
+- [ ] RED marker/version validation, bounds, secret rejection, context-change
+  reconciliation, visible exact IDs, safe return, and unsupported context.
+- [ ] RED explicit application/workspace/group prefill without secret
+  persistence; command selection when present; no agent-to-client coercion.
+- [ ] RED Run Manager initial control-run selection and Distributed Recipes
+  exact control/distributed pair selection after first refresh, including
+  missing/stale IDs.
+- [ ] GREEN narrow optional props and existing owners; no control contract or
+  destructive behavior changes.
+- [ ] Commit `feat: consume legacy diagnostic context`.
+
+Validation:
+
+```bash
+npx vitest run \
+  packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts \
+  packages/tests/rallar-black-box/legacy-shell-models.test.ts \
+  packages/tests/rallar-black-box/legacy-run-url-selection.test.ts \
+  packages/tests/rallar-black-box/control-run-manager.test.ts \
+  packages/tests/rallar-black-box/distributed-recipes.test.ts
+npm --workspace rallar-black-box run typecheck
+```
+
+## Task 5: Prove Aliases And Remove Unreachable Duplicate Owners
+
+- [ ] RED an exhaustive alias matrix asserting canonical mode, visible tab,
+  Advanced child, exactly one real DOM owner, and unchanged rollback URL.
+- [ ] RED runner-agent launch fragment consumption/scrubbing and Flow Builder
+  edited-draft behavior against the actual owner.
+- [ ] Remove `RunnerCompatibilityTabPanels.tsx`,
+  `LegacyCompatibilityTailTabPanels.tsx`, and the duplicate direct Manual
+  pane only after their unreachable status is proven.
+- [ ] Update only intentional composition/lifetime assertions in
+  `legacy-shell-composition.test.ts`, `legacy-shell-structure.test.ts`, and
+  `app-structure.test.ts`; retain implementation fingerprints.
+- [ ] Commit `refactor: remove unreachable legacy compatibility mounts`.
+
+Validation:
+
+```bash
+npx vitest run \
+  packages/tests/rallar-black-box/app-tabs.test.ts \
+  packages/tests/rallar-black-box/legacy-shell-composition.test.ts \
+  packages/tests/rallar-black-box/legacy-shell-structure.test.ts \
+  packages/tests/rallar-black-box/app-structure.test.ts \
+  packages/tests/rallar-black-box/runner-agent-launch.test.ts \
+  packages/tests/rallar-black-box/flow-builder.test.ts
+```
+
+## Task 6: Dynamically Import Safe Surfaces And Prove Effect Ownership
+
+Files:
+
+- Modify `RunnerWorkspaceTabPanels.tsx`,
+  `RunnerAdvancedPanel.tsx`, and `DirectConnectionTabPanels.tsx`
+- Modify `apps/rallar-black-box/scripts/assert-experience-chunks.ts`
+- Create `packages/tests/rallar-black-box/legacy-mount-policy.test.ts`
+
+- [ ] RED dynamic imports and active-only mounts for every safe target in the
+  lifetime register, with local Suspense fallbacks and no runtime registry.
+- [ ] RED that leaving Advanced unmounts Distributed Recipes, Run Manager, and
+  Shared Test; leaving direct tabs disposes Topology and stops all safe
+  view-owned refresh/effect work.
+- [ ] RED that every documented exception remains mounted only inside active
+  `LegacyExperience`, and that cold Recipe Console mounts none.
+- [ ] RED production manifest closure: safe surfaces absent from legacy static
+  closure, present as reachable dynamic entries, all legacy code absent from
+  Recipe Console static closure, and stateful exceptions absent from cold
+  Recipe Console.
+- [ ] GREEN the exact app-structure proof named
+  `legacy routes resolve through dynamic imports only`.
+- [ ] Commit `perf: lazy-load safe legacy surfaces`.
+
+Validation:
+
+```bash
+npx vitest run \
+  packages/tests/rallar-black-box/legacy-mount-policy.test.ts \
+  packages/tests/rallar-black-box/legacy-shell-composition.test.ts \
+  packages/tests/rallar-black-box/app-structure.test.ts
+npm --workspace rallar-black-box run typecheck
+npm run build:rallar-black-box
+npx tsx apps/rallar-black-box/scripts/assert-experience-chunks.ts
+```
+
+## Task 7: Prove Browser Cutover, Responsiveness, And Isolation
+
+Files:
+
+- Create `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts`
+- Modify only focused shell, chunk, responsive/accessibility, CSS-isolation,
+  Monitor, and legacy navigation specs where intentional contracts changed.
+
+- [ ] RED then GREEN the exact Ready-State titles:
+  `keeps direct Rallar diagnostics out of primary navigation and opens them from Advanced`;
+  `opens every registered legacy surface from its alias and contextual route`;
+  `default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions`.
+- [ ] Prove auth+WS, RTC, Groups/Clients, and Server failure handoffs, actual
+  context consumption, and exact return to the selected Monitor run.
+- [ ] Prove every alias, target-only lazy chunk, safe unmount/effect stop,
+  stateful-exception round trip, no duplicate DOM owner, and no legacy request
+  on cold Recipe Console.
+- [ ] QA 1440×900 desktop, 900×900 tablet, genuine-touch 430×932 portrait,
+  genuine-touch 932×430 landscape, keyboard-only use, 44px targets, reduced
+  motion, focus return, long/bidi IDs, zero document overflow, and non-hover
+  evidence.
+- [ ] QA loading, empty, partial, stale, offline, permission, schema-error,
+  unavailable-context, and missing-run states plus both Recipe Console/legacy
+  CSS load orders.
+- [ ] Capture and deliberately review deterministic Direction A screenshots;
+  update only approved baselines.
+- [ ] Commit `test: prove advanced diagnostics cutover`.
+
+Validation:
+
+```bash
+npx playwright test \
+  --config apps/rallar-black-box/playwright.recipe-console.config.ts \
+  tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts \
+  tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts \
+  tests/playwright/rallar-black-box/recipe-console-chunks.spec.ts \
+  tests/playwright/rallar-black-box/recipe-console-shell.spec.ts \
+  tests/playwright/rallar-black-box/recipe-console-responsive-accessibility.spec.ts \
+  tests/playwright/rallar-black-box/recipe-console-css-isolation.spec.ts
+
+npx playwright test \
+  --config apps/rallar-black-box/playwright.config.ts \
+  tests/playwright/rallar-black-box/tabbed-navigation.spec.ts \
+  tests/playwright/rallar-black-box/exhaustive-shell-navigation.spec.ts \
+  tests/playwright/rallar-black-box/recipe-console-legacy-monitor-handoff.spec.ts
+```
+
+## Task 8: Independent Reviews And Fresh Iteration Exit
+
+- [ ] Dispatch independent reviews for shared classification/public contracts,
+  URL/context/security semantics, React ownership/accessibility, and
+  strangler/lifetime/chunk/browser proof. RED/GREEN every Critical or Important
+  finding with its focused owner.
+- [ ] Run every focused command above, complete
+  `packages/tests/rallar-black-box`, shared/app type and Deno checks, app
+  build/chunk assertion, complete Recipe Console Playwright config, and the
+  preserved legacy navigation suite.
+- [ ] Try the in-app Browser first; if unavailable, record the exact reason and
+  use terminal Playwright without representing the Browser as passed.
+- [ ] Run configured live/Postgres proof only when the documented stack exists;
+  otherwise record the exact skip reason below, never a pass.
+- [ ] Update this child plan, the parent iteration ledger, migration register,
+  product spec, and fidelity ledger with actual commits, cutover evidence,
+  screenshots, test counts, skips, stateful exceptions, and remaining
+  Iteration 12 risks.
+- [ ] Make a cohesive final documentation milestone commit. Do not push or
+  open a pull request.
+
+Final qualification:
+
+```bash
+npx vitest run packages/tests/rallar-black-box
+npm --workspace @ar-eye-hunter/shared-test run check:ts
+npm --workspace @ar-eye-hunter/shared-test run check:deno
+npm --workspace rallar-black-box run typecheck
+npm run build:rallar-black-box
+npx tsx apps/rallar-black-box/scripts/assert-experience-chunks.ts
+npx playwright test \
+  --config apps/rallar-black-box/playwright.recipe-console.config.ts
+```
+
+Configured-live exact skip when unavailable:
+
+`Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
+
+## Iteration 11 Exit Criteria
+
+- [ ] Recipe Console Advanced exposes every registered direct diagnostic and
+  Advanced Legacy workflow without adding direct tools to primary navigation.
+- [ ] Selected auth/ticket, no-peer/no-route, missing-group/member, and
+  server-status failures open the correct tool with safe exact context and
+  return to the same selected run.
+- [ ] Every old query alias, deep link, runner-agent launch URL, legacy
+  navigation surface, rollback path, and public/control contract remains
+  operational.
+- [ ] Safe legacy surfaces resolve through dynamic imports, mount only while
+  opened, dispose view-owned work on exit, and remain production-reachable.
+- [ ] Registered stateful exceptions retain their documented behavior only
+  inside active `LegacyExperience`; none load, mount, subscribe, or poll on a
+  cold Recipe Console route.
+- [ ] Recipe Console and legacy static closures remain reciprocal, CSS remains
+  isolated in both load orders, and no registry, replacement monolith, broad
+  stylesheet, duplicate poller, hidden safe mount, or legacy React import has
+  been introduced.
+- [ ] Desktop, tablet, touch portrait, touch landscape, keyboard, reduced
+  motion, operational states, context/return, alias, chunk, effect, and
+  accessibility browser proofs pass.
+- [ ] All available focused and complete unit, type, Deno, build, chunk,
+  browser, and independent-review gates are green; unavailable live-service
+  proof is recorded with its exact skip reason.
+- [ ] No legacy row is retired and the default remains legacy. Iteration 12
+  remains the sole owner of the default flip and final Ready-State audit.
