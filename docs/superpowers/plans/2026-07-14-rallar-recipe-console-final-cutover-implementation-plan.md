@@ -174,6 +174,12 @@ stylesheet.
   repository default `recipeId=rtc-realtime-stability`, and proves stale legacy
   storage, DOM owners, chunks, and resources cannot win on `/`.
 - Fresh specification and code-quality reviews report no remaining finding.
+- A subsequent whole-suite route audit found one exhaustive legacy reload that
+  intentionally omitted workspace/tab but also relied on the old implicit
+  experience. Its URL now carries only `experience=legacy`, preserving stored
+  Event Stream authority. The two configured-stack cases were discovered and
+  skipped, not passed, under the unavailable-service guard; focused re-review
+  reports no finding.
 
 ## Task 2: Scoped Legacy Touch And Narrow-Screen Repair
 
