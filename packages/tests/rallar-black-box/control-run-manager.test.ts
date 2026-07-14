@@ -13,6 +13,7 @@ import {
     fetchDistributedRuns,
     fetchFleetReport,
     fetchFleetReportBundle,
+    fetchFleetReportBundleBytes,
     fetchFleetReports,
     fetchControlRunArtifactBundle,
     fetchControlRunFailureBundle,
@@ -124,6 +125,8 @@ const runSnapshot: ControlRunSnapshot = {
     reports: [],
     heartbeats: [],
 };
+
+const fleetReportBundleTransferMaxBytes = 64 * 1_024 * 1_024;
 
 describe('rallar-black-box control run manager', () => {
     it('preserves the canonical HTTP error identity through the manager export', () => {
@@ -730,6 +733,175 @@ describe('rallar-black-box control run manager', () => {
             expect((bytes as ArrayBuffer & { resizable?: boolean }).resizable).toBe(false);
         },
     );
+
+    it('rejects an oversized declared Fleet bundle before reading its body', async () => {
+        let pulled = false;
+        let canceled = false;
+        const body = new ReadableStream<Uint8Array>({
+            pull() {
+                pulled = true;
+            },
+            cancel() {
+                canceled = true;
+            },
+        }, { highWaterMark: 0 });
+
+        await expect(fetchFleetReportBundleBytes({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            fetchFn: async () => new Response(body, {
+                headers: {
+                    'content-length': String(fleetReportBundleTransferMaxBytes + 1),
+                },
+            }),
+        })).rejects.toThrow(
+            `${fleetReportBundleTransferMaxBytes}-byte transfer limit`,
+        );
+
+        expect(pulled).toBe(false);
+        expect(canceled).toBe(true);
+    });
+
+    it('cancels an unbounded-length Fleet bundle stream after it crosses 64 MiB', async () => {
+        const chunkBytes = 1_024 * 1_024;
+        let emittedChunks = 0;
+        let canceled = false;
+        const body = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                if (emittedChunks < 65) {
+                    emittedChunks += 1;
+                    controller.enqueue(new Uint8Array(chunkBytes));
+                    return;
+                }
+                controller.close();
+            },
+            cancel() {
+                canceled = true;
+            },
+        }, { highWaterMark: 0 });
+
+        await expect(fetchFleetReportBundleBytes({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            fetchFn: async () => new Response(body),
+        })).rejects.toThrow(
+            `${fleetReportBundleTransferMaxBytes}-byte transfer limit`,
+        );
+
+        expect(emittedChunks).toBe(65);
+        expect(canceled).toBe(true);
+    });
+
+    it('returns exact Fleet bundle bytes at the 64 MiB transfer ceiling', async () => {
+        const chunkBytes = 1_024 * 1_024;
+        const chunkCount = fleetReportBundleTransferMaxBytes / chunkBytes;
+        let chunkIndex = 0;
+        const body = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                if (chunkIndex >= chunkCount) {
+                    controller.close();
+                    return;
+                }
+                const chunk = new Uint8Array(chunkBytes);
+                chunk[0] = chunkIndex;
+                chunk[chunk.byteLength - 1] = 255 - chunkIndex;
+                chunkIndex += 1;
+                controller.enqueue(chunk);
+            },
+        }, { highWaterMark: 0 });
+
+        const bytes = await fetchFleetReportBundleBytes({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            fetchFn: async () => new Response(body, {
+                headers: {
+                    'content-length': String(fleetReportBundleTransferMaxBytes),
+                },
+            }),
+        });
+        const view = new Uint8Array(bytes);
+
+        expect(bytes.byteLength).toBe(fleetReportBundleTransferMaxBytes);
+        expect(view[0]).toBe(0);
+        expect(view[chunkBytes - 1]).toBe(255);
+        expect(view[(chunkCount - 1) * chunkBytes]).toBe(chunkCount - 1);
+        expect(view[view.byteLength - 1]).toBe(256 - chunkCount);
+        expect((bytes as ArrayBuffer & { resizable?: boolean }).resizable).toBe(false);
+    });
+
+    it('caps streamed non-success Fleet bundle bodies at 64 KiB', async () => {
+        const chunks = [
+            new Uint8Array(32 * 1_024),
+            new Uint8Array(32 * 1_024),
+            new Uint8Array([1]),
+        ];
+        let emittedBytes = 0;
+        let canceled = false;
+        const body = new ReadableStream<Uint8Array>({
+            pull(controller) {
+                const chunk = chunks.shift();
+                if (chunk) {
+                    emittedBytes += chunk.byteLength;
+                    controller.enqueue(chunk);
+                    return;
+                }
+                controller.close();
+            },
+            cancel() {
+                canceled = true;
+            },
+        }, { highWaterMark: 0 });
+
+        await expect(fetchFleetReportBundleBytes({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-1',
+            fetchFn: async () => new Response(body, {
+                status: 503,
+                statusText: 'Service Unavailable',
+            }),
+        })).rejects.toMatchObject({
+            name: 'ControlRunManagerHttpError',
+            status: 503,
+            statusText: 'Service Unavailable',
+        });
+
+        expect(emittedBytes).toBe(64 * 1_024 + 1);
+        expect(canceled).toBe(true);
+    });
+
+    it('keeps the typed Fleet bundle client parsing its JSON contract', async () => {
+        const bundle = {
+            fleetReportSchemaVersion: 1 as const,
+            distributedRunId: 'dist/1',
+            generatedAtEpochMs: 2_100,
+            files: {
+                'fleet-report.json': '{}',
+                'summary.md': '# Fleet Run Report',
+                'agent-results.csv': 'agentId',
+                'failure-signatures.csv': 'signatureId',
+            },
+        };
+        let requestUrl = '';
+        let requestAuthorization: string | undefined;
+
+        const result = await fetchFleetReportBundle({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist/1',
+            token: 'admin-token',
+            fetchFn: async (input, init) => {
+                requestUrl = String(input);
+                requestAuthorization = (init?.headers as Record<string, string>)
+                    .Authorization;
+                return Response.json(bundle);
+            },
+        });
+
+        expect(result).toEqual(bundle);
+        expect(requestUrl).toBe(
+            'http://control.test/fleet/reports/dist%2F1/artifacts',
+        );
+        expect(requestAuthorization).toBe('Bearer admin-token');
+    });
 
     it('calls fleet report endpoints with filters and export helpers', async () => {
         const requests: Array<{ url: string; init?: RequestInit }> = [];

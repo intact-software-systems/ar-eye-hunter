@@ -354,12 +354,23 @@ describe('fleet analysis helpers', () => {
         ]);
         const reports = [newest, older];
 
-        expect(fleetHeatmapRows(reports, reports).map((row) => row.agent.agentId))
+        const heatmap = fleetHeatmapRows(reports, reports);
+        expect(heatmap.map((row) => row.agent.agentId))
             .toEqual(['agent-b', 'agent-c', 'agent-a']);
+        expect(heatmap.find((row) => row.agent.agentId === 'agent-a'))
+            .toMatchObject({
+                agent: { state: 'passed' },
+                cells: [{ state: 'passed' }, { state: 'failed' }],
+            });
         expect(fleetRegionRows(reports).map((row) => [row.region, row.failed]))
             .toEqual([['eu-north', 1], ['us-east', 1], ['unlabeled', 0]]);
         expect(fleetMissingLabelAgents(reports)).toEqual(['agent-c']);
         expect(fleetAgentDetail('agent-a', reports)).toMatchObject({
+            agent: { state: 'passed' },
+            runs: [
+                { run: { distributedRunId: 'run-2' } },
+                { run: { distributedRunId: 'run-1' } },
+            ],
             passed: 1,
             failed: 1,
             missing: 0,
@@ -367,6 +378,32 @@ describe('fleet analysis helpers', () => {
             diagnosticCount: 1,
         });
         expect(fleetAgentDetail('unknown', reports)).toBeUndefined();
+    });
+
+    it('preserves the extracted legacy locale ordering for non-ASCII labels', () => {
+        const reports = [
+            report('run-z', [
+                agent('agent-z', {
+                    agentId: 'agent-z',
+                    region: 'z',
+                    provider: 'provider',
+                }, 'passed'),
+            ]),
+            report('run-umlaut', [
+                agent('agent-umlaut', {
+                    agentId: 'agent-umlaut',
+                    region: 'ä',
+                    provider: 'provider',
+                }, 'passed'),
+            ]),
+        ];
+        const expectedRegions = ['z', 'ä']
+            .sort((left, right) => left.localeCompare(right));
+
+        expect(fleetHeatmapRows(reports, reports).map((row) => row.region))
+            .toEqual(expectedRegions);
+        expect(fleetRegionRows(reports).map((row) => row.region))
+            .toEqual(expectedRegions);
     });
 
     it('rolls up summaries, failures, and nearest-rank timing groups', () => {

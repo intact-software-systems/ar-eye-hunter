@@ -557,10 +557,17 @@ export async function fetchDistributedRunArtifactBundleBytes(input: Readonly<{
         ),
         { headers: authorizationHeaders(input.token) },
     );
+    return readBoundedControlArtifactResponseBytes(response, input.maxBytes);
+}
+
+async function readBoundedControlArtifactResponseBytes(
+    response: Response,
+    maxBytes: number,
+): Promise<ArrayBuffer> {
     const declared = controlArtifactDeclaredByteLength(response);
     const maxResponseBytes = response.ok
-        ? input.maxBytes
-        : Math.min(input.maxBytes, CONTROL_ARTIFACT_ERROR_BODY_MAX_BYTES);
+        ? maxBytes
+        : Math.min(maxBytes, CONTROL_ARTIFACT_ERROR_BODY_MAX_BYTES);
     if (declared !== undefined && declared > maxResponseBytes) {
         try {
             await response.body?.cancel();
@@ -590,6 +597,7 @@ export async function fetchDistributedRunArtifactBundleBytes(input: Readonly<{
 }
 
 const CONTROL_ARTIFACT_ERROR_BODY_MAX_BYTES = 64 * 1_024;
+const CONTROL_FLEET_REPORT_BUNDLE_TRANSFER_MAX_BYTES = 64 * 1_024 * 1_024;
 
 async function readBoundedControlArtifactBytes(
     response: Response,
@@ -858,6 +866,24 @@ export async function fetchFleetReportBundle(input: Readonly<{
         },
     );
     return readJsonResponse<ControlFleetReportBundle>(response);
+}
+
+export async function fetchFleetReportBundleBytes(input: Readonly<{
+    baseUrl: string;
+    distributedRunId: string;
+    token?: string;
+    fetchFn?: ControlRunManagerFetch;
+}>): Promise<ArrayBuffer> {
+    const response = await (input.fetchFn ?? fetch)(
+        new URL(`/fleet/reports/${encodeURIComponent(input.distributedRunId)}/artifacts`, normalizedBaseUrl(input.baseUrl)),
+        {
+            headers: authorizationHeaders(input.token),
+        },
+    );
+    return readBoundedControlArtifactResponseBytes(
+        response,
+        CONTROL_FLEET_REPORT_BUNDLE_TRANSFER_MAX_BYTES,
+    );
 }
 
 export async function rebuildFleetReports(input: Readonly<{

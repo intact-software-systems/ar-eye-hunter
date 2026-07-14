@@ -14,6 +14,7 @@ import {
 import {
     createRecipeConsoleControlApi,
     type RecipeConsoleControlApi,
+    type RecipeConsoleControlFleetCapability,
     type RecipeConsoleControlQueryProvenance,
     type RecipeConsoleControlRetentionCapability,
 } from './control-api.ts';
@@ -53,6 +54,7 @@ export type RecipeConsoleControlConnection = Readonly<{
     baseUrl: string;
     execution: RecipeConsoleControlExecutionApi | undefined;
     retention: RecipeConsoleControlRetentionCapability | undefined;
+    fleet: RecipeConsoleControlFleetCapability | undefined;
     query: ControlQuerySnapshot<
         ControlServerSnapshot,
         RecipeConsoleControlQueryProvenance
@@ -199,6 +201,7 @@ export function ControlConnectionProvider({
         baseUrl: apiSetup.api?.baseUrl ?? 'Invalid control URL',
         execution: apiSetup.api?.execution,
         retention: apiSetup.api?.retention,
+        fleet: apiSetup.api?.fleet,
         query,
         selectionIndex: selectionProjection?.selectionIndex,
         selectionIndexWork: selectionProjection?.selectionIndexWork,

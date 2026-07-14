@@ -1,4 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import {
+    resolveFleetWorldMapLocation,
+    type FleetWorldMapLocationInput,
+} from '../../../apps/rallar-black-box/src/world-map-geo-fixtures.ts';
 import {
     deriveFleetWorldMapModel,
     routeEvidenceFromControlRun,
@@ -14,6 +19,10 @@ import type {
     ControlFleetAgentRunOutcome,
     ControlFleetRunReport,
 } from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
+import {
+    fleetGeographyRouteEvidenceFromControlRun,
+    resolveFleetGeographyDocumentedLocation,
+} from '../../../packages/shared-test/rallar-bb-test/fleet-geography.ts';
 
 function liveAgent(
     agentId: string,
@@ -127,6 +136,62 @@ function report(
 }
 
 describe('fleet world map model', () => {
+    it('keeps legacy location labels and sources while delegating documented fixtures', () => {
+        const inputs: readonly FleetWorldMapLocationInput[] = [
+            {
+                location: {
+                    latitude: 59.9139,
+                    longitude: 10.7522,
+                    label: '',
+                    precision: 'approximate',
+                },
+                provider: 'hetzner',
+                datacenter: 'fsn1',
+            },
+            { provider: ' HETZNER ', datacenter: ' FSN1 ' },
+            { provider: 'hetzner', datacenter: 'nbg1' },
+            { provider: 'hetzner', datacenter: 'hel1' },
+            { provider: 'hetzner', datacenter: 'ash' },
+            { provider: 'hetzner', datacenter: 'hil' },
+            { region: 'eu-north' },
+            { region: 'eu-central' },
+            { region: 'eu-west' },
+            { region: 'us-east' },
+            { region: ' US-WEST ' },
+            { provider: 'private-lab' },
+        ];
+
+        for (const input of inputs) {
+            const shared = resolveFleetGeographyDocumentedLocation(input);
+            expect(resolveFleetWorldMapLocation(input)).toEqual(shared
+                ? {
+                    ...shared,
+                    source: shared.source === 'explicit'
+                        ? 'agent'
+                        : shared.source,
+                }
+                : undefined);
+        }
+    });
+
+    it('keeps the app location and route seams as thin shared delegates', () => {
+        const locationSource = readFileSync(new URL(
+            '../../../apps/rallar-black-box/src/world-map-geo-fixtures.ts',
+            import.meta.url,
+        ), 'utf8');
+        const modelSource = readFileSync(new URL(
+            '../../../apps/rallar-black-box/src/world-map-model.ts',
+            import.meta.url,
+        ), 'utf8');
+
+        expect(locationSource).toContain('resolveFleetGeographyDocumentedLocation');
+        expect(locationSource).not.toContain('DATACENTER_LOCATIONS');
+        expect(locationSource).not.toContain('REGION_LOCATIONS');
+        expect(modelSource).toContain('fleetGeographyRouteEvidenceFromControlRun');
+        expect(modelSource).not.toContain('payload.targetAgentId');
+        expect(modelSource).not.toContain('payload.peerId');
+    });
+
     it('resolves explicit coordinates before datacenter fallbacks and keeps missing agents unresolved', () => {
         const model = deriveFleetWorldMapModel({
             liveAgents: [
@@ -299,8 +364,52 @@ describe('fleet world map model', () => {
         expect(model.summary.routes).toBe(1);
     });
 
+    it('does not merge delimiter-bearing legacy region or route tuples', () => {
+        const located = (
+            agentId: string,
+            region: string,
+            provider: string,
+            latitude: number,
+        ) => outcome(agentId, {
+            agentId,
+            region,
+            provider,
+            location: { latitude, longitude: latitude },
+        }, 'passed');
+        const model = deriveFleetWorldMapModel({
+            reports: [report([
+                located('a->b', 'a / b', 'c', 10),
+                located('c', 'a', 'b / c', 20),
+                located('a', 'route-a', 'provider', 30),
+                located('b->c', 'route-b', 'provider', 40),
+            ])],
+            routeEvidence: [
+                {
+                    sourceAgentId: 'a->b',
+                    targetAgentId: 'c',
+                    transport: 'd',
+                },
+                {
+                    sourceAgentId: 'a',
+                    targetAgentId: 'b->c',
+                    transport: 'd',
+                },
+            ],
+        });
+
+        expect(model.regions.map(region => [region.region, region.provider]))
+            .toEqual(expect.arrayContaining([
+                ['a / b', 'c'],
+                ['a', 'b / c'],
+            ]));
+        expect(model.regions).toHaveLength(4);
+        expect(new Set(model.regions.map(region => region.key)).size).toBe(4);
+        expect(model.routes).toHaveLength(2);
+        expect(new Set(model.routes.map(route => route.routeId)).size).toBe(2);
+    });
+
     it('extracts route evidence only from explicit control event target agent fields', () => {
-        const evidence = routeEvidenceFromControlRun({
+        const run = {
             runId: 'run-1',
             createdAtEpochMs: 1_000,
             updatedAtEpochMs: 2_000,
@@ -315,7 +424,12 @@ describe('fleet world map model', () => {
                     agentId: 'agent-1',
                     atEpochMs: 2_000,
                     payload: {
-                        targetAgentId: 'agent-2',
+                        targetAgentId: 'agent-z',
+                        destinationAgentId: 'agent-b',
+                        remoteAgentId: 'agent-y',
+                        targetAgentIds: ['agent-a', 'agent-z'],
+                        destinationAgentIds: ['agent-c'],
+                        data: { targetAgentIds: ['agent-d'] },
                         transport: 'rtc',
                     },
                 },
@@ -333,14 +447,27 @@ describe('fleet world map model', () => {
             stats: [],
             reports: [],
             heartbeats: [],
-        } satisfies ControlRunSnapshot);
+        } satisfies ControlRunSnapshot;
+        const evidence = routeEvidenceFromControlRun(run);
 
-        expect(evidence).toEqual([{
-            sourceAgentId: 'agent-1',
-            targetAgentId: 'agent-2',
-            atEpochMs: 2_000,
-            transport: 'rtc',
-            failed: false,
-        }]);
+        expect(evidence.map(entry => entry.targetAgentId)).toEqual([
+            'agent-z',
+            'agent-b',
+            'agent-y',
+            'agent-a',
+            'agent-c',
+            'agent-d',
+        ]);
+        expect(evidence).toEqual(
+            fleetGeographyRouteEvidenceFromControlRun(run, {
+                observationOrder: 'source',
+            }).observations.map(observation => ({
+                sourceAgentId: observation.sourceAgentId,
+                targetAgentId: observation.targetAgentId,
+                atEpochMs: observation.atEpochMs,
+                transport: observation.transport,
+                failed: observation.failed,
+            })),
+        );
     });
 });

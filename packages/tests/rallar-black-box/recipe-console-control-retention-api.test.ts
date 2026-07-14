@@ -747,6 +747,7 @@ describe('Recipe Console retention lazy boundary', () => {
         }
         expect(dynamicImports(controlApiPath)).toEqual([
             './control-retention-api.ts',
+            './control-fleet-api.ts',
         ]);
         expect(source(requestPath)).toContain(
             "from '../../control-http-error.ts'",

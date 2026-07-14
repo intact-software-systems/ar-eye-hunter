@@ -8639,19 +8639,17 @@ describe('rallar-black-box app source ownership', () => {
             ]],
             [`${fleetRoot}/fleet-timing.ts`, [
                 '../../../control-run-manager.ts|type:ControlFleetRunReport,type:ControlFleetTimingDistribution',
-                './fleet-presentation.ts|value:fleetRegionKey',
                 './fleet-types.ts|type:FleetTimingGroup',
+                '@shared-test/rallar-bb-test/fleet-report-analysis.ts|value:deriveFleetReportTimingDistribution,value:deriveFleetReportTimingGroupsByRecipe,value:deriveFleetReportTimingGroupsByRegion',
             ]],
             [`${fleetRoot}/fleet-derivations.ts`, [
-                '../../../control-run-manager.ts|type:ControlFleetAgentRunOutcome,type:ControlFleetRunReport',
-                './fleet-presentation.ts|value:fleetRegionKey',
-                './fleet-timing.ts|value:fleetTimingDistribution',
+                '../../../control-run-manager.ts|type:ControlFleetRunReport',
                 './fleet-types.ts|type:FleetAgentHeatmapRow',
+                '@shared-test/rallar-bb-test/fleet-report-analysis.ts|value:deriveFleetReportAgentDetail,value:deriveFleetReportHeatmapRows,value:deriveFleetReportMissingLabelAgentIds,value:deriveFleetReportRegionRows',
             ]],
             [`${fleetRoot}/fleet-rollups.ts`, [
                 '../../../control-run-manager.ts|type:ControlFleetFailureSignature,type:ControlFleetReportsResponse,type:ControlFleetRunReport',
-                './fleet-presentation.ts|value:fleetRegionKey',
-                './fleet-timing.ts|value:fleetTimingDistribution',
+                '@shared-test/rallar-bb-test/fleet-report-analysis.ts|value:deriveFleetReportDisplaySummary,value:deriveFleetReportFailureRows',
             ]],
             [`${fleetRoot}/views/RunnerFleetControls.tsx`, [
                 '../../../../control-run-manager.ts|type:ControlFleetRunReport',
@@ -8772,21 +8770,6 @@ describe('rallar-black-box app source ownership', () => {
                 '58c1c9cf6f42d8f8d6478f3ba6dbb1b171aeb8ad530e08888c410f991fc831f0',
             ],
             [
-                ownerAst('fleet-derivations.ts'),
-                ['fleetHeatmapRows', 'fleetRegionRows', 'fleetMissingLabelAgents', 'fleetAgentDetail'],
-                '6a876cd493b99195541623f4134a2b361b38b7632cf502cf4ceb2bf476d305f7',
-            ],
-            [
-                ownerAst('fleet-timing.ts'),
-                ['fleetTimingGroupsByRegion', 'fleetTimingGroupsByRecipe', 'fleetTimingDistribution', 'percentile'],
-                '9f85f91e3feb4c42a8df8ab85df139c55b10b3d985bda79d3be5b55abc1febf8',
-            ],
-            [
-                ownerAst('fleet-rollups.ts'),
-                ['fleetDisplaySummary', 'fleetFailureRows', 'minDefined', 'maxDefined'],
-                '6349987408e5f4798688589cda005feca9d5ee935a1eee27191f29fda6cd5cd4',
-            ],
-            [
                 ownerAst('fleet-presentation.ts'),
                 ['fleetRegionKey', 'fleetRegionLabel', 'fleetAgentStateTone', 'fleetFailureTone', 'fleetCellTitle', 'shortSignatureId'],
                 'ab350e7cc2faa8408b94372cc27f0b1ebcbd4c6ca1a03045851d839988c72470',
@@ -8797,6 +8780,67 @@ describe('rallar-black-box app source ownership', () => {
                 task9aAstFingerprint(parameterAndBodyNodes(sourceFile, names)),
                 `${sourceFile.fileName}: exact parameters and bodies`,
             ).toBe(expectedFingerprint);
+        }
+        const delegatedFunctions = [
+            [
+                ownerAst('fleet-derivations.ts'),
+                new Map([
+                    ['fleetHeatmapRows', 'deriveFleetReportHeatmapRows'],
+                    ['fleetRegionRows', 'deriveFleetReportRegionRows'],
+                    ['fleetMissingLabelAgents', 'deriveFleetReportMissingLabelAgentIds'],
+                    ['fleetAgentDetail', 'deriveFleetReportAgentDetail'],
+                ]),
+            ],
+            [
+                ownerAst('fleet-timing.ts'),
+                new Map([
+                    ['fleetTimingGroupsByRegion', 'deriveFleetReportTimingGroupsByRegion'],
+                    ['fleetTimingGroupsByRecipe', 'deriveFleetReportTimingGroupsByRecipe'],
+                    ['fleetTimingDistribution', 'deriveFleetReportTimingDistribution'],
+                ]),
+            ],
+            [
+                ownerAst('fleet-rollups.ts'),
+                new Map([
+                    ['fleetDisplaySummary', 'deriveFleetReportDisplaySummary'],
+                    ['fleetFailureRows', 'deriveFleetReportFailureRows'],
+                ]),
+            ],
+        ] as const;
+        for (const [sourceFile, functions] of delegatedFunctions) {
+            for (const [functionName, sharedFunctionName] of functions) {
+                const declaration = task9aNamedFunction(sourceFile, functionName);
+                const calls: string[] = [];
+                const visit = (node: ts.Node): void => {
+                    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+                        calls.push(node.expression.text);
+                    }
+                    ts.forEachChild(node, visit);
+                };
+                visit(declaration.body!);
+                expect.soft(
+                    calls,
+                    `${sourceFile.fileName}:${functionName} exact shared delegation`,
+                ).toEqual([sharedFunctionName]);
+            }
+        }
+        for (const [path, policyUseCount] of [
+            [`${fleetRoot}/fleet-derivations.ts`, 3],
+            [`${fleetRoot}/fleet-timing.ts`, 2],
+            [`${fleetRoot}/fleet-rollups.ts`, 1],
+        ] as const) {
+            const source = sources.get(path) ?? '';
+            for (const exactPolicyEntry of [
+                "reportOrder: 'input'",
+                'timedOutAsFailed: false',
+                'stableTieBreaks: false',
+                "textCollation: 'legacy-locale'",
+            ]) {
+                expect.soft(
+                    source.split(exactPolicyEntry).length - 1,
+                    `${path}: exact legacy compatibility policy ${exactPolicyEntry}`,
+                ).toBe(policyUseCount);
+            }
         }
         const typesAst = ownerAst('fleet-types.ts');
         const typeNodes = [

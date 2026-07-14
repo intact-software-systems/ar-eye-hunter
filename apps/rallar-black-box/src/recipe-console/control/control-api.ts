@@ -17,6 +17,7 @@ import {
     createControlLazyCapability,
     type ControlLazyCapability,
 } from './control-lazy-capability.ts';
+import type { RecipeConsoleControlFleetApi } from './control-fleet-api.ts';
 import type { RecipeConsoleControlRetentionApi } from './control-retention-api.ts';
 import { createControlSnapshotReader } from './control-snapshot-reader.ts';
 import type { RecipeConsoleControlSnapshotResult } from
@@ -43,11 +44,14 @@ const MISSING_CONTROL_CREDENTIAL_POLICY = {
 
 export type RecipeConsoleControlRetentionCapability =
     ControlLazyCapability<RecipeConsoleControlRetentionApi>;
+export type RecipeConsoleControlFleetCapability =
+    ControlLazyCapability<RecipeConsoleControlFleetApi>;
 
 export type RecipeConsoleControlApi = Readonly<{
     baseUrl: string;
     execution: RecipeConsoleControlExecutionApi;
     retention: RecipeConsoleControlRetentionCapability;
+    fleet: RecipeConsoleControlFleetCapability;
     close(): void;
     readSnapshot(
         input?: Readonly<{
@@ -107,6 +111,17 @@ export function createRecipeConsoleControlApi(
             });
         },
     });
+    const fleet = createControlLazyCapability({
+        signal: lifetime.signal,
+        load: async () => {
+            const feature = await import('./control-fleet-api.ts');
+            return feature.createRecipeConsoleControlFleetApi({
+                baseUrl,
+                endpoint: transport.createAuthorizedEndpoint(),
+                contextSignal: lifetime.signal,
+            });
+        },
+    });
     const readSnapshot = createControlSnapshotReader({
         baseUrl,
         bounds,
@@ -119,6 +134,7 @@ export function createRecipeConsoleControlApi(
         baseUrl,
         execution,
         retention,
+        fleet,
         close: () => lifetime.abort(),
         readSnapshot,
     };

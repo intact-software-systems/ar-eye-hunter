@@ -10,6 +10,8 @@ import type {
     ControlFleetFailureSignature,
     ControlFleetRunReport,
 } from '@shared-test/rallar-bb-test/fleet-report.ts';
+import { fleetGeographyRouteEvidenceFromControlRun } from
+    '@shared-test/rallar-bb-test/fleet-geography.ts';
 import {
     resolveFleetWorldMapLocation,
     type FleetWorldMapLocation,
@@ -194,37 +196,15 @@ function sortedFrozenAgents(
 export function routeEvidenceFromControlRun(
     run: ControlRunSnapshot | undefined,
 ): readonly FleetWorldMapRouteEvidence[] {
-    if (!run) {
-        return [];
-    }
-
-    return run.events.flatMap((event) => {
-        const payload = asRecord(event.payload);
-        const data = asRecord(payload.data);
-        const targets = uniqueStrings([
-            stringValue(payload.targetAgentId),
-            stringValue(payload.destinationAgentId),
-            stringValue(payload.remoteAgentId),
-            ...stringArray(payload.targetAgentIds),
-            ...stringArray(payload.destinationAgentIds),
-            ...stringArray(data.targetAgentIds),
-        ]).filter((agentId) => agentId !== event.agentId);
-        if (targets.length === 0) {
-            return [];
-        }
-
-        const transport = stringValue(payload.transport) ?? stringValue(data.transport);
-        const failed = payload.failed === true ||
-            payload.ok === false ||
-            payload.severity === 'error';
-        return targets.map((targetAgentId) => ({
-            sourceAgentId: event.agentId,
-            targetAgentId,
-            atEpochMs: event.atEpochMs,
-            transport,
-            failed,
-        }));
-    });
+    return fleetGeographyRouteEvidenceFromControlRun(run, {
+        observationOrder: 'source',
+    }).observations.map(observation => ({
+        sourceAgentId: observation.sourceAgentId,
+        targetAgentId: observation.targetAgentId,
+        atEpochMs: observation.atEpochMs,
+        transport: observation.transport,
+        failed: observation.failed,
+    }));
 }
 
 function agentFromOutcome(
@@ -324,15 +304,15 @@ function deriveRegions(
     const regions = new Map<string, MutableRegion>();
     for (const report of reports) {
         for (const outcome of report.agents) {
-            const key = regionKey(outcome.label);
+            const identity = regionIdentity(outcome.label);
             const location = locationFromLabel(outcome.label);
             if (!location) {
                 continue;
             }
-            const current = regions.get(key) ?? {
+            const current = regions.get(identity) ?? {
                 region: outcome.label.region ?? 'unlabeled',
                 provider: outcome.label.provider,
-                key,
+                key: identity,
                 location,
                 agentIds: new Set<string>(),
                 passed: 0,
@@ -353,7 +333,7 @@ function deriveRegions(
                     (current.failures.get(signatureId) ?? 0) + 1,
                 );
             });
-            regions.set(key, current);
+            regions.set(identity, current);
         }
     }
 
@@ -404,8 +384,13 @@ function deriveRoutes(
         if (!source || !target) {
             continue;
         }
-        const routeId = `${entry.sourceAgentId}->${entry.targetAgentId}:${entry.transport ?? 'unknown'}`;
-        const current = routes.get(routeId) ?? {
+        const identity = tupleIdentity([
+            entry.sourceAgentId,
+            entry.targetAgentId,
+            entry.transport ?? null,
+        ]);
+        const routeId = fleetRouteId(entry);
+        const current = routes.get(identity) ?? {
             routeId,
             sourceAgentId: entry.sourceAgentId,
             targetAgentId: entry.targetAgentId,
@@ -420,7 +405,7 @@ function deriveRoutes(
         current.eventCount += 1;
         current.failedCount += entry.failed ? 1 : 0;
         current.lastSeenAtEpochMs = maxDefined(current.lastSeenAtEpochMs, entry.atEpochMs);
-        routes.set(routeId, current);
+        routes.set(identity, current);
     }
     return [...routes.values()]
         .sort((left, right) =>
@@ -459,8 +444,25 @@ function locationFromLabel(
     });
 }
 
-function regionKey(label: ControlFleetAgentLabel): string {
-    return `${label.region ?? 'unlabeled'} / ${label.provider ?? 'unknown'}`;
+function regionIdentity(label: ControlFleetAgentLabel): string {
+    return `${encodeURIComponent(label.region ?? 'unlabeled')} / ${
+        encodeURIComponent(label.provider ?? 'unknown')
+    }`;
+}
+
+function fleetRouteId(entry: FleetWorldMapRouteEvidence): string {
+    const transport = entry.transport === undefined
+        ? 'unknown'
+        : entry.transport === 'unknown'
+        ? 'unknown%00'
+        : encodeURIComponent(entry.transport);
+    return `${encodeURIComponent(entry.sourceAgentId)}->${
+        encodeURIComponent(entry.targetAgentId)
+    }:${transport}`;
+}
+
+function tupleIdentity(parts: readonly (string | null)[]): string {
+    return JSON.stringify(parts);
 }
 
 function topFailure(
@@ -509,30 +511,6 @@ function maxDefined(
     if (left === undefined) return right;
     if (right === undefined) return left;
     return Math.max(left, right);
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : {};
-}
-
-function stringValue(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0
-        ? value.trim()
-        : undefined;
-}
-
-function stringArray(value: unknown): readonly string[] {
-    return Array.isArray(value)
-        ? value.filter((entry): entry is string =>
-            typeof entry === 'string' && entry.trim().length > 0
-        ).map((entry) => entry.trim())
-        : [];
-}
-
-function uniqueStrings(values: readonly (string | undefined)[]): readonly string[] {
-    return [...new Set(values.filter((value): value is string => value !== undefined))];
 }
 
 export type { ControlFleetFailureSignature };
