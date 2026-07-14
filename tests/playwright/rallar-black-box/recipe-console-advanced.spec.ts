@@ -583,6 +583,15 @@ test("default Recipe Console does not load or poll inactive legacy routes except
   const recipeFirst = await browser.newContext({
     baseURL: PRODUCTION_BASE_URL,
   });
+  await recipeFirst.addInitScript(() => {
+    localStorage.setItem("auth.session", JSON.stringify({
+      clientId: "cold-default-client",
+      sessionId: "cold-default-session",
+      username: "cold-default-operator",
+      accessToken: "cold-default-session-token",
+      expiresAtEpochMs: 4_000_000_000_000,
+    }));
+  });
   await installTimerProbe(recipeFirst);
   await installEmptyControlFixture(recipeFirst);
   const page = await recipeFirst.newPage();
@@ -596,9 +605,7 @@ test("default Recipe Console does not load or poll inactive legacy routes except
     }
   });
   try {
-    await page.goto(
-      "/?provider=simulated&v=1&experience=recipe-console&view=execute",
-    );
+    await page.goto("/");
     await expect(
       page.locator('.recipe-console[data-view="execute"]'),
     ).toBeVisible();

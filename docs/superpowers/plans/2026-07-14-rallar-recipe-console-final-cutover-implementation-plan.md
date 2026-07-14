@@ -108,7 +108,7 @@ stylesheet.
 - Produces: `DEFAULT_APP_EXPERIENCE === 'recipe-console'`; explicit legacy
   aliases still win; blank/provider-only URLs enter Recipe Console.
 
-- [ ] RED `experience-route.test.ts`: remove blank search from the legacy alias
+- [x] RED `experience-route.test.ts`: remove blank search from the legacy alias
   table, import `DEFAULT_APP_EXPERIENCE`, and assert:
 
   ```ts
@@ -121,43 +121,59 @@ stylesheet.
   `advancedSurface`, `advanced`, future versions, invalid explicit experience,
   and control-agent launch URLs resolve to legacy.
 
-- [ ] Run
+- [x] Run
   `./node_modules/.bin/vitest run packages/tests/rallar-black-box/experience-route.test.ts`
   and verify only the new default assertions fail because the constant is
   still `legacy`.
-- [ ] Make legacy-intent Playwright setup explicit by adding
+- [x] Make legacy-intent Playwright setup explicit by adding
   `experience=legacy` to provider-only routes in `tabbed-navigation.spec.ts`
   (Quick Test default, browser-Rallar Quick Test, persistence reload),
   `recipe-console-shell.spec.ts` (legacy side of the lazy round trip), and
   `recipe-console-chunks.spec.ts` (legacy cold entries). Do not change old
   compatibility routes that already contain a legacy key such as `tab`.
-- [ ] Add exact browser acceptance `blank URL opens Recipe Console Execute
+- [x] Add exact browser acceptance `blank URL opens Recipe Console Execute
   after the final ready-state flip`. Seed a valid local auth session plus stale
   stored legacy mode/tab, navigate literal `/`, and assert canonical Execute,
   Recipe Console navigation, no `.app-shell`, no legacy owner, no
   `LegacyExperience` request, and canonical v1 URL replacement.
-- [ ] Before changing production, run the exact named browser acceptance and
+- [x] Before changing production, run the exact named browser acceptance and
   observe RED because blank `/` still resolves to legacy. Keep the explicit
   legacy-intent route corrections in this test-only RED patch so unrelated
   legacy cases do not fail merely because they depended on the old default.
-- [ ] GREEN the smallest production change:
+- [x] GREEN the smallest production change:
 
   ```ts
   export const DEFAULT_APP_EXPERIENCE: AppExperience = 'recipe-console';
   ```
 
-- [ ] Change the Iteration 11 cold default proof in
+- [x] Change the Iteration 11 cold default proof in
   `recipe-console-advanced.spec.ts` and the recipe side of
   `recipe-console-chunks.spec.ts` to enter through `/` (using auth setup where
   the browser-Rallar login gate applies). Preserve reciprocal explicit legacy
   chunk proof and credential-origin policy tests.
-- [ ] Run focused Vitest, the exact shell/default test, chunks 10/10, Advanced
+- [x] Run focused Vitest, the exact shell/default test, chunks 10/10, Advanced
   3/3, and full `tabbed-navigation.spec.ts`. Review every changed test route to
   ensure it expresses product intent rather than depending on the old default.
-- [ ] Dispatch a fresh specification reviewer and then a code-quality reviewer
+- [x] Dispatch a fresh specification reviewer and then a code-quality reviewer
   for Task 1. Fix every Critical or Important finding test-first, rerun the
   focused gates, and obtain a clean re-review before advancing.
-- [ ] Commit `feat: make Recipe Console the default`.
+- [x] Commit `feat: make Recipe Console the default`.
+
+### Task 1 qualification — 2026-07-14
+
+- RED was observed independently in unit and browser scope: the route suite
+  failed only the new default expectation (14 passed, one failed), and the
+  exact blank-route acceptance could not find Recipe Console while the constant
+  still selected legacy.
+- GREEN passes 15/15 route tests, the exact blank/default acceptance 1/1,
+  reciprocal chunk/isolation 10/10, Advanced lifetime/alias proof 3/3, and the
+  preserved legacy navigation suite 29/29. App TypeScript and diff-check pass.
+- The only production change is the one default constant. Provider-only legacy
+  test intent is explicit; every alias/deep link remains authoritative. The
+  strengthened acceptance compares the full canonical URL, including the
+  repository default `recipeId=rtc-realtime-stability`, and proves stale legacy
+  storage, DOM owners, chunks, and resources cannot win on `/`.
+- Fresh specification and code-quality reviews report no remaining finding.
 
 ## Task 2: Scoped Legacy Touch And Narrow-Screen Repair
 

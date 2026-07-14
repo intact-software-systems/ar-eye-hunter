@@ -8,14 +8,30 @@ import { installRecipeConsoleAnalyzeFixture } from
 import { chooseAnalyzeFiles } from './recipe-console-analyze-helpers.ts';
 import { ANALYZE_ROUTE } from './recipe-console-analyze-run-data.ts';
 
+type ColdEntryOptions = Readonly<{
+    baseUrl?: string;
+    ready?: string;
+    authenticated?: boolean;
+}>;
+
 async function coldEntry(
     browser: Browser,
     url: string,
     visible: '.recipe-console' | '.app-shell',
-    baseUrl?: string,
-    ready?: string,
+    options: ColdEntryOptions = {},
 ) {
     const context = await browser.newContext();
+    if (options.authenticated) {
+        await context.addInitScript(() => {
+            localStorage.setItem('auth.session', JSON.stringify({
+                clientId: 'cold-entry-client',
+                sessionId: 'cold-entry-session',
+                username: 'cold-entry-operator',
+                accessToken: 'cold-entry-session-token',
+                expiresAtEpochMs: 4_000_000_000_000,
+            }));
+        });
+    }
     const page = await context.newPage();
     const requestedResources: string[] = [];
     page.on('request', (request) => {
@@ -23,10 +39,10 @@ async function coldEntry(
             requestedResources.push(request.url());
         }
     });
-    await page.goto(baseUrl ? new URL(url, baseUrl).href : url);
+    await page.goto(options.baseUrl ? new URL(url, options.baseUrl).href : url);
     await expect(page.locator(visible)).toBeVisible();
-    if (ready) {
-        await expect(page.locator(ready)).toBeVisible();
+    if (options.ready) {
+        await expect(page.locator(options.ready)).toBeVisible();
     }
     await expect(page.locator(
         visible === '.recipe-console' ? '.app-shell' : '.recipe-console',
@@ -38,14 +54,15 @@ async function coldEntry(
 test('keeps one lazy experience mounted without loading the other experience', async ({ browser }) => {
     const recipeScripts = await coldEntry(
         browser,
-        '/?provider=simulated&v=1&experience=recipe-console',
+        '/',
         '.recipe-console',
+        { authenticated: true },
     );
     expect(recipeScripts.some((url) => url.includes('LegacyExperience')))
         .toBe(false);
 
     for (const legacyUrl of [
-        '/?provider=simulated',
+        '/?provider=simulated&experience=legacy',
         '/?provider=simulated&tab=monitor',
     ]) {
         const legacyScripts = await coldEntry(browser, legacyUrl, '.app-shell');
@@ -188,7 +205,7 @@ test('proves each production experience static closure without fixture or peer r
         browser,
         '/?provider=simulated&v=1&experience=recipe-console&view=execute',
         '.recipe-console',
-        productionBaseUrl,
+        { baseUrl: productionBaseUrl },
     );
     expect(recipeResources.some(url => /\/assets\/RecipeConsoleApp-[^/]+\.js$/.test(url))).toBe(true);
     expect(recipeResources.some(url => /\/assets\/RecipeConsoleApp-[^/]+\.css$/.test(url))).toBe(true);
@@ -199,7 +216,7 @@ test('proves each production experience static closure without fixture or peer r
         browser,
         '/?provider=simulated&experience=legacy&tab=auth',
         '.app-shell',
-        productionBaseUrl,
+        { baseUrl: productionBaseUrl },
     );
     expect(legacyResources.some(url => /\/assets\/LegacyExperience-[^/]+\.js$/.test(url))).toBe(true);
     expect(legacyResources.some(url => /\/assets\/LegacyExperience-[^/]+\.css$/.test(url))).toBe(true);
@@ -215,7 +232,7 @@ test('loads the production Fleet chunk only for the Fleet route', async ({
         browser,
         '/?provider=simulated&v=1&experience=recipe-console&view=execute',
         '.recipe-console',
-        productionBaseUrl,
+        { baseUrl: productionBaseUrl },
     );
     expect(executeResources.some(url =>
         /\/assets\/FleetWorkspace-[^/]+\.(?:js|css)$/.test(url)
@@ -225,8 +242,10 @@ test('loads the production Fleet chunk only for the Fleet route', async ({
         browser,
         '/?provider=simulated&v=1&experience=recipe-console&view=fleet',
         '.recipe-console',
-        productionBaseUrl,
-        '[data-fleet-workspace]',
+        {
+            baseUrl: productionBaseUrl,
+            ready: '[data-fleet-workspace]',
+        },
     );
     expect(fleetResources.some(url =>
         /\/assets\/FleetWorkspace-[^/]+\.js$/.test(url)

@@ -1,6 +1,6 @@
 export type AppExperience = 'legacy' | 'recipe-console';
 
-export const DEFAULT_APP_EXPERIENCE: AppExperience = 'legacy';
+export const DEFAULT_APP_EXPERIENCE: AppExperience = 'recipe-console';
 
 const LEGACY_EXPERIENCE_QUERY_KEYS = [
     'mode',

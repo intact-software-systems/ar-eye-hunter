@@ -162,7 +162,7 @@ test('opens a tab from the URL and updates tab state in the address bar', async 
 });
 
 test('opens Quick Test as the default Rallar workspace screen', async ({ page }) => {
-    await page.goto('/?provider=simulated&roomId=bb-group');
+    await page.goto('/?provider=simulated&experience=legacy&roomId=bb-group');
 
     await expect(page.getByRole('tab', { name: 'Quick Test' })).toHaveAttribute(
         'aria-selected',
@@ -700,7 +700,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
         };
     });
 
-    await page.goto('/?provider=browser-rallar&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&roomId=rallar');
+    await page.goto('/?provider=browser-rallar&experience=legacy&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&roomId=rallar');
 
     const panel = page.getByLabel('Rallar Quick Test');
     const groupInput = panel.getByRole('textbox', { name: 'Group', exact: true });
@@ -2807,7 +2807,7 @@ test('restores selected tab and redacted UI drafts after a fresh load', async ({
         .getByRole('button', { name: 'message', exact: true })
         .click();
 
-    await page.goto('/?provider=simulated');
+    await page.goto('/?provider=simulated&experience=legacy');
 
     await expect(page.getByRole('tab', { name: 'Event Stream' })).toHaveAttribute(
         'aria-selected',

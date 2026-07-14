@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+    DEFAULT_APP_EXPERIENCE,
     resolveAppExperience,
 } from '../../../apps/rallar-black-box/src/app/experience-route.ts';
 
 describe('rallar-black-box experience route', () => {
     it.each([
-        ['', 'blank URL'],
         ['?workspace=black-box-runner', 'workspace'],
         ['?appMode=black-box-runner', 'appMode'],
         ['?tab=fleet', 'tab'],
@@ -15,8 +15,13 @@ describe('rallar-black-box experience route', () => {
         expect(resolveAppExperience(search)).toBe('legacy');
     });
 
+    it('uses Recipe Console for blank and provider-only URLs', () => {
+        expect(DEFAULT_APP_EXPERIENCE).toBe('recipe-console');
+        expect(resolveAppExperience('')).toBe('recipe-console');
+        expect(resolveAppExperience('?provider=simulated')).toBe('recipe-console');
+    });
+
     it('opts into Recipe Console only for its supported explicit version', () => {
-        expect(resolveAppExperience('')).toBe('legacy');
         expect(resolveAppExperience('?experience=recipe-console')).toBe('recipe-console');
         expect(resolveAppExperience('?v=1&experience=recipe-console')).toBe('recipe-console');
         expect(resolveAppExperience('?v=2&experience=recipe-console')).toBe('legacy');

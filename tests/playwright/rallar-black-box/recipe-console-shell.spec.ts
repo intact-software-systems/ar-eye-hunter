@@ -648,8 +648,59 @@ test('requires known distributed-run truth before artifact export', async ({ pag
     expect(downloadCount).toBe(0);
 });
 
+test('blank URL opens Recipe Console Execute after the final ready-state flip', async ({
+    context,
+    page,
+}) => {
+    const requestedResources: string[] = [];
+    await context.addInitScript(() => {
+        localStorage.setItem('auth.session', JSON.stringify({
+            clientId: 'ready-state-client',
+            sessionId: 'ready-state-session',
+            username: 'ready-state-operator',
+            accessToken: 'ready-state-session-token',
+            expiresAtEpochMs: 4_000_000_000_000,
+        }));
+        localStorage.setItem(
+            'rallar-black-box.ui.active-mode',
+            'black-box-runner',
+        );
+        localStorage.setItem(
+            'rallar-black-box.ui.active-tab',
+            'event-stream',
+        );
+    });
+    page.on('request', (request) => {
+        if (
+            request.resourceType() === 'script' ||
+            request.resourceType() === 'stylesheet'
+        ) {
+            requestedResources.push(request.url());
+        }
+    });
+
+    await page.goto('/');
+
+    await expect(
+        page.locator('.recipe-console[data-view="execute"]'),
+    ).toBeVisible();
+    await expect(page.locator('[data-primary-navigation]'))
+        .toHaveAttribute('aria-label', 'Recipe Console');
+    await expect(page.locator('.app-shell')).toHaveCount(0);
+    await expect(page.locator('[id^="panel-"]')).toHaveCount(0);
+    await expect.poll(() => {
+        const url = new URL(page.url());
+        return `${url.pathname}${url.search}${url.hash}`;
+    }).toBe(
+        '/?v=1&experience=recipe-console&view=execute' +
+        '&recipeId=rtc-realtime-stability',
+    );
+    expect(requestedResources.some(url => url.includes('LegacyExperience')))
+        .toBe(false);
+});
+
 test('keeps one lazy experience mounted', async ({ page }) => {
-    await page.goto('/?provider=simulated');
+    await page.goto('/?provider=simulated&experience=legacy');
     await expect(page.locator('.app-shell')).toBeVisible();
     await expect(page.locator('.recipe-console')).toHaveCount(0);
 
