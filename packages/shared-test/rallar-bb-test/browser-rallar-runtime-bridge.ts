@@ -53,6 +53,12 @@ async function resolveBrowserRallarDirectorRuntime(): Promise<NonNullable<Rallar
 
 export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRuntime {
     return {
+        async authenticate(config) {
+            const runtime = await resolveBrowserRallarRuntime();
+            return runtime.authenticate
+                ? await runtime.authenticate(config)
+                : await runtime.connect(config);
+        },
         async connect(config) {
             return await (await resolveBrowserRallarRuntime()).connect(config);
         },

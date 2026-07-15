@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -169,13 +170,11 @@ describe("GitHub Free distributed recipe workflow", () => {
   });
 
   it("preflights free-tier manifests before planning the matrix", async () => {
-    const workflow = await readFile(
-      path.join(
-        repoRoot,
-        ".github/workflows/github-free-distributed-recipe.yml",
-      ),
-      "utf8",
-    );
+    const workflow = await readFile(workflowPath, "utf8");
+    const parsedWorkflow = await readWorkflow();
+    const plan = required(parsedWorkflow.jobs?.plan, "plan job");
+    const buildMatrix = findStep(plan, "Build matrix");
+    const buildMatrixRun = required(buildMatrix.run, "Build matrix run body");
 
     expect(workflow).toContain(
       "jq -r '.targetPolicy.expectedParticipantCount // empty'",
@@ -202,6 +201,56 @@ describe("GitHub Free distributed recipe workflow", () => {
       "::error::Manifest startMode must be manual, auto-after-ready, or scheduled.",
     );
     expect(workflow).toContain("requires_topology_prepare=true");
+    expect(buildMatrix.env?.ROLLOUT_CONTROL_PLANE).toBe(
+      "${{ inputs.rollout_control_plane }}",
+    );
+    expect(buildMatrixRun).toContain(
+      'if [[ "${requires_topology_prepare}" == "true" && "${ROLLOUT_CONTROL_PLANE}" != "true" ]]; then',
+    );
+    expect(buildMatrixRun).toContain(
+      "::error::Manifest ${MANIFEST_PATH} sets metadata.rtcTopologyEnv; set rollout_control_plane=true because those values are applied during the API/control rollout.",
+    );
+  });
+
+  it("rejects topology manifests before creating the GitHub Free matrix when rollout is disabled", async () => {
+    const workflow = await readWorkflow();
+    const plan = required(workflow.jobs?.plan, "plan job");
+    const buildMatrix = findStep(plan, "Build matrix");
+    const buildMatrixRun = required(buildMatrix.run, "Build matrix run body");
+    const testDirectory = await mkdtemp(
+      path.join(tmpdir(), "rallar-github-free-topology-plan-"),
+    );
+
+    try {
+      const result = spawnSync("bash", ["-c", buildMatrixRun], {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          INPUT_RUN_ID: "github-free-topology-no-rollout",
+          TARGET_AGENT_COUNT: "15",
+          AGENTS_PER_JOB: "1",
+          MAX_PARALLEL_JOBS: "15",
+          AGENT_PREFIX: "controller",
+          MANIFEST_PATH:
+            "apps/rallar-black-box/manifests/hetzner/12-rtc-messages-all-peer-15-agent-30s-5hz-tree.json",
+          REGISTER_BEFORE_LOGIN: "true",
+          ROLLOUT_CONTROL_PLANE: "false",
+          GITHUB_RUN_ID: "123456",
+          GITHUB_RUN_ATTEMPT: "1",
+          GITHUB_OUTPUT: path.join(testDirectory, "github-output"),
+          GITHUB_STEP_SUMMARY: path.join(testDirectory, "summary"),
+        },
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        "Manifest apps/rallar-black-box/manifests/hetzner/12-rtc-messages-all-peer-15-agent-30s-5hz-tree.json sets metadata.rtcTopologyEnv; set rollout_control_plane=true",
+      );
+      expect(result.stdout).not.toContain("GitHub Free distributed recipe");
+    } finally {
+      await rm(testDirectory, { force: true, recursive: true });
+    }
   });
 
   it("pins the actual checkout and reusable-runner scopes to the workflow commit", async () => {

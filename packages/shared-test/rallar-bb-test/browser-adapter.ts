@@ -63,6 +63,7 @@ export type RallarBlackBoxBrowserRallarDirectorRuntime = Readonly<{
 }>;
 
 export type RallarBlackBoxBrowserRallarRuntime = Readonly<{
+    authenticate?(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
     connect(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
     send(input: unknown): Promise<unknown>;
     sendWs?(input: unknown): Promise<unknown>;
@@ -1160,8 +1161,11 @@ class BrowserCommandAdapter {
 
         const abort = this.commandAbortSignal(command, context);
         try {
+            const connectionConfig = this.toRallarAuthConnectionConfig(config);
             await this.withAbort(
-                this.rallarRuntime.connect(this.toRallarAuthConnectionConfig(config)),
+                this.rallarRuntime.authenticate
+                    ? this.rallarRuntime.authenticate(connectionConfig)
+                    : this.rallarRuntime.connect(connectionConfig),
                 abort.signal,
             );
         } finally {

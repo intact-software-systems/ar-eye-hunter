@@ -17,6 +17,7 @@ describe('browser Rallar runtime bridge', () => {
 
     it('delegates SPA browser Rallar runtime calls to the window runtime', async () => {
         const runtime: RallarBlackBoxBrowserRallarRuntime = {
+            authenticate: vi.fn(async input => ({ action: 'authenticate', input })),
             connect: vi.fn(async input => ({ action: 'connect', input })),
             send: vi.fn(async input => ({ action: 'send', input })),
             sendWs: vi.fn(async input => ({ action: 'sendWs', input })),
@@ -45,6 +46,10 @@ describe('browser Rallar runtime bridge', () => {
             },
         };
 
+        await expect(bridge.authenticate?.(connectInput)).resolves.toEqual({
+            action: 'authenticate',
+            input: connectInput,
+        });
         await expect(bridge.connect(connectInput)).resolves.toEqual({
             action: 'connect',
             input: connectInput,
@@ -66,6 +71,7 @@ describe('browser Rallar runtime bridge', () => {
             });
         await expect(bridge.close()).resolves.toEqual({ action: 'close' });
 
+        expect(runtime.authenticate).toHaveBeenCalledWith(connectInput);
         expect(runtime.connect).toHaveBeenCalledWith(connectInput);
         expect(runtime.send).toHaveBeenCalledWith({
             connection: 'aliceRtc',
@@ -77,6 +83,31 @@ describe('browser Rallar runtime bridge', () => {
             roomId: 'room-1',
             principalId: 'alice',
         });
+    });
+
+    it('falls back to full connect when an older window runtime cannot authenticate separately', async () => {
+        const runtime: RallarBlackBoxBrowserRallarRuntime = {
+            connect: vi.fn(async input => ({ action: 'connect', input })),
+            send: vi.fn(async input => ({ action: 'send', input })),
+            close: vi.fn(async () => ({ action: 'close' })),
+            health: vi.fn(async () => ({ action: 'health' })),
+        };
+        vi.stubGlobal('window', {
+            __blackBoxRallar: runtime,
+        });
+        const bridge = createSpaBrowserRallarRuntime();
+        const input = {
+            connection: 'legacy',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+            },
+        };
+
+        await expect(bridge.authenticate?.(input)).resolves.toEqual({
+            action: 'connect',
+            input,
+        });
+        expect(runtime.connect).toHaveBeenCalledWith(input);
     });
 
     it('installs and restores the SPA browser event bridge', async () => {

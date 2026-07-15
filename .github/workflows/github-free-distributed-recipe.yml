@@ -129,6 +129,7 @@ jobs:
           AGENT_PREFIX: ${{ inputs.agent_prefix }}
           MANIFEST_PATH: ${{ inputs.manifest_path }}
           REGISTER_BEFORE_LOGIN: "${{ inputs.register_before_login }}"
+          ROLLOUT_CONTROL_PLANE: "${{ inputs.rollout_control_plane }}"
         run: |
           set -euo pipefail
           sanitize() {
@@ -216,6 +217,10 @@ jobs:
             requires_topology_prepare=true
           fi
           printf 'requires_topology_prepare=%s\n' "${requires_topology_prepare}" >> "${GITHUB_OUTPUT}"
+          if [[ "${requires_topology_prepare}" == "true" && "${ROLLOUT_CONTROL_PLANE}" != "true" ]]; then
+            echo "::error::Manifest ${MANIFEST_PATH} sets metadata.rtcTopologyEnv; set rollout_control_plane=true because those values are applied during the API/control rollout." >&2
+            exit 1
+          fi
 
           plan_json="$(node scripts/github-actions/plan-github-free-headless-matrix.mjs \
             --target-agent-count="${TARGET_AGENT_COUNT}" \

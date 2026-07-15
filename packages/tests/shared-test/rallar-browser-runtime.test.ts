@@ -65,10 +65,17 @@ const facade = vi.hoisted(() => {
 });
 
 vi.mock('@shared-web/browser/rallar.ts', () => ({
+    createRallarFacade: vi.fn(() => facade.rallar),
     rallar: facade.rallar,
 }));
 
 type Runtime = Readonly<{
+    authenticate(config: {
+        connection: string;
+        actor?: string;
+        roomId?: string;
+        rallar: Record<string, unknown>;
+    }): Promise<unknown>;
     connect(config: {
         connection: string;
         actor?: string;
@@ -304,6 +311,833 @@ describe('browser Rallar black-box runtime', () => {
 
     afterEach(() => {
         delete (globalThis as typeof globalThis & { window?: TestWindow }).window;
+    });
+
+    it('authenticates without initializing realtime middleware or connected runtime state', async () => {
+        const runtime = await loadRuntime();
+
+        const diagnostics = await runtime.authenticate({
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed',
+            },
+        });
+
+        expect(diagnostics).toEqual({
+            status: 'authenticated',
+            connection: 'aliceHttp',
+            actor: 'alice',
+            clientId: 'client-1',
+            sessionId: 'session-1',
+            username: 'alice',
+        });
+        expect(JSON.stringify(diagnostics)).not.toContain('access-token-1');
+        expect(JSON.stringify(diagnostics)).not.toContain('secret');
+        expect(facade.rallar.configure).toHaveBeenCalledWith({
+            apiBaseUrl: 'https://api.example.test',
+        });
+        expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.setDefaults).not.toHaveBeenCalled();
+        expect(facade.rallar.connect).not.toHaveBeenCalled();
+        expect(facade.rallar.rooms.join).not.toHaveBeenCalled();
+        expect(facade.rallar.realtime.onJson).not.toHaveBeenCalled();
+        expect(facade.rallar.messages.rtc.onMessage).not.toHaveBeenCalled();
+        await expect(runtime.send({ data: 'not-connected' }))
+            .rejects.toThrow('Black-box Rallar runtime is not connected.');
+        expect(topics()).toEqual(expect.arrayContaining([
+            'rallar.browser.authenticate_started',
+            'rallar.browser.auth.register_started',
+            'rallar.browser.auth.register_completed',
+            'rallar.browser.authenticate_completed',
+        ]));
+        expect(topics()).not.toContain('rallar.browser.connect_started');
+    });
+
+    it('requires connected runtime cleanup before a fresh auth-only login', async () => {
+        const runtime = await loadRuntime();
+        const rallarConfig = {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+        };
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                ...rallarConfig,
+                leaveRoomOnClose: true,
+            },
+        });
+        expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
+
+        await expect(runtime.authenticate({
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: rallarConfig,
+        })).rejects.toThrow(
+            'Fresh Rallar authentication requires closing the connected black-box runtime first.',
+        );
+
+        expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
+        expect(facade.unsubscribeRealtime).not.toHaveBeenCalled();
+
+        const closeDiagnostics = await runtime.close();
+        expect(facade.rallar.rooms.leave).toHaveBeenCalledWith({
+            roomId: 'room-1',
+            clearCurrent: true,
+            timeoutMs: undefined,
+        });
+        expect(closeDiagnostics).toMatchObject({
+            status: 'closed',
+            connection: 'aliceRtc',
+            roomId: 'room-1',
+            leftRoom: true,
+        });
+        expect(facade.unsubscribeRealtime).toHaveBeenCalledTimes(1);
+    });
+
+    it('deduplicates auth bootstrap and reuses its restored session for full connect', async () => {
+        let resolveRegistration!: (session: typeof facade.session) => void;
+        facade.rallar.auth.registerAndLogin.mockImplementation(() =>
+            new Promise(resolve => {
+                resolveRegistration = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const config = {
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed' as const,
+            },
+        };
+
+        const firstAuthentication = runtime.authenticate(config);
+        const secondAuthentication = runtime.authenticate(config);
+        expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
+
+        resolveRegistration(facade.session);
+        await Promise.all([firstAuthentication, secondAuthentication]);
+        facade.rallar.auth.restore.mockReturnValue(facade.session);
+
+        await runtime.connect({
+            ...config,
+            connection: 'aliceRtc',
+            roomId: 'room-1',
+        });
+
+        expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.auth.restore).toHaveBeenCalled();
+        expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.rooms.join).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves logout cleanup when connect reuses an authenticated session', async () => {
+        const runtime = await loadRuntime();
+        const authentication = {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+        };
+        await runtime.authenticate({
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                ...authentication,
+                logoutOnClose: true,
+            },
+        });
+        facade.rallar.auth.restore.mockReturnValue(facade.session);
+
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                ...authentication,
+                logoutOnClose: false,
+            },
+        });
+        const diagnostics = await runtime.close();
+
+        expect(facade.rallar.auth.logout).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.disconnect).not.toHaveBeenCalled();
+        expect(diagnostics).toMatchObject({
+            status: 'closed',
+            connection: 'aliceRtc',
+            roomId: 'room-1',
+            logout: true,
+            disconnected: false,
+        });
+    });
+
+    it('shares an in-flight authentication bootstrap with connect', async () => {
+        let resolveRegistration!: (session: typeof facade.session) => void;
+        const registration = new Promise<typeof facade.session>(resolve => {
+            resolveRegistration = resolve;
+        });
+        facade.rallar.auth.registerAndLogin.mockReturnValue(registration);
+        const runtime = await loadRuntime();
+        const authentication = runtime.authenticate({
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed',
+            },
+        });
+        const connection = runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed',
+            },
+        });
+
+        expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
+        resolveRegistration(facade.session);
+        await Promise.all([authentication, connection]);
+
+        expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves each caller context while deduplicating same-identity auth bootstrap', async () => {
+        let resolveRegistration!: (session: typeof facade.session) => void;
+        facade.rallar.auth.registerAndLogin.mockImplementation(() =>
+            new Promise(resolve => {
+                resolveRegistration = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+
+        const firstAuthentication = runtime.authenticate({
+            connection: 'firstHttp',
+            actor: 'first-actor',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed',
+                logoutOnClose: false,
+            },
+        });
+        const secondAuthentication = runtime.authenticate({
+            connection: 'secondHttp',
+            actor: 'second-actor',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed',
+                applicationId: 'app-2',
+                workspaceId: 'workspace-2',
+                logoutOnClose: true,
+            },
+        });
+        expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
+
+        resolveRegistration(facade.session);
+        await expect(firstAuthentication).resolves.toMatchObject({
+            connection: 'firstHttp',
+            actor: 'first-actor',
+        });
+        await expect(secondAuthentication).resolves.toMatchObject({
+            connection: 'secondHttp',
+            actor: 'second-actor',
+            applicationId: 'app-2',
+            workspaceId: 'workspace-2',
+        });
+
+        const closeDiagnostics = await runtime.close();
+        expect(facade.rallar.auth.logout).toHaveBeenCalledTimes(1);
+        expect(closeDiagnostics).toMatchObject({
+            connection: 'secondHttp',
+            actor: 'second-actor',
+            logout: true,
+        });
+    });
+
+    it('preserves logout cleanup when a later shared-auth caller disables it', async () => {
+        let resolveRegistration!: (session: typeof facade.session) => void;
+        facade.rallar.auth.registerAndLogin.mockImplementation(() =>
+            new Promise(resolve => {
+                resolveRegistration = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const sharedIdentity = {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+            register: 'if-needed' as const,
+        };
+
+        const firstAuthentication = runtime.authenticate({
+            connection: 'firstHttp',
+            actor: 'first-actor',
+            rallar: {
+                ...sharedIdentity,
+                logoutOnClose: true,
+            },
+        });
+        const secondAuthentication = runtime.authenticate({
+            connection: 'secondHttp',
+            actor: 'second-actor',
+            rallar: {
+                ...sharedIdentity,
+                logoutOnClose: false,
+            },
+        });
+
+        resolveRegistration(facade.session);
+        await Promise.all([firstAuthentication, secondAuthentication]);
+        const closeDiagnostics = await runtime.close();
+
+        expect(facade.rallar.auth.logout).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.disconnect).not.toHaveBeenCalled();
+        expect(closeDiagnostics).toMatchObject({
+            connection: 'secondHttp',
+            actor: 'second-actor',
+            logout: true,
+            disconnected: false,
+        });
+    });
+
+    it('records provenance before a queued restore-only identity can authenticate', async () => {
+        let resolveRegistration!: (session: typeof facade.session) => void;
+        facade.rallar.auth.registerAndLogin.mockImplementation(() =>
+            new Promise(resolve => {
+                resolveRegistration = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+
+        const aliceAuthentication = runtime.authenticate({
+            connection: 'aliceHttp',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed',
+            },
+        });
+        const bobAuthentication = runtime.authenticate({
+            connection: 'bobRestore',
+            rallar: {
+                apiBaseUrl: 'https://other-api.example.test',
+                username: 'bob',
+            },
+        });
+        const bobRejection = expect(bobAuthentication).rejects.toThrow(
+            'Rallar credentials are required when the authentication identity changes.',
+        );
+        facade.rallar.auth.restore.mockReturnValue(facade.session);
+
+        resolveRegistration(facade.session);
+
+        await expect(aliceAuthentication).resolves.toMatchObject({
+            status: 'authenticated',
+            username: 'alice',
+        });
+        await bobRejection;
+        expect(facade.rallar.configure).not.toHaveBeenCalledWith({
+            apiBaseUrl: 'https://other-api.example.test',
+        });
+    });
+
+    it('does not restore stale cleanup state when a queued identity login fails', async () => {
+        let resolveRegistration!: (session: typeof facade.session) => void;
+        facade.rallar.auth.registerAndLogin.mockImplementation(() =>
+            new Promise(resolve => {
+                resolveRegistration = resolve;
+            })
+        );
+        facade.rallar.auth.login.mockRejectedValueOnce(new Error('bad credentials'));
+        const runtime = await loadRuntime();
+
+        const aliceAuthentication = runtime.authenticate({
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed',
+                logoutOnClose: true,
+            },
+        });
+        const bobAuthentication = runtime.authenticate({
+            connection: 'bobHttp',
+            actor: 'bob',
+            rallar: {
+                apiBaseUrl: 'https://other-api.example.test',
+                username: 'bob',
+                password: 'wrong',
+                register: false,
+            },
+        });
+        const bobRejection = expect(bobAuthentication).rejects.toThrow(
+            'bad credentials',
+        );
+
+        resolveRegistration(facade.session);
+
+        await expect(aliceAuthentication).resolves.toMatchObject({
+            status: 'authenticated',
+            username: 'alice',
+        });
+        await bobRejection;
+
+        const closeDiagnostics = await runtime.close();
+        expect(facade.rallar.auth.logout).not.toHaveBeenCalled();
+        expect(facade.rallar.disconnect).toHaveBeenCalledTimes(1);
+        expect(closeDiagnostics).toMatchObject({
+            connection: undefined,
+            logout: false,
+            disconnected: true,
+        });
+    });
+
+    it.each([
+        {
+            mismatch: 'API base URL',
+            apiBaseUrl: 'https://other-api.example.test',
+            username: 'alice',
+            restoredSession: facade.session,
+        },
+        {
+            mismatch: 'username',
+            apiBaseUrl: 'https://api.example.test',
+            username: 'bob',
+            restoredSession: facade.session,
+        },
+        {
+            mismatch: 'restored session',
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            restoredSession: {
+                ...facade.session,
+                sessionId: 'session-2',
+            },
+        },
+    ])('does not reuse auth bootstrap after a $mismatch mismatch', async ({
+        apiBaseUrl,
+        username,
+        restoredSession,
+    }) => {
+        const runtime = await loadRuntime();
+        await runtime.authenticate({
+            connection: 'aliceHttp',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test/',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed',
+            },
+        });
+        facade.rallar.auth.restore.mockReturnValue(restoredSession);
+
+        await runtime.connect({
+            connection: 'rtc',
+            rallar: {
+                apiBaseUrl,
+                username,
+                password: 'secret',
+                register: 'if-needed',
+            },
+        });
+
+        expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+        {
+            operation: 'authenticate',
+            mismatch: 'API base URL',
+            apiBaseUrl: 'https://other-api.example.test',
+            username: 'alice',
+        },
+        {
+            operation: 'authenticate',
+            mismatch: 'username',
+            apiBaseUrl: 'https://api.example.test',
+            username: 'bob',
+        },
+        {
+            operation: 'connect',
+            mismatch: 'API base URL',
+            apiBaseUrl: 'https://other-api.example.test',
+            username: 'alice',
+        },
+        {
+            operation: 'connect',
+            mismatch: 'username',
+            apiBaseUrl: 'https://api.example.test',
+            username: 'bob',
+        },
+    ])('requires fresh credentials for $operation after a bootstrap $mismatch mismatch', async ({
+        operation,
+        apiBaseUrl,
+        username,
+    }) => {
+        const runtime = await loadRuntime();
+        await runtime.authenticate({
+            connection: 'aliceHttp',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed',
+            },
+        });
+        facade.rallar.auth.restore.mockReturnValue(facade.session);
+
+        const config = {
+            connection: operation,
+            rallar: {
+                apiBaseUrl,
+                username,
+            },
+        };
+        const result = operation === 'authenticate'
+            ? runtime.authenticate(config)
+            : runtime.connect(config);
+
+        await expect(result).rejects.toThrow(
+            'Rallar credentials are required when the authentication identity changes.',
+        );
+        expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.auth.login).not.toHaveBeenCalled();
+        expect(facade.rallar.connect).not.toHaveBeenCalled();
+    });
+
+    it('keeps a known cross-API session rejected after fresh authentication fails', async () => {
+        const runtime = await loadRuntime();
+        await runtime.authenticate({
+            connection: 'aliceHttp',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                register: 'if-needed',
+            },
+        });
+        facade.rallar.auth.restore.mockReturnValue(facade.session);
+        facade.rallar.auth.login.mockRejectedValueOnce(new Error('bad credentials'));
+
+        await expect(runtime.authenticate({
+            connection: 'bobHttp',
+            rallar: {
+                apiBaseUrl: 'https://other-api.example.test',
+                username: 'bob',
+                password: 'wrong',
+            },
+        })).rejects.toThrow('bad credentials');
+
+        await expect(runtime.authenticate({
+            connection: 'bobRestore',
+            rallar: {
+                apiBaseUrl: 'https://other-api.example.test',
+                username: 'bob',
+            },
+        })).rejects.toThrow(
+            'Rallar credentials are required when the authentication identity changes.',
+        );
+        expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses the latest authenticated identity for cleanup when full connect fails after a switch', async () => {
+        const runtime = await loadRuntime();
+        await runtime.authenticate({
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                logoutOnClose: true,
+            },
+        });
+        const bobSession = {
+            ...facade.session,
+            clientId: 'client-2',
+            sessionId: 'session-2',
+            username: 'bob',
+        };
+        facade.rallar.auth.login.mockResolvedValue(bobSession);
+        facade.rallar.connect.mockRejectedValueOnce(new Error('realtime unavailable'));
+
+        await expect(runtime.connect({
+            connection: 'bobRtc',
+            actor: 'bob',
+            rallar: {
+                apiBaseUrl: 'https://other-api.example.test',
+                username: 'bob',
+                password: 'other-secret',
+            },
+        })).rejects.toThrow('realtime unavailable');
+        const diagnostics = await runtime.close();
+
+        expect(facade.rallar.auth.logout).not.toHaveBeenCalled();
+        expect(facade.rallar.disconnect).toHaveBeenCalledTimes(1);
+        expect(diagnostics).toMatchObject({
+            status: 'closed',
+            connection: 'bobRtc',
+            actor: 'bob',
+            logout: false,
+            disconnected: true,
+        });
+    });
+
+    it('waits for cancelled authentication and owns its logout cleanup', async () => {
+        let resolveLogin!: (session: typeof facade.session) => void;
+        facade.rallar.auth.login.mockImplementation(() =>
+            new Promise(resolve => {
+                resolveLogin = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const authentication = runtime.authenticate({
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                logoutOnClose: true,
+            },
+        });
+        const rejectedAuthentication = expect(authentication).rejects.toThrow(
+            'Authentication was cancelled because the Rallar runtime closed.',
+        );
+        expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
+        facade.rallar.auth.restore.mockReturnValue(facade.session);
+
+        const closing = runtime.close();
+        await Promise.resolve();
+        expect(facade.rallar.auth.logout).not.toHaveBeenCalled();
+        expect(facade.rallar.disconnect).not.toHaveBeenCalled();
+        resolveLogin(facade.session);
+        await rejectedAuthentication;
+        const closeDiagnostics = await closing;
+
+        expect(closeDiagnostics).toMatchObject({
+            status: 'closed',
+            connection: 'aliceHttp',
+            actor: 'alice',
+            logout: true,
+            disconnected: false,
+        });
+        expect(facade.rallar.auth.logout).toHaveBeenCalledTimes(1);
+        const secondCloseDiagnostics = await runtime.close();
+        expect(secondCloseDiagnostics.connection).toBeUndefined();
+        expect(facade.rallar.auth.logout).toHaveBeenCalledTimes(1);
+    });
+
+    it('honors every caller cleanup policy when shared authentication completes after close', async () => {
+        let resolveRegistration!: (session: typeof facade.session) => void;
+        facade.rallar.auth.registerAndLogin.mockImplementation(() =>
+            new Promise(resolve => {
+                resolveRegistration = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const sharedIdentity = {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+            register: 'if-needed' as const,
+        };
+        const firstAuthentication = runtime.authenticate({
+            connection: 'firstHttp',
+            rallar: {
+                ...sharedIdentity,
+                logoutOnClose: false,
+            },
+        });
+        const secondAuthentication = runtime.authenticate({
+            connection: 'secondHttp',
+            rallar: {
+                ...sharedIdentity,
+                logoutOnClose: true,
+            },
+        });
+        const firstRejection = expect(firstAuthentication).rejects.toThrow(
+            'Authentication was cancelled because the Rallar runtime closed.',
+        );
+        const secondRejection = expect(secondAuthentication).rejects.toThrow(
+            'Authentication was cancelled because the Rallar runtime closed.',
+        );
+        facade.rallar.auth.restore.mockReturnValue(facade.session);
+
+        const closing = runtime.close();
+        resolveRegistration(facade.session);
+        await Promise.all([firstRejection, secondRejection]);
+        await closing;
+
+        expect(facade.rallar.auth.registerAndLogin).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.auth.logout).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects retries until aborted authentication and close settle', async () => {
+        let resolveFirstLogin!: (session: typeof facade.session) => void;
+        let firstLoginSignal: AbortSignal | undefined;
+        facade.rallar.auth.login
+            .mockImplementationOnce((_request, options) =>
+                new Promise(resolve => {
+                    firstLoginSignal = options?.signal;
+                    resolveFirstLogin = resolve;
+                })
+            )
+            .mockResolvedValueOnce(facade.session);
+        const runtime = await loadRuntime();
+        const config = {
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        };
+        const cancelledAuthentication = runtime.authenticate(config);
+        const cancelledResult = expect(cancelledAuthentication).rejects.toThrow(
+            'Authentication was cancelled because the Rallar runtime closed.',
+        );
+        const closing = runtime.close();
+        await Promise.resolve();
+
+        await expect(runtime.authenticate(config)).rejects.toThrow(
+            'Authentication was cancelled because the Rallar runtime closed.',
+        );
+        expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
+
+        resolveFirstLogin(facade.session);
+        await cancelledResult;
+        await closing;
+
+        const retry = runtime.authenticate(config);
+        await expect(retry).resolves.toMatchObject({
+            status: 'authenticated',
+            sessionId: 'session-1',
+        });
+        expect(firstLoginSignal?.aborted).toBe(true);
+        expect(facade.rallar.auth.login).toHaveBeenCalledTimes(2);
+    });
+
+    it('honors logout cleanup after auth-only bootstrap', async () => {
+        const runtime = await loadRuntime();
+
+        await runtime.authenticate({
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                logoutOnClose: true,
+            },
+        });
+        const diagnostics = await runtime.close();
+
+        expect(facade.rallar.auth.logout).toHaveBeenCalledWith({ timeoutMs: undefined });
+        expect(facade.rallar.disconnect).not.toHaveBeenCalled();
+        expect(diagnostics).toMatchObject({
+            status: 'closed',
+            connection: 'aliceHttp',
+            actor: 'alice',
+            logout: true,
+            disconnected: false,
+        });
+    });
+
+    it('preserves authentication on auth-only close when logout is disabled', async () => {
+        const runtime = await loadRuntime();
+
+        await runtime.authenticate({
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+        const diagnostics = await runtime.close();
+
+        expect(facade.rallar.auth.logout).not.toHaveBeenCalled();
+        expect(facade.rallar.disconnect).toHaveBeenCalledTimes(1);
+        expect(diagnostics).toMatchObject({
+            status: 'closed',
+            connection: 'aliceHttp',
+            actor: 'alice',
+            logout: false,
+            disconnected: true,
+        });
+    });
+
+    it('reports invalid auth bootstrap configuration and allows a corrected retry', async () => {
+        const runtime = await loadRuntime();
+
+        await expect(runtime.authenticate({
+            connection: 'invalidHttp',
+            rallar: {
+                username: 'alice',
+                password: 'secret',
+            },
+        })).rejects.toThrow('rallar.apiBaseUrl is required.');
+        expect(topics()).toContain('rallar.browser.authenticate_failed');
+
+        await expect(runtime.authenticate({
+            connection: 'aliceHttp',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        })).resolves.toMatchObject({
+            status: 'authenticated',
+            sessionId: 'session-1',
+        });
+        expect(facade.rallar.auth.login).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears failed auth bootstrap state before retrying the same identity', async () => {
+        facade.rallar.auth.login.mockRejectedValueOnce(new Error('temporary auth failure'));
+        const runtime = await loadRuntime();
+        const config = {
+            connection: 'aliceHttp',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        };
+
+        await expect(runtime.authenticate(config)).rejects.toThrow('temporary auth failure');
+        facade.rallar.auth.login.mockResolvedValue(facade.session);
+        await expect(runtime.authenticate(config)).resolves.toMatchObject({
+            status: 'authenticated',
+            sessionId: 'session-1',
+        });
+
+        expect(facade.rallar.auth.login).toHaveBeenCalledTimes(2);
+        expect(topics()).toContain('rallar.browser.authenticate_failed');
     });
 
     it('emits auth restore failure diagnostics when no session or credentials exist', async () => {
@@ -1122,5 +1956,777 @@ describe('browser Rallar black-box runtime', () => {
             'rallar.browser.session.duplicate_detected',
             'rallar.browser.cleanup.unsubscribe_completed',
         ]));
+    });
+
+    it('creates an isolated facade for the installed black-box runtime', async () => {
+        const rallarModule = await import('@shared-web/browser/rallar.ts');
+
+        await loadRuntime();
+
+        expect(rallarModule.createRallarFacade).toHaveBeenCalledTimes(1);
+    });
+
+    it('creates an injectable runtime without installing a browser global', async () => {
+        vi.resetModules();
+        const runtimeModule = await import(
+            '../../shared-test/black-box-runner/browser/rallar-browser-runtime/runtime.ts'
+        );
+        const factoryEvents: Array<{ atEpochMs?: number }> = [];
+        const targetWindow = {
+            __blackBoxRallarEmit: (event: { atEpochMs?: number }) => {
+                factoryEvents.push(event);
+            },
+        } as unknown as Window;
+        const runtime = runtimeModule.createBlackBoxRallarRuntime({
+            facade: facade.rallar as never,
+            targetWindow,
+            clock: {
+                now: () => 12_345,
+            },
+            delay: vi.fn(async () => undefined),
+        });
+
+        await runtime.authenticate({
+            connection: 'factoryAuth',
+            actor: 'alice',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+
+        expect(targetWindow.__blackBoxRallar).toBeUndefined();
+        expect(factoryEvents.length).toBeGreaterThan(0);
+        expect(factoryEvents.every(event => event.atEpochMs === 12_345)).toBe(true);
+    });
+
+    it('rejects a connected identity change before mutating facade configuration', async () => {
+        const runtime = await loadRuntime();
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+
+        await expect(runtime.authenticate({
+            connection: 'bobHttp',
+            actor: 'bob',
+            rallar: {
+                apiBaseUrl: 'https://other-api.example.test',
+                username: 'bob',
+                password: 'secret',
+            },
+        })).rejects.toThrow(
+            'Fresh Rallar authentication requires closing the connected black-box runtime first.',
+        );
+
+        expect(facade.rallar.configure).not.toHaveBeenCalledWith({
+            apiBaseUrl: 'https://other-api.example.test',
+        });
+    });
+
+    it('does not allow an in-flight connect to commit after close starts', async () => {
+        let resolveConnect!: () => void;
+        facade.rallar.connect.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveConnect = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const connecting = runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+        await vi.waitFor(() => {
+            expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+        });
+
+        const closing = runtime.close();
+        await Promise.resolve();
+        expect(facade.rallar.disconnect).not.toHaveBeenCalled();
+
+        resolveConnect();
+        await expect(connecting).rejects.toThrow(
+            'Connection was cancelled because the Rallar runtime closed.',
+        );
+        await closing;
+        await expect(runtime.send({ data: 'after-close' })).rejects.toThrow(
+            'Black-box Rallar runtime is not connected.',
+        );
+        expect(topics().lastIndexOf('rallar.browser.connect_completed')).toBeLessThan(0);
+    });
+
+    it('revalidates a queued connection target before mutating the facade', async () => {
+        let resolveFirstConnect!: () => void;
+        facade.rallar.connect.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveFirstConnect = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const first = runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+        await vi.waitFor(() => {
+            expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+        });
+
+        const second = runtime.connect({
+            connection: 'bobRtc',
+            actor: 'bob',
+            roomId: 'room-2',
+            rallar: {
+                apiBaseUrl: 'https://other-api.example.test',
+                username: 'bob',
+                password: 'other-secret',
+            },
+        });
+        const secondResult = expect(second).rejects.toThrow(
+            'Connected Rallar identity, scope, or room changes require close first.',
+        );
+        expect(facade.rallar.configure).not.toHaveBeenCalledWith({
+            apiBaseUrl: 'https://other-api.example.test',
+        });
+
+        resolveFirstConnect();
+        await first;
+        await secondResult;
+        expect(facade.rallar.configure).not.toHaveBeenCalledWith({
+            apiBaseUrl: 'https://other-api.example.test',
+        });
+        expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('serializes concurrent connects that share a target but use different transports', async () => {
+        let resolveFirstConnect!: () => void;
+        facade.rallar.connect.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveFirstConnect = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const baseConfig = {
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                typeId: 'chat.message',
+                topicId: 'chat',
+            },
+        };
+
+        const realtimeConnect = runtime.connect({
+            ...baseConfig,
+            rallar: {
+                ...baseConfig.rallar,
+                transport: 'realtime',
+            },
+        });
+        await vi.waitFor(() => {
+            expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+        });
+        const messagesConnect = runtime.connect({
+            ...baseConfig,
+            rallar: {
+                ...baseConfig.rallar,
+                transport: 'messages.rtc',
+            },
+        });
+        expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+
+        resolveFirstConnect();
+        await expect(realtimeConnect).resolves.toMatchObject({
+            transport: 'realtime',
+        });
+        await expect(messagesConnect).resolves.toMatchObject({
+            transport: 'messages.rtc',
+        });
+
+        expect(facade.rallar.connect).toHaveBeenCalledTimes(2);
+        expect(facade.rallar.realtime.onJson).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.messages.rtc.onMessage).toHaveBeenCalledTimes(1);
+        expect(facade.unsubscribeRealtime).toHaveBeenCalledTimes(1);
+    });
+
+    it('serializes fresh authentication behind an in-flight connection', async () => {
+        let resolveFirstConnect!: () => void;
+        facade.rallar.connect.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveFirstConnect = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const connecting = runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+        await vi.waitFor(() => {
+            expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+        });
+
+        const authenticating = runtime.authenticate({
+            connection: 'bobHttp',
+            actor: 'bob',
+            rallar: {
+                apiBaseUrl: 'https://other-api.example.test',
+                username: 'bob',
+                password: 'other-secret',
+            },
+        });
+        expect(facade.rallar.configure.mock.calls.some(
+            ([input]) => input.apiBaseUrl === 'https://other-api.example.test',
+        )).toBe(false);
+
+        resolveFirstConnect();
+        await connecting;
+        await expect(authenticating).rejects.toThrow(
+            'Fresh Rallar authentication requires closing the connected black-box runtime first.',
+        );
+        expect(facade.rallar.configure.mock.calls.some(
+            ([input]) => input.apiBaseUrl === 'https://other-api.example.test',
+        )).toBe(false);
+    });
+
+    it('revalidates queued live CRDT bootstrap before mutating the facade', async () => {
+        let resolveFirstConnect!: () => void;
+        facade.rallar.connect.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveFirstConnect = resolve;
+            })
+        );
+        facade.rallar.crdt.open.mockResolvedValueOnce(
+            createFakeCrdtDocument('queued-live-doc'),
+        );
+        const runtime = await loadRuntime();
+        const connecting = runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+        await vi.waitFor(() => {
+            expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+        });
+
+        const opening = runtime.crdt.open({
+            handle: 'queued-live-doc',
+            name: 'queued-live-doc',
+            transport: 'ws',
+            apiBaseUrl: 'https://other-api.example.test',
+            roomId: 'room-2',
+            username: 'bob',
+            password: 'other-secret',
+        });
+        const openingResult = expect(opening).rejects.toThrow(
+            'Connected Rallar identity, scope, or room changes require close first.',
+        );
+
+        resolveFirstConnect();
+        await connecting;
+        await openingResult;
+        expect(facade.rallar.configure).not.toHaveBeenCalledWith({
+            apiBaseUrl: 'https://other-api.example.test',
+        });
+        expect(facade.rallar.crdt.open).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates concurrent close cleanup', async () => {
+        const runtime = await loadRuntime();
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                leaveRoomOnClose: true,
+            },
+        });
+
+        const [first, second] = await Promise.all([
+            runtime.close(),
+            runtime.close(),
+        ]);
+
+        expect(first).toEqual(second);
+        expect(facade.rallar.rooms.leave).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.disconnect).toHaveBeenCalledTimes(1);
+        expect(facade.unsubscribeRealtime).toHaveBeenCalledTimes(1);
+    });
+
+    it('reserves CRDT handles before awaiting document creation', async () => {
+        let resolveOpen!: (document: ReturnType<typeof createFakeCrdtDocument>) => void;
+        facade.rallar.crdt.open.mockImplementationOnce(() =>
+            new Promise(resolve => {
+                resolveOpen = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const opening = runtime.crdt.open({
+            handle: 'shared-doc',
+            name: 'checklist',
+            transport: 'local-only',
+        });
+        await vi.waitFor(() => {
+            expect(facade.rallar.crdt.open).toHaveBeenCalledTimes(1);
+        });
+
+        await expect(runtime.crdt.open({
+            handle: 'shared-doc',
+            name: 'checklist',
+            transport: 'local-only',
+        })).rejects.toThrow('CRDT document handle is already open: shared-doc');
+        expect(facade.rallar.crdt.open).toHaveBeenCalledTimes(1);
+
+        resolveOpen(createFakeCrdtDocument('doc-shared'));
+        await opening;
+    });
+
+    it('waits for a late CRDT open and disposes the document during close', async () => {
+        let resolveOpen!: (document: ReturnType<typeof createFakeCrdtDocument>) => void;
+        facade.rallar.crdt.open.mockImplementationOnce(() =>
+            new Promise(resolve => {
+                resolveOpen = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const document = createFakeCrdtDocument('doc-late');
+        const opening = runtime.crdt.open({
+            handle: 'late-doc',
+            name: 'checklist',
+            transport: 'local-only',
+        });
+        const openingResult = expect(opening).rejects.toThrow(
+            'CRDT document open was cancelled because the Rallar runtime closed.',
+        );
+        await vi.waitFor(() => {
+            expect(facade.rallar.crdt.open).toHaveBeenCalledTimes(1);
+        });
+
+        const closing = runtime.close();
+        await Promise.resolve();
+        expect(facade.rallar.disconnect).not.toHaveBeenCalled();
+        resolveOpen(document);
+
+        await openingResult;
+        await closing;
+        expect(document.close).toHaveBeenCalledTimes(1);
+        await expect(runtime.crdt.read({ handle: 'late-doc' })).rejects.toThrow(
+            'CRDT document handle is not open: late-doc',
+        );
+    });
+
+    it('cancels a sleeping CRDT wait before close cleanup', async () => {
+        vi.useFakeTimers();
+        try {
+            const document = createFakeCrdtDocument('wait-during-close');
+            facade.rallar.crdt.open.mockResolvedValueOnce(document);
+            const runtime = await loadRuntime();
+            await runtime.crdt.open({
+                handle: 'wait-during-close',
+                name: 'wait-during-close',
+                transport: 'local-only',
+            });
+            const waiting = runtime.crdt.wait({
+                handle: 'wait-during-close',
+                timeoutMs: 60_000,
+                intervalMs: 60_000,
+                conditions: [{
+                    source: 'value',
+                    path: 'title',
+                    operator: 'equals',
+                    expected: 'never',
+                }],
+            });
+            const waitOutcome = waiting.then(
+                () => undefined,
+                error => error,
+            );
+            await vi.advanceTimersByTimeAsync(0);
+            expect(topics()).toContain('rallar.browser.crdt.waiting');
+
+            const closing = runtime.close();
+            const closeOutcome = closing.then(
+                () => undefined,
+                error => error,
+            );
+            await vi.advanceTimersByTimeAsync(0);
+            const disconnectCallsBeforeIntervalElapsed = facade.rallar.disconnect.mock.calls.length;
+
+            await vi.advanceTimersByTimeAsync(60_000);
+            const waitError = await waitOutcome;
+            const closeError = await closeOutcome;
+
+            expect(disconnectCallsBeforeIntervalElapsed).toBe(1);
+            expect(waitError).toBeInstanceOf(Error);
+            expect((waitError as Error).message).toBe(
+                'CRDT operation completed after the runtime closed.',
+            );
+            expect(closeError).toBeUndefined();
+            expect(document.close).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('rejects a queued CRDT wait before it starts polling after close', async () => {
+        vi.useFakeTimers();
+        try {
+            const document = createFakeCrdtDocument('queued-wait-during-close');
+            let resolveApply!: (result: { updateId: string }) => void;
+            document.applyLocal.mockImplementationOnce(() =>
+                new Promise(resolve => {
+                    resolveApply = resolve;
+                })
+            );
+            facade.rallar.crdt.open.mockResolvedValueOnce(document);
+            const runtime = await loadRuntime();
+            await runtime.crdt.open({
+                handle: 'queued-wait-during-close',
+                name: 'queued-wait-during-close',
+                transport: 'local-only',
+            });
+            const applying = runtime.crdt.apply({
+                handle: 'queued-wait-during-close',
+                batch: {
+                    kind: 'batch',
+                    operations: [{
+                        kind: 'register.set',
+                        path: ['title'],
+                        value: 'changed',
+                        policy: 'lww',
+                    }],
+                },
+            });
+            const applyOutcome = applying.then(
+                () => undefined,
+                error => error,
+            );
+            await vi.advanceTimersByTimeAsync(0);
+            expect(document.applyLocal).toHaveBeenCalledTimes(1);
+
+            const waiting = runtime.crdt.wait({
+                handle: 'queued-wait-during-close',
+                timeoutMs: 60_000,
+                intervalMs: 60_000,
+                conditions: [{
+                    source: 'value',
+                    path: 'title',
+                    operator: 'equals',
+                    expected: 'never',
+                }],
+            });
+            const waitOutcome = waiting.then(
+                () => undefined,
+                error => error,
+            );
+            const closing = runtime.close();
+            const closeOutcome = closing.then(
+                () => undefined,
+                error => error,
+            );
+
+            resolveApply({ updateId: 'late-apply' });
+            await vi.advanceTimersByTimeAsync(0);
+            const disconnectCallsBeforeIntervalElapsed = facade.rallar.disconnect.mock.calls.length;
+
+            await vi.advanceTimersByTimeAsync(60_000);
+            const applyError = await applyOutcome;
+            const waitError = await waitOutcome;
+            const closeError = await closeOutcome;
+
+            expect(disconnectCallsBeforeIntervalElapsed).toBe(1);
+            expect(applyError).toBeInstanceOf(Error);
+            expect(waitError).toBeInstanceOf(Error);
+            expect((waitError as Error).message).toBe(
+                'CRDT operation completed after the runtime closed.',
+            );
+            expect(closeError).toBeUndefined();
+            expect(document.close).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('rejects a CRDT wait promptly while close drains its in-flight sync', async () => {
+        const document = createFakeCrdtDocument('sync-wait-during-close');
+        let resolveSync!: (result: unknown) => void;
+        document.sync.mockImplementationOnce(() =>
+            new Promise(resolve => {
+                resolveSync = resolve;
+            })
+        );
+        facade.rallar.crdt.open.mockResolvedValueOnce(document);
+        const runtime = await loadRuntime();
+        await runtime.crdt.open({
+            handle: 'sync-wait-during-close',
+            name: 'sync-wait-during-close',
+            transport: 'local-only',
+        });
+        let waitSettled = false;
+        const waiting = runtime.crdt.wait({
+            handle: 'sync-wait-during-close',
+            timeoutMs: 60_000,
+            intervalMs: 60_000,
+            sync: { reason: 'wait-close-test' },
+            conditions: [{
+                source: 'value',
+                path: 'title',
+                operator: 'equals',
+                expected: 'never',
+            }],
+        });
+        const waitOutcome = waiting.then(
+            () => undefined,
+            error => {
+                waitSettled = true;
+                return error;
+            },
+        );
+        await vi.waitFor(() => {
+            expect(document.sync).toHaveBeenCalledTimes(1);
+        });
+
+        const closing = runtime.close();
+        await vi.waitFor(() => {
+            expect(waitSettled).toBe(true);
+        });
+        const waitSettledBeforeSync = waitSettled;
+        const documentCloseCallsBeforeSync = document.close.mock.calls.length;
+
+        resolveSync({
+            status: 'synced',
+            transport: 'local-only',
+            sentUpdateCount: 0,
+            receivedUpdateCount: 0,
+            pendingUpdateCount: 0,
+        });
+        const waitError = await waitOutcome;
+        await closing;
+
+        expect(waitSettledBeforeSync).toBe(true);
+        expect(documentCloseCallsBeforeSync).toBe(0);
+        expect(waitError).toBeInstanceOf(Error);
+        expect((waitError as Error).message).toBe(
+            'CRDT operation completed after the runtime closed.',
+        );
+        expect(document.close).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.disconnect).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not close a CRDT document twice when explicit close races runtime close', async () => {
+        let resolveDocumentClose!: () => void;
+        const document = createFakeCrdtDocument('doc-closing');
+        document.close.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveDocumentClose = resolve;
+            })
+        );
+        facade.rallar.crdt.open.mockResolvedValueOnce(document);
+        const runtime = await loadRuntime();
+        await runtime.crdt.open({
+            handle: 'closing-doc',
+            name: 'checklist',
+            transport: 'local-only',
+        });
+
+        const closingDocument = runtime.crdt.close({ handle: 'closing-doc' });
+        await vi.waitFor(() => {
+            expect(document.close).toHaveBeenCalledTimes(1);
+        });
+        const closingRuntime = runtime.close();
+        resolveDocumentClose();
+
+        await expect(closingDocument).rejects.toThrow(
+            'CRDT operation completed after the runtime closed.',
+        );
+        await closingRuntime;
+        expect(document.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not close a destroyed CRDT document when destroy races runtime close', async () => {
+        let resolveDocumentDestroy!: () => void;
+        const document = createFakeCrdtDocument('doc-destroying');
+        document.destroy.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveDocumentDestroy = resolve;
+            })
+        );
+        facade.rallar.crdt.open.mockResolvedValueOnce(document);
+        const runtime = await loadRuntime();
+        await runtime.crdt.open({
+            handle: 'destroying-doc',
+            name: 'checklist',
+            transport: 'local-only',
+        });
+
+        const destroyingDocument = runtime.crdt.destroy({ handle: 'destroying-doc' });
+        await vi.waitFor(() => {
+            expect(document.destroy).toHaveBeenCalledTimes(1);
+        });
+        const closingRuntime = runtime.close();
+        resolveDocumentDestroy();
+
+        await expect(destroyingDocument).rejects.toThrow(
+            'CRDT operation completed after the runtime closed.',
+        );
+        await closingRuntime;
+        expect(document.destroy).toHaveBeenCalledTimes(1);
+        expect(document.close).not.toHaveBeenCalled();
+    });
+
+    it('rejects a live CRDT target change before reconfiguring the connected facade', async () => {
+        const runtime = await loadRuntime();
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+
+        await expect(runtime.crdt.open({
+            handle: 'other-live-doc',
+            name: 'checklist',
+            transport: 'ws',
+            apiBaseUrl: 'https://other-api.example.test',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            roomId: 'room-1',
+            username: 'alice',
+            password: 'secret',
+        })).rejects.toThrow(
+            'Connected Rallar identity, scope, or room changes require close first.',
+        );
+        expect(facade.rallar.configure).not.toHaveBeenCalledWith({
+            apiBaseUrl: 'https://other-api.example.test',
+        });
+        expect(facade.rallar.crdt.open).not.toHaveBeenCalled();
+    });
+
+    it('fences send completion after runtime close without serializing sends', async () => {
+        let resolveSend!: (results: readonly unknown[]) => void;
+        facade.rallar.realtime.sendJson.mockImplementationOnce(() =>
+            new Promise(resolve => {
+                resolveSend = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+        const sending = runtime.send({ data: 'late-message' });
+        const sendResult = expect(sending).rejects.toThrow(
+            'Rallar send completed after the runtime closed.',
+        );
+        await vi.waitFor(() => {
+            expect(facade.rallar.realtime.sendJson).toHaveBeenCalledTimes(1);
+        });
+
+        await runtime.close();
+        resolveSend([]);
+        await sendResult;
+
+        expect(topics()).not.toContain('rallar.browser.realtime.send_completed');
+        expect(topics()).toContain('rallar.browser.realtime.send_failed');
+    });
+
+    it('rejects new resource effects while runtime close is in progress', async () => {
+        let resolveDisconnect!: () => void;
+        facade.rallar.disconnect.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveDisconnect = resolve;
+            })
+        );
+        facade.rallar.crdt.open.mockResolvedValueOnce(
+            createFakeCrdtDocument('doc-during-close'),
+        );
+        const runtime = await loadRuntime();
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+        facade.rallar.realtime.sendJson.mockClear();
+        facade.rallar.crdt.open.mockClear();
+        facade.rallar.director.appoint.mockClear();
+
+        const closing = runtime.close();
+        await vi.waitFor(() => {
+            expect(facade.rallar.disconnect).toHaveBeenCalledTimes(1);
+        });
+
+        await expect(runtime.send({ data: 'during-close' })).rejects.toThrow(
+            'Rallar send completed after the runtime closed.',
+        );
+        await expect(runtime.crdt.open({
+            handle: 'during-close',
+            name: 'during-close',
+            transport: 'local-only',
+        })).rejects.toThrow(
+            'CRDT document open was cancelled because the Rallar runtime closed.',
+        );
+        await expect(runtime.director.appoint({
+            roomId: 'room-1',
+        })).rejects.toThrow(
+            'Director operation completed after the runtime closed.',
+        );
+
+        expect(facade.rallar.realtime.sendJson).not.toHaveBeenCalled();
+        expect(facade.rallar.crdt.open).not.toHaveBeenCalled();
+        expect(facade.rallar.director.appoint).not.toHaveBeenCalled();
+
+        resolveDisconnect();
+        await closing;
     });
 });

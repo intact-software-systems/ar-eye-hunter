@@ -18,6 +18,21 @@ function envelope(commandId: string, command: RallarBlackBoxTestCommand): Contro
 }
 
 describe('rallar-bb-test control protocol', () => {
+    it('accepts the RTC diagnostics option on health commands', () => {
+        expect(validateRallarBlackBoxTestCommand({
+            kind: 'health',
+            includeRtcDiagnostics: true,
+        })).toEqual({ ok: true });
+
+        expect(validateRallarBlackBoxTestCommand({
+            kind: 'health',
+            includeRtcDiagnostics: 'yes',
+        } as never)).toEqual({
+            ok: false,
+            error: 'health.includeRtcDiagnostics must be a boolean.',
+        });
+    });
+
     it('accepts recipe.load containing rtc.connect readiness', () => {
         const parsed = parseControlServerMessage(
             JSON.stringify(envelope('recipe-load-rtc-readiness-1', {
