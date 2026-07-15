@@ -141,7 +141,6 @@ export function ControlConnectionProvider({
             providerMode: bootstrap.providerMode,
             controlWsUrl: controlWebSocketUrlFromHttpBaseUrl(apiSetup.api.baseUrl),
             apiBaseUrl: bootstrap.apiBaseUrl,
-            group: bootstrap.bootstrapGroup,
             authSession,
             issueRunToken: apiSetup.api.agentLaunch.issueRunToken,
         })
@@ -149,7 +148,6 @@ export function ControlConnectionProvider({
         apiSetup,
         authSession,
         bootstrap.apiBaseUrl,
-        bootstrap.bootstrapGroup,
         bootstrap.providerMode,
         browserAgentLaunchIssue,
     ]);

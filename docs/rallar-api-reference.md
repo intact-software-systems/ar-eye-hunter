@@ -999,7 +999,9 @@ The returned `RallarMiddlewareRuntime` contains:
 - `qboxEngine`: `InboxOutboxEngine` with WS and app-inbox tasks installed.
 - `wsQBoxServerService`: websocket queuebox service.
 - `inboxQueueReader`: app-inbox queue reader.
+- `outboxQueueReader`: app-outbox queue reader.
 - `appInboxResilience`: app-inbox resilience settings.
+- `appOutboxResilience`: independent app-outbox resilience settings.
 - `appGroupInboxService`: durable group mutation inbox.
 - `appClientInboxService`: durable client mutation inbox.
 - `clientsRepository`: client snapshot repository.
@@ -1013,6 +1015,7 @@ Required:
 - `createAppGroupInboxService(input)`: factory for the group app inbox service.
 - `createAppClientInboxService(input)`: factory for the client app inbox service.
 - `resilience.inbox`: resilience policy for inbox work.
+- `resilience.appOutbox`: independent resilience policy for app-outbox work.
 - `clientsRepository`: client snapshot repository.
 - `groupsRepository`: group snapshot repository.
 
@@ -1038,15 +1041,29 @@ const runtime = createRallarMiddleware({
     findGroupSnapshotByRef: (ref) => groupSnapshotCache.findByRef(ref),
     inboundStores,
     outboundStores,
-    createAppGroupInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
-        new AppGroupInboxService(
+    createAppGroupInboxService: ({
+        inboxQueueReader,
+        outboxQueueReader,
+        wsQBoxServerService,
+        wakeQueueEngine,
+    }) => {
+        const topologyOutbox = createRtcTopologyOutboxPublisher({
+            outboxQueueReader,
+            senderId: serverId,
+            wake: wakeQueueEngine,
+        });
+        return new AppGroupInboxService(
             inboxQueueReader,
             resourceInboxRepository,
             resourceInboxResultsRepository,
             groupStateService,
             createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
             serverId,
-        ),
+            undefined,
+            undefined,
+            topologyOutbox.publisher,
+        );
+    },
     createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
         new AppClientInboxService(
             inboxQueueReader,
@@ -1059,6 +1076,7 @@ const runtime = createRallarMiddleware({
     resilience: {
         inbox: resilienceInbox,
         outbox: resilienceOutbox,
+        appOutbox: resilienceAppOutbox,
     },
     clientsRepository,
     groupsRepository,
@@ -1073,6 +1091,8 @@ runtime.qboxEngine.start();
 
 `includeInboxQueueReaderEngineTasks(engine, inboxQueueReader, resilience)` installs app-inbox dequeue tasks.
 
+`includeOutboxQueueReaderEngineTasks(engine, outboxQueueReader, resilience)` installs app-outbox dequeue tasks.
+
 Use these only if you are composing your own engine instead of calling `createRallarMiddleware`.
 
 ### Built-In System Topics
@@ -1080,9 +1100,11 @@ Use these only if you are composing your own engine instead of calling `createRa
 `initRallarSystemWsTopics(wsQBoxServerService, options?)` installs the built-in
 state-sync, graph, RTT, overlay topology, chat, and RTC signaling topics.
 
-`options.rtcTopologyAppInbox` can route group-snapshot and RTT-triggered
-overlay recomputes through the durable app inbox with one coalesced work row per
-scoped overlay. Provide `inboxQueueReader` and optionally `wake`, `topicId`,
+`options.rtcTopologyAppOutbox` routes inbound group snapshots and RTT-triggered
+overlay recomputes through the durable app outbox with one coalesced work row per
+scoped overlay. Local group mutations enqueue the same work beside state-sync
+publication through `AppGroupInboxService`. Provide `outboxQueueReader` and
+optionally `wake`, `topicId`,
 `senderId`, and `findGroupSnapshotByRef`. In production,
 `findGroupSnapshotByRef` should read through `GroupStateSnapshotReadThroughCache`
 or another durable group snapshot source. When this option is omitted,
@@ -1092,7 +1114,7 @@ recomputes use the local in-process debounce timer.
 `options.rtcTopologyRuntimeState` can provide a runtime-state repository for
 multi-worker topology continuity. Rallar stores published topology snapshots in
 `rtc-topology:snapshots` and latest accepted RTT measurements in
-`rtc-rtt:latest`. When combined with `rtcTopologyAppInbox`, a worker can
+`rtc-rtt:latest`. When combined with `rtcTopologyAppOutbox`, a worker can
 continue overlay versioning from the previous durable snapshot and compute with
 durable RTT inputs even if another worker accepted the triggering RTT message.
 `rttTtlMs` can override the durable RTT retention window.

@@ -390,22 +390,6 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         requiresAuth: true,
     },
     {
-        presetId: 'graph-global',
-        tag: 'Graph',
-        label: 'Read global graph (deprecated)',
-        method: 'GET',
-        pathTemplate: '/api/graph',
-        requiresAuth: false,
-    },
-    {
-        presetId: 'graph-group',
-        tag: 'Graph',
-        label: 'Read group graph (deprecated)',
-        method: 'GET',
-        pathTemplate: '/api/graph/tree/{groupId}',
-        requiresAuth: false,
-    },
-    {
         presetId: 'graph-scoped-global',
         tag: 'Graph',
         label: 'Read scoped global graph',

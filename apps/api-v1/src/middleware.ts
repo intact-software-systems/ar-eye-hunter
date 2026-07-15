@@ -24,6 +24,7 @@ import {
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
@@ -78,6 +79,7 @@ function initialise(): Middleware {
   const webSocketServer = new JsonWebSocketServer();
   const resilienceInbox = toResilienceDto();
   const resilienceOutbox = toResilienceDto();
+  const resilienceAppOutbox = toResilienceDto();
   const clientsRepository = createClientStateRepository(sql);
   const groupsRepository = createGroupStateRepository(sql);
   const timing = getApiTimingSink();
@@ -104,11 +106,21 @@ function initialise(): Middleware {
     findGroupSnapshotById: groupStateSnapshotsRepository.findLatestGroupSnapshotById,
     inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
     outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
-    createAppGroupInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
+    createAppGroupInboxService: ({
+      inboxQueueReader,
+      outboxQueueReader,
+      wsQBoxServerService,
+      wakeQueueEngine,
+    }) => {
       const stateSyncPublisher = createWsStateSyncPublisher(
         wsQBoxServerService,
         { serverId: myServerId, timing },
       );
+      const topologyOutbox = createRtcTopologyOutboxPublisher({
+        outboxQueueReader,
+        senderId: myServerId,
+        wake: wakeQueueEngine,
+      });
       return new AppGroupInboxService(
         inboxQueueReader,
         resourceInboxRepository,
@@ -124,6 +136,7 @@ function initialise(): Middleware {
         myServerId,
         timing,
         appInboxOptions,
+        topologyOutbox.publisher,
       );
     },
     createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
@@ -151,6 +164,7 @@ function initialise(): Middleware {
     resilience: {
       inbox: resilienceInbox,
       outbox: resilienceOutbox,
+      appOutbox: resilienceAppOutbox,
     },
     clientsRepository,
     groupsRepository,

@@ -46,6 +46,7 @@ export * from './websocket/JsonWebSocketServer.ts';
 export * from './services/InboxOutboxContracts.ts';
 export * from './services/InboxOutboxEngine.ts';
 export * from './services/InboxQueueReader.ts';
+export * from './services/OutboxQueueReader.ts';
 export * from './alm/ALInboundAdmissionStore.ts';
 export * from './alm/ALInboundMessageRuntime.ts';
 export * from './alm/ALOutboundAdmissionStore.ts';

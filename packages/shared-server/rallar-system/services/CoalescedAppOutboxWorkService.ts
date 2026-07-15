@@ -1,5 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { type ALMessage, newALRoute, newALUntargetedMessage, } from '@shared/al-contracts/al-contract.ts';
+import {
+    type ALMessage,
+    newALRoute,
+    newALUntargetedMessage,
+} from '@shared/al-contracts/al-contract.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -7,44 +12,44 @@ import {
     type Key,
     type ResourceEntry,
 } from '@shared/queuebox/ResourceEntry.ts';
+import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import {
-    toAppInboxQueueCreatedBy,
-    toAppInboxQueueKey,
+    toAppQueueCreatedBy,
+    toAppQueueKey,
 } from './app-inbox-queue-key.ts';
 
-export const COALESCED_APP_INBOX_WORK_FIELD = '__rallarCoalescedWork';
+export const COALESCED_APP_OUTBOX_WORK_FIELD = '__rallarCoalescedWork';
 
-export type CoalescedAppInboxWorkMetadata = Readonly<{
+export type CoalescedAppOutboxWorkMetadata = Readonly<{
     generation: number;
     requestedAtEpochMs: number;
     dueAtEpochMs: number;
     reasons: readonly string[];
 }>;
 
-export type CoalescedAppInboxWorkData<T extends object> =
+export type CoalescedAppOutboxWorkData<T extends object> =
     & T
     & Readonly<{
-    [COALESCED_APP_INBOX_WORK_FIELD]: CoalescedAppInboxWorkMetadata;
+    [COALESCED_APP_OUTBOX_WORK_FIELD]: CoalescedAppOutboxWorkMetadata;
 }>;
 
-export type CoalescedAppInboxWorkEnvelope<T extends object> = Readonly<{
+export type CoalescedAppOutboxWorkEnvelope<T extends object> = Readonly<{
     type: string;
     topicId: string;
     resourceId: string;
     contextId: string;
     senderId: string;
-    data: CoalescedAppInboxWorkData<T>;
+    data: CoalescedAppOutboxWorkData<T>;
 }>;
 
-export type CoalescedAppInboxWorkMerge<T extends object> = (
-    existing: CoalescedAppInboxWorkData<T>,
-    incoming: CoalescedAppInboxWorkData<T>,
+export type CoalescedAppOutboxWorkMerge<T extends object> = (
+    existing: CoalescedAppOutboxWorkData<T>,
+    incoming: CoalescedAppOutboxWorkData<T>,
     previousEntry: ResourceEntry,
-) => CoalescedAppInboxWorkData<T>;
+) => CoalescedAppOutboxWorkData<T>;
 
-export type CoalescedAppInboxWorkEnqueueInput<T extends object> = Readonly<{
+export type CoalescedAppOutboxWorkEnqueueInput<T extends object> = Readonly<{
     type: string;
     topicId: string;
     resourceId: string;
@@ -54,35 +59,35 @@ export type CoalescedAppInboxWorkEnqueueInput<T extends object> = Readonly<{
     reason?: string;
     requestedAtEpochMs?: number;
     dueAtEpochMs?: number;
-    merge?: CoalescedAppInboxWorkMerge<T>;
+    merge?: CoalescedAppOutboxWorkMerge<T>;
 }>;
 
-export type CoalescedAppInboxWorkEnqueueResult<T extends object> = Readonly<{
+export type CoalescedAppOutboxWorkEnqueueResult<T extends object> = Readonly<{
     action: 'inserted' | 'updated' | 'unchanged';
     entry: ResourceEntry;
     previous?: ResourceEntry;
-    envelope: CoalescedAppInboxWorkEnvelope<T>;
+    envelope: CoalescedAppOutboxWorkEnvelope<T>;
 }>;
 
-export class CoalescedAppInboxWorkService {
+export class CoalescedAppOutboxWorkService {
     constructor(
-        private readonly inbox: InboxQueueReader,
+        private readonly outbox: OutboxQueueReader,
         private readonly serviceId: string = 'rallar-server',
         private readonly now: () => number = () => Date.now(),
     ) {
     }
 
     async enqueue<T extends object>(
-        input: CoalescedAppInboxWorkEnqueueInput<T>,
-    ): Promise<CoalescedAppInboxWorkEnqueueResult<T>> {
+        input: CoalescedAppOutboxWorkEnqueueInput<T>,
+    ): Promise<CoalescedAppOutboxWorkEnqueueResult<T>> {
         const now = input.requestedAtEpochMs ?? this.now();
         const incoming = this.createEnvelope(input, now, 1);
         const initialEntry = this.toScheduledEntry(
             this.toQueueEntry(incoming),
-            incoming.data[COALESCED_APP_INBOX_WORK_FIELD].dueAtEpochMs,
+            incoming.data[COALESCED_APP_OUTBOX_WORK_FIELD].dueAtEpochMs,
             now,
         );
-        const result = await this.inbox.inbox.enqueueOrUpdate(
+        const result = await this.outbox.outbox.enqueueOrUpdate(
             initialEntry,
             (previous) => {
                 const previousEnvelope = this.tryReadEnvelope<T>(previous);
@@ -92,16 +97,16 @@ export class CoalescedAppInboxWorkService {
 
                 const isTerminal = isTerminalCoalescedStatus(previous.status);
                 const previousMetadata =
-                    previousEnvelope.data[COALESCED_APP_INBOX_WORK_FIELD];
+                    previousEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD];
                 const mergedData = !isTerminal && input.merge
                     ? input.merge(previousEnvelope.data, incoming.data, previous)
                     : incoming.data;
-                const nextEnvelope: CoalescedAppInboxWorkEnvelope<T> = {
+                const nextEnvelope: CoalescedAppOutboxWorkEnvelope<T> = {
                     ...incoming,
                     data: {
                         ...mergedData,
-                        [COALESCED_APP_INBOX_WORK_FIELD]: {
-                            ...mergedData[COALESCED_APP_INBOX_WORK_FIELD],
+                        [COALESCED_APP_OUTBOX_WORK_FIELD]: {
+                            ...mergedData[COALESCED_APP_OUTBOX_WORK_FIELD],
                             generation: previousMetadata.generation + 1,
                             requestedAtEpochMs: now,
                         },
@@ -121,7 +126,7 @@ export class CoalescedAppInboxWorkService {
                 if (isTerminal) {
                     return this.toScheduledEntry(
                         nextEntry,
-                        nextEnvelope.data[COALESCED_APP_INBOX_WORK_FIELD]
+                        nextEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]
                             .dueAtEpochMs,
                         now,
                     );
@@ -130,7 +135,7 @@ export class CoalescedAppInboxWorkService {
                 return {
                     ...this.toScheduledEntry(
                         nextEntry,
-                        nextEnvelope.data[COALESCED_APP_INBOX_WORK_FIELD]
+                        nextEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]
                             .dueAtEpochMs,
                         now,
                     ),
@@ -139,15 +144,14 @@ export class CoalescedAppInboxWorkService {
             },
         );
 
-        const envelope = this.readEnvelope<T>(result.entry);
         return {
             ...result,
-            envelope,
+            envelope: this.readEnvelope<T>(result.entry),
         };
     }
 
     async isReservedEntryStale(entry: ResourceEntry): Promise<boolean> {
-        const current = await this.inbox.inbox.getItem(entry.key);
+        const current = await this.outbox.outbox.getItem(entry.key);
         if (!current) {
             return false;
         }
@@ -157,13 +161,11 @@ export class CoalescedAppInboxWorkService {
 
     readEnvelope<T extends object>(
         entry: ResourceEntry,
-    ): CoalescedAppInboxWorkEnvelope<T> {
+    ): CoalescedAppOutboxWorkEnvelope<T> {
         const envelope = this.tryReadEnvelope<T>(entry);
         if (!envelope) {
             throw new Error(
-                `Resource entry is not a coalesced app inbox work item: ${
-                    JSON.stringify(entry.key)
-                }`,
+                `Resource entry is not a coalesced app outbox work item: ${JSON.stringify(entry.key)}`,
             );
         }
 
@@ -175,26 +177,22 @@ export class CoalescedAppInboxWorkService {
     }
 
     readGeneration(entry: ResourceEntry): number {
-        return this.readEnvelope(entry).data[COALESCED_APP_INBOX_WORK_FIELD]
+        return this.readEnvelope(entry).data[COALESCED_APP_OUTBOX_WORK_FIELD]
             .generation;
     }
 
     toKey(input: Pick<
-        CoalescedAppInboxWorkEnqueueInput<object>,
+        CoalescedAppOutboxWorkEnqueueInput<object>,
         'topicId' | 'resourceId' | 'contextId'
     >): Key {
-        return toAppInboxQueueKey({
-            topicId: input.topicId,
-            resourceId: input.resourceId,
-            contextId: input.contextId,
-        });
+        return toAppQueueKey(input);
     }
 
     private createEnvelope<T extends object>(
-        input: CoalescedAppInboxWorkEnqueueInput<T>,
+        input: CoalescedAppOutboxWorkEnqueueInput<T>,
         requestedAtEpochMs: number,
         generation: number,
-    ): CoalescedAppInboxWorkEnvelope<T> {
+    ): CoalescedAppOutboxWorkEnvelope<T> {
         const dueAtEpochMs = input.dueAtEpochMs ?? requestedAtEpochMs;
         return {
             type: input.type,
@@ -204,32 +202,28 @@ export class CoalescedAppInboxWorkService {
             senderId: input.senderId ?? this.serviceId,
             data: {
                 ...input.data,
-                [COALESCED_APP_INBOX_WORK_FIELD]: {
+                [COALESCED_APP_OUTBOX_WORK_FIELD]: {
                     generation,
                     requestedAtEpochMs,
                     dueAtEpochMs,
                     reasons: input.reason ? [input.reason] : [],
                 },
-            } as CoalescedAppInboxWorkData<T>,
+            } as CoalescedAppOutboxWorkData<T>,
         };
     }
 
     private toQueueEntry<T extends object>(
-        envelope: CoalescedAppInboxWorkEnvelope<T>,
+        envelope: CoalescedAppOutboxWorkEnvelope<T>,
     ): ResourceEntry {
         const key = this.toKey(envelope);
         return QueueBoxUtilities.toResourceEntryFromMsg(
             newALUntargetedMessage(
-                toAppInboxQueueCreatedBy(envelope.senderId),
-                newALRoute(
-                    key.topicId,
-                    key.contextId,
-                    key.resourceId,
-                ),
+                toAppQueueCreatedBy(envelope.senderId),
+                newALRoute(key.topicId, key.contextId, key.resourceId),
                 envelope.type,
                 envelope,
             ),
-            InboxQueueReader.INBOX_ENQUEUE_TYPE,
+            EnqueuedType.APP_OUTBOX,
         );
     }
 
@@ -239,7 +233,6 @@ export class CoalescedAppInboxWorkService {
         now: number,
     ): ResourceEntry {
         const isDue = dueAtEpochMs <= now;
-
         return {
             ...entry,
             status: isDue ? EntityStatus.NEW : EntityStatus.RETRY,
@@ -254,17 +247,13 @@ export class CoalescedAppInboxWorkService {
 
     private tryReadEnvelope<T extends object>(
         entry: ResourceEntry,
-    ): CoalescedAppInboxWorkEnvelope<T> | undefined {
+    ): CoalescedAppOutboxWorkEnvelope<T> | undefined {
         try {
             const message = this.readMessage(entry);
             const envelope = JSON.parse(
                 message.payload.resource,
-            ) as CoalescedAppInboxWorkEnvelope<T>;
-            if (!isCoalescedEnvelope(envelope)) {
-                return undefined;
-            }
-
-            return envelope;
+            ) as CoalescedAppOutboxWorkEnvelope<T>;
+            return isCoalescedEnvelope(envelope) ? envelope : undefined;
         } catch {
             return undefined;
         }
@@ -275,15 +264,17 @@ function isTerminalCoalescedStatus(status: EntityStatus): boolean {
     return COMPLETED_STATUSES.has(status) || isFailed(status);
 }
 
-function isCoalescedEnvelope(value: unknown): value is CoalescedAppInboxWorkEnvelope<object> {
+function isCoalescedEnvelope(
+    value: unknown,
+): value is CoalescedAppOutboxWorkEnvelope<object> {
     if (!value || typeof value !== 'object') {
         return false;
     }
 
-    const maybe = value as Partial<CoalescedAppInboxWorkEnvelope<object>>;
+    const maybe = value as Partial<CoalescedAppOutboxWorkEnvelope<object>>;
     const data = maybe.data as Record<string, unknown> | undefined;
-    const metadata = data?.[COALESCED_APP_INBOX_WORK_FIELD] as
-        | Partial<CoalescedAppInboxWorkMetadata>
+    const metadata = data?.[COALESCED_APP_OUTBOX_WORK_FIELD] as
+        | Partial<CoalescedAppOutboxWorkMetadata>
         | undefined;
 
     return typeof maybe.type === 'string' &&

@@ -7,9 +7,8 @@ info:
     ICE lookup, graph snapshots, CRDT catch-up/admin operations, and embedded
     Swagger docs.
 
-    The legacy flat `/api/client`, `/api/read/*`, and `/api/groups*` endpoints are
-    no longer part of the active API surface. The authoritative client and group
-    model now lives under `/api/state/apps/{applicationId}/workspaces/{workspaceId}`.
+    The authoritative client and group model lives under
+    `/api/state/apps/{applicationId}/workspaces/{workspaceId}`.
 
     Production deployments should enable `RALLAR_PRODUCTION_HARDENING=1` or
     `ENVIRONMENT=prod`. The hardened profile requires admin-only registration,
@@ -1601,40 +1600,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /api/graph:
-    get:
-      tags: [Graph]
-      deprecated: true
-      summary: Read the global graph snapshot
-      responses:
-        '200':
-          description: Measured and predicted graph snapshot for all active sessions.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GraphInfoSnapshot'
-
-  /api/graph/tree/{groupId}:
-    get:
-      tags: [Graph]
-      deprecated: true
-      summary: Read the graph snapshot for a group
-      parameters:
-        - $ref: '#/components/parameters/GroupId'
-      responses:
-        '200':
-          description: Graph snapshot for the group.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GraphInfoSnapshot'
-        '400':
-          description: Invalid group state for graph computation, including group not found.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 
   /api/crdt/catch-up:
     post:

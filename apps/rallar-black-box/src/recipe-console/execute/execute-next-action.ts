@@ -32,6 +32,8 @@ export type ExecuteNextActionInput = Readonly<{
     targetableCount: number;
     launchedExpectedCount: number;
     launchedReadyCount: number;
+    launchPreparationPending?: boolean;
+    launchedCohortSelectionPending?: boolean;
     ackReadyCount?: number;
     ackExpectedCount?: number;
 }>;
@@ -45,24 +47,6 @@ export function deriveExecuteNextAction(
             'Refresh control data',
             input.policy.refresh.enabled,
             input.policy.refresh.reason,
-            input.targetCount,
-        );
-    }
-    if (input.targetableCount === 0 && input.launchedExpectedCount > 0) {
-        return action(
-            'registering',
-            `${input.launchedReadyCount} of ${input.launchedExpectedCount} browser agents ready`,
-            false,
-            'Registration advances automatically from current control polling.',
-            input.targetCount,
-        );
-    }
-    if (input.targetableCount === 0) {
-        return action(
-            'connect-agents',
-            'Connect agents to continue.',
-            false,
-            input.policy.resolve.reason,
             input.targetCount,
         );
     }
@@ -87,6 +71,35 @@ export function deriveExecuteNextAction(
     }
     if (input.runState !== undefined) {
         return action('monitor', 'Monitor run', true, undefined, input.targetCount);
+    }
+    const cohortSelectionPending = input.launchedCohortSelectionPending === true;
+    if (
+        input.launchPreparationPending || input.launchedExpectedCount > 0 &&
+        (
+            input.launchedReadyCount < input.launchedExpectedCount ||
+            cohortSelectionPending
+        )
+    ) {
+        return action(
+            'registering',
+            `${input.launchedReadyCount} of ${input.launchedExpectedCount} browser agents ready`,
+            false,
+            input.launchPreparationPending
+                ? 'Fresh per-agent launch authority is being prepared.'
+                : cohortSelectionPending
+                ? 'The exact launched cohort is being selected as the target set.'
+                : 'Registration advances automatically from current control polling.',
+            input.targetCount,
+        );
+    }
+    if (input.targetableCount === 0) {
+        return action(
+            'connect-agents',
+            'Connect agents to continue.',
+            false,
+            input.policy.resolve.reason,
+            input.targetCount,
+        );
     }
     if (input.policy.create.enabled) {
         return action('create', 'Create draft', true, undefined, input.targetCount);

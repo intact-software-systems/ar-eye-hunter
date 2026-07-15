@@ -114,6 +114,7 @@ export function ExecuteActionRunway({
                     >{next.label}</button>
                 ) : (
                     <p aria-live="polite" className={styles.waiting} role="status">
+                        <span className={styles.visuallyHidden}>{next.label}. </span>
                         {next.reason ?? next.label}
                     </p>
                 )}

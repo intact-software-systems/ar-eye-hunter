@@ -1,8 +1,11 @@
 import type { RecipeConsoleControlConnection } from
     '../control/ControlConnectionProvider.tsx';
+import type { RallarBlackBoxDistributedGroupRef } from
+    '@shared-test/rallar-bb-test/distributed-run.ts';
 
 export function executeAgentLaunchBlocker(input: Readonly<{
     connection: RecipeConsoleControlConnection;
+    group: RallarBlackBoxDistributedGroupRef;
     runId: string;
     prefix: string;
     count: number;
@@ -21,7 +24,7 @@ export function executeAgentLaunchBlocker(input: Readonly<{
     if (!['live', 'partial'].includes(input.connection.query.status)) {
         return 'A current control connection is required before launching browser agents.';
     }
-    const group = input.connection.bootstrap.bootstrapGroup;
+    const group = input.group;
     if (!group.applicationId || !group.workspaceId || !group.groupId) {
         return 'Application, workspace, and group are required before launching agents.';
     }

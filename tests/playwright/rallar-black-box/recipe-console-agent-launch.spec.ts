@@ -44,6 +44,139 @@ test('opens three browser agents and selects the exact registered cohort from cu
     for (const child of childPages) await child.close();
 });
 
+test('lets an operator replace an already selected control run ID', async ({
+    context,
+    page,
+}) => {
+    const control = await installAgentLaunchControl(context);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(EXECUTE_ROUTE);
+
+    const runId = page.getByLabel('Control run ID for new agents');
+    await runId.fill('selected-run');
+    await page.getByRole('button', { name: 'Copy 3 launch links' }).click();
+    await expect(page).toHaveURL(/controlRunId=selected-run/);
+    await expect(runId).toHaveValue('selected-run');
+
+    await runId.fill('replacement-run');
+    await expect(runId).toHaveValue('replacement-run');
+    await page.getByRole('button', { name: 'Copy 3 launch links' }).click();
+
+    await expect.poll(() => control.tokenRequests.slice(-3)).toEqual([
+        expect.objectContaining({ runId: 'replacement-run' }),
+        expect.objectContaining({ runId: 'replacement-run' }),
+        expect.objectContaining({ runId: 'replacement-run' }),
+    ]);
+});
+
+test('holds lifecycle actions while a new cohort registers beside existing agents', async ({
+    context,
+    page,
+}) => {
+    const control = await installAgentLaunchControl(context, {
+        registerOnToken: false,
+        initialAgents: [{ runId: 'cohort-run', agentId: 'existing-agent' }],
+    });
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(`${EXECUTE_ROUTE}&controlRunId=cohort-run`);
+
+    await page.getByRole('button', { name: 'Add browser agents' }).click();
+    await page.getByLabel('Agent ID prefix').fill('new-cohort');
+    await page.getByRole('button', { name: 'Copy 3 launch links' }).click();
+
+    const runway = page.locator('[data-execute-action-runway]');
+    await expect(runway.getByRole('heading', {
+        name: '0 of 3 browser agents ready',
+    })).toBeVisible();
+    await expect(runway.getByRole('button', { name: /Resolve/ })).toHaveCount(0);
+    await expect(runway.getByRole('status')).toContainText(
+        '0 of 3 browser agents ready',
+    );
+    expect(control.tokenRequests).toHaveLength(3);
+
+    control.registerAgent('cohort-run', control.tokenRequests[0].agentId);
+    await runway.getByRole('button', { name: 'Refresh' }).click();
+    await expect(runway.getByRole('status')).toContainText(
+        '1 of 3 browser agents ready',
+    );
+});
+
+test('blocks lifecycle actions while launch authority is prepared and recovers after a run switch', async ({
+    context,
+    page,
+}) => {
+    const control = await installAgentLaunchControl(context, {
+        holdTokenResponses: true,
+        initialAgents: [
+            { runId: 'pending-run', agentId: 'pending-existing' },
+            { runId: 'other-run', agentId: 'other-existing' },
+        ],
+    });
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(`${EXECUTE_ROUTE}&controlRunId=pending-run`);
+    await page.getByRole('button', { name: 'Add browser agents' }).click();
+    await page.getByLabel('Agent ID prefix').fill('pending-cohort');
+    await page.getByRole('button', { name: 'Copy 3 launch links' }).click();
+    await expect.poll(() => control.tokenRequests.length).toBe(3);
+
+    const runway = page.locator('[data-execute-action-runway]');
+    await expect(runway.getByRole('button', { name: /Resolve|Create draft/ }))
+        .toHaveCount(0);
+    await expect(runway.getByRole('status')).toContainText(
+        '0 of 3 browser agents ready',
+    );
+
+    await chooseControlRun(page, 'other-run');
+    control.releaseTokenResponses();
+    await expect(page).toHaveURL(/controlRunId=other-run/);
+    await expect(page.getByRole('button', { name: 'Copy 3 launch links' }))
+        .toBeEnabled();
+    await expect(runway.getByRole('button', { name: 'Resolve 1 target' }))
+        .toBeVisible();
+});
+
+test('clears completed cohort gating when the selected control run changes', async ({
+    context,
+    page,
+}) => {
+    await installAgentLaunchControl(context, {
+        registerOnToken: false,
+        initialAgents: [
+            { runId: 'first-run', agentId: 'first-existing' },
+            { runId: 'second-run', agentId: 'second-existing' },
+        ],
+    });
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(`${EXECUTE_ROUTE}&controlRunId=first-run`);
+    await page.getByRole('button', { name: 'Add browser agents' }).click();
+    await page.getByRole('button', { name: 'Copy 3 launch links' }).click();
+    await expect(page.locator('[data-execute-action-runway]').getByRole('status'))
+        .toContainText('0 of 3 browser agents ready');
+
+    await chooseControlRun(page, 'second-run');
+    await expect(page.locator('[data-execute-action-runway]')
+        .getByRole('button', { name: 'Resolve 1 target' })).toBeVisible();
+});
+
+test('allows manual target adjustment after the launched cohort is selected', async ({
+    context,
+    page,
+}) => {
+    await installAgentLaunchControl(context);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(EXECUTE_ROUTE);
+    await page.getByLabel('Control run ID for new agents').fill('adjust-run');
+    await page.getByLabel('Agent ID prefix').fill('adjust-agent');
+    await page.getByRole('button', { name: 'Copy 3 launch links' }).click();
+    await expect(page.locator('[data-execute-targets]')).toContainText('3 selected');
+
+    const firstTarget = page.locator('[data-execute-target]').first();
+    await firstTarget.getByRole('checkbox').uncheck();
+    await expect(page.locator('[data-execute-targets]')).toContainText('2 selected');
+    await expect(page.locator('[data-execute-action-runway]')
+        .getByRole('button', { name: 'Resolve 2 targets' })).toBeVisible();
+});
+
 test('explains popup blocking without minting and keeps copy-link fallback usable', async ({
     context,
     page,
@@ -167,10 +300,23 @@ test('gates missing launch identity and browser-rallar authentication in the vis
 
 async function installAgentLaunchControl(
     context: BrowserContext,
-    options: Readonly<{ registerOnToken?: boolean }> = {},
+    options: Readonly<{
+        registerOnToken?: boolean;
+        holdTokenResponses?: boolean;
+        initialAgents?: readonly Readonly<{ runId: string; agentId: string }>[];
+    }> = {},
 ) {
     const agents = new Map<string, ControlAgentSnapshot>();
+    for (const agent of options.initialAgents ?? []) {
+        agents.set(agent.agentId, connectedAgent(agent.runId, agent.agentId));
+    }
     const tokenRequests: Array<{ runId: string; agentId: string }> = [];
+    let releaseTokenResponses = () => undefined;
+    const tokenResponseGate = options.holdTokenResponses
+        ? new Promise<void>(resolve => {
+            releaseTokenResponses = resolve;
+        })
+        : undefined;
     await context.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -181,6 +327,7 @@ async function installAgentLaunchControl(
             const runId = decodeURIComponent(tokenMatch[1]);
             const agentId = decodeURIComponent(tokenMatch[2]);
             tokenRequests.push({ runId, agentId });
+            await tokenResponseGate;
             if (options.registerOnToken !== false) {
                 agents.set(agentId, connectedAgent(runId, agentId));
             }
@@ -213,7 +360,23 @@ async function installAgentLaunchControl(
         }
         await fulfillJson(route, { error: 'Not found.' }, 404);
     });
-    return { tokenRequests };
+    return {
+        tokenRequests,
+        registerAgent: (runId: string, agentId: string) => {
+            agents.set(agentId, connectedAgent(runId, agentId));
+        },
+        releaseTokenResponses,
+    };
+}
+
+async function chooseControlRun(page: Page, runId: string): Promise<void> {
+    const group = page.locator('[data-execute-targets]')
+        .getByRole('group', { name: 'Control run' });
+    const trigger = group.getByRole('button', { name: /^Control run(?:\s|$)/u });
+    await trigger.click();
+    const search = group.getByRole('combobox', { name: 'Search Control run' });
+    await search.fill(runId);
+    await search.press('Enter');
 }
 
 function connectedAgent(runId: string, agentId: string): ControlAgentSnapshot {

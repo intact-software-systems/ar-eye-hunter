@@ -23,6 +23,11 @@ const group = {
 
 describe('Recipe Console browser-agent launch service', () => {
     it('prepares exact simulated identities with distinct least-privilege control tokens', async () => {
+        const selectedGroup = {
+            applicationId: 'selected-app',
+            workspaceId: 'selected-workspace',
+            groupId: 'selected-room',
+        } as const;
         const issueRunToken = vi.fn(async ({ runId, agentId }: {
             runId: string;
             agentId: string;
@@ -38,18 +43,18 @@ describe('Recipe Console browser-agent launch service', () => {
             providerMode: 'simulated',
             controlWsUrl: 'wss://control.example.test/control',
             apiBaseUrl: 'https://api.example.test',
-            group,
             issueRunToken,
         });
 
         const result = await service.prepare({
             runId: 'human-flow-run',
             agentIds: ['operator-a-1', 'operator-a-2', 'operator-a-3'],
+            group: selectedGroup,
         });
 
         expect(result).toMatchObject({
             runId: 'human-flow-run',
-            group,
+            group: selectedGroup,
             providerMode: 'simulated',
         });
         expect(issueRunToken).toHaveBeenCalledTimes(3);
@@ -63,7 +68,9 @@ describe('Recipe Console browser-agent launch service', () => {
             expect(url.searchParams.get('mode')).toBe('control');
             expect(url.searchParams.get('runId')).toBe('human-flow-run');
             expect(url.searchParams.get('agentId')).toBe(agent.agentId);
-            expect(url.searchParams.get('roomId')).toBe('room-1');
+            expect(url.searchParams.get('roomId')).toBe('selected-room');
+            expect(url.searchParams.get('applicationId')).toBe('selected-app');
+            expect(url.searchParams.get('workspaceId')).toBe('selected-workspace');
             expect(url.searchParams.get('provider')).toBe('simulated');
             expect(url.searchParams.get('controlUrl')).toBe('wss://control.example.test/control');
             expect(url.searchParams.get('apiBaseUrl')).toBe('https://api.example.test');
@@ -94,7 +101,6 @@ describe('Recipe Console browser-agent launch service', () => {
             providerMode: 'browser-rallar',
             controlWsUrl: 'wss://control.example.test/control',
             apiBaseUrl: 'https://api.example.test',
-            group,
             authSession: session,
             issueRunToken: async ({ runId, agentId }) => ({
                 runId,
@@ -109,11 +115,13 @@ describe('Recipe Console browser-agent launch service', () => {
         await expect(create().prepare({
             runId: 'run-1',
             agentIds: ['browser-1'],
+            group,
         })).rejects.toThrow('logged-in operator');
 
         const result = await create(authSession).prepare({
             runId: 'run-1',
             agentIds: ['browser-1'],
+            group,
         });
         const url = new URL(result.agents[0].launchUrl);
         expect(issueAgentTickets).toHaveBeenCalledWith(
@@ -131,13 +139,80 @@ describe('Recipe Console browser-agent launch service', () => {
         expect(result.agents[0].expiresAtEpochMs).toBe(50_000);
     });
 
+    it.each([
+        ['ticket', 'shared-ticket', 'shared-ticket', 'session-1', 'session-2'],
+        ['session ID', 'ticket-1', 'ticket-2', 'shared-session', 'shared-session'],
+    ] as const)(
+        'rejects a browser-rallar batch with duplicate %s authority',
+        async (_label, firstTicket, secondTicket, firstSession, secondSession) => {
+            const service = createBrowserAgentLaunchService({
+                origin: 'https://blackbox.example.test',
+                providerMode: 'browser-rallar',
+                controlWsUrl: 'wss://control.example.test/control',
+                apiBaseUrl: 'https://api.example.test',
+                authSession: {
+                    clientId: 'operator-client',
+                    accessToken: 'operator-token',
+                    username: 'alice',
+                    sessionId: 'operator-session',
+                    expiresAtEpochMs: 100_000,
+                },
+                issueRunToken: async ({ runId, agentId }) => ({
+                    runId,
+                    agentId,
+                    token: `control-${agentId}`,
+                    issuedAtEpochMs: 1_000,
+                    expiresAtEpochMs: 60_000,
+                }),
+                issueAgentTickets: async () => ({ tickets: [{
+                    agentId: 'agent-1',
+                    ticket: firstTicket,
+                    sessionId: firstSession,
+                    expiresAtEpochMs: 50_000,
+                }, {
+                    agentId: 'agent-2',
+                    ticket: secondTicket,
+                    sessionId: secondSession,
+                    expiresAtEpochMs: 50_000,
+                }] }),
+            });
+
+            await expect(service.prepare({
+                runId: 'run-1',
+                agentIds: ['agent-1', 'agent-2'],
+                group,
+            })).rejects.toThrow('unique');
+        },
+    );
+
+    it('rejects duplicate control-token authority across simulated agents', async () => {
+        const service = createBrowserAgentLaunchService({
+            origin: 'https://blackbox.example.test',
+            providerMode: 'simulated',
+            controlWsUrl: 'wss://control.example.test/control',
+            apiBaseUrl: 'https://api.example.test',
+            issueRunToken: async ({ runId, agentId }) => ({
+                runId,
+                agentId,
+                token: 'shared-control-token',
+                issuedAtEpochMs: 1_000,
+                expiresAtEpochMs: 60_000,
+            }),
+        });
+
+        await expect(service.prepare({
+            runId: 'run-1',
+            agentIds: ['agent-1', 'agent-2'],
+            group,
+        })).rejects.toThrow('unique');
+    });
+
     it('rejects missing, duplicate, extra, and identity-mismatched launch authority', async () => {
         const base = {
             origin: 'https://blackbox.example.test',
             providerMode: 'simulated' as const,
             controlWsUrl: 'wss://control.example.test/control',
             apiBaseUrl: 'https://api.example.test',
-            group,
         };
         const mismatched = createBrowserAgentLaunchService({
             ...base,
@@ -150,15 +225,16 @@ describe('Recipe Console browser-agent launch service', () => {
             }),
         });
 
-        await expect(mismatched.prepare({ runId: 'run-1', agentIds: ['agent-1'] }))
+        await expect(mismatched.prepare({ runId: 'run-1', agentIds: ['agent-1'], group }))
             .rejects.toThrow('does not match');
-        await expect(mismatched.prepare({ runId: '', agentIds: ['agent-1'] }))
+        await expect(mismatched.prepare({ runId: '', agentIds: ['agent-1'], group }))
             .rejects.toThrow('Control run ID');
-        await expect(mismatched.prepare({ runId: 'run-1', agentIds: [] }))
+        await expect(mismatched.prepare({ runId: 'run-1', agentIds: [], group }))
             .rejects.toThrow('between 1 and 6');
         await expect(mismatched.prepare({
             runId: 'run-1',
             agentIds: ['agent-1', 'agent-1'],
+            group,
         })).rejects.toThrow('unique');
 
         const invalidExpiry = createBrowserAgentLaunchService({
@@ -174,6 +250,7 @@ describe('Recipe Console browser-agent launch service', () => {
         await expect(invalidExpiry.prepare({
             runId: 'run-1',
             agentIds: ['agent-1'],
+            group,
         })).rejects.toThrow('does not match');
     });
 
@@ -183,7 +260,6 @@ describe('Recipe Console browser-agent launch service', () => {
             providerMode: 'browser-rallar',
             controlWsUrl: 'wss://control.example.test/control',
             apiBaseUrl: 'https://api.example.test',
-            group,
             authSession: {
                 clientId: 'operator-client',
                 accessToken: 'operator-token',
@@ -209,6 +285,7 @@ describe('Recipe Console browser-agent launch service', () => {
         await expect(service.prepare({
             runId: 'run-1',
             agentIds: ['agent-1'],
+            group,
         })).rejects.toThrow('valid agent session ticket');
     });
 
@@ -219,7 +296,6 @@ describe('Recipe Console browser-agent launch service', () => {
             providerMode: 'browser-rallar',
             controlWsUrl: 'wss://control.example.test/control',
             apiBaseUrl: 'https://api.example.test',
-            group,
             issueAgentSessions: false,
             allowAnonymousControlToken: true,
             issueRunToken: async ({ runId, agentId }) => ({
@@ -235,6 +311,7 @@ describe('Recipe Console browser-agent launch service', () => {
         const result = await service.prepare({
             runId: 'legacy-run',
             agentIds: ['legacy-agent'],
+            group,
         });
         const url = new URL(result.agents[0].launchUrl);
 

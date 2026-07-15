@@ -18,9 +18,10 @@ Deno.test('PSqlAdminOperationsStatsReader aggregates admin read statistics', asy
     });
 
     const queues = await reader.readQueues({ adminSession: createAdminSession() });
-    assert.equal(queues.queueRows.total, 2);
+    assert.equal(queues.queueRows.total, 3);
     assert.equal(queues.queueRows.expired, 1);
     assert.deepEqual(queues.queueRows.byTypeStatus, [
+      { typeId: 'APP_OUTBOX', status: 'PENDING', count: 1 },
       { typeId: 'WS_INBOX', status: 'PENDING', count: 1 },
       { typeId: 'WS_OUTBOX', status: 'RESERVED', count: 1 },
     ]);
@@ -769,7 +770,10 @@ async function seedAdminOperationsRows(sql: PGliteSql): Promise<void> {
        ${null}, ${new Date('9999-12-31T23:59:59Z')}),
       (${'ri-2'}, ${'topic-2'}, ${'payload'}, ${'WS_OUTBOX'}, ${'RESERVED'},
        ${'bank-2'}, ${'2026-07-08'}, ${'test'}, ${new Date('2026-07-08T10:00:00Z')},
-       ${new Date('2026-07-08T10:01:00Z')}, ${new Date('2000-01-01T00:00:00Z')})
+       ${new Date('2026-07-08T10:01:00Z')}, ${new Date('2000-01-01T00:00:00Z')}),
+      (${'ri-3'}, ${'app-outbox.rtc-topology'}, ${'payload'}, ${'APP_OUTBOX'}, ${'PENDING'},
+       ${'bank-3'}, ${'2026-07-08'}, ${'test'}, ${new Date('2026-07-08T10:00:00Z')},
+       ${null}, ${new Date('9999-12-31T23:59:59Z')})
   `;
 
   await sql`

@@ -639,7 +639,7 @@ Deno.test('joinGroup rejects invite-only, code, removed, and banned join attempt
   );
 });
 
-Deno.test('legacy self-active upsert is admission policy gated', async () => {
+Deno.test('self-service active-member upsert is admission policy gated', async () => {
   const service = createTestGroupStateService();
   await service.createGroup(TEST_SCOPE, {
     groupId: 'invite-group',

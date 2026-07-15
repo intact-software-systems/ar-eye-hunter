@@ -10,7 +10,7 @@ export function ExecuteAgentSetup({
     connection: RecipeConsoleControlConnection;
     model: ExecuteAgentLaunchModel;
 }>) {
-    const group = connection.bootstrap.bootstrapGroup;
+    const group = model.group;
     const noun = model.count === 1 ? 'browser agent' : 'browser agents';
     const displacedBlockedAgentIds = model.blockedAgentIds.filter(
         agentId => !model.agentIds.includes(agentId),

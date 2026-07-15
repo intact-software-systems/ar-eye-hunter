@@ -175,7 +175,7 @@ export function init(
         );
 
         return c.json(
-          await listRecentGroupEventsForLegacyRoute(
+          await listRecentGroupEventsForArrayRoute(
             deps.getGroupStateService(),
             ref,
             query,
@@ -860,7 +860,7 @@ function toGroupStateRouteDependencies(
   };
 }
 
-async function listRecentGroupEventsForLegacyRoute(
+async function listRecentGroupEventsForArrayRoute(
   service: GroupStateRouteService,
   ref: GroupRef,
   query: StateEventListQuery,

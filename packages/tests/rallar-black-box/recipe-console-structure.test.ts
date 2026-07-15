@@ -341,7 +341,9 @@ describe('Recipe Console experience boundary', () => {
             'execute-operation-error.ts',
             'execute-artifact-export.ts',
             'execute-next-action.ts',
+            'execute-agent-launch-state.ts',
             'use-execute-agent-launch.ts',
+            'use-execute-agent-cohort.ts',
         ].map(file => `${recipeConsoleRoot}/execute/${file}`);
         for (const path of [...executeOwners, ...executeStyles, ...executeSupport]) {
             expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);

@@ -123,8 +123,8 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     assert.ok(json.paths[path], `missing OpenAPI path ${path}`);
   }
 
-  assert.equal(json.paths['/api/graph'].get?.deprecated, true);
-  assert.equal(json.paths['/api/graph/tree/{groupId}'].get?.deprecated, true);
+  assert.equal(json.paths['/api/graph'], undefined);
+  assert.equal(json.paths['/api/graph/tree/{groupId}'], undefined);
   assert.deepEqual(json.components.schemas.GraphInfo.required, [
     'groupRef',
     'graph',

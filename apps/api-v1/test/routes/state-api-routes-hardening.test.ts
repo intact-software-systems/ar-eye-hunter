@@ -196,7 +196,7 @@ Deno.test('state event page routes call paged services instead of full-history l
   });
 });
 
-Deno.test('legacy state event routes call bounded recent services instead of full-history listEvents', async () => {
+Deno.test('state event array routes call bounded recent services instead of full-history listEvents', async () => {
   await withStrictReadAuth(false, async () => {
     const clientEvent = createClientEvent('client-event-2');
     const groupEvent = createGroupEvent('group-event-2');

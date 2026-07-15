@@ -54,7 +54,6 @@ export function createRunnerAgentLaunchActions({
         providerMode,
         controlWsUrl: agentControlWsUrl,
         apiBaseUrl,
-        group: { applicationId, workspaceId, groupId },
         authSession,
         issueAgentSessions: agentRestoreSession,
         allowAnonymousControlToken: true,
@@ -73,6 +72,7 @@ export function createRunnerAgentLaunchActions({
     const prepare = (ids: readonly string[]) => launchService.prepare({
         runId: agentRunId,
         agentIds: ids,
+        group: { applicationId, workspaceId, groupId },
     });
 
     const copyAgentLinks = async (): Promise<void> => {

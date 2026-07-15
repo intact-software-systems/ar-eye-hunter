@@ -40,6 +40,24 @@ describe('Recipe Console Execute next action', () => {
     it.each([
         ['no agents', input({ targetCount: 0, targetableCount: 0 }), 'connect-agents', 'Connect agents to continue.'],
         ['registering', input({ targetCount: 0, targetableCount: 0, launchedExpectedCount: 3, launchedReadyCount: 2 }), 'registering', '2 of 3 browser agents ready'],
+        ['registering beside existing agents', input({
+            targetableCount: 1,
+            launchedExpectedCount: 3,
+            launchedReadyCount: 1,
+        }), 'registering', '1 of 3 browser agents ready'],
+        ['selecting a fully registered cohort', input({
+            targetableCount: 4,
+            launchedExpectedCount: 3,
+            launchedReadyCount: 3,
+            launchedCohortSelectionPending: true,
+        }), 'registering', '3 of 3 browser agents ready'],
+        ['manual target adjustment after cohort selection', input({
+            targetCount: 2,
+            targetableCount: 3,
+            launchedExpectedCount: 3,
+            launchedReadyCount: 3,
+            launchedCohortSelectionPending: false,
+        }), 'resolve', 'Resolve 2 targets'],
         ['resolve', input(), 'resolve', 'Resolve 3 targets'],
         ['create', input({ policy: policy({ resolutionCurrent: true }) }), 'create', 'Create draft'],
         ['stage', input({
@@ -63,6 +81,16 @@ describe('Recipe Console Execute next action', () => {
         ['monitor terminal', input({
             runState: 'passed',
             policy: policy({ runState: 'passed', hasKnownRun: true, resolutionCurrent: true }),
+        }), 'monitor', 'Monitor run'],
+        ['monitor terminal after agents disconnect', input({
+            targetableCount: 0,
+            runState: 'passed',
+            policy: policy({
+                runState: 'passed',
+                hasKnownRun: true,
+                resolutionCurrent: true,
+                selectedTargetsSafe: false,
+            }),
         }), 'monitor', 'Monitor run'],
     ] as const)('derives %s as one current step', (_label, facts, step, actionLabel) => {
         expect(deriveExecuteNextAction(facts)).toMatchObject({

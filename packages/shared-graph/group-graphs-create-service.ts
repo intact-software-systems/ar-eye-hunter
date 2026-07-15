@@ -45,18 +45,6 @@ export function computeGroupGraph(
     return computeGroupGraphFromSnapshot(group, isIncludeMeasured);
 }
 
-export function computeLatestGroupGraphById(
-    groupId: string,
-    isIncludeMeasured: boolean = false,
-): Either<string, GraphInfoSnapshot> {
-    const group = groupStateSnapshotsRepository.findLatestGroupSnapshotById(groupId);
-    if (!group) {
-        return Either.ofLeft('Group not found: ' + groupId);
-    }
-
-    return computeGroupGraphFromSnapshot(group, isIncludeMeasured);
-}
-
 function computeGroupGraphFromSnapshot(
     group: GroupSnapshot,
     isIncludeMeasured: boolean,

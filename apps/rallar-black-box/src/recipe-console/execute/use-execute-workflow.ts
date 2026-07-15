@@ -206,7 +206,9 @@ export function useExecuteWorkflow(input: Readonly<{
     const agentLaunch = useExecuteAgentLaunch({
         connection: input.connection,
         controlRunId: input.selection.controlRunId,
+        group,
         targetRows,
+        selectedAgentIds,
         selectionLocked,
         onBindRunId: controlRunId => input.navigate({
             controlRunId,
@@ -223,6 +225,9 @@ export function useExecuteWorkflow(input: Readonly<{
         targetableCount: targetRows.filter(row => row.targetable).length,
         launchedExpectedCount: agentLaunch.launchedExpectedCount,
         launchedReadyCount: agentLaunch.launchedReadyCount,
+        launchPreparationPending: agentLaunch.launchPreparationPending,
+        launchedCohortSelectionPending:
+            agentLaunch.launchedCohortSelectionPending,
         ackReadyCount: run?.rollup.summary.readyParticipants,
         ackExpectedCount: run?.targetAgentIds.length,
     });

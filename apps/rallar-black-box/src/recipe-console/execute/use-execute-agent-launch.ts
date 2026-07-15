@@ -1,33 +1,29 @@
-import type { DistributedRecipeTargetRow } from
-    '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import {
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
-import type { RecipeConsoleControlConnection } from
-    '../control/ControlConnectionProvider.tsx';
+import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import {
     navigateReservedBrowserAgentPopups,
     releaseReservedBrowserAgentPopups,
     reserveBrowserAgentPopups,
     type BrowserAgentPopupReservation,
 } from '../../browser-agent-popup.ts';
-import {
-    runnerAgentId,
-    runnerNewAgentLaunchSuffix,
-} from '../../runner-agent-launch.ts';
+import { runnerAgentId, runnerNewAgentLaunchSuffix } from '../../runner-agent-launch.ts';
 import { executeAgentLaunchBlocker } from './execute-agent-launch-blocker.ts';
-type SanitizedCohort = Readonly<{
-    runId: string;
-    agentIds: readonly string[];
-}>;
+import {
+    executeAgentLaunchErrorMessage,
+    executeAgentLaunchRunIdSync,
+    mergeExecuteAgentLaunchCohort,
+    type ExecuteAgentLaunchCohort,
+} from './execute-agent-launch-state.ts';
+import { useExecuteAgentCohort } from './use-execute-agent-cohort.ts';
 
 export function useExecuteAgentLaunch(input: Readonly<{
     connection: RecipeConsoleControlConnection;
     controlRunId?: string;
+    group: RallarBlackBoxDistributedGroupRef;
     targetRows: readonly DistributedRecipeTargetRow[];
+    selectedAgentIds: readonly string[];
     selectionLocked: boolean;
     onBindRunId(runId: string): void;
     onSelectTargets(agentIds: readonly string[]): void;
@@ -42,17 +38,19 @@ export function useExecuteAgentLaunch(input: Readonly<{
     const [busyAction, setBusyAction] = useState<'open' | 'copy'>();
     const [message, setMessage] = useState<string>();
     const [blockedAgentIds, setBlockedAgentIds] = useState<readonly string[]>([]);
-    const [cohort, setCohort] = useState<SanitizedCohort>();
+    const [cohort, setCohort] = useState<ExecuteAgentLaunchCohort>();
+    const [pendingCohort, setPendingCohort] = useState<ExecuteAgentLaunchCohort>();
+    const runIdRef = useRef(runId);
+    const selectedControlRunIdRef = useRef(input.controlRunId);
     const requestRef = useRef<AbortController | undefined>(undefined);
     const reservationRef = useRef<BrowserAgentPopupReservation | undefined>(undefined);
     const generationRef = useRef(0);
-    const announcedRef = useRef<string | undefined>(undefined);
     const autoExpansionDecidedRef = useRef(false);
     const launchContextKey = JSON.stringify([
         input.connection.baseUrl,
         input.connection.bootstrap.apiBaseUrl,
         input.connection.bootstrap.providerMode,
-        input.connection.bootstrap.bootstrapGroup,
+        input.group,
     ]);
     const launchContextKeyRef = useRef(launchContextKey);
 
@@ -64,28 +62,43 @@ export function useExecuteAgentLaunch(input: Readonly<{
     );
     const blocker = executeAgentLaunchBlocker({
         connection: input.connection,
+        group: input.group,
         runId,
         prefix,
         count,
     });
-    const readyAgentIds = useMemo(() => {
-        if (!cohort) return [];
-        const targetable = new Set(
-            input.targetRows.filter(row => row.targetable).map(row => row.agentId),
-        );
-        return cohort.agentIds.filter(agentId => targetable.has(agentId));
-    }, [cohort, input.targetRows]);
+    const cohortState = useExecuteAgentCohort({
+        cohort,
+        pendingCohort,
+        targetRows: input.targetRows,
+        selectedAgentIds: input.selectedAgentIds,
+        selectionLocked: input.selectionLocked,
+        controlRunId: input.controlRunId,
+        onSelectTargets: input.onSelectTargets,
+        onReadyMessage: setMessage,
+    });
+    runIdRef.current = runId;
 
     useEffect(() => {
-        if (!input.controlRunId || input.controlRunId === runId) return;
-        invalidatePending('The selected control run changed before launch completed.');
-        setRunIdState(input.controlRunId);
-        setMessage(undefined);
-    }, [input.controlRunId, runId]);
+        const sync = executeAgentLaunchRunIdSync({
+            previousControlRunId: selectedControlRunIdRef.current,
+            nextControlRunId: input.controlRunId,
+            currentRunId: runIdRef.current,
+        });
+        if (!sync) return;
+        selectedControlRunIdRef.current = sync.selectedControlRunId;
+        if (!sync.runId) return;
+        if (sync.invalidate) {
+            invalidateLaunchContext('The selected control run changed before launch completed.');
+            setMessage(undefined);
+        }
+        runIdRef.current = sync.runId;
+        setRunIdState(sync.runId);
+    }, [input.controlRunId]);
     useEffect(() => {
         if (launchContextKeyRef.current === launchContextKey) return;
         launchContextKeyRef.current = launchContextKey;
-        invalidatePending('Browser-agent launch context changed before launch completed.');
+        invalidateLaunchContext('Browser-agent launch context changed before launch completed.');
         setMessage(undefined);
     }, [launchContextKey]);
     useEffect(() => {
@@ -105,29 +118,9 @@ export function useExecuteAgentLaunch(input: Readonly<{
         input.controlRunId,
         input.targetRows,
     ]);
-    useEffect(() => () => invalidatePending('Browser-agent launch was cancelled.'), []);
-    useEffect(() => {
-        if (
-            !cohort || input.selectionLocked ||
-            input.controlRunId !== cohort.runId ||
-            readyAgentIds.length !== cohort.agentIds.length
-        ) return;
-        const key = JSON.stringify([cohort.runId, cohort.agentIds]);
-        if (announcedRef.current === key) return;
-        announcedRef.current = key;
-        input.onSelectTargets(cohort.agentIds);
-        setMessage(
-            `${cohort.agentIds.length} launched browser ${cohort.agentIds.length === 1 ? 'agent is' : 'agents are'} ready and selected as targets.`,
-        );
-    }, [
-        cohort,
-        input.controlRunId,
-        input.onSelectTargets,
-        input.selectionLocked,
-        readyAgentIds.length,
-    ]);
+    useEffect(() => () => disposePending('Browser-agent launch was cancelled.'), []);
 
-    function invalidatePending(reason: string): void {
+    function disposePending(reason: string): void {
         generationRef.current += 1;
         requestRef.current?.abort();
         requestRef.current = undefined;
@@ -137,8 +130,21 @@ export function useExecuteAgentLaunch(input: Readonly<{
         }
     }
 
+    function invalidatePending(reason: string): void {
+        disposePending(reason);
+        setPendingCohort(undefined);
+        setBusyAction(undefined);
+    }
+
+    function invalidateLaunchContext(reason: string): void {
+        invalidatePending(reason);
+        setCohort(undefined);
+        setBlockedAgentIds([]);
+    }
+
     function setRunId(value: string): void {
-        invalidatePending('Control run ID changed before launch completed.');
+        invalidateLaunchContext('Control run ID changed before launch completed.');
+        runIdRef.current = value;
         setRunIdState(value);
         setMessage(undefined);
     }
@@ -177,6 +183,7 @@ export function useExecuteAgentLaunch(input: Readonly<{
         const generation = ++generationRef.current;
         const controller = new AbortController();
         requestRef.current = controller;
+        setPendingCohort({ runId: runId.trim(), agentIds: [...reservation.reservedAgentIds].sort() });
         setBusyAction('open');
         setMessage(`Preparing ${reservation.reservedAgentIds.length} browser agent ${reservation.reservedAgentIds.length === 1 ? 'session' : 'sessions'}…`);
         input.onBindRunId(runId.trim());
@@ -184,6 +191,7 @@ export function useExecuteAgentLaunch(input: Readonly<{
             const prepared = await service.prepare({
                 runId,
                 agentIds: reservation.reservedAgentIds,
+                group: input.group,
                 signal: controller.signal,
             });
             if (generationRef.current !== generation || controller.signal.aborted) return;
@@ -202,13 +210,19 @@ export function useExecuteAgentLaunch(input: Readonly<{
             await input.connection.refreshAfterCurrent();
         } catch (error) {
             if (!controller.signal.aborted && generationRef.current === generation) {
-                releaseReservedBrowserAgentPopups(reservation, errorMessage(error));
+                releaseReservedBrowserAgentPopups(
+                    reservation,
+                    executeAgentLaunchErrorMessage(error),
+                );
                 reservationRef.current = undefined;
-                setMessage(errorMessage(error));
+                setMessage(executeAgentLaunchErrorMessage(error));
             }
         } finally {
             if (requestRef.current === controller) requestRef.current = undefined;
-            if (generationRef.current === generation) setBusyAction(undefined);
+            if (generationRef.current === generation) {
+                setPendingCohort(undefined);
+                setBusyAction(undefined);
+            }
         }
     }
 
@@ -218,6 +232,11 @@ export function useExecuteAgentLaunch(input: Readonly<{
         const generation = ++generationRef.current;
         const controller = new AbortController();
         requestRef.current = controller;
+        setPendingCohort(mergeExecuteAgentLaunchCohort(
+            cohort,
+            runId.trim(),
+            ids,
+        ));
         setBusyAction('copy');
         input.onBindRunId(runId.trim());
         setMessage(`Preparing ${ids.length} fresh launch ${ids.length === 1 ? 'link' : 'links'}…`);
@@ -225,19 +244,18 @@ export function useExecuteAgentLaunch(input: Readonly<{
             const prepared = await service.prepare({
                 runId,
                 agentIds: ids,
+                group: input.group,
                 signal: controller.signal,
             });
             if (generationRef.current !== generation || controller.signal.aborted) return;
             await navigator.clipboard.writeText(
                 prepared.agents.map(agent => agent.launchUrl).join('\n'),
             );
-            setCohort(previous => ({
-                runId: prepared.runId,
-                agentIds: [...new Set([
-                    ...(previous?.runId === prepared.runId ? previous.agentIds : []),
-                    ...prepared.agents.map(agent => agent.agentId),
-                ])].sort(),
-            }));
+            setCohort(previous => mergeExecuteAgentLaunchCohort(
+                previous,
+                prepared.runId,
+                prepared.agents.map(agent => agent.agentId),
+            ));
             setMessage(
                 `Copied ${prepared.agents.length} fresh, short-lived launch ${prepared.agents.length === 1 ? 'link' : 'links'}.`,
             );
@@ -245,11 +263,14 @@ export function useExecuteAgentLaunch(input: Readonly<{
             await input.connection.refreshAfterCurrent();
         } catch (error) {
             if (!controller.signal.aborted && generationRef.current === generation) {
-                setMessage(errorMessage(error));
+                setMessage(executeAgentLaunchErrorMessage(error));
             }
         } finally {
             if (requestRef.current === controller) requestRef.current = undefined;
-            if (generationRef.current === generation) setBusyAction(undefined);
+            if (generationRef.current === generation) {
+                setPendingCohort(undefined);
+                setBusyAction(undefined);
+            }
         }
     }
 
@@ -262,19 +283,16 @@ export function useExecuteAgentLaunch(input: Readonly<{
         setPrefix,
         count,
         setCount,
+        group: input.group,
         agentIds,
         blockedAgentIds,
         busyAction,
         blocker,
         message,
-        launchedExpectedCount: cohort?.agentIds.length ?? 0,
-        launchedReadyCount: readyAgentIds.length,
+        ...cohortState,
         openAgents,
         copyAgentLinks: () => copyAgents(agentIds),
         copyAgentLink: (agentId: string) => copyAgents([agentId]),
     } as const;
-}
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
 }
 export type ExecuteAgentLaunchModel = ReturnType<typeof useExecuteAgentLaunch>;

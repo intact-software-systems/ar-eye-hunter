@@ -55,6 +55,12 @@ const SCOPE: StateScope = {
     workspaceId: 'default',
 };
 
+describe('AppInboxType', () => {
+    it('does not expose server-produced RTC topology work', () => {
+        expect(AppInboxType).not.toHaveProperty('RTC_TOPOLOGY_RECOMPUTE');
+    });
+});
+
 describe('AppInboxService', () => {
     it('processes createGroup through the inbox and stores a readable result with bounded queue keys', async () => {
         const queue = new TestResourceInbox();
@@ -72,6 +78,9 @@ describe('AppInboxService', () => {
             publishGroupSnapshot: vi.fn(async () => undefined),
             publishGroupEvent: vi.fn(async () => undefined),
         };
+        const groupMutationOutboxPublisher = {
+            enqueueForGroupSnapshot: vi.fn(async () => undefined),
+        };
         const service = new AppGroupInboxService(
             reader,
             queue as never,
@@ -87,6 +96,7 @@ describe('AppInboxService', () => {
                 waitMaxRetryIntervalMsecs: 1,
                 waitJitterRatio: 0,
             },
+            groupMutationOutboxPublisher,
         );
 
         const resultPromise = service.processEntryUntilCompletion<
@@ -126,6 +136,14 @@ describe('AppInboxService', () => {
         expect(publisher.publishGroupEvent).toHaveBeenCalledWith(
             written.event,
             'server-12345678',
+        );
+        expect(groupMutationOutboxPublisher.enqueueForGroupSnapshot)
+            .toHaveBeenCalledWith(written.snapshot);
+        expect(
+            publisher.publishGroupEvent.mock.invocationCallOrder[0],
+        ).toBeLessThan(
+            groupMutationOutboxPublisher.enqueueForGroupSnapshot.mock
+                .invocationCallOrder[0]!,
         );
 
         const entry = readOnlyEntry(queue);
@@ -180,6 +198,50 @@ describe('AppInboxService', () => {
                 }),
             ]),
         );
+    });
+
+    it('does not publish state sync or derived outbox work without a mutation event', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const written = createGroupWritten('group-without-event');
+        const groupStateService = createGroupStateServiceStub({
+            createGroup: vi.fn(async () =>
+                createGroupStateWritten({ ...written, event: undefined })
+            ),
+        });
+        const publisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async () => undefined),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const groupMutationOutboxPublisher = {
+            enqueueForGroupSnapshot: vi.fn(async () => undefined),
+        };
+        const service = new AppGroupInboxService(
+            reader,
+            queue as never,
+            results as never,
+            groupStateService,
+            publisher,
+            'server-12345678',
+            undefined,
+            undefined,
+            groupMutationOutboxPublisher,
+        );
+
+        await processCreateGroup(
+            service,
+            reader,
+            'group-without-event',
+            'create-group-without-event',
+        );
+
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
+        expect(groupMutationOutboxPublisher.enqueueForGroupSnapshot)
+            .not.toHaveBeenCalled();
     });
 
     it('records app-inbox wait fallback timing when completion is not observed', async () => {

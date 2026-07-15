@@ -16,6 +16,7 @@ import { createRunnerAgentLaunchUrl } from './runner-agent-launch.ts';
 export type BrowserAgentLaunchRequest = Readonly<{
     runId: string;
     agentIds: readonly string[];
+    group: RallarBlackBoxDistributedGroupRef;
     signal?: AbortSignal;
 }>;
 
@@ -51,7 +52,6 @@ export function createBrowserAgentLaunchService(config: Readonly<{
     providerMode: RallarBlackBoxProviderMode;
     controlWsUrl: string;
     apiBaseUrl: string;
-    group: RallarBlackBoxDistributedGroupRef;
     authSession?: AuthSession;
     issueAgentSessions?: boolean;
     allowAnonymousControlToken?: boolean;
@@ -62,6 +62,7 @@ export function createBrowserAgentLaunchService(config: Readonly<{
         async prepare(input) {
             const runId = requiredId(input.runId, 'Control run ID');
             const agentIds = validatedAgentIds(input.agentIds);
+            const group = validatedGroup(input.group);
             const tickets = await issueTickets(config, agentIds, input.signal);
             const tokens = await Promise.all(agentIds.map(async agentId => {
                 const token = await config.issueRunToken({
@@ -77,10 +78,14 @@ export function createBrowserAgentLaunchService(config: Readonly<{
                 );
                 return token;
             }));
+            assertUniqueAuthority(
+                tokens.map(token => token.token).filter(Boolean),
+                'Control tokens',
+            );
 
             return {
                 runId,
-                group: config.group,
+                group,
                 providerMode: config.providerMode,
                 agents: agentIds.map((agentId, index) => {
                     const ticket = tickets.get(agentId);
@@ -93,10 +98,10 @@ export function createBrowserAgentLaunchService(config: Readonly<{
                             controlWsUrl: config.controlWsUrl,
                             runId,
                             agentId,
-                            groupId: config.group.groupId,
+                            groupId: group.groupId,
                             apiBaseUrl: config.apiBaseUrl,
-                            applicationId: config.group.applicationId,
-                            workspaceId: config.group.workspaceId,
+                            applicationId: group.applicationId,
+                            workspaceId: group.workspaceId,
                             restoreSession: ticket !== undefined,
                             authStorage: ticket ? 'session' : undefined,
                             actor: ticket
@@ -162,7 +167,21 @@ async function issueTickets(
             throw new Error(`Agent session ticket response contains unexpected agent ${ticket.agentId}.`);
         }
     }
+    assertUniqueAuthority(
+        response.tickets.map(ticket => ticket.ticket),
+        'Agent session tickets',
+    );
+    assertUniqueAuthority(
+        response.tickets.map(ticket => ticket.sessionId),
+        'Agent session IDs',
+    );
     return tickets;
+}
+
+function assertUniqueAuthority(values: readonly string[], label: string): void {
+    if (new Set(values).size !== values.length) {
+        throw new Error(`${label} must be unique per browser agent.`);
+    }
 }
 
 function validatedAgentIds(values: readonly string[]): readonly string[] {
@@ -174,6 +193,16 @@ function validatedAgentIds(values: readonly string[]): readonly string[] {
         throw new Error('Browser-agent IDs must be unique.');
     }
     return agentIds;
+}
+
+function validatedGroup(
+    value: RallarBlackBoxDistributedGroupRef,
+): RallarBlackBoxDistributedGroupRef {
+    return {
+        applicationId: requiredId(value.applicationId, 'Application ID'),
+        workspaceId: requiredId(value.workspaceId, 'Workspace ID'),
+        groupId: requiredId(value.groupId, 'Group ID'),
+    };
 }
 
 function requiredId(value: string, label: string): string {

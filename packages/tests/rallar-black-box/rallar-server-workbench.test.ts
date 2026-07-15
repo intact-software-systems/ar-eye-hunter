@@ -221,7 +221,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         ]);
     });
 
-    it('includes scoped graph and topology endpoint presets while retaining deprecated legacy graph presets', () => {
+    it('includes scoped graph and topology endpoint presets without deprecated graph presets', () => {
         const presets = new Map(
             RALLAR_SERVER_ENDPOINT_PRESETS.map((preset) => [preset.presetId, preset]),
         );
@@ -270,8 +270,8 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             method: 'DELETE',
             pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/override',
         });
-        expect(presets.get('graph-global')?.label.toLowerCase()).toContain('deprecated');
-        expect(presets.get('graph-group')?.label.toLowerCase()).toContain('deprecated');
+        expect(presets.has('graph-global')).toBe(false);
+        expect(presets.has('graph-group')).toBe(false);
     });
 
     it('redacts authorization, query secrets, and body secrets in cURL output', () => {
