@@ -554,8 +554,16 @@ export async function issueAgentSessionTickets(
     request: AgentSessionTicketRequest,
     options?: ApiRequestOptions,
 ): Promise<AgentSessionTicketResponse> {
+    return await issueAgentSessionTicketsAt(readApiBaseUrl(), request, options);
+}
+
+export async function issueAgentSessionTicketsAt(
+    apiBaseUrl: string,
+    request: AgentSessionTicketRequest,
+    options?: ApiRequestOptions,
+): Promise<AgentSessionTicketResponse> {
     return await executeHttpRequest<AgentSessionTicketRequest, AgentSessionTicketResponse>(
-        readApiBaseUrl(),
+        normalizedExplicitApiBaseUrl(apiBaseUrl),
         '/api/auth/agent-session-tickets',
         'POST',
         request,
@@ -567,13 +575,25 @@ export async function consumeAgentSessionTicket(
     request: ConsumeAgentSessionTicketRequest,
     options?: ApiRequestOptions,
 ): Promise<ConsumeAgentSessionTicketResponse> {
+    return await consumeAgentSessionTicketAt(readApiBaseUrl(), request, options);
+}
+
+export async function consumeAgentSessionTicketAt(
+    apiBaseUrl: string,
+    request: ConsumeAgentSessionTicketRequest,
+    options?: ApiRequestOptions,
+): Promise<ConsumeAgentSessionTicketResponse> {
     return await executeHttpRequest<ConsumeAgentSessionTicketRequest, ConsumeAgentSessionTicketResponse>(
-        readApiBaseUrl(),
+        normalizedExplicitApiBaseUrl(apiBaseUrl),
         '/api/auth/agent-session-tickets/consume',
         'POST',
         request,
         options,
     );
+}
+
+function normalizedExplicitApiBaseUrl(value: string): string {
+    return value.trim().replace(/\/+$/, '');
 }
 
 export async function createWebSocketTicket(

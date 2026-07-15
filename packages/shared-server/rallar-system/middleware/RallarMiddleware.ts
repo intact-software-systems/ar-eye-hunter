@@ -5,6 +5,7 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
     WsQueueBoxServerService,
@@ -25,7 +26,9 @@ export type RallarMiddlewareRuntime = Readonly<{
     qboxEngine: InboxOutboxEngine;
     wsQBoxServerService: WsQueueBoxServerService;
     inboxQueueReader: InboxQueueReader;
+    outboxQueueReader: OutboxQueueReader;
     appInboxResilience: ResilienceDto;
+    appOutboxResilience: ResilienceDto;
     appGroupInboxService: AppGroupInboxService;
     appClientInboxService: AppClientInboxService;
     clientsRepository: ClientStateRepository;
@@ -60,8 +63,11 @@ export type CreateRallarMiddlewareOptions = Readonly<{
     createAppGroupInboxService: (
         input: Readonly<{
             inboxQueueReader: InboxQueueReader;
+            outboxQueueReader: OutboxQueueReader;
             wsQBoxServerService: WsQueueBoxServerService;
             appInboxResilience: ResilienceDto;
+            appOutboxResilience: ResilienceDto;
+            wakeQueueEngine: () => void;
         }>,
     ) => AppGroupInboxService;
     createAppClientInboxService: (
@@ -75,6 +81,7 @@ export type CreateRallarMiddlewareOptions = Readonly<{
         inbox: ResilienceDto;
         outbox?: ResilienceDto;
         appInbox?: ResilienceDto;
+        appOutbox: ResilienceDto;
     }>;
     clientsRepository: ClientStateRepository;
     groupsRepository: GroupStateRepository;
@@ -108,12 +115,20 @@ export function createRallarMiddleware(
         },
     );
     const inboxQueueReader = new InboxQueueReader(options.inbox);
+    const outboxQueueReader = new OutboxQueueReader(
+        options.outbox ?? options.inbox,
+    );
     const appInboxResilience =
         options.resilience.appInbox ?? options.resilience.inbox;
+    const appOutboxResilience = options.resilience.appOutbox;
+    const wakeQueueEngine = () => qboxEngine.wake();
     const appGroupInboxService = options.createAppGroupInboxService({
         inboxQueueReader,
+        outboxQueueReader,
         wsQBoxServerService,
         appInboxResilience,
+        appOutboxResilience,
+        wakeQueueEngine,
     });
     const appClientInboxService = options.createAppClientInboxService({
         inboxQueueReader,
@@ -132,12 +147,19 @@ export function createRallarMiddleware(
         inboxQueueReader,
         appInboxResilience,
     );
+    includeOutboxQueueReaderEngineTasks(
+        qboxEngine,
+        outboxQueueReader,
+        appOutboxResilience,
+    );
 
     return {
         qboxEngine,
         wsQBoxServerService,
         inboxQueueReader,
+        outboxQueueReader,
         appInboxResilience,
+        appOutboxResilience,
         appGroupInboxService,
         appClientInboxService,
         clientsRepository: options.clientsRepository,
@@ -203,6 +225,29 @@ export function includeInboxQueueReaderEngineTasks(
         runnable: () =>
             inboxQueueReader.dequeueInbox(
                 InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                resilience,
+            ),
+        ongoingTasks: [],
+    });
+}
+
+export function includeOutboxQueueReaderEngineTasks(
+    engine: InboxOutboxEngine,
+    outboxQueueReader: OutboxQueueReader,
+    resilience: ResilienceDto,
+): void {
+    engine.includeTask(OutboxQueueReader.OUTBOX_ENQUEUE_TYPE, {
+        name: OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
+        maxConcurrency: () => 1,
+        isWork: () =>
+            outboxQueueReader.outbox.isAnyEntryToLock(
+                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+                resilience.checkReserveTimeouts.isEntryRateLimiter,
+                resilience.checkFailed.isEntryRateLimiter,
+            ),
+        runnable: () =>
+            outboxQueueReader.dequeueOutbox(
+                OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
                 resilience,
             ),
         ongoingTasks: [],

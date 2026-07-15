@@ -12,7 +12,7 @@ export function RunnerAgentSetupPanel({
     controlWsUrl,
     groupId,
     connectedAgents,
-    launchUrls,
+    agentIds,
     launchMessage,
     showConnectedAgents = true,
     onRunIdChange,
@@ -31,7 +31,7 @@ export function RunnerAgentSetupPanel({
     controlWsUrl: string;
     groupId: string;
     connectedAgents: ControlRunSnapshot['agents'];
-    launchUrls: readonly string[];
+    agentIds: readonly string[];
     launchMessage?: string;
     showConnectedAgents?: boolean;
     onRunIdChange(value: string): void;
@@ -45,15 +45,8 @@ export function RunnerAgentSetupPanel({
         runId.trim().length > 0 &&
         groupId.trim().length > 0 &&
         agentPrefix.trim().length > 0 &&
-        launchUrls.length > 0;
+        agentIds.length > 0;
     const activeAgents = connectedAgents.filter((agent) => agent.connected);
-    const previewAgentIds = launchUrls.map((url) => {
-        try {
-            return new URL(url).searchParams.get('agentId') ?? '';
-        } catch (_error) {
-            return '';
-        }
-    }).filter((agentId) => agentId.length > 0);
 
     return (
         <section className="runner-agent-setup" aria-label="Connect Agents">
@@ -139,7 +132,7 @@ export function RunnerAgentSetupPanel({
             <div className="runner-agent-preview" aria-label="Agent IDs">
                 <strong>Next agent IDs</strong>
                 <span>
-                    {previewAgentIds.join(', ')}
+                    {agentIds.join(', ')}
                 </span>
             </div>
             <dl className="config-list runner-agent-meta">

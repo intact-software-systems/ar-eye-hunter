@@ -12,6 +12,7 @@ import {
     newALUntargetedMessage,
 } from '@shared/mod.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
@@ -36,6 +37,7 @@ describe('createRallarMiddleware', () => {
         const clientsRepository = {} as ClientStateRepository;
         const groupsRepository = {} as GroupStateRepository;
         const appInboxResilience = createResilience();
+        const appOutboxResilience = createResilience();
         const appGroupInboxService = {} as AppGroupInboxService;
         const appClientInboxService = {} as AppClientInboxService;
         const createAppGroupInboxService = vi.fn(() => appGroupInboxService);
@@ -50,6 +52,7 @@ describe('createRallarMiddleware', () => {
                 inbox: createResilience(),
                 outbox: createResilience(),
                 appInbox: appInboxResilience,
+                appOutbox: appOutboxResilience,
             },
             clientsRepository,
             groupsRepository,
@@ -61,13 +64,19 @@ describe('createRallarMiddleware', () => {
         expect(runtime.wsQBoxServerService.name).toBe('server-1');
         expect(runtime.inboxQueueReader).toBeInstanceOf(InboxQueueReader);
         expect(runtime.inboxQueueReader.inbox).toBe(inbox);
+        expect(runtime.outboxQueueReader).toBeInstanceOf(OutboxQueueReader);
+        expect(runtime.outboxQueueReader.outbox).toBe(outbox);
         expect(runtime.appInboxResilience).toBe(appInboxResilience);
+        expect(runtime.appOutboxResilience).toBe(appOutboxResilience);
         expect(runtime.appGroupInboxService).toBe(appGroupInboxService);
         expect(runtime.appClientInboxService).toBe(appClientInboxService);
         expect(createAppGroupInboxService).toHaveBeenCalledWith({
             inboxQueueReader: runtime.inboxQueueReader,
+            outboxQueueReader: runtime.outboxQueueReader,
             wsQBoxServerService: runtime.wsQBoxServerService,
             appInboxResilience,
+            appOutboxResilience,
+            wakeQueueEngine: expect.any(Function),
         });
         expect(createAppClientInboxService).toHaveBeenCalledWith({
             inboxQueueReader: runtime.inboxQueueReader,
@@ -85,6 +94,7 @@ describe('createRallarMiddleware', () => {
             inbox,
             resilience: {
                 inbox: createResilience(),
+                appOutbox: createResilience(),
             },
             createAppGroupInboxService: () => ({}) as AppGroupInboxService,
             createAppClientInboxService: () => ({}) as AppClientInboxService,
@@ -114,6 +124,108 @@ describe('createRallarMiddleware', () => {
 
         expect(onMessage).toHaveBeenCalledOnce();
         expect(onMessage.mock.calls[0][0]).toEqual(message);
+    });
+
+    it('registers an independent app outbox engine task', async () => {
+        const inbox = new InMemoryQueueBox();
+        const outbox = new InMemoryQueueBox();
+        const runtime = createRallarMiddleware({
+            inbox,
+            outbox,
+            resilience: {
+                inbox: createResilience(),
+                appInbox: createResilience(),
+                appOutbox: createResilience(),
+            },
+            createAppGroupInboxService: () => ({}) as AppGroupInboxService,
+            createAppClientInboxService: () => ({}) as AppClientInboxService,
+            clientsRepository: {} as ClientStateRepository,
+            groupsRepository: {} as GroupStateRepository,
+        });
+        const onMessage = vi.fn(async () => undefined);
+        const message = newALUntargetedMessage(
+            'api-v1',
+            newALRoute('app-outbox.rtc-topology', 'group-1', 'group-1'),
+            'RTC_TOPOLOGY_RECOMPUTE',
+            { groupId: 'group-1' },
+        );
+
+        runtime.outboxQueueReader.onOutboxMessageDo(
+            'RTC_TOPOLOGY_RECOMPUTE',
+            { onMessage },
+        );
+        await runtime.outboxQueueReader.enqueueIfAbsent(message);
+        const appOutboxTask = readOnlyEngineTask(
+            runtime.qboxEngine,
+            OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
+        );
+
+        expect(appOutboxTask).toBeDefined();
+        expect(await appOutboxTask?.isWork()).toBe(true);
+        await appOutboxTask?.runnable();
+
+        expect(onMessage).toHaveBeenCalledOnce();
+        expect(onMessage.mock.calls[0][0]).toEqual(message);
+    });
+
+    it('continues draining APP_INBOX while an APP_OUTBOX handler is blocked', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRallarMiddleware({
+            inbox: queue,
+            outbox: queue,
+            resilience: {
+                inbox: createResilience(),
+                appInbox: createResilience(),
+                appOutbox: createResilience(),
+            },
+            createAppGroupInboxService: () => ({}) as AppGroupInboxService,
+            createAppClientInboxService: () => ({}) as AppClientInboxService,
+            clientsRepository: {} as ClientStateRepository,
+            groupsRepository: {} as GroupStateRepository,
+        });
+        let releaseOutbox!: () => void;
+        const outboxBlocked = new Promise<void>((resolve) => {
+            releaseOutbox = resolve;
+        });
+        const onInbox = vi.fn(async () => undefined);
+        const onOutbox = vi.fn(async () => await outboxBlocked);
+        runtime.inboxQueueReader.onInboxMessageDo('group-state.create.v1', {
+            onMessage: onInbox,
+        });
+        runtime.outboxQueueReader.onOutboxMessageDo(
+            'RTC_TOPOLOGY_RECOMPUTE',
+            { onMessage: onOutbox },
+        );
+        await runtime.outboxQueueReader.enqueueIfAbsent(
+            newALUntargetedMessage(
+                'api-v1',
+                newALRoute('app-outbox.rtc-topology', 'group-1', 'group-1'),
+                'RTC_TOPOLOGY_RECOMPUTE',
+                { groupId: 'group-1' },
+            ),
+        );
+        const appOutboxTask = readOnlyEngineTask(
+            runtime.qboxEngine,
+            OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,
+        )!;
+
+        await runtime.qboxEngine.executeOnce();
+        await vi.waitFor(() => expect(onOutbox).toHaveBeenCalledOnce());
+        await runtime.inboxQueueReader.enqueueIfAbsent(
+            newALUntargetedMessage(
+                'api-v1',
+                newALRoute('app-inbox.group-state', 'group-1', 'request-1'),
+                'group-state.create.v1',
+                { requestId: 'request-1' },
+            ),
+        );
+        await runtime.qboxEngine.executeOnce();
+
+        await vi.waitFor(() => expect(onInbox).toHaveBeenCalledOnce());
+        releaseOutbox();
+        await vi.waitFor(async () => {
+            expect(await appOutboxTask.isWork()).toBe(false);
+        });
     });
 });
 

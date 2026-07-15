@@ -21,10 +21,8 @@ Existing scoped state routes are already product-shaped:
 - `GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId`
 - group and client mutation routes under the same app/workspace scope.
 
-Existing graph routes are still diagnostic and legacy-shaped:
-
-- `GET /api/graph` computes a process-wide global graph.
-- `GET /api/graph/tree/:groupId` is marked deprecated and only accepts a bare `groupId`.
+The historical unscoped graph surface is intentionally not mounted and is
+absent from OpenAPI. Product graph reads use the scoped state API exclusively.
 
 The lower-level graph code is already closer to the desired model:
 
@@ -78,7 +76,8 @@ This keeps graph and topology operations next to clients and groups, and avoids 
 GET /api/state/apps/:applicationId/workspaces/:workspaceId/graphs/global?includeMeasured=true&refresh=if-missing
 ```
 
-This returns a diagnostic graph for active sessions in one app/workspace scope. It replaces the product need for the current process-wide `GET /api/graph`, which can remain as a deprecated operational diagnostic route.
+This returns a diagnostic graph for active sessions in one app/workspace
+scope. No process-wide graph route is mounted.
 
 The scoped global graph should use a reserved synthetic ref such as `{ applicationId, workspaceId, groupId: "__global__" }` so cache keys and response contracts still use `GroupRef`.
 
@@ -341,13 +340,14 @@ Prefer a new route module:
 apps/api-v1/src/routes/graph-topology-routes.ts
 ```
 
-It should mount after group state routes and before Swagger. The existing `graph-routes.ts` can remain for legacy endpoints while delegating to the new scoped services where practical.
+It should mount after group state routes and before Swagger. Do not mount a
+parallel unscoped graph route module.
 
 ## OpenAPI Updates
 
 Update `apps/api-v1/resources/api-v1-openapi.yaml`:
 
-- Mark `/api/graph` and `/api/graph/tree/{groupId}` as deprecated.
+- Keep removed unscoped graph paths absent from the OpenAPI document.
 - Add scoped graph diagnostics routes.
 - Add topology management routes.
 - Replace graph schemas that require `graphId` with schemas that require `groupRef`.
@@ -366,12 +366,12 @@ Use the same status language as state routes:
 
 ## Migration Plan
 
-1. Add scoped read services and routes while keeping existing graph routes.
+1. Add scoped read services and routes and remove the unscoped route surface.
 2. Fix OpenAPI schemas to match `groupRef`.
 3. Add durable and temporary config repository.
 4. Extract topology recompute/publish behavior into a shared-server service.
 5. Add topology management routes.
-6. Mark legacy graph routes deprecated in OpenAPI and optionally return `Deprecation` headers.
+6. Assert removed unscoped graph routes stay unmounted and undocumented.
 7. Update browser/admin tooling to use scoped graph and topology endpoints.
 
 ## Testing Plan

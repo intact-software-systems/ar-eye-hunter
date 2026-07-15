@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const RECIPE_CONSOLE_TEST_ENV = {
+    VITE_RALLAR_API_BASE_URL: 'http://localhost:8080',
+};
+
 export default defineConfig({
     testDir: '../../tests/playwright/rallar-black-box',
     testMatch: /recipe-console-.*\.spec\.ts/,
@@ -24,6 +28,7 @@ export default defineConfig({
             cwd: '.',
             url: 'http://127.0.0.1:5176',
             reuseExistingServer: false,
+            env: RECIPE_CONSOLE_TEST_ENV,
         },
         {
             command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4176 --strictPort',
@@ -31,6 +36,7 @@ export default defineConfig({
             url: 'http://127.0.0.1:4176',
             reuseExistingServer: false,
             timeout: 120_000,
+            env: RECIPE_CONSOLE_TEST_ENV,
         },
     ],
     projects: [

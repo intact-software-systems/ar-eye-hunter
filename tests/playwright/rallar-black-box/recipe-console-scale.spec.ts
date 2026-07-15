@@ -530,9 +530,8 @@ async function verifyExecuteScale(browser: Browser): Promise<void> {
                 await expect(targetRows).toHaveCount(100);
                 await expect(targetAnchor).toHaveText('Showing 1–100 of 240 targets.');
                 await expect(targetRows.first()).toContainText('pressure-agent-0000');
-                await expect(page.locator(
-                    '[data-execute-action-band] [data-connection="live"]',
-                )).toHaveCount(1);
+                await expect(page.locator('[data-execute-action-runway]'))
+                    .toContainText('live control truth');
 
                 const runTrigger = targets.locator('[data-searchable-listbox-trigger]');
                 const inspector = page.getByRole('dialog', { name: 'Inspector' });
@@ -572,11 +571,11 @@ async function verifyExecuteScale(browser: Browser): Promise<void> {
                 await expect(targets.getByText('pressure-agent-0239', { exact: true }))
                     .toBeVisible();
 
-                const actions = page.locator('[data-execute-action-band]');
-                await expect(actions.getByRole('button', { name: 'Resolve targets' }))
+                const actions = page.locator('[data-execute-action-runway]');
+                await expect(actions.getByRole('button', { name: /Resolve \d+ targets/ }))
                     .toBeEnabled();
                 await expect(actions.getByRole('button', { name: 'Create draft' }))
-                    .toBeDisabled();
+                    .toHaveCount(0);
                 expect(await page.evaluate(() => navigator.maxTouchPoints > 0)).toBe(true);
                 await expectNoDocumentOverflow(page);
                 expect(control.snapshotReads()).toBeGreaterThan(0);

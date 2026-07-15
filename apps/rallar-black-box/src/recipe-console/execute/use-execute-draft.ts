@@ -108,6 +108,19 @@ export function useExecuteDraft(input: Readonly<{
         });
     }
 
+    function selectTargets(agentIds: readonly string[]): void {
+        if (input.run || !reconciledTargets.contextKey) return;
+        const targetable = new Set(
+            targetRows.filter(row => row.targetable).map(row => row.agentId),
+        );
+        setTargetSelection({
+            contextKey: reconciledTargets.contextKey,
+            agentIds: [...new Set(agentIds)]
+                .filter(agentId => targetable.has(agentId))
+                .sort(),
+        });
+    }
+
     return {
         targetRows,
         selectedAgentIds: input.run
@@ -117,5 +130,6 @@ export function useExecuteDraft(input: Readonly<{
             ? draftIdentity.distributedRunId
             : undefined,
         toggleTarget,
+        selectTargets,
     } as const;
 }

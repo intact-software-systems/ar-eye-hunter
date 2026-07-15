@@ -48,6 +48,17 @@ describe('Playwright config ownership', () => {
         );
     });
 
+    test('pins the Recipe Console API origin for every Playwright web server', () => {
+        const recipeConsoleConfig = readRepoFile(
+            'apps/rallar-black-box/playwright.recipe-console.config.ts',
+        );
+
+        expect(recipeConsoleConfig).toContain(
+            "VITE_RALLAR_API_BASE_URL: 'http://localhost:8080'",
+        );
+        expect(recipeConsoleConfig.match(/env: RECIPE_CONSOLE_TEST_ENV/g)).toHaveLength(2);
+    });
+
     test('documents the app to config mapping for Playwright suites', () => {
         const readme = readRepoFile('tests/playwright/README.md');
 

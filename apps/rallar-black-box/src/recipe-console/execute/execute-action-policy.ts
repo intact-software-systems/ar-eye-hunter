@@ -12,7 +12,6 @@ export type ExecuteAction =
     | 'refresh'
     | 'export';
 
-export type ExecuteArmedAction = 'create' | 'stage' | 'start' | 'cancel';
 export type ExecuteConnectionTruth =
     | 'connecting'
     | 'live'
@@ -34,8 +33,7 @@ export type ExecuteActionBlockCode =
     | 'resolution-required'
     | 'run-unavailable'
     | 'run-state'
-    | 'terminal-run'
-    | 'arming-required';
+    | 'terminal-run';
 
 export type ExecuteActionDecision =
     | Readonly<{ enabled: true; code?: never; reason?: never }>
@@ -60,45 +58,8 @@ export type ExecuteActionPolicyInput = Readonly<{
     selectedTargetsSafe: boolean;
     manifestValid: boolean;
     resolutionCurrent: boolean;
-    armKeys: Partial<Readonly<Record<ExecuteArmedAction, string>>>;
-    armedKey?: string;
     busyAction?: ExecuteAction;
 }>;
-
-export type ExecuteActionArmContext = Readonly<{
-    key: string;
-    label: string;
-}>;
-
-export function createExecuteActionArmContext(input: Readonly<{
-    action: ExecuteArmedAction;
-    controlBaseUrl: string;
-    controlRunId: string;
-    distributedRunId?: string;
-    recipeIds: readonly string[];
-    targetAgentIds: readonly string[];
-    manifestFingerprint: string;
-}>): ExecuteActionArmContext {
-    const recipeIds = sortedUnique(input.recipeIds);
-    const targetAgentIds = sortedUnique(input.targetAgentIds);
-    const controlBaseUrl = input.controlBaseUrl.trim().replace(/\/+$/, '');
-    const context = {
-        action: input.action,
-        controlBaseUrl,
-        controlRunId: input.controlRunId,
-        distributedRunId: input.distributedRunId,
-        recipeIds,
-        targetAgentIds,
-        targetCount: targetAgentIds.length,
-        manifestFingerprint: input.manifestFingerprint,
-    };
-    return {
-        key: JSON.stringify(context),
-        label: `${title(input.action)} ${input.distributedRunId ?? 'new run'} at ` +
-            `${controlBaseUrl} with ${recipeIds.join(', ') || 'no recipe'} and ` +
-            `${targetAgentIds.length} ${targetAgentIds.length === 1 ? 'target' : 'targets'}`,
-    };
-}
 
 export function deriveExecuteActionPolicy(
     input: ExecuteActionPolicyInput,
@@ -162,7 +123,7 @@ function createDecision(
     if (!input.resolutionCurrent) {
         return blocked('resolution-required', 'Resolve the current manifest and safe targets first.');
     }
-    return armedDecision('create', input);
+    return enabled();
 }
 
 function stageDecision(
@@ -176,7 +137,7 @@ function stageDecision(
     if (!input.resolutionCurrent) {
         return blocked('resolution-required', 'Resolve the current manifest and safe targets first.');
     }
-    return armedDecision('stage', input);
+    return enabled();
 }
 
 function startDecision(
@@ -187,7 +148,7 @@ function startDecision(
         return blocked('run-state', 'Start requires authoritative ready state.');
     }
     if (safe) return safe;
-    return armedDecision('start', input);
+    return enabled();
 }
 
 function cancelDecision(input: ExecuteActionPolicyInput): ExecuteActionDecision {
@@ -197,7 +158,7 @@ function cancelDecision(input: ExecuteActionPolicyInput): ExecuteActionDecision 
     if (isDistributedRunTerminalState(input.runState)) {
         return blocked('terminal-run', `Run state ${input.runState} is already terminal.`);
     }
-    return armedDecision('cancel', input);
+    return enabled();
 }
 
 function guidedSafety(
@@ -219,19 +180,6 @@ function guidedSafety(
         return blocked('manifest-invalid', 'The generated distributed manifest is invalid.');
     }
     return undefined;
-}
-
-function armedDecision(
-    action: ExecuteArmedAction,
-    input: ExecuteActionPolicyInput,
-): ExecuteActionDecision {
-    const expected = input.armKeys[action];
-    return expected && input.armedKey === expected
-        ? enabled()
-        : blocked(
-            'arming-required',
-            `Review and arm ${title(action)} for the current run, recipe, targets, and control endpoint.`,
-        );
 }
 
 function allBlocked(
@@ -258,11 +206,6 @@ function blocked(
     reason: string,
 ): ExecuteActionDecision {
     return { enabled: false, code, reason };
-}
-
-function sortedUnique(values: readonly string[]): readonly string[] {
-    return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
-        .sort((left, right) => left.localeCompare(right));
 }
 
 function title(value: string): string {

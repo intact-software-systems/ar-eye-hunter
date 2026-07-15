@@ -1,0 +1,142 @@
+.runway {
+    position: sticky;
+    z-index: 2;
+    bottom: 0;
+    display: grid;
+    min-width: 0;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-surface);
+    box-shadow: 0 -8px 18px rgb(23 32 51 / 7%);
+}
+
+.runway > ol {
+    border-bottom: 1px solid var(--rc-border);
+}
+
+.current {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 18px;
+    padding: 13px 14px;
+}
+
+.summary {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.summary p {
+    color: var(--rc-primary);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.summary h2 {
+    font-size: 17px;
+}
+
+.summary span,
+.waiting,
+.reason {
+    color: var(--rc-muted);
+    font-size: 11px;
+}
+
+.primary,
+.secondary button {
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--rc-border);
+    border-radius: 5px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.runway .primary {
+    min-width: 150px;
+    border-color: var(--rc-primary);
+    color: #fff;
+    background: var(--rc-primary);
+}
+
+.runway .primary:disabled,
+.secondary button:disabled {
+    border-color: var(--rc-status-disabled-border);
+    color: var(--rc-status-disabled-text);
+    background: var(--rc-status-disabled-bg);
+    cursor: not-allowed;
+}
+
+.secondary {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 14px;
+    border-top: 1px solid var(--rc-border);
+}
+
+.secondary .cancel {
+    border-color: var(--rc-status-failed-border);
+    color: var(--rc-status-failed-text);
+}
+
+.reason {
+    padding: 0 14px 10px;
+}
+
+.reason summary {
+    min-height: 32px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.visuallyHidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+    .runway {
+        position: static;
+        box-shadow: none;
+    }
+}
+
+@media (max-width: 620px) {
+    .current {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .runway .primary {
+        width: 100%;
+    }
+
+    .secondary {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .secondary button {
+        width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .runway,
+    .runway * {
+        transition-duration: 0s;
+        animation: none;
+    }
+}

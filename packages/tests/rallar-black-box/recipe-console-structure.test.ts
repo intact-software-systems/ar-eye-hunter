@@ -146,6 +146,7 @@ describe('Recipe Console experience boundary', () => {
         expect(app).toMatch(/controlUrl:\s*bootstrap\.controlUrl/);
         expect(app).toMatch(/bootstrapRunId:\s*bootstrap\.runId/);
         expect(app).toMatch(/apiBaseUrl:\s*bootstrap\.apiBaseUrl/);
+        expect(app).toMatch(/providerMode:\s*bootstrap\.providerMode/);
         expect(app).toMatch(/manualToken:\s*bootstrap\.controlToken/);
         expect(app).toMatch(
             /credentialPolicy:\s*initialRecipeConsoleControlCredentialPolicy/,
@@ -156,6 +157,21 @@ describe('Recipe Console experience boundary', () => {
         );
         expect(app).not.toMatch(/<RecipeConsoleApp\b[^>]*\bruntime=/);
         expect(app).not.toMatch(/<RecipeConsoleApp\b[^>]*\bbootstrap=\{bootstrap\}/);
+    });
+
+    test('owns browser-agent launch at the control root without importing legacy launch UI', () => {
+        const provider = source(controlConnectionProviderPath);
+        const controlApi = source(`${recipeConsoleRoot}/control/control-api.ts`);
+        const app = source(appPath);
+
+        expect(provider).toContain('createBrowserAgentLaunchService');
+        expect(provider).toContain('browserAgentLaunch');
+        expect(provider).toContain('apiSetup.api.agentLaunch');
+        expect(controlApi).toContain('createRecipeConsoleControlAgentLaunchApi');
+        expect(app).toContain('scrubBrowserAgentBootstrapSecretsFromUrl();');
+        expect(`${provider}\n${controlApi}`).not.toMatch(
+            /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/,
+        );
     });
 
     test('owns one control query above the unkeyed live workspace', () => {
@@ -263,6 +279,7 @@ describe('Recipe Console experience boundary', () => {
             `${recipeConsoleRoot}/execute/execute-workflow-state.ts`,
             `${recipeConsoleRoot}/execute/execute-manifest.ts`,
             `${recipeConsoleRoot}/execute/execute-action-policy.ts`,
+            `${recipeConsoleRoot}/execute/execute-next-action.ts`,
         ];
         for (const path of paths) {
             expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
@@ -283,7 +300,8 @@ describe('Recipe Console experience boundary', () => {
             "export const DEFAULT_EXECUTE_RECIPE_ID = 'rtc-realtime-stability';",
         );
         expect(files[1]).toContain('validateDistributedRunManifest');
-        expect(files[2]).toContain('createExecuteActionArmContext');
+        expect(files[2]).not.toContain('arming-required');
+        expect(files[3]).toContain('deriveExecuteNextAction');
     });
 
     test('replaces Execute preview with one bounded live workflow composition', () => {
@@ -294,7 +312,10 @@ describe('Recipe Console experience boundary', () => {
             'ExecutePreflight.tsx',
             'ExecuteManifestDisclosure.tsx',
             'ExecuteRunStatus.tsx',
-            'ExecuteActionBand.tsx',
+            'ExecuteActionRunway.tsx',
+            'ExecuteLifecycleStrip.tsx',
+            'ExecuteAgentSetup.tsx',
+            'ExecuteStartDialog.tsx',
             'ExecuteCancelDialog.tsx',
             'ExecuteRecipeInspector.tsx',
             'ExecuteWorkspace.tsx',
@@ -306,7 +327,10 @@ describe('Recipe Console experience boundary', () => {
             'ExecutePreflight.module.css',
             'ExecuteManifestDisclosure.module.css',
             'ExecuteRunStatus.module.css',
-            'ExecuteActionBand.module.css',
+            'ExecuteActionRunway.module.css',
+            'ExecuteLifecycleStrip.module.css',
+            'ExecuteAgentSetup.module.css',
+            'ExecuteStartDialog.module.css',
             'ExecuteCancelDialog.module.css',
             'ExecuteRecipeInspector.module.css',
         ].map(file => `${recipeConsoleRoot}/execute/${file}`);
@@ -316,6 +340,10 @@ describe('Recipe Console experience boundary', () => {
             'execute-workflow-context.ts',
             'execute-operation-error.ts',
             'execute-artifact-export.ts',
+            'execute-next-action.ts',
+            'execute-agent-launch-state.ts',
+            'use-execute-agent-launch.ts',
+            'use-execute-agent-cohort.ts',
         ].map(file => `${recipeConsoleRoot}/execute/${file}`);
         for (const path of [...executeOwners, ...executeStyles, ...executeSupport]) {
             expect(existsSync(resolve(repositoryRoot, path)), path).toBe(true);
@@ -339,7 +367,7 @@ describe('Recipe Console experience boundary', () => {
         expect(executeSupport.map(path => source(path)).join('\n')).not.toMatch(
             /(?:from\s+|import\()['"][^'"]*(?:legacy\/|seeded-console-state|control-run-manager|registry|index\.ts)['"]|\bfetch\s*\(/,
         );
-        expect(workspace.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(150);
+        expect(workspace.trimEnd().split(/\r?\n/).length).toBeLessThanOrEqual(160);
         expect(workspace.match(/\buseExecuteWorkflow\b/g)).toHaveLength(2);
         for (const owner of [
             'ExecuteCatalog',
@@ -347,7 +375,7 @@ describe('Recipe Console experience boundary', () => {
             'ExecutePreflight',
             'ExecuteManifestDisclosure',
             'ExecuteRunStatus',
-            'ExecuteActionBand',
+            'ExecuteActionRunway',
         ]) {
             expect(workspace, owner).toContain(`import { ${owner} }`);
             expect(workspace.match(new RegExp(`<${owner}\\b`, 'g')), owner)

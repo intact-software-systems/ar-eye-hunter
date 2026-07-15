@@ -39,7 +39,7 @@ flowchart LR
     AppDataStore[("app_data_store<br/>RallarServer.data stores")]
     ServerCaches["Server process caches<br/>client/group snapshots,<br/>graphs, RTT, app-data cache"]
 
-    Browser -->|"REST /api/auth, /api/state, /api/webrtc/ice, /api/graph"| Hono
+    Browser -->|"REST /api/auth, /api/state, /api/webrtc/ice"| Hono
     Hono --> ServerFacade
     ServerFacade --> RestRoutes
     RestRoutes --> Services
@@ -279,7 +279,9 @@ publishing that result through `StateSyncPublisher`.
 ### ICE And Graph
 
 - `GET /api/webrtc/ice` reads Metered ICE config and caches it in memory.
-- `GET /api/graph` and `GET /api/graph/tree/:groupId` read graph data from shared graph services/repositories.
+- Scoped graph diagnostics live under
+  `/api/state/apps/:applicationId/workspaces/:workspaceId/graphs/global` and
+  `/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/graphs/latest`.
 
 ## WebSocket Data Flow
 

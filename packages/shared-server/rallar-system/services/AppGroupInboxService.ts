@@ -18,6 +18,7 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
@@ -167,6 +168,10 @@ export type GroupExpiredPresenceSessionsAppInboxPayload = Readonly<{
     atEpochMs: number;
 }>;
 
+export type GroupMutationOutboxPublisher = Readonly<{
+    enqueueForGroupSnapshot(snapshot: GroupSnapshot): Promise<void>;
+}>;
+
 export class AppGroupInboxService extends AppInboxService {
     constructor(
         public override readonly inbox: InboxQueueReader,
@@ -177,6 +182,7 @@ export class AppGroupInboxService extends AppInboxService {
         public override readonly serviceId: string,
         timing?: RallarTimingSink,
         options?: AppInboxServiceOptions,
+        private readonly groupMutationOutboxPublisher?: GroupMutationOutboxPublisher,
     ) {
         super(
             inbox,
@@ -545,6 +551,10 @@ export class AppGroupInboxService extends AppInboxService {
         await this.stateSyncPublisher.publishGroupEvent(
             written.event,
             this.serviceId,
+        );
+
+        await this.groupMutationOutboxPublisher?.enqueueForGroupSnapshot(
+            written.snapshot,
         );
     }
 

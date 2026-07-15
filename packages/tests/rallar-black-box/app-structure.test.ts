@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const appSourcePath = 'apps/rallar-black-box/src/App.tsx';
 const expectedAppFunctionFingerprint =
-    'f3528e1553eedcfde71ef5425f0f443647d421af97bdc422d372ff287a481126';
+    '10ed1f4a1e5f2976bf2131cd1c0571ae96170968ad7da6ba6dc8f1b38dd36a24';
 const legacyAppShellSourcePath =
     'apps/rallar-black-box/src/legacy/shell/LegacyAppShell.tsx';
 const legacyDiagnosticDrawerSourcePath =
@@ -5565,7 +5565,7 @@ describe('rallar-black-box app source ownership', () => {
                     'recipeAgentSummary', 'agentRunId', 'agentPrefix',
                     'agentCount', 'agentRestoreSession', 'bootstrap',
                     'authSession', 'agentControlWsUrl', 'globalValues',
-                    'controlRun', 'agentLaunchUrls', 'agentLaunchMessage',
+                    'controlRun', 'agentIds', 'agentLaunchMessage',
                     'setAgentRunId', 'setControlRunId', 'setControlRun',
                     'setAgentPrefix', 'setAgentCount',
                     'setAgentRestoreSession', 'copyAgentLinks', 'query',
@@ -5637,12 +5637,12 @@ describe('rallar-black-box app source ownership', () => {
             task9aJsxRuntimeFingerprint(controllerReturn),
             'RunnerRecipes exact wrapper/composition return AST',
         ).toBe(
-            '3d78f25aaeb5bc4414be93dbb276bc2cf1f63863a25695913148ebfef3bbe632',
+            '1e6172dcda6b9fa77065cb793871d1b91660bdde35eb5f3d2c387a3b20594635',
         );
         for (const [viewName, expectedFingerprint] of [
             [
                 'RunnerRecipesOverview',
-                'b118bbf976a5fe659345396b76a2245ccd868afae7936131203d8d1df5763897',
+                '591bae1858c6cfd5a289647442d4d993e06d6dc310776cba422df3d409ce1f65',
             ],
             [
                 'RunnerRecipeCatalogList',
@@ -5669,12 +5669,12 @@ describe('rallar-black-box app source ownership', () => {
             [
                 agentSetupPath,
                 'RunnerAgentSetupPanel',
-                'a566a63c3543f0c71e3280119905675a47f818ca826309eae39460a1c0043ee7',
+                '98e918ab553ff1402dfbea633b1d7d28402b0c2ab1332fa5f02142e5d7f9bfbb',
             ],
             [
                 overviewPath,
                 'RunnerRecipesOverview',
-                '72fc83fc223ebe3a4cc23d5e716e9c2ae0110191fb1a6b57dfa17a2fcb5e8158',
+                '7a46bbeaf3481443ba0097eb8fb72612929380ef451d3ba43c1f3168faacc278',
             ],
             [
                 catalogListPath,
@@ -5996,7 +5996,6 @@ describe('rallar-black-box app source ownership', () => {
         ]);
         expect.soft(memoNames(agentHook), 'agent exact memos').toEqual([
             'agentIds',
-            'agentLaunchUrls',
         ]);
         expect.soft(agentHook, 'agent has no effects/ref/callback').not.toMatch(
             /\buse(?:Effect|Ref|Callback)\b/,
@@ -6037,7 +6036,7 @@ describe('rallar-black-box app source ownership', () => {
         );
         const aggregate = [catalogHook, agentHook, controller].join('\n');
         expect.soft([...aggregate.matchAll(/\buseState(?:<|\s*\()/g)]).toHaveLength(27);
-        expect.soft([...aggregate.matchAll(/\buseMemo\s*\(/g)]).toHaveLength(10);
+        expect.soft([...aggregate.matchAll(/\buseMemo\s*\(/g)]).toHaveLength(9);
         expect.soft([...aggregate.matchAll(/\buseEffect\s*\(/g)]).toHaveLength(4);
         expect.soft([...aggregate.matchAll(/\buseRef\s*\(/g)]).toHaveLength(0);
         expect.soft([...aggregate.matchAll(/\buseCallback\s*\(/g)]).toHaveLength(0);
@@ -6058,10 +6057,10 @@ describe('rallar-black-box app source ownership', () => {
         const openTabs = agentActions.slice(
             agentActions.indexOf('const openAgentTabs'),
         );
-        expect.soft(openTabs.indexOf("globalThis.open?.('about:blank'"))
+        expect.soft(openTabs.indexOf('reserveBrowserAgentPopups(agentIds)'))
             .toBeGreaterThanOrEqual(0);
-        expect.soft(openTabs.indexOf('await createBrokeredAgentLaunchUrls()'))
-            .toBeGreaterThan(openTabs.indexOf("globalThis.open?.('about:blank'"));
+        expect.soft(openTabs.indexOf('await prepare(reservation.reservedAgentIds)'))
+            .toBeGreaterThan(openTabs.indexOf('reserveBrowserAgentPopups(agentIds)'));
 
         expect.soft(panel, 'panel has no built-in hooks').not.toMatch(
             /\buse(?:State|Memo|Effect|Ref|Callback|Reducer|Context|LayoutEffect)\b/,
@@ -6100,11 +6099,10 @@ describe('rallar-black-box app source ownership', () => {
                 agentHookPath,
                 [
                     '../../../control-client.ts|type:RallarBlackBoxControlSnapshot',
-                    '../../../runner-agent-launch.ts|value:createRunnerAgentLaunchUrl,value:runnerAgentId,value:runnerNewAgentLaunchSuffix',
+                    '../../../runner-agent-launch.ts|value:runnerAgentId,value:runnerNewAgentLaunchSuffix',
                     '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
                     '../../shared/safe-id-segment.ts|value:safeIdSegment',
-                    '../../shell/global-context-model.ts|type:CommandCenterGlobalValues',
-                    './runner-endpoints.ts|value:runnerBrowserOrigin,value:runnerControlWsUrlFromHttpBaseUrl',
+                    './runner-endpoints.ts|value:runnerControlWsUrlFromHttpBaseUrl',
                     '@shared/api/api-config.ts|type:AuthSession',
                     'react|value:useMemo,value:useState',
                 ],
@@ -6112,12 +6110,12 @@ describe('rallar-black-box app source ownership', () => {
             [
                 agentActionsPath,
                 [
-                    '../../../runner-agent-launch.ts|value:createRunnerAgentLaunchUrl,value:runnerNewAgentLaunchSuffix',
+                    '../../../browser-agent-launch-service.ts|value:createBrowserAgentLaunchService',
+                    '../../../browser-agent-popup.ts|value:navigateReservedBrowserAgentPopups,value:releaseReservedBrowserAgentPopups,value:reserveBrowserAgentPopups',
+                    '../../../runner-agent-launch.ts|value:runnerNewAgentLaunchSuffix',
                     '../../../runner-readiness.ts|value:runnerFriendlyErrorMessage',
                     '../../../runtime-store.ts|type:RallarBlackBoxBootstrapConfig',
                     './runner-endpoints.ts|value:runnerBrowserOrigin',
-                    '@shared-web/browser/api-client-config.ts|value:configureApiClient',
-                    '@shared-web/browser/api-integration.ts|value:issueAgentSessionTickets',
                     '@shared/api/api-config.ts|type:AuthSession',
                 ],
             ],
@@ -6248,10 +6246,10 @@ describe('rallar-black-box app source ownership', () => {
         };
         for (const [path, name, expectedFingerprint] of [
             [catalogHookPath, 'useRunnerRecipeCatalog', '4bf50cb94592de66fdc974223a5659e76ed261a3932d647acd7225650b79a584'],
-            [agentHookPath, 'useRunnerAgentLaunchState', 'a01124ddab504f883eedc382ba31afb593e406a7884a6331ef62072999ba02c1'],
-            [agentActionsPath, 'createRunnerAgentLaunchActions', '3501b2153573cdfed7b3e8d2f47dc512217d12562e0fad6de7c526c71c8e181f'],
-            [controllerPath, 'useRunnerRecipesController', '6121cf9bbf951a489136c9fe713d79891ead218be988ab98f1f92bccd32b18d1'],
-            [panelPath, 'RunnerRecipesPanel', 'ec8f1d339081250a5760d16b43587177836f9bf10cfbc22bbd94161096e6d650'],
+            [agentHookPath, 'useRunnerAgentLaunchState', '4f28484f5cd4a41ae86c7414c3d98b7dc14fac54cdf3bebb70563aafa04aa332'],
+            [agentActionsPath, 'createRunnerAgentLaunchActions', '895beea0fb541004472f2c0d8d93b787b07a4ecb8935459e1cd8be749d139381'],
+            [controllerPath, 'useRunnerRecipesController', '5575a9fac56145397174f0fd2b18cf18082d372e6afd98f831b258b5866f2e65'],
+            [panelPath, 'RunnerRecipesPanel', '449bad4dcec604534ade3c78f9b11949fc9f8f06d26e2cc7c2adcda30f0ca2c6'],
         ] as const) {
             const declaration = functionDeclaration(path, name);
             expect.soft(
@@ -6324,12 +6322,12 @@ describe('rallar-black-box app source ownership', () => {
                 : '',
             'Panel exact compiled return AST',
         ).toBe(
-            '3d78f25aaeb5bc4414be93dbb276bc2cf1f63863a25695913148ebfef3bbe632',
+            '1e6172dcda6b9fa77065cb793871d1b91660bdde35eb5f3d2c387a3b20594635',
         );
         for (const [viewName, expectedFingerprint] of [
             [
                 'RunnerRecipesOverview',
-                'b118bbf976a5fe659345396b76a2245ccd868afae7936131203d8d1df5763897',
+                '591bae1858c6cfd5a289647442d4d993e06d6dc310776cba422df3d409ce1f65',
             ],
             [
                 'RunnerRecipeCatalogList',
@@ -14432,7 +14430,7 @@ describe('rallar-black-box app source ownership', () => {
             );
         }
         expect.soft(appSource).toContain('consumeBootstrapAgentSessionTicket');
-        expect.soft(appSource).toContain('scrubAgentSessionTicketFromUrl');
+        expect.soft(appSource).toContain('scrubBrowserAgentBootstrapSecretsFromUrl');
         if (panelAst) {
             const panelOwnerSource = repositorySource(panelOwnerPath);
             expect.soft(panelOwnerSource).not.toMatch(

@@ -10,8 +10,8 @@ import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-stat
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { CoalescedAppInboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppInboxWorkService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
   PSqlClientStateEventRepository,
   PSqlGroupStateEventRepository,
@@ -28,7 +28,7 @@ import {
   toRallarCrdtDocumentKey,
 } from '@shared/crdt/mod.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
@@ -447,11 +447,11 @@ Deno.test('ResourceInboxRepository and ResourceInboxResultsRepository run agains
   });
 });
 
-Deno.test('Coalesced RTC topology work fits the durable resource inbox key columns', async () => {
+Deno.test('Coalesced APP_OUTBOX RTC topology work fits the durable resource inbox key columns', async () => {
   await withPGliteSql(async (sql) => {
     const queue = new PSqlQueueBox(new ResourceInboxRepository(sql));
-    const service = new CoalescedAppInboxWorkService(
-      new InboxQueueReader(queue),
+    const service = new CoalescedAppOutboxWorkService(
+      new OutboxQueueReader(queue),
       'rallar-server-instance-with-a-long-identity',
       () => 500,
     );
@@ -460,15 +460,15 @@ Deno.test('Coalesced RTC topology work fits the durable resource inbox key colum
     const contextId = `rallar-server:default:${groupId}`;
 
     const result = await service.enqueue({
-      type: AppInboxType.RTC_TOPOLOGY_RECOMPUTE,
-      topicId: 'app-inbox.rtc-topology',
+      type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+      topicId: 'app-outbox.rtc-topology',
       resourceId: overlayId,
       contextId,
       data: { overlayId },
     });
     const updated = await service.enqueue({
-      type: AppInboxType.RTC_TOPOLOGY_RECOMPUTE,
-      topicId: 'app-inbox.rtc-topology',
+      type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+      topicId: 'app-outbox.rtc-topology',
       resourceId: overlayId,
       contextId,
       data: { overlayId, revision: 2 },
@@ -484,6 +484,7 @@ Deno.test('Coalesced RTC topology work fits the durable resource inbox key colum
     `;
 
     assert.ok(stored);
+    assert.equal(stored.typeId, 'APP_OUTBOX');
     assert.equal(result.action, 'inserted');
     assert.equal(updated.action, 'updated');
     assert.equal(Number(rowCount[0].count), 1);

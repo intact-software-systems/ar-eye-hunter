@@ -115,14 +115,11 @@ export function useRunnerRecipesController({
         setAgentLaunchMessage,
         agentControlWsUrl,
         agentIds,
-        agentLaunchUrls,
     } = useRunnerAgentLaunchState({
         control,
         bootstrap,
         authSession,
-        globalValues,
         controlBaseUrl,
-        controlToken,
     });
     const [apiProbe, setApiProbe] = useState<RunnerServiceProbe>({
         status: 'checking',
@@ -626,7 +623,7 @@ export function useRunnerRecipesController({
         runDistributedRecipe, readiness, refreshReadiness, openAgentTabs,
         groupRef, recipeAgentRows, recipeAgentSummary, agentRunId,
         agentPrefix, agentCount, agentRestoreSession, agentControlWsUrl,
-        controlRun, agentLaunchUrls, agentLaunchMessage, setAgentRunId,
+        controlRun, agentIds, agentLaunchMessage, setAgentRunId,
         setControlRunId, setControlRun, setAgentPrefix, setAgentCount,
         setAgentRestoreSession, copyAgentLinks, query, setQuery, profile,
         setProfile, profileOptions, sourceFilter, setSourceFilter,

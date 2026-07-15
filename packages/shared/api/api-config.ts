@@ -21,7 +21,8 @@ export enum EnqueuedType {
     WS_OUTBOX = 'WS_OUTBOX',
     RTC_INBOX = 'RTC_INBOX',
     RTC_OUTBOX = 'RTC_OUTBOX',
-    APP_INBOX = 'APP_INBOX'
+    APP_INBOX = 'APP_INBOX',
+    APP_OUTBOX = 'APP_OUTBOX'
 }
 
 export enum AppTopics {

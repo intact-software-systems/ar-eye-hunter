@@ -28,6 +28,7 @@ import {
 import {
     AppGroupInboxService,
     AppInboxType,
+    type GroupMutationOutboxPublisher,
     type GroupCreateAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
     type GroupPresenceConnectAppInboxPayload,
@@ -85,6 +86,47 @@ describe('state sync publish failure characterization', () => {
         );
         expect(entry.status).toBe(EntityStatus.RETRY);
         expect(entry.dequeueAudit.attempts).toBe(1);
+        expect(await results.findByKey(entry.key)).toBeUndefined();
+    });
+
+    it('keeps a committed group mutation retryable when APP_OUTBOX registration fails', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => ({
+            status: 'enqueued',
+            message,
+            entries: [],
+        }));
+        const groupMutationOutboxPublisher = {
+            enqueueForGroupSnapshot: vi.fn(async () => {
+                throw new Error('app outbox unavailable');
+            }),
+        };
+        const { appInbox, reader, queue, results } = createGroupAppInbox(
+            runtimeRepository,
+            createPublisher(enqueueOutboxIfAbsent),
+            1_500,
+            groupMutationOutboxPublisher,
+        );
+
+        const entry = await processCreateGroup(
+            appInbox,
+            reader,
+            queue,
+            'room-app-outbox-failure',
+        );
+
+        const groupRef = {
+            ...SCOPE,
+            groupId: 'room-app-outbox-failure',
+        };
+        expect(
+            await new GroupStateRepository(runtimeRepository)
+                .readSnapshot(groupRef),
+        ).toBeDefined();
+        expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(3);
+        expect(groupMutationOutboxPublisher.enqueueForGroupSnapshot)
+            .toHaveBeenCalledOnce();
+        expect(entry.status).toBe(EntityStatus.RETRY);
         expect(await results.findByKey(entry.key)).toBeUndefined();
     });
 
@@ -340,6 +382,7 @@ function createGroupAppInbox(
     runtimeRepository: FakeRuntimeStateRepository,
     publisher: ReturnType<typeof createPublisher>,
     now: number,
+    groupMutationOutboxPublisher?: GroupMutationOutboxPublisher,
 ): Readonly<{
     appInbox: AppGroupInboxService;
     reader: InboxQueueReader;
@@ -361,6 +404,9 @@ function createGroupAppInbox(
         }),
         publisher,
         'state-service',
+        undefined,
+        undefined,
+        groupMutationOutboxPublisher,
     );
 
     return {

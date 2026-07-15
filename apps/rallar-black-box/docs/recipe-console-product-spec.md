@@ -2,9 +2,11 @@
 
 Status: canonical product contract; Ready-State #1–#14 are code-backed and
 executed through Iteration 12, `4f04228`, and `aec6e57`; Recipe Console is the
-blank/provider-only URL default and the preserved legacy experience remains an
-operational rollback
-Evidence date: 2026-07-14
+blank/provider-only URL default. Browser-agent launch and the execution runway
+are code-backed and current-UI configured-live qualified. Their moderated-human
+gate and the wider aggregate live-RTC qualification remain open. The preserved
+legacy experience remains an operational rollback.
+Evidence date: 2026-07-15
 
 This document is the source of truth for Recipe Console scope, acceptance stories, URL state, artifact compatibility, and Ready-State evidence. Surface migration is tracked in the [Recipe Console migration register](./recipe-console-migration-register.md); execution status, binding decisions, validation evidence, and risks are tracked in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
 
@@ -26,6 +28,7 @@ The default product path starts with recipe execution and promotes failures and 
 ## Non-goals
 
 - No shell executor in the browser. External runner execution remains explicit tooling or control-server work.
+- No browser-process, Playwright-worker, remote-headless, VM, or infrastructure provisioning. Execute launches local control-agent pages or copies links for manual opening.
 - No control protocol, artifact contract, shared-test public export, control-server endpoint, or app import-path break.
 - No deletion or retirement of legacy surfaces in this strangler project.
 - No generic admin-console redesign of direct Auth, Groups, WS, RTC, Data, CRDT, Media, Server, or tracing tools.
@@ -35,7 +38,33 @@ The default product path starts with recipe execution and promotes failures and 
 
 ### Simulated ACK execution
 
-**Given** Recipe Console is using the simulated provider and a schema-valid ACK recipe is visible in the catalog, **when** an operator selects the recipe, resolves its targets, creates the run, stages it, and starts it through visible controls, **then** the UI shows the resulting run identity, progress, and terminal verdict without requiring JSON editing.
+**Given** Recipe Console is using the simulated provider with no connected agents and a schema-valid ACK recipe is visible in the catalog, **when** an operator selects Composite Evidence, opens three local browser agents, resolves the exact launched cohort, creates the draft, stages it, confirms Start, and opens Monitor through visible controls, **then** the UI shows the resulting run identity, progress, and terminal verdict without JSON editing, a manual Refresh, DOM-injected clicks, or legacy navigation.
+
+### Browser-agent launch and popup fallback
+
+**Given** Execute has no current-safe targets, **when** an operator enters an
+exact control-run ID, agent prefix, and count from one through six, **then** the
+inline setup can synchronously reserve local tabs and navigate them after fresh
+per-agent authority is minted. If popups are blocked, no authority is minted
+for wholly blocked tabs and whole-cohort or per-agent Copy actions remain
+available. Each launched agent uses `mode=control`, the selected group and
+origins, a unique agent ID, and the exact entered run ID.
+
+`browser-rallar` launch is available only after the global login gate restores
+or creates a valid operator session. It always mints fresh per-agent API
+sessions. Simulated agents use `actor=agentId` and
+`sessionId=${agentId}-session` so one browser session cannot collapse the
+cohort into duplicate identities.
+
+### Human execution runway
+
+Execute derives one forward action from authoritative control, resolution, and
+distributed-run state. Resolve, Create, and Stage are direct actions. Start and
+Cancel use accessible confirmation dialogs. Registration and ACK waiting
+advance through the root query poller; Refresh remains a secondary recovery
+control, never a required happy-path step. Future phases are labels, not
+disabled buttons, and the running/terminal successor is `Monitor run` with both
+run identities retained.
 
 ### RTC stream evidence
 
@@ -129,7 +158,7 @@ All new Recipe Console URLs use the typed, validated schema version `v=1`.
 4. Invalid fields fall back visibly; every valid field in the same URL is retained and canonicalized.
 5. Committed view, selection, filter, comparison, and legacy-route changes push history. High-frequency time-range or viewport changes replace history.
 6. After the final default flip, stale stored legacy navigation cannot override a blank URL's Recipe Console default.
-7. Runner-agent launch URLs remain compatible with `mode=control`, `workspace=black-box-runner`, and `tab=local-workbench`. Fragment `agentSessionTicket` consumption and immediate fragment scrubbing remain compatible.
+7. Runner-agent launch URLs remain compatible with `mode=control`, `workspace=black-box-runner`, and `tab=local-workbench`. New links put `controlToken` and `agentSessionTicket` in the fragment; bootstrap consumes and immediately scrubs them with `history.replaceState`. Legacy query-token links remain parseable and receive the same immediate scrub.
 8. `legacySurface` is removed when leaving an advanced legacy route.
 
 ## Local storage rules
@@ -164,7 +193,7 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
 | # | Ready-State condition | Owning iteration | Exact expected evidence |
 | --- | --- | --- | --- |
 | 1 | The default first screen is distributed recipe execution, not a general command center. | 12 | `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `blank URL opens Recipe Console Execute after the final ready-state flip` |
-| 2 | A simulated distributed ACK run can be completed from visible controls. | 4 | `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts` — `runs a simulated distributed ACK recipe through visible controls` |
+| 2 | A simulated distributed ACK run can launch three agents and reach Monitor from visible controls without Refresh or legacy navigation. | 4 + launch migration | `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts` — `launches agents and runs a simulated distributed ACK recipe through visible controls` |
 | 3 | A live distributed run can be staged, started, monitored, cancelled, and exported when services are configured. | 3-5 | `tests/playwright/rallar-black-box/full-stack-recipe-console-monitor.spec.ts` — `completes the configured live distributed run lifecycle and exports its artifact` |
 | 4 | Failures are listed before raw event streams. | 5 | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `places the failure verdict and failure list before raw event evidence` |
 | 5 | Every failure row links to agent, command, recipe, diagnostic, timeline, and artifact evidence when available. | 5-6 | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `opens all available correlated evidence from a failure row` |

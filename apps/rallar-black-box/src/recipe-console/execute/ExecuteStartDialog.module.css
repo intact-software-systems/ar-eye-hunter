@@ -1,0 +1,106 @@
+.backdrop {
+    position: fixed;
+    z-index: 40;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    background: rgb(23 32 51 / 42%);
+}
+
+.dialog {
+    display: grid;
+    width: min(620px, 100%);
+    max-height: calc(100dvh - 36px);
+    gap: 16px;
+    padding: 20px;
+    overflow: auto;
+    border: 1px solid var(--rc-border);
+    border-radius: 7px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    box-shadow: 0 24px 70px rgb(23 32 51 / 25%);
+}
+
+.dialog header {
+    display: grid;
+    gap: 4px;
+}
+
+.dialog header p {
+    color: var(--rc-primary);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+    padding: 14px;
+    border: 1px solid var(--rc-border);
+    background: var(--rc-canvas);
+}
+
+.facts div {
+    display: grid;
+    min-width: 0;
+    gap: 3px;
+}
+
+.facts dt {
+    color: var(--rc-muted);
+    font-size: 11px;
+}
+
+.facts dd,
+.facts code {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+}
+
+.actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.actions button {
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--rc-border);
+    border-radius: 5px;
+    color: var(--rc-text);
+    background: var(--rc-surface);
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.actions .confirm {
+    border-color: var(--rc-primary);
+    color: #fff;
+    background: var(--rc-primary);
+}
+
+.actions button:disabled {
+    cursor: wait;
+    opacity: .66;
+}
+
+@media (max-width: 560px) {
+    .facts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .actions {
+        align-items: stretch;
+        flex-direction: column-reverse;
+    }
+
+    .actions button {
+        width: 100%;
+    }
+}

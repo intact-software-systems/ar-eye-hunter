@@ -19,14 +19,17 @@ import { loadBrowserRallarFacade } from './legacy/rallar/load-browser-rallar-fac
 import { LoginScreen } from './legacy/shell/LoginScreen.tsx';
 import {
     consumeBootstrapAgentSessionTicket,
-    scrubAgentSessionTicketFromUrl,
-} from './legacy/shell/auth/agent-session-ticket.ts';
+    scrubBrowserAgentBootstrapSecretsFromUrl,
+} from './bootstrap-agent-session.ts';
 import { readCurrentAuthSession } from './legacy/shell/read-current-auth-session.ts';
 
 // Recipe Console work belongs under `src/recipe-console/**`; legacy extraction belongs under `src/legacy/**`; no new feature panel belongs in `App.tsx`.
 
-const initialRecipeConsoleControlCredentialPolicy =
-    captureInitialRecipeConsoleControlCredentialPolicy();
+const initialRecipeConsoleControlCredentialPolicy = (() => {
+    const credentialPolicy = captureInitialRecipeConsoleControlCredentialPolicy();
+    scrubBrowserAgentBootstrapSecretsFromUrl();
+    return credentialPolicy;
+})();
 
 const RecipeConsoleApp = lazy(() => {
     scrubCurrentRecipeConsoleUrlBeforeLoad();
@@ -41,10 +44,7 @@ export default function App() {
     const { bootstrap } = runtime;
     const canConsumeBootstrapAgentTicket = initialRecipeConsoleControlCredentialPolicy.allowBootstrapAgentTicket;
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(
-        () =>
-            bootstrap.rallarAgentSessionTicket
-                ? undefined
-                : readCurrentAuthSession(),
+        () => bootstrap.rallarAgentSessionTicket ? undefined : readCurrentAuthSession(),
     );
     const [authBusy, setAuthBusy] = useState(false);
     const [authError, setAuthError] = useState<string | undefined>();
@@ -131,7 +131,6 @@ export default function App() {
             }
 
             writeSession(session);
-            scrubAgentSessionTicketFromUrl();
             setAuthSession(session);
             setAuthBusy(false);
             rallarBlackBoxRuntimeStore.updateBootstrapConfig(
@@ -243,6 +242,7 @@ export default function App() {
                         controlUrl: bootstrap.controlUrl,
                         bootstrapRunId: bootstrap.runId,
                         apiBaseUrl: bootstrap.apiBaseUrl,
+                        providerMode: bootstrap.providerMode,
                         manualToken: bootstrap.controlToken,
                         credentialPolicy: initialRecipeConsoleControlCredentialPolicy,
                         bootstrapGroup: {

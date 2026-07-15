@@ -623,15 +623,10 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(recipesPanel).toContain('const distributedControlToken');
         expect(recipesPanel).toContain('token: distributedControlToken');
         expect(recipesPanel).toContain('controlToken,');
-        const launchUrlPosition = recipesPanel.indexOf(
-            'createRunnerAgentLaunchUrl({',
-        );
-        const distributedControlTokenPosition = recipesPanel.indexOf(
-            'const distributedControlToken',
-        );
-        expect(launchUrlPosition).toBeGreaterThanOrEqual(0);
-        expect(distributedControlTokenPosition).toBeGreaterThanOrEqual(0);
-        expect(launchUrlPosition).toBeLessThan(distributedControlTokenPosition);
+        expect(recipesPanel).not.toContain('const agentLaunchUrls =');
+        expect(recipesPanel).not.toContain('createRunnerAgentLaunchUrl({');
+        expect(recipesPanel).toContain('createBrowserAgentLaunchService');
+        expect(recipesPanel).toContain('reserveBrowserAgentPopups(agentIds)');
         expect(runsPanel.indexOf('RunVerdictPanel')).toBeLessThan(
             runsPanel.indexOf(
                 existsSync(runnerDistributedAnalysisSourcePath)

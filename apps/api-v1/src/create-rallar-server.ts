@@ -50,7 +50,6 @@ import * as clientStateRoutes from './routes/client-state-routes.ts';
 import * as groupStateRoutes from './routes/group-state-routes.ts';
 import * as spaStatisticsRoutes from './routes/spa-statistics-routes.ts';
 import * as graphTopologyRoutes from './routes/graph-topology-routes.ts';
-import * as graphRoutes from './routes/graph-routes.ts';
 import * as crdtAdminRoutes from './routes/crdt-admin-routes.ts';
 import * as adminOperationsRoutes from './routes/admin-operations-routes.ts';
 import * as adminSupportRoutes from './routes/admin-support-routes.ts';
@@ -187,8 +186,8 @@ export function createRallarServer(
           rtcTopologyRuntimeState: {
             repository: runtimeStateRepository,
           },
-          rtcTopologyAppInbox: {
-            inboxQueueReader: runtime.inboxQueueReader,
+          rtcTopologyAppOutbox: {
+            outboxQueueReader: runtime.outboxQueueReader,
             senderId: myServerId,
             wake: () => runtime.qboxEngine.wake(),
             findGroupSnapshotByRef: (ref, cacheOptions) =>
@@ -252,7 +251,6 @@ export function createRallarServer(
             topologyManagement,
             adminClientIds,
           }),
-        graphRoutes.init,
         (app) =>
           crdtAdminRoutes.init(app, {
             repository: crdtLogRepository,

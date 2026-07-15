@@ -246,6 +246,34 @@ describe('Recipe Console control API', () => {
         });
     });
 
+    it('exposes run-token minting through the same root-owned authorized transport', async () => {
+        const requests: Array<{ url: string; init?: RequestInit }> = [];
+        const api = createRecipeConsoleControlApi({
+            controlUrl: 'https://control.test',
+            apiBaseUrl: 'https://api.test',
+            manualToken: 'operator-token',
+            fetchFn: async (input, init) => {
+                requests.push({ url: String(input), init });
+                return Response.json({
+                    runId: 'run-1',
+                    agentId: 'agent-1',
+                    token: 'agent-token',
+                    issuedAtEpochMs: 1_000,
+                    expiresAtEpochMs: 61_000,
+                }, { status: 201 });
+            },
+        });
+
+        await expect(api.agentLaunch.issueRunToken({
+            runId: 'run-1',
+            agentId: 'agent-1',
+        })).resolves.toMatchObject({ token: 'agent-token' });
+        expect(requests[0].url).toBe(
+            'https://control.test/runs/run-1/agents/agent-1/tokens',
+        );
+        expect(authorization(requests[0].init)).toBe('Bearer operator-token');
+    });
+
     it('delegates an anonymous bounded snapshot read to the canonical control client with cancellation', async () => {
         const requests: Array<{ url: string; init?: RequestInit }> = [];
         const controller = new AbortController();

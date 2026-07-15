@@ -28,7 +28,6 @@ export type BoundExecuteResolution = Readonly<{
     contextKey: string;
     evidence: ExecuteTargetResolutionEvidence;
 }>;
-
 export type BoundExecuteOptimisticRun = Readonly<{
     contextKey: string;
     run: ControlDistributedRunSnapshot;
@@ -44,11 +43,11 @@ export function useExecuteOperations(input: Readonly<{
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
     setResolution: Dispatch<SetStateAction<BoundExecuteResolution | undefined>>;
     setOptimisticRun: Dispatch<SetStateAction<BoundExecuteOptimisticRun | undefined>>;
-    resetArming(): void;
 }>) {
     const [busyAction, setBusyAction] = useState<ExecuteAction>();
     const [mutationError, setMutationError] = useState<ExecuteOperationError>();
     const [cancelOpen, setCancelOpen] = useState(false);
+    const [startOpen, setStartOpen] = useState(false);
     const requestRef = useRef<AbortController | undefined>(undefined);
     const operationContextRef = useRef(input.operationContextKey);
     operationContextRef.current = input.operationContextKey;
@@ -56,6 +55,7 @@ export function useExecuteOperations(input: Readonly<{
     useEffect(() => {
         setMutationError(undefined);
         setCancelOpen(false);
+        setStartOpen(false);
         return () => requestRef.current?.abort();
     }, [input.connection.execution, input.operationContextKey]);
     useEffect(() => {
@@ -63,10 +63,15 @@ export function useExecuteOperations(input: Readonly<{
             setCancelOpen(false);
         }
     }, [busyAction, input.policy.cancel.enabled]);
+    useEffect(() => {
+        if (!input.policy.start.enabled && busyAction !== 'start') {
+            setStartOpen(false);
+        }
+    }, [busyAction, input.policy.start.enabled]);
     const perform = useCallback(async (
         action: ExecuteAction,
         operation: (signal: AbortSignal) => Promise<void>,
-        refresh = true,
+        refreshMode: 'await' | 'background' | 'none' = 'await',
     ): Promise<boolean> => {
         if (requestRef.current) return false;
         const controller = new AbortController();
@@ -85,11 +90,12 @@ export function useExecuteOperations(input: Readonly<{
                 setMutationError(projectExecuteOperationError(error));
             }
         } finally {
-            if (
-                refresh && !controller.signal.aborted &&
-                operationContextRef.current === input.operationContextKey
-            ) {
+            const shouldRefresh = refreshMode !== 'none' && !controller.signal.aborted &&
+                operationContextRef.current === input.operationContextKey;
+            if (shouldRefresh && refreshMode === 'await') {
                 await input.connection.refreshAfterCurrent();
+            } else if (shouldRefresh) {
+                void input.connection.refreshAfterCurrent().catch(() => undefined);
             }
             if (requestRef.current === controller) {
                 requestRef.current = undefined;
@@ -140,12 +146,10 @@ export function useExecuteOperations(input: Readonly<{
             distributedRunId: result.run.distributedRunId,
             commandId: undefined,
         });
-        input.resetArming();
         if (!result.ok) throw new Error(result.reason);
     }, [
         input.manifest,
         input.navigate,
-        input.resetArming,
         input.setOptimisticRun,
         input.setResolution,
         input.truthContextKey,
@@ -153,7 +157,8 @@ export function useExecuteOperations(input: Readonly<{
 
     async function resolveTargets(): Promise<void> {
         if (!input.policy.resolve.enabled) return;
-        await perform('resolve', async signal => void await resolveFresh(signal));
+        await perform('resolve', async signal => void await resolveFresh(signal),
+            'background');
     }
     async function createRun(): Promise<void> {
         if (!input.policy.create.enabled || !input.manifest) return;
@@ -183,7 +188,7 @@ export function useExecuteOperations(input: Readonly<{
     }
     async function startRun(): Promise<void> {
         if (!input.policy.start.enabled || !input.run) return;
-        await perform('start', async signal => {
+        const succeeded = await perform('start', async signal => {
             const result = await requiredExecution(input.connection).startRun({
                 distributedRunId: input.run!.distributedRunId,
                 signal,
@@ -191,6 +196,7 @@ export function useExecuteOperations(input: Readonly<{
             assertCurrentOperation(signal, operationContextRef, input.operationContextKey);
             acceptRun('start', result);
         });
+        if (succeeded) setStartOpen(false);
     }
     async function confirmCancel(): Promise<void> {
         if (!input.policy.cancel.enabled || !input.run) return;
@@ -217,17 +223,22 @@ export function useExecuteOperations(input: Readonly<{
                 throw new Error('Artifact response belongs to a different distributed run.');
             }
             downloadExecuteArtifact(artifact, input.run!.distributedRunId);
-        }, false);
+        }, 'none');
     }
 
     return {
         busyAction,
         mutationError,
         cancelOpen,
+        startOpen,
         resolveTargets,
         createRun,
         stageRun,
         startRun,
+        requestStart: () => {
+            if (input.policy.start.enabled) setStartOpen(true);
+        },
+        closeStart: () => setStartOpen(false),
         requestCancel: () => setCancelOpen(true),
         closeCancel: () => setCancelOpen(false),
         confirmCancel,

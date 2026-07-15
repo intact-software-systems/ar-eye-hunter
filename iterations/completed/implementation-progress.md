@@ -119,26 +119,26 @@ room-transport slice from
 - [x] Wire server RTT ingestion to mark affected cached groups dirty, schedule
   due overlay recomputation, and publish only changed next-hop maps.
 - [x] Keep group snapshot and membership churn updates immediate.
-- [x] Keep the legacy global graph cache recompute opportunistic so partial RTT
+- [x] Keep the process-global graph cache recompute opportunistic so partial RTT
   sets do not prevent topology scheduling.
 
-### Coalesced App-Inbox Topology Ownership Slice
+### Coalesced APP_OUTBOX Topology Ownership Slice
 
 - [x] Add an atomic `enqueueOrUpdate(...)` queuebox primitive so callers can
   build replacement work from the existing active row.
-- [x] Add `CoalescedAppInboxWorkService` for fixed-key app-inbox work that
+- [x] Add `CoalescedAppOutboxWorkService` for fixed-key APP_OUTBOX work that
   coalesces pending rows, reopens completed/failed rows, preserves `RESERVED`
   rows while merging newer payload generations, and detects stale reserved
   work.
 - [x] Preserve newer coalesced payloads when in-memory and IndexedDB queuebox
   releases an older reserved entry.
-- [x] Add opt-in RTC topology app-inbox ownership for RTT-triggered recomputes
-  through `initRallarSystemWsTopics(..., { rtcTopologyAppInbox })`, with local
+- [x] Add opt-in RTC topology APP_OUTBOX ownership for RTT-triggered recomputes
+  through `initRallarSystemWsTopics(..., { rtcTopologyAppOutbox })`, with local
   timer debounce remaining as fallback.
 - [x] Route group-snapshot-triggered topology publication through the same
-  coalesced app-inbox ownership path when `rtcTopologyAppInbox` is configured,
+  coalesced APP_OUTBOX ownership path when `rtcTopologyAppOutbox` is configured,
   while keeping state-sync group snapshot broadcasts immediate.
-- [x] Allow the app-inbox topology worker to resolve group snapshots through an
+- [x] Allow the APP_OUTBOX topology worker to resolve group snapshots through an
   injected async resolver, so production can use
   `GroupStateSnapshotReadThroughCache.findOrLoadByRef(...)` or another durable
   group source.
@@ -163,14 +163,14 @@ room-transport slice from
   passed: 2 files, 98 tests.
 - `npx vitest run packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`
   passed: 2 files, 10 tests.
-- `npx vitest run packages/tests/shared-server/coalesced-app-inbox-work-service.test.ts packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`
+- `npx vitest run packages/tests/shared-server/coalesced-app-outbox-work-service.test.ts packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`
   passed: 3 files, 15 tests.
-- `npx vitest run packages/tests/shared-server/coalesced-app-inbox-work-service.test.ts packages/tests/shared/in-memory-queuebox.test.ts packages/tests/shared/indexeddb-queuebox.test.ts packages/tests/shared/psql-queuebox.test.ts`
+- `npx vitest run packages/tests/shared-server/coalesced-app-outbox-work-service.test.ts packages/tests/shared/in-memory-queuebox.test.ts packages/tests/shared/indexeddb-queuebox.test.ts packages/tests/shared/psql-queuebox.test.ts`
   passed: 4 files, 29 tests.
-- `npx vitest run packages/tests/shared-server/coalesced-app-inbox-work-service.test.ts packages/tests/shared/in-memory-queuebox.test.ts packages/tests/shared/indexeddb-queuebox.test.ts packages/tests/shared/psql-queuebox.test.ts packages/tests/shared-graph packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/repository-modules.test.ts packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared/multicast-policy-integration.test.ts packages/tests/shared-web/data-caches.test.ts packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared-web/rallar-message-selectors.test.ts`
+- `npx vitest run packages/tests/shared-server/coalesced-app-outbox-work-service.test.ts packages/tests/shared/in-memory-queuebox.test.ts packages/tests/shared/indexeddb-queuebox.test.ts packages/tests/shared/psql-queuebox.test.ts packages/tests/shared-graph packages/tests/shared-server/rallar-rtc-topology-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts packages/tests/shared/webrtc-group-manager.test.ts packages/tests/shared/repository-modules.test.ts packages/tests/shared/webrtc-overlay-services.test.ts packages/tests/shared/multicast-policy-integration.test.ts packages/tests/shared-web/data-caches.test.ts packages/tests/shared-web/rallar-operation-options.test.ts packages/tests/shared-web/rallar-message-selectors.test.ts`
   passed: 37 files, 250 tests.
 - `npm --workspace @ar-eye-hunter/shared-server run build` passed after the
-  coalesced app-inbox topology slice.
+  coalesced APP_OUTBOX topology slice.
 - `npx tsc -p packages/shared/tsconfig.json --noEmit` passed after the
   queuebox contract extension.
 - `npm --workspace @ar-eye-hunter/shared-web run build` passed after the
@@ -208,7 +208,7 @@ room-transport slice from
   but a persistent server-side call registry and missed-invite recovery are
   still future work.
 - Topology recomputes from group snapshots and RTT updates now share the same
-  opt-in app-inbox ownership path, with optional runtime-state storage for
+  opt-in APP_OUTBOX ownership path, with optional runtime-state storage for
   previous topology snapshots and latest RTT inputs across workers.
 - Large audio/video rooms still require a future SFU/relay boundary; the new
   tree/mesh topology is for RTC data overlay routing.

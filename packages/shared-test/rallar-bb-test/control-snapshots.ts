@@ -47,6 +47,14 @@ export type ControlAgentSnapshot = Readonly<{
     resumeCompletedCommandIds: readonly string[];
 }>;
 
+export type ControlRunToken = Readonly<{
+    runId: string;
+    agentId: string;
+    token: string;
+    issuedAtEpochMs: number;
+    expiresAtEpochMs: number;
+}>;
+
 export type ControlRunSnapshot = Readonly<{
     runId: string;
     createdAtEpochMs: number;

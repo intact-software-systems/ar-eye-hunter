@@ -50,7 +50,10 @@ describe('Recipe Console configured full-stack Monitor acceptance discovery', ()
         expect(wrapper).toContain('completedAtEpochMs');
         expect(wrapper).toContain('finally {');
         expect(wrapper).toContain('cleanupRallarPage(page)');
-        expect(wrapper).toContain('agent.context.close()');
+        expect(wrapper).toContain(
+            'agentPages.map(agentPage => agentPage.close())',
+        );
+        expect(wrapper).not.toContain('agent.context.close()');
     });
 
     test('removes the configured-only proof from the mocked Execute suite', () => {

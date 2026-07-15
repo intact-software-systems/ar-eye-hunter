@@ -149,7 +149,7 @@ export function init(
         );
 
         return c.json(
-          await listRecentClientEventsForLegacyRoute(
+          await listRecentClientEventsForArrayRoute(
             deps.getClientStateService(),
             ref,
             query,
@@ -375,7 +375,7 @@ function toClientStateRouteDependencies(
   };
 }
 
-async function listRecentClientEventsForLegacyRoute(
+async function listRecentClientEventsForArrayRoute(
   service: ClientStateRouteService,
   ref: ClientPrincipalRef,
   query: StateEventListQuery,

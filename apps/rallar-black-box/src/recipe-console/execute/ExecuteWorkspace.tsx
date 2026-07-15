@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import type { RecipeConsoleControlSelection } from '../control/control-selection.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
-import { ExecuteActionBand } from './ExecuteActionBand.tsx';
+import { ExecuteActionRunway } from './ExecuteActionRunway.tsx';
 import { ExecuteCancelDialog } from './ExecuteCancelDialog.tsx';
 import { ExecuteCatalog } from './ExecuteCatalog.tsx';
 import { ExecuteManifestDisclosure } from './ExecuteManifestDisclosure.tsx';
@@ -10,6 +10,7 @@ import { ExecutePreflight } from './ExecutePreflight.tsx';
 import { ExecuteRecipeInspector } from './ExecuteRecipeInspector.tsx';
 import { ExecuteRunStatus } from './ExecuteRunStatus.tsx';
 import { ExecuteTargets } from './ExecuteTargets.tsx';
+import { ExecuteStartDialog } from './ExecuteStartDialog.tsx';
 import { useExecuteWorkflow } from './use-execute-workflow.ts';
 import styles from './ExecuteWorkspace.module.css';
 
@@ -41,6 +42,7 @@ export function ExecuteWorkspace({
     });
     const refreshFocusRef = useRef<HTMLButtonElement>(null);
     const cancelFocusRef = useRef<HTMLButtonElement>(null);
+    const startFocusRef = useRef<HTMLButtonElement>(null);
     const entry = workflow.catalog.selection.selected;
 
     useEffect(() => {
@@ -77,7 +79,9 @@ export function ExecuteWorkspace({
             </div>
             <div className={styles.workflowColumn}>
                 <ExecuteTargets
+                    agentLaunch={workflow.agentLaunch}
                     connection={workflow.connection}
+                    controlConnection={connection}
                     controlRunId={selection.controlRunId}
                     controlRunIssue={selection.issues.find(
                         issue => issue.field === 'controlRunId',
@@ -101,25 +105,38 @@ export function ExecuteWorkspace({
                     unknownDistributedRunId={workflow.unknownDistributedRunId}
                 />
             </div>
-            <ExecuteActionBand
-                armContexts={workflow.armContexts}
-                armedKey={workflow.armedKey}
+            <ExecuteActionRunway
                 busyAction={workflow.busyAction}
                 cancelButtonRef={cancelFocusRef}
                 connection={workflow.connection}
-                onArm={workflow.arm}
                 onCancel={workflow.requestCancel}
                 onCreate={workflow.createRun}
                 onExport={workflow.exportArtifact}
+                onMonitor={() => navigate({ view: 'monitor' })}
                 onRefresh={workflow.refresh}
                 onResolve={workflow.resolveTargets}
+                onReviewStart={workflow.requestStart}
                 onStage={workflow.stageRun}
-                onStart={workflow.startRun}
+                next={workflow.nextAction}
                 policy={workflow.policy}
+                primaryButtonRef={startFocusRef}
+                recipeLabel={entry?.item.title}
                 refreshButtonRef={refreshFocusRef}
+                distributedRunId={workflow.run?.distributedRunId}
                 runState={workflow.run?.state}
-                selectedTargetCount={workflow.selectedAgentIds.length}
             />
+            {workflow.run ? (
+                <ExecuteStartDialog
+                    busy={workflow.busyAction === 'start'}
+                    controlOrigin={connection.baseUrl}
+                    fallbackFocusTo={refreshFocusRef.current}
+                    onClose={workflow.closeStart}
+                    onConfirm={workflow.confirmStart}
+                    open={workflow.startOpen}
+                    restoreFocusTo={startFocusRef.current}
+                    run={workflow.run}
+                />
+            ) : null}
             {workflow.run ? (
                 <ExecuteCancelDialog
                     busy={workflow.busyAction === 'cancel'}

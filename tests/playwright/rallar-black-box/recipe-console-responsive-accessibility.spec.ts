@@ -931,9 +931,10 @@ test('keeps representative portrait touch controls at least 44px high', async ({
         'manifest summary',
     );
     await expectMinimumTargetHeight(
-        page.locator('[data-execute-action-band] button'),
-        'Execute action',
+        page.locator('[data-execute-agent-setup] button'),
+        'Execute browser-agent setup action',
     );
+    await expect(page.locator('[data-execute-action-runway] button')).toHaveCount(0);
 
     await page.goto(MONITOR_ROUTE);
     await expectMinimumTargetHeight(

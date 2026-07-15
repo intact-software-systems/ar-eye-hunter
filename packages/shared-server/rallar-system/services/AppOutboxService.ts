@@ -1,0 +1,3 @@
+export enum AppOutboxType {
+    RTC_TOPOLOGY_RECOMPUTE = 'RTC_TOPOLOGY_RECOMPUTE',
+}

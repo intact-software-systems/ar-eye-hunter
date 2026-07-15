@@ -116,8 +116,7 @@ notification runs only after middleware shutdown and runtime clearing.
   rest of the game on a small app-owned `roomId` abstraction.
 - `apps/rallar-black-box` intentionally imports the full facade dynamically as a
   compatibility and conformance target. Its Rallar Server REST workbench now
-  lists the scoped graph/topology presets first-class while keeping the legacy
-  `/api/graph` presets visible as deprecated diagnostics.
+  exposes only the scoped graph and topology endpoints.
 - `examples/**` now teach the golden path first: `rallar.setup(...)`,
   `rallar.rooms.enter(...)`, `room.message(...)`, and `room.realtime(...)`.
 

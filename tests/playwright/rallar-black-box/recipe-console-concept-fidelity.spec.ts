@@ -12,6 +12,10 @@ import {
 } from './recipe-console-tune-run-data.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
+const EXECUTE_ROUTE =
+    '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
+    '&applicationId=rallar-black-box&workspaceId=default' +
+    '&roomId=rallar-black-box-room&controlRunId=execute-control-a';
 const ADVANCED_ROUTE =
     '/?provider=simulated&v=1&experience=recipe-console&view=advanced' +
     '&controlRunId=execute-control-a&agentId=execute-agent-a' +
@@ -122,11 +126,11 @@ const CONCEPT_CASES: readonly ConceptCase[] = [
             await expect(targetRegion.getByRole('checkbox')).toHaveCount(2);
             await expect(page.getByRole('region', { name: 'Preflight' })).toBeVisible();
             await expect(page.locator('[data-execute-manifest]')).toBeVisible();
-            const actions = page.getByRole('region', { name: 'Execute actions' });
-            await expect(actions.getByRole('button', { name: 'Resolve targets' }))
+            const actions = page.getByRole('region', { name: 'Execute next action' });
+            await expect(actions.getByRole('button', { name: /Resolve \d+ targets/ }))
                 .toBeEnabled();
             await expect(actions.getByRole('button', { name: 'Create draft' }))
-                .toBeDisabled();
+                .toHaveCount(0);
             const featuredLabels = [
                 'RTC Realtime Stability',
                 'Provider Parity',
@@ -365,7 +369,7 @@ test.describe('approved Signal Ledger concept fidelity', () => {
                     ? MONITOR_ROUTE
                     : concept.view === 'advanced'
                         ? ADVANCED_ROUTE
-                        : `/?provider=simulated&v=1&experience=recipe-console&view=${concept.view}`);
+                        : EXECUTE_ROUTE);
             }
             await expect(page.locator('.recipe-console')).toHaveAttribute(
                 'data-view',

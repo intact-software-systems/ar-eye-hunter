@@ -1,4 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RallarBlackBoxProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
@@ -11,6 +12,11 @@ import {
     useSyncExternalStore,
     type ReactNode,
 } from 'react';
+import {
+    createBrowserAgentLaunchService,
+    type BrowserAgentLaunchService,
+} from '../../browser-agent-launch-service.ts';
+import { controlWebSocketUrlFromHttpBaseUrl } from '../../runner-agent-launch.ts';
 import {
     createRecipeConsoleControlApi,
     type RecipeConsoleControlApi,
@@ -39,6 +45,7 @@ export type RecipeConsoleControlBootstrap = Readonly<{
     controlUrl?: string;
     bootstrapRunId?: string;
     apiBaseUrl: string;
+    providerMode: RallarBlackBoxProviderMode;
     manualToken?: string;
     credentialPolicy: RecipeConsoleControlCredentialPolicy;
     bootstrapGroup: RallarBlackBoxDistributedGroupRef;
@@ -46,12 +53,14 @@ export type RecipeConsoleControlBootstrap = Readonly<{
 
 export type RecipeConsoleControlContext = Readonly<Pick<
     RecipeConsoleControlBootstrap,
-    'bootstrapRunId' | 'apiBaseUrl' | 'bootstrapGroup'
+    'bootstrapRunId' | 'apiBaseUrl' | 'providerMode' | 'bootstrapGroup'
 >>;
 
 export type RecipeConsoleControlConnection = Readonly<{
     bootstrap: RecipeConsoleControlContext;
     baseUrl: string;
+    browserAgentLaunch: BrowserAgentLaunchService | undefined;
+    browserAgentLaunchIssue?: string;
     execution: RecipeConsoleControlExecutionApi | undefined;
     retention: RecipeConsoleControlRetentionCapability | undefined;
     fleet: RecipeConsoleControlFleetCapability | undefined;
@@ -115,11 +124,36 @@ export function ControlConnectionProvider({
     const publicBootstrap = useMemo<RecipeConsoleControlContext>(() => ({
         bootstrapRunId: bootstrap.bootstrapRunId,
         apiBaseUrl: bootstrap.apiBaseUrl,
+        providerMode: bootstrap.providerMode,
         bootstrapGroup: bootstrap.bootstrapGroup,
     }), [
         bootstrap.apiBaseUrl,
         bootstrap.bootstrapGroup,
         bootstrap.bootstrapRunId,
+        bootstrap.providerMode,
+    ]);
+    const browserAgentLaunchIssue = bootstrap.providerMode !== 'browser-rallar'
+        ? undefined
+        : bootstrap.credentialPolicy.apiBaseUrlFromLocation
+        ? 'Use a configured API endpoint before launching browser-rallar agents. Stored operator credentials are blocked for a URL-configured API origin.'
+        : !authSession
+        ? 'Log in before launching browser-rallar agents. Fresh per-agent sessions require an authenticated operator.'
+        : undefined;
+    const browserAgentLaunch = useMemo(() => apiSetup.api && !browserAgentLaunchIssue
+        ? createBrowserAgentLaunchService({
+            origin: globalThis.location?.origin ?? 'http://localhost:5176',
+            providerMode: bootstrap.providerMode,
+            controlWsUrl: controlWebSocketUrlFromHttpBaseUrl(apiSetup.api.baseUrl),
+            apiBaseUrl: bootstrap.apiBaseUrl,
+            authSession,
+            issueRunToken: apiSetup.api.agentLaunch.issueRunToken,
+        })
+        : undefined, [
+        apiSetup,
+        authSession,
+        bootstrap.apiBaseUrl,
+        bootstrap.providerMode,
+        browserAgentLaunchIssue,
     ]);
     const service = useMemo(() => createControlQueryService({
         query: async ({ signal }) => {
@@ -199,6 +233,8 @@ export function ControlConnectionProvider({
     const value = useMemo<RecipeConsoleControlConnection>(() => ({
         bootstrap: publicBootstrap,
         baseUrl: apiSetup.api?.baseUrl ?? 'Invalid control URL',
+        browserAgentLaunch,
+        browserAgentLaunchIssue,
         execution: apiSetup.api?.execution,
         retention: apiSetup.api?.retention,
         fleet: apiSetup.api?.fleet,
@@ -209,6 +245,8 @@ export function ControlConnectionProvider({
         refreshAfterCurrent: service.refreshAfterCurrent,
     }), [
         apiSetup,
+        browserAgentLaunch,
+        browserAgentLaunchIssue,
         publicBootstrap,
         query,
         selectionProjection,

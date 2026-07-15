@@ -5,6 +5,9 @@ import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-sna
 import type { ExecuteConnectionTruth } from './execute-action-policy.ts';
 import type { ExecuteTargetResolutionEvidence } from './execute-manifest.ts';
 import { ExecuteControlRunPicker } from './ExecuteControlRunPicker.tsx';
+import { ExecuteAgentSetup } from './ExecuteAgentSetup.tsx';
+import type { ExecuteAgentLaunchModel } from './use-execute-agent-launch.ts';
+import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import { ExecuteResolutionWindow } from './ExecuteResolutionWindow.tsx';
 import { ExecuteTargetWindow } from './ExecuteTargetWindow.tsx';
 import styles from './ExecuteTargets.module.css';
@@ -19,6 +22,8 @@ export type ExecuteTargetsProps = Readonly<{
     selectedAgentIds: readonly string[];
     connection: ExecuteConnectionTruth;
     resolution?: ExecuteTargetResolutionEvidence;
+    agentLaunch: ExecuteAgentLaunchModel;
+    controlConnection: RecipeConsoleControlConnection;
     onSelectControlRun(controlRunId: string): void;
     onToggle(agentId: string): void;
 }>;
@@ -33,6 +38,8 @@ export function ExecuteTargets({
     selectedAgentIds,
     connection,
     resolution,
+    agentLaunch,
+    controlConnection,
     onSelectControlRun,
     onToggle,
 }: ExecuteTargetsProps) {
@@ -77,6 +84,10 @@ export function ExecuteTargets({
                     {controlRunIssue}
                 </p>
             ) : null}
+            <ExecuteAgentSetup
+                connection={controlConnection}
+                model={agentLaunch}
+            />
             {selectionLocked ? (
                 <p className={styles.locked} role="status">
                     Targets are locked to the authoritative created run manifest.

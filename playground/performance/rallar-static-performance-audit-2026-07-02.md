@@ -47,7 +47,7 @@ Likely high-traffic and/or performance-sensitive execution paths:
 - CRDT path:
   CRDT routes/topics -> `RallarCrdtServer` -> `PSqlCrdtLogRepository`.
 - Graph and RTC path:
-  `graph-routes.ts`, `ws-system-topics.ts` -> graph/topology computation over
+  `graph-topology-routes.ts`, `ws-system-topics.ts` -> graph/topology computation over
   snapshots and RTT data.
 - App data path:
   `RallarServerAppDataStore` -> `PSqlAppDataRepository`, with local cache

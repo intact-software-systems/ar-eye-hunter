@@ -54,33 +54,48 @@ export function ExecutePreflight({ entry }: ExecutePreflightProps) {
                 <Fact label="Effective commands" value={String(preflight.effectiveCommandCount)} />
                 <Fact label="Maximum depth" value={String(preflight.maxDepth)} />
             </dl>
-            <div className={styles.serviceFacts}>
-                <FactList label="Provider modes" values={preflight.providerModes} />
-                <FactList label="Runtime surfaces" values={preflight.runtimeSurfaces} />
-                <FactList
-                    emptyLabel="No live service dependency"
-                    label="Live service requirements"
-                    values={preflight.liveServiceRequirements}
-                />
-            </div>
-            {preflight.serviceBadges.length > 0 ? (
-                <div aria-label="Service requirements" className={styles.badges}>
-                    {preflight.serviceBadges.map((badge, index) => (
-                        <span
-                            className={styles.badge}
-                            data-tone={badge.tone}
-                            key={`${badge.label}-${index}`}
-                        >{badge.label}</span>
-                    ))}
+            <details className={styles.details}>
+                <summary>{preflightDetailsLabel({
+                    errorCount: schema.errors.length + preflight.errors.length,
+                    warningCount: schema.warnings.length + preflight.warnings.length,
+                })}</summary>
+                <div className={styles.detailsBody}>
+                    <div className={styles.serviceFacts}>
+                        <FactList label="Provider modes" values={preflight.providerModes} />
+                        <FactList label="Runtime surfaces" values={preflight.runtimeSurfaces} />
+                        <FactList
+                            emptyLabel="No live service dependency"
+                            label="Live service requirements"
+                            values={preflight.liveServiceRequirements}
+                        />
+                    </div>
+                    {preflight.serviceBadges.length > 0 ? (
+                        <div aria-label="Service requirements" className={styles.badges}>
+                            {preflight.serviceBadges.map((badge, index) => (
+                                <span
+                                    className={styles.badge}
+                                    data-tone={badge.tone}
+                                    key={`${badge.label}-${index}`}
+                                >{badge.label}</span>
+                            ))}
+                        </div>
+                    ) : null}
+                    <ExecutePreflightIssueList contextKey={contextKey} id="schema-errors" label="Schema errors" tone="error" values={schema.errors} />
+                    <ExecutePreflightIssueList contextKey={contextKey} id="schema-warnings" label="Schema warnings" tone="warning" values={schema.warnings} />
+                    <ExecutePreflightIssueList contextKey={contextKey} id="errors" label="Preflight errors" tone="error" values={preflight.errors} />
+                    <ExecutePreflightIssueList contextKey={contextKey} id="warnings" label="Preflight warnings" tone="warning" values={preflight.warnings} />
+                    <ExecutePreflightTree contextKey={contextKey} rows={preflight.tree} />
                 </div>
-            ) : null}
-            <ExecutePreflightIssueList contextKey={contextKey} id="schema-errors" label="Schema errors" tone="error" values={schema.errors} />
-            <ExecutePreflightIssueList contextKey={contextKey} id="schema-warnings" label="Schema warnings" tone="warning" values={schema.warnings} />
-            <ExecutePreflightIssueList contextKey={contextKey} id="errors" label="Preflight errors" tone="error" values={preflight.errors} />
-            <ExecutePreflightIssueList contextKey={contextKey} id="warnings" label="Preflight warnings" tone="warning" values={preflight.warnings} />
-            <ExecutePreflightTree contextKey={contextKey} rows={preflight.tree} />
+            </details>
         </section>
     );
+}
+
+function preflightDetailsLabel(input: Readonly<{
+    errorCount: number;
+    warningCount: number;
+}>): string {
+    return `Preflight details · ${input.errorCount} ${input.errorCount === 1 ? 'error' : 'errors'} · ${input.warningCount} ${input.warningCount === 1 ? 'warning' : 'warnings'}`;
 }
 
 function Fact({ label, value }: Readonly<{ label: string; value: string }>) {

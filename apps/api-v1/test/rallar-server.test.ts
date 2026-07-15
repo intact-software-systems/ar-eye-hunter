@@ -64,7 +64,8 @@ Deno.test(
       [...runtime.websocketCallbackIds],
       ['handle-ws-lifecycle'],
     );
-    assert.deepEqual(runtime.appInboxTopics, ['RTC_TOPOLOGY_RECOMPUTE']);
+    assert.deepEqual(runtime.appInboxTopics, []);
+    assert.deepEqual(runtime.appOutboxTopics, ['RTC_TOPOLOGY_RECOMPUTE']);
 
     const app = new Hono();
     rallar.ws.mount(app).mount(app);
@@ -72,6 +73,11 @@ Deno.test(
 
     assert.equal((await app.request('/api/ws/session-1')).status, 426);
     assert.equal((await app.request('/api/docs')).status, 200);
+    for (const removedPath of ['/api/graph', '/api/graph/tree/room-1']) {
+      const removedResponse = await app.request(removedPath);
+      assert.equal(removedResponse.status, 302);
+      assert.equal(removedResponse.headers.get('location'), '/swagger-ui');
+    }
     assert.equal((await app.request('/api/admin/operations/overview')).status, 401);
     assert.equal((await app.request('/api/admin/support/explain/queue-item', {
       method: 'POST',
@@ -258,6 +264,7 @@ type FakeRuntime = Readonly<{
   websocketCallbackIds: Set<string>;
   starts: number;
   appInboxTopics: string[];
+  appOutboxTopics: string[];
 }>;
 
 function createFakeMiddleware(): FakeRuntime {
@@ -266,6 +273,7 @@ function createFakeMiddleware(): FakeRuntime {
   const anyInboxCallbackIds = new Set<string>();
   const websocketCallbackIds = new Set<string>();
   const appInboxTopics: string[] = [];
+  const appOutboxTopics: string[] = [];
   let starts = 0;
 
   const socket = {
@@ -310,6 +318,12 @@ function createFakeMiddleware(): FakeRuntime {
         return this;
       },
     },
+    outboxQueueReader: {
+      onOutboxMessageDo(topicId: string): unknown {
+        appOutboxTopics.push(topicId);
+        return this;
+      },
+    },
     wsQBoxServerService,
     clientsRepository: {},
     groupsRepository: {},
@@ -322,6 +336,7 @@ function createFakeMiddleware(): FakeRuntime {
     anyInboxCallbackIds,
     websocketCallbackIds,
     appInboxTopics,
+    appOutboxTopics,
     get starts() {
       return starts;
     },
