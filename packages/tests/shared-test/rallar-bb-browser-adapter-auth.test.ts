@@ -89,12 +89,13 @@ describe('rallar-bb browser adapter auth', () => {
         expect(headers.get('content-type')).toBeNull();
     });
 
-    it('connects the configured browser Rallar runtime before API path requests that need auth headers', async () => {
+    it('authenticates API path requests without starting a full Rallar connection', async () => {
         const fetchCalls: Array<{
             input: RequestInfo | URL;
             init?: RequestInit;
         }> = [];
-        const connectConfigs: unknown[] = [];
+        const authenticateConfigs: unknown[] = [];
+        let connectCalls = 0;
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             fetch: (async (input, init) => {
                 fetchCalls.push({ input, init });
@@ -106,8 +107,8 @@ describe('rallar-bb browser adapter auth', () => {
                 });
             }) as typeof fetch,
             rallarRuntime: {
-                connect: async (config) => {
-                    connectConfigs.push(config);
+                authenticate: async (config) => {
+                    authenticateConfigs.push(config);
                     storage.setItem('auth.session', JSON.stringify({
                         clientId: 'controller-01',
                         accessToken: 'token-1',
@@ -115,7 +116,11 @@ describe('rallar-bb browser adapter auth', () => {
                         sessionId: 'controller-01',
                         expiresAtEpochMs: Date.now() + 60_000,
                     }));
-                    return { connected: true };
+                    return { status: 'authenticated' };
+                },
+                connect: async () => {
+                    connectCalls += 1;
+                    throw new Error('full connect must not run for HTTP authentication');
                 },
                 send: async () => ({ sent: true }),
                 close: async () => ({ closed: true }),
@@ -142,6 +147,7 @@ describe('rallar-bb browser adapter auth', () => {
         const result = await runtime.execute({
             kind: 'http.request',
             commandId: 'http-api-auth-with-runtime-login',
+            timeoutMs: 50,
             request: {
                 path: '/api/state/apps/app/workspaces/ws/groups',
                 method: 'POST',
@@ -157,15 +163,63 @@ describe('rallar-bb browser adapter auth', () => {
 
         expect(result.ok).toBe(true);
         const headers = new Headers(fetchCalls[0].init?.headers);
-        expect(connectConfigs).toHaveLength(1);
-        expect(connectConfigs[0]).not.toHaveProperty('roomId');
+        expect(authenticateConfigs).toHaveLength(1);
+        expect(authenticateConfigs[0]).not.toHaveProperty('roomId');
+        expect(connectCalls).toBe(0);
         expect(fetchCalls[0].input).toBe('https://api.example.test/api/state/apps/app/workspaces/ws/groups');
         expect(headers.get('authorization')).toBe('Bearer token-1');
         expect(headers.get('x-client-id')).toBe('controller-01');
     });
 
-    it('preserves bootstrap Rallar credentials when recipe configure narrows live scope', async () => {
+    it('falls back to full connect for legacy runtimes without auth-only bootstrap', async () => {
         const connectConfigs: unknown[] = [];
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            fetch: (async () => new Response('{}', { status: 200 })) as typeof fetch,
+            rallarRuntime: {
+                connect: async (config) => {
+                    connectConfigs.push(config);
+                    storage.setItem('auth.session', JSON.stringify({
+                        clientId: 'legacy-client',
+                        accessToken: 'legacy-token',
+                        username: 'legacy',
+                        sessionId: 'legacy-session',
+                        expiresAtEpochMs: Date.now() + 60_000,
+                    }));
+                    return { connected: true };
+                },
+                send: async () => ({ sent: true }),
+                close: async () => ({ closed: true }),
+                health: async () => ({ connected: true }),
+            },
+        });
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-legacy-auth',
+            config: {
+                apiBaseUrl: 'https://api.example.test',
+                actor: 'legacy',
+                rallar: {
+                    username: 'legacy',
+                    password: 'secret',
+                },
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'http.request',
+            commandId: 'legacy-auth-request',
+            request: {
+                path: '/api/state/apps/app/workspaces/ws/groups',
+                method: 'GET',
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(connectConfigs).toHaveLength(1);
+    });
+
+    it('preserves bootstrap Rallar credentials when recipe configure narrows live scope', async () => {
+        const authenticateConfigs: unknown[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             fetch: (async () =>
                 new Response(JSON.stringify({ ok: true }), {
@@ -175,8 +229,8 @@ describe('rallar-bb browser adapter auth', () => {
                     },
                 })) as typeof fetch,
             rallarRuntime: {
-                connect: async (config) => {
-                    connectConfigs.push(config);
+                authenticate: async (config) => {
+                    authenticateConfigs.push(config);
                     const rallar = (config as { rallar?: { username?: string; password?: string } }).rallar;
                     if (!rallar?.username || !rallar.password) {
                         throw new Error('missing Rallar credentials');
@@ -188,7 +242,10 @@ describe('rallar-bb browser adapter auth', () => {
                         sessionId: 'controller-01',
                         expiresAtEpochMs: Date.now() + 60_000,
                     }));
-                    return { connected: true };
+                    return { status: 'authenticated' };
+                },
+                connect: async () => {
+                    throw new Error('full connect must not run for HTTP authentication');
                 },
                 send: async () => ({ sent: true }),
                 close: async () => ({ closed: true }),
@@ -255,8 +312,8 @@ describe('rallar-bb browser adapter auth', () => {
         });
 
         expect(result.ok).toBe(true);
-        expect(connectConfigs).toHaveLength(1);
-        expect(connectConfigs[0]).toMatchObject({
+        expect(authenticateConfigs).toHaveLength(1);
+        expect(authenticateConfigs[0]).toMatchObject({
             rallar: {
                 username: 'rallar',
                 password: 'secret',
@@ -331,12 +388,13 @@ describe('rallar-bb browser adapter auth', () => {
         });
     });
 
-    it('connects the configured browser Rallar runtime before resolving HTTP auth placeholders', async () => {
+    it('authenticates before resolving HTTP auth placeholders without starting full connect', async () => {
         const fetchCalls: Array<{
             input: RequestInfo | URL;
             init?: RequestInit;
         }> = [];
-        const connectConfigs: unknown[] = [];
+        const authenticateConfigs: unknown[] = [];
+        let connectCalls = 0;
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             fetch: (async (input, init) => {
                 fetchCalls.push({ input, init });
@@ -348,8 +406,8 @@ describe('rallar-bb browser adapter auth', () => {
                 });
             }) as typeof fetch,
             rallarRuntime: {
-                connect: async (config) => {
-                    connectConfigs.push(config);
+                authenticate: async (config) => {
+                    authenticateConfigs.push(config);
                     storage.setItem('auth.session', JSON.stringify({
                         clientId: 'controller-01',
                         accessToken: 'token-1',
@@ -357,7 +415,11 @@ describe('rallar-bb browser adapter auth', () => {
                         sessionId: 'controller-01',
                         expiresAtEpochMs: Date.now() + 60_000,
                     }));
-                    return { connected: true };
+                    return { status: 'authenticated' };
+                },
+                connect: async () => {
+                    connectCalls += 1;
+                    throw new Error('full connect must not run for HTTP authentication');
                 },
                 send: async () => ({ sent: true }),
                 close: async () => ({ closed: true }),
@@ -401,7 +463,7 @@ describe('rallar-bb browser adapter auth', () => {
 
         expect(result.ok).toBe(true);
         const headers = new Headers(fetchCalls[0].init?.headers);
-        expect(connectConfigs).toEqual([
+        expect(authenticateConfigs).toEqual([
             expect.objectContaining({
                 connection: 'controller-01',
                 actor: 'controller-01',
@@ -415,7 +477,8 @@ describe('rallar-bb browser adapter auth', () => {
                 }),
             }),
         ]);
-        expect(connectConfigs[0]).not.toHaveProperty('roomId');
+        expect(authenticateConfigs[0]).not.toHaveProperty('roomId');
+        expect(connectCalls).toBe(0);
         expect(fetchCalls[0].input).toBe(
             'https://api.example.test/api/state/apps/app/workspaces/ws/groups/bb-group/members/controller-01',
         );
