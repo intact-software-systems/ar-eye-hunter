@@ -96,6 +96,10 @@
               "groupId": "world-fleet-room"
             },
             "transport": "messages.rtc",
+            "rallar": {
+              "typeId": "black-box.group.multicast.position",
+              "topicId": "black-box.group.multicast.position"
+            },
             "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,
@@ -336,6 +340,10 @@
               "groupId": "world-fleet-room"
             },
             "transport": "messages.rtc",
+            "rallar": {
+              "typeId": "black-box.group.multicast.position",
+              "topicId": "black-box.group.multicast.position"
+            },
             "timeoutMs": 45000,
             "readiness": {
               "minReadyPeers": 1,

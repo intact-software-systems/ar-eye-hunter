@@ -229,6 +229,11 @@ function multicastDeliveryPlan(options: Readonly<{
     };
 }
 
+const RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR = {
+    typeId: 'black-box.group.multicast.position',
+    topicId: 'black-box.group.multicast.position',
+} as const;
+
 function messagesRtcConnectCommand(options: Readonly<{
     commandId: string;
     connection: string;
@@ -248,6 +253,7 @@ function messagesRtcConnectCommand(options: Readonly<{
         workspaceId: options.group.workspaceId,
         roomRef,
         transport: 'messages.rtc',
+        rallar: { ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR },
         timeoutMs: options.readyTimeoutMs ?? 45_000,
         readiness: {
             minReadyPeers: options.minReadyPeers,
@@ -322,11 +328,10 @@ function messagesRtcStreamCommand(options: Readonly<{
             roomId: options.group.groupId,
             roomRef,
             deliveryMode: 'multicast',
-            typeId: 'black-box.group.multicast.position',
-            topicId: 'black-box.group.multicast.position',
+            ...RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR,
             payload: {
-                topic: 'black-box.group.multicast.position',
-                typeId: 'black-box.group.multicast.position',
+                topic: RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR.topicId,
+                typeId: RALLAR_BLACK_BOX_GROUP_MULTICAST_POSITION_SELECTOR.typeId,
                 actor: '{auth.clientId}',
                 seq: '{stream.index}',
                 rateHz: options.plan.rateHz,
