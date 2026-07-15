@@ -14,8 +14,17 @@ import {
     deriveDistributedArtifactWorkspace,
     distributedArtifactPipelineJsonRecord,
 } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import { resolveDistributedArtifactEvidenceCatalogEntryIds } from
+    '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-catalog.ts';
+import type { DistributedArtifactEvidenceEntry } from
+    '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-contracts.ts';
 
 const GENERATED_AT_EPOCH_MS = Date.parse('2026-07-12T12:00:00.000Z');
+const TIMEOUT_STACK = [
+    'RALLAR_BLACK_BOX_TIMEOUT: Rallar black-box command timeout reached.',
+    ' at _t (https://blackbox.rallar.intactss.com/headless/assets/index-DG6wNwRv.js:1:50131)',
+    ' at https://blackbox.rallar.intactss.com/headless/assets/index-DG6wNwRv.js:1:62093',
+].join('\n');
 
 function evidenceFiles(): DistributedRunArtifactFiles {
     return {
@@ -313,6 +322,143 @@ describe('distributed artifact evidence index', () => {
         });
     });
 
+    it('promotes the reported timeout fingerprint without changing its raw payload summary', () => {
+        const files = evidenceFiles();
+        const controlRun = JSON.parse(files['control-run.json'] ?? '{}');
+        controlRun.results[0].error = {
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            details: {
+                name: 'RALLAR_BLACK_BOX_TIMEOUT',
+                stack: TIMEOUT_STACK,
+            },
+            message: 'Rallar black-box command timeout reached.',
+        };
+        const index = deriveDistributedArtifactEvidence({
+            files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+            indexLimit: 100,
+            summaryLimit: 600,
+            payloadSummaryLimit: 600,
+        });
+        const failedResult = index.entries.find(entry =>
+            entry.kind === 'result' && entry.commandId === 'send-rtc'
+        );
+
+        expect(failedResult?.failureDetails).toEqual({
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            name: 'RALLAR_BLACK_BOX_TIMEOUT',
+            message: 'Rallar black-box command timeout reached.',
+            stack: TIMEOUT_STACK,
+        });
+        expect(failedResult?.payloadSummary).toBe(JSON.stringify({
+            name: 'RALLAR_BLACK_BOX_TIMEOUT',
+            stack: TIMEOUT_STACK,
+        }));
+        expect(index.entries.find(entry =>
+            entry.kind === 'result' && entry.commandId === 'receive-rtc'
+        )).not.toHaveProperty('failureDetails');
+    });
+
+    it('uses deepest bounded failure fields through four details records', () => {
+        const files = evidenceFiles();
+        const controlRun = JSON.parse(files['control-run.json'] ?? '{}');
+        controlRun.results[0].error = {
+            code: 'OUTER_CODE',
+            message: 'Outer message remains when children omit it',
+            details: {
+                name: 'WRAPPER_NAME',
+                details: {
+                    code: `INNER_CODE_${'c'.repeat(40)}`,
+                    details: {
+                        name: `INNER_NAME_${'n'.repeat(40)}`,
+                        stack: `headline\n frame-one-${'x'.repeat(200)}\n frame-two`,
+                        details: {
+                            message: `Deep actionable message ${'m'.repeat(40)}`,
+                            details: {
+                                code: 'TOO_DEEP_CODE',
+                                message: 'Too deep message',
+                            },
+                        },
+                    },
+                },
+            },
+        };
+        const index = deriveDistributedArtifactEvidence({
+            files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+            indexLimit: 100,
+            summaryLimit: 24,
+            payloadSummaryLimit: 48,
+        });
+        const details = index.entries.find(entry =>
+            entry.kind === 'result' && entry.commandId === 'send-rtc'
+        )?.failureDetails;
+
+        expect(details?.code).toMatch(/^INNER_CODE_/);
+        expect(details?.name).toMatch(/^INNER_NAME_/);
+        expect(details?.message).toMatch(/^Deep actionable/);
+        expect([details?.code, details?.name, details?.message].every(value =>
+            (value?.length ?? 0) <= 24
+        )).toBe(true);
+        expect(details?.code).not.toContain('TOO_DEEP');
+        expect(details?.stack.length).toBeLessThanOrEqual(48);
+        expect(details?.stack).toContain('\n');
+    });
+
+    it('keeps direct errors and falls back to result errors when the envelope has none', () => {
+        const files = evidenceFiles();
+        const controlRun = JSON.parse(files['control-run.json'] ?? '{}');
+        delete controlRun.results[0].error;
+        controlRun.results[0].result.error = {
+            code: 'DIRECT_RESULT_ERROR',
+            name: 'DirectRuntimeError',
+            message: 'Direct nested result error',
+            stack: 'DirectRuntimeError: Direct nested result error\n at command.ts:4:2',
+        };
+        const index = deriveDistributedArtifactEvidence({
+            files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+            indexLimit: 100,
+        });
+
+        expect(index.entries.find(entry =>
+            entry.kind === 'result' && entry.commandId === 'send-rtc'
+        )?.failureDetails).toEqual(controlRun.results[0].result.error);
+
+        controlRun.results[0].error = { details: {} };
+        delete controlRun.results[0].result.error;
+        const missing = deriveDistributedArtifactEvidence({
+            files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+            indexLimit: 100,
+        });
+        expect(missing.entries.find(entry =>
+            entry.kind === 'result' && entry.commandId === 'send-rtc'
+        )).not.toHaveProperty('failureDetails');
+    });
+
+    it('canonicalizes structured failures even when their rendered summaries match', async () => {
+        const base: DistributedArtifactEvidenceEntry = {
+            id: 'result:same',
+            kind: 'result',
+            sourceFile: 'control-run.json',
+            status: 'failed',
+            summary: 'Same rendered summary',
+            payloadSummary: '',
+            failureDetails: { code: 'FIRST', message: 'First failure' },
+        };
+        const entries = await resolveDistributedArtifactEvidenceCatalogEntryIds([
+            base,
+            {
+                ...base,
+                failureDetails: { code: 'SECOND', message: 'Second failure' },
+            },
+        ]);
+
+        expect(entries).toHaveLength(2);
+        expect(new Set(entries.map(entry => entry.id)).size).toBe(2);
+    });
+
     it('retains usable result and event rows when a partial run has no command links', () => {
         const index = deriveDistributedArtifactEvidence({
             files: evidenceFilesWithoutCommandLinks(),
@@ -429,7 +575,6 @@ describe('distributed artifact evidence search', () => {
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100,
         });
-
         for (const query of [
             'AGENT-A',
             'send-rtc',
@@ -440,6 +585,49 @@ describe('distributed artifact evidence search', () => {
             'diagnostic',
         ]) {
             expect(searchDistributedArtifactEvidence(index, { query }).totalMatches, query).toBeGreaterThan(0);
+        }
+    });
+
+    it('matches structured result failure code, name, message, and stack', () => {
+        const files = evidenceFiles();
+        const controlRun = JSON.parse(files['control-run.json'] ?? '{}');
+        controlRun.results[0].error = {
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            details: {
+                name: 'RALLAR_BLACK_BOX_TIMEOUT',
+                stack: TIMEOUT_STACK,
+            },
+            message: 'Rallar black-box command timeout reached.',
+        };
+        const index = deriveDistributedArtifactEvidence({
+            files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+            indexLimit: 100,
+        });
+        const result = index.entries.find(entry =>
+            entry.kind === 'result' && entry.commandId === 'send-rtc'
+        );
+        if (!result) throw new Error('Expected structured failed result.');
+        const failureDetailsOnly = {
+            ...index,
+            entries: [{ ...result, summary: '', payloadSummary: '' }],
+            totalEntries: 1,
+            omittedEntryCount: 0,
+        };
+
+        for (const query of [
+            'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            'RALLAR_BLACK_BOX_TIMEOUT',
+            'timeout reached',
+            '50131',
+        ]) {
+            expect(searchDistributedArtifactEvidence(
+                failureDetailsOnly,
+                { query },
+            ).entries)
+                .toEqual(expect.arrayContaining([
+                    expect.objectContaining({ kind: 'result', status: 'failed' }),
+                ]));
         }
     });
 

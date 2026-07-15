@@ -375,6 +375,14 @@ function canonicalEvidenceEntry(entry: DistributedArtifactEvidenceEntry): string
         entry.commandId ?? null, entry.topic ?? null, entry.diagnosticType ?? null,
         entry.severity ?? null, entry.transport ?? null, entry.status ?? null,
         entry.category ?? null, entry.summary, entry.payloadSummary,
+        entry.failureDetails
+            ? [
+                  entry.failureDetails.code ?? null,
+                  entry.failureDetails.name ?? null,
+                  entry.failureDetails.message ?? null,
+                  entry.failureDetails.stack ?? null,
+              ]
+            : null,
     ]);
 }
 

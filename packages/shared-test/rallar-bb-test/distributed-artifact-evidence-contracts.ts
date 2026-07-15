@@ -11,6 +11,13 @@ export type DistributedArtifactEvidenceKind =
     | 'event'
     | 'diagnostic';
 
+export type DistributedArtifactEvidenceFailureDetails = Readonly<{
+    code?: string;
+    name?: string;
+    message?: string;
+    stack?: string;
+}>;
+
 export type DistributedArtifactEvidenceEntry = Readonly<{
     id: string;
     kind: DistributedArtifactEvidenceKind;
@@ -28,6 +35,7 @@ export type DistributedArtifactEvidenceEntry = Readonly<{
     category?: string;
     summary: string;
     payloadSummary: string;
+    failureDetails?: DistributedArtifactEvidenceFailureDetails;
 }>;
 
 export type DistributedArtifactEvidenceIndex = Readonly<{

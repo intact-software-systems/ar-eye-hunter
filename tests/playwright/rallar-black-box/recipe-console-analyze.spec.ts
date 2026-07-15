@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import {
-    createAnalyzeEnvelopeFile,
     createAnalyzeLooseFiles,
+    createAnalyzeTimeoutEnvelopeFile,
+    createAnalyzeTimeoutLooseFiles,
 } from './recipe-console-analyze-artifacts.ts';
 import { installRecipeConsoleAnalyzeFixture } from './recipe-console-analyze-fixture.ts';
 import {
@@ -21,6 +22,10 @@ import {
     ANALYZE_FAILURE_MESSAGE,
     ANALYZE_GENERATED_AT_EPOCH_MS,
     ANALYZE_RECIPE_ID,
+    ANALYZE_RESULT_FAILURE_CODE,
+    ANALYZE_RESULT_FAILURE_MESSAGE,
+    ANALYZE_RESULT_FAILURE_NAME,
+    ANALYZE_RESULT_FAILURE_STACK,
     ANALYZE_ROUTE,
 } from './recipe-console-analyze-run-data.ts';
 
@@ -54,7 +59,6 @@ test('imports a partial bundle offline and focuses the first actionable failure'
         .toContainText(
             'npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3',
         );
-
     const quality = page.locator('[data-analyze-section="quality"]');
     await expect(quality.locator('[data-file-status="malformed"]', {
         hasText: 'events.jsonl',
@@ -121,6 +125,44 @@ test('imports a partial bundle offline and focuses the first actionable failure'
     await expect(markdown).toContainText('Likely causal trail');
 });
 
+test('promotes a correlated timeout result from verdict through raw payload', async ({
+    context,
+    page,
+}) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await installRecipeConsoleAnalyzeFixture(context);
+    await page.goto(ANALYZE_ROUTE);
+    await chooseAnalyzeFiles(page, createAnalyzeTimeoutLooseFiles());
+
+    const verdict = analyzeVerdict(page);
+    const resultFingerprint = verdict.locator(
+        '[data-analyze-failure-details="verdict"]',
+    );
+    await expect(resultFingerprint).toContainText(ANALYZE_RESULT_FAILURE_CODE);
+    await expect(resultFingerprint).toContainText(ANALYZE_RESULT_FAILURE_NAME);
+    await expect(resultFingerprint).toContainText(ANALYZE_RESULT_FAILURE_MESSAGE);
+    await expect(resultFingerprint).toContainText('at _t');
+
+    const failedResult = analyzeSearch(page).locator('[data-evidence-kind="result"]');
+    await expect(failedResult).toContainText(ANALYZE_RESULT_FAILURE_CODE);
+    await expect(failedResult).toContainText(ANALYZE_RESULT_FAILURE_NAME);
+    await expect(failedResult).toContainText(ANALYZE_RESULT_FAILURE_MESSAGE);
+
+    const inspectResult = verdict.getByRole('button', { name: 'Inspect result' });
+    await inspectResult.click();
+    const inspector = page.getByRole('complementary', { name: 'Inspector' });
+    await expect(inspector.locator('[data-analyze-inspector]'))
+        .toHaveAttribute('data-selection-kind', 'result');
+    await expect(inspector.locator('[data-analyze-failure-details="inspector"]'))
+        .toContainText(ANALYZE_RESULT_FAILURE_STACK);
+    const rawPayload = inspector.locator('details').filter({
+        hasText: 'Raw payload JSON',
+    });
+    await expect(rawPayload).toHaveJSProperty('open', false);
+    await rawPayload.locator('summary').click();
+    await expect(rawPayload.locator('pre')).toContainText(ANALYZE_RESULT_FAILURE_NAME);
+});
+
 test('loads from Control, exports an envelope, reimports it, and clears memory on reload', async ({
     context,
     page,
@@ -178,7 +220,7 @@ test('opens and closes the Analyze inspector through a keyboard-only short-lands
     await page.setViewportSize({ width: 932, height: 430 });
     const fixture = await installRecipeConsoleAnalyzeFixture(context);
     await page.goto(ANALYZE_ROUTE);
-    await chooseAnalyzeFiles(page, [createAnalyzeEnvelopeFile()]);
+    await chooseAnalyzeFiles(page, [createAnalyzeTimeoutEnvelopeFile()]);
     const trigger = analyzeVerdict(page)
         .getByRole('button', { name: 'Inspect evidence' });
     await trigger.focus();
@@ -189,6 +231,17 @@ test('opens and closes the Analyze inspector through a keyboard-only short-lands
     await page.keyboard.press('Escape');
     await expect(inspector).toHaveCount(0);
     await expect(trigger).toBeFocused();
+
+    const resultTrigger = analyzeVerdict(page)
+        .getByRole('button', { name: 'Inspect result' });
+    await resultTrigger.focus();
+    await page.keyboard.press('Enter');
+    const resultInspector = page.getByRole('dialog', { name: 'Inspector' });
+    await expect(resultInspector.locator('[data-analyze-failure-details="inspector"]'))
+        .toContainText(ANALYZE_RESULT_FAILURE_NAME);
+    await page.keyboard.press('Escape');
+    await expect(resultInspector).toHaveCount(0);
+    await expect(resultTrigger).toBeFocused();
     await expect.poll(fixture.artifactRequestCount).toBe(0);
     expect(await page.evaluate(() => ({
         x: document.documentElement.scrollWidth - document.documentElement.clientWidth,

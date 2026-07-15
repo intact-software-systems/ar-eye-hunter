@@ -1,12 +1,15 @@
 import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import { AnalyzeFailureDetails } from './AnalyzeFailureDetails.tsx';
 import styles from './AnalyzeVerdict.module.css';
 
 export function AnalyzeVerdict({
     model,
     onInspect,
+    onInspectResult,
 }: Readonly<{
     model: AnalyzeArtifactProjection;
     onInspect?(trigger: HTMLButtonElement): void;
+    onInspectResult?(trigger: HTMLButtonElement): void;
 }>) {
     const { analysis } = model;
     const failure = analysis.failure;
@@ -31,6 +34,13 @@ export function AnalyzeVerdict({
                 </span>
             </header>
 
+            {model.primaryResultFailure ? (
+                <AnalyzeFailureDetails
+                    density="verdict"
+                    details={model.primaryResultFailure.failureDetails}
+                    onInspect={onInspectResult}
+                />
+            ) : null}
             {failure ? (
                 <>
                     <div className={styles.nextAction} data-first-actionable-failure>

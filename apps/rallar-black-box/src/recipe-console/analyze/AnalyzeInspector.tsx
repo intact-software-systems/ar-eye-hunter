@@ -1,6 +1,7 @@
 import type { DistributedArtifactEvidenceEntry } from '@shared-test/rallar-bb-test/mod.ts';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import { AnalyzeFailureDetails } from './AnalyzeFailureDetails.tsx';
 import styles from './AnalyzeInspector.module.css';
 
 export function AnalyzeInspector({
@@ -40,6 +41,12 @@ export function AnalyzeInspector({
                 <h2>{entry.summary}</h2>
                 <ExactIdentifier value={entry.id} />
             </header>
+            {entry.kind === 'result' && entry.failureDetails ? (
+                <AnalyzeFailureDetails
+                    density="inspector"
+                    details={entry.failureDetails}
+                />
+            ) : null}
             <dl>
                 {exactSelectors.filter(([, values]) => values.length > 0)
                     .map(([label, values]) => (
@@ -61,7 +68,12 @@ export function AnalyzeInspector({
                     </div>
                 ))}
             </dl>
-            {entry.payloadSummary ? (
+            {entry.payloadSummary && entry.kind === 'result' && entry.failureDetails ? (
+                <details className={styles.rawPayload}>
+                    <summary>Raw payload JSON</summary>
+                    <pre>{entry.payloadSummary}</pre>
+                </details>
+            ) : entry.payloadSummary ? (
                 <div className={styles.payload}>
                     <h3>Payload summary</h3>
                     <pre>{entry.payloadSummary}</pre>

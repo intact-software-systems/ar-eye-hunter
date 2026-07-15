@@ -76,7 +76,7 @@ run identities retained.
 
 ### Offline artifact analysis
 
-**Given** no control-server connection and a partial or complete supported artifact bundle, **when** the operator imports the files locally, **then** Analyze retains all usable evidence, warns visibly about missing or incompatible files, and focuses the first actionable failure with likely cause, next action, and evidence source.
+**Given** no control-server connection and a partial or complete supported artifact bundle, **when** the operator imports the files locally, **then** Analyze retains all usable evidence, warns visibly about missing or incompatible files, and focuses the first actionable failure with likely cause, next action, and evidence source. When a correlated failed result contains structured error evidence, its code, runtime name, actionable message, and retained stack are operator-readable from the verdict, result row, and inspector without making raw JSON the primary path.
 
 The same workspace accepts the existing control-server export envelope, keeps
 artifact bytes only in bounded memory, searches normalized failure/result/event/
@@ -85,6 +85,8 @@ and visibly rejects generic black-box-runner artifacts to the preserved Shared
 Test importer. Unknown schema versions and malformed optional evidence remain
 inspectable and can never be presented as a supported bundle; the artifact's
 claimed run outcome remains visible beside the incompatibility warning.
+The existing result payload summary remains available through a collapsed raw-
+payload disclosure for source verification.
 
 ### Run comparison and candidate tuning
 

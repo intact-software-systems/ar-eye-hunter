@@ -96,6 +96,12 @@ export function AnalyzeWorkspace({
                             );
                             onInspect(trigger);
                         }}
+                        onInspectResult={trigger => {
+                            controller.selectEvidence(
+                                controller.model?.primaryResultFailure?.evidenceId,
+                            );
+                            onInspect(trigger);
+                        }}
                     />
                     <AnalyzeEvidenceQuality model={controller.model} />
                     <AnalyzePerformance model={controller.model} />
