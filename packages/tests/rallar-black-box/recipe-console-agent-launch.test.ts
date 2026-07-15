@@ -1,3 +1,6 @@
+// @vitest-environment happy-dom
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthSession } from '../../shared/api/api-config.ts';
 import {
@@ -10,10 +13,23 @@ import {
     createRecipeConsoleControlAgentLaunchApi,
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-agent-launch-api.ts';
 import {
+    ControlConnectionProvider,
+    type RecipeConsoleControlConnection,
+    useControlConnection,
+} from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
+import type {
+    RecipeConsoleControlCredentialPolicy,
+} from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
+import {
     navigateReservedBrowserAgentPopups,
     reserveBrowserAgentPopups,
     releaseReservedBrowserAgentPopups,
 } from '../../../apps/rallar-black-box/src/browser-agent-popup.ts';
+import {
+    createRunnerAgentLaunchActions,
+} from '../../../apps/rallar-black-box/src/legacy/runner/recipes/runner-agent-launch-actions.ts';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const group = {
     applicationId: 'rallar-server',
@@ -326,6 +342,102 @@ describe('Recipe Console browser-agent launch service', () => {
             .toBe('wss://control.example.test/control');
         expect(controlWebSocketUrlFromHttpBaseUrl('not-a-url'))
             .toBe('ws://localhost:5180/control');
+    });
+});
+
+describe('Recipe Console browser-agent launch authority', () => {
+    it('does not forward a stored operator session to a URL-selected API origin', async () => {
+        const credentialPolicy: RecipeConsoleControlCredentialPolicy = {
+            allowManualToken: true,
+            allowBrokeredToken: false,
+            allowBootstrapAgentTicket: false,
+            controlUrlFromLocation: false,
+            apiBaseUrlFromLocation: true,
+            controlTokenFromLocation: false,
+            blockedMessage: 'Automatic credentials are blocked for a URL-configured API endpoint.',
+        };
+        let observed: RecipeConsoleControlConnection | undefined;
+        const container = document.createElement('div');
+        document.body.append(container);
+        const root = createRoot(container);
+        vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+            runs: [],
+            distributedRuns: [],
+        })));
+
+        function Harness() {
+            observed = useControlConnection();
+            return null;
+        }
+
+        try {
+            await act(async () => root.render(createElement(
+                ControlConnectionProvider,
+                {
+                    authSession: {
+                        clientId: 'stored-client',
+                        accessToken: 'stored-secret',
+                        username: 'operator',
+                        sessionId: 'stored-session',
+                        expiresAtEpochMs: 4_000_000_000_000,
+                    },
+                    bootstrap: {
+                        apiBaseUrl: 'https://untrusted.example.test',
+                        providerMode: 'browser-rallar',
+                        credentialPolicy,
+                        bootstrapGroup: group,
+                    },
+                },
+                createElement(Harness),
+            )));
+
+            expect(observed?.browserAgentLaunch).toBeUndefined();
+            expect(observed?.browserAgentLaunchIssue).toContain(
+                'URL-configured API origin',
+            );
+        } finally {
+            await act(async () => root.unmount());
+            container.remove();
+            vi.unstubAllGlobals();
+        }
+    });
+});
+
+describe('legacy runner browser-agent launch compatibility', () => {
+    it('copies multiple secured agent links that share the legacy run token', async () => {
+        const copyText = vi.fn(async () => undefined);
+        let message: string | undefined;
+        const actions = createRunnerAgentLaunchActions({
+            agentRestoreSession: false,
+            providerMode: 'simulated',
+            apiBaseUrl: 'https://api.example.test',
+            agentIds: ['legacy-agent-1', 'legacy-agent-2'],
+            agentControlWsUrl: 'wss://control.example.test/control',
+            agentRunId: 'legacy-run',
+            groupId: group.groupId,
+            applicationId: group.applicationId,
+            workspaceId: group.workspaceId,
+            controlToken: 'shared-legacy-token',
+            copyText,
+            setBusyAction: vi.fn(),
+            setAgentLaunchMessage: value => {
+                message = value;
+            },
+            setAgentLaunchSuffix: vi.fn(),
+            setControlRunId: vi.fn(),
+        });
+
+        await actions.copyAgentLinks();
+
+        expect(copyText).toHaveBeenCalledOnce();
+        const links = String(copyText.mock.calls[0][0]).split('\n');
+        expect(links).toHaveLength(2);
+        expect(links.map(link => new URLSearchParams(new URL(link).hash.slice(1))
+            .get('controlToken'))).toEqual([
+            'shared-legacy-token',
+            'shared-legacy-token',
+        ]);
+        expect(message).toContain('Copied 2 one-time, short-lived agent links.');
     });
 });
 

@@ -55,6 +55,7 @@ export function createBrowserAgentLaunchService(config: Readonly<{
     authSession?: AuthSession;
     issueAgentSessions?: boolean;
     allowAnonymousControlToken?: boolean;
+    allowSharedControlToken?: boolean;
     issueRunToken: IssueRunToken;
     issueAgentTickets?: IssueAgentTickets;
 }>): BrowserAgentLaunchService {
@@ -78,10 +79,12 @@ export function createBrowserAgentLaunchService(config: Readonly<{
                 );
                 return token;
             }));
-            assertUniqueAuthority(
-                tokens.map(token => token.token).filter(Boolean),
-                'Control tokens',
-            );
+            if (!config.allowSharedControlToken) {
+                assertUniqueAuthority(
+                    tokens.map(token => token.token).filter(Boolean),
+                    'Control tokens',
+                );
+            }
 
             return {
                 runId,

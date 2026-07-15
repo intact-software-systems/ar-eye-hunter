@@ -19,6 +19,10 @@ import { ExecuteRecipeInspector } from
     '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteRecipeInspector.tsx';
 import { ExecuteTargets } from
     '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteTargets.tsx';
+import type { ExecuteAgentLaunchModel } from
+    '../../../apps/rallar-black-box/src/recipe-console/execute/use-execute-agent-launch.ts';
+import type { RecipeConsoleControlConnection } from
+    '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
 import { createExecuteTargetRowKeys } from
     '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteTargetWindow.tsx';
 import { ExecuteWindowedList } from
@@ -32,6 +36,58 @@ import {
     .IS_REACT_ACT_ENVIRONMENT = true;
 
 const catalogEntry = projectDistributedRecipeCatalog().entries[0]!;
+const executeTargetGroup = {
+    applicationId: 'app',
+    workspaceId: 'workspace',
+    groupId: 'group',
+} as const;
+const executeTargetAgentLaunch = {
+    expanded: false,
+    setExpanded: () => undefined,
+    runId: 'window-control-run',
+    setRunId: () => undefined,
+    prefix: 'window-agent',
+    setPrefix: () => undefined,
+    count: 3,
+    setCount: () => undefined,
+    group: executeTargetGroup,
+    agentIds: ['window-agent-1', 'window-agent-2', 'window-agent-3'],
+    blockedAgentIds: [],
+    busyAction: undefined,
+    blocker: undefined,
+    message: undefined,
+    launchedExpectedCount: 0,
+    launchedReadyCount: 0,
+    launchPreparationPending: false,
+    launchedCohortSelectionPending: false,
+    openAgents: () => undefined,
+    copyAgentLinks: async () => undefined,
+    copyAgentLink: async () => undefined,
+} satisfies ExecuteAgentLaunchModel;
+const executeTargetControlConnection = {
+    bootstrap: {
+        apiBaseUrl: 'https://api.example.test',
+        providerMode: 'simulated',
+        bootstrapGroup: executeTargetGroup,
+    },
+    baseUrl: 'https://control.example.test',
+    browserAgentLaunch: undefined,
+    execution: undefined,
+    retention: undefined,
+    fleet: undefined,
+    query: {
+        status: 'live',
+        reachability: 'reachable',
+        authorization: 'ready',
+        isRefreshing: false,
+    },
+    refresh: async () => undefined,
+    refreshAfterCurrent: async () => undefined,
+} satisfies RecipeConsoleControlConnection;
+const executeTargetDependencies = {
+    agentLaunch: executeTargetAgentLaunch,
+    controlConnection: executeTargetControlConnection,
+};
 
 describe('Recipe Console Execute pressure-window contract', () => {
     it('caps every proven Execute pressure owner at 100 with collision-safe fingerprints', () => {
@@ -149,6 +205,7 @@ describe('Recipe Console Execute pressure windows', () => {
         const onSelectControlRun = vi.fn();
         const onToggle = vi.fn();
         await render(createElement(ExecuteTargets, {
+            ...executeTargetDependencies,
             connection: 'live',
             controlRunId: runs[249]!.runId,
             controlRuns: runs,
@@ -173,6 +230,7 @@ describe('Recipe Console Execute pressure windows', () => {
         expect(container.querySelector('select')).toBeNull();
 
         await render(createElement(ExecuteTargets, {
+            ...executeTargetDependencies,
             connection: 'live',
             controlRunId: 'duplicate-run',
             controlRunIssue: 'Control run identity is ambiguous.',
@@ -227,6 +285,7 @@ describe('Recipe Console Execute pressure windows', () => {
         async () => {
             const rows = Array.from({ length: 240 }, (_, index) => targetRow(index));
             const props = {
+                ...executeTargetDependencies,
                 connection: 'live' as const,
                 controlRunId: 'stable-control-run',
                 controlRuns: [],
@@ -315,6 +374,7 @@ describe('Recipe Console Execute pressure windows', () => {
         async () => {
             const runs = Array.from({ length: 250 }, (_, index) => controlRun(index));
             const props = {
+                ...executeTargetDependencies,
                 connection: 'live' as const,
                 controlRuns: runs,
                 onSelectControlRun: vi.fn(),
@@ -344,6 +404,7 @@ describe('Recipe Console Execute pressure windows', () => {
         const rowB = targetRow(1);
         const rowC = targetRow(2);
         const props = {
+            ...executeTargetDependencies,
             connection: 'live' as const,
             controlRunId: 'stable-run',
             controlRuns: [],
@@ -373,6 +434,7 @@ describe('Recipe Console Execute pressure windows', () => {
         const resolution = resolutionEvidence(240);
         const onToggle = vi.fn();
         const props = {
+            ...executeTargetDependencies,
             connection: 'live',
             controlRunId: 'stable-control-run',
             controlRuns: [],

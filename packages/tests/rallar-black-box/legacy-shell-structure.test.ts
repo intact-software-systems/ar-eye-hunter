@@ -241,36 +241,37 @@ const shellModelOwners = [
         lineCap: 100,
     },
     {
-        path: 'apps/rallar-black-box/src/legacy/shell/auth/agent-session-ticket.ts',
-        moduleImport: './legacy/shell/auth/agent-session-ticket.ts',
+        path: 'apps/rallar-black-box/src/bootstrap-agent-session.ts',
+        moduleImport: './bootstrap-agent-session.ts',
         declarations: [
             {
-                name: 'scrubAgentSessionTicketFromUrl',
+                name: 'scrubBrowserAgentBootstrapSecretsFromUrl',
                 fingerprint:
-                    'b317987437379cfb9d790e831d9aada8dbb04f12888d8be00bd8a4abc5f85479',
+                    '73c8eceb526493c557741927a815b277f6f97bdea31bce3bd43f8bbf6cce608e',
             },
             {
                 name: 'consumeBootstrapAgentSessionTicket',
                 fingerprint:
-                    'd260fc54254279ff69f206d3a6b8385a04ce4671d4060a8f89583b68b440cd90',
+                    '63f61f551d5e474f8b43fac8f96874eb0823a1f6b99d6f2294d6f5e73a05b50c',
             },
         ],
         variable: {
             name: 'pendingAgentSessionTicketConsume',
             fingerprint:
-                '91e80d14b0cef62b4ae659ca019c847f8db4389f6799fc72c7811c8e5afeb9ad',
+                '9d7b9fd3d2863c14e20e5a2d5bd3d4f895140169abeb3c6cf640af7e9657794a',
         },
         imports: [
-            '@shared-web/browser/api-client-config.ts|value:configureApiClient',
-            '@shared-web/browser/api-integration.ts|value:consumeAgentSessionTicket',
+            '@shared-web/browser/api-integration.ts|value:consumeAgentSessionTicketAt',
             '@shared/api/api-config.ts|type:AuthSession',
         ],
         inventory: [
-            'export-function:scrubAgentSessionTicketFromUrl',
+            'variable:BOOTSTRAP_FRAGMENT_SECRET_FIELDS',
             'variable:pendingAgentSessionTicketConsume',
+            'export-function:scrubBrowserAgentBootstrapSecretsFromUrl',
+            'export-function:scrubAgentSessionTicketFromUrl',
             'export-function:consumeBootstrapAgentSessionTicket',
         ],
-        lineCap: 65,
+        lineCap: 70,
     },
 ] as const;
 
@@ -706,7 +707,7 @@ describe('rallar-black-box legacy shell ownership', () => {
         expect.soft(
             appDeclaration ? fingerprint([appDeclaration]) : '',
             'lazy experience cutover leaves App bootstrap/routing behavior exact',
-        ).toBe('f3528e1553eedcfde71ef5425f0f443647d421af97bdc422d372ff287a481126');
+        ).toBe('10ed1f4a1e5f2976bf2131cd1c0571ae96170968ad7da6ba6dc8f1b38dd36a24');
         expect.soft(
             createHash('sha256')
                 .update(repositorySource('apps/rallar-black-box/src/styles.css'))

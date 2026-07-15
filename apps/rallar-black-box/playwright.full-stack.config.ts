@@ -37,6 +37,9 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
     {
         command:
             `cd ../.. && npm --workspace rallar-black-box run dev -- --port ${portFromBaseUrl(fullStackSpaBaseUrl)} --force`,
+        env: {
+            VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl,
+        },
         url: fullStackSpaBaseUrl,
         reuseExistingServer,
         timeout: 60_000,

@@ -1019,7 +1019,7 @@ test('refuses Stage when fresh target resolution drifts', async ({
     const mock = await installLifecycleControl(context, {
         resolutionTargetIds(call, manifest) {
             const selected = manifest.targetPolicy.agentIds ?? [];
-            return call >= 3 ? selected.slice(0, 1) : selected;
+            return call === 3 ? selected.slice(0, 1) : selected;
         },
     });
     await createDraftThroughVisibleControls(page);
@@ -1044,6 +1044,9 @@ test('refuses Stage when fresh target resolution drifts', async ({
         'data-run-state',
         'draft',
     );
+    await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
+    await expect(actions.getByRole('button', { name: /Stage \d+ agents/ }))
+        .toBeEnabled();
 });
 
 test('keeps structured control provenance after a failed mutation refresh', async ({

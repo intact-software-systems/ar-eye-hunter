@@ -132,7 +132,11 @@ export function ControlConnectionProvider({
         bootstrap.bootstrapRunId,
         bootstrap.providerMode,
     ]);
-    const browserAgentLaunchIssue = bootstrap.providerMode === 'browser-rallar' && !authSession
+    const browserAgentLaunchIssue = bootstrap.providerMode !== 'browser-rallar'
+        ? undefined
+        : bootstrap.credentialPolicy.apiBaseUrlFromLocation
+        ? 'Use a configured API endpoint before launching browser-rallar agents. Stored operator credentials are blocked for a URL-configured API origin.'
+        : !authSession
         ? 'Log in before launching browser-rallar agents. Fresh per-agent sessions require an authenticated operator.'
         : undefined;
     const browserAgentLaunch = useMemo(() => apiSetup.api && !browserAgentLaunchIssue

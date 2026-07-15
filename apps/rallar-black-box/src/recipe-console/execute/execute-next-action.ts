@@ -66,6 +66,19 @@ export function deriveExecuteNextAction(
             input.policy.start.reason, input.targetCount);
     }
     if (input.runState === 'draft') {
+        if (
+            !input.policy.stage.enabled &&
+            input.policy.stage.code === 'resolution-required' &&
+            input.policy.resolve.enabled
+        ) {
+            return action(
+                'resolve',
+                `Resolve ${input.targetCount} targets`,
+                true,
+                undefined,
+                input.targetCount,
+            );
+        }
         return action('stage', `Stage ${input.targetCount} ${agentLabel(input.targetCount)}`,
             input.policy.stage.enabled, input.policy.stage.reason, input.targetCount);
     }
@@ -103,6 +116,15 @@ export function deriveExecuteNextAction(
     }
     if (input.policy.create.enabled) {
         return action('create', 'Create draft', true, undefined, input.targetCount);
+    }
+    if (input.policy.create.code === 'run-unavailable') {
+        return action(
+            'create',
+            'Create draft',
+            false,
+            input.policy.create.reason,
+            input.targetCount,
+        );
     }
     return action('resolve', `Resolve ${input.targetCount} targets`,
         input.policy.resolve.enabled, input.policy.resolve.reason, input.targetCount);

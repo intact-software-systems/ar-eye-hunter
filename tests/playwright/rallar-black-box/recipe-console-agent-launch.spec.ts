@@ -203,8 +203,9 @@ test('explains popup blocking without minting and keeps copy-link fallback usabl
     ).toContainText(
         'Your browser blocked all 3 agent tabs. Copy the launch links instead.',
     );
-    await expect(page.getByRole('button', { name: 'Copy 3 launch links' }))
-        .toBeEnabled();
+    const copyLinks = page.getByRole('button', { name: 'Copy 3 launch links' });
+    await expect(copyLinks).toBeEnabled();
+    await expect(copyLinks).toBeFocused();
     expect(control.tokenRequests).toHaveLength(0);
     const individualLinks = page
         .getByRole('group', { name: 'Individual browser-agent launch links' })
@@ -220,6 +221,42 @@ test('explains popup blocking without minting and keeps copy-link fallback usabl
         page.locator('[data-execute-agent-setup]').getByRole('status'),
     ).toContainText('Copied 3 fresh, short-lived launch links.');
     expect(control.tokenRequests).toHaveLength(4);
+});
+
+test('replaces an unopened copied cohort when the whole batch is copied again', async ({
+    context,
+    page,
+}) => {
+    const control = await installAgentLaunchControl(context, {
+        registerOnToken: false,
+    });
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(EXECUTE_ROUTE);
+    await page.getByLabel('Control run ID for new agents').fill('recopy-run');
+    await page.getByLabel('Agent ID prefix').fill('recopy-agent');
+
+    const copyLinks = page.getByRole('button', { name: 'Copy 3 launch links' });
+    await copyLinks.click();
+    await expect.poll(() => control.tokenRequests.length).toBe(3);
+    const firstAgentIds = control.tokenRequests.map(request => request.agentId);
+
+    await copyLinks.click();
+    await expect.poll(() => control.tokenRequests.length).toBe(6);
+    const replacementAgentIds = control.tokenRequests.slice(3)
+        .map(request => request.agentId);
+    expect(replacementAgentIds).not.toEqual(firstAgentIds);
+
+    for (const agentId of replacementAgentIds) {
+        control.registerAgent('recopy-run', agentId);
+    }
+    await page.locator('[data-execute-action-runway]')
+        .getByRole('button', { name: 'Refresh' }).click();
+
+    await expect(page.locator('[data-execute-targets]')).toContainText('3 selected');
+    await expect(page.locator('[data-execute-action-runway]')
+        .getByRole('button', { name: 'Resolve 3 targets' })).toBeVisible();
+    await expect(page.locator('[data-execute-action-runway]'))
+        .not.toContainText('3 of 6 browser agents ready');
 });
 
 test('mints only reserved tabs and keeps each partially blocked identity copyable', async ({

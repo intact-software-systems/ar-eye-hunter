@@ -20,15 +20,11 @@ import type { LegacyDiagnosticContext } from
     '../../../apps/rallar-black-box/src/legacy/diagnostics/context/legacy-diagnostic-context.ts';
 
 const ticketMocks = vi.hoisted(() => ({
-    configureApiClient: vi.fn(),
-    consumeAgentSessionTicket: vi.fn(),
+    consumeAgentSessionTicketAt: vi.fn(),
 }));
 
-vi.mock('@shared-web/browser/api-client-config.ts', () => ({
-    configureApiClient: ticketMocks.configureApiClient,
-}));
 vi.mock('@shared-web/browser/api-integration.ts', () => ({
-    consumeAgentSessionTicket: ticketMocks.consumeAgentSessionTicket,
+    consumeAgentSessionTicketAt: ticketMocks.consumeAgentSessionTicketAt,
 }));
 
 import {
@@ -304,28 +300,25 @@ describe('legacy agent-session ticket service', () => {
         const firstConsume = new Promise<AuthSession>((resolve) => {
             resolveFirst = resolve;
         });
-        ticketMocks.consumeAgentSessionTicket
+        ticketMocks.consumeAgentSessionTicketAt
             .mockReturnValueOnce(firstConsume)
-            .mockResolvedValueOnce(session);
+            .mockResolvedValue(session);
 
         const first = consumeBootstrapAgentSessionTicket(
             'ticket-a',
-            'https://api-a.example.test',
+            'https://api-a.example.test/',
         );
         const duplicate = consumeBootstrapAgentSessionTicket(
             'ticket-a',
-            'https://api-b.example.test',
+            'https://api-a.example.test',
         );
 
         expect(duplicate).toBe(first);
-        expect(ticketMocks.configureApiClient).toHaveBeenCalledOnce();
-        expect(ticketMocks.configureApiClient).toHaveBeenCalledWith({
-            apiBaseUrl: 'https://api-a.example.test',
-        });
-        expect(ticketMocks.consumeAgentSessionTicket).toHaveBeenCalledOnce();
-        expect(ticketMocks.consumeAgentSessionTicket).toHaveBeenCalledWith({
-            ticket: 'ticket-a',
-        });
+        expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledOnce();
+        expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledWith(
+            'https://api-a.example.test',
+            { ticket: 'ticket-a' },
+        );
 
         resolveFirst(session);
         await first;
@@ -334,10 +327,12 @@ describe('legacy agent-session ticket service', () => {
             'ticket-a',
             'https://api-c.example.test',
         );
-        expect(ticketMocks.consumeAgentSessionTicket).toHaveBeenCalledTimes(2);
-        expect(ticketMocks.configureApiClient).toHaveBeenNthCalledWith(2, {
-            apiBaseUrl: 'https://api-c.example.test',
-        });
+        expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledTimes(2);
+        expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenNthCalledWith(
+            2,
+            'https://api-c.example.test',
+            { ticket: 'ticket-a' },
+        );
     });
 
     it('clears a rejected consume from the in-flight cache', async () => {
@@ -348,7 +343,7 @@ describe('legacy agent-session ticket service', () => {
             sessionId: 'retry-session',
             expiresAtEpochMs: 9_999,
         };
-        ticketMocks.consumeAgentSessionTicket
+        ticketMocks.consumeAgentSessionTicketAt
             .mockRejectedValueOnce(new Error('ticket temporarily unavailable'))
             .mockResolvedValueOnce(session);
 
@@ -361,6 +356,6 @@ describe('legacy agent-session ticket service', () => {
             'https://api.example.test',
         )).resolves.toEqual(session);
 
-        expect(ticketMocks.consumeAgentSessionTicket).toHaveBeenCalledTimes(2);
+        expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledTimes(2);
     });
 });

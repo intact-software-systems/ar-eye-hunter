@@ -14,10 +14,10 @@ import {
     executeAgentLaunchErrorMessage,
     executeAgentLaunchRunIdSync,
     mergeExecuteAgentLaunchCohort,
+    sameExecuteAgentIds,
     type ExecuteAgentLaunchCohort,
 } from './execute-agent-launch-state.ts';
 import { useExecuteAgentCohort } from './use-execute-agent-cohort.ts';
-
 export function useExecuteAgentLaunch(input: Readonly<{
     connection: RecipeConsoleControlConnection;
     controlRunId?: string;
@@ -161,7 +161,7 @@ export function useExecuteAgentLaunch(input: Readonly<{
         setMessage(undefined);
     }
 
-    function openAgents(): void {
+    function openAgents(): 'blocked' | 'reserved' | undefined {
         if (blocker || busyAction) return;
         const reservation = reserveBrowserAgentPopups(agentIds);
         setBlockedAgentIds(reservation.blockedAgentIds);
@@ -169,10 +169,11 @@ export function useExecuteAgentLaunch(input: Readonly<{
             setMessage(
                 `Your browser blocked all ${agentIds.length} agent tabs. Copy the launch links instead.`,
             );
-            return;
+            return 'blocked';
         }
         reservationRef.current = reservation;
         void prepareReserved(reservation);
+        return 'reserved';
     }
 
     async function prepareReserved(
@@ -229,11 +230,12 @@ export function useExecuteAgentLaunch(input: Readonly<{
     async function copyAgents(ids: readonly string[]): Promise<void> {
         const service = input.connection.browserAgentLaunch;
         if (blocker || !service || busyAction) return;
+        const replaceCohort = sameExecuteAgentIds(ids, agentIds);
         const generation = ++generationRef.current;
         const controller = new AbortController();
         requestRef.current = controller;
         setPendingCohort(mergeExecuteAgentLaunchCohort(
-            cohort,
+            replaceCohort ? undefined : cohort,
             runId.trim(),
             ids,
         ));
@@ -252,7 +254,7 @@ export function useExecuteAgentLaunch(input: Readonly<{
                 prepared.agents.map(agent => agent.launchUrl).join('\n'),
             );
             setCohort(previous => mergeExecuteAgentLaunchCohort(
-                previous,
+                replaceCohort ? undefined : previous,
                 prepared.runId,
                 prepared.agents.map(agent => agent.agentId),
             ));

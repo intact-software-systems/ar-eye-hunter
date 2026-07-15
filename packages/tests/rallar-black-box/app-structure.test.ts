@@ -6247,7 +6247,7 @@ describe('rallar-black-box app source ownership', () => {
         for (const [path, name, expectedFingerprint] of [
             [catalogHookPath, 'useRunnerRecipeCatalog', '4bf50cb94592de66fdc974223a5659e76ed261a3932d647acd7225650b79a584'],
             [agentHookPath, 'useRunnerAgentLaunchState', '4f28484f5cd4a41ae86c7414c3d98b7dc14fac54cdf3bebb70563aafa04aa332'],
-            [agentActionsPath, 'createRunnerAgentLaunchActions', '0a5f0722b7a0d91bce8e342a0dc074f64a19d94f5f552afe9ddb0ac3ac7c9ace'],
+            [agentActionsPath, 'createRunnerAgentLaunchActions', '895beea0fb541004472f2c0d8d93b787b07a4ecb8935459e1cd8be749d139381'],
             [controllerPath, 'useRunnerRecipesController', '5575a9fac56145397174f0fd2b18cf18082d372e6afd98f831b258b5866f2e65'],
             [panelPath, 'RunnerRecipesPanel', '449bad4dcec604534ade3c78f9b11949fc9f8f06d26e2cc7c2adcda30f0ca2c6'],
         ] as const) {

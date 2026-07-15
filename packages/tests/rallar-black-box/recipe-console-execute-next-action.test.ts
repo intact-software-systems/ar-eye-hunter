@@ -111,4 +111,37 @@ describe('Recipe Console Execute next action', () => {
             });
         },
     );
+
+    it('returns to Resolve when an authoritative draft has no current resolution', () => {
+        const draftPolicy = policy({
+            runState: 'draft',
+            hasKnownRun: true,
+            resolutionCurrent: false,
+        });
+
+        expect(deriveExecuteNextAction(input({
+            runState: 'draft',
+            policy: draftPolicy,
+        }))).toMatchObject({
+            step: 'resolve',
+            label: 'Resolve 3 targets',
+            enabled: true,
+        });
+    });
+
+    it('surfaces the unavailable-run Create blocker instead of repeating Resolve', () => {
+        const unavailablePolicy = policy({
+            unknownDistributedRunId: true,
+            resolutionCurrent: true,
+        });
+
+        expect(deriveExecuteNextAction(input({
+            policy: unavailablePolicy,
+        }))).toMatchObject({
+            step: 'create',
+            label: 'Create draft',
+            enabled: false,
+            reason: expect.stringContaining('clear or restore'),
+        });
+    });
 });

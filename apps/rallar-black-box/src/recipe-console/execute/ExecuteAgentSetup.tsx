@@ -1,6 +1,7 @@
 import type { ExecuteAgentLaunchModel } from './use-execute-agent-launch.ts';
 import type { RecipeConsoleControlConnection } from
     '../control/ControlConnectionProvider.tsx';
+import { useRef } from 'react';
 import styles from './ExecuteAgentSetup.module.css';
 
 export function ExecuteAgentSetup({
@@ -10,6 +11,7 @@ export function ExecuteAgentSetup({
     connection: RecipeConsoleControlConnection;
     model: ExecuteAgentLaunchModel;
 }>) {
+    const copyLinksRef = useRef<HTMLButtonElement>(null);
     const group = model.group;
     const noun = model.count === 1 ? 'browser agent' : 'browser agents';
     const displacedBlockedAgentIds = model.blockedAgentIds.filter(
@@ -76,7 +78,11 @@ export function ExecuteAgentSetup({
                         <button
                             className={styles.primary}
                             disabled={Boolean(model.blocker || model.busyAction)}
-                            onClick={model.openAgents}
+                            onClick={() => {
+                                if (model.openAgents() === 'blocked') {
+                                    copyLinksRef.current?.focus();
+                                }
+                            }}
                             type="button"
                         >{model.busyAction === 'open'
                             ? `Opening ${noun}…`
@@ -84,6 +90,7 @@ export function ExecuteAgentSetup({
                         <button
                             disabled={Boolean(model.blocker || model.busyAction)}
                             onClick={() => void model.copyAgentLinks()}
+                            ref={copyLinksRef}
                             type="button"
                         >{model.busyAction === 'copy'
                             ? 'Preparing links…'

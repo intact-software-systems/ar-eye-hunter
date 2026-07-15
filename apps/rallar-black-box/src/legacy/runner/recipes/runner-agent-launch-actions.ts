@@ -57,6 +57,7 @@ export function createRunnerAgentLaunchActions({
         authSession,
         issueAgentSessions: agentRestoreSession,
         allowAnonymousControlToken: true,
+        allowSharedControlToken: true,
         issueRunToken: async ({ runId, agentId }) => {
             const issuedAtEpochMs = Date.now();
             return {

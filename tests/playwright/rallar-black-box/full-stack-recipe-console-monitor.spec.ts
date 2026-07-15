@@ -102,7 +102,6 @@ function operatorUrl(input: Readonly<{
         experience: 'recipe-console',
         view: 'execute',
         recipeId: 'composite-evidence-recipe',
-        apiBaseUrl: CONFIGURED_POSTGRES.apiBaseUrl,
         controlUrl: CONFIGURED_POSTGRES.controlWsUrl,
         applicationId: CONFIGURED_POSTGRES.applicationId,
         workspaceId: CONFIGURED_POSTGRES.workspaceId,
