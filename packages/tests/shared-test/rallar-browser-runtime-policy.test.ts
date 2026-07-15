@@ -92,6 +92,37 @@ describe('browser Rallar runtime lifecycle policy', () => {
         expect(first).not.toEqual(second);
     });
 
+    it('uses the same room reference precedence as runtime operations', () => {
+        expect(
+            blackBoxRallarConnectionTargetOf({
+                roomRef: {
+                    applicationId: 'outer-app',
+                    workspaceId: 'outer-workspace',
+                    groupId: 'outer-room',
+                },
+                rallar: {
+                    apiBaseUrl: 'https://api.example.test',
+                    username: 'alice',
+                    roomRef: {
+                        applicationId: 'runtime-app',
+                        workspaceId: 'runtime-workspace',
+                        groupId: 'runtime-room',
+                    },
+                },
+            }),
+        ).toEqual({
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            applicationId: 'runtime-app',
+            workspaceId: 'runtime-workspace',
+            roomRef: {
+                applicationId: 'runtime-app',
+                workspaceId: 'runtime-workspace',
+                groupId: 'runtime-room',
+            },
+        });
+    });
+
     it('keys connection work by behavior as well as lifecycle target', () => {
         const base = {
             connection: 'aliceRtc',

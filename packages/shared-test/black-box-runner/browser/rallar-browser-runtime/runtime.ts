@@ -11,6 +11,7 @@ import {
     blackBoxRallarAuthenticationIdentityOf,
     blackBoxRallarConnectionOperationKeyOf,
     blackBoxRallarConnectionTargetOf,
+    blackBoxRallarRoomRefOf,
     decideBlackBoxRallarLifecycleRequest,
     isSameBlackBoxRallarSession,
     mergeBlackBoxRallarAuthenticationConfig,
@@ -279,40 +280,7 @@ function createBlackBoxRallarRuntimeInstallation(
         config: BlackBoxRallarConnectionConfig,
         input?: BlackBoxRallarSendInput,
     ): BlackBoxRallarRoomRef | undefined {
-        const explicit = input?.roomRef ?? config.rallar.roomRef ?? config.roomRef;
-        if (explicit?.applicationId && explicit.groupId) {
-            return {
-                applicationId: String(explicit.applicationId),
-                ...(explicit.workspaceId !== undefined ? { workspaceId: String(explicit.workspaceId) } : {}),
-                groupId: String(explicit.groupId),
-            };
-        }
-
-        const roomId = input?.roomId ?? config.roomId;
-        if (!roomId) {
-            return undefined;
-        }
-
-        const applicationId =
-            input?.applicationId ??
-            input?.scope?.applicationId ??
-            config.rallar.applicationId ??
-            config.rallar.scope?.applicationId;
-        if (!applicationId) {
-            return undefined;
-        }
-
-        const workspaceId =
-            input?.workspaceId ??
-            input?.scope?.workspaceId ??
-            config.rallar.workspaceId ??
-            config.rallar.scope?.workspaceId;
-
-        return {
-            applicationId: String(applicationId),
-            ...(workspaceId !== undefined ? { workspaceId: String(workspaceId) } : {}),
-            groupId: String(roomId),
-        };
+        return blackBoxRallarRoomRefOf(config, input);
     }
 
     function scopeDiagnostics(
@@ -1282,8 +1250,24 @@ function createBlackBoxRallarRuntimeInstallation(
         const activeCrdtOpens = crdtController.pending();
         const authenticatedConfig = authenticationState?.config;
         return lifecycle.close(async context => {
-            const config =
-                runtimeState?.config ?? authenticatedConfig ?? context.authenticationConfig ?? closeRetryConfig;
+            const configs = [
+                runtimeState?.config,
+                authenticatedConfig,
+                context.authenticationConfig,
+                closeRetryConfig,
+            ];
+            const baseConfig = configs.find(
+                (config): config is BlackBoxRallarConnectionConfig => config !== undefined,
+            );
+            const config = baseConfig
+                ? configs.reduce<BlackBoxRallarConnectionConfig>(
+                      (merged, candidate) =>
+                          candidate
+                              ? mergeBlackBoxRallarAuthenticationConfig(candidate, merged)
+                              : merged,
+                      baseConfig,
+                  )
+                : undefined;
             closeRetryConfig = config;
             try {
                 const diagnostics = await closeEffect({ runtimeState, config });

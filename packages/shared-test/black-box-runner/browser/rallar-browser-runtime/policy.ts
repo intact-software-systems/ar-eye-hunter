@@ -1,3 +1,9 @@
+import type {
+    BlackBoxRallarConnectionConfig,
+    BlackBoxRallarRoomRef,
+    BlackBoxRallarSendInput,
+} from './contracts.ts';
+
 export type BlackBoxRallarSessionIdentity = Readonly<{
     clientId: string;
     sessionId: string;
@@ -52,6 +58,42 @@ function normalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): BlackBox
               groupId: roomRef.groupId,
           }
         : undefined;
+}
+
+export function blackBoxRallarRoomRefOf(
+    config: ConnectionConfig,
+    input?: BlackBoxRallarSendInput,
+): BlackBoxRallarRoomRef | undefined {
+    const explicit = input?.roomRef ?? config.rallar.roomRef ?? config.roomRef;
+    if (explicit?.applicationId && explicit.groupId) {
+        return normalizedRoomRef(explicit);
+    }
+
+    const roomId = input?.roomId ?? config.roomId;
+    if (!roomId) {
+        return undefined;
+    }
+
+    const applicationId =
+        input?.applicationId ??
+        input?.scope?.applicationId ??
+        config.rallar.applicationId ??
+        config.rallar.scope?.applicationId;
+    if (!applicationId) {
+        return undefined;
+    }
+
+    const workspaceId =
+        input?.workspaceId ??
+        input?.scope?.workspaceId ??
+        config.rallar.workspaceId ??
+        config.rallar.scope?.workspaceId;
+
+    return {
+        applicationId: String(applicationId),
+        ...(workspaceId !== undefined ? { workspaceId: String(workspaceId) } : {}),
+        groupId: String(roomId),
+    };
 }
 
 function normalizedMessageSelector(
@@ -129,7 +171,7 @@ export function blackBoxRallarConnectionTargetOf(
     restoredSession?: Pick<BlackBoxRallarSessionIdentity, 'username'>,
 ): BlackBoxRallarConnectionTarget {
     const identity = blackBoxRallarAuthenticationIdentityOf(config.rallar, restoredSession);
-    const roomRef = config.roomRef ?? config.rallar.roomRef;
+    const roomRef = blackBoxRallarRoomRefOf(config);
     const applicationId = config.rallar.scope?.applicationId ?? roomRef?.applicationId ?? config.rallar.applicationId;
     const workspaceId = applicationId
         ? config.rallar.scope?.workspaceId ?? roomRef?.workspaceId ?? config.rallar.workspaceId ?? DEFAULT_WORKSPACE_ID
@@ -253,4 +295,3 @@ export function decideBlackBoxRallarLifecycleRequest(
     }
     return { kind: 'allow' };
 }
-import type { BlackBoxRallarConnectionConfig, BlackBoxRallarRoomRef } from './contracts.ts';

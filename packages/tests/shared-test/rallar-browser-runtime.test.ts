@@ -440,6 +440,45 @@ describe('browser Rallar black-box runtime', () => {
         expect(facade.rallar.rooms.join).toHaveBeenCalledTimes(1);
     });
 
+    it('preserves logout cleanup when connect reuses an authenticated session', async () => {
+        const runtime = await loadRuntime();
+        const authentication = {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+        };
+        await runtime.authenticate({
+            connection: 'aliceHttp',
+            actor: 'alice',
+            rallar: {
+                ...authentication,
+                logoutOnClose: true,
+            },
+        });
+        facade.rallar.auth.restore.mockReturnValue(facade.session);
+
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                ...authentication,
+                logoutOnClose: false,
+            },
+        });
+        const diagnostics = await runtime.close();
+
+        expect(facade.rallar.auth.logout).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.disconnect).not.toHaveBeenCalled();
+        expect(diagnostics).toMatchObject({
+            status: 'closed',
+            connection: 'aliceRtc',
+            roomId: 'room-1',
+            logout: true,
+            disconnected: false,
+        });
+    });
+
     it('shares an in-flight authentication bootstrap with connect', async () => {
         let resolveRegistration!: (session: typeof facade.session) => void;
         const registration = new Promise<typeof facade.session>(resolve => {
