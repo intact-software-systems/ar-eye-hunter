@@ -136,6 +136,9 @@ function addResults(
         }
         const status = result.result?.status ?? (result.ok ? 'ok' : 'failed');
         const kind = result.result?.kind;
+        const failureDetails = status === 'failed'
+            ? resultFailureDetails(result.error ?? result.result?.error)
+            : undefined;
         rows.push(bound(input, {
             id: stableEvidenceId(
                 'result', result.agentId, result.commandId,
@@ -159,8 +162,37 @@ function addResults(
                 result.error?.details ?? result.result?.error?.details ??
                     result.result?.value,
             ),
+            ...(failureDetails ? { failureDetails } : {}),
         }));
     }
+}
+
+function resultFailureDetails(
+    value: unknown,
+): DistributedArtifactEvidenceEntry['failureDetails'] {
+    let record = evidenceRecord(value);
+    const details: Record<'code' | 'name' | 'message' | 'stack', string | undefined> = {
+        code: undefined,
+        name: undefined,
+        message: undefined,
+        stack: undefined,
+    };
+    for (let depth = 0; depth <= 4; depth += 1) {
+        for (const field of ['code', 'name', 'message', 'stack'] as const) {
+            const candidate = evidenceStringField(record, field)?.trim();
+            if (candidate) details[field] = candidate;
+        }
+        if (depth === 4) break;
+        const nested = evidenceRecord(record.details);
+        if (Object.keys(nested).length === 0) break;
+        record = nested;
+    }
+    const populated = Object.fromEntries(
+        Object.entries(details).filter((entry): entry is [string, string] =>
+            typeof entry[1] === 'string'
+        ),
+    );
+    return Object.keys(populated).length > 0 ? populated : undefined;
 }
 
 function addMonitorEvents(

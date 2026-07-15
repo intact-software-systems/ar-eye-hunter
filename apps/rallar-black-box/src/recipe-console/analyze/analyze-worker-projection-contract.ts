@@ -17,6 +17,7 @@ import type {
 } from '@shared-test/rallar-bb-test/mod.ts';
 import type {
     AnalyzeArtifactIgnoredFile,
+    AnalyzePrimaryResultFailure,
     AnalyzeArtifactSource,
 } from './analyze-artifact-model.ts';
 
@@ -60,6 +61,7 @@ export type AnalyzeArtifactProjection = Readonly<{
         ignoredFiles: readonly AnalyzeArtifactIgnoredFile[];
     }>;
     firstActionableEvidenceId?: string;
+    primaryResultFailure?: AnalyzePrimaryResultFailure;
 }>;
 
 export type AnalyzeEvidenceWindowProjection = Readonly<{

@@ -3,6 +3,7 @@ export type {
     DeriveDistributedArtifactEvidenceIndexInput,
     DeriveDistributedArtifactEvidenceInput,
     DistributedArtifactEvidenceEntry,
+    DistributedArtifactEvidenceFailureDetails,
     DistributedArtifactEvidenceCatalog,
     DistributedArtifactEvidenceCollections,
     DistributedArtifactEvidenceCursor,

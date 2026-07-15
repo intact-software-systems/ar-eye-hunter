@@ -11,6 +11,15 @@ export const ANALYZE_RECIPE_ID = 'analyze-rtc-relay';
 export const ANALYZE_COMMAND_ID = 'analyze-send-relay';
 export const ANALYZE_FAILURE_MESSAGE = 'TURN relay allocation failed for receiver.';
 export const ANALYZE_DIAGNOSTIC_MESSAGE = 'Relay allocation missing in eu-north.';
+export const ANALYZE_RESULT_FAILURE_CODE = 'RALLAR_BLACK_BOX_COMMAND_FAILED';
+export const ANALYZE_RESULT_FAILURE_NAME = 'RALLAR_BLACK_BOX_TIMEOUT';
+export const ANALYZE_RESULT_FAILURE_MESSAGE =
+    'Rallar black-box command timeout reached.';
+export const ANALYZE_RESULT_FAILURE_STACK = [
+    `${ANALYZE_RESULT_FAILURE_NAME}: ${ANALYZE_RESULT_FAILURE_MESSAGE}`,
+    ' at _t (https://blackbox.rallar.intactss.com/headless/assets/index-DG6wNwRv.js:1:50131)',
+    ' at https://blackbox.rallar.intactss.com/headless/assets/index-DG6wNwRv.js:1:62093',
+].join('\n');
 export const ANALYZE_BASE_EPOCH_MS = 2_100_000_000_000;
 export const ANALYZE_GENERATED_AT_EPOCH_MS = 2_100_000_001_000;
 export const ANALYZE_ROUTE =

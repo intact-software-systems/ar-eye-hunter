@@ -68,6 +68,9 @@ export function projectAnalyzeEvidenceEntry(
             : {}),
         summary: boundedText(entry.summary, MAX_SUMMARY_BYTES),
         payloadSummary: boundedText(entry.payloadSummary),
+        ...(entry.failureDetails
+            ? { failureDetails: projectFailureDetails(entry.failureDetails, true) }
+            : {}),
     };
 }
 
@@ -132,5 +135,28 @@ function projectMinimalEvidenceEntry(
         sourceFile: boundedText(entry.sourceFile, 128),
         summary: boundedText(entry.summary, 256),
         payloadSummary: '',
+        ...(entry.failureDetails
+            ? { failureDetails: projectFailureDetails(entry.failureDetails, false) }
+            : {}),
+    };
+}
+
+function projectFailureDetails(
+    details: NonNullable<DistributedArtifactEvidenceEntry['failureDetails']>,
+    includeStack: boolean,
+): NonNullable<DistributedArtifactEvidenceEntry['failureDetails']> {
+    return {
+        ...(details.code
+            ? { code: boundedText(details.code, MAX_SUMMARY_BYTES) }
+            : {}),
+        ...(details.name
+            ? { name: boundedText(details.name, MAX_SUMMARY_BYTES) }
+            : {}),
+        ...(details.message
+            ? { message: boundedText(details.message, MAX_SUMMARY_BYTES) }
+            : {}),
+        ...(includeStack && details.stack
+            ? { stack: boundedText(details.stack) }
+            : {}),
     };
 }

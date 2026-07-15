@@ -174,6 +174,51 @@ describe('Recipe Console Analyze artifact projection', () => {
         );
         expect(projection.identity.distributedRunId).toMatch(/^opaque-id:/);
         expect(projection.firstActionableEvidenceId).toMatch(/^opaque-id:/);
+        expect(projection.primaryResultFailure?.evidenceId).toMatch(/^opaque-id:/);
+        expect(new TextEncoder().encode(
+            projection.primaryResultFailure?.sourceFile,
+        ).byteLength).toBeLessThanOrEqual(ANALYZE_PROJECTION_MAX_TEXT_BYTES);
+        expect(projection.primaryResultFailure?.failureDetails).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            name: 'RALLAR_BLACK_BOX_TIMEOUT',
+            message: 'Rallar black-box command timeout reached.',
+        });
+        expect(projection.primaryResultFailure?.failureDetails)
+            .not.toHaveProperty('stack');
+    });
+
+    it('keeps the retained stack in the normal primary-result projection', () => {
+        const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
+        const base = createAnalyzeArtifactModel({
+            files: fixture.files,
+            source: 'local-files',
+            label: 'Normal primary result fixture',
+            generatedAtEpochMs: fixture.generatedAtEpochMs,
+        });
+        const projection = projectAnalyzeArtifactModel({
+            ...base,
+            primaryResultFailure: {
+                evidenceId: `${HUGE_TEXT}-primary-result`,
+                sourceFile: 'results.jsonl',
+                failureDetails: {
+                    code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+                    name: 'RALLAR_BLACK_BOX_TIMEOUT',
+                    message: 'Rallar black-box command timeout reached.',
+                    stack: 'RALLAR_BLACK_BOX_TIMEOUT: timeout\n at command.ts:4:2',
+                },
+            },
+        });
+
+        expect(projection.primaryResultFailure).toEqual({
+            evidenceId: expect.stringMatching(/^opaque-id:/),
+            sourceFile: 'results.jsonl',
+            failureDetails: {
+                code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+                name: 'RALLAR_BLACK_BOX_TIMEOUT',
+                message: 'Rallar black-box command timeout reached.',
+                stack: 'RALLAR_BLACK_BOX_TIMEOUT: timeout\n at command.ts:4:2',
+            },
+        });
     });
 
     it('projects evidence metadata recursively and retains deterministic opaque selection handles', () => {
@@ -203,11 +248,25 @@ describe('Recipe Console Analyze artifact projection', () => {
             );
         }
         expect(window.entries).toHaveLength(64);
-        expect(window.entries[0]?.agentIds?.length).toBeLessThanOrEqual(
+        expect(projected.agentIds?.length).toBeLessThanOrEqual(
             ANALYZE_PROJECTION_MAX_ARRAY_LENGTH,
         );
+        expect(window.entries[0]).not.toHaveProperty('agentIds');
         expect(window.previousCursor).toBe('signed-cursor-previous');
         expect(window.nextCursor).toBe('signed-cursor-next');
+        expect(projected.failureDetails).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            name: 'RALLAR_BLACK_BOX_TIMEOUT',
+            message: 'Rallar black-box command timeout reached.',
+            stack: expect.any(String),
+        });
+        expect(new TextEncoder().encode(projected.failureDetails?.stack).byteLength)
+            .toBeLessThanOrEqual(ANALYZE_PROJECTION_MAX_TEXT_BYTES);
+        expect(window.entries[0]?.failureDetails).toEqual({
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            name: 'RALLAR_BLACK_BOX_TIMEOUT',
+            message: 'Rallar black-box command timeout reached.',
+        });
     });
 
     it('bounds Tune display data and never truncates a candidate manifest into authority', () => {
@@ -316,6 +375,7 @@ describe('Recipe Console Analyze artifact projection', () => {
 
 const HUGE_TEXT = 'hostile-æøå-🧪'.repeat(100_000);
 const OVERSIZED_TEXT = 'oversized-æøå-🧪'.repeat(1_000);
+const ESCAPED_OVERSIZED_TEXT = '\\"'.repeat(10_000);
 
 function hostileAnalyzeModel(): AnalyzeArtifactModel {
     const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
@@ -474,14 +534,24 @@ function hostileAnalyzeModel(): AnalyzeArtifactModel {
             })),
         },
         firstActionableEvidenceId: `${HUGE_TEXT}-first-evidence`,
+        primaryResultFailure: {
+            evidenceId: `${HUGE_TEXT}-result-evidence`,
+            sourceFile: OVERSIZED_TEXT,
+            failureDetails: {
+                code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+                name: 'RALLAR_BLACK_BOX_TIMEOUT',
+                message: 'Rallar black-box command timeout reached.',
+                stack: OVERSIZED_TEXT,
+            },
+        },
     } as unknown as AnalyzeArtifactModel;
 }
 
 function hostileEvidenceEntry(id: string): DistributedArtifactEvidenceEntry {
     return {
         id,
-        kind: 'diagnostic',
-        sourceFile: OVERSIZED_TEXT,
+        kind: 'result',
+        sourceFile: ESCAPED_OVERSIZED_TEXT,
         agentId: OVERSIZED_TEXT,
         agentIds: Array.from(
             { length: ANALYZE_PROJECTION_MAX_ARRAY_LENGTH + 40 },
@@ -491,14 +561,20 @@ function hostileEvidenceEntry(id: string): DistributedArtifactEvidenceEntry {
         ),
         recipeId: OVERSIZED_TEXT,
         commandId: OVERSIZED_TEXT,
-        topic: OVERSIZED_TEXT,
-        diagnosticType: OVERSIZED_TEXT,
-        severity: OVERSIZED_TEXT,
-        transport: OVERSIZED_TEXT,
-        status: OVERSIZED_TEXT,
-        category: OVERSIZED_TEXT,
-        summary: OVERSIZED_TEXT,
-        payloadSummary: OVERSIZED_TEXT,
+        topic: ESCAPED_OVERSIZED_TEXT,
+        diagnosticType: ESCAPED_OVERSIZED_TEXT,
+        severity: ESCAPED_OVERSIZED_TEXT,
+        transport: ESCAPED_OVERSIZED_TEXT,
+        status: 'failed',
+        category: ESCAPED_OVERSIZED_TEXT,
+        summary: ESCAPED_OVERSIZED_TEXT,
+        payloadSummary: ESCAPED_OVERSIZED_TEXT,
+        failureDetails: {
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            name: 'RALLAR_BLACK_BOX_TIMEOUT',
+            message: 'Rallar black-box command timeout reached.',
+            stack: ESCAPED_OVERSIZED_TEXT,
+        },
     };
 }
 

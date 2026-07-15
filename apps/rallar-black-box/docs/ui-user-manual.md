@@ -129,6 +129,30 @@ Legacy launch remains available for rollback at:
 /?experience=legacy&workspace=black-box-runner&tab=recipes
 ```
 
+## Analyze: Follow Result Failure Evidence
+
+Stay on `experience=recipe-console&view=analyze`, then import a distributed-
+run bundle or load one from Control. Analyze keeps the synthesized first
+actionable failure as the main verdict and preserves **Inspect evidence** for
+that failure.
+
+When the correlated failed command result contains structured error data, use
+this denser path:
+
+1. Read the result failure code, runtime name, actionable message, and first
+   retained stack frame directly in the verdict.
+2. Choose **Inspect result** to select that correlated result and open the
+   normal inspector. This is separate from **Inspect evidence**.
+3. Read the retained multiline stack at the top of the inspector, before the
+   source and command metadata.
+4. Expand **Raw payload JSON** only when you need to verify the preserved
+   payload summary against the source artifact.
+
+Failed-result rows repeat compact code and runtime markers plus the actionable
+message, so filtered evidence remains identifiable before opening the
+inspector. Results without structured failure details, and non-result evidence,
+keep the existing expanded payload-summary presentation.
+
 ## Legacy Header And Tabs
 
 The following header and tab controls belong to the explicit legacy experience. They remain available for diagnostic

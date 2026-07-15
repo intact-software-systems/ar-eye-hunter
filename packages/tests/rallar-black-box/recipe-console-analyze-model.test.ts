@@ -4,13 +4,24 @@ import {
     createAnalyzeArtifactModel,
     deriveAnalyzeArtifactModel,
     deriveAnalyzeArtifactSearchResult,
+    prepareAnalyzeArtifactModel,
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
+import { deriveAnalyzePrimaryResultFailure } from
+    '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-primary-result-failure.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
-import type { DistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import {
+    deriveDistributedArtifactEvidenceIndex,
+    type DistributedRunArtifactFiles,
+} from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import { createRecipeConsoleScaleFixture } from
     '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 const GENERATED_AT_EPOCH_MS = Date.parse('2026-07-12T14:00:00.000Z');
+const TIMEOUT_STACK = [
+    'RALLAR_BLACK_BOX_TIMEOUT: Rallar black-box command timeout reached.',
+    ' at _t (https://blackbox.rallar.intactss.com/headless/assets/index-DG6wNwRv.js:1:50131)',
+    ' at https://blackbox.rallar.intactss.com/headless/assets/index-DG6wNwRv.js:1:62093',
+].join('\n');
 
 function coreFiles(
     overrides: DistributedRunArtifactFiles = {},
@@ -428,8 +439,18 @@ describe('Recipe Console Analyze artifact model', () => {
     });
 
     it('composes issue-ready markdown and selects the first actionable failure', () => {
+        const files = coreFiles({ 'events.jsonl': '{not-json\n' });
+        const controlRun = JSON.parse(files['control-run.json'] ?? '{}');
+        controlRun.results[0].error = {
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            details: {
+                name: 'RALLAR_BLACK_BOX_TIMEOUT',
+                stack: TIMEOUT_STACK,
+            },
+            message: 'Rallar black-box command timeout reached.',
+        };
         const model = createAnalyzeArtifactModel({
-            files: coreFiles({ 'events.jsonl': '{not-json\n' }),
+            files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             source: 'local-files',
             label: 'Failed CI run',
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
@@ -445,6 +466,51 @@ describe('Recipe Console Analyze artifact model', () => {
         expect(model.evidenceIndex.entries.find(entry =>
             entry.id === model.firstActionableEvidenceId
         )?.kind).toBe('failure');
+        expect(model.primaryResultFailure).toEqual({
+            evidenceId: expect.stringMatching(/^result:/),
+            sourceFile: 'control-run.json',
+            failureDetails: {
+                code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+                name: 'RALLAR_BLACK_BOX_TIMEOUT',
+                message: 'Rallar black-box command timeout reached.',
+                stack: TIMEOUT_STACK,
+            },
+        });
+        expect(model.evidenceIndex.entries.find(entry =>
+            entry.id === model.primaryResultFailure?.evidenceId
+        )).toMatchObject({ commandId: model.analysis.failure?.commandId });
+    });
+
+    it('falls back deterministically when no structured result matches the analysis command', () => {
+        const files = coreFiles();
+        const controlRun = JSON.parse(files['control-run.json'] ?? '{}');
+        controlRun.results[0].error = {
+            code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+            details: { name: 'RALLAR_BLACK_BOX_TIMEOUT' },
+            message: 'Rallar black-box command timeout reached.',
+        };
+        const prepared = prepareAnalyzeArtifactModel({
+            files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
+            source: 'local-files',
+            label: 'Unmatched failure command',
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+        });
+        if (!prepared.analysis.failure) throw new Error('Expected failure.');
+        const evidenceIndex = deriveDistributedArtifactEvidenceIndex(
+            prepared.evidenceInput,
+        );
+        const primaryResultFailure = deriveAnalyzePrimaryResultFailure({
+            ...prepared.analysis,
+            failure: {
+                ...prepared.analysis.failure,
+                commandId: 'missing-command',
+            },
+        }, evidenceIndex);
+
+        expect(primaryResultFailure).toMatchObject({
+            evidenceId: expect.stringMatching(/^result:/),
+            failureDetails: { name: 'RALLAR_BLACK_BOX_TIMEOUT' },
+        });
     });
 
     it('derives evidence search exclusively from URL-backed Analyze fields', () => {

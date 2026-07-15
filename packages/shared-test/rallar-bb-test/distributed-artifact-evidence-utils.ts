@@ -15,6 +15,29 @@ export function boundedEvidenceEntry(
             entry.payloadSummary,
             payloadSummaryLimit,
         ),
+        ...(entry.failureDetails
+            ? {
+                  failureDetails: {
+                      ...(entry.failureDetails.code
+                          ? { code: boundedEvidenceText(entry.failureDetails.code, summaryLimit) }
+                          : {}),
+                      ...(entry.failureDetails.name
+                          ? { name: boundedEvidenceText(entry.failureDetails.name, summaryLimit) }
+                          : {}),
+                      ...(entry.failureDetails.message
+                          ? { message: boundedEvidenceText(entry.failureDetails.message, summaryLimit) }
+                          : {}),
+                      ...(entry.failureDetails.stack
+                          ? {
+                                stack: boundedMultilineEvidenceText(
+                                    entry.failureDetails.stack,
+                                    payloadSummaryLimit,
+                                ),
+                            }
+                          : {}),
+                  },
+              }
+            : {}),
     };
 }
 
@@ -117,6 +140,17 @@ export function transportFromCommandKind(
 
 function boundedEvidenceText(value: string, limit: number): string {
     const normalized = value.replace(/\s+/g, ' ').trim();
+    if (normalized.length <= limit) return normalized;
+    return `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+}
+
+function boundedMultilineEvidenceText(value: string, limit: number): string {
+    const normalized = value
+        .replace(/\r\n?/g, '\n')
+        .split('\n')
+        .map(line => line.replace(/[^\S\n]+/g, ' ').trimEnd())
+        .join('\n')
+        .trim();
     if (normalized.length <= limit) return normalized;
     return `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
 }

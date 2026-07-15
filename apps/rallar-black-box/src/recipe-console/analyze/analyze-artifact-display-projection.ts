@@ -53,6 +53,14 @@ export function projectAnalyzeArtifactModel(
                   ),
               }
             : {}),
+        ...(model.primaryResultFailure
+            ? {
+                  primaryResultFailure: projectPrimaryResultFailure(
+                      model.primaryResultFailure,
+                      true,
+                  ),
+              }
+            : {}),
     };
     return withinSerializedLimit(candidate, () => minimalArtifactProjection(model));
 }
@@ -163,5 +171,37 @@ function minimalArtifactProjection(model: AnalyzeArtifactModel): AnalyzeArtifact
                   ),
               }
             : {}),
+        ...(model.primaryResultFailure
+            ? {
+                  primaryResultFailure: projectPrimaryResultFailure(
+                      model.primaryResultFailure,
+                      false,
+                  ),
+              }
+            : {}),
+    };
+}
+
+function projectPrimaryResultFailure(
+    failure: NonNullable<AnalyzeArtifactModel['primaryResultFailure']>,
+    includeStack: boolean,
+): NonNullable<AnalyzeArtifactProjection['primaryResultFailure']> {
+    return {
+        evidenceId: projectOpaqueIdentifier(failure.evidenceId),
+        sourceFile: boundedText(failure.sourceFile, MAX_METADATA_BYTES),
+        failureDetails: {
+            ...(failure.failureDetails.code
+                ? { code: boundedText(failure.failureDetails.code, MAX_SUMMARY_BYTES) }
+                : {}),
+            ...(failure.failureDetails.name
+                ? { name: boundedText(failure.failureDetails.name, MAX_SUMMARY_BYTES) }
+                : {}),
+            ...(failure.failureDetails.message
+                ? { message: boundedText(failure.failureDetails.message, MAX_SUMMARY_BYTES) }
+                : {}),
+            ...(includeStack && failure.failureDetails.stack
+                ? { stack: boundedText(failure.failureDetails.stack) }
+                : {}),
+        },
     };
 }

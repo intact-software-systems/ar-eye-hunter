@@ -12,6 +12,9 @@ import {
     type DistributedRunArtifactSnapshots,
     type ParsedDistributedArtifactPipeline,
 } from '@shared-test/rallar-bb-test/mod.ts';
+import { deriveAnalyzePrimaryResultFailure, type AnalyzePrimaryResultFailure } from
+    './analyze-primary-result-failure.ts';
+export type { AnalyzePrimaryResultFailure } from './analyze-primary-result-failure.ts';
 
 export { deriveAnalyzeArtifactSearchResult } from './analyze-artifact-search.ts';
 
@@ -67,6 +70,7 @@ export type AnalyzeArtifactModel = Readonly<{
     portableEnvelope: AnalyzePortableArtifactEnvelope;
     provenance: AnalyzeArtifactProvenance;
     firstActionableEvidenceId?: string;
+    primaryResultFailure?: AnalyzePrimaryResultFailure;
 }>;
 
 export type DerivedAnalyzeArtifactModel = Readonly<{
@@ -185,6 +189,10 @@ export function finalizeAnalyzeArtifactModel(
     const firstActionableEvidenceId = evidenceIndex.entries.find(
         entry => entry.kind === 'failure',
     )?.id;
+    const primaryResultFailure = deriveAnalyzePrimaryResultFailure(
+        analysis,
+        evidenceIndex,
+    );
 
     const model: AnalyzeArtifactModel = {
         distributedRunId: analysis.distributedRunId,
@@ -230,6 +238,9 @@ export function finalizeAnalyzeArtifactModel(
         },
         ...(firstActionableEvidenceId
             ? { firstActionableEvidenceId }
+            : {}),
+        ...(primaryResultFailure
+            ? { primaryResultFailure }
             : {}),
     };
     return model;

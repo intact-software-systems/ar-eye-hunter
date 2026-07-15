@@ -9,6 +9,10 @@ import {
     ANALYZE_FAILURE_MESSAGE,
     ANALYZE_GENERATED_AT_EPOCH_MS,
     ANALYZE_RECIPE_ID,
+    ANALYZE_RESULT_FAILURE_CODE,
+    ANALYZE_RESULT_FAILURE_MESSAGE,
+    ANALYZE_RESULT_FAILURE_NAME,
+    ANALYZE_RESULT_FAILURE_STACK,
     createAnalyzeControlRun,
     createAnalyzeDistributedRun,
     createAnalyzeManifest,
@@ -21,8 +25,18 @@ export type AnalyzeUploadFile = Readonly<{
 }>;
 
 export function createAnalyzeLooseFiles(): readonly AnalyzeUploadFile[] {
+    return looseFiles(createAnalyzeArtifactFiles());
+}
+
+export function createAnalyzeTimeoutLooseFiles(): readonly AnalyzeUploadFile[] {
+    return looseFiles(createAnalyzeArtifactFiles(timeoutFailureError()));
+}
+
+function looseFiles(
+    files: Readonly<Record<string, string>>,
+): readonly AnalyzeUploadFile[] {
     return [
-        ...Object.entries(createAnalyzeArtifactFiles()).map(([name, contents]) => ({
+        ...Object.entries(files).map(([name, contents]) => ({
             name,
             mimeType: name.endsWith('.jsonl')
                 ? 'application/x-ndjson'
@@ -42,6 +56,17 @@ export function createAnalyzeEnvelopeFile(): AnalyzeUploadFile {
         name: `${ANALYZE_DISTRIBUTED_RUN_ID}-artifact.json`,
         mimeType: 'application/json',
         buffer: Buffer.from(JSON.stringify(createAnalyzeArtifactEnvelope(), null, 2)),
+    };
+}
+
+export function createAnalyzeTimeoutEnvelopeFile(): AnalyzeUploadFile {
+    return {
+        name: `${ANALYZE_DISTRIBUTED_RUN_ID}-timeout-artifact.json`,
+        mimeType: 'application/json',
+        buffer: Buffer.from(JSON.stringify({
+            ...createAnalyzeArtifactEnvelope(),
+            files: createAnalyzeArtifactFiles(timeoutFailureError()),
+        }, null, 2)),
     };
 }
 
@@ -125,7 +150,13 @@ export function createAnalyzeArtifactEnvelope(): ControlDistributedRunArtifactBu
     };
 }
 
-function createAnalyzeArtifactFiles(): Readonly<Record<string, string>> {
+function createAnalyzeArtifactFiles(
+    resultError: Readonly<Record<string, unknown>> = {
+        code: 'RTC_NO_RELAY',
+        message: ANALYZE_FAILURE_MESSAGE,
+        details: { expectedCandidate: 'relay', region: 'eu-north' },
+    },
+): Readonly<Record<string, string>> {
     const diagnostic = {
         kind: 'diagnostic', protocolVersion: 1,
         runId: ANALYZE_CONTROL_RUN_ID,
@@ -164,10 +195,7 @@ function createAnalyzeArtifactFiles(): Readonly<Record<string, string>> {
         startedAtEpochMs: ANALYZE_BASE_EPOCH_MS + 300,
         endedAtEpochMs: ANALYZE_BASE_EPOCH_MS + 1_500,
         durationMs: 1_200,
-        error: {
-            code: 'RTC_NO_RELAY', message: ANALYZE_FAILURE_MESSAGE,
-            details: { expectedCandidate: 'relay', region: 'eu-north' },
-        },
+        error: resultError,
     };
     return {
         'distributed-run.json': JSON.stringify(createAnalyzeDistributedRun(), null, 2),
@@ -180,6 +208,17 @@ function createAnalyzeArtifactFiles(): Readonly<Record<string, string>> {
             JSON.stringify(diagnostic),
             '{malformed-optional-row',
         ].join('\n'),
+    };
+}
+
+function timeoutFailureError(): Readonly<Record<string, unknown>> {
+    return {
+        code: ANALYZE_RESULT_FAILURE_CODE,
+        details: {
+            name: ANALYZE_RESULT_FAILURE_NAME,
+            stack: ANALYZE_RESULT_FAILURE_STACK,
+        },
+        message: ANALYZE_RESULT_FAILURE_MESSAGE,
     };
 }
 

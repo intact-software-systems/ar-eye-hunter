@@ -923,6 +923,7 @@ describe('Recipe Console experience boundary', () => {
             'AnalyzeWorkspace.tsx',
             'AnalyzeSourcePanel.tsx',
             'AnalyzeVerdict.tsx',
+            'AnalyzeFailureDetails.tsx',
             'AnalyzeEvidenceQuality.tsx',
             'AnalyzePerformance.tsx',
             'AnalyzeEvidenceSearch.tsx',
@@ -938,6 +939,7 @@ describe('Recipe Console experience boundary', () => {
             'analyze-worker-error.ts',
             'analyze-artifact-model.ts',
             'analyze-artifact-search.ts',
+            'analyze-primary-result-failure.ts',
             'analyze-artifact-projection.ts',
             'analyze-artifact-display-projection.ts',
             'analyze-analysis-projection.ts',
@@ -962,6 +964,7 @@ describe('Recipe Console experience boundary', () => {
             'AnalyzeSource.module.css',
             'AnalyzeSearch.module.css',
             'AnalyzeVerdict.module.css',
+            'AnalyzeFailureDetails.module.css',
             'AnalyzeEvidence.module.css',
             'AnalyzeInspector.module.css',
         ].map(file => `${recipeConsoleRoot}/analyze/${file}`);

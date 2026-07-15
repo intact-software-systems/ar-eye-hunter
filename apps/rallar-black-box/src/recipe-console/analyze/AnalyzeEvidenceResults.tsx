@@ -6,6 +6,7 @@ import { useExplicitWindowFocusRecovery } from
     '../ui/use-explicit-window.ts';
 import { deriveAnalyzeEvidenceWindowModel } from
     './analyze-evidence-window-model.ts';
+import { AnalyzeFailureDetails } from './AnalyzeFailureDetails.tsx';
 import type { AnalyzeWorkspaceController } from './use-analyze-workspace.ts';
 import styles from './AnalyzeSearch.module.css';
 
@@ -106,6 +107,12 @@ export function AnalyzeEvidenceResults({
                         >
                             <strong>{entry.summary}</strong>
                             <small>{entry.kind} · {entry.sourceFile}</small>
+                            {entry.kind === 'result' && entry.failureDetails ? (
+                                <AnalyzeFailureDetails
+                                    density="row"
+                                    details={entry.failureDetails}
+                                />
+                            ) : null}
                             <EvidenceMetadata entry={entry} />
                         </button>
                     </li>
