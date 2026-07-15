@@ -114,6 +114,26 @@ describe('browser Rallar lifecycle controller', () => {
         expect(cleanup).toHaveBeenCalledTimes(1);
     });
 
+    it('aborts the current operation generation before waiting for close dependencies', async () => {
+        const controller = createController();
+        const activeSignal = controller.operationSignal();
+        let releasePending!: () => void;
+        const pending = new Promise<void>(resolve => {
+            releasePending = resolve;
+        });
+        const cleanup = vi.fn(async () => 'closed');
+
+        const closing = controller.close(cleanup, [pending]);
+
+        expect(activeSignal.aborted).toBe(true);
+        expect(controller.operationSignal()).not.toBe(activeSignal);
+        expect(controller.operationSignal().aborted).toBe(false);
+        expect(cleanup).not.toHaveBeenCalled();
+
+        releasePending();
+        await expect(closing).resolves.toBe('closed');
+    });
+
     it('fences connect completion after close starts', async () => {
         const controller = createController();
         let resolveConnect!: (value: string) => void;

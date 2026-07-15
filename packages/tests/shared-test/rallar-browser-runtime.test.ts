@@ -2310,6 +2310,204 @@ describe('browser Rallar black-box runtime', () => {
         );
     });
 
+    it('cancels a sleeping CRDT wait before close cleanup', async () => {
+        vi.useFakeTimers();
+        try {
+            const document = createFakeCrdtDocument('wait-during-close');
+            facade.rallar.crdt.open.mockResolvedValueOnce(document);
+            const runtime = await loadRuntime();
+            await runtime.crdt.open({
+                handle: 'wait-during-close',
+                name: 'wait-during-close',
+                transport: 'local-only',
+            });
+            const waiting = runtime.crdt.wait({
+                handle: 'wait-during-close',
+                timeoutMs: 60_000,
+                intervalMs: 60_000,
+                conditions: [{
+                    source: 'value',
+                    path: 'title',
+                    operator: 'equals',
+                    expected: 'never',
+                }],
+            });
+            const waitOutcome = waiting.then(
+                () => undefined,
+                error => error,
+            );
+            await vi.advanceTimersByTimeAsync(0);
+            expect(topics()).toContain('rallar.browser.crdt.waiting');
+
+            const closing = runtime.close();
+            const closeOutcome = closing.then(
+                () => undefined,
+                error => error,
+            );
+            await vi.advanceTimersByTimeAsync(0);
+            const disconnectCallsBeforeIntervalElapsed = facade.rallar.disconnect.mock.calls.length;
+
+            await vi.advanceTimersByTimeAsync(60_000);
+            const waitError = await waitOutcome;
+            const closeError = await closeOutcome;
+
+            expect(disconnectCallsBeforeIntervalElapsed).toBe(1);
+            expect(waitError).toBeInstanceOf(Error);
+            expect((waitError as Error).message).toBe(
+                'CRDT operation completed after the runtime closed.',
+            );
+            expect(closeError).toBeUndefined();
+            expect(document.close).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('rejects a queued CRDT wait before it starts polling after close', async () => {
+        vi.useFakeTimers();
+        try {
+            const document = createFakeCrdtDocument('queued-wait-during-close');
+            let resolveApply!: (result: { updateId: string }) => void;
+            document.applyLocal.mockImplementationOnce(() =>
+                new Promise(resolve => {
+                    resolveApply = resolve;
+                })
+            );
+            facade.rallar.crdt.open.mockResolvedValueOnce(document);
+            const runtime = await loadRuntime();
+            await runtime.crdt.open({
+                handle: 'queued-wait-during-close',
+                name: 'queued-wait-during-close',
+                transport: 'local-only',
+            });
+            const applying = runtime.crdt.apply({
+                handle: 'queued-wait-during-close',
+                batch: {
+                    kind: 'batch',
+                    operations: [{
+                        kind: 'register.set',
+                        path: ['title'],
+                        value: 'changed',
+                        policy: 'lww',
+                    }],
+                },
+            });
+            const applyOutcome = applying.then(
+                () => undefined,
+                error => error,
+            );
+            await vi.advanceTimersByTimeAsync(0);
+            expect(document.applyLocal).toHaveBeenCalledTimes(1);
+
+            const waiting = runtime.crdt.wait({
+                handle: 'queued-wait-during-close',
+                timeoutMs: 60_000,
+                intervalMs: 60_000,
+                conditions: [{
+                    source: 'value',
+                    path: 'title',
+                    operator: 'equals',
+                    expected: 'never',
+                }],
+            });
+            const waitOutcome = waiting.then(
+                () => undefined,
+                error => error,
+            );
+            const closing = runtime.close();
+            const closeOutcome = closing.then(
+                () => undefined,
+                error => error,
+            );
+
+            resolveApply({ updateId: 'late-apply' });
+            await vi.advanceTimersByTimeAsync(0);
+            const disconnectCallsBeforeIntervalElapsed = facade.rallar.disconnect.mock.calls.length;
+
+            await vi.advanceTimersByTimeAsync(60_000);
+            const applyError = await applyOutcome;
+            const waitError = await waitOutcome;
+            const closeError = await closeOutcome;
+
+            expect(disconnectCallsBeforeIntervalElapsed).toBe(1);
+            expect(applyError).toBeInstanceOf(Error);
+            expect(waitError).toBeInstanceOf(Error);
+            expect((waitError as Error).message).toBe(
+                'CRDT operation completed after the runtime closed.',
+            );
+            expect(closeError).toBeUndefined();
+            expect(document.close).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('rejects a CRDT wait promptly while close drains its in-flight sync', async () => {
+        const document = createFakeCrdtDocument('sync-wait-during-close');
+        let resolveSync!: (result: unknown) => void;
+        document.sync.mockImplementationOnce(() =>
+            new Promise(resolve => {
+                resolveSync = resolve;
+            })
+        );
+        facade.rallar.crdt.open.mockResolvedValueOnce(document);
+        const runtime = await loadRuntime();
+        await runtime.crdt.open({
+            handle: 'sync-wait-during-close',
+            name: 'sync-wait-during-close',
+            transport: 'local-only',
+        });
+        let waitSettled = false;
+        const waiting = runtime.crdt.wait({
+            handle: 'sync-wait-during-close',
+            timeoutMs: 60_000,
+            intervalMs: 60_000,
+            sync: { reason: 'wait-close-test' },
+            conditions: [{
+                source: 'value',
+                path: 'title',
+                operator: 'equals',
+                expected: 'never',
+            }],
+        });
+        const waitOutcome = waiting.then(
+            () => undefined,
+            error => {
+                waitSettled = true;
+                return error;
+            },
+        );
+        await vi.waitFor(() => {
+            expect(document.sync).toHaveBeenCalledTimes(1);
+        });
+
+        const closing = runtime.close();
+        await vi.waitFor(() => {
+            expect(waitSettled).toBe(true);
+        });
+        const waitSettledBeforeSync = waitSettled;
+        const documentCloseCallsBeforeSync = document.close.mock.calls.length;
+
+        resolveSync({
+            status: 'synced',
+            transport: 'local-only',
+            sentUpdateCount: 0,
+            receivedUpdateCount: 0,
+            pendingUpdateCount: 0,
+        });
+        const waitError = await waitOutcome;
+        await closing;
+
+        expect(waitSettledBeforeSync).toBe(true);
+        expect(documentCloseCallsBeforeSync).toBe(0);
+        expect(waitError).toBeInstanceOf(Error);
+        expect((waitError as Error).message).toBe(
+            'CRDT operation completed after the runtime closed.',
+        );
+        expect(document.close).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.disconnect).toHaveBeenCalledTimes(1);
+    });
+
     it('does not close a CRDT document twice when explicit close races runtime close', async () => {
         let resolveDocumentClose!: () => void;
         const document = createFakeCrdtDocument('doc-closing');

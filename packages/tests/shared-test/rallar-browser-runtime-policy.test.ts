@@ -57,6 +57,41 @@ describe('browser Rallar runtime lifecycle policy', () => {
         });
     });
 
+    it('distinguishes connection targets expressed through rallar.scope', () => {
+        const first = blackBoxRallarConnectionTargetOf({
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                scope: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                },
+            },
+        });
+        const second = blackBoxRallarConnectionTargetOf({
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                scope: {
+                    applicationId: 'app-2',
+                    workspaceId: 'workspace-2',
+                },
+            },
+        });
+
+        expect(first).toMatchObject({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+        expect(second).toMatchObject({
+            applicationId: 'app-2',
+            workspaceId: 'workspace-2',
+        });
+        expect(first).not.toEqual(second);
+    });
+
     it('keys connection work by behavior as well as lifecycle target', () => {
         const base = {
             connection: 'aliceRtc',

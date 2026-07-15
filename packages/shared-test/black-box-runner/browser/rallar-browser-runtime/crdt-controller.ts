@@ -33,6 +33,7 @@ export type BlackBoxRallarCrdtResourceController<TDocument> = Readonly<{
     lease(): BlackBoxRallarCrdtLease;
     assertCurrent(lease: BlackBoxRallarCrdtLease, message: string): void;
     open(handle: string, effect: () => Promise<TDocument>): Promise<TDocument>;
+    track<TResult>(effect: Promise<TResult>): Promise<TResult>;
     run<TResult>(handle: string, effect: (document: TDocument) => Promise<TResult>): Promise<TResult>;
     release<TResult>(handle: string, effect: (document: TDocument) => Promise<TResult>): Promise<TResult>;
     require(handle: string): TDocument;
@@ -49,6 +50,7 @@ export function createBlackBoxRallarCrdtResourceController<TDocument>(
     const documents = new Map<string, TDocument>();
     const pendingOpens = new Map<string, Promise<TDocument>>();
     const operationTails = new Map<string, Promise<unknown>>();
+    const pendingEffects = new Set<Promise<unknown>>();
 
     const open = (handle: string, effect: () => Promise<TDocument>): Promise<TDocument> => {
         if (documents.has(handle) || pendingOpens.has(handle)) {
@@ -77,6 +79,16 @@ export function createBlackBoxRallarCrdtResourceController<TDocument>(
             throw new Error('CRDT document handle is not open: ' + handle);
         }
         return document;
+    };
+
+    const track = <TResult>(effect: Promise<TResult>): Promise<TResult> => {
+        pendingEffects.add(effect);
+        void effect
+            .finally(() => {
+                pendingEffects.delete(effect);
+            })
+            .catch(() => undefined);
+        return effect;
     };
 
     const take = (handle: string): TDocument => {
@@ -129,6 +141,7 @@ export function createBlackBoxRallarCrdtResourceController<TDocument>(
             }
         },
         open,
+        track,
         run,
         release,
         require: requireDocument,
@@ -136,7 +149,7 @@ export function createBlackBoxRallarCrdtResourceController<TDocument>(
         delete: handle => documents.delete(handle),
         entries: () => [...documents.entries()],
         handles: () => [...documents.keys()],
-        pending: () => [...pendingOpens.values(), ...operationTails.values()],
+        pending: () => [...pendingOpens.values(), ...operationTails.values(), ...pendingEffects],
     };
 }
 
@@ -156,6 +169,7 @@ type ScopeDiagnostics = Readonly<{
 
 export type CreateBlackBoxRallarCrdtControllerOptions = BlackBoxRallarGenerationPort &
     Readonly<{
+        operationSignal(): AbortSignal;
         facade: CrdtFacade;
         now(): number;
         delay(ms: number): Promise<void>;
@@ -195,6 +209,42 @@ function optionalRecord(value: unknown): Record<string, unknown> | undefined {
 
 function stringValue(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function raceCrdtOperationWithClose<TResult>(
+    operation: Promise<TResult>,
+    signal: AbortSignal,
+): Promise<TResult> {
+    const closedError = () => new Error('CRDT operation completed after the runtime closed.');
+    if (signal.aborted) {
+        return Promise.reject(closedError());
+    }
+
+    return new Promise<TResult>((resolve, reject) => {
+        let settled = false;
+        const settle = (effect: () => void): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            signal.removeEventListener('abort', onAbort);
+            effect();
+        };
+        const onAbort = (): void => settle(() => reject(closedError()));
+        signal.addEventListener('abort', onAbort, { once: true });
+        void operation.then(
+            result => settle(() => resolve(result)),
+            error => settle(() => reject(error)),
+        );
+    });
+}
+
+function waitForCrdtDelay(
+    delay: (ms: number) => Promise<void>,
+    durationMs: number,
+    signal: AbortSignal,
+): Promise<void> {
+    return raceCrdtOperationWithClose(delay(durationMs), signal);
 }
 
 export function createBlackBoxRallarCrdtController(
@@ -760,6 +810,7 @@ export function createBlackBoxRallarCrdtController(
         return await crdtController.run(handle, async document => {
             const assertCurrent = () =>
                 crdtController.assertCurrent(lease, 'CRDT operation completed after the runtime closed.');
+            assertCurrent();
             const result = await effect(document, assertCurrent);
             assertCurrent();
             return result;
@@ -851,6 +902,7 @@ export function createBlackBoxRallarCrdtController(
         const stableForMs = input.stableForMs ?? 0;
         const startEpochMs = now();
         const deadlineEpochMs = startEpochMs + timeoutMs;
+        const operationSignal = lifecycle.operationSignal();
         const syncOptions: RallarCrdtSyncOptions | undefined =
             input.sync && typeof input.sync === 'object'
                 ? {
@@ -879,7 +931,10 @@ export function createBlackBoxRallarCrdtController(
             while (true) {
                 attempts += 1;
                 if (syncOptions) {
-                    lastSyncResult = await document.sync(syncOptions);
+                    lastSyncResult = await raceCrdtOperationWithClose(
+                        crdtController.track(document.sync(syncOptions)),
+                        operationSignal,
+                    );
                     assertCurrent();
                 }
 
@@ -917,7 +972,11 @@ export function createBlackBoxRallarCrdtController(
                     throw new Error('Timed out waiting for CRDT conditions on handle: ' + input.handle);
                 }
 
-                await wait(Math.min(intervalMs, Math.max(0, deadlineEpochMs - currentEpochMs)));
+                await waitForCrdtDelay(
+                    wait,
+                    Math.min(intervalMs, Math.max(0, deadlineEpochMs - currentEpochMs)),
+                    operationSignal,
+                );
                 assertCurrent();
             }
         } catch (error) {

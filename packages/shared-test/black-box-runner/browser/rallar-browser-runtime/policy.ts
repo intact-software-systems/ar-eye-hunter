@@ -34,9 +34,15 @@ type ConnectionConfig = Readonly<{
         Readonly<{
             applicationId?: string;
             workspaceId?: string;
+            scope?: Readonly<{
+                applicationId?: string;
+                workspaceId?: string;
+            }>;
             roomRef?: BlackBoxRallarConnectionTarget['roomRef'];
         }>;
 }>;
+
+const DEFAULT_WORKSPACE_ID = 'default';
 
 function normalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): BlackBoxRallarRoomRef | undefined {
     return roomRef
@@ -124,10 +130,14 @@ export function blackBoxRallarConnectionTargetOf(
 ): BlackBoxRallarConnectionTarget {
     const identity = blackBoxRallarAuthenticationIdentityOf(config.rallar, restoredSession);
     const roomRef = config.roomRef ?? config.rallar.roomRef;
+    const applicationId = config.rallar.scope?.applicationId ?? roomRef?.applicationId ?? config.rallar.applicationId;
+    const workspaceId = applicationId
+        ? config.rallar.scope?.workspaceId ?? roomRef?.workspaceId ?? config.rallar.workspaceId ?? DEFAULT_WORKSPACE_ID
+        : undefined;
     return {
         ...identity,
-        ...(config.rallar.applicationId ? { applicationId: config.rallar.applicationId } : {}),
-        ...(config.rallar.workspaceId ? { workspaceId: config.rallar.workspaceId } : {}),
+        ...(applicationId ? { applicationId } : {}),
+        ...(workspaceId ? { workspaceId } : {}),
         ...(config.roomId ? { roomId: config.roomId } : {}),
         ...(roomRef ? { roomRef } : {}),
     };

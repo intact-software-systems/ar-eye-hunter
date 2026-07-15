@@ -10,6 +10,7 @@ export type BlackBoxRallarLifecycleCloseContext<TConfig> = Readonly<{
 
 export type BlackBoxRallarLifecycleController<TConfig, TSession, TConnect, TClose> = Readonly<{
     generation(): number;
+    operationSignal(): AbortSignal;
     isCurrent(generation: number): boolean;
     isClosing(): boolean;
     authenticationConfig(): TConfig | undefined;
@@ -57,6 +58,7 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
     let authenticationInFlight: AuthenticationInFlight<TConfig, TSession> | undefined;
     let connectInFlight: ConnectInFlight | undefined;
     let closeInFlight: Promise<TClose> | undefined;
+    let operationController = new AbortController();
     let faulted = false;
 
     const isCurrent = (candidate: number): boolean => candidate === generation && !closeInFlight && !faulted;
@@ -180,7 +182,10 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
 
         const activeAuthentication = authenticationInFlight;
         const activeConnect = connectInFlight;
+        const activeOperationController = operationController;
         generation += 1;
+        operationController = new AbortController();
+        activeOperationController.abort(options.connectionClosedError());
         activeAuthentication?.controller.abort(options.authenticationClosedError());
         const context: BlackBoxRallarLifecycleCloseContext<TConfig> = {
             authenticationConfig: activeAuthentication?.config,
@@ -213,6 +218,7 @@ export function createBlackBoxRallarLifecycleController<TConfig, TSession, TConn
 
     return {
         generation: () => generation,
+        operationSignal: () => operationController.signal,
         isCurrent: candidate => candidate === generation && !closeInFlight && !faulted,
         isClosing: () => Boolean(closeInFlight),
         authenticationConfig: () => authenticationInFlight?.config,

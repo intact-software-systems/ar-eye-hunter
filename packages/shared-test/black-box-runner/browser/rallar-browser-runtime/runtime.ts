@@ -171,6 +171,7 @@ function createBlackBoxRallarRuntimeInstallation(
     });
     const crdtController = createBlackBoxRallarCrdtController({
         generation: lifecycle.generation,
+        operationSignal: lifecycle.operationSignal,
         isCurrent: lifecycle.isCurrent,
         facade: rallar,
         now,
