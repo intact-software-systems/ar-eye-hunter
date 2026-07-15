@@ -549,6 +549,31 @@ describe('browser-agent popup reservation', () => {
         expect(first.close).toHaveBeenCalledOnce();
         expect(second.close).toHaveBeenCalledOnce();
     });
+
+    it('reports a reserved popup closed before prepared links are navigated', () => {
+        const first = popup();
+        const second = popup();
+        const reservation = reserveBrowserAgentPopups(
+            ['agent-1', 'agent-2'],
+            vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second),
+        );
+        second.closed = true;
+
+        const navigation = navigateReservedBrowserAgentPopups(reservation, [{
+            agentId: 'agent-1',
+            launchUrl: 'https://blackbox.test/agent-1',
+        }, {
+            agentId: 'agent-2',
+            launchUrl: 'https://blackbox.test/agent-2',
+        }]);
+
+        expect(navigation).toEqual({
+            navigatedAgentIds: ['agent-1'],
+            closedAgentIds: ['agent-2'],
+        });
+        expect(first.location.replace).toHaveBeenCalledOnce();
+        expect(second.location.replace).not.toHaveBeenCalled();
+    });
 });
 
 function popup() {

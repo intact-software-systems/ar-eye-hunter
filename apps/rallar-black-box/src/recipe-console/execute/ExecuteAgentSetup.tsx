@@ -106,7 +106,7 @@ export function ExecuteAgentSetup({
                             <div className={styles.linkRow} key={agentId}>
                                 <code>{agentId}</code>
                                 {model.blockedAgentIds.includes(agentId) ? (
-                                    <span>Popup blocked</span>
+                                    <span>Popup blocked or closed</span>
                                 ) : null}
                                 <button
                                     disabled={Boolean(model.blocker || model.busyAction)}
@@ -126,7 +126,7 @@ export function ExecuteAgentSetup({
                             {displacedBlockedAgentIds.map(agentId => (
                                 <div className={styles.linkRow} key={agentId}>
                                     <code>{agentId}</code>
-                                    <span>Popup blocked</span>
+                                    <span>Popup blocked or closed</span>
                                     <button
                                         disabled={Boolean(model.blocker || model.busyAction)}
                                         onClick={() => void model.copyAgentLink(agentId)}

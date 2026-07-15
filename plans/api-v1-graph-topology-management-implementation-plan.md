@@ -4,7 +4,7 @@
 
 ## Goal
 
-Build the scoped graph diagnostics and group topology management REST product described in `playground/api-v1-graph-topology-management-design.md`, while preserving legacy graph endpoints and reusing current Rallar graph, runtime-state, group-state, auth, error, and WS topology infrastructure.
+Build the scoped graph diagnostics and group topology management REST product described in `playground/api-v1-graph-topology-management-design.md`, remove the obsolete unscoped graph endpoints, and reuse current Rallar graph, runtime-state, group-state, auth, error, and WS topology infrastructure.
 
 ## Source Inputs Inspected
 
@@ -23,7 +23,6 @@ Build the scoped graph diagnostics and group topology management REST product de
 - `docs/environment-variables.md`
 - `apps/api-v1/src/create-rallar-server.ts`
 - `apps/api-v1/src/middleware.ts`
-- `apps/api-v1/src/routes/graph-routes.ts`
 - `apps/api-v1/src/routes/group-state-routes.ts`
 - `apps/api-v1/src/routes/client-state-routes.ts`
 - `apps/api-v1/src/routes/config-route.ts`
@@ -88,16 +87,16 @@ Build the scoped graph diagnostics and group topology management REST product de
 - `packages/shared-graph/group-topology-validation.ts` now exists and is exported from `packages/shared-graph/mod.ts`; it validates graphology `WeightedGraph` outputs, but it does not validate REST config patches or next-hop maps yet.
 - `packages/shared-server` owns runtime-state repositories, group policy, app inbox services, WS topics, and `RallarRtcTopologyService`.
 - `packages/shared-web/browser/api-integration.ts` currently supports `GET`, `POST`, and `PUT` only; REST helper work for topology deletes must add `DELETE` support.
-- Graph routes remain legacy: `GET /api/graph` is process-wide and `GET /api/graph/tree/:groupId` accepts only a bare group id.
-- `computeGroupGraph(groupRef, includeMeasured)` already accepts a full `GroupRef`; `computeLatestGroupGraphById(groupId, ...)` is the legacy ambiguity point.
+- Only scoped graph diagnostics are part of the API product; the former unscoped graph routes and bare-group lookup helper are removed.
+- `computeGroupGraph(groupRef, includeMeasured)` accepts a full `GroupRef`.
 - `GraphInfoSnapshot` already carries `groupRef`, but OpenAPI still requires `graphId`.
 - `GLOBAL_GRAPH_REF` still uses `{ applicationId: 'global', workspaceId: 'global', groupId: DEFAULT_GRAPH_PROP.id }`; scoped global diagnostics need a synthetic per-scope ref instead.
 - `graphsRepository.toGraphRepositoryKey(ref)` already keys by application, workspace, and group id.
 - `RallarRtcTopologyServiceOptions` currently supports thresholds and debounce only: `degreeLimit`, `treeMinSize`, `meshMinSize`, `meshParamK`, `rttRebuildDebounceMs`, and `now`.
 - `RallarRtcTopologyService.updateGroupTopology(...)` currently accepts a previous snapshot only; it cannot apply per-request effective topology config yet.
-- `initRallarSystemWsTopics(...)` already supports `rtcTopologyRuntimeState` and `rtcTopologyAppInbox`, but `apps/api-v1/src/create-rallar-server.ts` currently passes neither.
-- `RallarMiddlewareRuntime` exposes `inboxQueueReader`, `qboxEngine`, `groupsRepository`, and `wsQBoxServerService`, so API-v1 can wire durable app-inbox topology recompute without inventing a new worker.
-- `GroupStateSnapshotReadThroughCache` exists and should be used when app-inbox topology work needs a durable, scoped group snapshot by `GroupRef`.
+- `initRallarSystemWsTopics(...)` supports `rtcTopologyRuntimeState` and `rtcTopologyAppOutbox`.
+- `RallarMiddlewareRuntime` exposes `outboxQueueReader`, `qboxEngine`, `groupsRepository`, and `wsQBoxServerService`, so API-v1 can wire durable APP_OUTBOX topology recompute without inventing a new worker.
+- `GroupStateSnapshotReadThroughCache` supplies durable, scoped group snapshots to APP_OUTBOX topology work by `GroupRef`.
 - Read authorization should reuse strict read behavior from state routes: `RALLAR_STATE_STRICT_READ_AUTH` gates full group reads.
 - Write authorization should reuse `canUpdateGroupSnapshot(...)`; platform admin bypass should use existing `AUTH_ADMIN_CLIENT_IDS` client-id convention from config/CRDT admin routes.
 - Runtime-state JSON stores already provide namespaces, scoped key helpers, expiry cleanup, and transactional locks. No migration is needed for topology config storage.
@@ -168,15 +167,14 @@ Authorization:
 - active group owner/admin can manage their group
 - platform admin client id can manage any group
 
-Legacy compatibility:
+Removed unscoped surface:
 
-- keep `GET /api/graph`
-- keep `GET /api/graph/tree/:groupId`
-- mark both deprecated in OpenAPI
+- Do not mount or document unscoped graph endpoints.
+- Do not expose black-box workbench presets for unscoped graph endpoints.
+- Keep absence assertions in API/OpenAPI/workbench tests.
 
 ## Current-Code Conflicts To Resolve
 
-- `apps/api-v1/src/routes/graph-routes.ts` exposes only unscoped graph routes.
 - `apps/api-v1/resources/api-v1-openapi.yaml` still documents graph schemas with `graphId`.
 - `apps/api-v1/test/swagger-routes.test.ts` only checks server URL behavior and does not assert graph/topology schema correctness.
 - `computeGlobalGraphAndCacheIt()` reads all process client snapshots, not one app/workspace scope.
@@ -184,14 +182,14 @@ Legacy compatibility:
 - `packages/shared-graph/group-topology-validation.ts` validates graphology graphs only; REST topology management needs config validation and next-hop validation before publish.
 - `RallarRtcTopologyService` cannot receive effective per-group config per update.
 - RTC topology recompute, persistence, RTT reads, and publish helpers are private in `ws-system-topics.ts`.
-- API-v1 does not pass `rtcTopologyRuntimeState` or `rtcTopologyAppInbox` into `initRallarSystemWsTopics(...)`.
+- API-v1 needs durable RTC topology runtime-state and APP_OUTBOX wiring.
 - `packages/shared-web/browser/api-integration.ts` lacks `DELETE` support.
-- `apps/rallar-black-box/src/rallar-server-workbench.ts` lists only legacy graph diagnostic presets.
+- `apps/rallar-black-box/src/rallar-server-workbench.ts` needs scoped graph diagnostic presets.
 
 ## Decisions And Tradeoffs
 
 - Keep graph diagnostics separate from live overlay topology. Graph diagnostics return serialized graphology exports; topology management returns and publishes `RallarOverlayTopologySnapshot`.
-- Reuse `GroupRef` everywhere new; keep bare `groupId` only for deprecated legacy graph routes.
+- Reuse `GroupRef` everywhere; do not add a bare-group graph lookup compatibility path.
 - Store durable config and temporary overrides in runtime-state namespaces, not `Group.metadata`, because this is server transport control rather than group identity/roster state.
 - Extend existing `RallarRtcTopologyService`; do not create a parallel topology planner.
 - Reuse existing `group-topology-validation.ts` by adding next-hop validation there; keep REST config patch validation in shared-server because it concerns API/server config semantics.
@@ -207,7 +205,7 @@ Legacy compatibility:
 - No database migration for topology config.
 - No new web framework, queue system, or persistence framework.
 - No replacement of client/group state routes.
-- No removal of legacy graph routes.
+- No compatibility shim for the removed unscoped graph routes.
 - No new global topology-kind environment variable or Hetzner manifest/workflow env expansion.
 - No role-based platform admin model beyond `AUTH_ADMIN_CLIENT_IDS`.
 - No SFU, TURN, or media relay architecture changes.
@@ -333,7 +331,7 @@ npx vitest run packages/tests/shared-graph/group-graph-services.test.ts packages
 - [x] Add `SCOPED_GLOBAL_GRAPH_GROUP_ID = '__global__'` and `toScopedGlobalGraphRef(scope: StateScope): GroupRef` in `packages/shared-graph/group-graphs-create-service.ts`.
 - [x] Add `computeScopedGlobalGraph(scope: StateScope, allNodes: readonly string[], includeMeasured = false): GraphInfoSnapshot`.
 - [x] Add `computeScopedGlobalGraphAndCacheIt(scope: StateScope, includeMeasured = false): GraphInfoSnapshot` that filters `clientStateSnapshotsRepository.getAllClientStateSnapshots()` by snapshot principal scope and active session scope.
-- [x] Keep `GLOBAL_GRAPH_REF`, `computeGlobalGraph(...)`, `computeGlobalGraphAndCacheIt()`, and `computeLatestGroupGraphById(...)` unchanged for legacy compatibility.
+- [x] Keep internal global graph computation used by topology diagnostics, and remove the obsolete bare-group `computeLatestGroupGraphById(...)` compatibility helper.
 - [x] Implement `readScopedGlobalGraphDiagnostic(scope, options)` and `readGroupGraphDiagnostic(groupRef, options)` in `packages/shared-graph/graph-diagnostics-service.ts`.
 - [x] Make `refresh: 'never'` return a left/error when no cached snapshot exists; make `if-missing` compute only on cache miss; make `always` compute and replace cache.
 - [x] Export graph diagnostic helpers from `packages/shared-graph/mod.ts`.
@@ -530,7 +528,7 @@ npx vitest run packages/tests/shared-server/group-topology-management-service.te
 - [x] Move durable topology snapshot locking behavior equivalent to `updateRtcOverlayTopology(...)` into the new service.
 - [x] Move durable RTT read behavior equivalent to `readRtcTopologyRttMeasurements(...)` into the new service.
 - [x] Validate computed next-hop maps with `validateGroupTopologyNextHops(...)` before persistence and publication.
-- [x] Refactor `ws-system-topics.ts` so group snapshot, RTT timer, and app-inbox recomputes call the new service instead of private duplicate logic.
+- [x] Refactor `ws-system-topics.ts` so group snapshot, RTT timer, and APP_OUTBOX recomputes call the new service instead of private duplicate logic.
 - [x] Keep `initRallarSystemWsTopics(...)` public options backward compatible.
 - [x] Export the new service from `packages/shared-server/mod.ts`.
 - [x] Run the focused command and confirm tests pass.
@@ -617,7 +615,7 @@ cd apps/api-v1 && deno task check
 
 ### Iteration 6: API-V1 Server Wiring, OpenAPI, And Docs
 
-**Goal:** Mount the real routes, wire durable topology runtime-state/app-inbox behavior, and publish accurate OpenAPI and product docs.
+**Goal:** Mount the real routes, wire durable topology runtime-state/APP_OUTBOX behavior, and publish accurate OpenAPI and product docs.
 
 **Files:**
 
@@ -633,11 +631,11 @@ cd apps/api-v1 && deno task check
 - In `apps/api-v1/test/rallar-server.test.ts`:
   - `createRallarServer` mounts the new scoped graph/topology route module
   - default system topic setup passes `rtcTopologyRuntimeState` into `initRallarSystemWsTopics(...)`
-  - default system topic setup passes `rtcTopologyAppInbox` with `inboxQueueReader`, `senderId`, `wake`, and `findGroupSnapshotByRef`
+  - default system topic setup passes `rtcTopologyAppOutbox` with `outboxQueueReader`, `senderId`, `wake`, and `findGroupSnapshotByRef`
   - existing topic lists remain unchanged
 - In `apps/api-v1/test/swagger-routes.test.ts`:
   - `/api/openapi.json` includes every new scoped graph/topology path
-  - `/api/graph` and `/api/graph/tree/{groupId}` have `deprecated: true`
+  - unscoped graph paths are absent
   - `GraphInfo` and `GraphInfoSnapshot` schemas require `groupRef`, not `graphId`
   - topology config schemas contain the `auto | star | tree | mesh` enum and positive integer constraints
   - reconfigure response schema includes `changed`, `published`, `snapshot`, and `config`
@@ -654,30 +652,30 @@ cd apps/api-v1 && deno test --allow-env --allow-read test/rallar-server.test.ts 
 **Expected Failure Before Implementation:**
 
 - Route path assertions fail because routes are not mounted.
-- Runtime-state/app-inbox assertions fail because `create-rallar-server.ts` currently passes only `rtcTopologyOptions`.
+- Runtime-state/APP_OUTBOX assertions fail because `create-rallar-server.ts` currently passes only `rtcTopologyOptions`.
 - OpenAPI assertions fail because new paths are missing and graph schemas still use `graphId`.
 
 **Checkbox Steps:**
 
-- [x] Import and mount `graph-topology-routes.ts` after `groupStateRoutes.init` and before legacy `graphRoutes.init`.
+- [x] Import and mount `graph-topology-routes.ts` after `groupStateRoutes.init`.
 - [x] Create one `runtimeStateRepository = createRuntimeStateRepository(sql)` inside `createRallarServer(...)` for topology config, topology snapshots, RTTs, and auth/session compatibility.
 - [x] Construct `GroupTopologyConfigRepository`, `RtcTopologySnapshotRepository`, `RtcRttRepository`, and `GroupTopologyManagementService` with `serverDefaults` from existing `getApiRtcTopologyServiceOptions()` plus `topologyKind: 'auto'`.
 - [x] Construct graph diagnostics dependencies from `packages/shared-graph/graph-diagnostics-service.ts`.
 - [x] Pass `adminClientIds: readAdminClientIds()` into the new route module.
 - [x] Pass `rtcTopologyRuntimeState: { repository: runtimeStateRepository }` into `initRallarSystemWsTopics(...)`.
-- [x] Pass `rtcTopologyAppInbox` with `inboxQueueReader: runtime.inboxQueueReader`, `senderId: myServerId`, `wake: () => runtime.qboxEngine.wake()`, and `findGroupSnapshotByRef` using `createGroupStateSnapshotReadThroughCache({ groupsRepository: runtime.groupsRepository }).findOrLoadByRef(...)`.
+- [x] Pass `rtcTopologyAppOutbox` with `outboxQueueReader: runtime.outboxQueueReader`, `senderId: myServerId`, `wake: () => runtime.qboxEngine.wake()`, and `findGroupSnapshotByRef` using `createGroupStateSnapshotReadThroughCache({ groupsRepository: runtime.groupsRepository }).findOrLoadByRef(...)`.
 - [x] Preserve `initDynamicTopics: false` and CRDT topic installation.
 - [x] Update OpenAPI with scoped graph diagnostics and topology management paths.
 - [x] Replace Graph schemas from `graphId` to `groupRef` and document Graphology export shape as `additionalProperties: true`.
-- [x] Mark legacy graph routes deprecated.
+- [x] Remove the unscoped graph route module, OpenAPI paths, and workbench presets.
 - [x] Update docs without changing environment variable surface.
 - [x] Run the focused Deno command and confirm tests pass.
 
 **Expected Pass After Implementation:**
 
-- Real API-v1 exposes new routes and keeps legacy graph routes.
+- Real API-v1 exposes only the scoped graph/topology routes.
 - OpenAPI matches runtime `groupRef` contracts.
-- API-v1 default topology recompute can use runtime-state/app-inbox infrastructure.
+- API-v1 default topology recompute uses runtime-state/APP_OUTBOX infrastructure.
 - Docs describe the new REST product surface and shared recompute path.
 
 **Verification Command:**
@@ -688,7 +686,7 @@ cd apps/api-v1 && deno task check
 
 ### Iteration 7: Shared-Web Helpers And Black-Box Workbench
 
-**Goal:** Expose browser helper functions and update the black-box REST workbench catalog to prefer scoped graph/topology routes while keeping legacy endpoints visible as deprecated diagnostics.
+**Goal:** Expose browser helper functions and update the black-box REST workbench catalog to expose only scoped graph/topology routes.
 
 **Files:**
 
@@ -709,7 +707,7 @@ cd apps/api-v1 && deno task check
 - In `packages/tests/rallar-black-box/rallar-server-workbench.test.ts`:
   - endpoint presets include `graph-scoped-global`, `group-graph-latest`, `group-topology-read`, `group-topology-config-put`, `group-topology-override-put`, and `group-topology-reconfigure`
   - delete presets exist for config and override
-  - legacy `graph-global` and `graph-group` remain present and are labeled deprecated
+  - removed `graph-global` and `graph-group` presets are absent
 
 **Exact Focused Test Command:**
 
@@ -721,7 +719,7 @@ npx vitest run packages/tests/shared-web/api-workflows.test.ts packages/tests/sh
 
 - New shared-web helper imports are missing.
 - `executeHttpRequest(...)` does not accept `DELETE`.
-- Workbench preset assertions fail because only legacy graph endpoints are listed.
+- Workbench preset assertions fail because scoped graph/topology endpoints are not yet listed.
 
 **Checkbox Steps:**
 
@@ -731,14 +729,14 @@ npx vitest run packages/tests/shared-web/api-workflows.test.ts packages/tests/sh
 - [x] Add helpers `readStateScopedGlobalGraph`, `readStateGroupGraph`, `readStateGroupTopology`, `readStateGroupTopologyConfig`, `putStateGroupTopologyConfig`, `deleteStateGroupTopologyConfig`, `readStateGroupTopologyOverride`, `putStateGroupTopologyOverride`, `deleteStateGroupTopologyOverride`, and `reconfigureStateGroupTopology`.
 - [x] Keep helpers graphology-free by returning serialized DTO types.
 - [x] Add endpoint presets for new scoped graph/topology routes in `rallar-server-workbench.ts`.
-- [x] Keep existing `/api/graph` and `/api/graph/tree/{groupId}` presets and mark labels as deprecated.
+- [x] Remove the unscoped `graph-global` and `graph-group` presets.
 - [x] Update public API snapshots only if they include `api-integration.ts` named exports.
 - [x] Run the focused Vitest command and confirm tests pass.
 
 **Expected Pass After Implementation:**
 
 - Browser helper tests prove path encoding, query encoding, auth, and DELETE support.
-- Black-box workbench tests prove operators can discover the new scoped product API while legacy endpoints remain available.
+- Black-box workbench tests prove operators can discover the scoped product API and cannot select removed unscoped presets.
 
 **Verification Command:**
 
@@ -811,15 +809,13 @@ Deployment notes:
 - Existing production hardening still requires `RALLAR_STATE_STRICT_READ_AUTH=1`, which protects group graph/topology reads.
 - Keep topology-kind forcing as REST config/override/reconfigure data, not an environment variable, so existing Hetzner topology env handling remains unchanged.
 
-## Rollback/Compatibility Plan
+## Rollback Plan
 
-- Legacy `/api/graph` and `/api/graph/tree/:groupId` remain available throughout rollout.
-- New routes are additive. If issues appear, stop calling the new scoped routes without breaking existing clients.
+- The removed unscoped graph routes are not a rollback surface.
 - Durable topology config can be rolled back operationally by deleting rows in `runtime_state_store` namespaces `group-topology:config` and `group-topology:override`.
-- If runtime-state/app-inbox topology wiring causes production trouble, temporarily omit `rtcTopologyRuntimeState` and `rtcTopologyAppInbox` from `create-rallar-server.ts` while keeping REST config storage and direct recompute behavior.
+- If runtime-state/APP_OUTBOX topology wiring causes production trouble, temporarily omit `rtcTopologyRuntimeState` and `rtcTopologyAppOutbox` from `create-rallar-server.ts` while keeping REST config storage and direct recompute behavior.
 - Shared-web helper additions are additive.
 - Existing browser room routing continues to consume `AppTopics.overlayTopology`.
-- OpenAPI deprecation of legacy graph routes is documentation-only and does not remove handlers.
 
 ## Final Acceptance Criteria
 
@@ -835,12 +831,12 @@ Deployment notes:
 - Platform admin client ids from `AUTH_ADMIN_CLIENT_IDS` can manage any existing group.
 - Non-admin group members cannot mutate topology config.
 - REST reconfigure and WS-triggered recompute use the same shared-server recompute/publish path.
-- API-v1 wires durable RTC topology runtime-state and coalesced app-inbox behavior without changing existing topic IDs.
+- API-v1 wires durable RTC topology runtime-state and coalesced APP_OUTBOX behavior without changing existing topic IDs.
 - OpenAPI documents all new routes and uses `groupRef`, not `graphId`, for graph schemas.
 - Docs describe the new REST surface and shared topology recompute path.
 - Shared-web helpers support GET, PUT, POST, and DELETE for the new product routes.
-- Black-box workbench exposes scoped graph/topology presets while retaining deprecated legacy graph presets.
-- Legacy graph endpoints still work and are marked deprecated.
+- Black-box workbench exposes scoped graph/topology presets and omits the removed unscoped presets.
+- API-v1 and OpenAPI omit the removed unscoped graph paths.
 - Focused tests, type checks, shared-web bundle boundary checks, and `cd apps/api-v1 && deno task check` pass.
 
 ## Implementation Progress
@@ -884,7 +880,7 @@ Deployment notes:
 ### Iteration 4: Shared-Server Topology Management Service And WS Reuse
 
 - Date/time: 2026-07-07 23:13:20 CEST
-- Completed steps: added `GroupTopologyManagementService`, overlay topology broadcast helper, durable snapshot locking/persistence, durable RTT reads, computed topology validation, config/override write-delete reconfigure defaults, and WS delegation for group snapshot, app-inbox, and RTT timer recomputes.
+- Completed steps: added `GroupTopologyManagementService`, overlay topology broadcast helper, durable snapshot locking/persistence, durable RTT reads, computed topology validation, config/override write-delete reconfigure defaults, and WS delegation for group snapshot, APP_OUTBOX, and RTT timer recomputes.
 - Files changed: `packages/shared-server/rallar-system/services/group-topology-management-service.ts`, `packages/shared-server/rallar-system/ws-system-topics.ts`, `packages/shared-server/mod.ts`, `packages/tests/shared-server/group-topology-management-service.test.ts`, `packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`.
 - Commands run:
   - `npx vitest run packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts` initially failed as expected because the management service module was missing and WS did not pass resolved config.
@@ -908,7 +904,7 @@ Deployment notes:
 ### Iteration 6: API-V1 Wiring, OpenAPI, And Docs
 
 - Date/time: 2026-07-07 23:24:47 CEST
-- Completed steps: mounted scoped graph/topology REST routes in API-v1, wired durable runtime-state repositories for topology config/snapshots/RTTs, connected app-inbox topology recompute wiring, passed graph diagnostics/topology management/admin dependencies into the route module, updated OpenAPI for scoped graph/topology routes and deprecated legacy graph routes, and documented the REST surface plus shared recompute behavior.
+- Completed steps: mounted scoped graph/topology REST routes in API-v1, wired durable runtime-state repositories for topology config/snapshots/RTTs, connected APP_OUTBOX topology recompute wiring, passed graph diagnostics/topology management/admin dependencies into the route module, kept removed unscoped graph routes absent from runtime and OpenAPI, and documented the REST surface plus shared recompute behavior.
 - Files changed: `apps/api-v1/src/create-rallar-server.ts`, `apps/api-v1/test/rallar-server.test.ts`, `apps/api-v1/resources/api-v1-openapi.yaml`, `apps/api-v1/test/swagger-routes.test.ts`, `docs/rallar-api-reference.md`, `docs/rallar-rtc-rtt-reporting.md`, `plans/api-v1-graph-topology-management-implementation-plan.md`.
 - Commands run:
   - `cd apps/api-v1 && deno test --allow-env --allow-read test/rallar-server.test.ts test/swagger-routes.test.ts` initially failed because the server-level global graph route assertion treated an empty diagnostic-cache `404` as missing route registration.
@@ -920,7 +916,7 @@ Deployment notes:
 ### Iteration 7: Shared-Web Helpers And Black-Box Workbench
 
 - Date/time: 2026-07-07 23:29:56 CEST
-- Completed steps: added serialized scoped graph/topology browser REST helpers, added authenticated `PUT`/`POST` and bodyless `DELETE` support, kept browser helpers free of Graphology runtime dependencies, added black-box workbench presets for scoped graph/topology routes, marked legacy graph presets deprecated, and documented the shared-web/workbench surface in the package architecture notes.
+- Completed steps: added serialized scoped graph/topology browser REST helpers, added authenticated `PUT`/`POST` and bodyless `DELETE` support, kept browser helpers free of Graphology runtime dependencies, added black-box workbench presets for scoped graph/topology routes, removed unscoped graph presets, and documented the shared-web/workbench surface in the package architecture notes.
 - Files changed: `packages/shared-web/browser/api-integration.ts`, `packages/tests/shared-web/api-workflows.test.ts`, `apps/rallar-black-box/src/rallar-server-workbench.ts`, `packages/tests/rallar-black-box/rallar-server-workbench.test.ts`, `packages/shared-web/architecture.md`, `plans/api-v1-graph-topology-management-implementation-plan.md`.
 - Commands run:
   - `npx vitest run packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-web/shared-web-public-api-snapshots.test.ts packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts packages/tests/rallar-black-box/rallar-server-workbench.test.ts` initially failed as expected because the shared-web helper exports and workbench presets were missing.

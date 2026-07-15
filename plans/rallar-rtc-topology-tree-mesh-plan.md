@@ -28,7 +28,7 @@ these core services and converts the result into compact RTC next-hop overlays.
 - Rallar builds room-local weighted graphs for active room sessions only, with
   member degree limit `5` baked into graph attributes and nodes.
 - `AppTopics.overlayTopology` exists as the compact routing-overlay topic, while
-  `AppTopics.graphs` remains diagnostic or legacy graph data.
+  `AppTopics.graphs` remains diagnostic graph data.
 - `OverlayId` is a scoped string derived from `GroupRef`, and browser overlay
   lookup applies snapshots by scoped group identity.
 - `WebRtcGroupManager` reconciles desired RTC peers from overlay next hops, with

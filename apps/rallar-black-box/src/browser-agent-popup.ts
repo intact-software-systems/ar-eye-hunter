@@ -23,6 +23,11 @@ export type BrowserAgentPopupReservation = Readonly<{
     }>[];
 }>;
 
+export type BrowserAgentPopupNavigation = Readonly<{
+    navigatedAgentIds: readonly string[];
+    closedAgentIds: readonly string[];
+}>;
+
 export function reserveBrowserAgentPopups(
     agentIds: readonly string[],
     open: BrowserAgentPopupOpen = globalThis.open as BrowserAgentPopupOpen,
@@ -60,7 +65,7 @@ export function reserveBrowserAgentPopups(
 export function navigateReservedBrowserAgentPopups(
     reservation: BrowserAgentPopupReservation,
     agents: readonly Readonly<{ agentId: string; launchUrl: string }>[],
-): void {
+): BrowserAgentPopupNavigation {
     const byAgentId = new Map(agents.map(agent => [agent.agentId, agent]));
     if (
         byAgentId.size !== reservation.reserved.length ||
@@ -68,11 +73,17 @@ export function navigateReservedBrowserAgentPopups(
     ) {
         throw new Error('Prepared browser-agent links do not match reserved popup identities.');
     }
+    const navigatedAgentIds: string[] = [];
+    const closedAgentIds: string[] = [];
     for (const item of reservation.reserved) {
-        if (!item.popup.closed) {
-            item.popup.location.replace(byAgentId.get(item.agentId)!.launchUrl);
+        if (item.popup.closed) {
+            closedAgentIds.push(item.agentId);
+            continue;
         }
+        item.popup.location.replace(byAgentId.get(item.agentId)!.launchUrl);
+        navigatedAgentIds.push(item.agentId);
     }
+    return { navigatedAgentIds, closedAgentIds };
 }
 
 export function releaseReservedBrowserAgentPopups(

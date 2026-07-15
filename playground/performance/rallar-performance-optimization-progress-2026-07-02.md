@@ -43,7 +43,7 @@ coordination costs:
 10. A memory-mode three-browser live RTC matrix now persists RTC diagnostic
     artifacts under `tmp/perf/results/**`; the latest simple run showed no
     reconnect attempts, offer collisions, pending ICE, or signaling errors.
-11. The legacy global graph cache builder now tolerates partial RTT/Vivaldi
+11. The process-global graph cache builder now tolerates partial RTT/Vivaldi
     coverage, eliminating repeated hot-path warnings during accepted RTT bursts.
 12. `QRtcPeerConnection` now coalesces repeated `disconnected` events into one
     pending reconnect timer and clears that timer on recovery/failure/close.

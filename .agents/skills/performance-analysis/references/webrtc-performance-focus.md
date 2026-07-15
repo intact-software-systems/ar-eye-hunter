@@ -327,7 +327,7 @@ Server/room/signaling/topology:
 - `packages/shared-server/rallar-system/services/ws-lifecycle-service.ts`
 - `packages/shared-server/rallar-system/services/AppClientInboxService.ts`
 - `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`
-- `packages/shared-server/rallar-system/services/CoalescedAppInboxWorkService.ts`
+- `packages/shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts`
 - `packages/shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts`
 - `packages/shared-server/rallar-system/repositories/RtcRttRepository.ts`
 - `packages/shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts`

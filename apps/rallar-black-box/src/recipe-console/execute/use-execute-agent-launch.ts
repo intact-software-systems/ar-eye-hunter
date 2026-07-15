@@ -14,6 +14,7 @@ import {
     executeAgentLaunchErrorMessage,
     executeAgentLaunchRunIdSync,
     mergeExecuteAgentLaunchCohort,
+    projectExecuteAgentPopupNavigation,
     sameExecuteAgentIds,
     type ExecuteAgentLaunchCohort,
 } from './execute-agent-launch-state.ts';
@@ -53,7 +54,6 @@ export function useExecuteAgentLaunch(input: Readonly<{
         input.group,
     ]);
     const launchContextKeyRef = useRef(launchContextKey);
-
     const agentIds = useMemo(
         () => Array.from({ length: count }, (_, index) =>
             runnerAgentId(prefix, index, count, suffix)
@@ -78,7 +78,6 @@ export function useExecuteAgentLaunch(input: Readonly<{
         onReadyMessage: setMessage,
     });
     runIdRef.current = runId;
-
     useEffect(() => {
         const sync = executeAgentLaunchRunIdSync({
             previousControlRunId: selectedControlRunIdRef.current,
@@ -129,13 +128,11 @@ export function useExecuteAgentLaunch(input: Readonly<{
             reservationRef.current = undefined;
         }
     }
-
     function invalidatePending(reason: string): void {
         disposePending(reason);
         setPendingCohort(undefined);
         setBusyAction(undefined);
     }
-
     function invalidateLaunchContext(reason: string): void {
         invalidatePending(reason);
         setCohort(undefined);
@@ -196,17 +193,20 @@ export function useExecuteAgentLaunch(input: Readonly<{
                 signal: controller.signal,
             });
             if (generationRef.current !== generation || controller.signal.aborted) return;
-            navigateReservedBrowserAgentPopups(reservation, prepared.agents);
-            reservationRef.current = undefined;
-            setCohort({
-                runId: prepared.runId,
-                agentIds: prepared.agents.map(agent => agent.agentId),
-            });
-            const blocked = reservation.blockedAgentIds.length;
-            setMessage(blocked > 0
-                ? `Opened ${prepared.agents.length} agent tabs. ${blocked} ${blocked === 1 ? 'tab was' : 'tabs were'} blocked; use the copy-link fallback below.`
-                : `Opened ${prepared.agents.length} browser agent ${prepared.agents.length === 1 ? 'tab' : 'tabs'}. Waiting for registration.`,
+            const navigation = navigateReservedBrowserAgentPopups(
+                reservation,
+                prepared.agents,
             );
+            reservationRef.current = undefined;
+            const outcome = projectExecuteAgentPopupNavigation({
+                runId: prepared.runId,
+                blockedAgentIds: reservation.blockedAgentIds,
+                closedAgentIds: navigation.closedAgentIds,
+                navigatedAgentIds: navigation.navigatedAgentIds,
+            });
+            setBlockedAgentIds(outcome.unavailableAgentIds);
+            setCohort(outcome.cohort);
+            setMessage(outcome.message);
             setSuffix(runnerNewAgentLaunchSuffix());
             await input.connection.refreshAfterCurrent();
         } catch (error) {

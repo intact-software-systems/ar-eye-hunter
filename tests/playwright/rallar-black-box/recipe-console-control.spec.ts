@@ -574,7 +574,9 @@ test('retains partial authorization when the configured token broker is unavaila
         .toBeEnabled();
     await expect(executeActionBand(page).getByRole('button', { name: 'Create draft' }))
         .toHaveCount(0);
-    expect(brokerAuthorizations).toEqual(['Bearer configured-session-token']);
+    await expect.poll(() => brokerAuthorizations).toEqual([
+        'Bearer configured-session-token',
+    ]);
 });
 
 test('retains last-good rows after a failed manual refresh but reports zero current safe targets', async ({

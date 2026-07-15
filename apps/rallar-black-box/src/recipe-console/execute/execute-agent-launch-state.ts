@@ -9,6 +9,12 @@ export type ExecuteAgentLaunchCohort = Readonly<{
     agentIds: readonly string[];
 }>;
 
+export type ExecuteAgentPopupNavigationState = Readonly<{
+    unavailableAgentIds: readonly string[];
+    cohort?: ExecuteAgentLaunchCohort;
+    message: string;
+}>;
+
 export function executeAgentLaunchRunIdSync(input: Readonly<{
     previousControlRunId?: string;
     nextControlRunId?: string;
@@ -57,6 +63,33 @@ export function mergeExecuteAgentLaunchCohort(
     };
 }
 
+export function projectExecuteAgentPopupNavigation(input: Readonly<{
+    runId: string;
+    blockedAgentIds: readonly string[];
+    closedAgentIds: readonly string[];
+    navigatedAgentIds: readonly string[];
+}>): ExecuteAgentPopupNavigationState {
+    const unavailableAgentIds = [
+        ...input.blockedAgentIds,
+        ...input.closedAgentIds,
+    ];
+    const opened = input.navigatedAgentIds.length;
+    const unavailable = unavailableAgentIds.length;
+    return {
+        unavailableAgentIds,
+        cohort: opened > 0
+            ? { runId: input.runId, agentIds: input.navigatedAgentIds }
+            : undefined,
+        message: unavailable > 0
+            ? `Opened ${opened} browser agent ${plural(opened, 'tab', 'tabs')}. ${unavailable} ${plural(unavailable, 'popup was', 'popups were')} blocked or closed. Use the copy-link fallback below.`
+            : `Opened ${opened} browser agent ${plural(opened, 'tab', 'tabs')}. Waiting for registration.`,
+    };
+}
+
 export function executeAgentLaunchErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function plural(count: number, one: string, many: string): string {
+    return count === 1 ? one : many;
 }

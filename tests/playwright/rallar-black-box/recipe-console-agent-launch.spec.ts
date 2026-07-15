@@ -307,6 +307,55 @@ test('mints only reserved tabs and keeps each partially blocked identity copyabl
     for (const child of childPages) await child.close();
 });
 
+test('removes a reserved tab closed during preparation from registration gating', async ({
+    context,
+    page,
+}) => {
+    const control = await installAgentLaunchControl(context, {
+        holdTokenResponses: true,
+        registerOnToken: false,
+    });
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(EXECUTE_ROUTE);
+    await page.getByLabel('Control run ID for new agents').fill('closed-tab-run');
+    await page.getByLabel('Agent ID prefix').fill('closed-tab-agent');
+
+    const agentIds = await page
+        .getByRole('group', { name: 'Individual browser-agent launch links' })
+        .locator('code')
+        .allTextContents();
+    const childPages: Page[] = [];
+    context.on('page', child => {
+        if (child !== page) childPages.push(child);
+    });
+    await page.getByRole('button', { name: 'Open 3 browser agents' }).click();
+    await expect.poll(() => childPages.length).toBe(3);
+    await expect.poll(() => control.tokenRequests.length).toBe(3);
+
+    await childPages[1].close();
+    control.releaseTokenResponses();
+    await expect(page.locator('[data-execute-agent-setup]').getByRole('status'))
+        .toContainText('Opened 2 browser agent tabs. 1 popup was blocked or closed.');
+    await expect(page.getByRole('group', {
+        name: 'Popup-blocked browser-agent launch links',
+    }).getByRole('button', {
+        name: `Copy link for ${agentIds[1]}`,
+    })).toBeVisible();
+
+    for (const agentId of agentIds.filter((_, index) => index !== 1)) {
+        control.registerAgent('closed-tab-run', agentId);
+    }
+    await page.locator('[data-execute-action-runway]')
+        .getByRole('button', { name: 'Refresh' }).click();
+    await expect(page.locator('[data-execute-targets]')).toContainText('2 selected');
+    await expect(page.locator('[data-execute-action-runway]')
+        .getByRole('button', { name: 'Resolve 2 targets' })).toBeVisible();
+
+    for (const child of childPages) {
+        if (!child.isClosed()) await child.close();
+    }
+});
+
 test('gates missing launch identity and browser-rallar authentication in the visible setup', async ({
     context,
     page,

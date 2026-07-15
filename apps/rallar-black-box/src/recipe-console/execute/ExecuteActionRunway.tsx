@@ -52,8 +52,9 @@ export function ExecuteActionRunway({
     onExport: ActionHandler;
 }>) {
     const primaryRef = useRef<HTMLButtonElement>(null);
-    const advanceFocusRef = useRef(false);
-    const previousStepRef = useRef(next.step);
+    const currentFocusRef = useRef<HTMLDivElement>(null);
+    const recoverFocusRef = useRef(false);
+    const observedBusyRef = useRef(false);
     const handler = primaryHandler(next.step, {
         onResolve,
         onCreate,
@@ -67,17 +68,18 @@ export function ExecuteActionRunway({
     const showSecondaryActions = showSecondaryRefresh ||
         policy.export.enabled || policy.cancel.enabled || busyAction === 'cancel';
     useEffect(() => {
-        if (
-            previousStepRef.current !== next.step &&
-            advanceFocusRef.current && primaryRef.current
-        ) {
-            primaryRef.current.focus();
+        if (!recoverFocusRef.current) return;
+        if (busyAction !== undefined) {
+            observedBusyRef.current = true;
+            return;
         }
-        if (previousStepRef.current !== next.step) {
-            previousStepRef.current = next.step;
-            advanceFocusRef.current = false;
-        }
-    }, [next.step]);
+        if (!observedBusyRef.current) return;
+        const primary = primaryRef.current;
+        if (primary && !primary.disabled) primary.focus();
+        else currentFocusRef.current?.focus();
+        recoverFocusRef.current = false;
+        observedBusyRef.current = false;
+    }, [busyAction, next.step]);
 
     return (
         <section
@@ -87,7 +89,7 @@ export function ExecuteActionRunway({
             data-execute-action-runway
         >
             <ExecuteLifecycleStrip nextStep={next.step} runState={runState} />
-            <div className={styles.current}>
+            <div className={styles.current} ref={currentFocusRef} tabIndex={-1}>
                 <div className={styles.summary}>
                     <p>Next</p>
                     <h2>{busyAction ? `${executeActionProgressLabel(busyAction)} in progress` : next.label}</h2>
@@ -103,7 +105,10 @@ export function ExecuteActionRunway({
                         className={styles.primary}
                         disabled={!next.enabled || busyAction !== undefined}
                         onClick={() => {
-                            advanceFocusRef.current = document.activeElement === primaryRef.current;
+                            recoverFocusRef.current =
+                                isDirectExecuteStep(next.step) &&
+                                document.activeElement === primaryRef.current;
+                            observedBusyRef.current = false;
                             void handler();
                         }}
                         ref={node => {
@@ -155,6 +160,10 @@ export function ExecuteActionRunway({
             ) : null}
         </section>
     );
+}
+
+function isDirectExecuteStep(step: ExecuteNextAction['step']): boolean {
+    return step === 'resolve' || step === 'create' || step === 'stage';
 }
 
 function setExternalRef<T>(ref: Ref<T> | undefined, value: T | null): void {

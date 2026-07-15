@@ -28,7 +28,6 @@ export type BoundExecuteResolution = Readonly<{
     contextKey: string;
     evidence: ExecuteTargetResolutionEvidence;
 }>;
-
 export type BoundExecuteOptimisticRun = Readonly<{
     contextKey: string;
     run: ControlDistributedRunSnapshot;
@@ -72,7 +71,7 @@ export function useExecuteOperations(input: Readonly<{
     const perform = useCallback(async (
         action: ExecuteAction,
         operation: (signal: AbortSignal) => Promise<void>,
-        refresh = true,
+        refreshMode: 'await' | 'background' | 'none' = 'await',
     ): Promise<boolean> => {
         if (requestRef.current) return false;
         const controller = new AbortController();
@@ -91,11 +90,12 @@ export function useExecuteOperations(input: Readonly<{
                 setMutationError(projectExecuteOperationError(error));
             }
         } finally {
-            if (
-                refresh && !controller.signal.aborted &&
-                operationContextRef.current === input.operationContextKey
-            ) {
+            const shouldRefresh = refreshMode !== 'none' && !controller.signal.aborted &&
+                operationContextRef.current === input.operationContextKey;
+            if (shouldRefresh && refreshMode === 'await') {
                 await input.connection.refreshAfterCurrent();
+            } else if (shouldRefresh) {
+                void input.connection.refreshAfterCurrent().catch(() => undefined);
             }
             if (requestRef.current === controller) {
                 requestRef.current = undefined;
@@ -157,7 +157,8 @@ export function useExecuteOperations(input: Readonly<{
 
     async function resolveTargets(): Promise<void> {
         if (!input.policy.resolve.enabled) return;
-        await perform('resolve', async signal => void await resolveFresh(signal));
+        await perform('resolve', async signal => void await resolveFresh(signal),
+            'background');
     }
     async function createRun(): Promise<void> {
         if (!input.policy.create.enabled || !input.manifest) return;
@@ -222,7 +223,7 @@ export function useExecuteOperations(input: Readonly<{
                 throw new Error('Artifact response belongs to a different distributed run.');
             }
             downloadExecuteArtifact(artifact, input.run!.distributedRunId);
-        }, false);
+        }, 'none');
     }
 
     return {

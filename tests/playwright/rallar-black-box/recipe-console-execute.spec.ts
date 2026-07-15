@@ -859,6 +859,41 @@ test('generates a fresh run ID when the same recipe starts another run', async (
     ).toHaveLength(2);
 });
 
+test('advances after Resolve while root reconciliation waits for an earlier read', async ({
+    context,
+    page,
+}) => {
+    const mock = await installLifecycleControl(context);
+    await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
+    await page
+        .locator(
+            '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]',
+        )
+        .click();
+    const actions = page.locator('[data-execute-action-runway]');
+
+    mock.deferNextRunRead();
+    await page.getByRole('button', { name: 'Refresh control data' }).click();
+    await mock.waitForDeferredRunRead();
+    const readsBeforeResolve = mock.runRequestCount();
+
+    try {
+        await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
+        await expect(
+            actions.getByRole('button', { name: 'Create draft', exact: true }),
+        ).toBeEnabled({ timeout: 1_000 });
+        expect(mock.successfulWrites.map(request => request.path)).toEqual([
+            '/distributed-runs/resolve-targets',
+        ]);
+        expect(mock.runRequestCount()).toBe(readsBeforeResolve);
+    } finally {
+        mock.releaseDeferredRunRead();
+    }
+
+    await expect.poll(() => mock.runRequestCount())
+        .toBeGreaterThan(readsBeforeResolve);
+});
+
 test('queues a post-mutation read behind a preexisting control refresh', async ({
     context,
     page,
@@ -1200,6 +1235,10 @@ test('rejects a mutation response for a different run identity', async ({
     ).toContainText(
         'Control response identity does not match the requested distributed run.',
     );
+    await expect(actions.getByRole('button', {
+        name: 'Create draft',
+        exact: true,
+    })).toBeFocused();
     await expect(page).not.toHaveURL(/(?:\?|&)distributedRunId=/);
 });
 
