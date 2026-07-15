@@ -14,6 +14,7 @@ import type {
 import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
+const API_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):8080\/.*/;
 const GROUP = {
     applicationId: 'rallar-server',
     workspaceId: 'default',
@@ -247,20 +248,13 @@ function targetRow(page: Page, agentId: string) {
 }
 
 function executeActionBand(page: Page) {
-    return page.locator('[data-execute-action-band]');
+    return page.locator('[data-execute-action-runway]');
 }
 
 function targetEmptyState(page: Page) {
     return executeTargets(page).getByRole('status').filter({
         hasText: 'No current target evidence',
     });
-}
-
-function actionRequirement(page: Page, action: string) {
-    return executeActionBand(page)
-        .locator('[aria-label="Action requirements"]')
-        .locator('p')
-        .filter({ hasText: new RegExp(`^${action}:`) });
 }
 
 function controlRunPicker(page: Page) {
@@ -363,14 +357,18 @@ test('shows initial network failure as offline without seeded board fallback', a
     await expect(runPicker).not.toContainText('No control runs');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
     await expect(targets).not.toContainText('seed-agent');
-    await expect(executeActionBand(page).getByRole('button', { name: 'Refresh' }))
-        .toBeEnabled();
-    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
-        .toBeDisabled();
-    await expect(actionRequirement(page, 'Resolve targets'))
-        .toHaveText('Resolve targets: Live or partial control truth is required.');
-    await expect(actionRequirement(page, 'Create draft'))
-        .toHaveText('Create draft: Complete live control truth is required.');
+    await expect(executeActionBand(page).getByRole('button', {
+        name: 'Refresh',
+        exact: true,
+    })).toHaveCount(0);
+    await expect(executeActionBand(page).getByRole('button', {
+        name: 'Refresh control data',
+        exact: true,
+    })).toBeEnabled();
+    await expect(executeActionBand(page).getByRole('button', { name: /Resolve \d+ targets/ }))
+        .toHaveCount(0);
+    await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
+        .toBeVisible();
 });
 
 test('keeps malformed successful control responses reachable', async ({
@@ -395,10 +393,10 @@ test('keeps malformed successful control responses reachable', async ({
         'Control is reachable but returned invalid data. Refresh to retry.',
         { exact: true },
     )).toBeVisible();
-    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
-        .toBeDisabled();
-    await expect(actionRequirement(page, 'Resolve targets'))
-        .toHaveText('Resolve targets: Live or partial control truth is required.');
+    await expect(executeActionBand(page).getByRole('button', { name: /Resolve \d+ targets/ }))
+        .toHaveCount(0);
+    await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
+        .toBeVisible();
 });
 
 test('contains nested malformed control snapshots before repository derivation', async ({
@@ -424,8 +422,8 @@ test('contains nested malformed control snapshots before repository derivation',
         { exact: true },
     )).toBeVisible();
     await expect(executeTargets(page).locator('[data-execute-target]')).toHaveCount(0);
-    await expect(actionRequirement(page, 'Resolve targets'))
-        .toHaveText('Resolve targets: Live or partial control truth is required.');
+    await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
+        .toBeVisible();
     expect(pageErrors).toEqual([]);
 });
 
@@ -454,12 +452,10 @@ test('keeps usable rows in a partial snapshot and labels active-run context unkn
         .toBeEnabled();
     await expect(commandContextItem(page, 'Safe targets')).toContainText('1');
     await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
-    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+    await expect(executeActionBand(page).getByRole('button', { name: /Resolve \d+ targets/ }))
         .toBeEnabled();
     await expect(executeActionBand(page).getByRole('button', { name: 'Create draft' }))
-        .toBeDisabled();
-    await expect(actionRequirement(page, 'Create draft'))
-        .toHaveText('Create draft: Complete live control truth is required.');
+        .toHaveCount(0);
 });
 
 test('keeps usable rows when optional distributed context is malformed', async ({
@@ -487,10 +483,10 @@ test('keeps usable rows when optional distributed context is malformed', async (
     await expect(row.getByRole('checkbox', { name: 'Select agent-partial-protocol' }))
         .toBeEnabled();
     await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
-    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+    await expect(executeActionBand(page).getByRole('button', { name: /Resolve \d+ targets/ }))
         .toBeEnabled();
-    await expect(actionRequirement(page, 'Create draft'))
-        .toHaveText('Create draft: Complete live control truth is required.');
+    await expect(executeActionBand(page).getByRole('button', { name: 'Create draft' }))
+        .toHaveCount(0);
 });
 
 test('keeps agent rows usable while announcing distributed-context authorization', async ({
@@ -518,10 +514,10 @@ test('keeps agent rows usable while announcing distributed-context authorization
         .toBeEnabled();
     await expect(commandContextItem(page, 'Safe targets')).toContainText('1');
     await expect(commandContextItem(page, 'Active run')).toContainText('Unknown');
-    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+    await expect(executeActionBand(page).getByRole('button', { name: /Resolve \d+ targets/ }))
         .toBeEnabled();
-    await expect(actionRequirement(page, 'Create draft'))
-        .toHaveText('Create draft: Complete live control truth is required.');
+    await expect(executeActionBand(page).getByRole('button', { name: 'Create draft' }))
+        .toHaveCount(0);
 });
 
 test('retains partial authorization when the configured token broker is unavailable', async ({
@@ -539,7 +535,7 @@ test('retains partial authorization when the configured token broker is unavaila
             expiresAtEpochMs: 4_000_000_000_000,
         }));
     });
-    await context.route('https://api.example.invalid/**', async (route) => {
+    await context.route(API_ROUTE, async (route) => {
         if (route.request().method() === 'OPTIONS') {
             await route.fulfill({
                 status: 204,
@@ -574,10 +570,10 @@ test('retains partial authorization when the configured token broker is unavaila
     );
     await expect(row.getByRole('checkbox', { name: 'Select agent-partial-broker-error' }))
         .toBeEnabled();
-    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
+    await expect(executeActionBand(page).getByRole('button', { name: /Resolve \d+ targets/ }))
         .toBeEnabled();
-    await expect(actionRequirement(page, 'Create draft'))
-        .toHaveText('Create draft: Complete live control truth is required.');
+    await expect(executeActionBand(page).getByRole('button', { name: 'Create draft' }))
+        .toHaveCount(0);
     expect(brokerAuthorizations).toEqual(['Bearer configured-session-token']);
 });
 
@@ -607,9 +603,11 @@ test('retains last-good rows after a failed manual refresh but reports zero curr
     );
 
     const requestsBeforeRefresh = mock.runRequestCount();
-    await page.getByRole('button', { name: 'Refresh control data' }).click();
+    await executeActionBand(page)
+        .getByRole('button', { name: 'Refresh control data', exact: true })
+        .click();
 
-    await expect.poll(mock.runRequestCount).toBe(requestsBeforeRefresh + 1);
+    await expect.poll(mock.runRequestCount).toBeGreaterThan(requestsBeforeRefresh);
     await expect(commandStatus(page, 'stale', 'Stale'))
         .toBeVisible();
     await expect(page.locator('[data-command-bar]').getByRole('status'))
@@ -632,10 +630,10 @@ test('retains last-good rows after a failed manual refresh but reports zero curr
         'Target evidence is retained for diagnosis. Selection is disabled until current control truth returns.',
         { exact: true },
     )).toBeVisible();
-    await expect(executeActionBand(page).getByRole('button', { name: 'Resolve targets' }))
-        .toBeDisabled();
-    await expect(actionRequirement(page, 'Resolve targets'))
-        .toHaveText('Resolve targets: Live or partial control truth is required.');
+    await expect(executeActionBand(page).getByRole('button', { name: /Resolve \d+ targets/ }))
+        .toHaveCount(0);
+    await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
+        .toBeVisible();
 });
 
 test('renders a truthful live-empty control state', async ({ context, page }) => {
@@ -663,8 +661,7 @@ test('renders a truthful live-empty control state', async ({ context, page }) =>
     await expect(commandContextItem(page, 'Safe targets'))
         .toContainText('0 selected · 0 recipe-safe');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
-    await expect(actionRequirement(page, 'Resolve targets'))
-        .toHaveText('Resolve targets: Select at least one current-safe target.');
+    await expect(executeActionBand(page)).toContainText('Connect agents to continue.');
 });
 
 for (const unresolvedCase of [
@@ -718,8 +715,7 @@ for (const unresolvedCase of [
                 'Control run missing-control-run is not present in the latest snapshot.',
             );
         }
-        await expect(actionRequirement(page, 'Resolve targets'))
-            .toHaveText('Resolve targets: Select at least one current-safe target.');
+        await expect(executeActionBand(page)).toContainText('Connect agents to continue.');
     });
 }
 
@@ -745,8 +741,8 @@ test('distinguishes reachable authorization failure from offline', async ({ cont
         { exact: true },
     )).toBeVisible();
     await expect(targets).not.toContainText('Control is offline');
-    await expect(actionRequirement(page, 'Resolve targets'))
-        .toHaveText('Resolve targets: Live or partial control truth is required.');
+    await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
+        .toBeVisible();
 });
 
 test('keeps stored credentials away from URL-selected control and API origins', async ({
@@ -796,8 +792,8 @@ test('keeps stored credentials away from URL-selected control and API origins', 
         'Automatic credentials were withheld for this URL-selected control endpoint.',
         { exact: true },
     )).toBeVisible();
-    await expect(actionRequirement(page, 'Create draft'))
-        .toHaveText('Create draft: Complete live control truth is required.');
+    await expect(executeActionBand(page).getByRole('heading', { name: 'Refresh control data' }))
+        .toBeVisible();
     expect(controlAuthorizations).toEqual([null]);
     expect(brokerAuthorizations).toEqual([]);
 });
@@ -815,7 +811,9 @@ test('announces recovery from offline to live and restores canonical rows', asyn
 
     const announcedStatus = page.locator('[data-command-bar]').getByRole('status');
     await expect(announcedStatus).toHaveText('Offline · unreachable');
-    await page.getByRole('button', { name: 'Refresh control data' }).click();
+    await executeActionBand(page)
+        .getByRole('button', { name: 'Refresh control data', exact: true })
+        .click();
     await expect(announcedStatus).toHaveText('Live · reachable');
     await expect(targetRow(page, 'agent-matched')).toHaveAttribute(
         'data-target-status',
@@ -1067,7 +1065,7 @@ test('keeps the complete Execute workflow scrollable in mobile landscape', async
 
     const actionBand = executeActionBand(page);
     await expect(actionBand).toBeVisible();
-    const resolve = actionBand.getByRole('button', { name: 'Resolve targets' });
+    const resolve = actionBand.getByRole('button', { name: /Resolve \d+ targets/ });
     await expect(resolve).toBeEnabled();
     await resolve.scrollIntoViewIfNeeded();
     const withinWorkspace = await resolve.evaluate((element) => {

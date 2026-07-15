@@ -38,6 +38,7 @@ import type {
   ControlDistributedRunCommandPhase,
   ControlDistributedRunSnapshot,
   ControlQueuedCommandSnapshot,
+  ControlRunToken,
   ControlRunSnapshot,
   ControlRunSnapshotBounds,
   ControlServerSnapshot,
@@ -88,14 +89,6 @@ export type RallarBlackBoxControlServiceOptions = Readonly<{
   runtimeRetentionBounds?: ControlRunSnapshotBounds;
 }>;
 
-export type ControlRunToken = Readonly<{
-  runId: string;
-  agentId: string;
-  token: string;
-  issuedAtEpochMs: number;
-  expiresAtEpochMs: number;
-}>;
-
 export type {
   ControlAgentSnapshot,
   ControlDistributedRunArtifactBundle,
@@ -104,6 +97,7 @@ export type {
   ControlDistributedRunSnapshot,
   ControlQueuedCommandSnapshot,
   ControlRunSnapshot,
+  ControlRunToken,
   ControlRunSnapshotBounds,
   ControlServerSnapshot,
 };

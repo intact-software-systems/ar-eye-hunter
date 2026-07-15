@@ -74,8 +74,8 @@ Useful query parameters:
 Recipe Console keeps the current provider, control state, operational run, and URL normalization state in its top
 command bar. Its primary views are:
 
-- `Execute`: choose a repository recipe, resolve targets, inspect preflight and the manifest, then create, stage,
-  start, cancel, refresh, or export a run
+- `Execute`: choose a repository recipe, open or copy links for local browser agents when needed, resolve targets,
+  inspect the compact preflight and manifest details, then follow the single next action through draft, stage, Start confirmation, and Monitor
 - `Monitor`: follow lifecycle and participant progress with the first failure and correlated evidence kept prominent
 - `Analyze`: import or load bounded artifacts, search evidence, inspect failures, and export redacted findings
 - `Tune`: inspect timing distributions and cadence, compare runs and recipe knobs, browse History, apply saved filters,
@@ -85,6 +85,49 @@ command bar. Its primary views are:
 
 The active view and shareable filters are stored in the versioned URL. Recipe Console views and preserved legacy
 surfaces are loaded at their route boundaries rather than retained as one hidden application tree.
+
+## Execute: Launch Agents And Run A Recipe
+
+Stay on `experience=recipe-console&view=execute`. In `Targets`, expand **Add
+browser agents** when it is not already open, then:
+
+1. Enter the exact **Control run ID for new agents**.
+2. Enter an **Agent ID prefix** and choose an **Agent count** from 1 through 6.
+3. Select the recipe. For the deterministic ACK flow, choose **Composite Evidence**.
+4. Choose **Open 3 browser agents**. The UI opens blank tabs synchronously, prepares fresh per-agent authority, and then navigates the reserved tabs.
+5. Wait for “3 launched browser agents are ready and selected as targets.”
+6. Follow **Resolve 3 targets**, **Create draft**, **Stage 3 agents**, **Review and start**, **Start distributed run**, and **Monitor run**.
+
+Create and Stage happen on the first click. Start opens a confirmation dialog
+that names the run, recipe, group, control origin, and target count. Registration
+and staging acknowledgements update through normal control polling, so do not
+use Refresh on the happy path. Refresh, artifact export, preflight/manifest
+details, and cancellation remain secondary controls.
+
+If the browser blocks tabs, use **Copy 3 launch links** or an individual **Copy
+link for _agent ID_** action and paste each short-lived link into another
+tab/window. Copying a link does not by itself prove registration; the manually
+opened control-agent page must connect. A wholly blocked Open action mints no
+tokens. Partially blocked cohorts mint only for tabs that were successfully
+reserved, with fresh Copy actions for the remainder.
+
+In `browser-rallar` mode, sign in at the Rallar Server login gate first. Every
+agent gets a fresh one-time API session and a distinct run-scoped control
+token. Tokens and tickets are fragment bootstrap data: the child consumes and
+immediately scrubs them. Do not copy URLs from history or logs; use the provided
+Copy actions for the intentional short-lived handoff.
+
+The setup opens automatically only after control truth shows that the selected
+run has no current-safe targets. Polling never opens, closes, or focuses it on
+your behalf afterward. Existing connected-agent and restored-run workflows can
+leave the setup collapsed and continue directly to Resolve or the current run
+phase.
+
+Legacy launch remains available for rollback at:
+
+```text
+/?experience=legacy&workspace=black-box-runner&tab=recipes
+```
 
 ## Legacy Header And Tabs
 

@@ -1,24 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-    createExecuteActionArmContext,
     deriveExecuteActionPolicy,
     type ExecuteActionPolicyInput,
-    type ExecuteArmedAction,
 } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-action-policy.ts';
 import type { RallarBlackBoxDistributedRunState } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-
-function arm(action: ExecuteArmedAction, overrides: Record<string, unknown> = {}) {
-    return createExecuteActionArmContext({
-        action,
-        controlBaseUrl: 'https://control.test/root',
-        controlRunId: 'run-a',
-        distributedRunId: 'distributed-a',
-        recipeIds: ['recipe-a'],
-        targetAgentIds: ['agent-b', 'agent-a'],
-        manifestFingerprint: '{"manifest":"a"}',
-        ...overrides,
-    });
-}
 
 function input(
     overrides: Partial<ExecuteActionPolicyInput> = {},
@@ -34,13 +19,6 @@ function input(
         selectedTargetsSafe: true,
         manifestValid: true,
         resolutionCurrent: true,
-        armKeys: {
-            create: arm('create').key,
-            stage: arm('stage').key,
-            start: arm('start').key,
-            cancel: arm('cancel').key,
-        },
-        armedKey: arm('create').key,
         ...overrides,
     };
 }
@@ -97,15 +75,13 @@ describe('Recipe Console Execute action policy', () => {
         ['waiting-for-ack', 'cancel'],
         ['waiting-for-barrier', 'cancel'],
         ['running', 'cancel'],
-    ] as const)('enables the armed lifecycle action for state %s', (
+    ] as const)('enables the current lifecycle action directly for state %s', (
         runState,
         action,
     ) => {
-        const armedKey = arm(action).key;
         const policy = deriveExecuteActionPolicy(input({
             runState,
             hasKnownRun: runState !== undefined,
-            armedKey,
         }));
 
         expect(policy[action].enabled).toBe(true);
@@ -122,7 +98,6 @@ describe('Recipe Console Execute action policy', () => {
         const policy = deriveExecuteActionPolicy(input({
             runState,
             hasKnownRun: true,
-            armedKey: arm('cancel').key,
         }));
 
         expect(policy.refresh.enabled).toBe(true);
@@ -143,7 +118,6 @@ describe('Recipe Console Execute action policy', () => {
             selectedTargetsSafe: false,
             manifestValid: false,
             resolutionCurrent: false,
-            armedKey: arm('cancel').key,
         }));
 
         expect(policy.cancel.enabled).toBe(true);
@@ -183,12 +157,10 @@ describe('Recipe Console Execute action policy', () => {
         const waiting = deriveExecuteActionPolicy(input({
             runState: 'waiting-for-ack',
             hasKnownRun: true,
-            armedKey: arm('start').key,
         }));
         const draft = deriveExecuteActionPolicy(input({
             runState: 'draft',
             hasKnownRun: true,
-            armedKey: arm('start').key,
         }));
 
         expect(waiting.stage).toMatchObject({ enabled: false, code: 'run-state' });
@@ -196,35 +168,20 @@ describe('Recipe Console Execute action policy', () => {
         expect(draft.start).toMatchObject({ enabled: false, code: 'run-state' });
     });
 
-    it('requires a matching explicit arm context for every live mutation', () => {
-        const policy = deriveExecuteActionPolicy(input({ armedKey: undefined }));
-
-        expect(policy.create).toMatchObject({
-            enabled: false,
-            code: 'arming-required',
-        });
-        expect(policy.create.reason).toContain('arm');
-    });
-
-    it('changes the arm key for every action or operational context field', () => {
-        const baseline = arm('stage');
-        const variants = [
-            arm('create'),
-            arm('stage', { controlBaseUrl: 'https://other-control.test' }),
-            arm('stage', { controlRunId: 'run-b' }),
-            arm('stage', { distributedRunId: 'distributed-b' }),
-            arm('stage', { recipeIds: ['recipe-b'] }),
-            arm('stage', { targetAgentIds: ['agent-a'] }),
-            arm('stage', { manifestFingerprint: '{"manifest":"b"}' }),
-        ];
-
-        expect(new Set(variants.map((variant) => variant.key)).size)
-            .toBe(variants.length);
-        expect(variants.every((variant) => variant.key !== baseline.key)).toBe(true);
-        expect(baseline.label).toContain('https://control.test/root');
-        expect(baseline.label).toContain('distributed-a');
-        expect(baseline.label).toContain('recipe-a');
-        expect(baseline.label).toContain('2 targets');
+    it('does not require arming for Create, Stage, Start, or Cancel', () => {
+        expect(deriveExecuteActionPolicy(input()).create.enabled).toBe(true);
+        expect(deriveExecuteActionPolicy(input({
+            runState: 'draft',
+            hasKnownRun: true,
+        })).stage.enabled).toBe(true);
+        expect(deriveExecuteActionPolicy(input({
+            runState: 'ready',
+            hasKnownRun: true,
+        })).start.enabled).toBe(true);
+        expect(deriveExecuteActionPolicy(input({
+            runState: 'running',
+            hasKnownRun: true,
+        })).cancel.enabled).toBe(true);
     });
 
     it('disables every second action while one action is busy', () => {

@@ -22,6 +22,23 @@ execution, live monitoring, bounded artifact analysis, timing and recipe compari
 retention, large-run windows, Fleet evidence, and contextual Advanced handoffs. The extracted legacy experience remains
 operational through explicit deep links and those handoffs.
 
+Execute now also owns first-class local browser-agent setup. Operators can enter
+the exact control-run ID, prefix, and count (1–6), synchronously reserve local
+tabs or copy individual/whole-cohort launch links, observe the exact cohort
+through the root query, and continue through Resolve, Create, Stage, confirmed
+Start, and Monitor without entering legacy. The lifecycle is presented as one
+state-derived next action instead of an equal-weight action bank; only Start and
+Cancel require confirmation, and polling removes the happy-path Refresh step.
+
+The implementation reuses a non-legacy launch service from both experiences.
+Fresh launch secrets are fragment-only and immediately scrubbed; simulated
+identities are unique per agent; browser-rallar requires login and fresh
+per-agent sessions. Deterministic unit/browser proof and the configured-live
+three-agent current-UI lifecycle pass. The moderated five-operator usability
+gate is still pending, and the wider aggregate distributed command retains an
+existing live RTC diagnostics assertion failure in legacy Distributed Recipes.
+The legacy Recipes route therefore remains visible and operational.
+
 The shared facade exists in `packages/shared-test/rallar-bb-test` and defines:
 
 - command types for `configure`, recipes, RTC, WebSocket, HTTP, health, stats, close, and reset
@@ -50,8 +67,8 @@ The SPA currently provides:
 
 - Recipe Console `Execute` as the blank/provider-only URL default, with `Monitor`, `Analyze`, `Tune`, `Fleet`, and
   `Advanced` as the other primary views
-- repository recipe selection, target resolution, manifest preflight, and visible create/stage/start/cancel/refresh and
-  export controls for distributed runs
+- repository recipe selection, inline local browser-agent launch/copy and registration evidence, target resolution,
+  compact manifest preflight, and a single-next-action runway for create/stage/start/Monitor with secondary cancel/refresh/export controls
 - failure-first monitoring, correlated evidence navigation, bounded artifact search/import/export, run timing and recipe
   comparison, saved History filters, guarded retention preview/confirmation, and accessible large-run windows
 - explicit legacy Local Workbench startup with a sample recipe at

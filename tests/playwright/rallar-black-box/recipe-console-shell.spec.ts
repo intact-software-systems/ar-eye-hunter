@@ -31,6 +31,10 @@ const EXECUTE_GROUP = {
     workspaceId: 'default',
     groupId: 'rallar-black-box-room',
 } as const;
+const LIVE_EXECUTE_ROUTE =
+    '/?provider=simulated&experience=recipe-console&view=execute' +
+    '&applicationId=rallar-black-box&workspaceId=default' +
+    '&roomId=rallar-black-box-room';
 
 function liveExecuteSnapshot() {
     const runId = 'execute-control-a';
@@ -450,7 +454,7 @@ test('keeps the repository catalog and preflight usable with control offline', a
     });
 
     await routeOfflineControl(page);
-    await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+    await page.goto(LIVE_EXECUTE_ROUTE);
 
     const search = page.getByRole('searchbox', { name: 'Search recipes' });
     const recipeLedger = page.getByRole('region', { name: 'Recipe ledger' });
@@ -491,23 +495,26 @@ test('keeps the repository catalog and preflight usable with control offline', a
     await expect(preflight.getByText('Recipe ready', { exact: true })).toBeVisible();
     await expect(preflight.getByText('Manifest commands', { exact: true }).locator('..'))
         .toContainText('5');
+    const agentSetup = page.locator('[data-execute-agent-setup]');
+    await expect(agentSetup.getByRole('button', { name: 'Open 3 browser agents' }))
+        .toBeDisabled();
+    await expect(agentSetup.getByRole('alert')).toContainText(
+        'A current control connection is required before launching browser agents.',
+    );
     await expect(page.locator('[data-execute-manifest]')).toContainText('Unavailable');
 
-    const actions = page.getByRole('region', { name: 'Execute actions' });
-    for (const action of [
-        'Resolve targets',
-        'Create draft',
-        'Stage run',
-        'Start run',
-        'Export artifact',
-        'Cancel run',
-    ]) {
-        await expect(actions.getByRole('button', { name: action, exact: true }))
-            .toBeDisabled();
-    }
-    await expect(actions.getByRole('button', { name: 'Refresh', exact: true }))
+    const actions = page.getByRole('region', { name: 'Execute next action' });
+    await expect(actions.getByRole('button', { name: 'Refresh control data' }))
         .toBeEnabled();
-    await expect(actions).toContainText('Live or partial control truth is required.');
+    for (const action of ['Create draft', 'Export artifact', 'Cancel run']) {
+        await expect(actions.getByRole('button', { name: action, exact: true }))
+            .toHaveCount(0);
+    }
+    await expect(actions.getByRole('button', { name: /Resolve \d+ targets/ }))
+        .toHaveCount(0);
+    await expect(actions.getByRole('button', { name: 'Refresh', exact: true }))
+        .toHaveCount(0);
+    await expect(actions).toContainText('offline control truth');
     await expect(page.getByText(/Preview action|Stage Preview|Start Preview|Export Preview/))
         .toHaveCount(0);
 
@@ -522,10 +529,10 @@ test('keeps the repository catalog and preflight usable with control offline', a
     expect(new URL(controlServerRequests[0]).pathname).toBe('/runs');
 
     await page.setViewportSize({ width: 430, height: 932 });
-    await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+    await page.goto(LIVE_EXECUTE_ROUTE);
     expect((await page.getByRole('searchbox', { name: 'Search recipes' }).boundingBox())?.height)
         .toBeGreaterThanOrEqual(44);
-    expect((await page.getByRole('button', { name: 'Refresh', exact: true }).boundingBox())?.height)
+    expect((await actions.getByRole('button', { name: 'Refresh control data', exact: true }).boundingBox())?.height)
         .toBeGreaterThanOrEqual(44);
     await expect(page.getByRole('region', { name: 'Recipe ledger' }).getByRole('listbox'))
         .toHaveCSS('overflow-y', 'visible');
@@ -533,7 +540,7 @@ test('keeps the repository catalog and preflight usable with control offline', a
 
 test('keeps selected recipe truth aligned across Execute surfaces', async ({ page }) => {
     await routeLiveExecuteControl(page);
-    await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+    await page.goto(LIVE_EXECUTE_ROUTE);
 
     const providerRecipe = page.locator(
         '[data-execute-recipe][data-recipe-id="rallar-provider-parity-recipe"]',
@@ -550,6 +557,15 @@ test('keeps selected recipe truth aligned across Execute surfaces', async ({ pag
     const preflight = page.getByRole('region', { name: 'Preflight' });
     await expect(preflight.getByText('Manifest commands', { exact: true }).locator('..'))
         .toContainText('10');
+    const preflightDetails = preflight.locator('details').filter({
+        hasText: 'Preflight details',
+    });
+    await expect(preflightDetails.locator('summary')).toBeVisible();
+    await expect(preflight.getByRole('heading', { name: 'Runtime surfaces' }))
+        .not.toBeVisible();
+    await preflightDetails.locator('summary').click();
+    await expect(preflight.getByRole('heading', { name: 'Runtime surfaces' }))
+        .toBeVisible();
     const manifest = page.locator('[data-execute-manifest]');
     await manifest.locator('summary').click();
     await expect(manifest)
@@ -559,14 +575,11 @@ test('keeps selected recipe truth aligned across Execute surfaces', async ({ pag
     await expect(targets.locator('[data-target-status="matched"]')).toHaveCount(2);
     await expect(targets.getByRole('checkbox')).toHaveCount(2);
     await expect(targets.getByText('2 selected', { exact: true })).toBeVisible();
-    const actions = page.getByRole('region', { name: 'Execute actions' });
-    await expect(actions.getByRole('button', { name: 'Resolve targets' })).toBeEnabled();
-    await expect(actions.getByRole('button', { name: 'Create draft' })).toBeDisabled();
-    await expect(actions).toContainText(
-        'Resolve the current manifest and safe targets first.',
-    );
-    await expect(actions.getByRole('button', { name: 'Stage run' })).toBeDisabled();
-    await expect(actions.getByRole('button', { name: 'Start run' })).toBeDisabled();
+    const actions = page.getByRole('region', { name: 'Execute next action' });
+    await expect(actions.getByRole('button', { name: /Resolve \d+ targets/ })).toBeEnabled();
+    await expect(actions.getByRole('button', { name: 'Create draft' })).toHaveCount(0);
+    await expect(actions.getByRole('button', { name: /Stage \d+ agents/ })).toHaveCount(0);
+    await expect(actions.getByRole('button', { name: 'Review and start' })).toHaveCount(0);
     await expect(page.locator('[data-command-bar]')
         .getByText('Safe targets', { exact: true }).locator('..'))
         .toContainText('2 selected · 2 recipe-safe');
@@ -587,7 +600,7 @@ test('refreshes Execute control truth without discarding the uncreated draft', a
         }
     });
     await routeLiveExecuteControl(page);
-    await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+    await page.goto(LIVE_EXECUTE_ROUTE);
     await expect(page.locator('[data-command-bar] [data-status="passed"]'))
         .toContainText('Live · reachable');
     const targets = page.getByRole('region', { name: 'Targets' });
@@ -635,15 +648,12 @@ test('refreshes live Monitor truth without discarding selected evidence', async 
 
 test('requires known distributed-run truth before artifact export', async ({ page }) => {
     await routeLiveExecuteControl(page);
-    await page.goto('/?provider=simulated&experience=recipe-console&view=execute');
+    await page.goto(LIVE_EXECUTE_ROUTE);
     let downloadCount = 0;
     page.on('download', () => downloadCount += 1);
-    const actions = page.getByRole('region', { name: 'Execute actions' });
+    const actions = page.getByRole('region', { name: 'Execute next action' });
     await expect(actions.getByRole('button', { name: 'Export artifact' }))
-        .toBeDisabled();
-    await expect(actions).toContainText(
-        'Select a known distributed run to export.',
-    );
+        .toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Export Preview' })).toHaveCount(0);
     expect(downloadCount).toBe(0);
 });

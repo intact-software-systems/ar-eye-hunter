@@ -4,6 +4,8 @@ import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
+    consumeAgentSessionTicketAt,
+    issueAgentSessionTicketsAt,
     listStateClientEventPage,
     listStateClientEvents,
     listStateGroupEventPage,
@@ -69,6 +71,51 @@ describe('state API workflows', () => {
         vi.useRealTimers();
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
+    });
+
+    it('issues and consumes agent tickets against an explicit API base without changing the configured base', async () => {
+        const authSession = {
+            clientId: 'operator-client',
+            accessToken: 'operator-token',
+            username: 'alice',
+            sessionId: 'operator-session',
+            expiresAtEpochMs: 10_000,
+        };
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.endsWith('/api/auth/agent-session-tickets')) {
+                return jsonResponse({ tickets: [{
+                    agentId: 'agent-1',
+                    ticket: 'ticket-1',
+                    sessionId: 'agent-session-1',
+                    expiresAtEpochMs: 9_000,
+                }] });
+            }
+            if (method === 'POST' && url.endsWith('/api/auth/agent-session-tickets/consume')) {
+                return jsonResponse(authSession);
+            }
+            if (method === 'GET' && url.endsWith('/stats/me/realtime')) {
+                return jsonResponse({});
+            }
+            return notFoundResponse();
+        });
+
+        await issueAgentSessionTicketsAt(
+            'https://agent-api.example.test',
+            { agentIds: ['agent-1'] },
+            { authSession },
+        );
+        await consumeAgentSessionTicketAt(
+            'https://agent-api.example.test',
+            { ticket: 'ticket-1' },
+        );
+        await readStateMyRealtimeStatus();
+
+        expect(fetchCalls.map(call => call.url)).toEqual([
+            'https://agent-api.example.test/api/auth/agent-session-tickets',
+            'https://agent-api.example.test/api/auth/agent-session-tickets/consume',
+            '/api/state/apps/rallar-server/workspaces/default/stats/me/realtime',
+        ]);
+        expect(fetchCalls[0].headers.authorization).toBe('Bearer operator-token');
     });
 
     it('refreshes client and group snapshots through an orchestrated API workflow', async () => {

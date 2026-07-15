@@ -23,6 +23,23 @@ export function runnerNewAgentLaunchSuffix(): string {
     return Date.now().toString(36).slice(-5);
 }
 
+export function controlWebSocketUrlFromHttpBaseUrl(value: string): string {
+    try {
+        const url = new URL(value);
+        if (url.protocol === 'http:') {
+            url.protocol = 'ws:';
+        } else if (url.protocol === 'https:') {
+            url.protocol = 'wss:';
+        }
+        url.pathname = '/control';
+        url.search = '';
+        url.hash = '';
+        return url.toString();
+    } catch {
+        return 'ws://localhost:5180/control';
+    }
+}
+
 export function runnerAgentId(
     prefix: string,
     index: number,
@@ -62,16 +79,18 @@ export function createRunnerAgentLaunchUrl(input: RunnerAgentLaunchInput): strin
     if (input.actor) {
         url.searchParams.set('actor', input.actor);
     }
-    if (input.sessionId) {
+    if (input.sessionId && !input.agentSessionTicket) {
         url.searchParams.set('sessionId', input.sessionId);
     }
+    const fragment = new URLSearchParams();
     if (input.controlToken) {
-        url.searchParams.set('controlToken', input.controlToken);
+        fragment.set('controlToken', input.controlToken);
     }
     if (input.agentSessionTicket) {
-        url.hash = new URLSearchParams({
-            agentSessionTicket: input.agentSessionTicket,
-        }).toString();
+        fragment.set('agentSessionTicket', input.agentSessionTicket);
+    }
+    if (fragment.size > 0) {
+        url.hash = fragment.toString();
     }
     return url.toString();
 }
@@ -81,6 +100,14 @@ export function readRunnerAgentSessionTicketFromHash(
 ): string | undefined {
     return new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
         .get('agentSessionTicket')
+        ?.trim() || undefined;
+}
+
+export function readRunnerControlTokenFromHash(
+    hash: string,
+): string | undefined {
+    return new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
+        .get('controlToken')
         ?.trim() || undefined;
 }
 

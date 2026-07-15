@@ -12,12 +12,14 @@ import {
 } from '../../../apps/rallar-black-box/src/legacy/shell/navigation.ts';
 import {
     createRunnerAgentLaunchUrl,
+    readRunnerControlTokenFromHash,
     readRunnerAgentSessionTicketFromHash,
 } from '../../../apps/rallar-black-box/src/runner-agent-launch.ts';
 
 const ticketMocks = vi.hoisted(() => ({
     configureApiClient: vi.fn(),
     consumeAgentSessionTicket: vi.fn(),
+    consumeAgentSessionTicketAt: vi.fn(),
 }));
 
 vi.mock('@shared-web/browser/api-client-config.ts', () => ({
@@ -25,11 +27,12 @@ vi.mock('@shared-web/browser/api-client-config.ts', () => ({
 }));
 vi.mock('@shared-web/browser/api-integration.ts', () => ({
     consumeAgentSessionTicket: ticketMocks.consumeAgentSessionTicket,
+    consumeAgentSessionTicketAt: ticketMocks.consumeAgentSessionTicketAt,
 }));
 
 import {
     consumeBootstrapAgentSessionTicket,
-    scrubAgentSessionTicketFromUrl,
+    scrubBrowserAgentBootstrapSecretsFromUrl,
 } from '../../../apps/rallar-black-box/src/legacy/shell/auth/agent-session-ticket.ts';
 
 afterEach(() => {
@@ -38,7 +41,7 @@ afterEach(() => {
 });
 
 describe('rallar-black-box runner agent launch links', () => {
-    it('builds one-time same-user agent links without leaking auth secrets in query params', () => {
+    it('builds one-time same-user agent links without leaking auth secrets or minted session IDs in query params', () => {
         const launchUrl = createRunnerAgentLaunchUrl({
             origin: 'https://blackbox.example.test',
             providerMode: 'browser-rallar',
@@ -64,14 +67,15 @@ describe('rallar-black-box runner agent launch links', () => {
         expect(url.searchParams.get('autoConnect')).toBe('1');
         expect(url.searchParams.get('agentId')).toBe('controller-01');
         expect(url.searchParams.get('actor')).toBe('alice');
-        expect(url.searchParams.get('sessionId')).toBe('controller-01-session');
+        expect(url.searchParams.get('sessionId')).toBeNull();
         expect(url.searchParams.get('rallarAuthStorage')).toBe('session');
         expect(url.searchParams.get('rallarRestoreSession')).toBe('1');
-        expect(url.searchParams.get('controlToken')).toBe('control-token');
+        expect(url.searchParams.get('controlToken')).toBeNull();
         expect(url.search).not.toContain('secret-agent-ticket');
         expect(url.searchParams.get('rallarPassword')).toBeNull();
         expect(url.searchParams.get('accessToken')).toBeNull();
         expect(readRunnerAgentSessionTicketFromHash(url.hash)).toBe('secret-agent-ticket');
+        expect(readRunnerControlTokenFromHash(url.hash)).toBe('control-token');
     });
 
     it('boots the generated Workbench alias, consumes its ticket once, and scrubs only the ticket fragment', async () => {
@@ -82,7 +86,7 @@ describe('rallar-black-box runner agent launch links', () => {
             sessionId: 'controller-01-session',
             expiresAtEpochMs: 9_999,
         };
-        ticketMocks.consumeAgentSessionTicket.mockResolvedValue(session);
+        ticketMocks.consumeAgentSessionTicketAt.mockResolvedValue(session);
 
         const generated = createRunnerAgentLaunchUrl({
             origin: 'https://blackbox.example.test',
@@ -130,7 +134,7 @@ describe('rallar-black-box runner agent launch links', () => {
             applicationId: 'rallar-server',
             workspaceId: 'default',
             actor: 'alice',
-            sessionId: 'controller-01-session',
+            controlToken: undefined,
             rallarAuthStorage: 'session',
             rallarAgentSessionTicket: 'secret-agent-ticket',
             rallarRestoreSession: true,
@@ -153,14 +157,12 @@ describe('rallar-black-box runner agent launch links', () => {
 
         expect(duplicateConsume).toBe(firstConsume);
         await expect(firstConsume).resolves.toEqual(session);
-        expect(ticketMocks.configureApiClient).toHaveBeenCalledOnce();
-        expect(ticketMocks.configureApiClient).toHaveBeenCalledWith({
-            apiBaseUrl: 'https://api.example.test',
-        });
-        expect(ticketMocks.consumeAgentSessionTicket).toHaveBeenCalledOnce();
-        expect(ticketMocks.consumeAgentSessionTicket).toHaveBeenCalledWith({
-            ticket: 'secret-agent-ticket',
-        });
+        expect(ticketMocks.configureApiClient).not.toHaveBeenCalled();
+        expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledOnce();
+        expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledWith(
+            'https://api.example.test',
+            { ticket: 'secret-agent-ticket' },
+        );
 
         const replaceState = vi.fn();
         vi.stubGlobal('window', {
@@ -172,12 +174,37 @@ describe('rallar-black-box runner agent launch links', () => {
         });
         vi.stubGlobal('document', { title: 'Rallar Black Box' });
 
-        scrubAgentSessionTicketFromUrl();
+        scrubBrowserAgentBootstrapSecretsFromUrl();
 
         expect(replaceState).toHaveBeenCalledOnce();
         const scrubbed = new URL(String(replaceState.mock.calls[0][2]));
-        expect(scrubbed.search).toBe(launchUrl.search);
+        expect(scrubbed.searchParams.get('controlToken')).toBeNull();
         expect(scrubbed.hash).toBe('#trace=keep&pane=evidence');
         expect(scrubbed.href).not.toContain('secret-agent-ticket');
+    });
+
+    it('scrubs legacy query control tokens and new fragment secrets without removing public context', () => {
+        const launchUrl = new URL('https://blackbox.example.test/?mode=control&runId=run-1&agentId=agent-1&controlToken=legacy-token#controlToken=new-token&agentSessionTicket=api-ticket&trace=keep');
+        const replaceState = vi.fn();
+        vi.stubGlobal('window', {
+            location: {
+                hash: launchUrl.hash,
+                href: launchUrl.toString(),
+            },
+            history: { replaceState },
+        });
+        vi.stubGlobal('document', { title: 'Rallar Black Box' });
+
+        scrubBrowserAgentBootstrapSecretsFromUrl();
+
+        const scrubbed = new URL(String(replaceState.mock.calls[0][2]));
+        expect(scrubbed.searchParams.get('mode')).toBe('control');
+        expect(scrubbed.searchParams.get('runId')).toBe('run-1');
+        expect(scrubbed.searchParams.get('agentId')).toBe('agent-1');
+        expect(scrubbed.searchParams.get('controlToken')).toBeNull();
+        expect(scrubbed.hash).toBe('#trace=keep');
+        expect(scrubbed.href).not.toContain('legacy-token');
+        expect(scrubbed.href).not.toContain('new-token');
+        expect(scrubbed.href).not.toContain('api-ticket');
     });
 });

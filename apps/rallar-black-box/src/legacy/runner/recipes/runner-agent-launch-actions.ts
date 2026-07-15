@@ -1,8 +1,11 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import { issueAgentSessionTickets } from '@shared-web/browser/api-integration.ts';
+import { createBrowserAgentLaunchService } from '../../../browser-agent-launch-service.ts';
 import {
-    createRunnerAgentLaunchUrl,
+    navigateReservedBrowserAgentPopups,
+    releaseReservedBrowserAgentPopups,
+    reserveBrowserAgentPopups,
+} from '../../../browser-agent-popup.ts';
+import {
     runnerNewAgentLaunchSuffix,
 } from '../../../runner-agent-launch.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
@@ -46,87 +49,44 @@ export function createRunnerAgentLaunchActions({
     setAgentLaunchSuffix,
     setControlRunId,
 }: RunnerAgentLaunchActionsInput) {
-    const createBrokeredAgentLaunchUrls = async (): Promise<
-        readonly string[]
-    > => {
-        if (
-            agentRestoreSession &&
-            providerMode === 'browser-rallar'
-        ) {
-            if (!authSession) {
-                throw new Error(
-                    'Open agent tabs requires a logged-in browser session.',
-                );
-            }
-
-            configureApiClient({ apiBaseUrl: apiBaseUrl });
-            const response = await issueAgentSessionTickets(
-                { agentIds },
-                { authSession },
-            );
-            const ticketsByAgent = new Map(
-                response.tickets.map((ticket) => [ticket.agentId, ticket]),
-            );
-
-            return agentIds.map((agentId) => {
-                const ticket = ticketsByAgent.get(agentId);
-                if (!ticket) {
-                    throw new Error(
-                        `Missing agent session ticket for ${agentId}.`,
-                    );
-                }
-
-                return createRunnerAgentLaunchUrl({
-                    origin: runnerBrowserOrigin(),
-                    providerMode: providerMode,
-                    controlWsUrl: agentControlWsUrl,
-                    runId: agentRunId,
-                    agentId,
-                    groupId: groupId,
-                    apiBaseUrl: apiBaseUrl,
-                    applicationId: applicationId,
-                    workspaceId: workspaceId,
-                    restoreSession: true,
-                    authStorage: 'session',
-                    actor: authSession.username,
-                    sessionId: ticket.sessionId,
-                    controlToken,
-                    agentSessionTicket: ticket.ticket,
-                });
-            });
-        }
-
-        return agentIds.map((agentId) =>
-            createRunnerAgentLaunchUrl({
-                origin: runnerBrowserOrigin(),
-                providerMode: providerMode,
-                controlWsUrl: agentControlWsUrl,
-                runId: agentRunId,
+    const launchService = createBrowserAgentLaunchService({
+        origin: runnerBrowserOrigin(),
+        providerMode,
+        controlWsUrl: agentControlWsUrl,
+        apiBaseUrl,
+        group: { applicationId, workspaceId, groupId },
+        authSession,
+        issueAgentSessions: agentRestoreSession,
+        allowAnonymousControlToken: true,
+        issueRunToken: async ({ runId, agentId }) => {
+            const issuedAtEpochMs = Date.now();
+            return {
+                runId,
                 agentId,
-                groupId: groupId,
-                apiBaseUrl: apiBaseUrl,
-                applicationId: applicationId,
-                workspaceId: workspaceId,
-                restoreSession: agentRestoreSession,
-                authStorage: agentRestoreSession ? 'session' : undefined,
-                actor: authSession?.username,
-                sessionId: authSession?.sessionId,
-                controlToken,
-            }),
-        );
-    };
+                token: controlToken,
+                issuedAtEpochMs,
+                expiresAtEpochMs: issuedAtEpochMs + 60 * 60 * 1_000,
+            };
+        },
+    });
+
+    const prepare = (ids: readonly string[]) => launchService.prepare({
+        runId: agentRunId,
+        agentIds: ids,
+    });
 
     const copyAgentLinks = async (): Promise<void> => {
         setBusyAction('agent-links');
         setAgentLaunchMessage('Minting fresh one-time agent links...');
         try {
-            const launchUrls = await createBrokeredAgentLaunchUrls();
+            const prepared = await prepare(agentIds);
+            setControlRunId(prepared.runId);
             await copyText(
-                launchUrls.join('\n'),
-                `Copied ${launchUrls.length} one-time agent link${launchUrls.length === 1 ? '' : 's'}.`,
+                prepared.agents.map(agent => agent.launchUrl).join('\n'),
+                `Copied ${prepared.agents.length} one-time agent link${prepared.agents.length === 1 ? '' : 's'}.`,
             );
             setAgentLaunchMessage(
-                `Copied ${launchUrls.length} one-time, short-lived agent link${launchUrls.length === 1 ? '' : 's'}.`,
+                `Copied ${prepared.agents.length} one-time, short-lived agent link${prepared.agents.length === 1 ? '' : 's'}.`,
             );
             setAgentLaunchSuffix(runnerNewAgentLaunchSuffix());
         } catch (error) {
@@ -137,50 +97,31 @@ export function createRunnerAgentLaunchActions({
     };
 
     const openAgentTabs = async (): Promise<void> => {
-        const pendingAgentWindows = agentIds.map(() => {
-            const popup = globalThis.open?.('about:blank', '_blank');
-            try {
-                if (popup) {
-                    popup.opener = null;
-                    popup.document.title = 'Rallar Agent';
-                    popup.document.body.textContent =
-                        'Preparing fresh Rallar agent session...';
-                }
-            } catch {
-                // Popup access can be unavailable in browser security modes.
-            }
-            return popup;
-        });
+        const reservation = reserveBrowserAgentPopups(agentIds);
+        if (reservation.reservedAgentIds.length === 0) {
+            setAgentLaunchMessage(
+                `Your browser blocked all ${agentIds.length} agent tabs. Copy the launch links instead.`,
+            );
+            return;
+        }
         setBusyAction('agent-tabs');
         setAgentLaunchMessage(
             'Minting fresh one-time agent sessions...',
         );
         try {
-            const launchUrls = await createBrokeredAgentLaunchUrls();
-            setControlRunId(agentRunId);
-            launchUrls.forEach((url, index) => {
-                const pendingWindow = pendingAgentWindows[index];
-                if (pendingWindow && !pendingWindow.closed) {
-                    pendingWindow.location.href = url;
-                    return;
-                }
-                globalThis.open?.(url, '_blank', 'noopener,noreferrer');
-            });
+            const prepared = await prepare(reservation.reservedAgentIds);
+            setControlRunId(prepared.runId);
+            navigateReservedBrowserAgentPopups(reservation, prepared.agents);
+            const blocked = reservation.blockedAgentIds.length;
             setAgentLaunchMessage(
-                `Requested ${launchUrls.length} agent tab${launchUrls.length === 1 ? '' : 's'} with fresh one-time sessions. Copy links if your browser blocked popups.`,
+                blocked > 0
+                    ? `Opened ${prepared.agents.length} agent tabs. ${blocked} ${blocked === 1 ? 'tab was' : 'tabs were'} blocked; copy fresh links for the remainder.`
+                    : `Opened ${prepared.agents.length} agent tab${prepared.agents.length === 1 ? '' : 's'} with fresh one-time sessions.`,
             );
             setAgentLaunchSuffix(runnerNewAgentLaunchSuffix());
         } catch (error) {
             const message = runnerFriendlyErrorMessage(error);
-            pendingAgentWindows.forEach((pendingWindow) => {
-                try {
-                    if (pendingWindow && !pendingWindow.closed) {
-                        pendingWindow.document.body.textContent = message;
-                    }
-                } catch {
-                    // Ignore inaccessible popup documents.
-                }
-            });
+            releaseReservedBrowserAgentPopups(reservation, message);
             setAgentLaunchMessage(message);
         } finally {
             setBusyAction(undefined);

@@ -134,7 +134,8 @@ test.describe('rallar-black-box agent tab session tickets', () => {
       .getByRole('button', { name: 'Open agent tabs', exact: true })
       .click();
 
-    await expect(panel).toContainText('Requested 2 agent tabs', {
+    await expect(panel).toContainText(
+      'Opened 2 agent tabs with fresh one-time sessions.', {
       timeout: 15_000,
     });
     await expect.poll(() => popups.length, {

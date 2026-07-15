@@ -13,7 +13,8 @@ import { TUNE_COMPARE_ROUTE } from './recipe-console-tune-run-data.ts';
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 const RECIPE_URL =
     '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
-    '&controlRunId=execute-control-a';
+    '&applicationId=rallar-black-box&workspaceId=default' +
+    '&roomId=rallar-black-box-room&controlRunId=execute-control-a';
 const ADVANCED_URL = RECIPE_URL.replace('view=execute', 'view=advanced');
 const MATCHED_REASON = 'Agent is connected and reports the selected global group.';
 const TUNE_CSS_FIXTURE = {
@@ -140,7 +141,7 @@ async function navigateInApp(page: Page, url: string): Promise<void> {
 async function captureRealRecipeStyles(page: Page) {
     const catalog = page.getByRole('region', { name: 'Recipe ledger' });
     const targets = page.getByRole('region', { name: 'Targets' });
-    const actionBand = page.getByRole('region', { name: 'Execute actions' });
+    const actionBand = page.getByRole('region', { name: 'Execute next action' });
     const targetRow = targets.locator('[data-target-status="matched"]').first();
     await expect(catalog).toBeVisible();
     await expect(targets).toBeVisible();
@@ -607,7 +608,11 @@ test('matches cold Recipe styles when legacy components load first', async ({
     const coldRecipe = await captureRealRecipeStyles(page);
 
     const legacyFirst = await context.newPage();
-    await legacyFirst.goto('/?provider=simulated&experience=legacy&tab=auth');
+    await legacyFirst.goto(
+        '/?provider=simulated&experience=legacy&tab=auth' +
+        '&applicationId=rallar-black-box&workspaceId=default' +
+        '&roomId=rallar-black-box-room',
+    );
     await expect(legacyFirst.locator('.app-shell')).toBeVisible();
     await expect(legacyFirst.locator('.recipe-console')).toHaveCount(0);
     await navigateInApp(legacyFirst, RECIPE_URL);

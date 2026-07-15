@@ -20,7 +20,7 @@ export function RunnerRecipesPanel({
         runDistributedRecipe, readiness, refreshReadiness, openAgentTabs,
         groupRef, recipeAgentRows, recipeAgentSummary, agentRunId,
         agentPrefix, agentCount, agentRestoreSession, agentControlWsUrl,
-        controlRun, agentLaunchUrls, agentLaunchMessage, setAgentRunId,
+        controlRun, agentIds, agentLaunchMessage, setAgentRunId,
         setControlRunId, setControlRun, setAgentPrefix, setAgentCount,
         setAgentRestoreSession, copyAgentLinks, query, setQuery, profile,
         setProfile, profileOptions, sourceFilter, setSourceFilter,
@@ -69,7 +69,7 @@ export function RunnerRecipesPanel({
                 agentControlWsUrl={agentControlWsUrl}
                 globalValues={globalValues}
                 controlRun={controlRun}
-                agentLaunchUrls={agentLaunchUrls}
+                agentIds={agentIds}
                 agentLaunchMessage={agentLaunchMessage}
                 setAgentRunId={setAgentRunId}
                 setControlRunId={setControlRunId}

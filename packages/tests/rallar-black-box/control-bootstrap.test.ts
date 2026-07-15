@@ -244,6 +244,21 @@ describe('rallar-black-box control bootstrap', () => {
     expect(bootstrap.rallarRestoreSession).toBe(true);
   });
 
+  it('prefers a fragment control token while keeping legacy query-token links compatible', () => {
+    const fragment = resolveRallarBlackBoxBootstrapConfig(
+      '?mode=control&controlToken=legacy-token',
+      {},
+      '#controlToken=fragment-token',
+    );
+    const legacy = resolveRallarBlackBoxBootstrapConfig(
+      '?mode=control&controlToken=legacy-token',
+      {},
+    );
+
+    expect(fragment.controlToken).toBe('fragment-token');
+    expect(legacy.controlToken).toBe('legacy-token');
+  });
+
   it('validates browser-rallar provider config before real execution exists', () => {
     expect(validateRallarBlackBoxProviderConfig({
       control: {

@@ -376,7 +376,8 @@ export function resolveRallarBlackBoxBootstrapConfig(
         controlUrl,
         runId,
         agentId,
-        controlToken: paramValue(params, env, 'controlToken', 'VITE_RALLAR_CONTROL_TOKEN'),
+        controlToken: fragmentParams.get('controlToken')?.trim() ||
+            paramValue(params, env, 'controlToken', 'VITE_RALLAR_CONTROL_TOKEN'),
         heartbeatIntervalMs: numberParamValue(paramValue(
             params,
             env,

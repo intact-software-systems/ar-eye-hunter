@@ -243,7 +243,9 @@ test('opens runner mode on Recipes and runs a local recipe from the launcher', a
     expect(agentUrl.searchParams.get('agentId')).toMatch(/^ui-agent-/);
     expect(agentUrl.searchParams.get('roomId')).toBe('bb-group');
     await agentPage.close();
-    await expect(agentSetup).toContainText('Requested 1 agent tab');
+    await expect(agentSetup).toContainText(
+        'Opened 1 agent tab with fresh one-time sessions.',
+    );
 
     await panel.getByRole('button', { name: 'Open in editor' }).first().click();
     await expect(panel.locator('.runner-inline-editor')).toContainText('Recipe JSON');

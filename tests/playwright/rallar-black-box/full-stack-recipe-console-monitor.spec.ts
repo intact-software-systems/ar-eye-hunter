@@ -19,7 +19,6 @@ import {
     expectFullStackApiReady,
     FULL_STACK_SPA_ORIGIN,
     loginUser,
-    openBrowserControlAgent,
     readExhaustivePostgresConfig,
     uniqueGroupId,
     uniqueRunId,
@@ -102,7 +101,7 @@ function operatorUrl(input: Readonly<{
         v: '1',
         experience: 'recipe-console',
         view: 'execute',
-        recipeId: 'rtc-realtime-stability',
+        recipeId: 'composite-evidence-recipe',
         apiBaseUrl: CONFIGURED_POSTGRES.apiBaseUrl,
         controlUrl: CONFIGURED_POSTGRES.controlWsUrl,
         applicationId: CONFIGURED_POSTGRES.applicationId,
@@ -119,11 +118,11 @@ async function assertLiveExecuteTargets(
     agentIds: readonly string[],
 ): Promise<void> {
     const recipe = page.locator(
-        '[data-execute-recipe][data-recipe-id="rtc-realtime-stability"]',
+        '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]',
     );
     await expect(recipe).toHaveAttribute('aria-selected', 'true');
-    await expect(recipe).toContainText('browser-rallar');
-    await expect(recipe).toContainText('Live services');
+    await expect(recipe).toContainText('simulated');
+    await expect(recipe).toContainText('Self-contained');
 
     const targets = page.locator('[data-execute-targets]');
     await expect(targets.locator('[data-execute-target]')).toHaveCount(
@@ -136,12 +135,63 @@ async function assertLiveExecuteTargets(
     );
 }
 
+async function launchBrowserAgentsThroughVisibleControls(
+    page: Page,
+    input: Readonly<{
+        controlRunId: string;
+        groupId: string;
+        prefix: string;
+        count: number;
+    }>,
+): Promise<Readonly<{ pages: readonly Page[]; agentIds: readonly string[] }>> {
+    const setup = page.locator('[data-execute-agent-setup]');
+    await expect(setup).toBeVisible();
+    await expect(setup.getByLabel('Control run ID for new agents')).toHaveValue(
+        input.controlRunId,
+    );
+    await setup.getByLabel('Agent ID prefix').fill(input.prefix);
+    await setup.getByLabel('Agent count').fill(String(input.count));
+
+    const context = page.context();
+    const existingPages = new Set(context.pages());
+    await setup.getByRole('button', {
+        name: `Open ${input.count} browser agents`,
+    }).click();
+    await expect.poll(
+        () => context.pages().filter(candidate => !existingPages.has(candidate)).length,
+        { timeout: 30_000 },
+    ).toBe(input.count);
+    const agentPages = context.pages().filter(candidate => !existingPages.has(candidate));
+    await Promise.all(agentPages.map(agentPage => agentPage.waitForURL(url =>
+        url.searchParams.get('mode') === 'control' &&
+        url.searchParams.get('agentId')?.startsWith(`${input.prefix}-`) === true
+    )));
+
+    const agentIds = agentPages.map(agentPage => {
+        const url = new URL(agentPage.url());
+        expect(url.hash).toBe('');
+        expect(url.searchParams.get('provider')).toBe('browser-rallar');
+        expect(url.searchParams.get('runId')).toBe(input.controlRunId);
+        expect(url.searchParams.get('roomId')).toBe(input.groupId);
+        expect(url.searchParams.get('apiBaseUrl')).toBe(
+            CONFIGURED_POSTGRES.apiBaseUrl,
+        );
+        expect(url.searchParams.get('sessionId')).toBeNull();
+        return url.searchParams.get('agentId') ?? '';
+    });
+    expect(new Set(agentIds).size).toBe(input.count);
+    await expect(setup.getByRole('status')).toContainText(
+        `${input.count} launched browser agents are ready and selected as targets.`,
+        { timeout: 60_000 },
+    );
+    return { pages: agentPages, agentIds };
+}
+
 async function createDraftThroughVisibleExecuteControls(
     page: Page,
 ): Promise<string> {
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Resolve targets' }).click();
-    await actions.getByRole('button', { name: 'Arm Create draft' }).click();
+    const actions = page.locator('[data-execute-action-runway]');
+    await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
     await actions
         .getByRole('button', { name: 'Create draft', exact: true })
         .click();
@@ -160,10 +210,9 @@ async function createDraftThroughVisibleExecuteControls(
 }
 
 async function stageThroughVisibleExecuteControls(page: Page): Promise<void> {
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Arm Stage run' }).click();
+    const actions = page.locator('[data-execute-action-runway]');
     await actions
-        .getByRole('button', { name: 'Stage run', exact: true })
+        .getByRole('button', { name: /Stage \d+ agents/ })
         .click();
     await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
         'data-run-state',
@@ -173,11 +222,10 @@ async function stageThroughVisibleExecuteControls(page: Page): Promise<void> {
 }
 
 async function startThroughVisibleExecuteControls(page: Page): Promise<void> {
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Arm Start run' }).click();
-    await actions
-        .getByRole('button', { name: 'Start run', exact: true })
-        .click();
+    const actions = page.locator('[data-execute-action-runway]');
+    await actions.getByRole('button', { name: 'Review and start' }).click();
+    await page.getByRole('dialog', { name: 'Start distributed run?' })
+        .getByRole('button', { name: 'Start distributed run' }).click();
     await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
         'data-run-state',
         'passed',
@@ -190,7 +238,12 @@ async function navigateToMonitor(
     distributedRunId: string,
     state: ControlDistributedRunSnapshot['state'],
 ): Promise<void> {
-    await page.getByRole('button', { name: 'Monitor', exact: true }).click();
+    if (state === 'ready') {
+        await page.getByRole('button', { name: 'Monitor', exact: true }).click();
+    } else {
+        await page.locator('[data-execute-action-runway]')
+            .getByRole('button', { name: 'Monitor run' }).click();
+    }
     await expect(page).toHaveURL(/(?:\?|&)view=monitor(?:&|$)/);
     await expect(page).toHaveURL(
         new RegExp(`(?:\\?|&)distributedRunId=${distributedRunId}(?:&|$)`),
@@ -227,6 +280,9 @@ function assertSchemaV2Artifact(
         agentIds: readonly string[];
     }>,
 ): void {
+    expect(JSON.stringify(artifact)).not.toMatch(
+        /agentSessionTicket|controlToken|authorization:\s*bearer/iu,
+    );
     expect(artifact).toMatchObject({
         artifactSchemaVersion: 2,
         distributedRunId: input.distributedRunId,
@@ -244,7 +300,7 @@ function assertSchemaV2Artifact(
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
         group: { groupId: input.groupId },
-        recipes: [{ recipeId: 'rtc-realtime-stability' }],
+        recipes: [{ recipeId: 'composite-evidence-recipe' }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: [...input.agentIds].sort(),
@@ -266,7 +322,10 @@ function assertSchemaV2Artifact(
         state: 'passed',
         ok: true,
     });
-    expect(JSON.parse(files['control-run.json'] ?? '{}')).toMatchObject({
+    const controlRun = JSON.parse(
+        files['control-run.json'] ?? '{}',
+    ) as ControlRunSnapshot;
+    expect(controlRun).toMatchObject({
         runId: input.controlRunId,
         agents: expect.arrayContaining(input.agentIds.map(agentId =>
             expect.objectContaining({
@@ -281,6 +340,12 @@ function assertSchemaV2Artifact(
             expect.objectContaining({ ok: true }),
         ]),
     });
+    const launchedSessions = controlRun.agents
+        .filter(agent => input.agentIds.includes(agent.agentId))
+        .map(agent => agent.identity?.sessionId);
+    expect(launchedSessions).toHaveLength(input.agentIds.length);
+    expect(launchedSessions.every(sessionId => Boolean(sessionId))).toBe(true);
+    expect(new Set(launchedSessions).size).toBe(input.agentIds.length);
 }
 
 async function fetchDistributedRun(
@@ -379,7 +444,6 @@ async function expectCompletedCancelProof(
 }
 
 test('completes the configured live distributed run lifecycle and exports its artifact', async ({
-    browser,
     page,
     request,
 }, testInfo) => {
@@ -398,33 +462,11 @@ test('completes the configured live distributed run lifecycle and exports its ar
 
     const groupId = uniqueGroupId(testInfo);
     const controlRunId = uniqueRunId(testInfo);
-    const agentIds = [
-        `${controlRunId}-agent-a`,
-        `${controlRunId}-agent-b`,
-    ];
     const operatorSessionId = `${controlRunId}-operator-session`;
-    const agents: Array<Awaited<ReturnType<typeof openBrowserControlAgent>>> = [];
+    const agentPages: Page[] = [];
+    let agentIds: readonly string[] = [];
 
     try {
-        agents.push(
-            await openBrowserControlAgent(
-                browser,
-                CONFIGURED_POSTGRES,
-                CONFIGURED_POSTGRES.userA,
-                { runId: controlRunId, agentId: agentIds[0], groupId },
-            ),
-        );
-        agents.push(
-            await openBrowserControlAgent(
-                browser,
-                CONFIGURED_POSTGRES,
-                CONFIGURED_POSTGRES.userB,
-                { runId: controlRunId, agentId: agentIds[1], groupId },
-            ),
-        );
-        await Promise.all(agentIds.map(agentId =>
-            waitForControlRunAgent(request, controlRunId, agentId)
-        ));
         await loginUser(page, CONFIGURED_POSTGRES, CONFIGURED_POSTGRES.userC, {
             groupId,
             sessionId: operatorSessionId,
@@ -436,6 +478,18 @@ test('completes the configured live distributed run lifecycle and exports its ar
             sessionId: operatorSessionId,
         }));
         await expect(page).toHaveURL(/(?:\?|&)provider=browser-rallar(?:&|$)/);
+
+        const launched = await launchBrowserAgentsThroughVisibleControls(page, {
+            controlRunId,
+            groupId,
+            prefix: 'recipe-console-live-agent',
+            count: 3,
+        });
+        agentPages.push(...launched.pages);
+        agentIds = launched.agentIds;
+        await Promise.all(agentIds.map(agentId =>
+            waitForControlRunAgent(request, controlRunId, agentId)
+        ));
 
         await assertLiveExecuteTargets(page, agentIds);
         const passedRunId = await createDraftThroughVisibleExecuteControls(page);
@@ -495,11 +549,11 @@ test('completes the configured live distributed run lifecycle and exports its ar
         try {
             await Promise.allSettled([
                 cleanupRallarPage(page),
-                ...agents.map(agent => cleanupRallarPage(agent.page)),
+                ...agentPages.map(agentPage => cleanupRallarPage(agentPage)),
             ]);
         } finally {
             await Promise.allSettled(
-                agents.map(agent => agent.context.close()),
+                agentPages.map(agentPage => agentPage.close()),
             );
         }
     }

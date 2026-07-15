@@ -20,6 +20,7 @@ import type {
 import { DISTRIBUTED_RECIPE_CATALOG } from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
+const API_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):8080\/.*/;
 const GROUP = {
     applicationId: 'rallar-server',
     workspaceId: 'default',
@@ -205,6 +206,7 @@ type LifecycleControl = Readonly<{
         }>
     >;
     brokerAuthorizations: string[];
+    tokenRequests: Array<Readonly<{ runId: string; agentId: string }>>;
     runRequestCount(): number;
     waitForDeferredResolution(): Promise<void>;
     releaseDeferredResolution(): void;
@@ -219,6 +221,7 @@ type LifecycleControl = Readonly<{
 
 type LifecycleOptions = Readonly<{
     snapshot?: ControlServerSnapshot;
+    enableAgentLaunch?: boolean;
     refreshAgentEvidence?: boolean;
     resolutionTargetIds?(
         call: number,
@@ -237,9 +240,10 @@ async function installLifecycleControl(
     context: BrowserContext,
     options: LifecycleOptions = {},
 ): Promise<LifecycleControl> {
-    const base = options.snapshot ?? liveSnapshot();
+    let base = options.snapshot ?? liveSnapshot();
     const successfulWrites: LifecycleControl['successfulWrites'] = [];
     const brokerAuthorizations: string[] = [];
+    const tokenRequests: LifecycleControl['tokenRequests'] = [];
     let run: ControlDistributedRunSnapshot | undefined;
     let version = Date.now();
     let waitingReads = 0;
@@ -277,7 +281,7 @@ async function installLifecycleControl(
             }),
         );
     });
-    await context.route('https://api.example.invalid/**', async (route) => {
+    await context.route(API_ROUTE, async (route) => {
         if (route.request().method() === 'OPTIONS') {
             await fulfillCorsPreflight(route);
             return;
@@ -298,6 +302,48 @@ async function installLifecycleControl(
         const url = new URL(request.url());
         if (request.method() === 'OPTIONS') {
             await fulfillCorsPreflight(route);
+            return;
+        }
+        const tokenMatch = url.pathname.match(
+            /^\/runs\/([^/]+)\/agents\/([^/]+)\/tokens$/,
+        );
+        if (options.enableAgentLaunch && request.method() === 'POST' && tokenMatch) {
+            const runId = decodeURIComponent(tokenMatch[1]);
+            const agentId = decodeURIComponent(tokenMatch[2]);
+            tokenRequests.push({ runId, agentId });
+            const now = Date.now();
+            const current = base.runs.find(candidate => candidate.runId === runId);
+            const launchedAgent = agent(runId, agentId);
+            const launchedRun: ControlRunSnapshot = current
+                ? {
+                      ...current,
+                      agents: [
+                          ...current.agents.filter(candidate => candidate.agentId !== agentId),
+                          launchedAgent,
+                      ],
+                      updatedAtEpochMs: now,
+                  }
+                : {
+                      runId,
+                      createdAtEpochMs: now,
+                      updatedAtEpochMs: now,
+                      agents: [launchedAgent],
+                      commands: [], results: [], events: [], stats: [], reports: [], heartbeats: [],
+                  };
+            base = {
+                ...base,
+                runs: [
+                    ...base.runs.filter(candidate => candidate.runId !== runId),
+                    launchedRun,
+                ],
+            };
+            await fulfillJson(route, {
+                runId,
+                agentId,
+                token: `control-agent-${agentId}`,
+                issuedAtEpochMs: now,
+                expiresAtEpochMs: now + 60_000,
+            }, 201);
             return;
         }
         if (request.method() === 'GET' && url.pathname === '/runs') {
@@ -482,6 +528,7 @@ async function installLifecycleControl(
     return {
         successfulWrites,
         brokerAuthorizations,
+        tokenRequests,
         runRequestCount: () => runReads,
         waitForDeferredResolution: () => resolutionStarted,
         releaseDeferredResolution: () => releaseResolution(),
@@ -637,9 +684,8 @@ async function createDraftThroughVisibleControls(page: Page): Promise<void> {
     );
     await selectedRecipe.focus();
     await page.keyboard.press('Enter');
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Resolve targets' }).click();
-    await actions.getByRole('button', { name: 'Arm Create draft' }).click();
+    const actions = page.locator('[data-execute-action-runway]');
+    await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
     await actions
         .getByRole('button', { name: 'Create draft', exact: true })
         .click();
@@ -649,39 +695,43 @@ async function createDraftThroughVisibleControls(page: Page): Promise<void> {
     );
 }
 
-test('runs a simulated distributed ACK recipe through visible controls', async ({
+test('launches agents and runs a simulated distributed ACK recipe through visible controls', async ({
     context,
     page,
 }) => {
-    const mock = await installLifecycleControl(context);
-    await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
-    const selectedRecipe = page.locator(
-        '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]',
-    );
-    await selectedRecipe.evaluate((element) =>
-        element.scrollIntoView({ block: 'start' })
-    );
-    await selectedRecipe.focus();
-    await page.keyboard.press('Enter');
+    const mock = await installLifecycleControl(context, {
+        snapshot: { runs: [], distributedRuns: [] },
+        enableAgentLaunch: true,
+    });
+    await page.goto(EXECUTE_ROUTE);
+    await page.getByRole('option', { name: /Composite Evidence/ }).click();
+    await page.getByLabel('Control run ID for new agents').fill('execute-control-a');
+    await page.getByLabel('Agent ID prefix').fill('execute-agent');
+    await page.getByLabel('Agent count').fill('3');
+    const childPages: Page[] = [];
+    context.on('page', child => {
+        if (child !== page) childPages.push(child);
+    });
+    await page.getByRole('button', { name: 'Open 3 browser agents' }).click();
+    await expect.poll(() => childPages.length).toBe(3);
+    await expect(page.getByText(
+        '3 launched browser agents are ready and selected as targets.',
+        { exact: true },
+    )).toBeVisible();
 
-    const actions = page.locator('[data-execute-action-band]');
+    const actions = page.locator('[data-execute-action-runway]');
     await expect(
-        actions.getByRole('button', { name: 'Resolve targets' }),
+        actions.getByRole('button', { name: 'Resolve 3 targets' }),
     ).toBeEnabled();
-    await actions.getByRole('button', { name: 'Resolve targets' }).click();
-    await expect(
-        actions.getByRole('button', { name: 'Arm Create draft' }),
-    ).toBeVisible();
-    await actions.getByRole('button', { name: 'Arm Create draft' }).click();
+    await expect(actions.getByRole('button', { name: 'Create draft' }))
+        .toHaveCount(0);
+    await actions.getByRole('button', { name: 'Resolve 3 targets' }).click();
     await expect(
         actions.getByRole('button', { name: 'Create draft', exact: true }),
     ).toBeEnabled();
     await actions
         .getByRole('button', { name: 'Create draft', exact: true })
-        .evaluate((button) => {
-            (button as HTMLButtonElement).click();
-            (button as HTMLButtonElement).click();
-        });
+        .click();
 
     const status = page.locator('[data-execute-run-status]');
     await expect(status).toHaveAttribute('data-run-state', 'draft');
@@ -692,43 +742,26 @@ test('runs a simulated distributed ACK recipe through visible controls', async (
             { exact: true },
         ),
     ).toBeVisible();
-    const draftUrl = page.url();
-    await page.getByRole('button', { name: 'Refresh control data' }).click();
-    await expect(status).toHaveAttribute('data-run-state', 'draft');
-    expect(page.url()).toBe(draftUrl);
-
-    await actions.getByRole('button', { name: 'Arm Stage run' }).click();
     await actions
-        .getByRole('button', { name: 'Stage run', exact: true })
+        .getByRole('button', { name: 'Stage 3 agents', exact: true })
         .click();
     await expect(status).toHaveAttribute('data-run-state', 'waiting-for-ack');
-    await actions.getByRole('button', { name: 'Refresh' }).click();
     await expect(status).toHaveAttribute('data-run-state', 'ready');
 
-    await actions.getByRole('button', { name: 'Arm Start run' }).click();
     await actions
-        .getByRole('button', { name: 'Start run', exact: true })
+        .getByRole('button', { name: 'Review and start', exact: true })
+        .click();
+    const startDialog = page.getByRole('dialog', {
+        name: 'Start distributed run?',
+    });
+    await expect(startDialog).toBeVisible();
+    await startDialog.getByRole('button', { name: 'Start distributed run' })
         .click();
     await expect(status).toHaveAttribute('data-run-state', 'running');
-    await actions.getByRole('button', { name: 'Refresh' }).click();
-    await expect(status).toHaveAttribute('data-run-state', 'passed');
-
-    const downloadPromise = page.waitForEvent('download');
-    await actions.getByRole('button', { name: 'Export artifact' }).click();
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/^dist-.*-artifact\.json$/);
-    const downloadPath = await download.path();
-    if (!downloadPath)
-        throw new Error('Artifact download path is unavailable.');
-    expect(JSON.parse(await readFile(downloadPath, 'utf8'))).toMatchObject({
-        artifactSchemaVersion: 2,
-        generatedAtEpochMs: 2_000_000_000_000,
-        files: {
-            'distributed-run.json': expect.any(String),
-            'manifest.json': expect.any(String),
-            'control-run.json': expect.any(String),
-        },
-    });
+    await actions.getByRole('button', { name: 'Monitor run' }).click();
+    await expect(page).toHaveURL(/(?:\?|&)view=monitor(?:&|$)/);
+    await expect(page).toHaveURL(/(?:\?|&)controlRunId=execute-control-a(?:&|$)/);
+    await expect(page).toHaveURL(/(?:\?|&)distributedRunId=dist-/);
 
     const create = mock.successfulWrites.find(
         (request) => request.path === '/distributed-runs',
@@ -738,8 +771,8 @@ test('runs a simulated distributed ACK recipe through visible controls', async (
         recipes: [{ recipeId: 'composite-evidence-recipe' }],
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['execute-agent-a', 'execute-agent-b'],
-            expectedParticipantCount: 2,
+            agentIds: expect.arrayContaining(mock.tokenRequests.map(value => value.agentId)),
+            expectedParticipantCount: 3,
         },
         metadata: { rolePattern: 'all-agents' },
         ackTimeoutMs: 15_000,
@@ -752,7 +785,6 @@ test('runs a simulated distributed ACK recipe through visible controls', async (
         '/distributed-runs/resolve-targets',
         expect.stringMatching(/\/stage$/),
         expect.stringMatching(/\/start$/),
-        expect.stringMatching(/\/artifacts$/),
     ]);
     expect(
         mock.successfulWrites.every(
@@ -764,13 +796,16 @@ test('runs a simulated distributed ACK recipe through visible controls', async (
     expect(mock.brokerAuthorizations).toEqual([
         'Bearer execute-primary-session-token',
     ]);
+    expect(mock.tokenRequests).toHaveLength(3);
+    expect(new Set(mock.tokenRequests.map(value => value.agentId)).size).toBe(3);
+    expect(mock.tokenRequests.every(value => value.runId === 'execute-control-a'))
+        .toBe(true);
     await expect(page.locator('textarea')).toHaveCount(0);
 
     const passedUrl = new URL(page.url());
     const passedDistributedRunId = passedUrl.searchParams.get('distributedRunId');
     expect(passedUrl.searchParams.get('controlRunId')).toBe('execute-control-a');
     expect(passedDistributedRunId).toMatch(/^dist-/);
-    await page.getByRole('button', { name: 'Monitor', exact: true }).click();
     const monitorUrl = new URL(page.url());
     expect(monitorUrl.searchParams.get('controlRunId')).toBe('execute-control-a');
     expect(monitorUrl.searchParams.get('distributedRunId')).toBe(
@@ -780,6 +815,7 @@ test('runs a simulated distributed ACK recipe through visible controls', async (
     await expect(monitorVerdict).toHaveAttribute('data-run-state', 'passed');
     await expect(monitorVerdict).toHaveAttribute('data-evidence-freshness', 'current');
     await expect(monitorVerdict.locator('[data-status="passed"]')).toContainText('Passed');
+    for (const child of childPages) await child.close();
 });
 
 test('generates a fresh run ID when the same recipe starts another run', async ({
@@ -803,9 +839,8 @@ test('generates a fresh run ID when the same recipe starts another run', async (
     const secondManifest = await visibleExecuteManifest(page);
     expect(secondManifest.distributedRunId).not.toBe(firstRunId);
 
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Resolve targets' }).click();
-    await actions.getByRole('button', { name: 'Arm Create draft' }).click();
+    const actions = page.locator('[data-execute-action-runway]');
+    await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
     await actions
         .getByRole('button', { name: 'Create draft', exact: true })
         .click();
@@ -835,9 +870,8 @@ test('queues a post-mutation read behind a preexisting control refresh', async (
             '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]',
         )
         .click();
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Resolve targets' }).click();
-    await actions.getByRole('button', { name: 'Arm Create draft' }).click();
+    const actions = page.locator('[data-execute-action-runway]');
+    await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
 
     mock.deferNextRunRead();
     await page.getByRole('button', { name: 'Refresh control data' }).click();
@@ -907,9 +941,14 @@ test('diagnoses non-targetable agents before staging', async ({
     );
     await expect(
         page
-            .locator('[data-execute-action-band]')
-            .getByRole('button', { name: 'Stage run', exact: true }),
-    ).toBeDisabled();
+            .locator('[data-execute-action-runway]')
+            .getByRole('button', { name: /Stage \d+ agents/ }),
+    ).toHaveCount(0);
+    await expect(
+        page
+            .locator('[data-execute-action-runway]')
+            .getByRole('button', { name: /Resolve \d+ targets/ }),
+    ).toBeEnabled();
 });
 
 test('restores an existing Execute run from a copied v1 URL', async ({
@@ -969,7 +1008,7 @@ test('restores an existing Execute run from a copied v1 URL', async ({
         page.locator('[data-execute-targets]').getByRole('checkbox'),
     ).toHaveCount(2);
     await expect(
-        page.getByRole('button', { name: 'Arm Start run' }),
+        page.getByRole('button', { name: 'Review and start' }),
     ).toBeVisible();
 });
 
@@ -984,12 +1023,11 @@ test('refuses Stage when fresh target resolution drifts', async ({
         },
     });
     await createDraftThroughVisibleControls(page);
-    const actions = page.locator('[data-execute-action-band]');
+    const actions = page.locator('[data-execute-action-runway]');
     const readsBeforeFailure = mock.runRequestCount();
 
-    await actions.getByRole('button', { name: 'Arm Stage run' }).click();
     await actions
-        .getByRole('button', { name: 'Stage run', exact: true })
+        .getByRole('button', { name: /Stage \d+ agents/ })
         .click();
 
     const error = page.locator('[data-execute-run-status] [data-error-kind]');
@@ -1020,9 +1058,9 @@ test('keeps structured control provenance after a failed mutation refresh', asyn
         },
     });
     await page.goto(`${EXECUTE_ROUTE}&controlRunId=execute-control-a`);
-    const actions = page.locator('[data-execute-action-band]');
+    const actions = page.locator('[data-execute-action-runway]');
     const readsBeforeFailure = mock.runRequestCount();
-    await actions.getByRole('button', { name: 'Resolve targets' }).click();
+    await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
 
     const error = page.locator(
         '[data-execute-run-status] [data-error-kind="http"]',
@@ -1033,7 +1071,7 @@ test('keeps structured control provenance after a failed mutation refresh', asyn
     await expect(error).toContainText('HTTP 409');
     expect(mock.runRequestCount()).toBeGreaterThan(readsBeforeFailure);
     await expect(
-        actions.getByRole('button', { name: 'Resolve targets' }),
+        actions.getByRole('button', { name: /Resolve \d+ targets/ }),
     ).toBeEnabled();
 });
 
@@ -1052,7 +1090,7 @@ test('renders credential-trust truth when a URL-selected control rejects Resolve
             expiresAtEpochMs: 4_000_000_000_000,
         }));
     });
-    await context.route('https://api.example.invalid/**', async (route) => {
+    await context.route(API_ROUTE, async (route) => {
         brokerRequests.push(route.request().url());
         await fulfillJson(route, { error: 'Broker must not be called.' }, 500);
     });
@@ -1083,8 +1121,8 @@ test('renders credential-trust truth when a URL-selected control rejects Resolve
             '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol',
     );
     await page
-        .locator('[data-execute-action-band]')
-        .getByRole('button', { name: 'Resolve targets' })
+        .locator('[data-execute-action-runway]')
+        .getByRole('button', { name: /Resolve \d+ targets/ })
         .click();
 
     const error = page.locator(
@@ -1117,8 +1155,8 @@ test('clears a completed operation error when Execute context changes', async ({
         '[data-execute-run-status] [data-error-kind="http"]',
     );
     await page
-        .locator('[data-execute-action-band]')
-        .getByRole('button', { name: 'Resolve targets' })
+        .locator('[data-execute-action-runway]')
+        .getByRole('button', { name: /Resolve \d+ targets/ })
         .click();
     await expect(error).toContainText('Recipe A resolution conflict.');
 
@@ -1148,9 +1186,8 @@ test('rejects a mutation response for a different run identity', async ({
             '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]',
         )
         .click();
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Resolve targets' }).click();
-    await actions.getByRole('button', { name: 'Arm Create draft' }).click();
+    const actions = page.locator('[data-execute-action-runway]');
+    await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
     await actions
         .getByRole('button', { name: 'Create draft', exact: true })
         .click();
@@ -1176,13 +1213,13 @@ test('aborts an in-flight action when Execute configuration changes', async ({
             '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]',
         )
         .click();
-    const actions = page.locator('[data-execute-action-band]');
+    const actions = page.locator('[data-execute-action-runway]');
     const targets = page.locator('[data-execute-targets]');
     const runTrigger = targets.locator('[data-searchable-listbox-trigger]');
     await runTrigger.click();
     await expect(targets.getByRole('combobox', { name: 'Search Control run' }))
         .toBeFocused();
-    await actions.getByRole('button', { name: 'Resolve targets' })
+    await actions.getByRole('button', { name: /Resolve \d+ targets/ })
         .evaluate((button: HTMLButtonElement) => button.click());
     await mock.waitForDeferredResolution();
     await expect(runTrigger).toBeDisabled();
@@ -1228,9 +1265,8 @@ test('rejects an abort-ignoring stale Create response after context changes', as
             '[data-execute-recipe][data-recipe-id="composite-evidence-recipe"]',
         )
         .click();
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Resolve targets' }).click();
-    await actions.getByRole('button', { name: 'Arm Create draft' }).click();
+    const actions = page.locator('[data-execute-action-runway]');
+    await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
     await actions
         .getByRole('button', { name: 'Create draft', exact: true })
         .click();
@@ -1278,7 +1314,7 @@ test('rejects an abort-ignoring stale Export response after context changes', as
     page.on('download', () => {
         downloads += 1;
     });
-    const actions = page.locator('[data-execute-action-band]');
+    const actions = page.locator('[data-execute-action-runway]');
     await actions.getByRole('button', { name: 'Export artifact' }).click();
     await waitForAbortIgnoringFetch(page);
 
@@ -1299,9 +1335,8 @@ test('cancels a known non-terminal run through an accessible confirmation', asyn
 }) => {
     const mock = await installLifecycleControl(context);
     await createDraftThroughVisibleControls(page);
-    const actions = page.locator('[data-execute-action-band]');
+    const actions = page.locator('[data-execute-action-runway]');
 
-    await actions.getByRole('button', { name: 'Arm Cancel run' }).click();
     await actions
         .getByRole('button', { name: 'Cancel run', exact: true })
         .click();
@@ -1322,7 +1357,7 @@ test('cancels a known non-terminal run through an accessible confirmation', asyn
     );
     await expect(
         actions.getByRole('button', { name: 'Cancel run', exact: true }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
     await expect(
         actions.getByRole('button', { name: 'Refresh', exact: true }),
     ).toBeFocused();
@@ -1346,8 +1381,7 @@ test('keeps failed Cancel focus trapped and disables dialog motion when requeste
         },
     });
     await createDraftThroughVisibleControls(page);
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Arm Cancel run' }).click();
+    const actions = page.locator('[data-execute-action-runway]');
     await actions
         .getByRole('button', { name: 'Cancel run', exact: true })
         .click();
@@ -1401,8 +1435,7 @@ test('does not reopen Cancel when URL context leaves and restores a run', async 
 }) => {
     await installLifecycleControl(context);
     await createDraftThroughVisibleControls(page);
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Arm Cancel run' }).click();
+    const actions = page.locator('[data-execute-action-runway]');
     await actions
         .getByRole('button', { name: 'Cancel run', exact: true })
         .click();
@@ -1431,18 +1464,14 @@ test('renders waiting-for-barrier truth with bounded Start Cancel and Export pol
     await page.getByRole('button', { name: 'Refresh control data' }).click();
 
     const status = page.locator('[data-execute-run-status]');
-    const actions = page.locator('[data-execute-action-band]');
+    const actions = page.locator('[data-execute-action-runway]');
     await expect(status.locator('[data-execute-run-live-summary]'))
         .toHaveAttribute('aria-live', 'polite');
     await expect(status).toHaveAttribute('data-run-state', 'waiting-for-barrier');
     await expect(status).toContainText('Waiting For Barrier');
     await expect(
-        actions.getByRole('button', { name: 'Start run', exact: true }),
-    ).toBeDisabled();
-    await expect(
-        actions.getByRole('button', { name: 'Cancel run', exact: true }),
-    ).toBeDisabled();
-    await actions.getByRole('button', { name: 'Arm Cancel run' }).click();
+        actions.getByRole('button', { name: 'Review and start' }),
+    ).toHaveCount(0);
     await expect(
         actions.getByRole('button', { name: 'Cancel run', exact: true }),
     ).toBeEnabled();
@@ -1457,8 +1486,7 @@ test('closes Cancel on terminal failed truth and announces the authoritative err
 }) => {
     const mock = await installLifecycleControl(context);
     await createDraftThroughVisibleControls(page);
-    const actions = page.locator('[data-execute-action-band]');
-    await actions.getByRole('button', { name: 'Arm Cancel run' }).click();
+    const actions = page.locator('[data-execute-action-runway]');
     await actions
         .getByRole('button', { name: 'Cancel run', exact: true })
         .click();
@@ -1484,11 +1512,11 @@ test('closes Cancel on terminal failed truth and announces the authoritative err
     );
     await expect(dialog).toHaveCount(0);
     await expect(
-        actions.getByRole('button', { name: 'Start run', exact: true }),
-    ).toBeDisabled();
+        actions.getByRole('button', { name: 'Review and start' }),
+    ).toHaveCount(0);
     await expect(
         actions.getByRole('button', { name: 'Cancel run', exact: true }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
     await expect(
         actions.getByRole('button', { name: 'Export artifact' }),
     ).toBeEnabled();
@@ -1566,15 +1594,15 @@ test('keeps late Execute pressure evidence operable without changing lifecycle a
         await page.goto(`${EXECUTE_ROUTE}&controlRunId=${selectedRunId}`);
 
         const targets = page.locator('[data-execute-targets]');
-        const actions = page.locator('[data-execute-action-band]');
+        const actions = page.locator('[data-execute-action-runway]');
         const runTrigger = targets.locator('[data-searchable-listbox-trigger]');
         await expect(page).toHaveURL(/recipeId=rtc-realtime-stability/);
         const stableUrl = page.url();
         await expect(targets.locator('[data-execute-target]')).toHaveCount(100);
-        await expect(actions.getByRole('button', { name: 'Resolve targets' }))
+        await expect(actions.getByRole('button', { name: /Resolve \d+ targets/ }))
             .toBeEnabled();
         await expect(actions.getByRole('button', { name: 'Create draft' }))
-            .toBeDisabled();
+            .toHaveCount(0);
 
         const inspector = page.getByRole('dialog', { name: 'Inspector' });
         await inspector.getByRole('button', { name: 'Close inspector' }).click();
@@ -1679,10 +1707,10 @@ test('keeps late Execute pressure evidence operable without changing lifecycle a
         await expect(targets.getByText('240 selected', { exact: true })).toBeVisible();
         expect(page.url()).toBe(targetWindowUrl);
         expect(mock.successfulWrites).toHaveLength(0);
-        await expect(actions.getByRole('button', { name: 'Resolve targets' }))
+        await expect(actions.getByRole('button', { name: /Resolve \d+ targets/ }))
             .toBeEnabled();
         await expect(actions.getByRole('button', { name: 'Create draft' }))
-            .toBeDisabled();
+            .toHaveCount(0);
 
     } finally {
         await context.close();
@@ -1702,14 +1730,13 @@ test('preserves the complete 240-target manifest through pressure lifecycle muta
     const selectedRunId = snapshot.runs[249]!.runId;
     await page.goto(`${EXECUTE_ROUTE}&controlRunId=${selectedRunId}`);
     const targets = page.locator('[data-execute-targets]');
-    const actions = page.locator('[data-execute-action-band]');
+    const actions = page.locator('[data-execute-action-runway]');
     await expect(targets.getByText('240 selected', { exact: true })).toBeVisible();
 
-    await actions.getByRole('button', { name: 'Resolve targets' }).click();
-    await expect(actions.getByRole('button', { name: 'Arm Create draft' }))
+    await actions.getByRole('button', { name: /Resolve \d+ targets/ }).click();
+    await expect(actions.getByRole('button', { name: 'Create draft' }))
         .toBeVisible();
     expect(mock.successfulWrites).toHaveLength(1);
-    await actions.getByRole('button', { name: 'Arm Create draft' }).click();
     await actions.getByRole('button', { name: 'Create draft', exact: true }).click();
     await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
         'data-run-state',
@@ -1725,8 +1752,7 @@ test('preserves the complete 240-target manifest through pressure lifecycle muta
         ),
         expectedParticipantCount: 240,
     });
-    await actions.getByRole('button', { name: 'Arm Stage run' }).click();
-    await actions.getByRole('button', { name: 'Stage run', exact: true }).click();
+    await actions.getByRole('button', { name: /Stage \d+ agents/ }).click();
     await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
         'data-run-state',
         'waiting-for-ack',
@@ -1768,8 +1794,8 @@ test('renders one live recipe-aware target plane without seeded fallback', async
     await expect(page.locator('[data-execute-preflight]')).toBeVisible();
     await expect(
         page
-            .locator('[data-execute-action-band]')
-            .getByRole('button', { name: 'Resolve targets' }),
+            .locator('[data-execute-action-runway]')
+            .getByRole('button', { name: /Resolve \d+ targets/ }),
     ).toBeEnabled();
 });
 
@@ -1786,12 +1812,19 @@ test('keeps catalog and preflight available while offline actions remain blocked
     await expect(page.locator('[data-execute-preflight]')).toBeVisible();
     await expect(page.locator('[data-execute-target]')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('seed-agent');
-    const actions = page.locator('[data-execute-action-band]');
+    const actions = page.locator('[data-execute-action-runway]');
     await expect(
-        actions.getByRole('button', { name: 'Resolve targets' }),
-    ).toBeDisabled();
+        actions.getByRole('button', { name: 'Refresh control data' }),
+    ).toBeEnabled();
     await expect(
-        actions.getByRole('button', { name: 'Create draft' }),
-    ).toBeDisabled();
+        actions.getByRole('button', { name: 'Refresh control data' }),
+    ).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(
+        actions.getByRole('button', { name: 'Refresh', exact: true }),
+    ).toHaveCount(0);
+    await expect(actions.getByRole('button', { name: /Resolve \d+ targets/ }))
+        .toHaveCount(0);
+    await expect(actions.getByRole('button', { name: 'Create draft' }))
+        .toHaveCount(0);
     await expect(actions).toContainText(/offline|control truth|Refresh/i);
 });

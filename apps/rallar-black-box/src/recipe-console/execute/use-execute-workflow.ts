@@ -8,11 +8,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import type { RecipeConsoleControlSelection } from '../control/control-selection.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
-import {
-    createExecuteActionArmContext,
-    deriveExecuteActionPolicy,
-    type ExecuteArmedAction,
-} from './execute-action-policy.ts';
+import { deriveExecuteActionPolicy } from './execute-action-policy.ts';
+import { deriveExecuteNextAction } from './execute-next-action.ts';
 import {
     currentExecuteTargetResolutionEvidence,
     deriveExecuteManifest,
@@ -25,7 +22,6 @@ import {
     executeRunConfigurationIssue,
     executeSafeTargetLabel,
     executeTruthContextKey,
-    manifestRecipeIds,
     singleRunRecipe,
     singleRunRecipeId,
 } from './execute-workflow-context.ts';
@@ -41,6 +37,7 @@ import {
     type BoundExecuteOptimisticRun,
     type BoundExecuteResolution,
 } from './use-execute-operations.ts';
+import { useExecuteAgentLaunch } from './use-execute-agent-launch.ts';
 
 export function useExecuteWorkflow(input: Readonly<{
     connection: RecipeConsoleControlConnection;
@@ -53,7 +50,6 @@ export function useExecuteWorkflow(input: Readonly<{
     const [profile, setProfile] = useState('');
     const [resolution, setResolution] = useState<BoundExecuteResolution>();
     const [optimisticRun, setOptimisticRun] = useState<BoundExecuteOptimisticRun>();
-    const [armedKey, setArmedKey] = useState<string>();
     const group = input.selection.groupContext.group;
     const truthContextKey = executeTruthContextKey({
         baseUrl: input.connection.baseUrl,
@@ -168,24 +164,6 @@ export function useExecuteWorkflow(input: Readonly<{
         controlRunId: input.selection.controlRunId,
         recipeId: recipeSelection.selected?.item.recipe.recipeId,
     });
-    const armContexts = useMemo(() => {
-        const controlRunId = manifest?.manifest.controlRunId;
-        if (!manifest || !controlRunId) return {};
-        return Object.fromEntries((['create', 'stage', 'start', 'cancel'] as const)
-            .map(action => [action, createExecuteActionArmContext({
-                action,
-                controlBaseUrl: input.connection.baseUrl,
-                controlRunId,
-                distributedRunId: manifest.manifest.distributedRunId,
-                recipeIds: manifestRecipeIds(manifest.manifest),
-                targetAgentIds: selectedAgentIds,
-                manifestFingerprint: manifest.fingerprint,
-            })]));
-    }, [
-        input.connection.baseUrl,
-        manifest,
-        selectedAgentIds,
-    ]);
     const selectedTargetsSafe = selectedAgentIds.length > 0 &&
         selectedAgentIds.every(agentId =>
             targetRows.some(row => row.agentId === agentId && row.targetable)
@@ -201,9 +179,6 @@ export function useExecuteWorkflow(input: Readonly<{
         selectedTargetsSafe,
         manifestValid: manifest?.validation.ok === true,
         resolutionCurrent: currentResolution?.comparison.ok === true,
-        armKeys: Object.fromEntries(Object.entries(armContexts)
-            .map(([action, value]) => [action, value.key])),
-        armedKey,
     } as const;
     const idlePolicy = deriveExecuteActionPolicy({
         ...policyFacts,
@@ -219,7 +194,6 @@ export function useExecuteWorkflow(input: Readonly<{
         navigate: input.navigate,
         setResolution,
         setOptimisticRun,
-        resetArming: () => setArmedKey(undefined),
     });
     const policy = operations.busyAction
         ? deriveExecuteActionPolicy({
@@ -228,14 +202,30 @@ export function useExecuteWorkflow(input: Readonly<{
         })
         : idlePolicy;
 
-    useEffect(() => {
-        const currentKeys = new Set(Object.values(armContexts).map(value => value.key));
-        if (armedKey && !currentKeys.has(armedKey)) setArmedKey(undefined);
-    }, [armContexts, armedKey]);
-    function arm(action: ExecuteArmedAction): void {
-        const context = armContexts[action];
-        if (context) setArmedKey(value => value === context.key ? undefined : context.key);
-    }
+    const selectionLocked = run !== undefined || operations.busyAction !== undefined;
+    const agentLaunch = useExecuteAgentLaunch({
+        connection: input.connection,
+        controlRunId: input.selection.controlRunId,
+        targetRows,
+        selectionLocked,
+        onBindRunId: controlRunId => input.navigate({
+            controlRunId,
+            distributedRunId: undefined,
+            commandId: undefined,
+        }),
+        onSelectTargets: draft.selectTargets,
+    });
+    const nextAction = deriveExecuteNextAction({
+        connection,
+        policy,
+        runState: run?.state,
+        targetCount: selectedAgentIds.length,
+        targetableCount: targetRows.filter(row => row.targetable).length,
+        launchedExpectedCount: agentLaunch.launchedExpectedCount,
+        launchedReadyCount: agentLaunch.launchedReadyCount,
+        ackReadyCount: run?.rollup.summary.readyParticipants,
+        ackExpectedCount: run?.targetAgentIds.length,
+    });
 
     return {
         catalog: { entries, profiles: catalog.profiles, query, profile, selection: recipeSelection },
@@ -250,10 +240,11 @@ export function useExecuteWorkflow(input: Readonly<{
             ? projectExecuteOperationError(new Error(configurationIssue))
             : undefined),
         policy,
-        armContexts,
-        armedKey,
+        agentLaunch,
+        nextAction,
         busyAction: operations.busyAction,
-        selectionLocked: run !== undefined || operations.busyAction !== undefined,
+        selectionLocked,
+        startOpen: operations.startOpen,
         cancelOpen: operations.cancelOpen,
         safeTargetLabel: executeSafeTargetLabel({
             connection,
@@ -266,11 +257,12 @@ export function useExecuteWorkflow(input: Readonly<{
             recipeConsoleExecuteRecipeSelectionPatch(recipeId),
         ),
         toggleTarget: draft.toggleTarget,
-        arm,
         resolveTargets: operations.resolveTargets,
         createRun: operations.createRun,
         stageRun: operations.stageRun,
-        startRun: operations.startRun,
+        requestStart: operations.requestStart,
+        closeStart: operations.closeStart,
+        confirmStart: operations.startRun,
         requestCancel: operations.requestCancel,
         closeCancel: operations.closeCancel,
         confirmCancel: operations.confirmCancel,

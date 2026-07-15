@@ -44,11 +44,11 @@ export function useExecuteOperations(input: Readonly<{
     navigate(patch: Partial<RecipeConsoleUrlState>): void;
     setResolution: Dispatch<SetStateAction<BoundExecuteResolution | undefined>>;
     setOptimisticRun: Dispatch<SetStateAction<BoundExecuteOptimisticRun | undefined>>;
-    resetArming(): void;
 }>) {
     const [busyAction, setBusyAction] = useState<ExecuteAction>();
     const [mutationError, setMutationError] = useState<ExecuteOperationError>();
     const [cancelOpen, setCancelOpen] = useState(false);
+    const [startOpen, setStartOpen] = useState(false);
     const requestRef = useRef<AbortController | undefined>(undefined);
     const operationContextRef = useRef(input.operationContextKey);
     operationContextRef.current = input.operationContextKey;
@@ -56,6 +56,7 @@ export function useExecuteOperations(input: Readonly<{
     useEffect(() => {
         setMutationError(undefined);
         setCancelOpen(false);
+        setStartOpen(false);
         return () => requestRef.current?.abort();
     }, [input.connection.execution, input.operationContextKey]);
     useEffect(() => {
@@ -63,6 +64,11 @@ export function useExecuteOperations(input: Readonly<{
             setCancelOpen(false);
         }
     }, [busyAction, input.policy.cancel.enabled]);
+    useEffect(() => {
+        if (!input.policy.start.enabled && busyAction !== 'start') {
+            setStartOpen(false);
+        }
+    }, [busyAction, input.policy.start.enabled]);
     const perform = useCallback(async (
         action: ExecuteAction,
         operation: (signal: AbortSignal) => Promise<void>,
@@ -140,12 +146,10 @@ export function useExecuteOperations(input: Readonly<{
             distributedRunId: result.run.distributedRunId,
             commandId: undefined,
         });
-        input.resetArming();
         if (!result.ok) throw new Error(result.reason);
     }, [
         input.manifest,
         input.navigate,
-        input.resetArming,
         input.setOptimisticRun,
         input.setResolution,
         input.truthContextKey,
@@ -183,7 +187,7 @@ export function useExecuteOperations(input: Readonly<{
     }
     async function startRun(): Promise<void> {
         if (!input.policy.start.enabled || !input.run) return;
-        await perform('start', async signal => {
+        const succeeded = await perform('start', async signal => {
             const result = await requiredExecution(input.connection).startRun({
                 distributedRunId: input.run!.distributedRunId,
                 signal,
@@ -191,6 +195,7 @@ export function useExecuteOperations(input: Readonly<{
             assertCurrentOperation(signal, operationContextRef, input.operationContextKey);
             acceptRun('start', result);
         });
+        if (succeeded) setStartOpen(false);
     }
     async function confirmCancel(): Promise<void> {
         if (!input.policy.cancel.enabled || !input.run) return;
@@ -224,10 +229,15 @@ export function useExecuteOperations(input: Readonly<{
         busyAction,
         mutationError,
         cancelOpen,
+        startOpen,
         resolveTargets,
         createRun,
         stageRun,
         startRun,
+        requestStart: () => {
+            if (input.policy.start.enabled) setStartOpen(true);
+        },
+        closeStart: () => setStartOpen(false),
         requestCancel: () => setCancelOpen(true),
         closeCancel: () => setCancelOpen(false),
         confirmCancel,

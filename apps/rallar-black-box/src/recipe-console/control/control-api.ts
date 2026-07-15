@@ -14,6 +14,10 @@ import { isControlAbortError } from './control-authorized-fetch.ts';
 import { createRecipeConsoleControlExecutionApi } from './control-execution-api.ts';
 import type { RecipeConsoleControlExecutionApi } from './control-execution-api.ts';
 import {
+    createRecipeConsoleControlAgentLaunchApi,
+    type RecipeConsoleControlAgentLaunchApi,
+} from './control-agent-launch-api.ts';
+import {
     createControlLazyCapability,
     type ControlLazyCapability,
 } from './control-lazy-capability.ts';
@@ -49,6 +53,7 @@ export type RecipeConsoleControlFleetCapability =
 
 export type RecipeConsoleControlApi = Readonly<{
     baseUrl: string;
+    agentLaunch: RecipeConsoleControlAgentLaunchApi;
     execution: RecipeConsoleControlExecutionApi;
     retention: RecipeConsoleControlRetentionCapability;
     fleet: RecipeConsoleControlFleetCapability;
@@ -99,6 +104,10 @@ export function createRecipeConsoleControlApi(
         baseUrl,
         transport,
     });
+    const agentLaunch = createRecipeConsoleControlAgentLaunchApi({
+        baseUrl,
+        endpoint: transport.createAuthorizedEndpoint(),
+    });
     const lifetime = new AbortController();
     const retention = createControlLazyCapability({
         signal: lifetime.signal,
@@ -132,6 +141,7 @@ export function createRecipeConsoleControlApi(
 
     return {
         baseUrl,
+        agentLaunch,
         execution,
         retention,
         fleet,

@@ -41,7 +41,7 @@ type RunnerRecipesOverviewProps = Readonly<{
     agentControlWsUrl: string;
     globalValues: CommandCenterGlobalValues;
     controlRun?: ControlRunSnapshot;
-    agentLaunchUrls: readonly string[];
+    agentIds: readonly string[];
     agentLaunchMessage?: string;
     setAgentRunId: Dispatch<SetStateAction<string>>;
     setControlRunId: Dispatch<SetStateAction<string>>;
@@ -77,7 +77,7 @@ export function RunnerRecipesOverview({
     refreshReadiness, openAgentTabs, groupRef, recipeAgentRows,
     recipeAgentSummary, agentRunId, agentPrefix, agentCount,
     agentRestoreSession, bootstrap, authSession, agentControlWsUrl, globalValues,
-    controlRun, agentLaunchUrls, agentLaunchMessage, setAgentRunId,
+    controlRun, agentIds, agentLaunchMessage, setAgentRunId,
     setControlRunId, setControlRun, setAgentPrefix, setAgentCount,
     setAgentRestoreSession, copyAgentLinks, query, setQuery, profile, setProfile,
     profileOptions, sourceFilter, setSourceFilter, controlBaseUrl,
@@ -158,7 +158,7 @@ export function RunnerRecipesOverview({
                 controlWsUrl={agentControlWsUrl}
                 groupId={globalValues.roomId}
                 connectedAgents={controlRun?.agents ?? []}
-                launchUrls={agentLaunchUrls}
+                agentIds={agentIds}
                 launchMessage={agentLaunchMessage}
                 showConnectedAgents={false}
                 onRunIdChange={(value) => {

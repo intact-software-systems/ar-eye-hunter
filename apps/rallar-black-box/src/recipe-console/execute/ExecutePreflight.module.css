@@ -58,6 +58,29 @@
     border-bottom: 1px solid var(--rc-border);
 }
 
+.details {
+    min-width: 0;
+}
+
+.details > summary {
+    min-height: 44px;
+    padding: 12px 14px;
+    color: var(--rc-primary);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.details > summary:focus-visible {
+    outline: 2px solid var(--rc-focus);
+    outline-offset: -2px;
+}
+
+.detailsBody {
+    display: grid;
+    border-top: 1px solid var(--rc-border);
+}
+
 .serviceFacts div {
     display: grid;
     align-content: start;

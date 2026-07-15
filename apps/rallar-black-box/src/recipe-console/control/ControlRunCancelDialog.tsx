@@ -28,26 +28,31 @@ export function ControlRunCancelDialog({
 }: ControlRunCancelDialogProps) {
     const dialogRef = useRef<HTMLDivElement>(null);
     const initialFocusRef = useRef<HTMLButtonElement>(null);
+    const restoreTargetRef = useRef<HTMLElement | null | undefined>(undefined);
+    const fallbackTargetRef = useRef<HTMLElement | null | undefined>(undefined);
+    fallbackTargetRef.current = fallbackFocusTo;
     const headingId = `${owner}-cancel-heading`;
     const descriptionId = `${owner}-cancel-description`;
 
     useEffect(() => {
         if (!open) return;
-        const restoreTarget = restoreFocusTo ?? (
+        restoreTargetRef.current = restoreFocusTo ?? (
             document.activeElement instanceof HTMLElement
                 ? document.activeElement
                 : undefined
         );
         initialFocusRef.current?.focus();
         return () => {
+            const restoreTarget = restoreTargetRef.current;
+            const fallbackTarget = fallbackTargetRef.current;
             const target = focusableRestoreTarget(restoreTarget)
                 ? restoreTarget
-                : focusableRestoreTarget(fallbackFocusTo)
-                ? fallbackFocusTo
+                : focusableRestoreTarget(fallbackTarget)
+                ? fallbackTarget
                 : undefined;
             target?.focus();
         };
-    }, [fallbackFocusTo, open, restoreFocusTo]);
+    }, [open]);
     useEffect(() => {
         if (open && busy) dialogRef.current?.focus();
     }, [busy, open]);

@@ -14,7 +14,7 @@
     gap: 12px;
 }
 
-.workspace > [data-execute-action-band] {
+.workspace > [data-execute-action-runway] {
     grid-column: 1 / -1;
 }
 
@@ -23,7 +23,7 @@
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .workspace > [data-execute-action-band] {
+    .workspace > [data-execute-action-runway] {
         grid-column: 1;
     }
 }
