@@ -16,6 +16,11 @@ import {
     validateJsonSchema,
 } from '../../../packages/shared-test/rallar-bb-test/schema.ts';
 
+const EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR = {
+    typeId: 'black-box.group.multicast.position',
+    topicId: 'black-box.group.multicast.position',
+} as const;
+
 describe('rallar-bb-test recipe fixtures', () => {
     it('builds principal messages.rtc multicast sender and receiver recipes for 50-agent runs', () => {
         const [sender, receiver] = createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({
@@ -65,6 +70,7 @@ describe('rallar-bb-test recipe fixtures', () => {
         expect(senderConnect).toMatchObject({
             kind: 'rtc.connect',
             transport: 'messages.rtc',
+            rallar: EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR,
             readiness: {
                 minReadyPeers: 1,
                 timeoutMs: 45_000,
@@ -110,6 +116,7 @@ describe('rallar-bb-test recipe fixtures', () => {
         expect(receiverConnect).toMatchObject({
             kind: 'rtc.connect',
             transport: 'messages.rtc',
+            rallar: EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR,
             readiness: {
                 minReadyPeers: 1,
                 timeoutMs: 45_000,
@@ -189,6 +196,7 @@ describe('rallar-bb-test recipe fixtures', () => {
         expect(connect).toMatchObject({
             kind: 'rtc.connect',
             transport: 'messages.rtc',
+            rallar: EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR,
             readiness: {
                 minReadyPeers: 1,
                 timeoutMs: 45_000,

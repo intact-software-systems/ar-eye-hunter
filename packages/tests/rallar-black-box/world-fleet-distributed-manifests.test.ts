@@ -12,7 +12,29 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/schema.ts';
 import {
     validateDistributedRunManifestContract,
+    type RallarBlackBoxDistributedRunManifest,
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+
+type ManifestCommand = Readonly<{
+    kind?: string;
+    transport?: string;
+    rallar?: Readonly<Record<string, unknown>>;
+    commands?: readonly ManifestCommand[];
+    groups?: readonly Readonly<{
+        commands?: readonly ManifestCommand[];
+    }>[];
+}>;
+
+function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
+    const walk = (commands: readonly ManifestCommand[]): readonly ManifestCommand[] =>
+        commands.flatMap(command => [
+            command,
+            ...walk(command.commands ?? []),
+            ...(command.groups ?? []).flatMap(group => walk(group.commands ?? [])),
+        ]);
+
+    return manifest.recipes.flatMap(selection => walk((selection.recipe?.commands ?? []) as readonly ManifestCommand[]));
+}
 
 describe('world fleet distributed manifest catalog', () => {
     it('writes checked-in JSON that matches the generated catalog exactly', async () => {
@@ -71,6 +93,21 @@ describe('world fleet distributed manifest catalog', () => {
             expectedInboundMessages: 600,
             minReceiveRatio: 0.95,
         });
+    });
+
+    it('configures matching selectors for every messages.rtc connection', () => {
+        for (const entry of buildWorldFleetDistributedManifestCatalog()) {
+            for (const command of manifestCommands(entry.manifest)) {
+                if (command.kind !== 'rtc.connect' || command.transport !== 'messages.rtc') {
+                    continue;
+                }
+
+                expect(command.rallar, entry.filePath).toEqual({
+                    typeId: 'black-box.group.multicast.position',
+                    topicId: 'black-box.group.multicast.position',
+                });
+            }
+        }
     });
 
     it('keeps 20 Hz all-peer and 60m world-fleet runs diagnostic', () => {

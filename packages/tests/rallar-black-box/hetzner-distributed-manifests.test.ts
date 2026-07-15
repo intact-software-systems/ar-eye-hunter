@@ -60,6 +60,8 @@ function allValues(value: unknown): readonly string[] {
 type ManifestCommand = Readonly<{
     kind?: string;
     commandId?: string;
+    transport?: string;
+    rallar?: Readonly<Record<string, unknown>>;
     commands?: readonly ManifestCommand[];
     groups?: readonly Readonly<{
         commands?: readonly ManifestCommand[];
@@ -232,6 +234,21 @@ describe('Hetzner distributed manifest catalog', () => {
             const match = entry.filePath.match(/-(\d+)-agent/);
             expect(match?.[1], entry.filePath).toBe(String(entry.agentCount));
             expect(entry.manifest.targetPolicy.expectedParticipantCount).toBe(entry.agentCount);
+        }
+    });
+
+    it('configures matching selectors for every messages.rtc connection', () => {
+        for (const entry of buildHetznerDistributedManifestCatalog()) {
+            for (const command of manifestCommands(entry.manifest)) {
+                if (command.kind !== 'rtc.connect' || command.transport !== 'messages.rtc') {
+                    continue;
+                }
+
+                expect(command.rallar, entry.filePath).toEqual({
+                    typeId: 'black-box.group.multicast.position',
+                    topicId: 'black-box.group.multicast.position',
+                });
+            }
         }
     });
 
