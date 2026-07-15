@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createBlackBoxRallarCrdtController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/crdt-controller.ts';
-import { createBlackBoxRallarDirectorController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts';
-import { createBlackBoxRallarMessagingController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/messaging-controller.ts';
+import { createBlackBoxRallarCrdtResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/crdt-controller.ts';
+import { createBlackBoxRallarDirectorResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts';
+import { createBlackBoxRallarMessagingResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/messaging-controller.ts';
 import { createBlackBoxRallarConsoleDiagnostics } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/diagnostics.ts';
 
 describe('browser Rallar resource controllers', () => {
     it('reserves CRDT handles before asynchronous creation', async () => {
         let generation = 1;
-        const controller = createBlackBoxRallarCrdtController<object>({
+        const controller = createBlackBoxRallarCrdtResourceController<object>({
             generation: () => generation,
             isCurrent: candidate => candidate === generation,
         });
@@ -57,9 +57,56 @@ describe('browser Rallar resource controllers', () => {
         );
     });
 
+    it('keeps a CRDT handle reserved until destructive release succeeds', async () => {
+        const controller = createBlackBoxRallarCrdtResourceController<object>({
+            generation: () => 1,
+            isCurrent: candidate => candidate === 1,
+        });
+        const document = {};
+        await controller.open('doc', async () => document);
+        let resolveRelease!: () => void;
+        const releasing = controller.release(
+            'doc',
+            () =>
+                new Promise<void>(resolve => {
+                    resolveRelease = resolve;
+                }),
+        );
+        await vi.waitFor(() => {
+            expect(resolveRelease).toBeTypeOf('function');
+        });
+
+        await expect(controller.open('doc', async () => ({}))).rejects.toThrow(
+            'CRDT document handle is already open: doc',
+        );
+        expect(controller.entries()).toEqual([['doc', document]]);
+
+        resolveRelease();
+        await releasing;
+        expect(controller.handles()).toEqual([]);
+    });
+
+    it('retains a CRDT document when destructive release fails', async () => {
+        const controller = createBlackBoxRallarCrdtResourceController<object>({
+            generation: () => 1,
+            isCurrent: candidate => candidate === 1,
+        });
+        const document = {};
+        await controller.open('doc', async () => document);
+
+        await expect(
+            controller.release('doc', async () => {
+                throw new Error('close failed');
+            }),
+        ).rejects.toThrow('close failed');
+
+        expect(controller.require('doc')).toBe(document);
+        expect(controller.handles()).toEqual(['doc']);
+    });
+
     it('owns director relay handles synchronously', () => {
         let generation = 1;
-        const controller = createBlackBoxRallarDirectorController<object>({
+        const controller = createBlackBoxRallarDirectorResourceController<object>({
             generation: () => generation,
             isCurrent: candidate => candidate === generation,
         });
@@ -82,7 +129,7 @@ describe('browser Rallar resource controllers', () => {
         let generation = 1;
         const unsubscribe = vi.fn();
         const subscribe = vi.fn(() => unsubscribe);
-        const controller = createBlackBoxRallarMessagingController({
+        const controller = createBlackBoxRallarMessagingResourceController({
             generation: () => generation,
             isCurrent: candidate => candidate === generation,
         });

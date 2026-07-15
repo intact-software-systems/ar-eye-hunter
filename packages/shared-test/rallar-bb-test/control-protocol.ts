@@ -1282,6 +1282,10 @@ export function validateRallarBlackBoxTestCommand(
             result = validateKeys(command, [...base, 'handle'], 'director.relay.stop');
             return !result.ok ? result : validateDirectorCommand(command);
         case 'health':
+            result = validateKeys(command, [...base, 'includeRtcDiagnostics'], 'health');
+            return !result.ok
+                ? result
+                : validateBooleanField(command, 'includeRtcDiagnostics', 'health');
         case 'stats':
         case 'close':
         case 'reset':

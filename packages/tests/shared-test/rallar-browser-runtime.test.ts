@@ -533,6 +533,52 @@ describe('browser Rallar black-box runtime', () => {
         });
     });
 
+    it('preserves logout cleanup when a later shared-auth caller disables it', async () => {
+        let resolveRegistration!: (session: typeof facade.session) => void;
+        facade.rallar.auth.registerAndLogin.mockImplementation(() =>
+            new Promise(resolve => {
+                resolveRegistration = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const sharedIdentity = {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+            register: 'if-needed' as const,
+        };
+
+        const firstAuthentication = runtime.authenticate({
+            connection: 'firstHttp',
+            actor: 'first-actor',
+            rallar: {
+                ...sharedIdentity,
+                logoutOnClose: true,
+            },
+        });
+        const secondAuthentication = runtime.authenticate({
+            connection: 'secondHttp',
+            actor: 'second-actor',
+            rallar: {
+                ...sharedIdentity,
+                logoutOnClose: false,
+            },
+        });
+
+        resolveRegistration(facade.session);
+        await Promise.all([firstAuthentication, secondAuthentication]);
+        const closeDiagnostics = await runtime.close();
+
+        expect(facade.rallar.auth.logout).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.disconnect).not.toHaveBeenCalled();
+        expect(closeDiagnostics).toMatchObject({
+            connection: 'secondHttp',
+            actor: 'second-actor',
+            logout: true,
+            disconnected: false,
+        });
+    });
+
     it('records provenance before a queued restore-only identity can authenticate', async () => {
         let resolveRegistration!: (session: typeof facade.session) => void;
         facade.rallar.auth.registerAndLogin.mockImplementation(() =>
@@ -2031,6 +2077,60 @@ describe('browser Rallar black-box runtime', () => {
         expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
     });
 
+    it('serializes concurrent connects that share a target but use different transports', async () => {
+        let resolveFirstConnect!: () => void;
+        facade.rallar.connect.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveFirstConnect = resolve;
+            })
+        );
+        const runtime = await loadRuntime();
+        const baseConfig = {
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                typeId: 'chat.message',
+                topicId: 'chat',
+            },
+        };
+
+        const realtimeConnect = runtime.connect({
+            ...baseConfig,
+            rallar: {
+                ...baseConfig.rallar,
+                transport: 'realtime',
+            },
+        });
+        await vi.waitFor(() => {
+            expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+        });
+        const messagesConnect = runtime.connect({
+            ...baseConfig,
+            rallar: {
+                ...baseConfig.rallar,
+                transport: 'messages.rtc',
+            },
+        });
+        expect(facade.rallar.connect).toHaveBeenCalledTimes(1);
+
+        resolveFirstConnect();
+        await expect(realtimeConnect).resolves.toMatchObject({
+            transport: 'realtime',
+        });
+        await expect(messagesConnect).resolves.toMatchObject({
+            transport: 'messages.rtc',
+        });
+
+        expect(facade.rallar.connect).toHaveBeenCalledTimes(2);
+        expect(facade.rallar.realtime.onJson).toHaveBeenCalledTimes(1);
+        expect(facade.rallar.messages.rtc.onMessage).toHaveBeenCalledTimes(1);
+        expect(facade.unsubscribeRealtime).toHaveBeenCalledTimes(1);
+    });
+
     it('serializes fresh authentication behind an in-flight connection', async () => {
         let resolveFirstConnect!: () => void;
         facade.rallar.connect.mockImplementationOnce(() =>
@@ -2208,6 +2308,67 @@ describe('browser Rallar black-box runtime', () => {
         await expect(runtime.crdt.read({ handle: 'late-doc' })).rejects.toThrow(
             'CRDT document handle is not open: late-doc',
         );
+    });
+
+    it('does not close a CRDT document twice when explicit close races runtime close', async () => {
+        let resolveDocumentClose!: () => void;
+        const document = createFakeCrdtDocument('doc-closing');
+        document.close.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveDocumentClose = resolve;
+            })
+        );
+        facade.rallar.crdt.open.mockResolvedValueOnce(document);
+        const runtime = await loadRuntime();
+        await runtime.crdt.open({
+            handle: 'closing-doc',
+            name: 'checklist',
+            transport: 'local-only',
+        });
+
+        const closingDocument = runtime.crdt.close({ handle: 'closing-doc' });
+        await vi.waitFor(() => {
+            expect(document.close).toHaveBeenCalledTimes(1);
+        });
+        const closingRuntime = runtime.close();
+        resolveDocumentClose();
+
+        await expect(closingDocument).rejects.toThrow(
+            'CRDT operation completed after the runtime closed.',
+        );
+        await closingRuntime;
+        expect(document.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not close a destroyed CRDT document when destroy races runtime close', async () => {
+        let resolveDocumentDestroy!: () => void;
+        const document = createFakeCrdtDocument('doc-destroying');
+        document.destroy.mockImplementationOnce(() =>
+            new Promise<void>(resolve => {
+                resolveDocumentDestroy = resolve;
+            })
+        );
+        facade.rallar.crdt.open.mockResolvedValueOnce(document);
+        const runtime = await loadRuntime();
+        await runtime.crdt.open({
+            handle: 'destroying-doc',
+            name: 'checklist',
+            transport: 'local-only',
+        });
+
+        const destroyingDocument = runtime.crdt.destroy({ handle: 'destroying-doc' });
+        await vi.waitFor(() => {
+            expect(document.destroy).toHaveBeenCalledTimes(1);
+        });
+        const closingRuntime = runtime.close();
+        resolveDocumentDestroy();
+
+        await expect(destroyingDocument).rejects.toThrow(
+            'CRDT operation completed after the runtime closed.',
+        );
+        await closingRuntime;
+        expect(document.destroy).toHaveBeenCalledTimes(1);
+        expect(document.close).not.toHaveBeenCalled();
     });
 
     it('rejects a live CRDT target change before reconfiguring the connected facade', async () => {

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
     blackBoxRallarAuthenticationIdentityOf,
+    blackBoxRallarConnectionOperationKeyOf,
     blackBoxRallarConnectionTargetOf,
     decideBlackBoxRallarLifecycleRequest,
     isSameBlackBoxRallarSession,
+    mergeBlackBoxRallarAuthenticationConfig,
     normalizeBlackBoxRallarApiBaseUrl,
 } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/policy.ts';
 
@@ -53,6 +55,80 @@ describe('browser Rallar runtime lifecycle policy', () => {
                 groupId: 'room-1',
             },
         });
+    });
+
+    it('keys connection work by behavior as well as lifecycle target', () => {
+        const base = {
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test/',
+                username: 'alice',
+                password: 'secret',
+            },
+        };
+
+        const realtimeKey = blackBoxRallarConnectionOperationKeyOf({
+            ...base,
+            rallar: {
+                ...base.rallar,
+                transport: 'realtime',
+            },
+        });
+        const messagesKey = blackBoxRallarConnectionOperationKeyOf({
+            ...base,
+            rallar: {
+                ...base.rallar,
+                transport: 'messages.rtc',
+            },
+        });
+
+        expect(realtimeKey).not.toBe(messagesKey);
+        expect(realtimeKey).toBe(
+            blackBoxRallarConnectionOperationKeyOf({
+                roomId: 'room-1',
+                actor: 'alice',
+                connection: 'aliceRtc',
+                rallar: {
+                    password: 'secret',
+                    username: 'alice',
+                    transport: 'realtime',
+                    apiBaseUrl: 'https://api.example.test',
+                },
+            }),
+        );
+    });
+
+    it('merges authentication cleanup policy independently of caller order', () => {
+        const cleanupRequired = {
+            connection: 'firstHttp',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                logoutOnClose: true,
+            },
+        };
+        const latestContext = {
+            connection: 'secondHttp',
+            actor: 'second-actor',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                logoutOnClose: false,
+            },
+        };
+
+        expect(
+            mergeBlackBoxRallarAuthenticationConfig(cleanupRequired, latestContext),
+        ).toEqual({
+            ...latestContext,
+            rallar: {
+                ...latestContext.rallar,
+                logoutOnClose: true,
+            },
+        });
+        expect(
+            mergeBlackBoxRallarAuthenticationConfig(latestContext, cleanupRequired),
+        ).toEqual(cleanupRequired);
     });
 
     it('reuses matching lifecycle work and rejects connected target changes', () => {

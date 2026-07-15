@@ -38,6 +38,57 @@ type ConnectionConfig = Readonly<{
         }>;
 }>;
 
+function normalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): BlackBoxRallarRoomRef | undefined {
+    return roomRef
+        ? {
+              applicationId: roomRef.applicationId,
+              workspaceId: roomRef.workspaceId,
+              groupId: roomRef.groupId,
+          }
+        : undefined;
+}
+
+function normalizedMessageSelector(
+    selector: BlackBoxRallarConnectionConfig['rallar']['messageSelector'],
+): unknown {
+    return typeof selector === 'string'
+        ? selector
+        : selector
+          ? {
+                topicId: selector.topicId,
+                typeId: selector.typeId,
+            }
+          : undefined;
+}
+
+function normalizedDataChannelLanes(
+    lanes: BlackBoxRallarConnectionConfig['rallar']['dataChannelLanes'],
+): unknown {
+    return lanes?.map(lane => ({
+        id: lane.id,
+        label: lane.label,
+        binaryType: lane.binaryType,
+        init: lane.init
+            ? {
+                  id: lane.init.id,
+                  maxPacketLifeTime: lane.init.maxPacketLifeTime,
+                  maxRetransmits: lane.init.maxRetransmits,
+                  negotiated: lane.init.negotiated,
+                  ordered: lane.init.ordered,
+                  protocol: lane.init.protocol,
+              }
+            : undefined,
+        flowControl: lane.flowControl
+            ? {
+                  highWatermarkBytes: lane.flowControl.highWatermarkBytes,
+                  lowWatermarkBytes: lane.flowControl.lowWatermarkBytes,
+                  overflow: lane.flowControl.overflow,
+                  maxQueueItems: lane.flowControl.maxQueueItems,
+              }
+            : undefined,
+    }));
+}
+
 export type BlackBoxRallarLifecyclePolicyState = Readonly<{
     status: 'idle' | 'authenticating' | 'authenticated' | 'connecting' | 'connected' | 'closing' | 'faulted';
     activeTarget?: BlackBoxRallarConnectionTarget;
@@ -82,6 +133,75 @@ export function blackBoxRallarConnectionTargetOf(
     };
 }
 
+export function blackBoxRallarConnectionOperationKeyOf(
+    config: BlackBoxRallarConnectionConfig,
+): string {
+    const rallar = config.rallar;
+    return JSON.stringify({
+        connection: config.connection,
+        actor: config.actor,
+        peerId: config.peerId,
+        remotePeerId: config.remotePeerId,
+        roomId: config.roomId,
+        roomRef: normalizedRoomRef(config.roomRef),
+        rallar: {
+            apiBaseUrl: normalizeBlackBoxRallarApiBaseUrl(rallar.apiBaseUrl),
+            applicationId: rallar.applicationId,
+            workspaceId: rallar.workspaceId,
+            scope: rallar.scope
+                ? {
+                      applicationId: rallar.scope.applicationId,
+                      workspaceId: rallar.scope.workspaceId,
+                  }
+                : undefined,
+            roomRef: normalizedRoomRef(rallar.roomRef),
+            username: rallar.username,
+            password: rallar.password,
+            displayName: rallar.displayName,
+            register: rallar.register,
+            transport: rallar.transport,
+            laneId: rallar.laneId,
+            openTimeoutMs: rallar.openTimeoutMs,
+            timeoutMs: rallar.timeoutMs,
+            peerIds: rallar.peerIds,
+            nextHopPeerIds: rallar.nextHopPeerIds,
+            typeId: rallar.typeId,
+            topicId: rallar.topicId,
+            contextId: rallar.contextId,
+            resourceId: rallar.resourceId,
+            messageSelector: normalizedMessageSelector(rallar.messageSelector),
+            ttlHops: rallar.ttlHops,
+            ttlMs: rallar.ttlMs,
+            reliability: rallar.reliability,
+            ack: rallar.ack,
+            ownership: rallar.ownership,
+            membershipEpoch: rallar.membershipEpoch,
+            minSnapshotVersion: rallar.minSnapshotVersion,
+            seq: rallar.seq,
+            orderingKey: rallar.orderingKey,
+            overlayId: rallar.overlayId,
+            fanoutLimit: rallar.fanoutLimit,
+            dataChannelLanes: normalizedDataChannelLanes(rallar.dataChannelLanes),
+            expectedSessionId: rallar.expectedSessionId,
+            leaveRoomOnClose: rallar.leaveRoomOnClose,
+            logoutOnClose: rallar.logoutOnClose,
+        },
+    });
+}
+
+export function mergeBlackBoxRallarAuthenticationConfig(
+    active: BlackBoxRallarConnectionConfig,
+    next: BlackBoxRallarConnectionConfig,
+): BlackBoxRallarConnectionConfig {
+    return {
+        ...next,
+        rallar: {
+            ...next.rallar,
+            logoutOnClose: active.rallar.logoutOnClose === true || next.rallar.logoutOnClose === true,
+        },
+    };
+}
+
 export function isSameBlackBoxRallarSession(
     left: BlackBoxRallarSessionIdentity,
     right: BlackBoxRallarSessionIdentity,
@@ -123,3 +243,4 @@ export function decideBlackBoxRallarLifecycleRequest(
     }
     return { kind: 'allow' };
 }
+import type { BlackBoxRallarConnectionConfig, BlackBoxRallarRoomRef } from './contracts.ts';
