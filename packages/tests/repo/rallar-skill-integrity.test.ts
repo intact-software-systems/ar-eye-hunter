@@ -301,13 +301,16 @@ describe('Rallar repo skill and documentation integrity', () => {
             "import { rallar } from '@shared-web/browser/rallar.ts';",
         );
         expect(docsIndex).toContain(
+            './rallar-api-v1-in-memory-performance-mode.md',
+        );
+        expect(docsIndex).not.toContain(
             '../iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md',
         );
         expect(
             existsSync(
                 path.join(
                     repoRoot,
-                    'iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md',
+                    'docs/rallar-api-v1-in-memory-performance-mode.md',
                 ),
             ),
         ).toBe(true);

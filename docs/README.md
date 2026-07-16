@@ -53,14 +53,6 @@ can select specialist skills from each `SKILL.md` frontmatter description;
 explicitly name a skill in the prompt when you want to guarantee its use, for
 example: "Use the `rallar-realtime` and `rallar-testing` skills."
 
-## Implementation Notes
-
-- [API-v1 In-Memory SQL Performance Mode](../iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md)
-  Completed implementation context for running API-v1 performance tests with a
-  single server process and an embedded PGlite SQL backend, including backend
-  configuration, the PGlite SQL adapter, local queue pub/sub, and black-box
-  validation scripts for API-v1 memory mode.
-
 ## Source Files
 
 - Browser facade: `packages/shared-web/browser/rallar.ts`

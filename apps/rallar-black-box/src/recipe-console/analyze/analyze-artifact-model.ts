@@ -15,11 +15,10 @@ import {
 import { deriveAnalyzePrimaryResultFailure, type AnalyzePrimaryResultFailure } from
     './analyze-primary-result-failure.ts';
 export type { AnalyzePrimaryResultFailure } from './analyze-primary-result-failure.ts';
-
 export { deriveAnalyzeArtifactSearchResult } from './analyze-artifact-search.ts';
 
+type AnalyzeEvidenceEntries = DistributedArtifactEvidenceIndex['entries'];
 export type AnalyzeArtifactSource = 'local-files' | 'control';
-
 export type AnalyzeArtifactIgnoredFile = Readonly<{
     basename: string;
     sourcePath: string;
@@ -181,6 +180,7 @@ export function prepareAnalyzeArtifactModel(
 export function finalizeAnalyzeArtifactModel(
     prepared: PreparedAnalyzeArtifactModel,
     evidenceIndex: DistributedArtifactEvidenceIndex,
+    primaryResultEvidenceEntries: AnalyzeEvidenceEntries = evidenceIndex.entries,
 ): AnalyzeArtifactModel {
     const {
         input, workspace, analysis, snapshots, portableFiles, ignoredFiles,
@@ -191,7 +191,7 @@ export function finalizeAnalyzeArtifactModel(
     )?.id;
     const primaryResultFailure = deriveAnalyzePrimaryResultFailure(
         analysis,
-        evidenceIndex,
+        primaryResultEvidenceEntries,
     );
 
     const model: AnalyzeArtifactModel = {

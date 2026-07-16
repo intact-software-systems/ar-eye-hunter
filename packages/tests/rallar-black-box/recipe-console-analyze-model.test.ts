@@ -505,11 +505,44 @@ describe('Recipe Console Analyze artifact model', () => {
                 ...prepared.analysis.failure,
                 commandId: 'missing-command',
             },
-        }, evidenceIndex);
+        }, evidenceIndex.entries);
 
         expect(primaryResultFailure).toMatchObject({
             evidenceId: expect.stringMatching(/^result:/),
             failureDetails: { name: 'RALLAR_BLACK_BOX_TIMEOUT' },
+        });
+    });
+
+    it('retains the correlated structured result beyond the bounded evidence index window', () => {
+        const fixture = createRecipeConsoleScaleFixture({
+            eventCount: 3,
+            resultCount: 600,
+        });
+        const model = createAnalyzeArtifactModel({
+            files: fixture.files,
+            source: 'local-files',
+            label: 'Large failed result fixture',
+            generatedAtEpochMs: fixture.generatedAtEpochMs,
+        });
+
+        expect(model.evidenceIndex).toMatchObject({
+            limit: 500,
+            totalEntries: 606,
+            omittedEntryCount: 106,
+        });
+        expect(model.primaryResultFailure).toMatchObject({
+            evidenceId: expect.stringMatching(/^result:/),
+            failureDetails: {
+                code: 'SCALE_UPSTREAM_UNAVAILABLE',
+                message: expect.stringContaining('Expected HTTP 200'),
+            },
+        });
+        expect(model.evidenceIndex.entries.find(entry =>
+            entry.id === model.primaryResultFailure?.evidenceId
+        )).toMatchObject({
+            kind: 'result',
+            status: 'failed',
+            commandId: model.analysis.failure?.commandId,
         });
     });
 

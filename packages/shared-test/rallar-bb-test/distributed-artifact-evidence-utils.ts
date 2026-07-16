@@ -51,6 +51,27 @@ export function compareEvidenceEntries(
         left.id.localeCompare(right.id);
 }
 
+export function selectPrimaryDistributedArtifactResultFailure<
+    Entry extends DistributedArtifactEvidenceEntry,
+>(
+    entries: readonly Entry[],
+    failureCommandId: string | undefined,
+): Entry | undefined {
+    let selected: Entry | undefined;
+    for (const entry of entries) {
+        if (
+            entry.kind !== 'result' || entry.status !== 'failed' ||
+            !entry.failureDetails
+        ) continue;
+        if (!selected || comparePrimaryResultFailures(
+            entry,
+            selected,
+            failureCommandId,
+        ) < 0) selected = entry;
+    }
+    return selected;
+}
+
 export function boundedEvidenceLimit(
     value: number | undefined,
     fallback: number,
@@ -142,6 +163,25 @@ function boundedEvidenceText(value: string, limit: number): string {
     const normalized = value.replace(/\s+/g, ' ').trim();
     if (normalized.length <= limit) return normalized;
     return `${normalized.slice(0, Math.max(0, limit - 1)).trimEnd()}…`;
+}
+
+function comparePrimaryResultFailures(
+    left: DistributedArtifactEvidenceEntry,
+    right: DistributedArtifactEvidenceEntry,
+    failureCommandId: string | undefined,
+): number {
+    return resultFailureCorrelationRank(left, failureCommandId) -
+            resultFailureCorrelationRank(right, failureCommandId) ||
+        compareEvidenceEntries(left, right);
+}
+
+function resultFailureCorrelationRank(
+    entry: DistributedArtifactEvidenceEntry,
+    failureCommandId: string | undefined,
+): number {
+    return failureCommandId !== undefined && entry.commandId !== failureCommandId
+        ? 1
+        : 0;
 }
 
 function boundedMultilineEvidenceText(value: string, limit: number): string {
