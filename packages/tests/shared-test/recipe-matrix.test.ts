@@ -321,6 +321,56 @@ describe('black-box runner recipe matrix', () => {
         });
     });
 
+    it('defines a no-browser two-server topology convergence recipe', () => {
+        const { entries } = readMatrix();
+        const entry = entries.find(candidate =>
+            candidate.id === 'api-v1-rtc-topology-convergence'
+        );
+
+        expect(entry).toMatchObject({
+            category: 'api-v1-black-box',
+            mode: 'run',
+            expectedExitCode: 0,
+            profiles: ['api-v1-black-box-cluster'],
+            requires: {
+                httpServices: [
+                    {
+                        name: 'Rallar API primary',
+                        env: 'RALLAR_API_BASE_URL',
+                        default: 'http://127.0.0.1:18080',
+                    },
+                    {
+                        name: 'Rallar API secondary',
+                        env: 'RALLAR_API_BASE_URL_SECONDARY',
+                        default: 'http://127.0.0.1:18081',
+                    },
+                ],
+            },
+        });
+        expect(entry?.requires?.playwright).not.toBe(true);
+        expect(entry?.profiles).not.toContain('api-v1-black-box-recipes');
+
+        const recipe = readRecipe(entry!.recipe);
+        const connections = recipe.connections as Record<
+            string,
+            { type?: string }
+        >;
+        expect(Object.values(connections).filter(connection =>
+            connection.type === 'http'
+        )).toHaveLength(2);
+        expect(Object.values(connections).filter(connection =>
+            connection.type === 'ws'
+        )).toHaveLength(2);
+        expect(Object.values(connections).some(connection =>
+            connection.type === 'rtc'
+        )).toBe(false);
+        expect(JSON.stringify(recipe)).not.toContain('rallar-browser');
+        expect(JSON.stringify(recipe)).not.toContain('RTCPeerConnection');
+        expect((recipe.steps as Array<{ type?: string }>).some(step =>
+            step.type === 'parallel'
+        )).toBe(true);
+    });
+
     it('advertises the API-v1 profile in recipe-matrix CLI usage', () => {
         const source = readFileSync(path.join(runnerRoot, 'recipe-matrix.mts'), 'utf8');
 

@@ -85,6 +85,7 @@ jobs:
         with:
           backend: postgres
           api-port: "18080"
+          secondary-api-port: "18081"
           artifact-dir: .artifacts/api-v1-black-box/postgres
           profile: api-v1-black-box
           run-migrations: "false"

@@ -9,6 +9,10 @@ inputs:
     description: Local API port.
     required: false
     default: "18080"
+  secondary-api-port:
+    description: Optional second local API port for Postgres cluster recipes.
+    required: false
+    default: ""
   artifact-dir:
     description: Directory for runner artifacts and API logs.
     required: false
@@ -45,6 +49,10 @@ runs:
 
         if [ "${{ inputs.run-migrations }}" != "true" ]; then
           args+=("--no-migrate")
+        fi
+
+        if [ -n "${{ inputs.secondary-api-port }}" ]; then
+          args+=("--secondary-port=${{ inputs.secondary-api-port }}")
         fi
 
         deno run -A packages/shared-test/black-box-runner/api-v1-black-box-run.mts "${args[@]}"
