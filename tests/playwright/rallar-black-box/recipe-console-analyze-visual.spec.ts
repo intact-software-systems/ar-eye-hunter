@@ -56,10 +56,7 @@ async function expectResponsiveArtifact(page: Page): Promise<void> {
     await expect(verdict).toContainText(ANALYZE_FAILURE_MESSAGE);
     await expect(failure).toContainText('Next action');
     await failure.scrollIntoViewIfNeeded();
-    expect(await failure.evaluate(element => {
-        const bounds = element.getBoundingClientRect();
-        return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
-    })).toBe(true);
+    await expect(failure).toBeInViewport({ ratio: 1 });
 
     const undersized = await workspace.locator(
         'button, input:not([type="file"]), select, summary, label[for]',

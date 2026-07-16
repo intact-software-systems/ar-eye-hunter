@@ -236,6 +236,7 @@ test('opens runner mode on Recipes and runs a local recipe from the launcher', a
     const popupPromise = page.waitForEvent('popup');
     await agentSetup.getByRole('button', { name: 'Open agent tabs' }).click();
     const agentPage = await popupPromise;
+    await agentPage.waitForURL(/mode=control/, { timeout: 10_000 });
     const agentUrl = new URL(agentPage.url());
     expect(agentUrl.searchParams.get('mode')).toBe('control');
     expect(agentUrl.searchParams.get('autoConnect')).toBe('1');
