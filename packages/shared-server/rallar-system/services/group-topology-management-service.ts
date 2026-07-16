@@ -17,7 +17,14 @@ import * as rttRepository from '@shared/repository/rtt-repository.ts';
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { GroupTopologyConfigRepository } from '../repositories/GroupTopologyConfigRepository.ts';
 import { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
-import { RtcTopologySnapshotRepository } from '../repositories/RtcTopologySnapshotRepository.ts';
+import {
+    RtcTopologySnapshotRepository,
+    type RtcTopologySnapshotObservation,
+} from '../repositories/RtcTopologySnapshotRepository.ts';
+import {
+    readGroupStateRevision,
+    readGroupMemberSessionIds,
+} from '@shared/api/group-client-views.ts';
 import {
     GroupTopologyServerOptions,
     resolveGroupTopologyConfig,
@@ -107,8 +114,18 @@ export type DeleteGroupTopologyConfigResult = Readonly<{
     reconfigure?: ReconfigureGroupTopologyResponse;
 }>;
 
+export type ReconcileGroupTopologyResult = Readonly<{
+    snapshot: RallarOverlayTopologySnapshot;
+    previous?: RallarOverlayTopologySnapshot;
+    changed: boolean;
+}>;
+
 export class GroupTopologyManagementService {
     constructor(private readonly options: GroupTopologyManagementServiceOptions) {}
+
+    recordTopologyPublication(published: boolean): void {
+        this.options.topologyService.recordTopologyPublishResult(published);
+    }
 
     async readTopologyView(
         groupRef: GroupRef,
@@ -295,28 +312,32 @@ export class GroupTopologyManagementService {
         });
         const rttMeasurements = await this.readRawRttMeasurements(group);
         const result = this.options.topologySnapshotRepository
-            ? await this.options.topologySnapshotRepository.withSnapshotLock(
-                input.groupRef,
-                async (repository) => {
-                    const previous = await repository.findSnapshot(input.groupRef);
-                    const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
-                        group,
-                        rttMeasurements,
-                        config.effective,
+            ? await (async () => {
+                const repository = this.options.topologySnapshotRepository!;
+                const previous = await repository.findSnapshot(input.groupRef);
+                const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
+                    group,
+                    rttMeasurements,
+                    config.effective,
+                    previous,
+                );
+                const update = this.options.topologyService.updateGroupTopology(
+                    group,
+                    filteredRttMeasurements,
+                    {
                         previous,
-                    );
-                    const update = this.options.topologyService.updateGroupTopology(
-                        group,
-                        filteredRttMeasurements,
-                        {
-                            previous,
-                            topologyOptions: config.effective,
-                        },
-                    );
-                    await this.validateAndPersist(update, repository);
-                    return update;
-                },
-            )
+                        topologyOptions: config.effective,
+                    },
+                );
+                const observation = await this.validateAndPersist(
+                    update,
+                    repository,
+                );
+                if (observation === 'stale' && previous) {
+                    this.options.topologyService.observeTopologySnapshot(previous);
+                }
+                return update;
+            })()
             : (() => {
                 const previous = this.options.topologyService.readSnapshot(group);
                 const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
@@ -357,6 +378,69 @@ export class GroupTopologyManagementService {
         };
     }
 
+    async reconcileGroupTopology(
+        group: GroupSnapshot,
+    ): Promise<ReconcileGroupTopologyResult> {
+        if (group.group.status === 'active') {
+            const result = await this.reconfigureGroupTopology({
+                groupRef: group.group,
+                groupSnapshot: group,
+                publish: false,
+            });
+            return {
+                snapshot: result.snapshot,
+                previous: result.previous,
+                changed: result.changed,
+            };
+        }
+
+        const previous = this.options.topologySnapshotRepository
+            ? await this.options.topologySnapshotRepository.findSnapshot(group.group)
+            : this.options.topologyService.readSnapshot(group);
+        const activeSessionIds = [
+            ...new Set([
+                ...(previous?.activeSessionIds ?? []),
+                ...readGroupMemberSessionIds(group),
+            ]),
+        ];
+        const now = this.now();
+        const snapshot: RallarOverlayTopologySnapshot = {
+            sourceGroupStateRevision: readGroupStateRevision(group),
+            state: 'removed',
+            overlayId: toScopedOverlayId(group.group),
+            groupRef: group.group,
+            name: previous?.name ?? group.group.displayName,
+            topology: previous?.topology ?? 'star',
+            activeSessionIds,
+            nextHopsBySessionId: Object.fromEntries(
+                activeSessionIds.map((sessionId) => [sessionId, []]),
+            ),
+            degreeLimit: previous?.degreeLimit ?? 0,
+            version: previous?.version ?? 0,
+            createdByClientId: previous?.createdByClientId ??
+                group.group.created.byPrincipalId ?? group.group.groupId,
+            createdAtEpochMs: previous?.createdAtEpochMs ??
+                group.group.created.atEpochMs,
+            updatedAtEpochMs: now,
+        };
+        this.validateTopology(snapshot);
+        const observation = await this.options.topologySnapshotRepository
+            ?.observeSnapshot(snapshot);
+        const previousRevision = previous?.sourceGroupStateRevision;
+        const shouldUpdateProcessLatest = observation === undefined
+            ? previousRevision === undefined ||
+                previousRevision <= (snapshot.sourceGroupStateRevision ?? 0)
+            : observation !== 'stale';
+        if (shouldUpdateProcessLatest) {
+            this.options.topologyService.removeGroupTopology(group);
+        }
+        return {
+            snapshot,
+            previous,
+            changed: previous?.state !== 'removed',
+        };
+    }
+
     async flushDueGroupTopology(
         input: ReconfigureGroupTopologyInput,
     ): Promise<ReconfigureGroupTopologyResponse | undefined> {
@@ -369,33 +453,34 @@ export class GroupTopologyManagementService {
         const config = await this.readConfig(input.groupRef);
         const rttMeasurements = await this.readRawRttMeasurements(group);
         const result = this.options.topologySnapshotRepository
-            ? await this.options.topologySnapshotRepository.withSnapshotLock(
-                input.groupRef,
-                async (repository) => {
-                    const previous = await repository.findSnapshot(input.groupRef);
-                    const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
-                        group,
-                        rttMeasurements,
-                        config.effective,
+            ? await (async () => {
+                const repository = this.options.topologySnapshotRepository!;
+                const previous = await repository.findSnapshot(input.groupRef);
+                const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
+                    group,
+                    rttMeasurements,
+                    config.effective,
+                    previous,
+                );
+                const update = this.options.topologyService.flushDueRttTopologyUpdate(
+                    group,
+                    filteredRttMeasurements,
+                    {
                         previous,
+                        topologyOptions: config.effective,
+                    },
+                );
+                if (update) {
+                    this.validateTopology(update.snapshot);
+                    const observation = await repository.observeSnapshot(
+                        update.snapshot,
                     );
-                    const update = this.options.topologyService.flushDueRttTopologyUpdate(
-                        group,
-                        filteredRttMeasurements,
-                        {
-                            previous,
-                            topologyOptions: config.effective,
-                        },
-                    );
-                    if (update?.changed) {
-                        this.validateTopology(update.snapshot);
-                        await repository.putSnapshot(update.snapshot);
-                    } else if (update) {
-                        this.validateTopology(update.snapshot);
+                    if (observation === 'stale' && previous) {
+                        this.options.topologyService.observeTopologySnapshot(previous);
                     }
-                    return update;
-                },
-            )
+                }
+                return update;
+            })()
             : (() => {
                 const previous = this.options.topologyService.readSnapshot(group);
                 const filteredRttMeasurements = this.filterRttMeasurementsForGroup(
@@ -454,11 +539,9 @@ export class GroupTopologyManagementService {
     private async validateAndPersist(
         result: RallarRtcTopologyUpdateResult,
         repository: RtcTopologySnapshotRepository,
-    ): Promise<void> {
+    ): Promise<RtcTopologySnapshotObservation> {
         this.validateTopology(result.snapshot);
-        if (result.changed) {
-            await repository.putSnapshot(result.snapshot);
-        }
+        return await repository.observeSnapshot(result.snapshot);
     }
 
     private validateTopology(snapshot: RallarOverlayTopologySnapshot): void {
@@ -490,13 +573,9 @@ export class GroupTopologyManagementService {
             return false;
         }
 
-        this.options.topologyService.recordTopologyPublishResult(result.changed);
-        if (!result.changed) {
-            return false;
-        }
-
         const resolvedPublisher = publisher ?? this.options.publisher;
         if (!resolvedPublisher) {
+            this.options.topologyService.recordTopologyPublishResult(false);
             return false;
         }
 
@@ -504,6 +583,7 @@ export class GroupTopologyManagementService {
             createRtcOverlayTopologyBroadcastMessage(group, result.snapshot),
             result.snapshot,
         );
+        this.options.topologyService.recordTopologyPublishResult(true);
         return true;
     }
 
@@ -592,7 +672,7 @@ export function createRtcOverlayTopologyBroadcastMessage(
         newALRoute(
             AppTopics.overlayTopology,
             group.group.groupId,
-            `${snapshot.overlayId}:${snapshot.version}`,
+            `${snapshot.overlayId}:${snapshot.sourceGroupStateRevision ?? snapshot.version}:${snapshot.version}`,
         ),
         'room',
         AppTopics.overlayTopology,

@@ -358,7 +358,7 @@ export class WebRtcOverlayMulticastManager {
 
         const overlay = this.overlayCache.read(overlayId) ??
             this.overlayCache.peek(overlayId);
-        if (!overlay) {
+        if (!overlay || overlay.state === 'removed') {
             console.warn(`No OverlayInfo found for overlayId/groupId ${overlayId}`);
             return undefined;
         }
@@ -416,8 +416,9 @@ export class WebRtcOverlayMulticastManager {
     }
 
     private hasOverlay(overlayId: OverlayId): boolean {
-        return (this.overlayCache.read(overlayId) ?? this.overlayCache.peek(overlayId)) !==
-            undefined;
+        const overlay = this.overlayCache.read(overlayId) ??
+            this.overlayCache.peek(overlayId);
+        return overlay !== undefined && overlay.state !== 'removed';
     }
 
     private createDirectDispatchPlan(

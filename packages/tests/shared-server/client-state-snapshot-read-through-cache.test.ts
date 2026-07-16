@@ -6,6 +6,7 @@ import type {
     ClientSnapshot,
 } from '@shared/api/client-types.ts';
 import {
+    findClientStateSnapshotByRef,
     findClientStateSnapshotByPrincipalId,
 } from '@shared/repository/client-state-snapshots-repository.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
@@ -40,7 +41,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         expect(findClientStateSnapshotByPrincipalId('alice')).toBeUndefined();
 
         await expect(readThroughCache.findOrLoadByRef(snapshot.principal))
-            .resolves.toEqual(snapshot);
+            .resolves.toEqual({ ...snapshot, stateRevision: 1 });
 
         expect(
             findClientStateSnapshotByPrincipalId('alice')?.principal.snapshotVersion,
@@ -60,7 +61,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
 
         await putClientSnapshot(clientRepository, stale);
         await expect(readThroughCache.findOrLoadByRef(stale.principal))
-            .resolves.toEqual(stale);
+            .resolves.toEqual({ ...stale, stateRevision: 1 });
         expect(
             findClientStateSnapshotByPrincipalId('alice')?.principal.snapshotVersion,
         ).toBe(1);
@@ -69,9 +70,9 @@ describe('ClientStateSnapshotReadThroughCache', () => {
 
         await expect(
             readThroughCache.findOrLoadByRef(current.principal, {
-                minSnapshotVersion: 4,
+                minStateRevision: 2,
             }),
-        ).resolves.toEqual(current);
+        ).resolves.toEqual({ ...current, stateRevision: 2 });
 
         expect(
             findClientStateSnapshotByPrincipalId('alice')?.principal.snapshotVersion,
@@ -93,12 +94,18 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         await putClientSnapshot(clientRepository, workspaceB);
 
         await expect(readThroughCache.findOrLoadByRef(workspaceA.principal))
-            .resolves.toEqual(workspaceA);
+            .resolves.toEqual({ ...workspaceA, stateRevision: 1 });
         await expect(readThroughCache.findOrLoadByRef(workspaceB.principal))
-            .resolves.toEqual(workspaceB);
+            .resolves.toEqual({ ...workspaceB, stateRevision: 1 });
 
-        expect(readThroughCache.findByRef(workspaceA.principal)).toEqual(workspaceA);
-        expect(readThroughCache.findByRef(workspaceB.principal)).toEqual(workspaceB);
+        expect(readThroughCache.peek(workspaceA.principal))
+            .toEqual({ ...workspaceA, stateRevision: 1 });
+        expect(readThroughCache.peek(workspaceB.principal))
+            .toEqual({ ...workspaceB, stateRevision: 1 });
+        expect(findClientStateSnapshotByRef(workspaceA.principal))
+            .toEqual({ ...workspaceA, stateRevision: 1 });
+        expect(findClientStateSnapshotByRef(workspaceB.principal))
+            .toEqual({ ...workspaceB, stateRevision: 1 });
     });
 
     it('refreshes a warm snapshot when its embedded session has expired', async () => {
@@ -120,7 +127,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         });
         await putClientSnapshot(clientRepository, snapshot);
         await expect(readThroughCache.findOrLoadByRef(snapshot.principal))
-            .resolves.toEqual(snapshot);
+            .resolves.toEqual({ ...snapshot, stateRevision: 1 });
 
         vi.setSystemTime(1_001);
 
@@ -133,6 +140,30 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         expect(
             findClientStateSnapshotByPrincipalId('alice')?.activeSessions,
         ).toEqual([]);
+    });
+
+    it('observes revisioned snapshots monotonically and rejects conflicts', () => {
+        configureTestCacheRepositories();
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(runtimeRepository);
+        const readThroughCache = createClientStateSnapshotReadThroughCache({
+            clientsRepository: clientRepository,
+        });
+        const base = createClientSnapshot('alice', 'app-1', 'workspace-a', 1);
+        const revisionTwo = { ...base, stateRevision: 2 };
+        const revisionOne = {
+            ...createClientSnapshot('alice', 'app-1', 'workspace-a', 99),
+            stateRevision: 1,
+        };
+
+        expect(readThroughCache.observe(revisionTwo)).toBe('inserted');
+        expect(readThroughCache.observe(revisionOne)).toBe('stale');
+        expect(readThroughCache.observe(revisionTwo)).toBe('duplicate');
+        expect(() => readThroughCache.observe({
+            ...revisionTwo,
+            activeSessionCount: 0,
+        })).toThrow('Client snapshot revision conflict');
+        expect(readThroughCache.peek(base.principal)).toEqual(revisionTwo);
     });
 });
 

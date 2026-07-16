@@ -29,10 +29,6 @@ export function createWsStateSyncPublisher(
 ): StateSyncPublisher {
     return {
         publishClientSnapshot: async (snapshot, senderId) => {
-            clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId(
-                snapshot.principal.principalId,
-                snapshot,
-            );
             await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? snapshot.principal.principalId,
@@ -65,7 +61,6 @@ export function createWsStateSyncPublisher(
             );
         },
         publishGroupSnapshot: async (snapshot, senderId) => {
-            groupStateSnapshotsRepository.setGroupStateSnapshot(snapshot);
             await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? snapshot.group.groupId,

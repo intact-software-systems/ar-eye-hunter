@@ -116,7 +116,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
 
     async listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]> {
         const [groups, members, sessions] = await Promise.all([
-            this.listGroups(scope),
+            this.listEntryValues<Group>(GROUPS_NAMESPACE, this.scopeChildPrefix(scope)),
             this.listValues<GroupMember>(MEMBERS_NAMESPACE, this.scopeChildPrefix(scope)),
             this.listValues<GroupPresenceSession>(
                 SESSIONS_NAMESPACE,
@@ -137,11 +137,12 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             activeSessionsByGroupId.set(session.groupId, current);
         }
 
-        return groups.map((group) =>
+        return groups.map(({ entry, value: group }) =>
             this.toSnapshot(
                 group,
                 membersByGroupId.get(group.groupId) ?? [],
                 activeSessionsByGroupId.get(group.groupId) ?? [],
+                entry.revision + 1,
             )
         );
     }
@@ -152,7 +153,11 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     ): Promise<GroupSnapshotPage> {
         const limit = Math.max(1, Math.floor(options.limit));
         const rawPageLimit = limit + 1;
-        const pageGroups: Array<Readonly<{ key: string; group: Group }>> = [];
+        const pageGroups: Array<Readonly<{
+            key: string;
+            group: Group;
+            stateRevision: number;
+        }>> = [];
         let afterKey = options.afterKey;
         let hasMore = false;
 
@@ -186,7 +191,11 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                     break;
                 }
 
-                pageGroups.push({ key: entry.key, group });
+                pageGroups.push({
+                    key: entry.key,
+                    group,
+                    stateRevision: entry.revision + 1,
+                });
             }
 
             if (groupEntries.length < rawPageLimit) {
@@ -195,7 +204,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         }
 
         const snapshots = await Promise.all(
-            pageGroups.map(async ({ group }) => {
+            pageGroups.map(async ({ group, stateRevision }) => {
                 const [members, sessions] = await Promise.all([
                     this.listMembers(group),
                     this.listPresenceSessions(group),
@@ -204,6 +213,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                     group,
                     members,
                     this.toActiveSessions(sessions),
+                    stateRevision,
                 );
             }),
         );
@@ -323,8 +333,11 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined> {
-        const group = await this.findGroup(ref);
-        if (!group) {
+        const stored = await this.getEntryValue<Group>(
+            GROUPS_NAMESPACE,
+            this.groupKey(ref),
+        );
+        if (!stored) {
             return undefined;
         }
 
@@ -332,13 +345,19 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         const activeSessions = this.toActiveSessions(
             await this.listPresenceSessions(ref),
         );
-        return this.toSnapshot(group, members, activeSessions);
+        return this.toSnapshot(
+            stored.value,
+            members,
+            activeSessions,
+            stored.entry.revision + 1,
+        );
     }
 
     private toSnapshot(
         group: Group,
         members: readonly GroupMember[],
         activeSessions: readonly GroupPresenceSession[],
+        stateRevision: number,
     ): GroupSnapshot {
         const activePrincipals = new Set(
             activeSessions.map((session) => session.principalId),
@@ -348,6 +367,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
 
         return {
+            stateRevision,
             group,
             members,
             activeSessions,

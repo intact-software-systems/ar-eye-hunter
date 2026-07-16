@@ -648,6 +648,41 @@ describe("GroupStateService command idempotency", () => {
       "session-heartbeat",
     ]);
   });
+
+  it("advances causal state revision for a heartbeat-only snapshot change", async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    await seedGroup(runtimeRepository, "room-heartbeat-revision");
+    await seedPresenceSession(runtimeRepository, "room-heartbeat-revision");
+    const repository = new GroupStateRepository(runtimeRepository);
+    const groupRef = toGroupRef("room-heartbeat-revision");
+    const before = await repository.readSnapshot(groupRef);
+    const service = createGroupStateService({
+      runtimeRepository,
+      syncPublisher: createPublisher(),
+      now: () => 2_000,
+      serviceId: "group-service",
+    });
+
+    const written = await service.heartbeatPresenceSession(
+      SCOPE,
+      groupRef.groupId,
+      "session-1",
+      {
+        principalId: "alice",
+        lastHeartbeatAtEpochMs: 2_000,
+        expiresAtEpochMs: 62_000,
+        requestId: "heartbeat-causal-revision",
+      },
+    );
+
+    expect(written.result.right?.event).toBeUndefined();
+    expect(written.result.right?.snapshot.group.snapshotVersion).toBe(
+      before?.group.snapshotVersion,
+    );
+    expect(written.result.right?.snapshot.stateRevision).toBeGreaterThan(
+      before?.stateRevision ?? 0,
+    );
+  });
 });
 
 async function seedGroup(

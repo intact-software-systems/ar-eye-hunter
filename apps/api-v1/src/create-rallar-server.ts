@@ -25,7 +25,6 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repo
 import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
-import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
 import {
   PSqlAdminOperationsPruner,
   PSqlAdminOperationsStatsReader,
@@ -61,6 +60,8 @@ import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import { myServerId } from './runtime/runtime-identity.ts';
 import { createRuntimeStateRepository } from './repository/createStateRepositories.ts';
 import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
 
 export { RallarServerDataFacade, RallarServerSystemFacade };
 
@@ -100,12 +101,13 @@ export function createRallarServer(
   const rttRepository = new RtcRttRepository(runtimeStateRepository, {
     now: rtcTopologyOptions.now,
   });
-  const groupSnapshotCache = createGroupStateSnapshotReadThroughCache({
-    groupsRepository: middleware.groupsRepository,
-  });
   const topologyManagement = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref, cacheOptions) =>
-      groupSnapshotCache.findOrLoadByRef(ref, cacheOptions),
+      readGroupSnapshotForTopology(
+        middleware.groupStateService,
+        ref,
+        cacheOptions,
+      ),
     configRepository: topologyConfigRepository,
     topologyService: rtcTopologyService,
     topologySnapshotRepository,
@@ -150,8 +152,8 @@ export function createRallarServer(
     now: rtcTopologyOptions.now ?? (() => Date.now()),
     serverId: myServerId,
     reader: new PSqlAdminSupportReader(sql as unknown as PSqlSql),
-    clientStateService: middleware.clientsRepository,
-    groupStateService: middleware.groupsRepository,
+    clientStateService: middleware.clientStateService,
+    groupStateService: middleware.groupStateService,
     topologyManagement,
     wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
     crdtAdminRepository: crdtLogRepository,
@@ -159,8 +161,8 @@ export function createRallarServer(
   });
   const spaStatistics = new SpaStatisticsService({
     now: rtcTopologyOptions.now ?? (() => Date.now()),
-    clientStateService: middleware.clientsRepository,
-    groupStateService: middleware.groupsRepository,
+    clientStateService: middleware.clientStateService,
+    groupStateService: middleware.groupStateService,
     wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
   });
 
@@ -169,7 +171,7 @@ export function createRallarServer(
     repositories: options.repositories ?? defaultRepositoryManager,
     ws: {
       authorizeRoomMessage: createApiV1RoomWsAuthorizer(
-        middleware.groupsRepository,
+        middleware.groupStateService,
       ),
       ...options.ws,
     },
@@ -179,19 +181,40 @@ export function createRallarServer(
     },
     system: {
       installDefaultMiddlewareTopics: (runtime, ws) => {
+        const observeGroupSnapshot = createGroupSnapshotObserver(
+          runtime.groupStateService,
+        );
+        const observeClientSnapshot = createClientSnapshotObserver(
+          runtime.clientStateService,
+        );
         initRallarSystemWsTopics(runtime.wsQBoxServerService, {
           initDynamicTopics: false,
           rtcTopologyService,
           rtcTopologyOptions,
+          rtcTopologyManagement: topologyManagement,
+          ...(observeGroupSnapshot ? { observeGroupSnapshot } : {}),
+          ...(observeClientSnapshot ? { observeClientSnapshot } : {}),
           rtcTopologyRuntimeState: {
             repository: runtimeStateRepository,
+          },
+          rtcTopologyRepositories: {
+            topologyConfig: topologyConfigRepository,
+            topologySnapshots: topologySnapshotRepository,
+            rtts: rttRepository,
           },
           rtcTopologyAppOutbox: {
             outboxQueueReader: runtime.outboxQueueReader,
             senderId: myServerId,
             wake: () => runtime.qboxEngine.wake(),
+            publicationRepository:
+              runtime.rtcTopologyPublicationRepository,
+            publicationFanout: runtime.rtcTopologyPublicationFanout,
             findGroupSnapshotByRef: (ref, cacheOptions) =>
-              groupSnapshotCache.findOrLoadByRef(ref, cacheOptions),
+              readGroupSnapshotForTopology(
+                runtime.groupStateService,
+                ref,
+                cacheOptions,
+              ),
           },
         });
         installRallarCrdtWsTopics(ws, {
@@ -236,14 +259,21 @@ export function createRallarServer(
       rest: [
         configRoutes.init,
         iceRoutes.init,
-        clientStateRoutes.init,
-        groupStateRoutes.init,
+        (app) =>
+          clientStateRoutes.init(app, {
+            getClientStateService: () => middleware.clientStateService,
+          }),
+        (app) =>
+          groupStateRoutes.init(app, {
+            getGroupStateService: () => middleware.groupStateService,
+          }),
         (app) =>
           spaStatisticsRoutes.init(app, {
             statistics: spaStatistics,
           }),
         (app) =>
           graphTopologyRoutes.init(app, {
+            getGroupStateService: () => middleware.groupStateService,
             graphDiagnostics: {
               readScopedGlobalGraphDiagnostic,
               readGroupGraphDiagnostic,
@@ -273,6 +303,73 @@ export function createRallarServer(
     },
   });
   return rallarApplication;
+}
+
+async function readGroupSnapshotForTopology(
+  service: Middleware['groupStateService'],
+  ref: GroupRef,
+  options: Readonly<{
+    minSnapshotVersion?: number;
+    minStateRevision?: number;
+  }> = {},
+): Promise<GroupSnapshot | undefined> {
+  const cached = service as Middleware['groupStateService'] & {
+    readSnapshotAtLeast?: (
+      groupRef: GroupRef,
+      readOptions: typeof options,
+    ) => Promise<GroupSnapshot | undefined>;
+  };
+  const snapshot = cached.readSnapshotAtLeast
+    ? await cached.readSnapshotAtLeast(ref, options)
+    : await service.readSnapshot(ref);
+  if (
+    snapshot && options.minStateRevision !== undefined &&
+    (snapshot.stateRevision ?? snapshot.group.snapshotVersion) <
+      options.minStateRevision
+  ) {
+    return undefined;
+  }
+  if (
+    snapshot && options.minSnapshotVersion !== undefined &&
+    snapshot.group.snapshotVersion < options.minSnapshotVersion
+  ) {
+    return undefined;
+  }
+  return snapshot;
+}
+
+function createGroupSnapshotObserver(
+  service: Middleware['groupStateService'] | undefined,
+): ((snapshot: GroupSnapshot) => Promise<void>) | undefined {
+  if (!service) {
+    return undefined;
+  }
+  const observe = (service as Middleware['groupStateService'] & {
+    observeSnapshot?: (snapshot: GroupSnapshot) => Promise<unknown>;
+  }).observeSnapshot;
+  return observe
+    ? async (snapshot) => {
+      await observe(snapshot);
+    }
+    : undefined;
+}
+
+function createClientSnapshotObserver(
+  service: Middleware['clientStateService'] | undefined,
+): ((snapshot: ClientSnapshot) => Promise<void>) | undefined {
+  if (!service) {
+    return undefined;
+  }
+  const observe = (service as Middleware['clientStateService'] & {
+    observeSnapshot?: (
+      snapshot: ClientSnapshot,
+    ) => Promise<unknown>;
+  }).observeSnapshot;
+  return observe
+    ? async (snapshot) => {
+      await observe(snapshot);
+    }
+    : undefined;
 }
 
 function readAdminClientIds(): readonly string[] {

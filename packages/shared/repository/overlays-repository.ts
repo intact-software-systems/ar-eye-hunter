@@ -52,6 +52,13 @@ export type OverlayRepositoryChangeListener = (
     change: OverlayRepositoryChange,
 ) => void | Promise<void>;
 
+export class OverlayRevisionConflictError extends Error {
+    constructor(readonly overlayId: string) {
+        super(`Overlay revision conflict: ${overlayId}`);
+        this.name = 'OverlayRevisionConflictError';
+    }
+}
+
 export const overlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
     'shared.repository.overlays',
     'Overlay repository is not configured',
@@ -65,7 +72,9 @@ export function configureOverlayRepository(
         overlayRepositoryToken,
         {
             ...options,
-            equals: (left, right) => left.overlayVersion === right.overlayVersion,
+            equals: (left, right) =>
+                compareOverlayInfoTuple(left, right) === 0 &&
+                JSON.stringify(left) === JSON.stringify(right),
         },
         manager,
     );
@@ -181,7 +190,12 @@ export function findOverlayById(
     id: string,
     manager?: RepositoryManager,
 ): OverlayInfo | undefined {
-    return readObservableLatestRepositoryValue(overlayRepositoryToken, id, manager);
+    const overlay = readObservableLatestRepositoryValue(
+        overlayRepositoryToken,
+        id,
+        manager,
+    );
+    return overlay?.state === 'removed' ? undefined : overlay;
 }
 
 export function setOverlayById(
@@ -196,10 +210,18 @@ export function setOverlayById(
         return;
     }
 
-    if (overlay.overlayVersion > current.overlayVersion) {
+    const comparison = compareOverlayInfoTuple(overlay, current);
+    if (comparison > 0) {
         console.log(`Received updated overlay details: ${JSON.stringify(overlay)}`);
         repository.set(id, overlay);
         return;
+    }
+
+    if (comparison === 0) {
+        if (JSON.stringify(overlay) === JSON.stringify(current)) {
+            return;
+        }
+        throw new OverlayRevisionConflictError(id);
     }
 
     console.log(
@@ -213,7 +235,27 @@ export function setOverlayById(
 export function getAllOverlays(
     manager?: RepositoryManager,
 ): OverlayInfo[] {
-    return readAllObservableLatestRepository(overlayRepositoryToken, manager);
+    return readAllObservableLatestRepository(overlayRepositoryToken, manager)
+        .filter((overlay) => overlay.state !== 'removed');
+}
+
+export function compareOverlayInfoTuple(
+    left: Pick<OverlayInfo, 'sourceGroupStateRevision' | 'overlayVersion'>,
+    right: Pick<OverlayInfo, 'sourceGroupStateRevision' | 'overlayVersion'>,
+): number {
+    const leftRevision = left.sourceGroupStateRevision;
+    const rightRevision = right.sourceGroupStateRevision;
+    if (leftRevision !== undefined && rightRevision === undefined) {
+        return 1;
+    }
+    if (leftRevision === undefined && rightRevision !== undefined) {
+        return -1;
+    }
+    if (leftRevision !== undefined && rightRevision !== undefined &&
+        leftRevision !== rightRevision) {
+        return leftRevision - rightRevision;
+    }
+    return left.overlayVersion - right.overlayVersion;
 }
 
 function toOverlayRepositoryChange(

@@ -1,5 +1,5 @@
-import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import { readClientVersion } from '@shared/api/group-client-views.ts';
+import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
+import { readClientStateRevision, readClientVersion } from '@shared/api/group-client-views.ts';
 import {
     configureObservableLatestRepository,
     newObservableLatestRepositoryToken,
@@ -18,6 +18,12 @@ import {
     type ReadableKeyedValues,
 } from '@shared/cache/RepositoryInterfaces.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import {
+    decideStateSnapshotRevision,
+    type StateSnapshotObservation,
+    type StateSnapshotRevisionDecision,
+    toStateSnapshotObservation,
+} from './state-snapshot-revision.ts';
 
 export type ClientStateSnapshotRepositoryOptions =
     & Omit<
@@ -100,9 +106,21 @@ export function findClientStateSnapshotByPrincipalId(
     principalId: string,
     manager?: RepositoryManager,
 ): ClientSnapshot | undefined {
+    return getAllClientStateSnapshots(manager)
+        .filter((snapshot) => snapshot.principal.principalId === principalId)
+        .toSorted((left, right) =>
+            readClientStateRevision(right) - readClientStateRevision(left)
+        )
+        .at(0);
+}
+
+export function findClientStateSnapshotByRef(
+    ref: ClientPrincipalRef,
+    manager?: RepositoryManager,
+): ClientSnapshot | undefined {
     return readObservableLatestRepositoryValue(
         clientStateSnapshotRepositoryToken,
-        principalId,
+        toClientStateSnapshotRepositoryKey(ref),
         manager,
     );
 }
@@ -131,29 +149,53 @@ export function setClientStateSnapshotByPrincipalId(
     snapshot: ClientSnapshot,
     manager?: RepositoryManager,
 ): boolean {
+    const decision = writeClientStateSnapshot(snapshot, manager);
+    return decision === 'inserted' || decision === 'advanced';
+}
+
+export function observeClientStateSnapshot(
+    snapshot: ClientSnapshot,
+    manager?: RepositoryManager,
+): StateSnapshotObservation {
+    return toStateSnapshotObservation(
+        writeClientStateSnapshot(snapshot, manager),
+    );
+}
+
+function writeClientStateSnapshot(
+    snapshot: ClientSnapshot,
+    manager?: RepositoryManager,
+): StateSnapshotRevisionDecision {
     const repository = requireClientStateSnapshotRepository(manager);
-    const current = repository.read(principalId);
-    const nextVersion = toClientSnapshotVersion(snapshot);
-    const currentVersion = current
-        ? toClientSnapshotVersion(current)
-        : undefined;
+    const repositoryKey = toClientStateSnapshotRepositoryKey(snapshot.principal);
+    const current = repository.read(repositoryKey);
+    const decision = decideStateSnapshotRevision({
+        entity: 'Client',
+        current,
+        incoming: snapshot,
+        stateRevisionOf: (value) => value.stateRevision,
+        legacyVersionOf: toClientSnapshotVersion,
+        equals: jsonEquals,
+    });
 
-    if (!current) {
-        repository.set(principalId, snapshot);
-        return true;
+    if (decision === 'inserted' || decision === 'advanced') {
+        repository.set(repositoryKey, snapshot);
+        if (decision === 'advanced') {
+            console.log(
+                `Received updated client snapshot: ${snapshot.principal.principalId}`,
+            );
+        }
+        return decision;
     }
 
-    if (currentVersion !== undefined && nextVersion > currentVersion) {
-        repository.set(principalId, snapshot);
-        console.log(`Received updated client snapshot: ${principalId}`);
-        return true;
+    if (decision === 'legacy-refreshed') {
+        console.warn(
+            `Received divergent legacy client snapshot at version ${toClientSnapshotVersion(snapshot)}: ${snapshot.principal.principalId}`,
+        );
+        repository.set(repositoryKey, snapshot);
     }
 
-    if (currentVersion === nextVersion && !jsonEquals(current, snapshot)) {
-        repository.set(principalId, snapshot);
-    }
-
-    return false;
+    return decision;
 }
 
 export function getAllClientStateSnapshots(
@@ -166,13 +208,26 @@ function toClientSnapshotVersion(snapshot: ClientSnapshot): number {
     return readClientVersion(snapshot);
 }
 
+export function toClientStateSnapshotRepositoryKey(
+    ref: ClientPrincipalRef,
+): string {
+    return JSON.stringify([
+        ref.applicationId,
+        ref.workspaceId ?? '',
+        ref.principalId,
+    ]);
+}
+
 function toClientStateSnapshotChange(
     event: ObservableKeyedValueEvent<string, ClientSnapshot>,
     manager?: RepositoryManager,
 ): ClientStateSnapshotChange {
     return {
         kind: event.type,
-        principalId: event.key,
+        principalId:
+            event.value?.principal.principalId ??
+            event.previous?.principal.principalId ??
+            event.key,
         snapshot: event.value,
         previous: event.previous,
         version: event.value

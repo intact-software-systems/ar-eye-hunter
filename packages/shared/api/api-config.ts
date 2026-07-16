@@ -115,6 +115,8 @@ export type GroupId = string;
 export type OverlayId = string;
 
 export type OverlayInfo = {
+    readonly sourceGroupStateRevision?: number;
+    readonly state?: 'active' | 'removed';
     readonly overlayId: OverlayId;
     readonly groupRef?: GroupRef;
     readonly topology?: 'star' | 'tree' | 'mesh';

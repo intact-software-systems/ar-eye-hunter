@@ -94,6 +94,7 @@ describe('ClientStateRepository', () => {
             principalId: principal.principalId,
         });
 
+        expect(snapshot?.stateRevision).toBe(1);
         expect(snapshot?.principal).toEqual(principal);
         expect(snapshot?.instances).toEqual([instanceA, instanceB]);
         expect(snapshot?.activeSessions).toEqual([activeSession]);
@@ -115,6 +116,49 @@ describe('ClientStateRepository', () => {
         });
         expect(repository.findStoredEntry('client-state:events')).toBeUndefined();
         expect(eventStore.listEventsCalls).toBe(1);
+    });
+
+    it('exposes the durable principal-row revision without changing snapshotVersion', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: new InMemoryClientStateEventStore(),
+        });
+        const principal = createClientPrincipal();
+
+        await clientRepository.putPrincipal(principal);
+        await clientRepository.putPrincipal({
+            ...principal,
+            displayName: 'Updated principal',
+        });
+
+        const ref = {
+            applicationId: principal.applicationId,
+            workspaceId: principal.workspaceId,
+            principalId: principal.principalId,
+        };
+        const direct = await clientRepository.readSnapshot(ref);
+        const listed = await clientRepository.listSnapshots(ref);
+
+        expect(direct?.stateRevision).toBe(2);
+        expect(direct?.principal.snapshotVersion).toBe(principal.snapshotVersion);
+        expect(listed[0]?.stateRevision).toBe(2);
+    });
+
+    it('assigns distinct causal revisions to concurrent client writes with one domain version', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: new InMemoryClientStateEventStore(),
+        });
+        const principal = createClientPrincipal();
+
+        await Promise.all([
+            clientRepository.putPrincipal({ ...principal, displayName: 'A' }),
+            clientRepository.putPrincipal({ ...principal, displayName: 'B' }),
+        ]);
+
+        const snapshot = await clientRepository.readSnapshot(principal);
+        expect(snapshot?.stateRevision).toBe(2);
+        expect(snapshot?.principal.snapshotVersion).toBe(principal.snapshotVersion);
     });
 
     it('lists client snapshots with scope-wide child reads instead of per-principal fanout', async () => {
@@ -306,6 +350,7 @@ describe('GroupStateRepository', () => {
         });
 
         expect(snapshot).toEqual({
+            stateRevision: 1,
             group,
             members: [activeMember, invitedMember],
             activeSessions: [activeSession],
@@ -322,6 +367,46 @@ describe('GroupStateRepository', () => {
         ).toEqual([createGroupEvent('evt-1', now + 1_000), createGroupEvent('evt-2', now + 2_000)]);
         expect(repository.findStoredEntry('group-state:events')).toBeUndefined();
         expect(eventStore.listEventsCalls).toBe(1);
+    });
+
+    it('exposes the durable group-row revision without changing snapshotVersion', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        const group = createGroup();
+
+        await groupRepository.putGroup(group);
+        await groupRepository.putGroup({
+            ...group,
+            displayName: 'Updated group',
+        });
+
+        const direct = await groupRepository.readSnapshot(group);
+        const listed = await groupRepository.listSnapshots(group);
+        const page = await groupRepository.listSnapshotsPage(group, { limit: 10 });
+
+        expect(direct?.stateRevision).toBe(2);
+        expect(direct?.group.snapshotVersion).toBe(group.snapshotVersion);
+        expect(listed[0]?.stateRevision).toBe(2);
+        expect(page.snapshots[0]?.stateRevision).toBe(2);
+    });
+
+    it('assigns distinct causal revisions to concurrent group writes with one domain version', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        const group = createGroup();
+
+        await Promise.all([
+            groupRepository.putGroup({ ...group, displayName: 'A' }),
+            groupRepository.putGroup({ ...group, displayName: 'B' }),
+        ]);
+
+        const snapshot = await groupRepository.readSnapshot(group);
+        expect(snapshot?.stateRevision).toBe(2);
+        expect(snapshot?.group.snapshotVersion).toBe(group.snapshotVersion);
     });
 
     it('lists group snapshots with scope-wide child reads instead of per-group fanout', async () => {

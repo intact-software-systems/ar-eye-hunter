@@ -1,10 +1,14 @@
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { readGroupVersion } from '@shared/api/group-client-views.ts';
+import {
+    readGroupStateRevision,
+    readGroupVersion,
+} from '@shared/api/group-client-views.ts';
 import {
     findGroupStateSnapshotByRef,
-    setGroupStateSnapshot,
+    observeGroupStateSnapshot,
     toGroupStateSnapshotRepositoryKey,
 } from '@shared/repository/group-state-snapshots-repository.ts';
+import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
 import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
@@ -21,6 +25,7 @@ export type GroupStateSnapshotReadThroughCacheOptions = Readonly<{
 
 export type FindOrLoadGroupStateSnapshotOptions = Readonly<{
     minSnapshotVersion?: number;
+    minStateRevision?: number;
 }>;
 
 export class GroupStateSnapshotNotFoundError extends Error {
@@ -46,18 +51,24 @@ export class GroupStateSnapshotReadThroughCache {
                     throw new GroupStateSnapshotNotFoundError(ref);
                 }
 
+                observeGroupStateSnapshot(snapshot, options.manager);
                 return snapshot;
             },
             {
                 ttlMs: options.ttlMs ?? DEFAULT_TTL_MS,
-                equals: (left, right) => readGroupVersion(left) === readGroupVersion(right),
+                equals: (left, right) =>
+                    JSON.stringify(left) === JSON.stringify(right),
             },
         );
         this.snapshots.onChangeDo((event) => {
             if (event.value) {
-                setGroupStateSnapshot(event.value, this.options.manager);
+                observeGroupStateSnapshot(event.value, this.options.manager);
             }
         });
+    }
+
+    public peek(ref: GroupRef): GroupSnapshot | undefined {
+        return this.findByRef(ref);
     }
 
     public findByRef(ref: GroupRef): GroupSnapshot | undefined {
@@ -76,17 +87,21 @@ export class GroupStateSnapshotReadThroughCache {
     ): Promise<GroupSnapshot | undefined> {
         const key = toGroupStateSnapshotRepositoryKey(ref);
         const latest = findGroupStateSnapshotByRef(ref, this.options.manager);
-        if (this.isUsable(latest, options.minSnapshotVersion)) {
+        if (this.isUsable(latest, options)) {
             return latest;
         }
 
         const loaned = this.snapshots.read(key);
-        if (this.isUsable(loaned, options.minSnapshotVersion)) {
-            setGroupStateSnapshot(loaned, this.options.manager);
+        if (this.isUsable(loaned, options)) {
+            observeGroupStateSnapshot(loaned, this.options.manager);
             return loaned;
         }
 
-        return await this.loadByRef(ref, latest !== undefined || loaned !== undefined);
+        const loaded = await this.loadByRef(
+            ref,
+            latest !== undefined || loaned !== undefined,
+        );
+        return this.isUsable(loaded, options) ? loaded : undefined;
     }
 
     public async refreshByRef(ref: GroupRef): Promise<GroupSnapshot | undefined> {
@@ -95,6 +110,10 @@ export class GroupStateSnapshotReadThroughCache {
 
     public async whenIdle(): Promise<void> {
         await this.snapshots.whenIdle();
+    }
+
+    public observe(snapshot: GroupSnapshot): StateSnapshotObservation {
+        return observeGroupStateSnapshot(snapshot, this.options.manager);
     }
 
     private async loadByRef(
@@ -107,7 +126,8 @@ export class GroupStateSnapshotReadThroughCache {
                 ? await this.snapshots.refresh(key)
                 : await this.snapshots.get(key);
             await this.snapshots.whenIdle();
-            return snapshot;
+            return findGroupStateSnapshotByRef(ref, this.options.manager) ??
+                snapshot;
         } catch (error) {
             if (error instanceof GroupStateSnapshotNotFoundError) {
                 return undefined;
@@ -119,13 +139,17 @@ export class GroupStateSnapshotReadThroughCache {
 
     private isUsable(
         snapshot: GroupSnapshot | undefined,
-        minSnapshotVersion: number | undefined,
+        options: FindOrLoadGroupStateSnapshotOptions,
     ): snapshot is GroupSnapshot {
         return snapshot !== undefined &&
             this.isPresenceFresh(snapshot) &&
             (
-                minSnapshotVersion === undefined ||
-                readGroupVersion(snapshot) >= minSnapshotVersion
+                options.minSnapshotVersion === undefined ||
+                readGroupVersion(snapshot) >= options.minSnapshotVersion
+            ) &&
+            (
+                options.minStateRevision === undefined ||
+                readGroupStateRevision(snapshot) >= options.minStateRevision
             );
     }
 

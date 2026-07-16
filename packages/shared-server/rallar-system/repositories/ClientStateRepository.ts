@@ -96,7 +96,10 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         scope: ClientScope,
     ): Promise<readonly ClientSnapshot[]> {
         const [principals, instances, sessions] = await Promise.all([
-            this.listPrincipals(scope),
+            this.listEntryValues<ClientPrincipal>(
+                PRINCIPALS_NAMESPACE,
+                this.scopeChildPrefix(scope),
+            ),
             this.listValues<ClientInstance>(
                 INSTANCES_NAMESPACE,
                 this.scopeChildPrefix(scope),
@@ -120,11 +123,12 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             activeSessionsByPrincipalId.set(session.principalId, current);
         }
 
-        return principals.map((principal) =>
+        return principals.map(({ entry, value: principal }) =>
             this.toSnapshot(
                 principal,
                 instancesByPrincipalId.get(principal.principalId) ?? [],
                 activeSessionsByPrincipalId.get(principal.principalId) ?? [],
+                entry.revision + 1,
             )
         );
     }
@@ -265,8 +269,11 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     async readSnapshot(
         ref: ClientPrincipalRef,
     ): Promise<ClientSnapshot | undefined> {
-        const principal = await this.findPrincipal(ref);
-        if (!principal) {
+        const stored = await this.getEntryValue<ClientPrincipal>(
+            PRINCIPALS_NAMESPACE,
+            this.principalKey(ref),
+        );
+        if (!stored) {
             return undefined;
         }
 
@@ -275,15 +282,22 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             await this.listSessionsForPrincipal(ref),
         );
 
-        return this.toSnapshot(principal, instances, activeSessions);
+        return this.toSnapshot(
+            stored.value,
+            instances,
+            activeSessions,
+            stored.entry.revision + 1,
+        );
     }
 
     private toSnapshot(
         principal: ClientPrincipal,
         instances: readonly ClientInstance[],
         activeSessions: readonly ClientSession[],
+        stateRevision: number,
     ): ClientSnapshot {
         return {
+            stateRevision,
             principal,
             instances,
             activeSessions,

@@ -3,7 +3,10 @@ import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { toScopedOverlayId, toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
-import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    type ALMessage,
+    readALTargetGroupRef,
+} from '@shared/al-contracts/al-contract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -37,22 +40,36 @@ import { GroupTopologyConfigRepository } from './repositories/GroupTopologyConfi
 import { RtcRttRepository, type RtcRttRepositoryOptions, } from './repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from './repositories/RtcTopologySnapshotRepository.ts';
 import type { RuntimeStateRepositoryLike } from '../runtime-state/RuntimeStateRepository.ts';
+import type { RtcTopologyPublicationRepository } from './repositories/RtcTopologyPublicationRepository.ts';
+import type { RtcTopologyPublicationFanout } from './pubsub/RtcTopologyClusterTransport.ts';
 
 export type InitRallarSystemWsTopicsOptions = Readonly<{
     initDynamicTopics?: boolean;
     dynamicTopicRouterOptions?: DynamicWsTopicRouterOptions;
     rtcTopologyService?: RallarRtcTopologyService;
     rtcTopologyOptions?: RallarRtcTopologyServiceOptions;
+    rtcTopologyManagement?: GroupTopologyManagementService;
+    observeGroupSnapshot?: (snapshot: GroupSnapshot) => void | Promise<void>;
+    observeClientSnapshot?: (snapshot: ClientSnapshot) => void | Promise<void>;
     rtcTopologyRuntimeState?: Readonly<{
         repository: RuntimeStateRepositoryLike;
         rttTtlMs?: number;
     }>;
+    rtcTopologyRepositories?: RtcTopologyRuntimeState;
     rtcTopologyAppOutbox?: Readonly<{
         outboxQueueReader: OutboxQueueReader;
         topicId?: string;
         senderId?: string;
         wake?: () => void;
         findGroupSnapshotByRef?: RtcTopologyGroupSnapshotResolver;
+        publicationRepository?: RtcTopologyPublicationRepository;
+        publicationFanout?: RtcTopologyPublicationFanout;
+        /**
+         * @deprecated Group mutations enqueue immutable topology work at the
+         * commit boundary. Enable only while draining an older integration
+         * that still relies on inbound group snapshots to create work.
+         */
+        scheduleTopologyForInboundGroupSnapshots?: boolean;
     }>;
 }>;
 
@@ -72,7 +89,8 @@ export function initRallarSystemWsTopics(
         new RallarRtcTopologyService(
             options.rtcTopologyOptions,
         );
-    const rtcTopologyRuntimeState = options.rtcTopologyRuntimeState
+    const rtcTopologyRuntimeState = options.rtcTopologyRepositories ??
+        (options.rtcTopologyRuntimeState
         ? createRtcTopologyRuntimeState(
             options.rtcTopologyRuntimeState.repository,
             {
@@ -80,7 +98,7 @@ export function initRallarSystemWsTopics(
                 now: options.rtcTopologyOptions?.now,
             },
         )
-        : undefined;
+        : undefined);
     const rtcTopologyFlushTimers = new Map<string, RtcTopologyFlushTimer>();
     let globalGraphRttRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
     const scheduleGlobalGraphRttRecompute = (): void => {
@@ -111,7 +129,8 @@ export function initRallarSystemWsTopics(
         rtcTopologyAppOutboxOptions?.findGroupSnapshotByRef ??
         ((ref: GroupRef) =>
             groupStateSnapshotsRepository.findGroupStateSnapshotByRef(ref));
-    const rtcTopologyManagement = new GroupTopologyManagementService({
+    const rtcTopologyManagement = options.rtcTopologyManagement ??
+        new GroupTopologyManagementService({
         findGroupSnapshotByRef,
         configRepository: rtcTopologyRuntimeState?.topologyConfig,
         topologyService: rtcTopologyService,
@@ -123,7 +142,7 @@ export function initRallarSystemWsTopics(
             topologyKind: options.rtcTopologyOptions?.topologyKind ?? 'auto',
         },
         now: options.rtcTopologyOptions?.now,
-    });
+        });
     const rtcTopologyAppOutbox = rtcTopologyAppOutboxOptions
         ? createRtcTopologyOutboxPublisher({
             outboxQueueReader: rtcTopologyAppOutboxOptions.outboxQueueReader,
@@ -143,6 +162,10 @@ export function initRallarSystemWsTopics(
                 findGroupSnapshotByRef,
                 topologyManagement: rtcTopologyManagement,
                 server: wsQBoxServerService.socket,
+                publicationRepository:
+                    rtcTopologyAppOutboxOptions.publicationRepository,
+                publicationFanout:
+                    rtcTopologyAppOutboxOptions.publicationFanout,
                 onInactiveOverlay: (overlayId) =>
                     clearRtcTopologyFlushTimer(
                         overlayId,
@@ -154,10 +177,14 @@ export function initRallarSystemWsTopics(
 
     initStateBroadcastTopic(AppTopics.clientStateSnapshot, wsQBoxServerService, (rawData) => {
         const data = rawData as ClientSnapshot;
-        clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId(
-            data.principal.principalId,
-            data,
-        );
+        if (options.observeClientSnapshot) {
+            return options.observeClientSnapshot(data);
+        } else {
+            clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId(
+                data.principal.principalId,
+                data,
+            );
+        }
     });
     initStateBroadcastTopic(AppTopics.clientStateEvent, wsQBoxServerService);
     const handleGroupStateSnapshot = async (
@@ -182,19 +209,35 @@ export function initRallarSystemWsTopics(
 
         await publishRtcOverlayTopology(data, server, rtcTopologyManagement);
     };
+    const scheduleTopologyForInboundGroupSnapshots =
+        !rtcTopologyAppOutbox ||
+        rtcTopologyAppOutboxOptions
+                ?.scheduleTopologyForInboundGroupSnapshots === true;
+    const handleInboundGroupStateSnapshot =
+        scheduleTopologyForInboundGroupSnapshots
+            ? handleGroupStateSnapshot
+            : undefined;
     initStateBroadcastTopic(
         AppTopics.groupStateSnapshot,
         wsQBoxServerService,
         (rawData) => {
             const data = rawData as GroupSnapshot;
-            groupStateSnapshotsRepository.setGroupStateSnapshot(data);
+            if (options.observeGroupSnapshot) {
+                return options.observeGroupSnapshot(data);
+            } else {
+                groupStateSnapshotsRepository.setGroupStateSnapshot(data);
+            }
         },
-        handleGroupStateSnapshot,
+        handleInboundGroupStateSnapshot,
         rtcTopologyAppOutbox ? undefined : handleGroupStateSnapshot,
     );
     initStateBroadcastTopic(AppTopics.groupDirectorySnapshot, wsQBoxServerService, (rawData) => {
         const data = rawData as GroupSnapshot;
-        groupStateSnapshotsRepository.setGroupStateSnapshot(data);
+        if (options.observeGroupSnapshot) {
+            return options.observeGroupSnapshot(data);
+        } else {
+            groupStateSnapshotsRepository.setGroupStateSnapshot(data);
+        }
     });
     initStateBroadcastTopic(AppTopics.groupStateEvent, wsQBoxServerService);
     initGraphsTopic(wsQBoxServerService);
@@ -208,6 +251,7 @@ export function initRallarSystemWsTopics(
         rtcTopologyManagement,
         rtcTopologyRuntimeState,
         scheduleGlobalGraphRttRecompute,
+        findGroupSnapshotByRef,
     );
     initRtcSignalingTopic(wsQBoxServerService);
     if (options.initDynamicTopics ?? true) {
@@ -222,7 +266,7 @@ function initStateBroadcastTopic(
         data: unknown,
         message: ALMessage,
         server: JsonWebSocketServer,
-    ) => void,
+    ) => void | Promise<void>,
     afterInbox?: (
         data: unknown,
         message: ALMessage,
@@ -245,7 +289,7 @@ function initStateBroadcastTopic(
             }
 
             const state = readState(data);
-            onState?.(state, data, server);
+            await onState?.(state, data, server);
             sendStateSyncMessage(server, data);
             await afterInbox?.(state, data, server);
         },
@@ -258,7 +302,7 @@ function initStateBroadcastTopic(
             }
 
             const state = readState(data);
-            onState?.(state, data, server);
+            await onState?.(state, data, server);
             sendStateSyncMessage(server, data);
             await afterOutbox?.(state, data, server);
         },
@@ -449,9 +493,17 @@ function scheduleRtcOverlayTopologyFlushesForRtt(
     }
 }
 
-function findGroupsAffectedByRtt(
+async function findGroupsAffectedByRtt(
     rtt: RttMeasurementInfo,
-): readonly GroupSnapshot[] {
+    message: ALMessage,
+    findGroupSnapshotByRef?: RtcTopologyGroupSnapshotResolver,
+): Promise<readonly GroupSnapshot[]> {
+    const groupRef = readALTargetGroupRef(message);
+    if (groupRef && findGroupSnapshotByRef) {
+        const snapshot = await findGroupSnapshotByRef(groupRef);
+        return snapshot ? [snapshot] : [];
+    }
+
     return groupStateSnapshotsRepository.findGroupStateSnapshotsBySessionIds([
         rtt.sessionIdFrom,
         rtt.sessionIdTo,
@@ -480,6 +532,7 @@ function initRttTopic(
     runtimeState?: RtcTopologyRuntimeState,
     scheduleGlobalGraphRttRecompute: () => void = () => {
     },
+    findGroupSnapshotByRef?: RtcTopologyGroupSnapshotResolver,
 ): void {
     wsQBoxServerService.onInboxMessageDo(AppTopics.rtt, {
         onMessage: async (data: ALMessage, _: ResourceEntry, server: JsonWebSocketServer) => {
@@ -491,7 +544,11 @@ function initRttTopic(
 
             console.log(`Received RTT message: ${data.payload.resource}`);
 
-            const candidateGroups = findGroupsAffectedByRtt(rtt);
+            const candidateGroups = await findGroupsAffectedByRtt(
+                rtt,
+                data,
+                findGroupSnapshotByRef,
+            );
             const overlaySnapshotsByGroupKey = await readOverlaySnapshotsForGroups(
                 candidateGroups,
                 rtcTopologyService,

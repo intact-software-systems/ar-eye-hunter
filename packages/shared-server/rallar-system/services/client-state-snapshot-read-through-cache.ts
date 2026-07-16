@@ -1,9 +1,14 @@
 import type { ClientPrincipalRef, ClientSnapshot, } from '@shared/api/client-types.ts';
-import { readClientVersion } from '@shared/api/group-client-views.ts';
 import {
-    findClientStateSnapshotByPrincipalId,
-    setClientStateSnapshotByPrincipalId,
+    readClientStateRevision,
+    readClientVersion,
+} from '@shared/api/group-client-views.ts';
+import {
+    findClientStateSnapshotByRef,
+    observeClientStateSnapshot,
+    toClientStateSnapshotRepositoryKey as toSharedClientStateSnapshotRepositoryKey,
 } from '@shared/repository/client-state-snapshots-repository.ts';
+import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
 import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import type { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
@@ -20,6 +25,7 @@ export type ClientStateSnapshotReadThroughCacheOptions = Readonly<{
 
 export type FindOrLoadClientStateSnapshotOptions = Readonly<{
     minSnapshotVersion?: number;
+    minStateRevision?: number;
 }>;
 
 export class ClientStateSnapshotNotFoundError extends Error {
@@ -45,34 +51,29 @@ export class ClientStateSnapshotReadThroughCache {
                     throw new ClientStateSnapshotNotFoundError(ref);
                 }
 
+                observeClientStateSnapshot(snapshot, options.manager);
                 return snapshot;
             },
             {
                 ttlMs: options.ttlMs ?? DEFAULT_TTL_MS,
-                equals: (left, right) => readClientVersion(left) === readClientVersion(right),
+                equals: (left, right) =>
+                    JSON.stringify(left) === JSON.stringify(right),
             },
         );
         this.snapshots.onChangeDo((event) => {
             if (event.value) {
-                setClientStateSnapshotByPrincipalId(
-                    event.value.principal.principalId,
-                    event.value,
-                    this.options.manager,
-                );
+                observeClientStateSnapshot(event.value, this.options.manager);
             }
         });
     }
 
+    public peek(ref: ClientPrincipalRef): ClientSnapshot | undefined {
+        return this.findByRef(ref);
+    }
+
     public findByRef(ref: ClientPrincipalRef): ClientSnapshot | undefined {
-        const latest = findClientStateSnapshotByPrincipalId(
-            ref.principalId,
-            this.options.manager,
-        );
-        if (
-            latest &&
-            isSameClientPrincipalRef(latest.principal, ref) &&
-            this.isPresenceFresh(latest)
-        ) {
+        const latest = findClientStateSnapshotByRef(ref, this.options.manager);
+        if (this.isPresenceFresh(latest)) {
             return latest;
         }
 
@@ -89,33 +90,22 @@ export class ClientStateSnapshotReadThroughCache {
         options: FindOrLoadClientStateSnapshotOptions = {},
     ): Promise<ClientSnapshot | undefined> {
         const key = toClientStateSnapshotRepositoryKey(ref);
-        const latest = findClientStateSnapshotByPrincipalId(
-            ref.principalId,
-            this.options.manager,
-        );
-        if (
-            latest &&
-            isSameClientPrincipalRef(latest.principal, ref) &&
-            this.isUsable(latest, options.minSnapshotVersion)
-        ) {
+        const latest = findClientStateSnapshotByRef(ref, this.options.manager);
+        if (this.isUsable(latest, options)) {
             return latest;
         }
 
         const loaned = this.snapshots.read(key);
-        if (this.isUsable(loaned, options.minSnapshotVersion)) {
-            setClientStateSnapshotByPrincipalId(
-                loaned.principal.principalId,
-                loaned,
-                this.options.manager,
-            );
+        if (this.isUsable(loaned, options)) {
+            observeClientStateSnapshot(loaned, this.options.manager);
             return loaned;
         }
 
-        return await this.loadByRef(
+        const loaded = await this.loadByRef(
             ref,
-            (latest !== undefined && isSameClientPrincipalRef(latest.principal, ref)) ||
-            loaned !== undefined,
+            latest !== undefined || loaned !== undefined,
         );
+        return this.isUsable(loaded, options) ? loaded : undefined;
     }
 
     public async refreshByRef(
@@ -128,6 +118,10 @@ export class ClientStateSnapshotReadThroughCache {
         await this.snapshots.whenIdle();
     }
 
+    public observe(snapshot: ClientSnapshot): StateSnapshotObservation {
+        return observeClientStateSnapshot(snapshot, this.options.manager);
+    }
+
     private async loadByRef(
         ref: ClientPrincipalRef,
         forceRefresh = false,
@@ -138,7 +132,8 @@ export class ClientStateSnapshotReadThroughCache {
                 ? await this.snapshots.refresh(key)
                 : await this.snapshots.get(key);
             await this.snapshots.whenIdle();
-            return snapshot;
+            return findClientStateSnapshotByRef(ref, this.options.manager) ??
+                snapshot;
         } catch (error) {
             if (error instanceof ClientStateSnapshotNotFoundError) {
                 return undefined;
@@ -150,13 +145,17 @@ export class ClientStateSnapshotReadThroughCache {
 
     private isUsable(
         snapshot: ClientSnapshot | undefined,
-        minSnapshotVersion: number | undefined,
+        options: FindOrLoadClientStateSnapshotOptions,
     ): snapshot is ClientSnapshot {
         return snapshot !== undefined &&
             this.isPresenceFresh(snapshot) &&
             (
-                minSnapshotVersion === undefined ||
-                readClientVersion(snapshot) >= minSnapshotVersion
+                options.minSnapshotVersion === undefined ||
+                readClientVersion(snapshot) >= options.minSnapshotVersion
+            ) &&
+            (
+                options.minStateRevision === undefined ||
+                readClientStateRevision(snapshot) >= options.minStateRevision
             );
     }
 
@@ -181,11 +180,7 @@ export function createClientStateSnapshotReadThroughCache(
 export function toClientStateSnapshotRepositoryKey(
     ref: ClientPrincipalRef,
 ): string {
-    return JSON.stringify([
-        ref.applicationId,
-        ref.workspaceId ?? '',
-        ref.principalId,
-    ]);
+    return toSharedClientStateSnapshotRepositoryKey(ref);
 }
 
 function fromClientStateSnapshotRepositoryKey(key: string): ClientPrincipalRef {
@@ -200,13 +195,4 @@ function fromClientStateSnapshotRepositoryKey(key: string): ClientPrincipalRef {
         workspaceId: workspaceId === '' ? undefined : workspaceId,
         principalId,
     };
-}
-
-function isSameClientPrincipalRef(
-    left: ClientPrincipalRef,
-    right: ClientPrincipalRef,
-): boolean {
-    return left.applicationId === right.applicationId &&
-        (left.workspaceId ?? '') === (right.workspaceId ?? '') &&
-        left.principalId === right.principalId;
 }

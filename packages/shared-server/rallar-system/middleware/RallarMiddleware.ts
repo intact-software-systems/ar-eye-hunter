@@ -18,9 +18,13 @@ import type { ClientStateRepository } from '../repositories/ClientStateRepositor
 import type { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import type { AppClientInboxService } from '../services/AppClientInboxService.ts';
 import type { AppGroupInboxService } from '../services/AppGroupInboxService.ts';
+import type { ClientStateService } from '../services/client-state-service.ts';
+import type { GroupStateService } from '../services/group-state-service.ts';
 import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import { isGroupSnapshotSessionLive, type RallarSnapshotPresenceClock, } from '../snapshot-presence.ts';
+import type { RtcTopologyPublicationRepository } from '../repositories/RtcTopologyPublicationRepository.ts';
+import type { RtcTopologyPublicationFanout } from '../pubsub/RtcTopologyClusterTransport.ts';
 
 export type RallarMiddlewareRuntime = Readonly<{
     qboxEngine: InboxOutboxEngine;
@@ -31,8 +35,13 @@ export type RallarMiddlewareRuntime = Readonly<{
     appOutboxResilience: ResilienceDto;
     appGroupInboxService: AppGroupInboxService;
     appClientInboxService: AppClientInboxService;
+    clientStateService: ClientStateService;
+    groupStateService: GroupStateService;
     clientsRepository: ClientStateRepository;
     groupsRepository: GroupStateRepository;
+    rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
+    rtcTopologyPublicationFanout?: RtcTopologyPublicationFanout;
+    readiness: Promise<void>;
 }>;
 
 export type RallarGroupSnapshotResolverOptions = Readonly<{
@@ -85,6 +94,9 @@ export type CreateRallarMiddlewareOptions = Readonly<{
     }>;
     clientsRepository: ClientStateRepository;
     groupsRepository: GroupStateRepository;
+    rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
+    rtcTopologyPublicationFanout?: RtcTopologyPublicationFanout;
+    readiness?: Promise<void>;
 }>;
 
 export function createRallarMiddleware(
@@ -162,8 +174,14 @@ export function createRallarMiddleware(
         appOutboxResilience,
         appGroupInboxService,
         appClientInboxService,
+        groupStateService: appGroupInboxService.groupStateService,
+        clientStateService: appClientInboxService.clientStateService,
         clientsRepository: options.clientsRepository,
         groupsRepository: options.groupsRepository,
+        rtcTopologyPublicationRepository:
+            options.rtcTopologyPublicationRepository,
+        rtcTopologyPublicationFanout: options.rtcTopologyPublicationFanout,
+        readiness: options.readiness ?? Promise.resolve(),
     };
 }
 

@@ -27,6 +27,8 @@ import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppG
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { createCachedClientStateService } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { myPublisherId, myServerId } from './runtime/runtime-identity.ts';
 import { toResilienceDto } from './middleware-resilience.ts';
@@ -43,6 +45,9 @@ import {
   createGroupStateSnapshotReadThroughCache,
 } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
 import {
+  createClientStateSnapshotReadThroughCache,
+} from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
+import {
   initPresenceExpiryReconciliation,
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
 import { getApiAppInboxServiceOptions, getApiTimingSink } from './services/timing-service.ts';
@@ -52,6 +57,9 @@ import {
   queuePubSubDeliveryForConfig,
   shouldInstallQueuePubSubBridge,
 } from './db/api-v1-queue-pubsub-bridge.ts';
+import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import { createRtcTopologyPublicationFanout } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
+import { createApiV1RtcTopologyClusterTransport } from './db/api-v1-rtc-topology-cluster-transport.ts';
 
 export type Middleware = RallarMiddlewareRuntime;
 
@@ -88,6 +96,21 @@ function initialise(): Middleware {
   const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
     groupsRepository,
   });
+  const clientSnapshotReadThroughCache = createClientStateSnapshotReadThroughCache({
+    clientsRepository,
+  });
+  const runtimeStateRepository = createRuntimeStateRepository(sql);
+  const rtcTopologyPublicationRepository =
+    new RtcTopologyPublicationRepository(runtimeStateRepository);
+  const rtcTopologyPublicationFanout = createRtcTopologyPublicationFanout({
+    publisherId: myPublisherId,
+    repository: rtcTopologyPublicationRepository,
+    transport: createApiV1RtcTopologyClusterTransport(
+      pubSubConfig,
+      myPublisherId,
+    ),
+    server: webSocketServer,
+  });
 
   configureServerWsQBoxALRuntimeStores(wsRuntimeName, { sql: postgresSql });
   initResourceInboxExpiryEviction(queueBox.repo).catch((e) =>
@@ -121,17 +144,21 @@ function initialise(): Middleware {
         senderId: myServerId,
         wake: wakeQueueEngine,
       });
-      return new AppGroupInboxService(
-        inboxQueueReader,
-        resourceInboxRepository,
-        resourceInboxResultsRepository,
-        createGroupStateService({
-          runtimeRepository: createRuntimeStateRepository(sql),
+      const groupStateService = createCachedGroupStateService({
+        durable: createGroupStateService({
+          runtimeRepository: runtimeStateRepository,
           createGroupStateEventStore: createGroupStateEventRepository,
           syncPublisher: stateSyncPublisher,
           serviceId: myServerId,
           timing,
         }),
+        cache: groupSnapshotReadThroughCache,
+      });
+      return new AppGroupInboxService(
+        inboxQueueReader,
+        resourceInboxRepository,
+        resourceInboxResultsRepository,
+        groupStateService,
         stateSyncPublisher,
         myServerId,
         timing,
@@ -144,17 +171,21 @@ function initialise(): Middleware {
         wsQBoxServerService,
         { serverId: myServerId, timing },
       );
-      return new AppClientInboxService(
-        inboxQueueReader,
-        resourceInboxRepository,
-        resourceInboxResultsRepository,
-        createClientStateService({
-          runtimeRepository: createRuntimeStateRepository(sql),
+      const clientStateService = createCachedClientStateService({
+        durable: createClientStateService({
+          runtimeRepository: runtimeStateRepository,
           createClientStateEventStore: createClientStateEventRepository,
           syncPublisher: stateSyncPublisher,
           serviceId: myServerId,
           timing,
         }),
+        cache: clientSnapshotReadThroughCache,
+      });
+      return new AppClientInboxService(
+        inboxQueueReader,
+        resourceInboxRepository,
+        resourceInboxResultsRepository,
+        clientStateService,
         stateSyncPublisher,
         myServerId,
         timing,
@@ -168,6 +199,9 @@ function initialise(): Middleware {
     },
     clientsRepository,
     groupsRepository,
+    rtcTopologyPublicationRepository,
+    rtcTopologyPublicationFanout,
+    readiness: rtcTopologyPublicationFanout.readiness,
   });
 
   if (shouldInstallQueuePubSubBridge(pubSubConfig)) {

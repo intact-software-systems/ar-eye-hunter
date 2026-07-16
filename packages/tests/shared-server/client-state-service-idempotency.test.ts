@@ -510,6 +510,45 @@ describe('ClientStateService command idempotency', () => {
             'session-heartbeat',
         ]);
     });
+
+    it('advances causal state revision for a heartbeat-only snapshot change', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        await seedConnectedSession(
+            runtimeRepository,
+            'alice',
+            'alice-browser',
+            'session-1',
+        );
+        const repository = new ClientStateRepository(runtimeRepository);
+        const principalRef = toClientPrincipalRef('alice');
+        const before = await repository.readSnapshot(principalRef);
+        const service = createClientStateService({
+            runtimeRepository,
+            syncPublisher: createPublisher(),
+            now: () => 2_000,
+            serviceId: 'client-service',
+        });
+
+        const written = await service.heartbeatSession(
+            SCOPE,
+            principalRef.principalId,
+            'alice-browser',
+            'session-1',
+            {
+                lastHeartbeatAtEpochMs: 2_000,
+                expiresAtEpochMs: 62_000,
+                requestId: 'heartbeat-causal-revision',
+            },
+        );
+
+        expect(written.result.right?.event).toBeUndefined();
+        expect(written.result.right?.snapshot.principal.snapshotVersion).toBe(
+            before?.principal.snapshotVersion,
+        );
+        expect(written.result.right?.snapshot.stateRevision).toBeGreaterThan(
+            before?.stateRevision ?? 0,
+        );
+    });
 });
 
 async function seedConnectedSession(

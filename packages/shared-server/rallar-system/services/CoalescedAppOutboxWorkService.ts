@@ -67,6 +67,7 @@ export type CoalescedAppOutboxWorkEnqueueResult<T extends object> = Readonly<{
     entry: ResourceEntry;
     previous?: ResourceEntry;
     envelope: CoalescedAppOutboxWorkEnvelope<T>;
+    blockedByReserved: boolean;
 }>;
 
 export class CoalescedAppOutboxWorkService {
@@ -87,6 +88,7 @@ export class CoalescedAppOutboxWorkService {
             incoming.data[COALESCED_APP_OUTBOX_WORK_FIELD].dueAtEpochMs,
             now,
         );
+        let blockedByReserved = false;
         const result = await this.outbox.outbox.enqueueOrUpdate(
             initialEntry,
             (previous) => {
@@ -98,6 +100,10 @@ export class CoalescedAppOutboxWorkService {
                 const isTerminal = isTerminalCoalescedStatus(previous.status);
                 const previousMetadata =
                     previousEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD];
+                if (previous.status === EntityStatus.RESERVED) {
+                    blockedByReserved = true;
+                    return previous;
+                }
                 const mergedData = !isTerminal && input.merge
                     ? input.merge(previousEnvelope.data, incoming.data, previous)
                     : incoming.data;
@@ -113,15 +119,6 @@ export class CoalescedAppOutboxWorkService {
                     },
                 };
                 const nextEntry = this.toQueueEntry(nextEnvelope);
-
-                if (previous.status === EntityStatus.RESERVED) {
-                    return {
-                        ...nextEntry,
-                        audit: previous.audit,
-                        status: EntityStatus.RESERVED,
-                        dequeueAudit: previous.dequeueAudit,
-                    };
-                }
 
                 if (isTerminal) {
                     return this.toScheduledEntry(
@@ -147,6 +144,7 @@ export class CoalescedAppOutboxWorkService {
         return {
             ...result,
             envelope: this.readEnvelope<T>(result.entry),
+            blockedByReserved,
         };
     }
 

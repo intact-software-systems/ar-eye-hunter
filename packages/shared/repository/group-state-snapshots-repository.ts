@@ -18,6 +18,12 @@ import {
     type ReadableKeyedValues,
 } from '@shared/cache/RepositoryInterfaces.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
+import {
+    decideStateSnapshotRevision,
+    type StateSnapshotObservation,
+    type StateSnapshotRevisionDecision,
+    toStateSnapshotObservation,
+} from './state-snapshot-revision.ts';
 
 export type GroupStateSnapshotRepositoryOptions =
     & Omit<
@@ -189,16 +195,37 @@ export function setGroupStateSnapshot(
     snapshot: GroupSnapshot,
     manager?: RepositoryManager,
 ): boolean {
+    const decision = writeGroupStateSnapshot(snapshot, manager);
+    return decision === 'inserted' || decision === 'advanced';
+}
+
+export function observeGroupStateSnapshot(
+    snapshot: GroupSnapshot,
+    manager?: RepositoryManager,
+): StateSnapshotObservation {
+    return toStateSnapshotObservation(
+        writeGroupStateSnapshot(snapshot, manager),
+    );
+}
+
+function writeGroupStateSnapshot(
+    snapshot: GroupSnapshot,
+    manager?: RepositoryManager,
+): StateSnapshotRevisionDecision {
     const repository = requireGroupStateSnapshotRepository(manager);
     const repositoryKey = toGroupStateSnapshotRepositoryKey(snapshot.group);
     const current = repository.read(repositoryKey);
     const previousForIndex = repository.peek(repositoryKey);
-    const nextVersion = toGroupSnapshotVersion(snapshot);
-    const currentVersion = current
-        ? toGroupSnapshotVersion(current)
-        : undefined;
+    const decision = decideStateSnapshotRevision({
+        entity: 'Group',
+        current,
+        incoming: snapshot,
+        stateRevisionOf: (value) => value.stateRevision,
+        legacyVersionOf: toGroupSnapshotVersion,
+        equals: jsonEquals,
+    });
 
-    if (!current) {
+    if (decision === 'inserted' || decision === 'advanced') {
         repository.set(repositoryKey, snapshot);
         replaceGroupSnapshotInSessionIndex(
             repository,
@@ -206,10 +233,16 @@ export function setGroupStateSnapshot(
             previousForIndex,
             snapshot,
         );
-        return true;
+        if (decision === 'advanced') {
+            console.log(`Received updated group snapshot: ${snapshot.group.groupId}`);
+        }
+        return decision;
     }
 
-    if (currentVersion !== undefined && nextVersion > currentVersion) {
+    if (decision === 'legacy-refreshed') {
+        console.warn(
+            `Received divergent legacy group snapshot at version ${toGroupSnapshotVersion(snapshot)}: ${snapshot.group.groupId}`,
+        );
         repository.set(repositoryKey, snapshot);
         replaceGroupSnapshotInSessionIndex(
             repository,
@@ -217,21 +250,9 @@ export function setGroupStateSnapshot(
             previousForIndex,
             snapshot,
         );
-        console.log(`Received updated group snapshot: ${snapshot.group.groupId}`);
-        return true;
     }
 
-    if (currentVersion === nextVersion && !jsonEquals(current, snapshot)) {
-        repository.set(repositoryKey, snapshot);
-        replaceGroupSnapshotInSessionIndex(
-            repository,
-            repositoryKey,
-            previousForIndex,
-            snapshot,
-        );
-    }
-
-    return false;
+    return decision;
 }
 
 export function removeGroupStateSnapshotByRef(

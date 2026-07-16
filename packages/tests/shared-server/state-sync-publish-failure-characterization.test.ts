@@ -35,6 +35,10 @@ import {
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
+import { createCachedClientStateService } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
+import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
+import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
@@ -392,15 +396,21 @@ function createGroupAppInbox(
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
+    const groupsRepository = new GroupStateRepository(runtimeRepository);
     const appInbox = new AppGroupInboxService(
         reader,
         queue as never,
         results as never,
-        createGroupStateService({
-            runtimeRepository,
-            syncPublisher: publisher,
-            now: () => now,
-            serviceId: 'state-service',
+        createCachedGroupStateService({
+            durable: createGroupStateService({
+                runtimeRepository,
+                syncPublisher: publisher,
+                now: () => now,
+                serviceId: 'state-service',
+            }),
+            cache: createGroupStateSnapshotReadThroughCache({
+                groupsRepository,
+            }),
         }),
         publisher,
         'state-service',
@@ -430,15 +440,21 @@ function createClientAppInbox(
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
+    const clientsRepository = new ClientStateRepository(runtimeRepository);
     const appInbox = new AppClientInboxService(
         reader,
         queue as never,
         results as never,
-        createClientStateService({
-            runtimeRepository,
-            syncPublisher: publisher,
-            now: () => now,
-            serviceId: 'state-service',
+        createCachedClientStateService({
+            durable: createClientStateService({
+                runtimeRepository,
+                syncPublisher: publisher,
+                now: () => now,
+                serviceId: 'state-service',
+            }),
+            cache: createClientStateSnapshotReadThroughCache({
+                clientsRepository,
+            }),
         }),
         publisher,
         'state-service',

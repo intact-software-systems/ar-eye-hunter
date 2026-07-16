@@ -1369,6 +1369,11 @@ export function createGroupStateService(
                         serviceId,
                     );
                     await repository.appendEvent(event);
+                } else {
+                    // The session row changed even though the public domain
+                    // version did not. Touch the aggregate row so its durable
+                    // revision remains a causal revision for the full snapshot.
+                    await repository.putGroup(snapshotGroup);
                 }
 
                 return await addIdempotentGroupMutationWritten(
@@ -1462,6 +1467,10 @@ export function createGroupStateService(
                         serviceId,
                     );
                     await repository.appendEvent(event);
+                } else {
+                    // Heartbeat/TTL state is part of GroupSnapshot. Advance the
+                    // aggregate row revision without changing snapshotVersion.
+                    await repository.putGroup(snapshotGroup);
                 }
 
                 return await addIdempotentGroupMutationWritten(

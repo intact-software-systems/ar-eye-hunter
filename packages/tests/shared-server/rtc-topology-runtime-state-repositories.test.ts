@@ -7,8 +7,13 @@ import {
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+    RtcTopologySnapshotRevisionConflictError,
     RtcTopologySnapshotRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+import {
+    RtcTopologyPublicationRepository,
+} from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import type { ALMessage } from '@shared/mod.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('RTC topology runtime-state repositories', () => {
@@ -29,6 +34,59 @@ describe('RTC topology runtime-state repositories', () => {
                 key: repository.snapshotKey(groupRef),
             },
         ]);
+    });
+
+    it('observes topology snapshots monotonically by source revision before version', async () => {
+        const repository = new RtcTopologySnapshotRepository(
+            new FakeRuntimeStateRepository(),
+        );
+        const groupRef = createGroupRef();
+        const revision2 = {
+            ...createTopologySnapshot(groupRef, 1),
+            sourceGroupStateRevision: 2,
+        };
+        const revision1WithHigherOverlayVersion = {
+            ...createTopologySnapshot(groupRef, 9),
+            sourceGroupStateRevision: 1,
+        };
+
+        expect(await repository.observeSnapshot(revision2)).toBe('inserted');
+        expect(await repository.observeSnapshot(revision1WithHigherOverlayVersion))
+            .toBe('stale');
+        expect(await repository.findSnapshot(groupRef)).toEqual(revision2);
+        expect(await repository.observeSnapshot(revision2)).toBe('duplicate');
+        await expect(repository.observeSnapshot({
+            ...revision2,
+            name: 'conflicting payload',
+        })).rejects.toBeInstanceOf(RtcTopologySnapshotRevisionConflictError);
+    });
+
+    it('persists immutable topology publications and reuses the first retry result', async () => {
+        const repository = new RtcTopologyPublicationRepository(
+            new FakeRuntimeStateRepository(),
+        );
+        const publication = {
+            publicationId: 'publication-1',
+            workId: 'work-1',
+            groupRef: createGroupRef(),
+            sourceGroupStateRevision: 3,
+            overlayVersion: 2,
+            recipientSessionIds: ['session-a'],
+            message: { id: 'message-1' } as unknown as ALMessage,
+            createdAtEpochMs: Date.now(),
+        };
+
+        expect(await repository.putOrLoad(publication)).toEqual({
+            publication,
+            inserted: true,
+        });
+        expect(await repository.putOrLoad({
+            ...publication,
+            recipientSessionIds: ['session-b'],
+        })).toEqual({
+            publication,
+            inserted: false,
+        });
     });
 
     it('keeps latest RTT measurements by sorted pair and expires stale entries', async () => {

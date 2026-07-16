@@ -419,6 +419,7 @@ export function createClientStateService(
 
                 let event: ClientEvent | undefined;
                 let snapshotPrincipal = principal;
+                let principalWritten = false;
                 if (existing && isSameActiveClientSession(existing, session)) {
                     const nextPrincipal = rememberPrincipalLastSeen(
                         principal,
@@ -426,6 +427,7 @@ export function createClientStateService(
                     );
                     if (nextPrincipal !== principal) {
                         await repository.putPrincipal(nextPrincipal);
+                        principalWritten = true;
                         snapshotPrincipal = nextPrincipal;
                     }
                 } else {
@@ -437,6 +439,7 @@ export function createClientStateService(
                         serviceId,
                     );
                     await repository.putPrincipal(snapshotPrincipal);
+                    principalWritten = true;
 
                     event = newClientEvent(
                         'session-connected',
@@ -449,6 +452,9 @@ export function createClientStateService(
                     );
 
                     await repository.appendEvent(event);
+                }
+                if (!principalWritten) {
+                    await repository.putPrincipal(snapshotPrincipal);
                 }
 
                 return await addIdempotentClientMutationWritten(
@@ -532,6 +538,7 @@ export function createClientStateService(
 
                 let event: ClientEvent | undefined;
                 let snapshotPrincipal = principal;
+                let principalWritten = false;
                 if (wasSemanticallyActive) {
                     const nextPrincipal = rememberPrincipalLastSeen(
                         principal,
@@ -539,6 +546,7 @@ export function createClientStateService(
                     );
                     if (nextPrincipal !== principal) {
                         await repository.putPrincipal(nextPrincipal);
+                        principalWritten = true;
                         snapshotPrincipal = nextPrincipal;
                     }
                 } else {
@@ -550,6 +558,7 @@ export function createClientStateService(
                         serviceId,
                     );
                     await repository.putPrincipal(snapshotPrincipal);
+                    principalWritten = true;
 
                     event = newClientEvent(
                         'session-heartbeat',
@@ -561,6 +570,9 @@ export function createClientStateService(
                         sessionId,
                     );
                     await repository.appendEvent(event);
+                }
+                if (!principalWritten) {
+                    await repository.putPrincipal(snapshotPrincipal);
                 }
 
                 return await addIdempotentClientMutationWritten(

@@ -58,6 +58,7 @@ rallar.system
   .useWebSocketLifecycle();
 rallar.ws.mount(app);
 rallar.rest.mount(app);
+await rallar.runtime.readiness;
 rallar.start();
 
 const port = readServerPort();

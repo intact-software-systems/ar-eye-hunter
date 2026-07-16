@@ -19,6 +19,7 @@ import * as clientStateSnapshotsRepository from '@shared/repository/client-state
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { latestRttById } from '@shared/repository/rtt-repository.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
+import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
@@ -136,12 +137,12 @@ describe('Rallar system websocket topics RTC topology', () => {
 
         expect(topologyService.readMetrics()).toMatchObject({
             topologyPublishAttemptCount: 2,
-            topologyPublishedCount: 1,
-            topologyPublishSkippedUnchangedCount: 1,
+            topologyPublishedCount: 2,
+            topologyPublishSkippedUnchangedCount: 0,
         });
     });
 
-    it('removes cached topology from terminal app-outbox work when a group becomes inactive', async () => {
+    it('processes immutable app-outbox work without scheduling from inbound snapshots', async () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
@@ -172,6 +173,9 @@ describe('Rallar system websocket topics RTC topology', () => {
         const topologyService = new RallarRtcTopologyService();
         const appOutbox = new InMemoryQueueBox(new Map());
         const outboxQueueReader = new OutboxQueueReader(appOutbox);
+        const topologyOutbox = createRtcTopologyOutboxPublisher({
+            outboxQueueReader,
+        });
         initRallarSystemWsTopics(service, {
             rtcTopologyService: topologyService,
             rtcTopologyRuntimeState: {
@@ -208,7 +212,9 @@ describe('Rallar system websocket topics RTC topology', () => {
             ),
         );
 
+        expect(await appOutbox.getAllKeys()).toEqual([]);
         expect(countSentTopologyMessages(sockets)).toBe(0);
+        await topologyOutbox.publisher.enqueueForGroupSnapshot(group);
         await outboxQueueReader.dequeueOutbox(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
             createResilience(),
@@ -243,6 +249,8 @@ describe('Rallar system websocket topics RTC topology', () => {
             ),
         );
 
+        expect(await appOutbox.getAllKeys()).toHaveLength(1);
+        await topologyOutbox.publisher.enqueueForGroupSnapshot(archivedGroup);
         await outboxQueueReader.dequeueOutbox(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
             createResilience(),
@@ -684,7 +692,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         }
     });
 
-    it('routes inbound group-triggered topology recomputes through app outbox ownership', async () => {
+    it('retains opt-in legacy inbound group topology scheduling', async () => {
         configureTestCacheRepositories();
 
         const server = new JsonWebSocketServer();
@@ -707,6 +715,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
                 findGroupSnapshotByRef,
+                scheduleTopologyForInboundGroupSnapshots: true,
             },
         });
         clientStateSnapshotsRepository.setClientStateSnapshots([
@@ -741,9 +750,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             createResilience(),
         );
 
-        expect(findGroupSnapshotByRef).toHaveBeenCalledWith(group.group, {
-            minSnapshotVersion: 1,
-        });
+        expect(findGroupSnapshotByRef).not.toHaveBeenCalled();
         expect(countSentTopologyMessages(createSocketsFrom([
             senderSocket,
             peerSocket,
@@ -837,6 +844,8 @@ describe('Rallar system websocket topics RTC topology', () => {
                 server,
                 'server-1',
             );
+            const group = createGroupSnapshot('room-1', [...sockets.keys()]);
+            const findGroupSnapshotByRef = vi.fn(async () => group);
             initRallarSystemWsTopics(service, {
                 rtcTopologyOptions: {
                     rttRebuildDebounceMs: 100,
@@ -844,10 +853,10 @@ describe('Rallar system websocket topics RTC topology', () => {
                 rtcTopologyAppOutbox: {
                     outboxQueueReader,
                     wake,
+                    findGroupSnapshotByRef,
                 },
             });
 
-            const group = createGroupSnapshot('room-1', [...sockets.keys()]);
             clientStateSnapshotsRepository.setClientStateSnapshots(
                 [...sockets.keys()].map(createClientSnapshot),
             );
@@ -869,6 +878,8 @@ describe('Rallar system websocket topics RTC topology', () => {
                     },
                 ),
             );
+            await createRtcTopologyOutboxPublisher({ outboxQueueReader })
+                .publisher.enqueueForGroupSnapshot(group);
 
             await outboxQueueReader.dequeueOutbox(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
@@ -879,6 +890,9 @@ describe('Rallar system websocket topics RTC topology', () => {
             for (const socket of sockets.values()) {
                 socket.sent.length = 0;
             }
+            groupStateSnapshotsRepository.removeGroupStateSnapshotByRef(
+                group.group,
+            );
 
             const fullSnapshotScan = vi.spyOn(
                 groupStateSnapshotsRepository,
@@ -906,10 +920,16 @@ describe('Rallar system websocket topics RTC topology', () => {
                     ),
                 );
             }
+            groupStateSnapshotsRepository.setGroupStateSnapshot(group);
 
             expect(fullSnapshotScan).not.toHaveBeenCalled();
             fullSnapshotScan.mockRestore();
             expect(wake).toHaveBeenCalled();
+            expect(findGroupSnapshotByRef).toHaveBeenCalledWith({
+                applicationId: group.group.applicationId,
+                workspaceId: group.group.workspaceId,
+                groupId: group.group.groupId,
+            });
             expect(countSentTopologyMessages(sockets)).toBe(0);
 
             await outboxQueueReader.dequeueOutbox(
@@ -987,6 +1007,9 @@ describe('Rallar system websocket topics RTC topology', () => {
                     },
                 ),
             );
+            await createRtcTopologyOutboxPublisher({
+                outboxQueueReader: workerA.outboxQueueReader,
+            }).publisher.enqueueForGroupSnapshot(group);
 
             await workerA.outboxQueueReader.dequeueOutbox(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
