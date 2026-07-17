@@ -18,6 +18,21 @@ export type RtcTopologySnapshotObservation =
     | 'duplicate'
     | 'stale';
 
+export type RtcTopologySnapshotCommitResult =
+    | Readonly<{
+        status: 'accepted';
+        observation: Exclude<RtcTopologySnapshotObservation, 'stale'>;
+        snapshot: RallarOverlayTopologySnapshot;
+    }>
+    | Readonly<{
+        status: 'retry';
+        current?: RallarOverlayTopologySnapshot;
+    }>
+    | Readonly<{
+        status: 'superseded';
+        current: RallarOverlayTopologySnapshot;
+    }>;
+
 export class RtcTopologySnapshotRevisionConflictError extends Error {
     constructor(readonly ref: GroupRef) {
         super(
@@ -65,6 +80,39 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
             }
             return decision;
         });
+    }
+
+    async commitSnapshot(input: Readonly<{
+        expected?: RallarOverlayTopologySnapshot;
+        candidate: RallarOverlayTopologySnapshot;
+    }>): Promise<RtcTopologySnapshotCommitResult> {
+        return await this.withSnapshotLock(
+            input.candidate.groupRef,
+            async (repository) => {
+                const current = await repository.findSnapshot(
+                    input.candidate.groupRef,
+                );
+                if (!sameSnapshot(current, input.expected)) {
+                    return { status: 'retry', current };
+                }
+
+                const observation = decideTopologySnapshot(
+                    current,
+                    input.candidate,
+                );
+                if (observation === 'stale') {
+                    return { status: 'superseded', current: current! };
+                }
+                if (observation === 'inserted' || observation === 'advanced') {
+                    await repository.putSnapshot(input.candidate);
+                }
+                return {
+                    status: 'accepted',
+                    observation,
+                    snapshot: input.candidate,
+                };
+            },
+        );
     }
 
     async removeSnapshot(ref: GroupRef): Promise<void> {
@@ -128,4 +176,11 @@ export function compareTopologyTuple(
     right: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateRevision' | 'version'>,
 ): number {
     return compareOverlayTopologyCausalTuple(left, right);
+}
+
+function sameSnapshot(
+    left: RallarOverlayTopologySnapshot | undefined,
+    right: RallarOverlayTopologySnapshot | undefined,
+): boolean {
+    return left === right || JSON.stringify(left) === JSON.stringify(right);
 }

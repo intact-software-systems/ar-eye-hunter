@@ -708,20 +708,16 @@ describe('Rallar system websocket topics RTC topology', () => {
         }
     });
 
-    it('retains opt-in legacy inbound group topology scheduling', async () => {
+    it('does not create topology work from an inbound group snapshot when app outbox owns topology', async () => {
         configureTestCacheRepositories();
 
         const server = new JsonWebSocketServer();
         const senderSocket = new FakeSocket();
-        const peerSocket = new FakeSocket();
         server.addConnection(new ConnectionContext('session-a', senderSocket as never));
-        server.addConnection(new ConnectionContext('session-b', peerSocket as never));
 
-        const appOutboxQueue = new InMemoryQueueBox(new Map());
+        const appOutbox = new InMemoryQueueBox(new Map());
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const outboxQueueReader = new OutboxQueueReader(appOutboxQueue);
-        const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
-        const findGroupSnapshotByRef = vi.fn(async () => group);
+        const outboxQueueReader = new OutboxQueueReader(appOutbox);
         const service = new WsQueueBoxServerService(
             new InMemoryQueueBox(new Map()),
             new InMemoryQueueBox(new Map()),
@@ -736,14 +732,9 @@ describe('Rallar system websocket topics RTC topology', () => {
                     server,
                     'server-1',
                 ),
-                findGroupSnapshotByRef,
-                scheduleTopologyForInboundGroupSnapshots: true,
             },
         });
-        clientStateSnapshotsRepository.setClientStateSnapshots([
-            createClientSnapshot('session-a'),
-            createClientSnapshot('session-b'),
-        ]);
+        const group = createGroupSnapshot('room-1', ['session-a']);
 
         await senderSocket.dispatchMessage(
             newALBroadcastMessage(
@@ -756,27 +747,16 @@ describe('Rallar system websocket topics RTC topology', () => {
                 'room',
                 AppTopics.groupStateSnapshot,
                 group,
-                {
-                    groupRef: group.group,
-                },
+                { groupRef: group.group },
             ),
         );
 
-        expect(countSentTopologyMessages(createSocketsFrom([
-            senderSocket,
-            peerSocket,
-        ]))).toBe(0);
-
-        await outboxQueueReader.dequeueOutbox(
+        const resilience = createResilience();
+        expect(await appOutbox.isAnyEntryToLock(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-            createResilience(),
-        );
-
-        expect(findGroupSnapshotByRef).not.toHaveBeenCalled();
-        expect(countSentTopologyMessages(createSocketsFrom([
-            senderSocket,
-            peerSocket,
-        ]))).toBe(2);
+            resilience.checkReserveTimeouts.isEntryRateLimiter,
+            resilience.checkFailed.isEntryRateLimiter,
+        )).toBe(false);
     });
 
     it('does not create topology work while draining a local WS_OUTBOX snapshot', async () => {

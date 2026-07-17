@@ -32,6 +32,15 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 
 - Prefer `GroupRef` over bare `groupId` when application/workspace scope matters.
 - Do not trust warm in-memory presence blindly; check expiry and durable read-through paths.
+- Prefer optimistic reconciliation for replicated state. Accept monotonic newer
+  observations. Ignore stale observations without failing the consumer, and
+  treat equal-revision/different-content data as invariant corruption.
+- Keep graph planning and recomputation outside locks. Use short, fixed-order
+  compare-and-commit transactions, then retry when the predecessor moves.
+- Optimistic and permissive does not mean weak contracts. Require causal fields
+  on snapshots and durable work; reserve hard rejection for malformed or
+  wrongly scoped data, authorization failures, invariant corruption, resource
+  caps, and exhausted retry or connection-attempt budgets.
 - Keep browser ergonomics, but diagnose ambiguity where string room IDs can cross scopes.
 - Use `rallar.rooms.createAndSwitch(...)` for browser flows where creating a new
   room should leave the previous current room. Plain `rooms.create(...)` keeps

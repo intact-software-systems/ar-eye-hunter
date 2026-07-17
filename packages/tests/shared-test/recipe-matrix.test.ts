@@ -371,6 +371,36 @@ describe('black-box runner recipe matrix', () => {
         )).toBe(true);
     });
 
+    it('defines bounded two-server multi-client and multi-group churn coverage', () => {
+        const { entries } = readMatrix();
+        const entry = entries.find(candidate =>
+            candidate.id === 'api-v1-state-topology-churn'
+        );
+
+        expect(entry).toMatchObject({
+            category: 'api-v1-black-box',
+            mode: 'run',
+            expectedExitCode: 0,
+            profiles: ['api-v1-black-box-cluster'],
+        });
+        expect(entry?.requires?.playwright).not.toBe(true);
+
+        const recipe = readRecipe(entry!.recipe);
+        const parallel = (recipe.steps as Array<Record<string, unknown>>)
+            .find(step => step.name === 'runConcurrentClientChurn') as {
+                type?: string;
+                groups?: Array<{ steps?: Array<Record<string, unknown>> }>;
+            };
+        expect(parallel.type).toBe('parallel');
+        expect(parallel.groups).toHaveLength(2);
+        expect(parallel.groups?.map(group => {
+            const loop = group.steps?.find(step => step.type === 'loop');
+            return loop?.count;
+        })).toEqual([6, 6]);
+        expect(JSON.stringify(recipe)).toContain('disconnect');
+        expect(JSON.stringify(recipe)).toContain('topology/reconfigure');
+    });
+
     it('advertises the API-v1 profile in recipe-matrix CLI usage', () => {
         const source = readFileSync(path.join(runnerRoot, 'recipe-matrix.mts'), 'utf8');
 

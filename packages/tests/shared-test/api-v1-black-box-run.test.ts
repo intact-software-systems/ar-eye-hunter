@@ -10,6 +10,7 @@ import {
     parseApiV1BlackBoxArgs,
     readBoundedLogTail,
     toApiV1BlackBoxEnvironment,
+    toClusterRecipeMatrixCommand,
     toManagedApiServerPlans,
     toApiV1ServerCommand,
     waitForManagedApiReady,
@@ -356,6 +357,23 @@ describe('api-v1 black-box run helper', () => {
             '--allow-env',
             '--allow-read',
             'apps/api-v1/src/main.ts',
+        ]);
+    });
+
+    it('runs every two-server cluster recipe through the cluster profile', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--secondary-port=18081',
+        ]);
+
+        expect(toClusterRecipeMatrixCommand(options, '/tmp/api-v1-bb')).toEqual([
+            'deno',
+            'run',
+            '-A',
+            'packages/shared-test/black-box-runner/recipe-matrix.mts',
+            '--profile=api-v1-black-box-cluster',
+            '--require-gates',
+            '--artifact-dir=/tmp/api-v1-bb/cluster',
         ]);
     });
 

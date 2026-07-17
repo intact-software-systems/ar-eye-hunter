@@ -64,12 +64,6 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
         findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
         executionRepository: RtcTopologyExecutionRepository;
         publicationFanout: RtcTopologyPublicationFanout;
-        /**
-         * @deprecated Group mutations enqueue immutable topology work at the
-         * commit boundary. Enable only while draining an older integration
-         * that still relies on inbound group snapshots to create work.
-         */
-        scheduleTopologyForInboundGroupSnapshots?: boolean;
     }>;
 }>;
 
@@ -206,14 +200,6 @@ export function initRallarSystemWsTopics(
 
         await publishRtcOverlayTopology(data, server, rtcTopologyManagement);
     };
-    const scheduleTopologyForInboundGroupSnapshots =
-        !rtcTopologyAppOutbox ||
-        rtcTopologyAppOutboxOptions
-                ?.scheduleTopologyForInboundGroupSnapshots === true;
-    const handleInboundGroupStateSnapshot =
-        scheduleTopologyForInboundGroupSnapshots
-            ? handleGroupStateSnapshot
-            : undefined;
     initStateBroadcastTopic(
         AppTopics.groupStateSnapshot,
         wsQBoxServerService,
@@ -225,7 +211,7 @@ export function initRallarSystemWsTopics(
                 groupStateSnapshotsRepository.setGroupStateSnapshot(data);
             }
         },
-        handleInboundGroupStateSnapshot,
+        rtcTopologyAppOutbox ? undefined : handleGroupStateSnapshot,
         rtcTopologyAppOutbox ? undefined : handleGroupStateSnapshot,
     );
     initStateBroadcastTopic(AppTopics.groupDirectorySnapshot, wsQBoxServerService, (rawData) => {

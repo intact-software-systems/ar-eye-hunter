@@ -243,9 +243,16 @@ export class RallarRtcTopologyService {
             rttMeasurements,
             options,
         );
-        this.observeTopologySnapshot(result.snapshot);
-        this.pendingRttUpdateDueAtByOverlayId.delete(result.snapshot.overlayId);
+        this.observeCommittedTopologySnapshot(result.snapshot);
         return result;
+    }
+
+    observeCommittedTopologySnapshot(
+        snapshot: RallarOverlayTopologySnapshot,
+    ): boolean {
+        const changed = this.observeTopologySnapshot(snapshot);
+        this.pendingRttUpdateDueAtByOverlayId.delete(snapshot.overlayId);
+        return changed;
     }
 
     planGroupTopology(

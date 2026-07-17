@@ -63,7 +63,7 @@ const SCRIPT_DIR = new URL('.', import.meta.url)
 const REPO_ROOT = new URL('../../../', SCRIPT_DIR)
 const API_CONFIG_PATH = 'apps/api-v1/deno.json'
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts'
-const API_V1_CLUSTER_MATRIX_ID = 'api-v1-rtc-topology-convergence'
+const API_V1_CLUSTER_MATRIX_PROFILE = 'api-v1-black-box-cluster'
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb'
 const LOG_TAIL_MAX_BYTES = 4096
 const MANAGED_SECRET_ENV_KEY = /(?:^|_)(?:PASSWORD|PASSWD|TOKEN|SECRET|DATABASE_URL|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)(?:_|$)/i
@@ -239,7 +239,7 @@ function toRecipeMatrixCommand(options: ApiV1BlackBoxOptions, artifactDir: strin
     ]
 }
 
-function toClusterRecipeMatrixCommand(
+export function toClusterRecipeMatrixCommand(
     options: ApiV1BlackBoxOptions,
     artifactDir: string,
 ): readonly string[] {
@@ -248,7 +248,7 @@ function toClusterRecipeMatrixCommand(
         'run',
         '-A',
         'packages/shared-test/black-box-runner/recipe-matrix.mts',
-        `--id=${API_V1_CLUSTER_MATRIX_ID}`,
+        `--profile=${API_V1_CLUSTER_MATRIX_PROFILE}`,
         ...(options.requireGates ? ['--require-gates'] : []),
         `--artifact-dir=${artifactDir.replace(/\/+$/, '')}/cluster`,
     ]

@@ -65,6 +65,42 @@ describe('RTC topology runtime-state repositories', () => {
         })).rejects.toBeInstanceOf(RtcTopologySnapshotRevisionConflictError);
     });
 
+    it('accepts a topology candidate only for the exact durable predecessor', async () => {
+        const repository = new RtcTopologySnapshotRepository(
+            new FakeRuntimeStateRepository(),
+        );
+        const groupRef = createGroupRef();
+        const revision1 = createTopologySnapshot(groupRef, 1);
+        const revision2 = {
+            ...createTopologySnapshot(groupRef, 2),
+            sourceGroupStateRevision: 2,
+        };
+
+        await expect(repository.commitSnapshot({
+            expected: undefined,
+            candidate: revision1,
+        })).resolves.toEqual({
+            status: 'accepted',
+            observation: 'inserted',
+            snapshot: revision1,
+        });
+        await expect(repository.commitSnapshot({
+            expected: undefined,
+            candidate: revision2,
+        })).resolves.toEqual({
+            status: 'retry',
+            current: revision1,
+        });
+        await expect(repository.commitSnapshot({
+            expected: revision1,
+            candidate: revision2,
+        })).resolves.toEqual({
+            status: 'accepted',
+            observation: 'advanced',
+            snapshot: revision2,
+        });
+    });
+
     it('persists immutable topology publications and reuses the first retry result', async () => {
         const repository = new RtcTopologyPublicationRepository(
             new FakeRuntimeStateRepository(),

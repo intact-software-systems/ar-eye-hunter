@@ -19,6 +19,32 @@ and durable topology publications make retries and reordered delivery safe.
 - Keep `APP_OUTBOX` terminal: topology work must not create another queue item.
 - Avoid process locks and aggregate-wide transaction locks.
 
+## Architecture Decision Rules
+
+Rallar uses strong data contracts to enable permissive distributed execution.
+Authoritative, persisted, queued, or replicated records require their causal
+fields. Optional fields are appropriate only when absence has domain meaning;
+they are not a compatibility mechanism for authoritative state. Input drafts
+that genuinely lack fields use a separate input type or a discriminated union.
+
+Once input is well formed, convergence is optimistic:
+
+- read without locking and retry when a revision moves;
+- calculate expensive work outside transactions;
+- accept newer causal state and ignore older state;
+- use a short compare-and-commit transaction at the durable boundary;
+- allow duplicate delivery when the receiver can identify it exactly.
+
+Hard rejection remains correct for malformed or wrong-scope data,
+authorization failures, equal-revision/different-content conflicts, violated
+topology invariants, resource caps, and exhausted bounded retries. In
+particular, permissive convergence never means authorizing from stale state.
+
+Compatibility is a product decision rather than an implicit implementation
+default. A plan that retains a revisionless shape, legacy work envelope, or
+fallback authorization path must obtain explicit human approval and state its
+retirement conditions.
+
 ## Architecture Overview
 
 ```mermaid
@@ -122,6 +148,16 @@ and aggregate set B. The unchanged path is four prefix reads regardless of
 snapshot count. Pages validate the scanned aggregate keys with one exact-key
 batch read and retain their scanned cursor when a deleted entry is omitted.
 
+### Example: a member changes during a read
+
+Suppose a reader loads aggregate revision 12, then reads members and sessions.
+Another server commits a member change and advances the aggregate to revision
+13 before the reader's validation read. The reader discards the mixed
+candidate and retries from revision 13; it does not lock the group while
+assembling children. If the group is deleted, the validation read returns
+absent and the result is absent. Three consecutive movements produce a
+retryable 503 rather than a torn snapshot.
+
 ## Topology Work At The Commit Boundary
 
 When an application-inbox group mutation writes an event,
@@ -210,6 +246,16 @@ sessions and the exact inactive group snapshot's sessions. Its update time is
 the immutable group update time. Causally stale work completes without a
 publication, so a rejected candidate is never fanned out.
 
+### Example: two planners share one predecessor
+
+Workers A and B both read topology predecessor `(groupRevision=20,
+topologyVersion=7)` and plan outside the transaction. A commits first. B locks
+only the topology and work-index keys, observes the moved predecessor, releases
+the transaction, and replans against A's accepted snapshot. If B's embedded
+group snapshot is now causally older, B completes without publishing. If it is
+newer, B commits one exact publication for its work identity. At no point is a
+rejected candidate returned as authoritative or sent to browsers.
+
 ## Durable Publications
 
 Topology calculation and network fanout are separated by
@@ -288,6 +334,15 @@ start. A PostgreSQL deployment fails closed if it cannot establish the
 subscription. Local and disabled modes resolve readiness immediately; disabled
 mode is suitable only for a single server.
 
+### Example: authorization after a remote ban
+
+Server A may have cached group revision 31 when server B bans a member and
+commits revision 32. On the member's next room message, A probes the durable
+aggregate once. Because the cache is older, A performs a stable snapshot read,
+refreshes its cache, and rejects the message. Remote presence disconnects and
+group deletion follow the same path. A warm, unchanged authorization performs
+only the revision probe.
+
 ## Browser Convergence
 
 `RallarOverlayTopologySnapshot` and `OverlayInfo` require
@@ -320,6 +375,21 @@ An APP_OUTBOX storage or cluster-publish failure keeps the queue item retryable.
 A delivery failure after local delivery can repeat local delivery on retry;
 that is safe because the publication and browser observation are idempotent.
 
+## Guarantees And Remaining Limits
+
+The architecture guarantees that a returned durable group/client snapshot is
+revision-consistent, process caches do not regress, outbox-accepted topology
+output is atomic with its publication index, a work retry reuses the same
+publication, and room authorization observes durable revision movement on the
+next message.
+
+It does not yet guarantee lossless cluster publication replay. PostgreSQL
+notifications are ephemeral, so a server disconnected after publication commit
+can miss the wake-up. The durable record remains correct, but no ordered cursor
+drain currently discovers it. The follow-up architecture should maintain a
+durable ordered publication log with per-process replay cursors and treat
+notifications only as wake-ups.
+
 ## Performance Bounds
 
 - Unchanged group/client full lists issue four prefix reads and zero point
@@ -336,25 +406,35 @@ that is safe because the publication and browser observation are idempotent.
 Timing benchmarks are directional machine-local evidence. Repository-call
 counts and algorithmic bounds are the acceptance gates.
 
+The API-v1 Postgres cluster profile has two complementary black-box workloads:
+
+- the two-session topology convergence recipe proves exact revision delivery
+  to WebSockets connected to different servers;
+- the bounded churn recipe runs 12 disposable clients in two concurrent lanes,
+  joins every client to two groups, disconnects and reconnects presence, then
+  verifies 13-member/13-online aggregate snapshots and exact final topology
+  source revisions through the opposite servers.
+
+The churn recipe intentionally stops at 12 clients. It is a deterministic
+contention and convergence gate, not a capacity benchmark; higher session
+counts and dense RTT graph cost remain in `scripts/perf/**` harnesses.
+
 ## Deployment And Compatibility
 
-The public `snapshotVersion` contract and existing imports remain unchanged,
-but `stateRevision`, topology `sourceGroupStateRevision`, and topology `state`
-are mandatory. Revisionless snapshots, missing topology causal fields, legacy
-outbox work, and nondurable topology handling are not supported.
+The public meaning of `snapshotVersion` and existing imports remain unchanged,
+but snapshot and topology response shapes now require `stateRevision`,
+`sourceGroupStateRevision`, and topology `state`. Revisionless snapshots,
+missing topology causal fields, legacy outbox work, and nondurable topology
+handling are not supported.
 
 The cluster-notification cutover requires a coordinated deployment of API
 nodes. Older nodes do not subscribe to topology publication notifications and
 cannot fan out publications to their locally connected sessions.
 
-No recipe timeout, REST schema, queue schema, generated manifest, or browser
-runtime import path is changed by this architecture.
-
-PostgreSQL notifications remain ephemeral. A durable publication can still be
-missed if `NOTIFY` succeeds while another process is disconnected, because
-there is no ordered durable cursor drain. Lossless cluster replay is a separate
-follow-up: notifications should act only as wake-ups for a durable ordered
-publication log with per-process replay cursors.
+REST route and request shapes, database schema, generated manifests, and
+browser runtime import paths are unchanged. The required response fields and
+the two-work-type topology queue contract are intentional breaking contract
+changes and require a coordinated deployment.
 
 ## Source Map
 
@@ -399,8 +479,12 @@ Focused concurrency coverage lives in:
 - `packages/tests/shared-server/rtc-topology-outbox-work.test.ts`
 - `packages/tests/shared-server/rtc-topology-cluster-transport.test.ts`
 - `packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts`
+- `packages/tests/shared-server/group-topology-management-service.test.ts`
 - `packages/tests/api-v1/rtc-topology-cluster-transport.test.ts`
 - `packages/tests/shared-web/data-caches.test.ts`
+- `apps/api-v1/test/services/ws-topic-room-authorizer.test.ts`
+- `packages/shared-test/black-box-runner/tests/api-v1/api-v1-rtc-topology-convergence.json`
+- `packages/shared-test/black-box-runner/tests/api-v1/api-v1-state-topology-churn.json`
 
 The full-stack acceptance commands are:
 

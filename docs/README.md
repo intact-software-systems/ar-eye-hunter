@@ -41,6 +41,9 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
 - [Rallar RTC RTT Reporting](./rallar-rtc-rtt-reporting.md) Browser to server
   RTC RTT reporting flow, server acceptance policy, and bounded per-client RTT
   reporting degree.
+- [Convergent State And RTC Topology Architecture](./rallar-convergent-state-and-rtc-topology.md)
+  Durable causal revisions, optimistic snapshot reads, atomic topology
+  execution, cross-server authorization, fanout, and retry guarantees.
 
 ## Repo Codex Skills
 

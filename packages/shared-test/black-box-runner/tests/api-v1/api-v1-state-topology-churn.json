@@ -1,0 +1,818 @@
+{
+  "variables": {
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarApiBaseUrlSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "api-v1-churn-{runId}"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "cluster-churn-{runId}"
+    },
+    "sharedGroupId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "shared-churn-{runId}"
+    },
+    "churnGroupId": {
+      "env": "RALLAR_BB_SECONDARY_GROUP_ID",
+      "default": "presence-churn-{runId}"
+    },
+    "ownerUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "ownerPassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_CHURN_PASSWORD",
+      "default": "api-v1-churn-password",
+      "secret": true
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "apiPrimary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "apiSecondary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrlSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginOwner",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{ownerUsername}",
+          "password": "{ownerPassword}"
+        },
+        "outputs": {
+          "ownerClientId": "body.clientId",
+          "ownerAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "ownerSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveOwnerAuthHeader",
+      "type": "set",
+      "output": "ownerAuthHeader",
+      "secret": true,
+      "redactAs": "ownerAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.ownerAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createSharedGroup",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "create-{sharedGroupId}-{runId}",
+          "groupId": "{sharedGroupId}",
+          "displayName": "Shared churn {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "stateRevision": "integer",
+          "group": {
+            "groupId": "{sharedGroupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "createPresenceChurnGroup",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "create-{churnGroupId}-{runId}",
+          "groupId": "{churnGroupId}",
+          "displayName": "Presence churn {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "stateRevision": "integer",
+          "group": {
+            "groupId": "{churnGroupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "activateOwnerInSharedGroup",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{ownerClientId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "activate-owner-{sharedGroupId}-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "stateRevision": "integer"
+        }
+      }
+    },
+    {
+      "name": "activateOwnerInChurnGroup",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{ownerClientId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "activate-owner-{churnGroupId}-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "stateRevision": "integer"
+        }
+      }
+    },
+    {
+      "name": "connectOwnerToSharedGroup",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{ownerSessionId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "presence-owner-{sharedGroupId}-{runId}",
+          "principalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "stateRevision": "integer"
+        }
+      }
+    },
+    {
+      "name": "connectOwnerToChurnGroup",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{ownerSessionId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "presence-owner-{churnGroupId}-{runId}",
+          "principalId": "{ownerClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "stateRevision": "integer"
+        }
+      }
+    },
+    {
+      "name": "runConcurrentClientChurn",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "timeoutMs": 120000,
+      "groups": [
+        {
+          "name": "primary-client-lane",
+          "steps": [
+            {
+              "name": "primaryClientLoop",
+              "type": "loop",
+              "count": 6,
+              "steps": [
+                {
+                  "name": "registerPrimaryClient{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiPrimary",
+                  "request": {
+                    "method": "POST",
+                    "path": "/api/auth/register",
+                    "body": {
+                      "username": "churn-primary-{loop.iteration}-{runId}",
+                      "password": "{clientPassword}",
+                      "displayName": "Primary churn client {loop.iteration}"
+                    }
+                  },
+                  "expect": {
+                    "status": 201,
+                    "body": {
+                      "clientId": "string"
+                    }
+                  }
+                },
+                {
+                  "name": "loginPrimaryClient{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiPrimary",
+                  "request": {
+                    "method": "POST",
+                    "path": "/api/auth/login",
+                    "body": {
+                      "username": "churn-primary-{loop.iteration}-{runId}",
+                      "password": "{clientPassword}"
+                    },
+                    "outputs": {
+                      "primaryClientId": "body.clientId",
+                      "primaryAccessToken": {
+                        "path": "body.accessToken",
+                        "secret": true
+                      },
+                      "primarySessionId": "body.sessionId"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "clientId": "string",
+                      "sessionId": "string"
+                    }
+                  }
+                },
+                {
+                  "name": "derivePrimaryAuthHeader{loop.iteration}",
+                  "type": "set",
+                  "output": "primaryAuthHeader",
+                  "secret": true,
+                  "redactAs": "primaryAuthHeader",
+                  "transform": {
+                    "concat": [
+                      "Bearer ",
+                      {
+                        "path": "outputs.primaryAccessToken"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "joinPrimaryClientToShared{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiPrimary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{primaryClientId}",
+                    "headers": {
+                      "Authorization": "{primaryAuthHeader}",
+                      "x-client-id": "{primaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "join-primary-{loop.iteration}-{sharedGroupId}-{runId}",
+                      "status": "active"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "joinPrimaryClientToChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiPrimary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{primaryClientId}",
+                    "headers": {
+                      "Authorization": "{primaryAuthHeader}",
+                      "x-client-id": "{primaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "join-primary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "status": "active"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "connectPrimaryClientToShared{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiPrimary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{primarySessionId}",
+                    "headers": {
+                      "Authorization": "{primaryAuthHeader}",
+                      "x-client-id": "{primaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "presence-primary-{loop.iteration}-{sharedGroupId}-{runId}",
+                      "principalId": "{primaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "connectPrimaryClientToChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiPrimary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{primarySessionId}",
+                    "headers": {
+                      "Authorization": "{primaryAuthHeader}",
+                      "x-client-id": "{primaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "presence-primary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "principalId": "{primaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "disconnectPrimaryClientFromChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiPrimary",
+                  "request": {
+                    "method": "POST",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{primarySessionId}/disconnect",
+                    "headers": {
+                      "Authorization": "{primaryAuthHeader}",
+                      "x-client-id": "{primaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "disconnect-primary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "principalId": "{primaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "reconnectPrimaryClientToChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiPrimary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{primarySessionId}",
+                    "headers": {
+                      "Authorization": "{primaryAuthHeader}",
+                      "x-client-id": "{primaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "reconnect-primary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "principalId": "{primaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "secondary-client-lane",
+          "steps": [
+            {
+              "name": "secondaryClientLoop",
+              "type": "loop",
+              "count": 6,
+              "steps": [
+                {
+                  "name": "registerSecondaryClient{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiSecondary",
+                  "request": {
+                    "method": "POST",
+                    "path": "/api/auth/register",
+                    "body": {
+                      "username": "churn-secondary-{loop.iteration}-{runId}",
+                      "password": "{clientPassword}",
+                      "displayName": "Secondary churn client {loop.iteration}"
+                    }
+                  },
+                  "expect": {
+                    "status": 201,
+                    "body": {
+                      "clientId": "string"
+                    }
+                  }
+                },
+                {
+                  "name": "loginSecondaryClient{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiSecondary",
+                  "request": {
+                    "method": "POST",
+                    "path": "/api/auth/login",
+                    "body": {
+                      "username": "churn-secondary-{loop.iteration}-{runId}",
+                      "password": "{clientPassword}"
+                    },
+                    "outputs": {
+                      "secondaryClientId": "body.clientId",
+                      "secondaryAccessToken": {
+                        "path": "body.accessToken",
+                        "secret": true
+                      },
+                      "secondarySessionId": "body.sessionId"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "clientId": "string",
+                      "sessionId": "string"
+                    }
+                  }
+                },
+                {
+                  "name": "deriveSecondaryAuthHeader{loop.iteration}",
+                  "type": "set",
+                  "output": "secondaryAuthHeader",
+                  "secret": true,
+                  "redactAs": "secondaryAuthHeader",
+                  "transform": {
+                    "concat": [
+                      "Bearer ",
+                      {
+                        "path": "outputs.secondaryAccessToken"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "joinSecondaryClientToShared{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiSecondary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{secondaryClientId}",
+                    "headers": {
+                      "Authorization": "{secondaryAuthHeader}",
+                      "x-client-id": "{secondaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "join-secondary-{loop.iteration}-{sharedGroupId}-{runId}",
+                      "status": "active"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "joinSecondaryClientToChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiSecondary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{secondaryClientId}",
+                    "headers": {
+                      "Authorization": "{secondaryAuthHeader}",
+                      "x-client-id": "{secondaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "join-secondary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "status": "active"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "connectSecondaryClientToShared{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiSecondary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{secondarySessionId}",
+                    "headers": {
+                      "Authorization": "{secondaryAuthHeader}",
+                      "x-client-id": "{secondaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "presence-secondary-{loop.iteration}-{sharedGroupId}-{runId}",
+                      "principalId": "{secondaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "connectSecondaryClientToChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiSecondary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{secondarySessionId}",
+                    "headers": {
+                      "Authorization": "{secondaryAuthHeader}",
+                      "x-client-id": "{secondaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "presence-secondary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "principalId": "{secondaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "disconnectSecondaryClientFromChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiSecondary",
+                  "request": {
+                    "method": "POST",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{secondarySessionId}/disconnect",
+                    "headers": {
+                      "Authorization": "{secondaryAuthHeader}",
+                      "x-client-id": "{secondaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "disconnect-secondary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "principalId": "{secondaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "reconnectSecondaryClientToChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiSecondary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{secondarySessionId}",
+                    "headers": {
+                      "Authorization": "{secondaryAuthHeader}",
+                      "x-client-id": "{secondaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "reconnect-secondary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "principalId": "{secondaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "readSharedGroupThroughSecondary",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "outputs": {
+          "sharedFinalRevision": "body.stateRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "stateRevision": "integer",
+          "memberCount": 13,
+          "onlineMemberCount": 13,
+          "group": {
+            "groupId": "{sharedGroupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "readChurnGroupThroughPrimary",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "outputs": {
+          "churnFinalRevision": "body.stateRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "stateRevision": "integer",
+          "memberCount": 13,
+          "onlineMemberCount": 13,
+          "group": {
+            "groupId": "{churnGroupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "reconcileSharedTopologyThroughSecondary",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/topology/reconfigure",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "reconcile-{sharedGroupId}-{runId}",
+          "publish": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "sourceGroupStateRevision": "{sharedFinalRevision}",
+            "state": "active",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{sharedGroupId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "reconcileChurnTopologyThroughPrimary",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/topology/reconfigure",
+        "headers": {
+          "Authorization": "{ownerAuthHeader}",
+          "x-client-id": "{ownerClientId}"
+        },
+        "body": {
+          "requestId": "reconcile-{churnGroupId}-{runId}",
+          "publish": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "sourceGroupStateRevision": "{churnFinalRevision}",
+            "state": "active",
+            "groupRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{churnGroupId}"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
