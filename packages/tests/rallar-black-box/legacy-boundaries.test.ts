@@ -132,7 +132,7 @@ describe('Rallar Black Box legacy boundaries', () => {
     });
 
     it('keeps application and legacy roots as composition boundaries', () => {
-        const featurePanelNames = new Set(
+        const featurePanelNames: ReadonlySet<string> = new Set(
             LEGACY_ROUTES.map(([, , seamName]) => seamName),
         );
 

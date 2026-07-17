@@ -3305,6 +3305,7 @@
     ],
     "packageJson": {
       "dependencies": [
+        "npm:@babel/parser@^7.29.3",
         "npm:@babylonjs/loaders@^9.6.2",
         "npm:@playwright/test@1.61.1",
         "npm:@vitest/ui@4.0.17",
