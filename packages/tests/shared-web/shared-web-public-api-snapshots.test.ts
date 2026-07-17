@@ -1,7 +1,9 @@
-import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import {
+    analyzeSourceFile,
+    type SourceAnalysis,
+} from '../helpers/source-analysis';
 
 type ExportSnapshot = Readonly<{
     values: readonly string[];
@@ -668,8 +670,8 @@ function collectExportSnapshot(
     filePath: string,
     options: Readonly<{ resolveStarExports: boolean }>,
 ): ExportSnapshot {
-    const sourceFile = readSourceFile(filePath);
-    const direct = collectDirectExports(sourceFile);
+    const analysis = readSourceAnalysis(filePath);
+    const direct = collectDirectExports(analysis);
     if (!options.resolveStarExports) {
         return direct;
     }
@@ -687,8 +689,8 @@ function collectResolvedExports(
     filePath: string,
     seen: Set<string>,
 ): Pick<ExportSnapshot, 'values' | 'types'> {
-    const sourceFile = readSourceFile(filePath);
-    const direct = collectDirectExports(sourceFile);
+    const analysis = readSourceAnalysis(filePath);
+    const direct = collectDirectExports(analysis);
     const values = [...direct.values];
     const types = [...direct.types];
 
@@ -710,62 +712,40 @@ function collectResolvedExports(
     };
 }
 
-function collectDirectExports(sourceFile: ts.SourceFile): ExportSnapshot {
+function collectDirectExports(analysis: SourceAnalysis): ExportSnapshot {
     const values: string[] = [];
     const types: string[] = [];
     const starExports: string[] = [];
     const namespaceExports: string[] = [];
 
-    for (const statement of sourceFile.statements) {
-        if (ts.isExportDeclaration(statement)) {
-            const moduleSpecifier = readModuleSpecifier(statement);
-            const exportClause = statement.exportClause;
-            if (!exportClause) {
-                starExports.push(moduleSpecifier);
-                continue;
-            }
-
-            if (ts.isNamespaceExport(exportClause)) {
-                namespaceExports.push(`${exportClause.name.text} from ${moduleSpecifier}`);
-                continue;
-            }
-
-            for (const element of exportClause.elements) {
-                if (statement.isTypeOnly || element.isTypeOnly) {
-                    types.push(element.name.text);
-                } else {
-                    values.push(element.name.text);
-                }
-            }
-            continue;
-        }
-
-        if (!hasExportModifier(statement)) {
+    for (const entry of analysis.exports) {
+        if (entry.kind === 'star' && entry.specifier) {
+            starExports.push(entry.specifier);
             continue;
         }
 
         if (
-            ts.isFunctionDeclaration(statement) ||
-            ts.isClassDeclaration(statement) ||
-            ts.isEnumDeclaration(statement)
+            entry.kind === 'namespace' &&
+            entry.exportedName &&
+            entry.specifier
         ) {
-            if (statement.name) {
-                values.push(statement.name.text);
-            }
+            namespaceExports.push(
+                `${entry.exportedName} from ${entry.specifier}`,
+            );
             continue;
         }
 
-        if (ts.isVariableStatement(statement)) {
-            for (const declaration of statement.declarationList.declarations) {
-                if (ts.isIdentifier(declaration.name)) {
-                    values.push(declaration.name.text);
-                }
-            }
+        const exportName = entry.kind === 'default'
+            ? entry.localName
+            : entry.exportedName;
+        if (!exportName) {
             continue;
         }
 
-        if (ts.isTypeAliasDeclaration(statement) || ts.isInterfaceDeclaration(statement)) {
-            types.push(statement.name.text);
+        if (entry.typeOnly) {
+            types.push(exportName);
+        } else {
+            values.push(exportName);
         }
     }
 
@@ -777,14 +757,8 @@ function collectDirectExports(sourceFile: ts.SourceFile): ExportSnapshot {
     };
 }
 
-function readSourceFile(filePath: string): ts.SourceFile {
-    return ts.createSourceFile(
-        filePath,
-        readFileSync(toAbsolutePath(filePath), 'utf8'),
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TS,
-    );
+function readSourceAnalysis(filePath: string): SourceAnalysis {
+    return analyzeSourceFile(toAbsolutePath(filePath));
 }
 
 function resolveLocalModule(filePath: string, specifier: string): string | undefined {
@@ -795,18 +769,6 @@ function resolveLocalModule(filePath: string, specifier: string): string | undef
         process.cwd(),
         path.resolve(path.dirname(toAbsolutePath(filePath)), specifier),
     );
-}
-
-function readModuleSpecifier(statement: ts.ExportDeclaration): string {
-    const specifier = statement.moduleSpecifier;
-    return specifier && ts.isStringLiteral(specifier) ? specifier.text : '';
-}
-
-function hasExportModifier(node: ts.Node): boolean {
-    return ts.canHaveModifiers(node) &&
-        (ts.getModifiers(node) ?? []).some((modifier) =>
-            modifier.kind === ts.SyntaxKind.ExportKeyword
-        );
 }
 
 function toAbsolutePath(filePath: string): string {
