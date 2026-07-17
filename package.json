@@ -134,6 +134,7 @@
     "test:integration:rallar:real:live": "npm run test:integration:rallar:live"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.3",
     "@playwright/test": "1.61.1",
     "@vitest/ui": "4.0.17",
     "esbuild": "^0.27.7",
