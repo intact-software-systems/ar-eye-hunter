@@ -23,11 +23,8 @@ export function createCachedClientStateService(options: Readonly<{
     const observeSnapshot = async (
         snapshot: ClientSnapshot,
     ): Promise<ClientSnapshot> => {
-        const resolved = snapshot.stateRevision === undefined
-            ? await options.durable.readSnapshot(snapshot.principal) ?? snapshot
-            : snapshot;
-        options.cache.observe(resolved);
-        return resolved;
+        options.cache.observe(snapshot);
+        return snapshot;
     };
     const observeWritten = async (
         written: ClientStateWritten,

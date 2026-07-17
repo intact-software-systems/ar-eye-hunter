@@ -161,6 +161,53 @@ describe('ClientStateRepository', () => {
         expect(snapshot?.principal.snapshotVersion).toBe(principal.snapshotVersion);
     });
 
+    it('retries a client snapshot when the principal revision changes during child reads', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: new InMemoryClientStateEventStore(),
+        });
+        const principal = createClientPrincipal();
+
+        await clientRepository.putPrincipal(principal);
+        await clientRepository.putInstance(createClientInstance('instance-a'));
+        repository.onFindEntriesByPrefix = async () => {
+            if (repository.findEntriesByPrefixCalls !== 2) {
+                return;
+            }
+            await clientRepository.putInstance({
+                ...createClientInstance('instance-a'),
+                platform: 'native',
+            });
+            await clientRepository.putPrincipal({
+                ...principal,
+                displayName: 'Current principal',
+            });
+        };
+
+        const snapshot = await clientRepository.readSnapshot(principal);
+
+        expect(snapshot).toMatchObject({
+            stateRevision: 2,
+            principal: { displayName: 'Current principal' },
+            instances: [{ platform: 'native' }],
+        });
+    });
+
+    it('returns absent when a client principal is created after the aggregate probe', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: new InMemoryClientStateEventStore(),
+        });
+        const principal = createClientPrincipal();
+        repository.onFindEntryAfterRead = async () => {
+            repository.onFindEntryAfterRead = undefined;
+            await clientRepository.putPrincipal(principal);
+            await clientRepository.putInstance(createClientInstance('instance-a'));
+        };
+
+        await expect(clientRepository.readSnapshot(principal)).resolves.toBeUndefined();
+    });
+
     it('lists client snapshots with scope-wide child reads instead of per-principal fanout', async () => {
         const repository = new FakeRuntimeStateRepository();
         const clientRepository = new ClientStateRepository(repository, {
@@ -197,8 +244,54 @@ describe('ClientStateRepository', () => {
         expect(snapshots[0].instances).toHaveLength(1);
         expect(snapshots[0].activeSessions).toHaveLength(1);
         expect(repository.findEntryCalls).toBe(0);
-        expect(repository.findEntriesByPrefixCalls).toBe(3);
+        expect(repository.findEntriesByPrefixCalls).toBe(4);
         expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(clientCount);
+    });
+
+    it('target-reads only changed clients and omits clients deleted during full-list validation', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const clientRepository = new ClientStateRepository(repository, {
+            events: new InMemoryClientStateEventStore(),
+        });
+        for (const principalId of ['principal-0', 'principal-1', 'principal-2']) {
+            await clientRepository.putPrincipal(createClientPrincipal(principalId));
+            await clientRepository.putInstance(
+                createClientInstance(`instance-${principalId}`, principalId),
+            );
+        }
+        repository.resetCounters();
+        repository.onFindEntriesByPrefix = async () => {
+            if (repository.findEntriesByPrefixCalls !== 4) {
+                return;
+            }
+            repository.onFindEntriesByPrefix = undefined;
+            await clientRepository.putInstance(
+                createClientInstance('instance-new', 'principal-0'),
+            );
+            await clientRepository.putPrincipal({
+                ...createClientPrincipal('principal-0'),
+                displayName: 'Changed',
+            });
+            await clientRepository.removePrincipal(createClientPrincipal('principal-1'));
+        };
+
+        const snapshots = await clientRepository.listSnapshots({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+
+        expect(snapshots.map((snapshot) => snapshot.principal.principalId)).toEqual([
+            'principal-0',
+            'principal-2',
+        ]);
+        expect(snapshots[0]).toMatchObject({
+            principal: { displayName: 'Changed' },
+            instances: expect.arrayContaining([
+                expect.objectContaining({ clientInstanceId: 'instance-new' }),
+            ]),
+        });
+        expect(repository.findEntriesByPrefixCalls).toBe(6);
+        expect(repository.findEntryCalls).toBe(2);
     });
 
     it('lists client event pages with event-type filtering through dedicated event-store paging', async () => {
@@ -409,6 +502,80 @@ describe('GroupStateRepository', () => {
         expect(snapshot?.group.snapshotVersion).toBe(group.snapshotVersion);
     });
 
+    it('retries a group snapshot when the aggregate revision changes during child reads', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        const group = createGroup();
+
+        await groupRepository.putGroup(group);
+        await groupRepository.putMember(createGroupMember('principal-a', 'active'));
+        repository.onFindEntriesByPrefix = async () => {
+            if (repository.findEntriesByPrefixCalls !== 2) {
+                return;
+            }
+            await groupRepository.putMember(
+                createGroupMember('principal-a', 'banned'),
+            );
+            await groupRepository.putGroup({
+                ...group,
+                displayName: 'Current group',
+            });
+        };
+
+        const snapshot = await groupRepository.readSnapshot(group);
+
+        expect(snapshot).toMatchObject({
+            stateRevision: 2,
+            group: { displayName: 'Current group' },
+            members: [{ status: 'banned' }],
+        });
+    });
+
+    it('returns absent when a group is deleted during child reads', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        const group = createGroup('group-delete');
+        await groupRepository.putGroup(group);
+        await groupRepository.putMember(
+            createGroupMember('principal-a', 'active', group.groupId),
+        );
+        repository.onFindEntriesByPrefix = async () => {
+            repository.onFindEntriesByPrefix = undefined;
+            await groupRepository.removeGroup(group);
+        };
+
+        await expect(groupRepository.readSnapshot(group)).resolves.toBeUndefined();
+    });
+
+    it('fails a group snapshot read after three continuously conflicting attempts', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        const group = createGroup();
+
+        await groupRepository.putGroup(group);
+        repository.onFindEntriesByPrefix = async () => {
+            if (repository.findEntriesByPrefixCalls % 2 !== 0) {
+                return;
+            }
+            await groupRepository.putGroup({
+                ...group,
+                displayName: `Revision ${repository.findEntriesByPrefixCalls}`,
+            });
+        };
+
+        await expect(groupRepository.readSnapshot(group)).rejects.toMatchObject({
+            name: 'StateSnapshotReadConflictError',
+            status: 503,
+        });
+        expect(repository.findEntriesByPrefixCalls).toBe(6);
+    });
+
     it('lists group snapshots with scope-wide child reads instead of per-group fanout', async () => {
         const repository = new FakeRuntimeStateRepository();
         const groupRepository = new GroupStateRepository(repository, {
@@ -447,8 +614,54 @@ describe('GroupStateRepository', () => {
         expect(snapshots[0].memberCount).toBe(1);
         expect(snapshots[0].onlineMemberCount).toBe(1);
         expect(repository.findEntryCalls).toBe(0);
-        expect(repository.findEntriesByPrefixCalls).toBe(3);
+        expect(repository.findEntriesByPrefixCalls).toBe(4);
         expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(groupCount);
+    });
+
+    it('target-reads only changed groups and omits groups deleted during full-list validation', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        for (const groupId of ['group-0', 'group-1', 'group-2']) {
+            await groupRepository.putGroup(createGroup(groupId));
+            await groupRepository.putMember(
+                createGroupMember(`principal-${groupId}`, 'active', groupId),
+            );
+        }
+        repository.resetCounters();
+        repository.onFindEntriesByPrefix = async () => {
+            if (repository.findEntriesByPrefixCalls !== 4) {
+                return;
+            }
+            repository.onFindEntriesByPrefix = undefined;
+            await groupRepository.putMember(
+                createGroupMember('principal-new', 'active', 'group-0'),
+            );
+            await groupRepository.putGroup({
+                ...createGroup('group-0'),
+                displayName: 'Changed',
+            });
+            await groupRepository.removeGroup(createGroup('group-1'));
+        };
+
+        const snapshots = await groupRepository.listSnapshots({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        });
+
+        expect(snapshots.map((snapshot) => snapshot.group.groupId)).toEqual([
+            'group-0',
+            'group-2',
+        ]);
+        expect(snapshots[0]).toMatchObject({
+            group: { displayName: 'Changed' },
+            members: expect.arrayContaining([
+                expect.objectContaining({ principalId: 'principal-new' }),
+            ]),
+        });
+        expect(repository.findEntriesByPrefixCalls).toBe(6);
+        expect(repository.findEntryCalls).toBe(2);
     });
 
     it('lists bounded group snapshot pages without scanning every group row', async () => {
@@ -506,6 +719,9 @@ describe('GroupStateRepository', () => {
                 limit: 3,
             },
         ]);
+        expect(repository.findEntriesByKeysCalls).toBe(1);
+        expect(repository.findEntriesByPrefixCalls).toBe(4);
+        expect(repository.findEntryCalls).toBe(0);
         expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(1);
     });
 
@@ -547,6 +763,65 @@ describe('GroupStateRepository', () => {
         expect(page.scannedGroupCount).toBe(2);
         expect(page.hasMore).toBe(true);
         expect(page.nextGroupKey).toBe('app=app-1:ws=workspace-1:group=group-0002');
+    });
+
+    it('omits groups deleted during page validation while retaining the scanned cursor', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        await groupRepository.putGroup(createGroup('group-0000'));
+        await groupRepository.putGroup(createGroup('group-0001'));
+        repository.onFindEntriesByKeys = async () => {
+            repository.onFindEntriesByKeys = undefined;
+            await groupRepository.removeGroup(createGroup('group-0000'));
+        };
+
+        const page = await groupRepository.listSnapshotsPage({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        }, { limit: 2 });
+
+        expect(page.snapshots.map((snapshot) => snapshot.group.groupId)).toEqual([
+            'group-0001',
+        ]);
+        expect(page.scannedGroupCount).toBe(2);
+        expect(page.nextGroupKey).toBe('app=app-1:ws=workspace-1:group=group-0001');
+    });
+
+    it('target-reads a group changed during exact-key page validation', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const groupRepository = new GroupStateRepository(repository, {
+            events: new InMemoryGroupStateEventStore(),
+        });
+        const group = createGroup('group-0000');
+        await groupRepository.putGroup(group);
+        await groupRepository.putMember(
+            createGroupMember('principal-old', 'active', group.groupId),
+        );
+        repository.resetCounters();
+        repository.onFindEntriesByKeys = async () => {
+            repository.onFindEntriesByKeys = undefined;
+            await groupRepository.putMember(
+                createGroupMember('principal-new', 'active', group.groupId),
+            );
+            await groupRepository.putGroup({ ...group, displayName: 'Changed' });
+        };
+
+        const page = await groupRepository.listSnapshotsPage({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+        }, { limit: 1 });
+
+        expect(page.snapshots[0]).toMatchObject({
+            group: { displayName: 'Changed' },
+            members: expect.arrayContaining([
+                expect.objectContaining({ principalId: 'principal-new' }),
+            ]),
+        });
+        expect(repository.findEntriesByKeysCalls).toBe(1);
+        expect(repository.findEntriesByPrefixCalls).toBe(4);
+        expect(repository.findEntryCalls).toBe(2);
     });
 
     it('keeps paged group snapshot scans inside the exact workspace scope', async () => {
@@ -825,7 +1100,11 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     readonly data = new Map<string, RuntimeStateEntry>();
     findEntryCalls = 0;
     findEntriesByPrefixCalls = 0;
+    findEntriesByKeysCalls = 0;
     maxRowsReturnedPerFindEntriesByPrefix = 0;
+    onFindEntryAfterRead?: () => void | Promise<void>;
+    onFindEntriesByPrefix?: () => void | Promise<void>;
+    onFindEntriesByKeys?: () => void | Promise<void>;
     findEntriesByPrefixPageCalls: Array<
         Readonly<{
             namespace: string;
@@ -844,6 +1123,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
         this.findEntryCalls += 1;
         const entry = this.data.get(this.toKey(namespace, key));
+        await this.onFindEntryAfterRead?.();
         return entry ? { ...entry } : undefined;
     }
 
@@ -859,6 +1139,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         keyPrefix: string,
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixCalls += 1;
+        await this.onFindEntriesByPrefix?.();
         const rows = [...this.data.entries()]
             .filter(
                 ([compositeKey]) =>
@@ -872,6 +1153,23 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
             rows.length,
         );
         return rows;
+    }
+
+    async findEntriesByKeys(
+        namespace: string,
+        keys: readonly string[],
+    ): Promise<readonly RuntimeStateEntry[]> {
+        this.findEntriesByKeysCalls += 1;
+        await this.onFindEntriesByKeys?.();
+        const keySet = new Set(keys);
+        return [...this.data.entries()]
+            .filter(
+                ([compositeKey]) =>
+                    this.toNamespace(compositeKey) === namespace &&
+                    keySet.has(this.toStoreKey(compositeKey)),
+            )
+            .map(([, entry]) => ({ ...entry }))
+            .sort((left, right) => left.key.localeCompare(right.key));
     }
 
     async findEntriesByPrefixPage(
@@ -955,6 +1253,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     resetCounters(): void {
         this.findEntryCalls = 0;
         this.findEntriesByPrefixCalls = 0;
+        this.findEntriesByKeysCalls = 0;
         this.maxRowsReturnedPerFindEntriesByPrefix = 0;
         this.findEntriesByPrefixPageCalls.length = 0;
     }

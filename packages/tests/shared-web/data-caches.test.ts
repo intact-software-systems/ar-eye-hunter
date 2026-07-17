@@ -657,6 +657,7 @@ function createClientSnapshot(
     snapshotVersion: number,
 ): ClientSnapshot {
     return {
+        stateRevision: snapshotVersion,
         principal: {
             applicationId,
             workspaceId,
@@ -704,6 +705,7 @@ function createGroupSnapshot(
     snapshotVersion: number,
 ): GroupSnapshot {
     return {
+        stateRevision: snapshotVersion,
         group: {
             applicationId,
             workspaceId,

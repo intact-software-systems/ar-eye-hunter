@@ -447,6 +447,7 @@ function createGroupSnapshot(
   memberPrincipalIds: readonly string[],
 ): GroupSnapshot {
   return {
+    stateRevision: 1,
     group: {
       ...TEST_SCOPE,
       groupId,

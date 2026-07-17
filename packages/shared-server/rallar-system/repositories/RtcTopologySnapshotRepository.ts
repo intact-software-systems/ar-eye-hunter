@@ -102,7 +102,7 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
     }
 }
 
-function decideTopologySnapshot(
+export function decideTopologySnapshot(
     current: RallarOverlayTopologySnapshot | undefined,
     incoming: RallarOverlayTopologySnapshot,
 ): RtcTopologySnapshotObservation {

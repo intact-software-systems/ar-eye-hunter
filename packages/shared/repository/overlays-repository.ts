@@ -10,6 +10,7 @@ import {
     readGroupCreatedByPrincipalId,
     readGroupDisplayName,
     readGroupMemberSessionIds,
+    readGroupStateRevision,
     readGroupUpdatedAtEpochMs,
     readGroupVersion,
 } from '@shared/api/group-client-views.ts';
@@ -243,17 +244,8 @@ export function compareOverlayInfoTuple(
     left: Pick<OverlayInfo, 'sourceGroupStateRevision' | 'overlayVersion'>,
     right: Pick<OverlayInfo, 'sourceGroupStateRevision' | 'overlayVersion'>,
 ): number {
-    const leftRevision = left.sourceGroupStateRevision;
-    const rightRevision = right.sourceGroupStateRevision;
-    if (leftRevision !== undefined && rightRevision === undefined) {
-        return 1;
-    }
-    if (leftRevision === undefined && rightRevision !== undefined) {
-        return -1;
-    }
-    if (leftRevision !== undefined && rightRevision !== undefined &&
-        leftRevision !== rightRevision) {
-        return leftRevision - rightRevision;
+    if (left.sourceGroupStateRevision !== right.sourceGroupStateRevision) {
+        return left.sourceGroupStateRevision - right.sourceGroupStateRevision;
     }
     return left.overlayVersion - right.overlayVersion;
 }
@@ -275,6 +267,8 @@ function toOverlayRepositoryChange(
 
 function toStarOverlay(group: AnyGroupPresence): OverlayInfo {
     return {
+        sourceGroupStateRevision: readGroupStateRevision(group),
+        state: 'active',
         name: readGroupDisplayName(group),
         overlayId: toScopedOverlayId(group.group),
         groupRef: group.group,

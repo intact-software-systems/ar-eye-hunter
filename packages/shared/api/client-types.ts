@@ -126,7 +126,7 @@ export type ClientPresenceSnapshot = ClientPrincipalRef & Readonly<{
 }>;
 
 export type ClientSnapshot = Readonly<{
-    stateRevision?: number;
+    stateRevision: number;
     principal: ClientPrincipal;
     instances: readonly ClientInstance[];
     activeSessions: readonly ClientSession[];

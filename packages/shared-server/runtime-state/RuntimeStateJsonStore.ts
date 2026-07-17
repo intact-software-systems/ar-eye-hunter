@@ -66,6 +66,29 @@ export class RuntimeStateJsonStore {
         return values;
     }
 
+    protected async listEntryValuesByKeys<T>(
+        namespace: string,
+        keys: readonly string[],
+    ): Promise<readonly RuntimeStateEntryValue<T>[]> {
+        if (keys.length === 0) {
+            return [];
+        }
+
+        const entries = isRuntimeStateTransactionalRepositoryLike(this.repository)
+            ? await this.repository.findEntriesByKeys(namespace, keys)
+            : (await Promise.all(
+                keys.map((key) => this.repository.findEntry(namespace, key)),
+            )).filter((entry): entry is RuntimeStateEntry => entry !== undefined);
+        const values: RuntimeStateEntryValue<T>[] = [];
+        for (const entry of entries) {
+            const value = await this.toLiveValue<T>(namespace, entry);
+            if (value !== undefined) {
+                values.push({ entry, value });
+            }
+        }
+        return values;
+    }
+
     protected async listEntriesPage(
         namespace: string,
         keyPrefix: string,

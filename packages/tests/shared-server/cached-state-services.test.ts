@@ -34,34 +34,28 @@ describe('cached state services', () => {
         expect(result.result.right?.snapshot).toBe(snapshot);
     });
 
-    it('rehydrates a legacy group mutation before observing and returning it', async () => {
-        const legacy = createGroupSnapshot(undefined);
+    it('validates a warm group snapshot against the durable state revision', async () => {
         const revisioned = createGroupSnapshot(4);
         const observe = vi.fn();
+        const findOrLoadByRef = vi.fn().mockResolvedValue(revisioned);
         const durable = {
-            updateGroup: vi.fn().mockResolvedValue({
-                status: 'ok',
-                result: Either.ofRight({ snapshot: legacy, event: undefined }),
-            }),
-            readSnapshot: vi.fn().mockResolvedValue(revisioned),
+            readStateRevision: vi.fn().mockResolvedValue(4),
         } as unknown as GroupStateService;
         const service = createCachedGroupStateService({
             durable,
             cache: {
-                findOrLoadByRef: vi.fn(),
+                findOrLoadByRef,
                 observe,
             },
         });
 
-        const result = await service.updateGroup(
-            { applicationId: 'app-1', workspaceId: 'workspace-1' },
-            'group-1',
-            {} as never,
-        );
+        const result = await service.readCurrentSnapshot(revisioned.group);
 
-        expect(durable.readSnapshot).toHaveBeenCalledWith(legacy.group);
-        expect(observe).toHaveBeenCalledWith(revisioned);
-        expect(result.result.right?.snapshot).toBe(revisioned);
+        expect(durable.readStateRevision).toHaveBeenCalledWith(revisioned.group);
+        expect(findOrLoadByRef).toHaveBeenCalledWith(revisioned.group, {
+            minStateRevision: 4,
+        });
+        expect(result).toBe(revisioned);
     });
 
     it('uses client read-through state and observes mutation results', async () => {
@@ -93,7 +87,7 @@ describe('cached state services', () => {
     });
 });
 
-function createGroupSnapshot(stateRevision: number | undefined): GroupSnapshot {
+function createGroupSnapshot(stateRevision: number): GroupSnapshot {
     return {
         stateRevision,
         group: {

@@ -11,8 +11,12 @@ import {
     RtcTopologySnapshotRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import {
+    RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
     RtcTopologyPublicationRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import {
+    RtcTopologyExecutionRepository,
+} from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import type { ALMessage } from '@shared/mod.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
@@ -89,6 +93,90 @@ describe('RTC topology runtime-state repositories', () => {
         });
     });
 
+    it('atomically accepts topology and publication only for the expected predecessor', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyExecutionRepository(runtimeRepository);
+        const groupRef = createGroupRef();
+        const snapshot = createTopologySnapshot(groupRef, 3);
+        const publication = createPublication(snapshot, 'work-1');
+
+        await expect(repository.commit({
+            expected: undefined,
+            candidate: snapshot,
+            publication,
+        })).resolves.toEqual({
+            status: 'committed',
+            snapshot,
+            publication,
+        });
+        await expect(repository.commit({
+            expected: undefined,
+            candidate: { ...snapshot, name: 'different retry' },
+            publication: { ...publication, recipientSessionIds: ['session-b'] },
+        })).resolves.toEqual({
+            status: 'loaded',
+            snapshot,
+            publication,
+        });
+
+        expect(
+            await new RtcTopologySnapshotRepository(runtimeRepository)
+                .findSnapshot(groupRef),
+        ).toEqual(snapshot);
+        expect(
+            await new RtcTopologyPublicationRepository(runtimeRepository)
+                .findPublicationForWork('work-1'),
+        ).toEqual(publication);
+    });
+
+    it('requests recomputation when the topology predecessor moves before commit', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+        const current = createTopologySnapshot(createGroupRef(), 4);
+        await snapshots.putSnapshot(current);
+        const repository = new RtcTopologyExecutionRepository(runtimeRepository);
+        const candidate = createTopologySnapshot(createGroupRef(), 3);
+
+        await expect(repository.commit({
+            expected: undefined,
+            candidate,
+            publication: createPublication(candidate, 'work-stale'),
+        })).resolves.toEqual({
+            status: 'retry',
+            current,
+        });
+        expect(
+            await new RtcTopologyPublicationRepository(runtimeRepository)
+                .findPublicationForWork('work-stale'),
+        ).toBeUndefined();
+    });
+
+    it('rolls back topology when publication persistence fails before commit', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcTopologyExecutionRepository(runtimeRepository);
+        const snapshot = createTopologySnapshot(createGroupRef(), 1);
+        runtimeRepository.beforeUpsert = (namespace) => {
+            if (namespace === RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE) {
+                throw new Error('publication write failed');
+            }
+        };
+
+        await expect(repository.commit({
+            expected: undefined,
+            candidate: snapshot,
+            publication: createPublication(snapshot, 'work-failed'),
+        })).rejects.toThrow('publication write failed');
+
+        expect(
+            await new RtcTopologySnapshotRepository(runtimeRepository)
+                .findSnapshot(snapshot.groupRef),
+        ).toBeUndefined();
+        expect(
+            await new RtcTopologyPublicationRepository(runtimeRepository)
+                .findPublicationForWork('work-failed'),
+        ).toBeUndefined();
+    });
+
     it('keeps latest RTT measurements by sorted pair and expires stale entries', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
@@ -162,6 +250,8 @@ function createTopologySnapshot(
     version: number,
 ): RallarOverlayTopologySnapshot {
     return {
+        sourceGroupStateRevision: version,
+        state: 'active',
         overlayId: JSON.stringify([
             groupRef.applicationId,
             groupRef.workspaceId ?? '',
@@ -180,5 +270,21 @@ function createTopologySnapshot(
         createdByClientId: 'owner',
         createdAtEpochMs: 1,
         updatedAtEpochMs: 2,
+    };
+}
+
+function createPublication(
+    snapshot: RallarOverlayTopologySnapshot,
+    workId: string,
+) {
+    return {
+        publicationId: `${workId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+        workId,
+        groupRef: snapshot.groupRef,
+        sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
+        overlayVersion: snapshot.version,
+        recipientSessionIds: snapshot.activeSessionIds,
+        message: { id: `message-${workId}` } as unknown as ALMessage,
+        createdAtEpochMs: 10,
     };
 }

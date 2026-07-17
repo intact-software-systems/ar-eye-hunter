@@ -65,7 +65,7 @@ export function configureClientStateSnapshotRepository(
         {
             ...options,
             equals: (left, right) =>
-                toClientSnapshotVersion(left) === toClientSnapshotVersion(right),
+                readClientStateRevision(left) === readClientStateRevision(right),
         },
         manager,
     );
@@ -174,7 +174,6 @@ function writeClientStateSnapshot(
         current,
         incoming: snapshot,
         stateRevisionOf: (value) => value.stateRevision,
-        legacyVersionOf: toClientSnapshotVersion,
         equals: jsonEquals,
     });
 
@@ -186,13 +185,6 @@ function writeClientStateSnapshot(
             );
         }
         return decision;
-    }
-
-    if (decision === 'legacy-refreshed') {
-        console.warn(
-            `Received divergent legacy client snapshot at version ${toClientSnapshotVersion(snapshot)}: ${snapshot.principal.principalId}`,
-        );
-        repository.set(repositoryKey, snapshot);
     }
 
     return decision;

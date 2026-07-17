@@ -22,6 +22,7 @@ export type CachedGroupStateServiceCache = Readonly<{
 
 export type CachedGroupStateService = GroupStateService & Readonly<{
     observeSnapshot(snapshot: GroupSnapshot): Promise<GroupSnapshot>;
+    readCurrentSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
     readSnapshotAtLeast(
         ref: GroupRef,
         options: Readonly<{
@@ -38,11 +39,8 @@ export function createCachedGroupStateService(options: Readonly<{
     const observeSnapshot = async (
         snapshot: GroupSnapshot,
     ): Promise<GroupSnapshot> => {
-        const resolved = snapshot.stateRevision === undefined
-            ? await options.durable.readSnapshot(snapshot.group) ?? snapshot
-            : snapshot;
-        options.cache.observe(resolved);
-        return resolved;
+        options.cache.observe(snapshot);
+        return snapshot;
     };
     const observeMutation = async <T extends GroupMutationWritten>(
         mutation: T,
@@ -87,6 +85,14 @@ export function createCachedGroupStateService(options: Readonly<{
     const service: CachedGroupStateService = {
         ...options.durable,
         observeSnapshot,
+        readCurrentSnapshot: async (ref) => {
+            const stateRevision = await options.durable.readStateRevision(ref);
+            return stateRevision === undefined
+                ? undefined
+                : await options.cache.findOrLoadByRef(ref, {
+                    minStateRevision: stateRevision,
+                });
+        },
         readSnapshotAtLeast: async (ref, readOptions) =>
             await options.cache.findOrLoadByRef(ref, readOptions),
         listSnapshots: async (scope) => {

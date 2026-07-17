@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     ConnectionContext,
     JsonWebSocketServer,
@@ -67,6 +67,52 @@ describe('RTC topology cluster publication fanout', () => {
         expect(socketA.sent).toHaveLength(1);
         expect(socketB.sent).toHaveLength(1);
         expect(outside.sent).toHaveLength(0);
+    });
+
+    it('encodes once and sends by recipient id without scanning unrelated connections', async () => {
+        const repository = new RtcTopologyPublicationRepository(
+            new FakeRuntimeStateRepository(),
+        );
+        const server = new JsonWebSocketServer();
+        server.addConnection(new ConnectionContext('session-a', new FakeSocket() as never));
+        server.addConnection(new ConnectionContext('session-outside', new FakeSocket() as never));
+        const encode = vi.spyOn(server, 'encode');
+        const trySendEncoded = vi.spyOn(server, 'trySendEncoded');
+        const broadcast = vi.spyOn(server, 'broadcast');
+        const fanout = createRtcTopologyPublicationFanout({
+            publisherId: 'server-a',
+            repository,
+            transport: createLocalRtcTopologyClusterTransport(
+                createLocalRtcTopologyClusterBus(),
+            ),
+            server,
+        });
+        await fanout.readiness;
+        const publication = {
+            publicationId: 'publication-1',
+            workId: 'work-1',
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
+            sourceGroupStateRevision: 4,
+            overlayVersion: 2,
+            recipientSessionIds: ['session-a', 'session-a', 'missing-session'],
+            message: newALBroadcastMessage(
+                'server-a',
+                newALRoute('overlay-topology', 'room-1', 'publication-1'),
+                'room',
+                'overlay-topology',
+                { sourceGroupStateRevision: 4 },
+            ),
+            createdAtEpochMs: Date.now(),
+        };
+
+        expect(fanout.deliverLocal(publication)).toBe(1);
+        expect(encode).toHaveBeenCalledTimes(1);
+        expect(trySendEncoded).toHaveBeenCalledTimes(2);
+        expect(broadcast).not.toHaveBeenCalled();
     });
 });
 

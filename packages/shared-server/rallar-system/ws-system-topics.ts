@@ -22,7 +22,6 @@ import { sendStateSyncMessage } from './state-sync-routing.ts';
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
-    type RtcTopologyGroupSnapshotResolver,
     type RtcTopologyWorkPublisher,
 } from './services/RtcTopologyOutboxWork.ts';
 import {
@@ -31,6 +30,7 @@ import {
 } from './services/rallar-rtc-topology-service.ts';
 import {
     GroupTopologyManagementService,
+    type GroupTopologyGroupSnapshotReader,
 } from './services/group-topology-management-service.ts';
 import {
     evaluateRtcRttMeasurement,
@@ -40,8 +40,8 @@ import { GroupTopologyConfigRepository } from './repositories/GroupTopologyConfi
 import { RtcRttRepository, type RtcRttRepositoryOptions, } from './repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from './repositories/RtcTopologySnapshotRepository.ts';
 import type { RuntimeStateRepositoryLike } from '../runtime-state/RuntimeStateRepository.ts';
-import type { RtcTopologyPublicationRepository } from './repositories/RtcTopologyPublicationRepository.ts';
 import type { RtcTopologyPublicationFanout } from './pubsub/RtcTopologyClusterTransport.ts';
+import type { RtcTopologyExecutionRepository } from './repositories/RtcTopologyExecutionRepository.ts';
 
 export type InitRallarSystemWsTopicsOptions = Readonly<{
     initDynamicTopics?: boolean;
@@ -61,9 +61,9 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
         topicId?: string;
         senderId?: string;
         wake?: () => void;
-        findGroupSnapshotByRef?: RtcTopologyGroupSnapshotResolver;
-        publicationRepository?: RtcTopologyPublicationRepository;
-        publicationFanout?: RtcTopologyPublicationFanout;
+        findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
+        executionRepository: RtcTopologyExecutionRepository;
+        publicationFanout: RtcTopologyPublicationFanout;
         /**
          * @deprecated Group mutations enqueue immutable topology work at the
          * commit boundary. Enable only while draining an older integration
@@ -159,13 +159,10 @@ export function initRallarSystemWsTopics(
             rtcTopologyAppOutbox.workType,
             createRtcTopologyWorkHandler({
                 runtime: rtcTopologyAppOutbox,
-                findGroupSnapshotByRef,
                 topologyManagement: rtcTopologyManagement,
-                server: wsQBoxServerService.socket,
-                publicationRepository:
-                    rtcTopologyAppOutboxOptions.publicationRepository,
-                publicationFanout:
-                    rtcTopologyAppOutboxOptions.publicationFanout,
+                executionRepository:
+                    rtcTopologyAppOutboxOptions.executionRepository,
+                publicationFanout: rtcTopologyAppOutboxOptions.publicationFanout,
                 onInactiveOverlay: (overlayId) =>
                     clearRtcTopologyFlushTimer(
                         overlayId,
@@ -496,7 +493,7 @@ function scheduleRtcOverlayTopologyFlushesForRtt(
 async function findGroupsAffectedByRtt(
     rtt: RttMeasurementInfo,
     message: ALMessage,
-    findGroupSnapshotByRef?: RtcTopologyGroupSnapshotResolver,
+    findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader,
 ): Promise<readonly GroupSnapshot[]> {
     const groupRef = readALTargetGroupRef(message);
     if (groupRef && findGroupSnapshotByRef) {
@@ -532,7 +529,7 @@ function initRttTopic(
     runtimeState?: RtcTopologyRuntimeState,
     scheduleGlobalGraphRttRecompute: () => void = () => {
     },
-    findGroupSnapshotByRef?: RtcTopologyGroupSnapshotResolver,
+    findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader,
 ): void {
     wsQBoxServerService.onInboxMessageDo(AppTopics.rtt, {
         onMessage: async (data: ALMessage, _: ResourceEntry, server: JsonWebSocketServer) => {

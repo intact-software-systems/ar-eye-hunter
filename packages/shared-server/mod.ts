@@ -17,6 +17,7 @@ export * from './rallar-system/repositories/GroupTopologyConfigRepository.ts';
 export * from './rallar-system/repositories/RtcRttRepository.ts';
 export * from './rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 export * from './rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+export * from './rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 export * from './rallar-system/repositories/StateEventStore.ts';
 export * from './rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 export * from './rallar-system/pubsub/RtcTopologyClusterTransport.ts';

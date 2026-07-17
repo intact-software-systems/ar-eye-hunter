@@ -1,5 +1,5 @@
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { readGroupVersion } from '@shared/api/group-client-views.ts';
+import { readGroupStateRevision, readGroupVersion } from '@shared/api/group-client-views.ts';
 import {
     configureObservableLatestRepository,
     newObservableLatestRepositoryToken,
@@ -72,7 +72,7 @@ export function configureGroupStateSnapshotRepository(
         {
             ...options,
             equals: (left, right) =>
-                toGroupSnapshotVersion(left) === toGroupSnapshotVersion(right),
+                readGroupStateRevision(left) === readGroupStateRevision(right),
         },
         manager,
     );
@@ -221,7 +221,6 @@ function writeGroupStateSnapshot(
         current,
         incoming: snapshot,
         stateRevisionOf: (value) => value.stateRevision,
-        legacyVersionOf: toGroupSnapshotVersion,
         equals: jsonEquals,
     });
 
@@ -237,19 +236,6 @@ function writeGroupStateSnapshot(
             console.log(`Received updated group snapshot: ${snapshot.group.groupId}`);
         }
         return decision;
-    }
-
-    if (decision === 'legacy-refreshed') {
-        console.warn(
-            `Received divergent legacy group snapshot at version ${toGroupSnapshotVersion(snapshot)}: ${snapshot.group.groupId}`,
-        );
-        repository.set(repositoryKey, snapshot);
-        replaceGroupSnapshotInSessionIndex(
-            repository,
-            repositoryKey,
-            previousForIndex,
-            snapshot,
-        );
     }
 
     return decision;

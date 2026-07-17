@@ -7,11 +7,21 @@ export class FakeRuntimeStateRepository
     implements RuntimeStateTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
     readonly locks: Array<Readonly<{ namespace: string; key: string }>> = [];
+    beforeUpsert?: (namespace: string, key: string) => void | Promise<void>;
 
     async begin<T>(
         fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
     ): Promise<T> {
-        return await fn(this);
+        const before = new Map(this.data);
+        try {
+            return await fn(this);
+        } catch (error) {
+            this.data.clear();
+            for (const [key, entry] of before) {
+                this.data.set(key, entry);
+            }
+            throw error;
+        }
     }
 
     findEntry(
@@ -47,12 +57,39 @@ export class FakeRuntimeStateRepository
         );
     }
 
+    findEntriesByKeys(
+        namespace: string,
+        keys: readonly string[],
+    ): Promise<readonly RuntimeStateEntry[]> {
+        const keySet = new Set(keys);
+        return Promise.resolve(
+            [...this.data.entries()]
+                .filter(
+                    ([compositeKey]) =>
+                        this.toNamespace(compositeKey) === namespace &&
+                        keySet.has(this.toStoreKey(compositeKey)),
+                )
+                .map(([, entry]) => ({ ...entry }))
+                .sort((left, right) => left.key.localeCompare(right.key)),
+        );
+    }
+
     upsert(
         namespace: string,
         key: string,
         value: string,
         expireAtTimestamp: number,
     ): Promise<void> {
+        return this.upsertAfterHook(namespace, key, value, expireAtTimestamp);
+    }
+
+    private async upsertAfterHook(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<void> {
+        await this.beforeUpsert?.(namespace, key);
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
         this.data.set(compositeKey, {
@@ -62,7 +99,6 @@ export class FakeRuntimeStateRepository
             updatedTimestamp: new Date().toISOString(),
             revision: current ? current.revision + 1 : 0,
         });
-        return Promise.resolve();
     }
 
     deleteByKey(namespace: string, key: string): Promise<void> {

@@ -72,6 +72,25 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
         return rows.map(toEntry);
     }
 
+    async findEntriesByKeys(
+        namespace: string,
+        keys: readonly string[],
+    ): Promise<readonly RuntimeStateEntry[]> {
+        if (keys.length === 0) {
+            return [];
+        }
+
+        const rows = await this.sql<RuntimeStateRow[]>`
+            select store_key, store_value, updated_ts, expire_at_ts, store_namespace, revision
+            from runtime_state_store
+            where store_namespace = ${namespace}
+              and store_key in ${this.sql([...new Set(keys)])}
+            order by store_key collate "C"
+        `;
+
+        return rows.map(toEntry);
+    }
+
     async findEntriesByPrefixPage(
         namespace: string,
         keyPrefix: string,

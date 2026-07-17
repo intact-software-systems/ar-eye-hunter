@@ -19,6 +19,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import { isLogicallyActiveSession, toSessionPurgeAfterEpochMs } from './session-expiry.ts';
 import { type ClientStateEventStore, defaultClientStateEventStoreFor } from './StateEventStore.ts';
 import { filterStateEventsForList, type StateEventListQuery } from '../state-event-listing.ts';
+import { readStableStateSnapshot } from './state-snapshot-read.ts';
 
 const PRINCIPALS_NAMESPACE = 'client-state:principals';
 const INSTANCES_NAMESPACE = 'client-state:instances';
@@ -95,20 +96,25 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     async listSnapshots(
         scope: ClientScope,
     ): Promise<readonly ClientSnapshot[]> {
-        const [principals, instances, sessions] = await Promise.all([
-            this.listEntryValues<ClientPrincipal>(
-                PRINCIPALS_NAMESPACE,
-                this.scopeChildPrefix(scope),
-            ),
+        const keyPrefix = this.scopeChildPrefix(scope);
+        const principalsBefore = await this.listEntryValues<ClientPrincipal>(
+            PRINCIPALS_NAMESPACE,
+            keyPrefix,
+        );
+        const [instances, sessions] = await Promise.all([
             this.listValues<ClientInstance>(
                 INSTANCES_NAMESPACE,
-                this.scopeChildPrefix(scope),
+                keyPrefix,
             ),
             this.listValues<ClientSession>(
                 SESSIONS_NAMESPACE,
-                this.scopeChildPrefix(scope),
+                keyPrefix,
             ),
         ]);
+        const principalsAfter = await this.listEntryValues<ClientPrincipal>(
+            PRINCIPALS_NAMESPACE,
+            keyPrefix,
+        );
         const instancesByPrincipalId = new Map<string, ClientInstance[]>();
         for (const instance of instances) {
             const current = instancesByPrincipalId.get(instance.principalId) ?? [];
@@ -123,13 +129,25 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
             activeSessionsByPrincipalId.set(session.principalId, current);
         }
 
-        return principals.map(({ entry, value: principal }) =>
-            this.toSnapshot(
-                principal,
-                instancesByPrincipalId.get(principal.principalId) ?? [],
-                activeSessionsByPrincipalId.get(principal.principalId) ?? [],
-                entry.revision + 1,
-            )
+        const beforeByKey = new Map(
+            principalsBefore.map((stored) => [stored.entry.key, stored]),
+        );
+        const snapshots = await Promise.all(
+            principalsAfter.map(async (stored) => {
+                const before = beforeByKey.get(stored.entry.key);
+                if (!before || before.entry.revision !== stored.entry.revision) {
+                    return await this.readSnapshot(stored.value);
+                }
+                return this.toSnapshot(
+                    stored.value,
+                    instancesByPrincipalId.get(stored.value.principalId) ?? [],
+                    activeSessionsByPrincipalId.get(stored.value.principalId) ?? [],
+                    stored.entry.revision + 1,
+                );
+            }),
+        );
+        return snapshots.filter(
+            (snapshot): snapshot is ClientSnapshot => snapshot !== undefined,
         );
     }
 
@@ -269,25 +287,29 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
     async readSnapshot(
         ref: ClientPrincipalRef,
     ): Promise<ClientSnapshot | undefined> {
-        const stored = await this.getEntryValue<ClientPrincipal>(
-            PRINCIPALS_NAMESPACE,
-            this.principalKey(ref),
-        );
-        if (!stored) {
-            return undefined;
-        }
-
-        const instances = await this.listInstances(ref);
-        const activeSessions = this.toActiveSessions(
-            await this.listSessionsForPrincipal(ref),
-        );
-
-        return this.toSnapshot(
-            stored.value,
-            instances,
-            activeSessions,
-            stored.entry.revision + 1,
-        );
+        const principalKey = this.principalKey(ref);
+        return await readStableStateSnapshot({
+            snapshotKey: principalKey,
+            readAggregate: async () =>
+                await this.getEntryValue<ClientPrincipal>(
+                    PRINCIPALS_NAMESPACE,
+                    principalKey,
+                ),
+            readChildren: async () => {
+                const [instances, sessions] = await Promise.all([
+                    this.listInstances(ref),
+                    this.listSessionsForPrincipal(ref),
+                ]);
+                return [instances, this.toActiveSessions(sessions)] as const;
+            },
+            assemble: (stored, instances, activeSessions) =>
+                this.toSnapshot(
+                    stored.value,
+                    instances,
+                    activeSessions,
+                    stored.entry.revision + 1,
+                ),
+        });
     }
 
     private toSnapshot(

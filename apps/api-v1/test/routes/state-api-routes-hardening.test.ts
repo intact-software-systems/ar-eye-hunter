@@ -939,6 +939,7 @@ function createAuthSession(clientId: string): AuthSession {
 
 function createClientSnapshot(principalId: string): ClientSnapshot {
   return {
+    stateRevision: 1,
     principal: {
       ...TEST_SCOPE,
       principalId,
@@ -965,6 +966,7 @@ function createGroupSnapshot(
   activePrincipalIds: readonly string[],
 ): GroupSnapshot {
   return {
+    stateRevision: 1,
     group: {
       ...TEST_SCOPE,
       groupId,

@@ -111,6 +111,7 @@ export type GroupStateService = Readonly<{
         options: GroupSnapshotPageOptions,
     ): Promise<GroupSnapshotPage>;
     readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
+    readStateRevision(ref: GroupRef): Promise<number | undefined>;
     listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
     listRecentEvents?(
         ref: GroupRef,
@@ -266,6 +267,9 @@ export function createGroupStateService(
                 ref,
             );
         },
+        readStateRevision: async (ref) => {
+            return await repositoryFor(runtimeRepository).readStateRevision(ref);
+        },
         listEvents: async (ref) => {
             return await repositoryFor(runtimeRepository).listEvents(ref);
         },
@@ -355,16 +359,9 @@ export function createGroupStateService(
                     joined: created,
                     updated: created,
                 };
-                const snapshot: GroupSnapshot = {
-                    group,
-                    members: [ownerMember],
-                    activeSessions: [],
-                    memberCount: 1,
-                    onlineMemberCount: 0,
-                };
-
                 await repository.putGroup(group);
                 await repository.putMember(ownerMember);
+                const snapshot = await requireGroupSnapshot(repository, ref);
 
                 const event = newGroupEvent(
                     'group-created',
@@ -1719,6 +1716,12 @@ function withGroupStateServiceTiming(
                 timing,
                 toGroupTimingInput(serviceId, 'readSnapshot', ref),
                 () => service.readSnapshot(ref),
+            ),
+        readStateRevision: async (ref) =>
+            await timeRallarAsync(
+                timing,
+                toGroupTimingInput(serviceId, 'readStateRevision', ref),
+                () => service.readStateRevision(ref),
             ),
         listEvents: async (ref) =>
             await timeRallarAsync(

@@ -18,6 +18,57 @@ import {
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('GroupTopologyManagementService', () => {
+    it('plans topology from an explicit predecessor without persisting under the graph computation', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const previous = createTopologySnapshot(group.group, {
+            'session-a': ['session-b'],
+            'session-b': ['session-a'],
+        });
+        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+        await snapshots.putSnapshot(previous);
+        const topologyService = new RallarRtcTopologyService();
+        const service = createService({ runtimeRepository, group, topologyService });
+
+        const result = await service.planGroupTopology(group, previous);
+
+        expect(result.previous).toBe(previous);
+        expect(result.snapshot.sourceGroupStateRevision).toBe(group.stateRevision);
+        expect(await snapshots.findSnapshot(group.group)).toEqual(previous);
+        expect(topologyService.readSnapshot(group)).toBeUndefined();
+    });
+
+    it('uses the immutable group update time for a planned removal tombstone', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const active = createGroupSnapshot(createGroupRef('workspace-1'));
+        const group = {
+            ...active,
+            stateRevision: 2,
+            group: {
+                ...active.group,
+                status: 'deleted' as const,
+                updated: { atEpochMs: 123, byPrincipalId: 'owner' },
+            },
+        };
+        const service = createService({
+            runtimeRepository,
+            group,
+            now: () => 999,
+        });
+
+        const result = await service.planGroupTopology(group, undefined);
+
+        expect(result.snapshot).toMatchObject({
+            state: 'removed',
+            sourceGroupStateRevision: 2,
+            updatedAtEpochMs: 123,
+        });
+        expect(
+            await new RtcTopologySnapshotRepository(runtimeRepository)
+                .findSnapshot(group.group),
+        ).toBeUndefined();
+    });
+
     it('reads topology views by full group ref without requiring an existing snapshot', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
@@ -495,6 +546,7 @@ function createGroupRef(workspaceId: string): GroupRef {
 function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
     const sessionIds = ['session-a', 'session-b', 'session-c', 'session-d', 'session-e'];
     return {
+        stateRevision: 1,
         group: {
             ...groupRef,
             displayName: groupRef.groupId,
@@ -548,6 +600,8 @@ function createTopologySnapshot(
     degreeLimit = 5,
 ): RallarOverlayTopologySnapshot {
     return {
+        sourceGroupStateRevision: 1,
+        state: 'active',
         overlayId: JSON.stringify([
             groupRef.applicationId,
             groupRef.workspaceId ?? '',

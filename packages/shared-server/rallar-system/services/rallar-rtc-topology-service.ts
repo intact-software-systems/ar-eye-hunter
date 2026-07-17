@@ -238,6 +238,21 @@ export class RallarRtcTopologyService {
         rttMeasurements: readonly RttMeasurementInfo[] = [],
         options: RallarRtcTopologyUpdateOptions = {},
     ): RallarRtcTopologyUpdateResult {
+        const result = this.planGroupTopology(
+            group,
+            rttMeasurements,
+            options,
+        );
+        this.observeTopologySnapshot(result.snapshot);
+        this.pendingRttUpdateDueAtByOverlayId.delete(result.snapshot.overlayId);
+        return result;
+    }
+
+    planGroupTopology(
+        group: GroupSnapshot,
+        rttMeasurements: readonly RttMeasurementInfo[] = [],
+        options: RallarRtcTopologyUpdateOptions = {},
+    ): RallarRtcTopologyUpdateResult {
         this.metrics.topologyUpdateCount += 1;
         const activeSessionIds = readGroupMemberSessionIds(group);
         const relevantRttMeasurements = filterRttMeasurementsForActiveSessions(
@@ -309,8 +324,6 @@ export class RallarRtcTopologyService {
         } else {
             this.metrics.topologyUnchangedCount += 1;
         }
-        this.observeTopologySnapshot(result.snapshot);
-        this.pendingRttUpdateDueAtByOverlayId.delete(overlayId);
         return result;
     }
 

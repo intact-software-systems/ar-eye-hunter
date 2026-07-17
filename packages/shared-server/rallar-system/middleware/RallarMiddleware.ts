@@ -25,6 +25,7 @@ import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import { isGroupSnapshotSessionLive, type RallarSnapshotPresenceClock, } from '../snapshot-presence.ts';
 import type { RtcTopologyPublicationRepository } from '../repositories/RtcTopologyPublicationRepository.ts';
 import type { RtcTopologyPublicationFanout } from '../pubsub/RtcTopologyClusterTransport.ts';
+import type { RtcTopologyExecutionRepository } from '../repositories/RtcTopologyExecutionRepository.ts';
 
 export type RallarMiddlewareRuntime = Readonly<{
     qboxEngine: InboxOutboxEngine;
@@ -40,6 +41,7 @@ export type RallarMiddlewareRuntime = Readonly<{
     clientsRepository: ClientStateRepository;
     groupsRepository: GroupStateRepository;
     rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
+    rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
     rtcTopologyPublicationFanout?: RtcTopologyPublicationFanout;
     readiness: Promise<void>;
 }>;
@@ -95,6 +97,7 @@ export type CreateRallarMiddlewareOptions = Readonly<{
     clientsRepository: ClientStateRepository;
     groupsRepository: GroupStateRepository;
     rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
+    rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
     rtcTopologyPublicationFanout?: RtcTopologyPublicationFanout;
     readiness?: Promise<void>;
 }>;
@@ -180,6 +183,7 @@ export function createRallarMiddleware(
         groupsRepository: options.groupsRepository,
         rtcTopologyPublicationRepository:
             options.rtcTopologyPublicationRepository,
+        rtcTopologyExecutionRepository: options.rtcTopologyExecutionRepository,
         rtcTopologyPublicationFanout: options.rtcTopologyPublicationFanout,
         readiness: options.readiness ?? Promise.resolve(),
     };

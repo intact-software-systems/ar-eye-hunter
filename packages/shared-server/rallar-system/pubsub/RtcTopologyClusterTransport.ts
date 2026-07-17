@@ -86,10 +86,14 @@ export function createRtcTopologyPublicationFanout(options: Readonly<{
     const channel = options.channel ?? RTC_TOPOLOGY_PUBLICATION_CHANNEL;
     const deliverLocal = (publication: RtcTopologyPublication): number => {
         const recipients = new Set(publication.recipientSessionIds);
-        return options.server.broadcast(
-            publication.message,
-            (connection) => recipients.has(connection.id),
-        );
+        const encoded = options.server.encode(publication.message);
+        let delivered = 0;
+        for (const connectionId of recipients) {
+            if (options.server.trySendEncoded(connectionId, encoded)) {
+                delivered += 1;
+            }
+        }
+        return delivered;
     };
     const readiness = options.transport.subscribe(
         channel,

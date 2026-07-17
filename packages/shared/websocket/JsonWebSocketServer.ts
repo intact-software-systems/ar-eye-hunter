@@ -196,6 +196,24 @@ export class JsonWebSocketServer {
         ctx.socket.send(encoded.text);
     }
 
+    trySendEncoded(
+        connectionId: string,
+        encoded: EncodedJsonWebSocketMessage,
+    ): boolean {
+        const ctx = this.connections.get(connectionId);
+        if (!ctx?.isOpen) {
+            return false;
+        }
+
+        try {
+            ctx.socket.send(encoded.text);
+            return true;
+        } catch (error) {
+            console.error(`WebSocket send failed for ${connectionId}`, error);
+            return false;
+        }
+    }
+
     broadcast(data: unknown, filter?: (ctx: ConnectionContext) => boolean): number {
         const encoded = this.encode(data);
 

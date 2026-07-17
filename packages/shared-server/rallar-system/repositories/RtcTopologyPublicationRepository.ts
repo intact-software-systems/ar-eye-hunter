@@ -63,7 +63,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
         publication: RtcTopologyPublication,
     ): Promise<PutRtcTopologyPublicationResult> {
         if (!isRuntimeStateTransactionalRepositoryLike(this.repository)) {
-            return await this.putOrLoadUnlocked(publication);
+            return await this.putOrLoadWithinTransaction(publication);
         }
 
         return await this.repository.begin(async (repository) => {
@@ -72,11 +72,11 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
                 publication.workId,
             );
             return await this.withRepository(repository)
-                .putOrLoadUnlocked(publication);
+                .putOrLoadWithinTransaction(publication);
         });
     }
 
-    private async putOrLoadUnlocked(
+    async putOrLoadWithinTransaction(
         publication: RtcTopologyPublication,
     ): Promise<PutRtcTopologyPublicationResult> {
         const existingForWork = await this.findPublicationForWork(
@@ -125,14 +125,12 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
 }
 
 export function toRtcTopologyPublicationId(input: Readonly<{
-    overlayId: string;
-    cause: 'group-revision' | 'rtt-refresh';
+    workId: string;
     sourceGroupStateRevision: number;
     overlayVersion: number;
 }>): string {
     return [
-        input.overlayId,
-        input.cause,
+        input.workId,
         input.sourceGroupStateRevision,
         input.overlayVersion,
     ].join(':');

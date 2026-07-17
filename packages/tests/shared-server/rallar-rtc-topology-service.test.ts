@@ -413,6 +413,7 @@ describe('RallarRtcTopologyService', () => {
         const first = service.updateGroupTopology(group);
         const second = service.updateGroupTopology({
             ...group,
+            stateRevision: 2,
             group: {
                 ...group.group,
                 snapshotVersion: 2,
@@ -701,6 +702,7 @@ function createGroupSnapshot(
     const workspaceId = 'workspace-1';
 
     return {
+        stateRevision: 1,
         group: {
             applicationId,
             workspaceId,
