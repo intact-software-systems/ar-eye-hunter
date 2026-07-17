@@ -486,4 +486,3 @@ Expected: task files match this plan; unrelated existing state-snapshot changes 
 - [ ] **Step 7: Commit any final test-only correction**
 
 If verification required a correction within task scope, stage only those task files and commit it. Otherwise leave the existing task commits intact.
-
