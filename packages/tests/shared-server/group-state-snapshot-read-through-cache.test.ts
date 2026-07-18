@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type {
     Group,
     GroupMember,
+    GroupPresenceSummary,
     GroupPresenceSession,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
@@ -23,17 +24,16 @@ describe('GroupStateSnapshotReadThroughCache', () => {
         const second = createGroupSnapshot(1, ['session-a', 'session-b']);
 
         await putGroupSnapshot(repository, first);
-        await expect(cache.findOrLoadByRef(first.group)).resolves.toEqual({
-            ...first,
-            stateRevision: 1,
-        });
+        await expect(cache.findOrLoadByRef(first.group)).resolves.toEqual(first);
 
         await putGroupSnapshot(repository, second);
         await expect(cache.findOrLoadByRef(second.group, {
-            minStateRevision: 2,
+            minCausalRevision: { groupRevision: 2, presenceRevision: 2 },
         })).resolves.toEqual({
             ...second,
-            stateRevision: 2,
+            stateRevision: 4,
+            causalRevision: { groupRevision: 2, presenceRevision: 2 },
+            group: { ...second.group, presenceVersion: 2 },
         });
     });
 
@@ -48,14 +48,21 @@ describe('GroupStateSnapshotReadThroughCache', () => {
         const revisionTwo = {
             ...createGroupSnapshot(1, ['session-new']),
             stateRevision: 2,
+            causalRevision: { groupRevision: 2, presenceRevision: 2 },
         } satisfies GroupSnapshot;
         const revisionOne = {
             ...createGroupSnapshot(99, ['session-stale']),
             stateRevision: 1,
+            causalRevision: { groupRevision: 1, presenceRevision: 1 },
         } satisfies GroupSnapshot;
 
         expect(cache.observe(revisionTwo)).toBe('inserted');
         expect(cache.observe(revisionOne)).toBe('stale');
+        expect(cache.observe({
+            ...revisionTwo,
+            stateRevision: 99,
+            causalRevision: { groupRevision: 3, presenceRevision: 1 },
+        })).toBe('stale');
         expect(cache.observe(revisionTwo)).toBe('duplicate');
         expect(() => cache.observe({
             ...revisionTwo,
@@ -76,6 +83,32 @@ async function putGroupSnapshot(
             repository.putPresenceSession(session)
         ),
     );
+    const group = await repository.findGroupEntry(snapshot.group);
+    if (!group) throw new Error('Expected persisted group');
+    const current = await repository.findPresenceSummaryEntry(snapshot.group);
+    const presenceRevision = (current?.value.causalRevision.presenceRevision ?? 0) + 1;
+    const summary: GroupPresenceSummary = {
+        ...snapshot.group,
+        causalRevision: {
+            groupRevision: group.entry.revision + 1,
+            presenceRevision,
+        },
+        activePrincipalIds: snapshot.activeSessions.map((session) =>
+            session.principalId
+        ),
+        activeSessionIds: snapshot.activeSessions.map((session) =>
+            session.sessionId
+        ),
+        activeSessions: snapshot.activeSessions,
+        activePrincipalCount: snapshot.activeSessions.length,
+        activeSessionCount: snapshot.activeSessions.length,
+        computedAtEpochMs: snapshot.group.updated.atEpochMs,
+    };
+    if (current) {
+        await repository.updatePresenceSummary(summary, current.entry.revision);
+    } else {
+        await repository.insertPresenceSummary(summary);
+    }
 }
 
 function createGroupSnapshot(
@@ -111,6 +144,8 @@ function createGroupSnapshot(
             ...group,
             sessionId,
             principalId: `principal-${sessionId}`,
+            generationId: `generation-${sessionId}`,
+            generationVersion: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs: 4_000_000_000_000,
@@ -118,6 +153,11 @@ function createGroupSnapshot(
     );
 
     return {
+        stateRevision: snapshotVersion + sessionIds.length,
+        causalRevision: {
+            groupRevision: snapshotVersion,
+            presenceRevision: sessionIds.length,
+        },
         group,
         members,
         activeSessions,

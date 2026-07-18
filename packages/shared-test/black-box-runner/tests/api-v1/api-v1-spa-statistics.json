@@ -256,6 +256,7 @@
         },
         "body": {
           "requestId": "presence-spa-stats-{aliceSessionId}-{runId}",
+          "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -264,13 +265,7 @@
         "body": {
           "group": {
             "groupId": "{groupId}"
-          },
-          "activeSessions": [
-            {
-              "sessionId": "{aliceSessionId}",
-              "principalId": "{aliceClientId}"
-            }
-          ]
+          }
         }
       }
     },

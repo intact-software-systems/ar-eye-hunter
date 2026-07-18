@@ -120,6 +120,10 @@ describe('Rallar system websocket topics RTC topology', () => {
         const unchangedGroup = {
             ...group,
             stateRevision: 2,
+            causalRevision: {
+                ...group.causalRevision,
+                groupRevision: 2,
+            },
             group: {
                 ...group.group,
                 snapshotVersion: 2,
@@ -1385,6 +1389,10 @@ function createGroupSnapshot(
 
     return {
         stateRevision: 1,
+        causalRevision: {
+            groupRevision: 1,
+            presenceRevision: 0,
+        },
         group: {
             applicationId,
             workspaceId,
@@ -1429,6 +1437,8 @@ function createGroupSnapshot(
             groupId,
             sessionId,
             principalId: sessionId,
+            generationId: `generation-${sessionId}`,
+            generationVersion: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: 1,
             expiresAtEpochMs: Date.now() + 60_000,
@@ -1450,6 +1460,10 @@ function createInactiveGroupSnapshot(
     return {
         ...snapshot,
         stateRevision: snapshot.stateRevision + 1,
+        causalRevision: {
+            ...snapshot.causalRevision,
+            groupRevision: snapshot.causalRevision.groupRevision + 1,
+        },
         group: {
             ...snapshot.group,
             status,

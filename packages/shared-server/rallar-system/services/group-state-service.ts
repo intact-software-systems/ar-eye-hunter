@@ -1,8 +1,5 @@
 import type {
-    AuditStamp,
-    Group,
     GroupEvent,
-    GroupMember,
     GroupPresenceSession,
     GroupRef,
     GroupScope,
@@ -19,7 +16,6 @@ import type {
     GroupJoinCodeResponse,
     HeartbeatGroupPresenceSessionRequest,
     JoinGroupRequest,
-    MutationActorInput,
     RemoveGroupMemberRequest,
     RevokeGroupInviteRequest,
     RotateGroupJoinCodeRequest,
@@ -30,67 +26,74 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
-import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import type { GroupPolicyDenied, GroupPolicyResult } from '@shared/api/group-policy-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import {
-    createRallarGroupDirectorAppointment,
-    mergeRallarGroupDirectorMetadata,
-    normalizeRallarGroupDirectorHeartbeatTtlMs,
-    readRallarGroupDirectorFromSnapshot,
-    resolveRallarGroupDirectorAppointmentEligibility,
-} from '@shared/api/group-director.ts';
-import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
-import { type GroupStateEventStore } from '../repositories/StateEventStore.ts';
-import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
-import type { StateSyncPublisher } from '../state-sync-publisher.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import { jsonEquals } from '@shared/repository/state-utils.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { type RallarTimingSink, timeRallarAsync } from './timing.ts';
+import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import {
-    canActivateGroupMember,
-    canConnectGroupPresenceSession,
-    canGovernGroupMember,
-    canJoinGroup,
-    canMutateActiveGroup,
-    type GroupGovernanceAction,
-    GroupPolicyDeniedError,
-} from '../group-policy.ts';
+    DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
+    normalizeRallarGroupDirectorHeartbeatTtlMs,
+} from '@shared/api/group-director.ts';
+import type {
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+} from '../../runtime-state/RuntimeStateRepository.ts';
+import {
+    DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
+    requireConditionalWrite,
+    RuntimeStateRetryExhaustedError,
+    RuntimeStateWriteConflictError,
+    waitForRuntimeStateWriteRetry,
+} from '../../runtime-state/optimistic-runtime-state-write.ts';
+import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
+import {
+    createStateMutationOutboxRecord,
+    hashStateMutationCommand,
+    StateMutationOutboxRepository,
+} from '../repositories/StateMutationOutboxRepository.ts';
+import type { GroupStateEventStore } from '../repositories/StateEventStore.ts';
+import type { StateSyncPublisher } from '../state-sync-publisher.ts';
+import {
+    computeGroupMutation,
+    type GroupMutationCommand,
+    type GroupMutationComputed,
+    type GroupMutationFacts,
+    type GroupMutationReceipt,
+    type GroupMutationRead,
+    validateGroupMutation,
+    validateGroupMutationCommand,
+} from './group-state-mutations.ts';
+import {
+    recordRallarTiming,
+    type RallarTimingSink,
+    timeRallarAsync,
+} from './timing.ts';
 
-const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_GROUP_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
-const RALLAR_GROUP_JOIN_CODE_VERSION = 1;
-const GROUP_PRESENCE_SESSION_LOCK_NAMESPACE = 'group-state:presence-session-locks';
+const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
-export type GroupWritten = {
+export type GroupWritten = Readonly<{
     snapshot: GroupSnapshot;
     event: GroupEvent;
-};
+}>;
 
-export type GroupMutationWritten = {
+export type GroupMutationWritten = Readonly<{
     snapshot: GroupSnapshot;
     event?: GroupEvent;
-};
+}>;
 
-export type GroupStateWritten = {
+export type GroupStateWritten = Readonly<{
     status: 'created' | 'ok' | 'error';
     result: Either<string, GroupMutationWritten>;
-};
+}>;
 
 export type GroupJoinCodeMutationWritten =
     & GroupJoinCodeResponse
-    & Readonly<{
-        event?: GroupEvent;
-    }>;
+    & Readonly<{ event?: GroupEvent }>;
 
-export type GroupJoinCodeWritten = {
+export type GroupJoinCodeWritten = Readonly<{
     status: 'ok' | 'error';
     result: Either<string, GroupJoinCodeMutationWritten>;
-};
+}>;
 
 export type GroupSnapshotPageOptions = Readonly<{
     afterKey?: string;
@@ -103,6 +106,11 @@ export type GroupSnapshotPage = Readonly<{
     hasMore: boolean;
     nextGroupKey?: string;
 }>;
+
+export type DisconnectPresenceBySessionRequest = Omit<
+    DisconnectGroupPresenceSessionRequest,
+    'generationId'
+>;
 
 export type GroupStateService = Readonly<{
     listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
@@ -121,10 +129,7 @@ export type GroupStateService = Readonly<{
         ref: GroupRef,
         query: StateEventListQuery,
     ): Promise<StateEventPage<GroupEvent>>;
-    createGroup(
-        scope: StateScope,
-        request: CreateGroupRequest,
-    ): Promise<GroupStateWritten>;
+    createGroup(scope: StateScope, request: CreateGroupRequest): Promise<GroupStateWritten>;
     updateGroup(
         scope: StateScope,
         groupId: string,
@@ -217,11 +222,11 @@ export type GroupStateService = Readonly<{
     ): Promise<GroupStateWritten>;
     disconnectPresenceSessionsBySessionId(
         sessionId: string,
-        request?: DisconnectGroupPresenceSessionRequest,
+        request?: DisconnectPresenceBySessionRequest,
     ): Promise<readonly GroupSnapshot[]>;
     disconnectPresenceSessionsBySessionIdWritten(
         sessionId: string,
-        request?: DisconnectGroupPresenceSessionRequest,
+        request?: DisconnectPresenceBySessionRequest,
     ): Promise<readonly GroupStateWritten[]>;
     expireExpiredPresenceSessions(
         atEpochMs?: number,
@@ -229,1451 +234,846 @@ export type GroupStateService = Readonly<{
 }>;
 
 export type GroupStateServiceDependencies = Readonly<{
-    runtimeRepository: RuntimeStateTransactionalRepositoryLike;
+    runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
     createGroupStateEventStore?: (
-        runtimeRepository: RuntimeStateTransactionalRepositoryLike,
+        runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
     ) => GroupStateEventStore;
-    syncPublisher: StateSyncPublisher;
+    /**
+     * @deprecated Ignored source-compatibility input. New composition must not wire
+     * a publisher here; the durable state-mutation outbox is the sole owner.
+     */
+    syncPublisher?: StateSyncPublisher;
     now?: () => number;
+    randomId?: () => string;
+    sleep?: (delayMs: number) => Promise<void>;
     serviceId: string;
+    /** Wake the durable mutation drainer after a transaction commits. */
+    wakeStateMutationOutbox?: () => void;
     timing?: RallarTimingSink;
+}>;
+
+export class GroupMutationIdempotencyConflictError extends Error {
+    readonly status = 409;
+    readonly code = 'group-mutation-idempotency-conflict';
+
+    constructor(
+        readonly commandId: string,
+        readonly existingCommandHash: string,
+        readonly receivedCommandHash: string,
+    ) {
+        super(`Group mutation command differs for request ${commandId}`);
+        this.name = 'GroupMutationIdempotencyConflictError';
+    }
+}
+
+type GroupMutationExecution = Readonly<{
+    receipt: GroupMutationReceipt;
+    source: 'write' | 'replay' | 'no-op' | 'rejected';
 }>;
 
 export function createGroupStateService(
     dependencies: GroupStateServiceDependencies,
 ): GroupStateService {
-    const runtimeRepository = dependencies.runtimeRepository;
-    const repositoryFor = (
-        repository: RuntimeStateTransactionalRepositoryLike,
-    ): GroupStateRepository =>
-        new GroupStateRepository(repository, {
-            events: dependencies.createGroupStateEventStore?.(repository),
-        });
+    const runtime = dependencies.runtimeRepository;
     const now = dependencies.now ?? (() => Date.now());
-    const serviceId = dependencies.serviceId;
+    const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
+    const repositoryFor = (
+        target: RuntimeStateOptimisticTransactionalRepositoryLike,
+    ) => new GroupStateRepository(target, {
+        events: dependencies.createGroupStateEventStore?.(target),
+    });
+
+    const executeReceipt = async (
+        command: GroupMutationCommand,
+        mutationAtEpochMs: number = now(),
+    ): Promise<GroupMutationExecution> => {
+        validateGroupMutationCommand(command);
+        const facts: GroupMutationFacts = {
+            nowEpochMs: mutationAtEpochMs,
+            serviceId: dependencies.serviceId,
+            eventId: randomId(),
+            commandHash: await hashStateMutationCommand(command),
+            joinCodeVerifier: await commandJoinCodeVerifier(command),
+        };
+        let lastConflict: RuntimeStateWriteConflictError | undefined;
+        for (let attempt = 0; attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS; attempt += 1) {
+            const backoffMs = await waitForRuntimeStateWriteRetry(
+                attempt as 0 | 1 | 2,
+                { sleep: dependencies.sleep },
+            );
+            const read = await timeMutationPhase(
+                dependencies,
+                command,
+                'read',
+                attempt,
+                backoffMs,
+                async () => await readGroupMutation(repositoryFor(runtime), command),
+            );
+            const computed = await timeMutationPhase(
+                dependencies,
+                command,
+                'compute',
+                attempt,
+                backoffMs,
+                () => computeGroupMutation({ command, read, facts }),
+            );
+            await timeMutationPhase(
+                dependencies,
+                command,
+                'validate',
+                attempt,
+                backoffMs,
+                () => validateGroupMutation({ command, read, facts, computed }),
+            );
+            if (computed.outcome === 'idempotency-conflict') {
+                throw new GroupMutationIdempotencyConflictError(
+                    command.commandId,
+                    computed.existingCommandHash,
+                    computed.receivedCommandHash,
+                );
+            }
+            if (
+                (computed.outcome === 'no-op' || computed.outcome === 'rejected') &&
+                computed.persistIdempotency && command.requestId !== null
+            ) {
+                const inserted = await repositoryFor(runtime)
+                    .insertIdempotentGroupMutationReceipt(
+                        command.aggregateRef,
+                        command.requestId,
+                        {
+                            requestId: command.requestId,
+                            commandHash: facts.commandHash,
+                            receipt: computed.receipt,
+                        },
+                    );
+                if (inserted.status === 'conflict') {
+                    lastConflict = new RuntimeStateWriteConflictError();
+                    recordMutationConflict(dependencies, command, attempt, backoffMs);
+                    continue;
+                }
+            }
+            if (computed.outcome !== 'write') {
+                return { receipt: computed.receipt, source: computed.outcome };
+            }
+            try {
+                const receipt = await timeMutationPhase(
+                    dependencies,
+                    command,
+                    'write',
+                    attempt,
+                    backoffMs,
+                    async () => await timeMutationPhase(
+                        dependencies,
+                        command,
+                        'transaction',
+                        attempt,
+                        backoffMs,
+                        async () => await writeGroupMutation(runtime, repositoryFor, computed),
+                    ),
+                );
+                dependencies.wakeStateMutationOutbox?.();
+                return { receipt, source: 'write' };
+            } catch (error) {
+                if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
+                lastConflict = error;
+                recordMutationConflict(dependencies, command, attempt, backoffMs);
+            }
+        }
+        throw new RuntimeStateRetryExhaustedError(
+            lastConflict ?? new RuntimeStateWriteConflictError(),
+        );
+    };
+
+    const executeCompatible = async (
+        command: GroupMutationCommand,
+    ): Promise<GroupStateWritten> => {
+        const execution = await executeReceipt(command);
+        if (execution.receipt.outcome === 'rejected') {
+            return {
+                status: 'error',
+                result: Either.ofLeft(execution.receipt.rejection ?? 'Group mutation rejected'),
+            };
+        }
+        const snapshot = await repositoryFor(runtime).readSnapshot(command.aggregateRef);
+        if (!snapshot) {
+            throw new NonRetryableException(
+                `Group snapshot not found: ${command.aggregateRef.groupId}`,
+            );
+        }
+        return {
+            status: command.operation === 'createGroup' ? 'created' : 'ok',
+            result: Either.ofRight({
+                snapshot,
+                ...(execution.receipt.event.kind === 'group'
+                    ? { event: execution.receipt.event.event }
+                    : {}),
+            }),
+        };
+    };
 
     const service: GroupStateService = {
-        listSnapshots: async (scope) => {
-            return await repositoryFor(runtimeRepository).listSnapshots(scope);
-        },
-        listSnapshotsPage: async (scope, options) => {
-            return await repositoryFor(runtimeRepository).listSnapshotsPage(
-                scope,
-                options,
-            );
-        },
-        readSnapshot: async (ref) => {
-            return await repositoryFor(runtimeRepository).readSnapshot(
-                ref,
-            );
-        },
-        readStateRevision: async (ref) => {
-            return await repositoryFor(runtimeRepository).readStateRevision(ref);
-        },
-        listEvents: async (ref) => {
-            return await repositoryFor(runtimeRepository).listEvents(ref);
-        },
-        listRecentEvents: async (ref, query) => {
-            return await repositoryFor(runtimeRepository).listRecentEvents(
-                ref,
-                query,
-            );
-        },
-        listEventPage: async (ref, query) => {
-            return await repositoryFor(runtimeRepository).listEventPage(
-                ref,
-                query,
-            );
-        },
-
-        createGroup: async (scope, request): Promise<GroupStateWritten> => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-
-                const ref: GroupRef = {
-                    ...scope,
-                    groupId: request.groupId,
-                };
-                const idempotencyKey = request.requestId ?? request.groupId;
-
-                const existing = await repository.findGroup(ref);
-
-                if (existing) {
-                    const written = await repository.findIdempotentGroupStateWritten(
-                        ref,
-                        idempotencyKey,
-                    );
-
-                    if (written) {
-                        return written;
-                    }
-
-                    return await repository.addIdempotentGroupStateWritten(
-                        ref,
-                        idempotencyKey,
-                        {
-                            status: 'error',
-                            result: Either.ofLeft(`Group already exists: ${request.groupId}`),
-                        },
-                    );
-                }
-
-                const timestamp = now();
-                const created = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    request.createdByPrincipalId,
-                );
-
-                const group: Group = {
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId: request.groupId,
-                    slug: request.slug,
-                    displayName: request.displayName,
-                    description: request.description,
-                    kind: request.kind,
-                    status: 'active',
-                    joinMode: request.joinMode ?? 'invite-only',
-                    maxMembers: request.maxMembers,
-                    maxSessionsPerMember: request.maxSessionsPerMember,
-                    metadata: request.metadata ?? {},
-                    snapshotVersion: 1,
-                    metadataVersion: 1,
-                    rosterVersion: 1,
-                    presenceVersion: 0,
-                    created,
-                    updated: created,
-                    expiresAtEpochMs: request.expiresAtEpochMs,
-                    purgeAfterEpochMs: request.purgeAfterEpochMs,
-                };
-
-                const ownerMember: GroupMember = {
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId: request.groupId,
-                    principalId: request.createdByPrincipalId,
-                    role: 'owner',
-                    status: 'active',
-                    joined: created,
-                    updated: created,
-                };
-                await repository.putGroup(group);
-                await repository.putMember(ownerMember);
-                const snapshot = await requireGroupSnapshot(repository, ref);
-
-                const event = newGroupEvent(
-                    'group-created',
-                    group,
-                    {
-                        ...request,
-                        actorPrincipalId: request.actorPrincipalId ?? request.createdByPrincipalId,
-                    },
-                    timestamp,
-                    serviceId,
-                );
-
-                await repository.appendEvent(event);
-
-                return await repository.addIdempotentGroupStateWritten(
-                    ref,
-                    idempotencyKey,
-                    {
-                        status: 'created',
-                        result: Either.ofRight({
-                            snapshot,
-                            event,
-                        }),
-                    },
-                );
-            });
-        },
-        updateGroup: async (scope, groupId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const ref: GroupRef = {
-                    ...scope,
-                    groupId,
-                };
-                const idempotentWritten = await findIdempotentGroupMutationWritten(
-                    repository,
-                    ref,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const existing = await repository.findGroup(ref);
-                if (!existing) {
-                    throw new NonRetryableException(`Group not found: ${groupId}`);
-                }
-                const timestamp = now();
-                if (shouldRequireActiveGroupForUpdate(existing, request, timestamp)) {
-                    assertGroupPolicyAllowed(canMutateActiveGroup({
-                        group: existing,
-                        nowEpochMs: timestamp,
-                    }));
-                }
-
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    request.actorPrincipalId,
-                );
-                const status = request.status ?? existing.status;
-                const group: Group = {
-                    ...existing,
-                    slug: request.slug ?? existing.slug,
-                    displayName: request.displayName ?? existing.displayName,
-                    description: request.description ?? existing.description,
-                    kind: request.kind ?? existing.kind,
-                    status,
-                    joinMode: request.joinMode ?? existing.joinMode,
-                    maxMembers: request.maxMembers ?? existing.maxMembers,
-                    maxSessionsPerMember: request.maxSessionsPerMember ?? existing.maxSessionsPerMember,
-                    metadata: request.metadata ?? existing.metadata,
-                    snapshotVersion: nextGroupSnapshotVersion(existing),
-                    metadataVersion: existing.metadataVersion + 1,
-                    updated: updatedAudit,
-                    archived: status === 'archived' ? updatedAudit : existing.archived,
-                    deleted: status === 'deleted' ? updatedAudit : existing.deleted,
-                    expiresAtEpochMs: request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
-                    emptySinceEpochMs: request.emptySinceEpochMs ?? existing.emptySinceEpochMs,
-                    purgeAfterEpochMs: request.purgeAfterEpochMs ?? existing.purgeAfterEpochMs,
-                };
-
-                if (isSameGroupMutation(existing, group)) {
-                    return await addIdempotentGroupMutationWritten(
-                        repository,
-                        ref,
-                        request.requestId,
-                        {
-                            snapshot: await requireGroupSnapshot(repository, ref),
-                            event: undefined,
-                        },
-                    );
-                }
-
-                await repository.putGroup(group);
-
-                const event = newGroupEvent(
-                    status === 'archived'
-                        ? 'group-archived'
-                        : status === 'deleted'
-                        ? 'group-deleted'
-                        : 'group-updated',
-                    group,
-                    request,
-                    timestamp,
-                    serviceId,
-                );
-                await repository.appendEvent(event);
-
-                return await addIdempotentGroupMutationWritten(
-                    repository,
-                    ref,
-                    request.requestId,
-                    {
-                        snapshot: await requireGroupSnapshot(repository, ref),
-                        event,
-                    },
-                );
-            });
-        },
-        appointDirector: async (scope, groupId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const ref: GroupRef = {
-                    ...scope,
-                    groupId,
-                };
-                const actorPrincipalId = request.actorPrincipalId;
-                const actorSessionId = request.actorSessionId;
-                if (!actorPrincipalId || !actorSessionId) {
-                    throw new NonRetryableException(
-                        'Forbidden: Cannot appoint a director without a local session.',
-                    );
-                }
-                const heartbeatTtlMs = toDirectorHeartbeatTtlMs(request);
-
-                const idempotentWritten = await findIdempotentGroupMutationWritten(
-                    repository,
-                    ref,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    assertIdempotentDirectorAppointmentMatchesActor(
-                        idempotentWritten,
-                        actorPrincipalId,
-                        actorSessionId,
-                    );
-                    return idempotentWritten;
-                }
-
-                const snapshot = await requireGroupSnapshot(repository, ref);
-                const timestamp = now();
-                assertGroupPolicyAllowed(canMutateActiveGroup({
-                    group: snapshot.group,
-                    nowEpochMs: timestamp,
-                }));
-                const eligibility = resolveRallarGroupDirectorAppointmentEligibility({
-                    snapshot,
-                    principalId: actorPrincipalId,
-                    sessionId: actorSessionId,
-                });
-                if (!eligibility.allowed) {
-                    throw new NonRetryableException(
-                        `Forbidden: ${
-                            eligibility.reason ??
-                                'Cannot appoint the browser director.'
-                        }`,
-                    );
-                }
-
-                const previous = readRallarGroupDirectorFromSnapshot(snapshot);
-                const appointment = createRallarGroupDirectorAppointment({
-                    session: {
-                        clientId: actorPrincipalId,
-                        sessionId: actorSessionId,
-                    },
-                    previous,
-                    now: timestamp,
-                    heartbeatTtlMs,
-                });
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    actorPrincipalId,
-                );
-                const group: Group = {
-                    ...snapshot.group,
-                    metadata: mergeRallarGroupDirectorMetadata(
-                        snapshot.group.metadata,
-                        appointment,
-                    ),
-                    snapshotVersion: nextGroupSnapshotVersion(snapshot.group),
-                    metadataVersion: snapshot.group.metadataVersion + 1,
-                    updated: updatedAudit,
-                };
-
-                await repository.putGroup(group);
-
-                const event = newGroupEvent(
-                    'group-updated',
-                    group,
-                    request,
-                    timestamp,
-                    serviceId,
-                );
-                await repository.appendEvent(event);
-
-                return await addIdempotentGroupMutationWritten(
-                    repository,
-                    ref,
-                    request.requestId,
-                    {
-                        snapshot: await requireGroupSnapshot(repository, group),
-                        event,
-                    },
-                );
-            });
-        },
-        joinGroup: async (scope, groupId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const groupRef = {
-                    ...scope,
-                    groupId,
-                };
-                const idempotentWritten = await findIdempotentGroupMutationWritten(
-                    repository,
-                    groupRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const snapshot = await requireGroupSnapshot(repository, groupRef);
-                const timestamp = now();
-                const storedJoinCode = readRallarGroupJoinCode(snapshot.group.metadata);
-                const joinCodeVerifier = request.joinCode
-                    ? await toGroupJoinCodeVerifier(request.joinCode)
-                    : undefined;
-                assertGroupPolicyAllowed(canJoinGroup({
-                    snapshot,
-                    actor: {
-                        principalId: request.actorPrincipalId,
-                        sessionId: request.actorSessionId,
-                    },
-                    nowEpochMs: timestamp,
-                    inviteToken: request.inviteToken,
-                    joinCode: request.joinCode,
-                    joinCodeVerifier,
-                    expectedJoinCodeVerifier: snapshot.group.joinMode === 'code'
-                        ? storedJoinCode?.verifier ?? ''
-                        : undefined,
-                    joinCodeExpiresAtEpochMs: storedJoinCode?.expiresAtEpochMs,
-                }));
-
-                const principalId = request.actorPrincipalId;
-                if (!principalId) {
-                    throw new NonRetryableException(
-                        'Forbidden: Cannot join a group without a principal.',
-                    );
-                }
-
-                const ref = {
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId,
-                };
-                const existing = await repository.findMember(ref);
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    principalId,
-                );
-                const member: GroupMember = {
-                    ...ref,
-                    role: existing?.role ?? 'member',
-                    status: 'active',
-                    joined: existing?.joined ?? updatedAudit,
-                    updated: updatedAudit,
-                    left: existing?.left,
-                    removed: existing?.removed,
-                    banned: existing?.banned,
-                    invitedByPrincipalId: existing?.invitedByPrincipalId,
-                    invitationExpiresAtEpochMs: existing?.invitationExpiresAtEpochMs,
-                };
-
-                if (existing && isSameGroupMemberMutation(existing, member)) {
-                    return await addIdempotentGroupMutationWritten(
-                        repository,
-                        snapshot.group,
-                        request.requestId,
-                        {
-                            snapshot,
-                            event: undefined,
-                        },
-                    );
-                }
-
-                await repository.putMember(member);
-                const snapshotGroup = {
-                    ...snapshot.group,
-                    snapshotVersion: nextGroupSnapshotVersion(snapshot.group),
-                    rosterVersion: snapshot.group.rosterVersion + 1,
-                    updated: updatedAudit,
-                };
-                await repository.putGroup(snapshotGroup);
-
-                const event = newGroupEvent(
-                    'member-joined',
-                    snapshotGroup,
-                    request,
-                    timestamp,
-                    serviceId,
-                );
-                await repository.appendEvent(event);
-
-                return await addIdempotentGroupMutationWritten(
-                    repository,
-                    snapshotGroup,
-                    request.requestId,
-                    {
-                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                        event,
-                    },
-                );
-            });
-        },
-        createGroupInvite: async (scope, groupId, principalId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const groupRef = {
-                    ...scope,
-                    groupId,
-                };
-                const idempotentWritten = await findIdempotentGroupMutationWritten(
-                    repository,
-                    groupRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const snapshot = await requireGroupSnapshot(repository, groupRef);
-                const timestamp = now();
-                assertGroupPolicyAllowed(canMutateActiveGroup({
-                    group: snapshot.group,
-                    nowEpochMs: timestamp,
-                }));
-                assertGroupPolicyAllowed(canGovernGroupMember({
-                    snapshot,
-                    actor: {
-                        principalId: request.actorPrincipalId,
-                        sessionId: request.actorSessionId,
-                    },
-                    targetPrincipalId: principalId,
-                    action: 'invite',
-                }));
-
-                const existing = snapshot.members.find((member) => member.principalId === principalId);
-                assertCanInviteMember(existing);
-                if (existing?.status === 'active') {
-                    return await addIdempotentGroupMutationWritten(
-                        repository,
-                        snapshot.group,
-                        request.requestId,
-                        {
-                            snapshot,
-                            event: undefined,
-                        },
-                    );
-                }
-
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    request.actorPrincipalId,
-                );
-                const ref = {
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId,
-                };
-                const member: GroupMember = {
-                    ...ref,
-                    role: existing?.role ?? 'member',
-                    status: 'invited',
-                    joined: existing?.joined ?? updatedAudit,
-                    updated: updatedAudit,
-                    left: existing?.left,
-                    removed: existing?.removed,
-                    banned: existing?.banned,
-                    invitedByPrincipalId: request.actorPrincipalId,
-                    invitationExpiresAtEpochMs: request.invitationExpiresAtEpochMs ??
-                        timestamp + DEFAULT_GROUP_INVITE_TTL_MS,
-                };
-
-                if (existing && isSameGroupMemberMutation(existing, member)) {
-                    return await addIdempotentGroupMutationWritten(
-                        repository,
-                        snapshot.group,
-                        request.requestId,
-                        {
-                            snapshot,
-                            event: undefined,
-                        },
-                    );
-                }
-
-                await repository.putMember(member);
-                const snapshotGroup = {
-                    ...snapshot.group,
-                    snapshotVersion: nextGroupSnapshotVersion(snapshot.group),
-                    rosterVersion: snapshot.group.rosterVersion + 1,
-                    updated: updatedAudit,
-                };
-                await repository.putGroup(snapshotGroup);
-
-                const event = newGroupEvent(
-                    'member-invited',
-                    snapshotGroup,
-                    request,
-                    timestamp,
-                    serviceId,
-                );
-                await repository.appendEvent(event);
-
-                return await addIdempotentGroupMutationWritten(
-                    repository,
-                    snapshotGroup,
-                    request.requestId,
-                    {
-                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                        event,
-                    },
-                );
-            });
-        },
-        revokeGroupInvite: async (scope, groupId, principalId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const groupRef = {
-                    ...scope,
-                    groupId,
-                };
-                const idempotentWritten = await findIdempotentGroupMutationWritten(
-                    repository,
-                    groupRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const snapshot = await requireGroupSnapshot(repository, groupRef);
-                const timestamp = now();
-                assertGroupPolicyAllowed(canMutateActiveGroup({
-                    group: snapshot.group,
-                    nowEpochMs: timestamp,
-                }));
-                assertGroupPolicyAllowed(canGovernGroupMember({
-                    snapshot,
-                    actor: {
-                        principalId: request.actorPrincipalId,
-                        sessionId: request.actorSessionId,
-                    },
-                    targetPrincipalId: principalId,
-                    action: 'remove',
-                }));
-
-                const existing = snapshot.members.find((member) => member.principalId === principalId);
-                if (existing?.status !== 'invited') {
-                    return await addIdempotentGroupMutationWritten(
-                        repository,
-                        snapshot.group,
-                        request.requestId,
-                        {
-                            snapshot,
-                            event: undefined,
-                        },
-                    );
-                }
-
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    request.actorPrincipalId,
-                );
-                const member: GroupMember = {
-                    ...existing,
-                    status: 'left',
-                    updated: updatedAudit,
-                    left: updatedAudit,
-                };
-                await repository.putMember(member);
-                const snapshotGroup = {
-                    ...snapshot.group,
-                    snapshotVersion: nextGroupSnapshotVersion(snapshot.group),
-                    rosterVersion: snapshot.group.rosterVersion + 1,
-                    updated: updatedAudit,
-                };
-                await repository.putGroup(snapshotGroup);
-
-                const event = newGroupEvent(
-                    'member-left',
-                    snapshotGroup,
-                    request,
-                    timestamp,
-                    serviceId,
-                );
-                await repository.appendEvent(event);
-
-                return await addIdempotentGroupMutationWritten(
-                    repository,
-                    snapshotGroup,
-                    request.requestId,
-                    {
-                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                        event,
-                    },
-                );
-            });
-        },
-        acceptGroupInvite: async (scope, groupId, request) => {
-            return await service.joinGroup(scope, groupId, request);
-        },
+        listSnapshots: async (scope) => await repositoryFor(runtime).listSnapshots(scope),
+        listSnapshotsPage: async (scope, options) =>
+            await repositoryFor(runtime).listSnapshotsPage(scope, options),
+        readSnapshot: async (ref) => await repositoryFor(runtime).readSnapshot(ref),
+        readStateRevision: async (ref) => await repositoryFor(runtime).readStateRevision(ref),
+        listEvents: async (ref) => await repositoryFor(runtime).listEvents(ref),
+        listRecentEvents: async (ref, query) =>
+            await repositoryFor(runtime).listRecentEvents(ref, query),
+        listEventPage: async (ref, query) =>
+            await repositoryFor(runtime).listEventPage(ref, query),
+        createGroup: async (scope, request) =>
+            await executeCompatible(toCreateCommand(scope, request, randomId)),
+        updateGroup: async (scope, groupId, request) =>
+            await executeCompatible(toUpdateCommand(scope, groupId, request, randomId)),
+        appointDirector: async (scope, groupId, request) =>
+            await executeCompatible(toDirectorCommand(scope, groupId, request, randomId)),
+        joinGroup: async (scope, groupId, request) =>
+            await executeCompatible(toJoinCommand('joinGroup', scope, groupId, request, randomId)),
+        createGroupInvite: async (scope, groupId, principalId, request) =>
+            await executeCompatible(toInviteCommand(scope, groupId, principalId, request, randomId)),
+        revokeGroupInvite: async (scope, groupId, principalId, request) =>
+            await executeCompatible(toTargetCommand(
+                'revokeGroupInvite', scope, groupId, principalId, request, randomId,
+            )),
+        acceptGroupInvite: async (scope, groupId, request) =>
+            await executeCompatible(toJoinCommand(
+                'acceptGroupInvite', scope, groupId, request, randomId,
+            )),
         rotateGroupJoinCode: async (scope, groupId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const groupRef = {
-                    ...scope,
-                    groupId,
-                };
-                const idempotentWritten = await findIdempotentGroupJoinCodeMutationWritten(
-                    repository,
-                    groupRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const snapshot = await requireGroupSnapshot(repository, groupRef);
-                const timestamp = now();
-                assertGroupPolicyAllowed(canMutateActiveGroup({
-                    group: snapshot.group,
-                    nowEpochMs: timestamp,
-                }));
-                assertGroupPolicyAllowed(canGovernGroupMember({
-                    snapshot,
-                    actor: {
-                        principalId: request.actorPrincipalId,
-                        sessionId: request.actorSessionId,
-                    },
-                    targetPrincipalId: `${snapshot.group.groupId}:join-code`,
-                    action: 'invite',
-                }));
-
-                const joinCode = normalizeJoinCode(request.joinCode);
-                const expiresAtEpochMs = request.expiresAtEpochMs ??
-                    timestamp + DEFAULT_GROUP_JOIN_CODE_TTL_MS;
-                const verifier = await toGroupJoinCodeVerifier(joinCode);
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    request.actorPrincipalId,
-                );
-                const group: Group = {
-                    ...snapshot.group,
-                    metadata: mergeRallarGroupJoinCodeMetadata(
-                        snapshot.group.metadata,
-                        {
-                            version: RALLAR_GROUP_JOIN_CODE_VERSION,
-                            verifier,
-                            expiresAtEpochMs,
-                            rotatedAtEpochMs: timestamp,
-                        },
+            const command = toRotateCommand(scope, groupId, request, randomId, now());
+            const execution = await executeReceipt(command);
+            if (execution.receipt.outcome === 'rejected') {
+                return {
+                    status: 'error',
+                    result: Either.ofLeft(
+                        execution.receipt.rejection ?? 'Join-code rotation rejected',
                     ),
-                    snapshotVersion: nextGroupSnapshotVersion(snapshot.group),
-                    metadataVersion: snapshot.group.metadataVersion + 1,
-                    updated: updatedAudit,
                 };
-
-                await repository.putGroup(group);
-
-                const event = newGroupEvent(
-                    'group-updated',
-                    group,
-                    request,
-                    timestamp,
-                    serviceId,
-                );
-                await repository.appendEvent(event);
-
-                return await addIdempotentGroupJoinCodeMutationWritten(
-                    repository,
-                    group,
-                    request.requestId,
-                    {
-                        joinCode,
-                        expiresAtEpochMs,
-                        snapshot: await requireGroupSnapshot(repository, group),
-                        event,
-                    },
-                );
-            });
+            }
+            const snapshot = await repositoryFor(runtime).readSnapshot(command.aggregateRef);
+            if (!snapshot || execution.receipt.joinCode === null ||
+                execution.receipt.joinCodeExpiresAtEpochMs === null) {
+                throw new NonRetryableException('Join-code mutation result is incomplete');
+            }
+            return {
+                status: 'ok',
+                result: Either.ofRight({
+                    joinCode: execution.receipt.joinCode,
+                    expiresAtEpochMs: execution.receipt.joinCodeExpiresAtEpochMs,
+                    snapshot,
+                    ...(execution.receipt.event.kind === 'group'
+                        ? { event: execution.receipt.event.event }
+                        : {}),
+                }),
+            };
         },
         removeGroupMember: async (scope, groupId, principalId, request) =>
-            await writeGovernedGroupMemberMutation({
-                runtimeRepository,
-                repositoryFor,
-                scope,
-                groupId,
-                principalId,
-                request,
-                now,
-                serviceId,
-                action: 'remove',
-                status: 'removed',
-                eventType: 'member-removed',
-                missingMemberBehavior: 'create',
-            }),
+            await executeCompatible(toTargetCommand(
+                'removeGroupMember', scope, groupId, principalId, request, randomId,
+            )),
         banGroupMember: async (scope, groupId, principalId, request) =>
-            await writeGovernedGroupMemberMutation({
-                runtimeRepository,
-                repositoryFor,
-                scope,
-                groupId,
-                principalId,
-                request,
-                now,
-                serviceId,
-                action: 'ban',
-                status: 'banned',
-                eventType: 'member-banned',
-                missingMemberBehavior: 'create',
-            }),
+            await executeCompatible(toTargetCommand(
+                'banGroupMember', scope, groupId, principalId, request, randomId,
+            )),
         unbanGroupMember: async (scope, groupId, principalId, request) =>
-            await writeGovernedGroupMemberMutation({
-                runtimeRepository,
-                repositoryFor,
-                scope,
-                groupId,
-                principalId,
-                request,
-                now,
-                serviceId,
-                action: 'unban',
-                status: 'left',
-                eventType: 'member-unbanned',
-                requiredExistingStatus: 'banned',
-                missingMemberBehavior: 'noop',
-            }),
+            await executeCompatible(toTargetCommand(
+                'unbanGroupMember', scope, groupId, principalId, request, randomId,
+            )),
         setGroupMemberRole: async (scope, groupId, principalId, request) =>
-            await writeGovernedGroupMemberMutation({
-                runtimeRepository,
-                repositoryFor,
-                scope,
-                groupId,
-                principalId,
-                request,
-                now,
-                serviceId,
-                action: 'promote',
-                role: request.role,
-                eventType: 'member-role-changed',
-                missingMemberBehavior: 'error',
-            }),
-        transferGroupOwnership: async (scope, groupId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const groupRef = {
-                    ...scope,
-                    groupId,
-                };
-                const idempotentWritten = await findIdempotentGroupMutationWritten(
-                    repository,
-                    groupRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const snapshot = await requireGroupSnapshot(repository, groupRef);
-                const timestamp = now();
-                assertGroupPolicyAllowed(canMutateActiveGroup({
-                    group: snapshot.group,
-                    nowEpochMs: timestamp,
-                }));
-                assertGroupPolicyAllowed(canGovernGroupMember({
-                    snapshot,
-                    actor: {
-                        principalId: request.actorPrincipalId,
-                        sessionId: request.actorSessionId,
-                    },
-                    targetPrincipalId: request.newOwnerPrincipalId,
-                    action: 'transfer-ownership',
-                }));
-
-                const actorMember = request.actorPrincipalId
-                    ? snapshot.members.find((member) => member.principalId === request.actorPrincipalId)
-                    : undefined;
-                const newOwner = snapshot.members.find((member) =>
-                    member.principalId === request.newOwnerPrincipalId
-                );
-                if (!actorMember || actorMember.status !== 'active') {
-                    throwGroupPolicyDenied(
-                        'forbidden-role',
-                        'Only active group owners can transfer group ownership.',
-                    );
-                }
-                if (!newOwner || newOwner.status !== 'active') {
-                    throwGroupPolicyDenied(
-                        'member-not-active',
-                        'Ownership can only be transferred to an active group member.',
-                    );
-                }
-                if (actorMember.principalId === newOwner.principalId) {
-                    return await addIdempotentGroupMutationWritten(
-                        repository,
-                        snapshot.group,
-                        request.requestId,
-                        {
-                            snapshot,
-                            event: undefined,
-                        },
-                    );
-                }
-
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    request.actorPrincipalId,
-                );
-                const updatedActor: GroupMember = {
-                    ...actorMember,
-                    role: 'admin',
-                    updated: updatedAudit,
-                };
-                const updatedNewOwner: GroupMember = {
-                    ...newOwner,
-                    role: 'owner',
-                    updated: updatedAudit,
-                };
-                await repository.putMember(updatedActor);
-                await repository.putMember(updatedNewOwner);
-
-                const snapshotGroup = {
-                    ...snapshot.group,
-                    snapshotVersion: nextGroupSnapshotVersion(snapshot.group),
-                    rosterVersion: snapshot.group.rosterVersion + 1,
-                    updated: updatedAudit,
-                };
-                await repository.putGroup(snapshotGroup);
-
-                const event = newGroupEvent(
-                    'ownership-transferred',
-                    snapshotGroup,
-                    request,
-                    timestamp,
-                    serviceId,
-                );
-                await repository.appendEvent(event);
-
-                return await addIdempotentGroupMutationWritten(
-                    repository,
-                    snapshotGroup,
-                    request.requestId,
-                    {
-                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                        event,
-                    },
-                );
-            });
-        },
-        upsertMember: async (scope, groupId, principalId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const groupRef = {
-                    ...scope,
-                    groupId,
-                };
-                const idempotentWritten = await findIdempotentGroupMutationWritten(
-                    repository,
-                    groupRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const group = await requireGroup(repository, groupRef);
-                const timestamp = now();
-                assertGroupPolicyAllowed(canMutateActiveGroup({
-                    group,
-                    nowEpochMs: timestamp,
-                }));
-                const snapshot = await requireGroupSnapshot(repository, groupRef);
-                if (request.status === 'active') {
-                    assertGroupPolicyAllowed(
-                        request.actorPrincipalId === principalId
-                            ? canJoinGroup({
-                                snapshot,
-                                actor: {
-                                    principalId: request.actorPrincipalId,
-                                    sessionId: request.actorSessionId,
-                                },
-                                nowEpochMs: timestamp,
-                            })
-                            : canActivateGroupMember({
-                                snapshot,
-                                targetPrincipalId: principalId,
-                                nowEpochMs: timestamp,
-                            }),
-                    );
-                }
-                const ref = {
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId,
-                };
-                const existing = snapshot.members.find((member) => member.principalId === principalId);
-                assertRawMemberMutationKeepsOwner(snapshot, existing, request);
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    request.actorPrincipalId ?? principalId,
-                );
-                const status = request.status;
-                const member: GroupMember = {
-                    ...ref,
-                    role: request.role ?? existing?.role ?? 'member',
-                    status,
-                    joined: existing?.joined ?? updatedAudit,
-                    updated: updatedAudit,
-                    left: status === 'left' ? updatedAudit : existing?.left,
-                    removed: status === 'removed' ? updatedAudit : existing?.removed,
-                    banned: status === 'banned' ? updatedAudit : existing?.banned,
-                    invitedByPrincipalId: request.invitedByPrincipalId ?? existing?.invitedByPrincipalId,
-                    invitationExpiresAtEpochMs: request.invitationExpiresAtEpochMs ??
-                        existing?.invitationExpiresAtEpochMs,
-                };
-
-                if (existing && isSameGroupMemberMutation(existing, member)) {
-                    return await addIdempotentGroupMutationWritten(
-                        repository,
-                        group,
-                        request.requestId,
-                        {
-                            snapshot: await requireGroupSnapshot(repository, group),
-                            event: undefined,
-                        },
-                    );
-                }
-
-                await repository.putMember(member);
-                const snapshotGroup = {
-                    ...group,
-                    snapshotVersion: nextGroupSnapshotVersion(group),
-                    rosterVersion: group.rosterVersion + 1,
-                    updated: updatedAudit,
-                };
-                await repository.putGroup(snapshotGroup);
-
-                const event = newGroupEvent(
-                    toGroupMemberEventType(status),
-                    snapshotGroup,
-                    request,
-                    timestamp,
-                    serviceId,
-                );
-                await repository.appendEvent(event);
-
-                return await addIdempotentGroupMutationWritten(
-                    repository,
-                    snapshotGroup,
-                    request.requestId,
-                    {
-                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                        event,
-                    },
-                );
-            });
-        },
-        connectPresenceSession: async (scope, groupId, sessionId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const groupRef = {
-                    ...scope,
-                    groupId,
-                };
-                await lockGroupPresenceSession(transactionRepository, {
-                    ...scope,
-                    groupId,
-                    sessionId,
-                });
-                const idempotentWritten = await findIdempotentGroupMutationWritten(
-                    repository,
-                    groupRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const group = await requireGroup(repository, groupRef);
-                const timestamp = now();
-                assertGroupPolicyAllowed(canMutateActiveGroup({
-                    group,
-                    nowEpochMs: timestamp,
-                }));
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    request.actorPrincipalId ?? request.principalId,
-                );
-                const existing = await repository.findPresenceSession({
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    sessionId,
-                });
-                const member = await repository.findMember({
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId: request.principalId,
-                });
-                if (!member) {
-                    throw new NonRetryableException(
-                        `Forbidden: group member not found for presence session: ${request.principalId}`,
-                    );
-                }
-                if (member.status !== 'active') {
-                    throw new NonRetryableException(
-                        `Forbidden: group member is not active for presence session: ${request.principalId}`,
-                    );
-                }
-                assertGroupPolicyAllowed(canConnectGroupPresenceSession({
-                    snapshot: await requireGroupSnapshot(repository, groupRef),
-                    actor: {
-                        principalId: request.principalId,
-                        sessionId: request.actorSessionId,
-                    },
-                    sessionId,
-                    nowEpochMs: timestamp,
-                }));
-
-                const session: GroupPresenceSession = {
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    sessionId,
-                    principalId: request.principalId,
-                    connectedAtEpochMs: request.connectedAtEpochMs ??
-                        existing?.connectedAtEpochMs ??
-                        timestamp,
-                    lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? timestamp,
-                    expiresAtEpochMs: request.expiresAtEpochMs ??
-                        timestamp + DEFAULT_GROUP_SESSION_TTL_MS,
-                    disconnectedAtEpochMs: undefined,
-                    disconnectReason: undefined,
-                };
-
-                await repository.putPresenceSession(session);
-
-                let event: GroupEvent | undefined;
-                let snapshotGroup = group;
-                if (
-                    !existing ||
-                    !isSameConnectedGroupPresenceSession(existing, session) ||
-                    group.emptySinceEpochMs !== undefined
-                ) {
-                    snapshotGroup = {
-                        ...group,
-                        snapshotVersion: nextGroupSnapshotVersion(group),
-                        presenceVersion: group.presenceVersion + 1,
-                        emptySinceEpochMs: undefined,
-                        updated: updatedAudit,
-                    };
-                    await repository.putGroup(snapshotGroup);
-
-                    event = newGroupEvent(
-                        'session-connected',
-                        snapshotGroup,
-                        request,
-                        timestamp,
-                        serviceId,
-                    );
-                    await repository.appendEvent(event);
-                } else {
-                    // The session row changed even though the public domain
-                    // version did not. Touch the aggregate row so its durable
-                    // revision remains a causal revision for the full snapshot.
-                    await repository.putGroup(snapshotGroup);
-                }
-
-                return await addIdempotentGroupMutationWritten(
-                    repository,
-                    snapshotGroup,
-                    request.requestId,
-                    {
-                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                        event,
-                    },
-                );
-            });
-        },
-        heartbeatPresenceSession: async (scope, groupId, sessionId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const groupRef = {
-                    ...scope,
-                    groupId,
-                };
-                await lockGroupPresenceSession(transactionRepository, {
-                    ...scope,
-                    groupId,
-                    sessionId,
-                });
-                const idempotentWritten = await findIdempotentGroupMutationWritten(
-                    repository,
-                    groupRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const group = await requireGroup(repository, groupRef);
-                const timestamp = request.lastHeartbeatAtEpochMs ?? now();
-                assertGroupPolicyAllowed(canMutateActiveGroup({
-                    group,
-                    nowEpochMs: timestamp,
-                }));
-                const ref = {
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    sessionId,
-                };
-                const existing = await repository.findPresenceSession(ref);
-                if (!existing) {
-                    throw new NonRetryableException(`Group presence session not found: ${sessionId}`);
-                }
-
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    request.actorPrincipalId ??
-                        request.principalId ??
-                        existing.principalId,
-                );
-                const wasActive = existing.disconnectedAtEpochMs === undefined &&
-                    existing.disconnectReason === undefined;
-                const session: GroupPresenceSession = {
-                    ...existing,
-                    lastHeartbeatAtEpochMs: timestamp,
-                    expiresAtEpochMs: request.expiresAtEpochMs ??
-                        existing.expiresAtEpochMs ??
-                        timestamp + DEFAULT_GROUP_SESSION_TTL_MS,
-                    disconnectedAtEpochMs: undefined,
-                    disconnectReason: undefined,
-                };
-
-                await repository.putPresenceSession(session);
-
-                let event: GroupEvent | undefined;
-                let snapshotGroup = group;
-                if (!wasActive || group.emptySinceEpochMs !== undefined) {
-                    snapshotGroup = {
-                        ...group,
-                        snapshotVersion: nextGroupSnapshotVersion(group),
-                        presenceVersion: group.presenceVersion + 1,
-                        emptySinceEpochMs: undefined,
-                        updated: updatedAudit,
-                    };
-                    await repository.putGroup(snapshotGroup);
-
-                    event = newGroupEvent(
-                        'session-heartbeat',
-                        snapshotGroup,
-                        request,
-                        timestamp,
-                        serviceId,
-                    );
-                    await repository.appendEvent(event);
-                } else {
-                    // Heartbeat/TTL state is part of GroupSnapshot. Advance the
-                    // aggregate row revision without changing snapshotVersion.
-                    await repository.putGroup(snapshotGroup);
-                }
-
-                return await addIdempotentGroupMutationWritten(
-                    repository,
-                    snapshotGroup,
-                    request.requestId,
-                    {
-                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                        event,
-                    },
-                );
-            });
-        },
-        disconnectPresenceSession: async (scope, groupId, sessionId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const groupRef = {
-                    ...scope,
-                    groupId,
-                };
-                await lockGroupPresenceSession(transactionRepository, {
-                    ...scope,
-                    groupId,
-                    sessionId,
-                });
-                const idempotentWritten = await findIdempotentGroupMutationWritten(
-                    repository,
-                    groupRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const group = await requireGroup(repository, groupRef);
-                const ref = {
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    sessionId,
-                };
-                const existing = await repository.findPresenceSession(ref);
-                if (!existing) {
-                    throw new NonRetryableException(`Group presence session not found: ${sessionId}`);
-                }
-                if (existing.disconnectedAtEpochMs !== undefined) {
-                    return await addIdempotentGroupMutationWritten(
-                        repository,
-                        groupRef,
-                        request.requestId,
-                        {
-                            snapshot: await requireGroupSnapshot(repository, group),
-                            event: undefined,
-                        },
-                    );
-                }
-
-                const timestamp = now();
-                const updatedAudit = toGroupAuditStamp(
-                    request,
-                    timestamp,
-                    serviceId,
-                    request.actorPrincipalId ??
-                        request.principalId ??
-                        existing.principalId,
-                );
-                const session: GroupPresenceSession = {
-                    ...existing,
-                    lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? existing.lastHeartbeatAtEpochMs,
-                    expiresAtEpochMs: request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
-                    disconnectedAtEpochMs: request.disconnectedAtEpochMs ??
-                        existing.disconnectedAtEpochMs ??
-                        timestamp,
-                    disconnectReason: request.reason ?? existing.disconnectReason ?? 'closed',
-                };
-
-                await repository.putPresenceSession(session);
-                const groupIsEmpty = !(await hasLiveGroupPresenceSessions(
-                    repository,
-                    groupRef,
-                    session.disconnectedAtEpochMs ?? timestamp,
-                ));
-
-                let event: GroupEvent | undefined;
-                let snapshotGroup = group;
-                if (!isSameDisconnectedGroupPresenceSession(existing, session)) {
-                    snapshotGroup = {
-                        ...group,
-                        snapshotVersion: nextGroupSnapshotVersion(group),
-                        presenceVersion: group.presenceVersion + 1,
-                        emptySinceEpochMs: groupIsEmpty
-                            ? group.emptySinceEpochMs ??
-                                (session.disconnectedAtEpochMs ?? timestamp)
-                            : undefined,
-                        updated: updatedAudit,
-                    };
-                    await repository.putGroup(snapshotGroup);
-
-                    event = newGroupEvent(
-                        'session-disconnected',
-                        snapshotGroup,
-                        request,
-                        timestamp,
-                        serviceId,
-                    );
-                    await repository.appendEvent(event);
-                }
-
-                return await addIdempotentGroupMutationWritten(
-                    repository,
-                    snapshotGroup,
-                    request.requestId,
-                    {
-                        snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                        event,
-                    },
-                );
-            });
-        },
+            await executeCompatible(toRoleCommand(scope, groupId, principalId, request, randomId)),
+        transferGroupOwnership: async (scope, groupId, request) =>
+            await executeCompatible(toTransferCommand(scope, groupId, request, randomId)),
+        upsertMember: async (scope, groupId, principalId, request) =>
+            await executeCompatible(toUpsertMemberCommand(
+                scope, groupId, principalId, request, randomId,
+            )),
+        connectPresenceSession: async (scope, groupId, sessionId, request) =>
+            await executeCompatible(toConnectPresenceCommand(
+                scope, groupId, sessionId, request, randomId,
+            )),
+        heartbeatPresenceSession: async (scope, groupId, sessionId, request) =>
+            await executeCompatible(toHeartbeatPresenceCommand(
+                scope, groupId, sessionId, request, randomId,
+            )),
+        disconnectPresenceSession: async (scope, groupId, sessionId, request) =>
+            await executeCompatible(toDisconnectPresenceCommand(
+                scope, groupId, sessionId, request, randomId,
+            )),
         disconnectPresenceSessionsBySessionId: async (sessionId, request = {}) => {
-            const writtenResults = await service.disconnectPresenceSessionsBySessionIdWritten(
+            const written = await service.disconnectPresenceSessionsBySessionIdWritten(
                 sessionId,
                 request,
             );
-
-            return writtenResults.map(requireGroupStateWrittenSnapshot);
+            return written.flatMap((result) =>
+                result.result.right ? [result.result.right.snapshot] : []
+            );
         },
         disconnectPresenceSessionsBySessionIdWritten: async (sessionId, request = {}) => {
-            const repository = repositoryFor(runtimeRepository);
-            const sessions = (await repository.listAllPresenceSessions()).filter(
-                (session) =>
+            const sessions = (await repositoryFor(runtime).listAllPresenceSessions())
+                .filter((session) =>
                     session.sessionId === sessionId &&
-                    session.disconnectedAtEpochMs === undefined,
-            );
-            const writtenResults: GroupStateWritten[] = [];
-
+                    session.disconnectedAtEpochMs === undefined
+                );
+            const written: GroupStateWritten[] = [];
             for (const session of sessions) {
-                try {
-                    const written = await service.disconnectPresenceSession(
-                        {
-                            applicationId: session.applicationId,
-                            workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-                        },
-                        session.groupId,
-                        session.sessionId,
-                        {
-                            ...request,
-                            principalId: request.principalId ?? session.principalId,
-                            actorPrincipalId: request.actorPrincipalId ?? session.principalId,
-                            actorSessionId: request.actorSessionId ?? session.sessionId,
-                        },
-                    );
-                    writtenResults.push(written);
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    if (!message.includes('not found')) {
-                        throw error;
-                    }
-                }
+                written.push(await service.disconnectPresenceSession(
+                    {
+                        applicationId: session.applicationId,
+                        workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+                    },
+                    session.groupId,
+                    session.sessionId,
+                    {
+                        ...request,
+                        generationId: session.generationId,
+                        principalId: request.principalId ?? session.principalId,
+                        actorPrincipalId:
+                            request.actorPrincipalId ?? session.principalId,
+                        actorSessionId: request.actorSessionId ?? session.sessionId,
+                    },
+                ));
             }
-
-            return writtenResults;
+            return written;
         },
         expireExpiredPresenceSessions: async (atEpochMs = now()) => {
-            const repository = repositoryFor(runtimeRepository);
-            const sessions = (await repository.listAllPresenceSessions()).filter(
-                (session) =>
+            const candidates = (await repositoryFor(runtime).listAllPresenceSessions())
+                .filter((session) =>
                     session.disconnectedAtEpochMs === undefined &&
-                    session.expiresAtEpochMs <= atEpochMs,
-            );
-            const writtenResults: GroupStateWritten[] = [];
-
-            for (const session of sessions) {
-                try {
-                    const written = await service.disconnectPresenceSession(
-                        {
-                            applicationId: session.applicationId,
-                            workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-                        },
-                        session.groupId,
-                        session.sessionId,
-                        {
-                            principalId: session.principalId,
-                            reason: 'expired',
-                            disconnectedAtEpochMs: atEpochMs,
-                            lastHeartbeatAtEpochMs: session.lastHeartbeatAtEpochMs,
-                            expiresAtEpochMs: session.expiresAtEpochMs,
-                            actorPrincipalId: session.principalId,
-                            actorSessionId: session.sessionId,
-                            requestId: toExpiredGroupPresenceRequestId(session),
-                        },
-                    );
-                    writtenResults.push(written);
-                } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    if (!message.includes('not found')) {
-                        throw error;
-                    }
-                }
+                    session.expiresAtEpochMs <= atEpochMs
+                );
+            const written: GroupStateWritten[] = [];
+            for (const session of candidates) {
+                const command = toExpiryCommand(session, atEpochMs);
+                const execution = await executeReceipt(command, atEpochMs);
+                if (execution.source !== 'write') continue;
+                const snapshot = await repositoryFor(runtime).readSnapshot(
+                    command.aggregateRef,
+                );
+                if (!snapshot) continue;
+                written.push({
+                    status: 'ok',
+                    result: Either.ofRight({
+                        snapshot,
+                        ...(execution.receipt.event.kind === 'group'
+                            ? { event: execution.receipt.event.event }
+                            : {}),
+                    }),
+                });
             }
-
-            return writtenResults;
+            return written;
         },
     };
 
-    return withGroupStateServiceTiming(service, dependencies.timing, serviceId);
+    return withGroupStateServiceTiming(service, dependencies.timing, dependencies.serviceId);
+}
+
+async function readGroupMutation(
+    repository: GroupStateRepository,
+    command: GroupMutationCommand,
+): Promise<GroupMutationRead> {
+    const [idempotency, group, members, targetPresence, presenceSummary, presenceSessions] =
+        await Promise.all([
+            command.requestId === null
+                ? Promise.resolve(undefined)
+                : repository.findIdempotentGroupMutationReceiptEntry(
+                    command.aggregateRef,
+                    command.requestId,
+                ),
+            repository.findGroupEntry(command.aggregateRef),
+            repository.listMembers(command.aggregateRef),
+            'sessionId' in command
+                ? repository.findPresenceEntry({
+                    ...command.aggregateRef,
+                    sessionId: command.sessionId,
+                })
+                : Promise.resolve(undefined),
+            repository.findPresenceSummaryEntry(command.aggregateRef),
+            repository.listPresenceSessions(command.aggregateRef),
+        ]);
+    return {
+        idempotency: idempotency ?? null,
+        group: group ?? null,
+        members,
+        targetPresence: targetPresence ?? null,
+        presenceSummary: presenceSummary ?? null,
+        presenceSessions,
+    };
+}
+
+async function writeGroupMutation(
+    runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
+    repositoryFor: (
+        target: RuntimeStateOptimisticTransactionalRepositoryLike,
+    ) => GroupStateRepository,
+    computed: Extract<GroupMutationComputed, { outcome: 'write' }>,
+): Promise<GroupMutationReceipt> {
+    return await runtime.begin(async (transaction) => {
+        const repository = repositoryFor(transaction);
+
+        // Aggregate/session ownership is always the first database statement.
+        if (computed.guard.kind === 'group') {
+            requireConditionalWrite(computed.guard.operation === 'insert'
+                ? await repository.insertGroup(computed.guard.value)
+                : await repository.updateGroup(
+                    computed.guard.value,
+                    computed.guard.expectedRevision,
+                ));
+        } else {
+            requireConditionalWrite(computed.guard.operation === 'insert'
+                ? await repository.insertPresence(computed.guard.value)
+                : await repository.updatePresence(
+                    computed.guard.value,
+                    computed.guard.expectedRevision,
+                ));
+        }
+
+        for (const member of computed.members) await repository.putMember(member);
+        if (computed.initialPresenceSummary) {
+            requireConditionalWrite(
+                await repository.insertPresenceSummary(computed.initialPresenceSummary),
+            );
+        }
+        if (computed.idempotency) {
+            requireConditionalWrite(
+                await repository.insertIdempotentGroupMutationReceipt(
+                    computed.outbox.aggregateRef,
+                    computed.idempotency.requestId,
+                    computed.idempotency,
+                ),
+            );
+        }
+        await new StateMutationOutboxRepository(transaction).putOrLoad(
+            createStateMutationOutboxRecord(computed.outbox),
+        );
+        await repository.appendEvent(computed.event);
+        return computed.receipt;
+    });
+}
+
+function toCreateCommand(
+    scope: StateScope,
+    request: CreateGroupRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    const commandId = request.requestId ?? randomId();
+    return {
+        operation: 'createGroup',
+        aggregateRef: { ...scope, groupId: request.groupId },
+        commandId,
+        requestId: request.requestId ?? commandId,
+        input: {
+            slug: request.slug ?? null,
+            displayName: request.displayName,
+            description: request.description ?? null,
+            kind: request.kind,
+            joinMode: request.joinMode ?? 'invite-only',
+            maxMembers: request.maxMembers ?? null,
+            maxSessionsPerMember: request.maxSessionsPerMember ?? null,
+            metadata: structuredClone(request.metadata ?? {}),
+            createdByPrincipalId: request.createdByPrincipalId,
+            expiresAtEpochMs: request.expiresAtEpochMs ?? null,
+            purgeAfterEpochMs: request.purgeAfterEpochMs ?? null,
+            ...actorInput(request),
+        },
+    };
+}
+
+function toUpdateCommand(
+    scope: StateScope,
+    groupId: string,
+    request: UpdateGroupRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    return {
+        operation: 'updateGroup',
+        aggregateRef: { ...scope, groupId },
+        ...identity(request.requestId, randomId),
+        input: {
+            slug: request.slug ?? null,
+            displayName: request.displayName ?? null,
+            description: request.description ?? null,
+            kind: request.kind ?? null,
+            status: request.status ?? null,
+            joinMode: request.joinMode ?? null,
+            maxMembers: request.maxMembers ?? null,
+            maxSessionsPerMember: request.maxSessionsPerMember ?? null,
+            metadata: request.metadata ? structuredClone(request.metadata) : null,
+            expiresAtEpochMs: request.expiresAtEpochMs ?? null,
+            emptySinceEpochMs: request.emptySinceEpochMs ?? null,
+            purgeAfterEpochMs: request.purgeAfterEpochMs ?? null,
+            ...actorInput(request),
+        },
+    };
+}
+
+function toDirectorCommand(
+    scope: StateScope,
+    groupId: string,
+    request: AppointGroupDirectorRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    return {
+        operation: 'appointDirector',
+        aggregateRef: { ...scope, groupId },
+        ...identity(request.requestId, randomId),
+        input: {
+            heartbeatTtlMs: normalizeRallarGroupDirectorHeartbeatTtlMs(
+                request.heartbeatTtlMs ??
+                    DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
+            ),
+            ...actorInput(request),
+        },
+    };
+}
+
+function toJoinCommand(
+    operation: 'joinGroup' | 'acceptGroupInvite',
+    scope: StateScope,
+    groupId: string,
+    request: JoinGroupRequest | AcceptGroupInviteRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    if (!request.actorPrincipalId) {
+        throw new NonRetryableException('Forbidden: Cannot join a group without a principal.');
+    }
+    return {
+        operation,
+        aggregateRef: { ...scope, groupId },
+        targetPrincipalId: request.actorPrincipalId,
+        ...identity(request.requestId, randomId),
+        input: {
+            inviteToken: 'inviteToken' in request ? request.inviteToken ?? null : null,
+            joinCode: 'joinCode' in request && request.joinCode
+                ? normalizeJoinCode(request.joinCode)
+                : null,
+            ...actorInput(request),
+        },
+    };
+}
+
+function toInviteCommand(
+    scope: StateScope,
+    groupId: string,
+    principalId: string,
+    request: CreateGroupInviteRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    return {
+        operation: 'createGroupInvite',
+        aggregateRef: { ...scope, groupId },
+        targetPrincipalId: principalId,
+        ...identity(request.requestId, randomId),
+        input: {
+            invitationExpiresAtEpochMs: request.invitationExpiresAtEpochMs ?? null,
+            ...actorInput(request),
+        },
+    };
+}
+
+function toTargetCommand(
+    operation: 'revokeGroupInvite' | 'removeGroupMember' |
+        'banGroupMember' | 'unbanGroupMember',
+    scope: StateScope,
+    groupId: string,
+    principalId: string,
+    request: RevokeGroupInviteRequest | RemoveGroupMemberRequest |
+        BanGroupMemberRequest | UnbanGroupMemberRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    return {
+        operation,
+        aggregateRef: { ...scope, groupId },
+        targetPrincipalId: principalId,
+        ...identity(request.requestId, randomId),
+        input: actorInput(request),
+    };
+}
+
+function toRoleCommand(
+    scope: StateScope,
+    groupId: string,
+    principalId: string,
+    request: SetGroupMemberRoleRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    return {
+        operation: 'setGroupMemberRole',
+        aggregateRef: { ...scope, groupId },
+        targetPrincipalId: principalId,
+        ...identity(request.requestId, randomId),
+        input: { role: request.role, ...actorInput(request) },
+    };
+}
+
+function toTransferCommand(
+    scope: StateScope,
+    groupId: string,
+    request: TransferGroupOwnershipRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    return {
+        operation: 'transferGroupOwnership',
+        aggregateRef: { ...scope, groupId },
+        targetPrincipalId: request.newOwnerPrincipalId,
+        ...identity(request.requestId, randomId),
+        input: actorInput(request),
+    };
+}
+
+function toUpsertMemberCommand(
+    scope: StateScope,
+    groupId: string,
+    principalId: string,
+    request: UpsertGroupMemberRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    return {
+        operation: 'upsertMember',
+        aggregateRef: { ...scope, groupId },
+        targetPrincipalId: principalId,
+        ...identity(request.requestId, randomId),
+        input: {
+            role: request.role ?? null,
+            status: request.status,
+            invitedByPrincipalId: request.invitedByPrincipalId ?? null,
+            invitationExpiresAtEpochMs: request.invitationExpiresAtEpochMs ?? null,
+            ...actorInput(request),
+        },
+    };
+}
+
+function toRotateCommand(
+    scope: StateScope,
+    groupId: string,
+    request: RotateGroupJoinCodeRequest,
+    randomId: () => string,
+    nowEpochMs: number,
+): GroupMutationCommand {
+    return {
+        operation: 'rotateGroupJoinCode',
+        aggregateRef: { ...scope, groupId },
+        ...identity(request.requestId, randomId),
+        input: {
+            joinCode: normalizeJoinCode(request.joinCode ?? randomId()),
+            expiresAtEpochMs: request.expiresAtEpochMs ??
+                nowEpochMs + DEFAULT_GROUP_JOIN_CODE_TTL_MS,
+            ...actorInput(request),
+        },
+    };
+}
+
+function toConnectPresenceCommand(
+    scope: StateScope,
+    groupId: string,
+    sessionId: string,
+    request: ConnectGroupPresenceSessionRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    requireGenerationId(request.generationId);
+    return {
+        operation: 'connectPresence',
+        aggregateRef: { ...scope, groupId },
+        sessionId,
+        ...identity(request.requestId, randomId),
+        input: {
+            principalId: request.principalId,
+            generationId: request.generationId,
+            connectedAtEpochMs: request.connectedAtEpochMs ?? null,
+            lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
+            expiresAtEpochMs: request.expiresAtEpochMs ?? null,
+            ...actorInput(request),
+        },
+    };
+}
+
+function toHeartbeatPresenceCommand(
+    scope: StateScope,
+    groupId: string,
+    sessionId: string,
+    request: HeartbeatGroupPresenceSessionRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    requireGenerationId(request.generationId);
+    return {
+        operation: 'heartbeatPresence',
+        aggregateRef: { ...scope, groupId },
+        sessionId,
+        ...identity(request.requestId, randomId),
+        input: {
+            principalId: request.principalId ?? null,
+            generationId: request.generationId,
+            lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
+            expiresAtEpochMs: request.expiresAtEpochMs ?? null,
+            ...actorInput(request),
+        },
+    };
+}
+
+function toDisconnectPresenceCommand(
+    scope: StateScope,
+    groupId: string,
+    sessionId: string,
+    request: DisconnectGroupPresenceSessionRequest,
+    randomId: () => string,
+): GroupMutationCommand {
+    requireGenerationId(request.generationId);
+    return {
+        operation: 'disconnectPresence',
+        aggregateRef: { ...scope, groupId },
+        sessionId,
+        ...identity(request.requestId, randomId),
+        input: {
+            principalId: request.principalId ?? null,
+            generationId: request.generationId,
+            generationVersion: null,
+            observedExpiresAtEpochMs: null,
+            disconnectedAtEpochMs: request.disconnectedAtEpochMs ?? null,
+            lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
+            expiresAtEpochMs: request.expiresAtEpochMs ?? null,
+            ...actorInput(request),
+        },
+    };
+}
+
+function toExpiryCommand(
+    session: GroupPresenceSession,
+    atEpochMs: number,
+): GroupMutationCommand {
+    const commandId = [
+        'expire-group-presence',
+        session.applicationId,
+        session.workspaceId ?? '',
+        session.groupId,
+        session.sessionId,
+        session.generationId,
+        session.generationVersion,
+        session.expiresAtEpochMs,
+    ].join(':');
+    return {
+        operation: 'disconnectPresence',
+        aggregateRef: {
+            applicationId: session.applicationId,
+            ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
+            groupId: session.groupId,
+        },
+        sessionId: session.sessionId,
+        commandId,
+        requestId: commandId,
+        input: {
+            principalId: session.principalId,
+            generationId: session.generationId,
+            generationVersion: session.generationVersion,
+            observedExpiresAtEpochMs: session.expiresAtEpochMs,
+            disconnectedAtEpochMs: atEpochMs,
+            lastHeartbeatAtEpochMs: session.lastHeartbeatAtEpochMs,
+            expiresAtEpochMs: session.expiresAtEpochMs,
+            actorPrincipalId: session.principalId,
+            actorSessionId: session.sessionId,
+            reason: 'expired',
+            traceId: null,
+        },
+    };
+}
+
+function identity(requestId: string | undefined, randomId: () => string) {
+    const commandId = requestId ?? randomId();
+    return { commandId, requestId: requestId ?? null };
+}
+
+function actorInput(request: Readonly<{
+    actorPrincipalId?: string;
+    actorSessionId?: string;
+    reason?: string;
+    traceId?: string;
+}>) {
+    return {
+        actorPrincipalId: request.actorPrincipalId ?? null,
+        actorSessionId: request.actorSessionId ?? null,
+        reason: request.reason ?? null,
+        traceId: request.traceId ?? null,
+    };
+}
+
+function requireGenerationId(value: string): void {
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new NonRetryableException('Group presence generation id is required');
+    }
+}
+
+function normalizeJoinCode(value: string): string {
+    const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9]/gu, '').slice(0, 12);
+    if (normalized.length < 4) {
+        throw new NonRetryableException('Group join code must contain at least four characters');
+    }
+    return normalized;
+}
+
+async function commandJoinCodeVerifier(
+    command: GroupMutationCommand,
+): Promise<string | null> {
+    const joinCode = command.operation === 'rotateGroupJoinCode'
+        ? command.input.joinCode
+        : command.operation === 'joinGroup' || command.operation === 'acceptGroupInvite'
+        ? command.input.joinCode
+        : null;
+    if (!joinCode) return null;
+    const digest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(joinCode.trim().toUpperCase()),
+    );
+    return Array.from(new Uint8Array(digest))
+        .map((value) => value.toString(16).padStart(2, '0'))
+        .join('');
+}
+
+async function timeMutationPhase<T>(
+    dependencies: GroupStateServiceDependencies,
+    command: GroupMutationCommand,
+    phase: 'read' | 'compute' | 'validate' | 'write' | 'transaction',
+    attempt: number,
+    backoffMs: number,
+    action: () => T | Promise<T>,
+): Promise<T> {
+    const started = performance.now();
+    try {
+        const result = await action();
+        recordRallarTiming(dependencies.timing, {
+            component: 'group-state-service',
+            operation: `mutation.${phase}`,
+            serviceId: dependencies.serviceId,
+            requestId: command.requestId ?? undefined,
+            ...command.aggregateRef,
+            details: { attempt, backoffMs, mutationOperation: command.operation },
+        }, 'ok', performance.now() - started);
+        return result;
+    } catch (error) {
+        recordRallarTiming(dependencies.timing, {
+            component: 'group-state-service',
+            operation: `mutation.${phase}`,
+            serviceId: dependencies.serviceId,
+            requestId: command.requestId ?? undefined,
+            ...command.aggregateRef,
+            details: { attempt, backoffMs, mutationOperation: command.operation },
+        }, 'error', performance.now() - started, error);
+        throw error;
+    }
+}
+
+function recordMutationConflict(
+    dependencies: GroupStateServiceDependencies,
+    command: GroupMutationCommand,
+    attempt: number,
+    backoffMs: number,
+): void {
+    recordRallarTiming(dependencies.timing, {
+        component: 'group-state-service',
+        operation: 'mutation.conflict',
+        serviceId: dependencies.serviceId,
+        requestId: command.requestId ?? undefined,
+        ...command.aggregateRef,
+        details: { attempt, backoffMs, conflict: true, mutationOperation: command.operation },
+    }, 'ok', 0);
 }
 
 function withGroupStateServiceTiming(
@@ -1681,1018 +1081,52 @@ function withGroupStateServiceTiming(
     timing: RallarTimingSink | undefined,
     serviceId: string,
 ): GroupStateService {
-    if (!timing) {
-        return service;
-    }
-
-    return {
-        listSnapshots: async (scope) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'listSnapshots',
-                    serviceId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                },
-                () => service.listSnapshots(scope),
-            ),
-        listSnapshotsPage: async (scope, options) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'listSnapshotsPage',
-                    serviceId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    details: { limit: options.limit },
-                },
-                () => service.listSnapshotsPage(scope, options),
-            ),
-        readSnapshot: async (ref) =>
-            await timeRallarAsync(
-                timing,
-                toGroupTimingInput(serviceId, 'readSnapshot', ref),
-                () => service.readSnapshot(ref),
-            ),
-        readStateRevision: async (ref) =>
-            await timeRallarAsync(
-                timing,
-                toGroupTimingInput(serviceId, 'readStateRevision', ref),
-                () => service.readStateRevision(ref),
-            ),
-        listEvents: async (ref) =>
-            await timeRallarAsync(
-                timing,
-                toGroupTimingInput(serviceId, 'listEvents', ref),
-                () => service.listEvents(ref),
-            ),
-        listRecentEvents: async (ref, query) =>
-            await timeRallarAsync(
-                timing,
-                toGroupTimingInput(serviceId, 'listRecentEvents', ref),
-                () => service.listRecentEvents!(ref, query),
-            ),
-        listEventPage: async (ref, query) =>
-            await timeRallarAsync(
-                timing,
-                toGroupTimingInput(serviceId, 'listEventPage', ref),
-                () => service.listEventPage(ref, query),
-            ),
-        createGroup: async (scope, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'createGroup',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId: request.groupId,
-                    principalId: request.createdByPrincipalId,
-                },
-                () => service.createGroup(scope, request),
-            ),
-        updateGroup: async (scope, groupId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'updateGroup',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId: request.actorPrincipalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.updateGroup(scope, groupId, request),
-            ),
-        appointDirector: async (scope, groupId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'appointDirector',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId: request.actorPrincipalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.appointDirector(scope, groupId, request),
-            ),
-        joinGroup: async (scope, groupId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'joinGroup',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId: request.actorPrincipalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.joinGroup(scope, groupId, request),
-            ),
-        createGroupInvite: async (scope, groupId, principalId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'createGroupInvite',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.createGroupInvite(scope, groupId, principalId, request),
-            ),
-        revokeGroupInvite: async (scope, groupId, principalId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'revokeGroupInvite',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.revokeGroupInvite(scope, groupId, principalId, request),
-            ),
-        acceptGroupInvite: async (scope, groupId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'acceptGroupInvite',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId: request.actorPrincipalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.acceptGroupInvite(scope, groupId, request),
-            ),
-        rotateGroupJoinCode: async (scope, groupId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'rotateGroupJoinCode',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId: request.actorPrincipalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.rotateGroupJoinCode(scope, groupId, request),
-            ),
-        removeGroupMember: async (scope, groupId, principalId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'removeGroupMember',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.removeGroupMember(scope, groupId, principalId, request),
-            ),
-        banGroupMember: async (scope, groupId, principalId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'banGroupMember',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.banGroupMember(scope, groupId, principalId, request),
-            ),
-        unbanGroupMember: async (scope, groupId, principalId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'unbanGroupMember',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.unbanGroupMember(scope, groupId, principalId, request),
-            ),
-        setGroupMemberRole: async (scope, groupId, principalId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'setGroupMemberRole',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.setGroupMemberRole(scope, groupId, principalId, request),
-            ),
-        transferGroupOwnership: async (scope, groupId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'transferGroupOwnership',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId: request.newOwnerPrincipalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.transferGroupOwnership(scope, groupId, request),
-            ),
-        upsertMember: async (scope, groupId, principalId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'upsertMember',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.upsertMember(scope, groupId, principalId, request),
-            ),
-        connectPresenceSession: async (scope, groupId, sessionId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'connectPresenceSession',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId: request.principalId,
-                    sessionId,
-                },
-                () => service.connectPresenceSession(scope, groupId, sessionId, request),
-            ),
-        heartbeatPresenceSession: async (scope, groupId, sessionId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'heartbeatPresenceSession',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId: request.principalId,
-                    sessionId,
-                },
-                () => service.heartbeatPresenceSession(scope, groupId, sessionId, request),
-            ),
-        disconnectPresenceSession: async (scope, groupId, sessionId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'disconnectPresenceSession',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    groupId,
-                    principalId: request.principalId,
-                    sessionId,
-                },
-                () => service.disconnectPresenceSession(scope, groupId, sessionId, request),
-            ),
-        disconnectPresenceSessionsBySessionId: async (sessionId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'disconnectPresenceSessionsBySessionId',
-                    serviceId,
-                    requestId: request?.requestId,
-                    principalId: request?.principalId,
-                    sessionId,
-                },
-                () => service.disconnectPresenceSessionsBySessionId(sessionId, request),
-            ),
-        disconnectPresenceSessionsBySessionIdWritten: async (sessionId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'disconnectPresenceSessionsBySessionIdWritten',
-                    serviceId,
-                    requestId: request?.requestId,
-                    principalId: request?.principalId,
-                    sessionId,
-                },
-                () => service.disconnectPresenceSessionsBySessionIdWritten(sessionId, request),
-            ),
-        expireExpiredPresenceSessions: async (atEpochMs) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'group-state-service',
-                    operation: 'expireExpiredPresenceSessions',
-                    serviceId,
-                    details: {
-                        atEpochMs,
-                    },
-                },
-                () => service.expireExpiredPresenceSessions(atEpochMs),
-            ),
-    };
-}
-
-function toGroupTimingInput(
-    serviceId: string,
-    operation: string,
-    ref: GroupRef,
-) {
-    return {
+    if (!timing) return service;
+    const timed = <T>(
+        operation: string,
+        details: Record<string, unknown>,
+        action: () => Promise<T>,
+    ) => timeRallarAsync(timing, {
         component: 'group-state-service',
         operation,
         serviceId,
-        applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId,
-        groupId: ref.groupId,
-    };
-}
-
-async function lockGroupPresenceSession(
-    repository: RuntimeStateTransactionalRepositoryLike,
-    ref: GroupRef & Readonly<{ sessionId: string }>,
-): Promise<void> {
-    await repository.lockKey(
-        GROUP_PRESENCE_SESSION_LOCK_NAMESPACE,
-        toGroupPresenceSessionLockKey(ref),
-    );
-}
-
-function toGroupPresenceSessionLockKey(
-    ref: GroupRef & Readonly<{ sessionId: string }>,
-): string {
-    return [
-        ref.applicationId,
-        ref.workspaceId ?? '_',
-        ref.groupId,
-        ref.sessionId,
-    ].join(':');
-}
-
-function toDirectorHeartbeatTtlMs(
-    request: AppointGroupDirectorRequest,
-): number | undefined {
-    if (request.heartbeatTtlMs === undefined) {
-        return undefined;
-    }
-
-    try {
-        return normalizeRallarGroupDirectorHeartbeatTtlMs(request.heartbeatTtlMs);
-    } catch {
-        throw new NonRetryableException('Invalid director heartbeat TTL.');
-    }
-}
-
-type RallarGroupJoinCodeMetadata = Readonly<{
-    version: typeof RALLAR_GROUP_JOIN_CODE_VERSION;
-    verifier: string;
-    expiresAtEpochMs?: number;
-    rotatedAtEpochMs: number;
-}>;
-
-function readRallarGroupJoinCode(
-    metadata: Readonly<Record<string, unknown>> | undefined,
-): RallarGroupJoinCodeMetadata | undefined {
-    const value = metadata?.[RALLAR_GROUP_JOIN_CODE_METADATA_KEY];
-    if (!isRecord(value)) {
-        return undefined;
-    }
-
-    if (
-        value.version !== RALLAR_GROUP_JOIN_CODE_VERSION ||
-        typeof value.verifier !== 'string' ||
-        typeof value.rotatedAtEpochMs !== 'number' ||
-        (
-            value.expiresAtEpochMs !== undefined &&
-            typeof value.expiresAtEpochMs !== 'number'
-        )
-    ) {
-        return undefined;
-    }
-
-    return {
-        version: RALLAR_GROUP_JOIN_CODE_VERSION,
-        verifier: value.verifier,
-        expiresAtEpochMs: value.expiresAtEpochMs,
-        rotatedAtEpochMs: value.rotatedAtEpochMs,
-    };
-}
-
-function mergeRallarGroupJoinCodeMetadata(
-    metadata: Readonly<Record<string, unknown>> | undefined,
-    joinCode: RallarGroupJoinCodeMetadata,
-): Record<string, unknown> {
-    return {
-        ...(metadata ?? {}),
-        [RALLAR_GROUP_JOIN_CODE_METADATA_KEY]: joinCode,
-    };
-}
-
-function normalizeJoinCode(joinCode: string | undefined): string {
-    const trimmed = joinCode?.trim();
-    if (trimmed) {
-        return trimmed;
-    }
-
-    return crypto.randomUUID().replaceAll('-', '').slice(0, 12);
-}
-
-async function toGroupJoinCodeVerifier(joinCode: string): Promise<string> {
-    const payload = new TextEncoder().encode(
-        `rallar-group-join-code:v${RALLAR_GROUP_JOIN_CODE_VERSION}:${joinCode}`,
-    );
-    const digest = await crypto.subtle.digest('SHA-256', payload);
-    return [...new Uint8Array(digest)]
-        .map((byte) => byte.toString(16).padStart(2, '0'))
-        .join('');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return Boolean(value && typeof value === 'object' && !Array.isArray(value));
-}
-
-function assertIdempotentDirectorAppointmentMatchesActor(
-    written: GroupStateWritten,
-    actorPrincipalId: string,
-    actorSessionId: string,
-): void {
-    const appointment = readRallarGroupDirectorFromSnapshot(
-        written.result.right?.snapshot,
-    );
-    if (
-        appointment?.principalId === actorPrincipalId &&
-        appointment.sessionId === actorSessionId
-    ) {
-        return;
-    }
-
-    throw new NonRetryableException(
-        'Forbidden: Idempotent director appointment request belongs to a different session.',
-    );
-}
-
-async function findIdempotentGroupMutationWritten(
-    repository: GroupStateRepository,
-    ref: GroupRef,
-    requestId: string | undefined,
-): Promise<GroupStateWritten | undefined> {
-    if (!requestId) {
-        return undefined;
-    }
-
-    return await repository.findIdempotentGroupStateWritten(ref, requestId);
-}
-
-async function addIdempotentGroupMutationWritten(
-    repository: GroupStateRepository,
-    ref: GroupRef,
-    requestId: string | undefined,
-    written: GroupMutationWritten,
-): Promise<GroupStateWritten> {
-    const groupStateWritten: GroupStateWritten = {
-        status: 'ok',
-        result: Either.ofRight(written),
-    };
-
-    if (!requestId) {
-        return groupStateWritten;
-    }
-
-    return await repository.addIdempotentGroupStateWritten(
-        ref,
-        requestId,
-        groupStateWritten,
-    );
-}
-
-async function findIdempotentGroupJoinCodeMutationWritten(
-    repository: GroupStateRepository,
-    ref: GroupRef,
-    requestId: string | undefined,
-): Promise<GroupJoinCodeWritten | undefined> {
-    if (!requestId) {
-        return undefined;
-    }
-
-    return await repository.findIdempotentGroupJoinCodeWritten(ref, requestId);
-}
-
-async function addIdempotentGroupJoinCodeMutationWritten(
-    repository: GroupStateRepository,
-    ref: GroupRef,
-    requestId: string | undefined,
-    written: GroupJoinCodeMutationWritten,
-): Promise<GroupJoinCodeWritten> {
-    const groupJoinCodeWritten: GroupJoinCodeWritten = {
-        status: 'ok',
-        result: Either.ofRight(written),
-    };
-
-    if (!requestId) {
-        return groupJoinCodeWritten;
-    }
-
-    return await repository.addIdempotentGroupJoinCodeWritten(
-        ref,
-        requestId,
-        groupJoinCodeWritten,
-    );
-}
-
-function requireGroupStateWrittenSnapshot(
-    written: GroupStateWritten,
-): GroupSnapshot {
-    const snapshot = written.result.right?.snapshot;
-    if (!snapshot) {
-        throw new Error(written.result.left ?? 'Group mutation failed');
-    }
-
-    return snapshot;
-}
-
-type GovernedGroupMemberMutationInput = Readonly<{
-    runtimeRepository: RuntimeStateTransactionalRepositoryLike;
-    repositoryFor: (
-        repository: RuntimeStateTransactionalRepositoryLike,
-    ) => GroupStateRepository;
-    scope: StateScope;
-    groupId: string;
-    principalId: string;
-    request: MutationActorInput;
-    now: () => number;
-    serviceId: string;
-    action: GroupGovernanceAction;
-    status?: GroupMember['status'];
-    role?: GroupMember['role'];
-    eventType: GroupEvent['eventType'];
-    requiredExistingStatus?: GroupMember['status'];
-    missingMemberBehavior: 'create' | 'noop' | 'error';
-}>;
-
-async function writeGovernedGroupMemberMutation(
-    input: GovernedGroupMemberMutationInput,
-): Promise<GroupStateWritten> {
-    return await input.runtimeRepository.begin(async (transactionRepository) => {
-        const repository = input.repositoryFor(transactionRepository);
-        const groupRef = {
-            ...input.scope,
-            groupId: input.groupId,
-        };
-        const idempotentWritten = await findIdempotentGroupMutationWritten(
-            repository,
-            groupRef,
-            input.request.requestId,
-        );
-        if (idempotentWritten) {
-            return idempotentWritten;
-        }
-
-        const snapshot = await requireGroupSnapshot(repository, groupRef);
-        const timestamp = input.now();
-        assertGroupPolicyAllowed(canMutateActiveGroup({
-            group: snapshot.group,
-            nowEpochMs: timestamp,
-        }));
-
-        const existing = snapshot.members.find((member) => member.principalId === input.principalId);
-        if (input.role === 'owner') {
-            throwGroupPolicyDenied(
-                'forbidden-role',
-                'Use ownership transfer to assign the owner role.',
-            );
-        }
-        assertGroupPolicyAllowed(canGovernGroupMember({
-            snapshot,
-            actor: {
-                principalId: input.request.actorPrincipalId,
-                sessionId: input.request.actorSessionId,
-            },
-            targetPrincipalId: input.principalId,
-            action: input.role ? toRoleGovernanceAction(existing, input.role) : input.action,
-        }));
-
-        if (!existing && input.missingMemberBehavior === 'noop') {
-            return await addIdempotentGroupMutationWritten(
-                repository,
-                snapshot.group,
-                input.request.requestId,
-                {
-                    snapshot,
-                    event: undefined,
-                },
-            );
-        }
-        if (!existing && input.missingMemberBehavior === 'error') {
-            throw new NonRetryableException(
-                `Group member not found: ${input.principalId}`,
-            );
-        }
-        if (
-            existing &&
-            input.requiredExistingStatus !== undefined &&
-            existing.status !== input.requiredExistingStatus
-        ) {
-            return await addIdempotentGroupMutationWritten(
-                repository,
-                snapshot.group,
-                input.request.requestId,
-                {
-                    snapshot,
-                    event: undefined,
-                },
-            );
-        }
-
-        const updatedAudit = toGroupAuditStamp(
-            input.request,
-            timestamp,
-            input.serviceId,
-            input.request.actorPrincipalId,
-        );
-        const status = input.status ?? existing?.status ?? 'left';
-        const member: GroupMember = {
-            applicationId: input.scope.applicationId,
-            workspaceId: input.scope.workspaceId,
-            groupId: input.groupId,
-            principalId: input.principalId,
-            role: input.role ?? existing?.role ?? 'member',
-            status,
-            joined: existing?.joined ?? updatedAudit,
-            updated: updatedAudit,
-            left: status === 'left' ? updatedAudit : existing?.left,
-            removed: status === 'removed' ? updatedAudit : existing?.removed,
-            banned: status === 'banned' ? updatedAudit : existing?.banned,
-            invitedByPrincipalId: existing?.invitedByPrincipalId,
-            invitationExpiresAtEpochMs: existing?.invitationExpiresAtEpochMs,
-        };
-
-        if (existing && isSameGroupMemberMutation(existing, member)) {
-            return await addIdempotentGroupMutationWritten(
-                repository,
-                snapshot.group,
-                input.request.requestId,
-                {
-                    snapshot,
-                    event: undefined,
-                },
-            );
-        }
-
-        await repository.putMember(member);
-        const snapshotGroup = {
-            ...snapshot.group,
-            snapshotVersion: nextGroupSnapshotVersion(snapshot.group),
-            rosterVersion: snapshot.group.rosterVersion + 1,
-            updated: updatedAudit,
-        };
-        await repository.putGroup(snapshotGroup);
-
-        const event = newGroupEvent(
-            input.eventType,
-            snapshotGroup,
-            input.request,
-            timestamp,
-            input.serviceId,
-        );
-        await repository.appendEvent(event);
-
-        return await addIdempotentGroupMutationWritten(
-            repository,
-            snapshotGroup,
-            input.request.requestId,
-            {
-                snapshot: await requireGroupSnapshot(repository, snapshotGroup),
-                event,
-            },
-        );
-    });
-}
-
-function assertGroupPolicyAllowed(result: GroupPolicyResult): void {
-    if (!result.allowed) {
-        throw new GroupPolicyDeniedError(result);
-    }
-}
-
-function assertRawMemberMutationKeepsOwner(
-    snapshot: GroupSnapshot,
-    existing: GroupMember | undefined,
-    request: UpsertGroupMemberRequest,
-): void {
-    if (!existing || !isLastActiveOwnerInSnapshot(snapshot, existing)) {
-        return;
-    }
-
-    if (
-        request.status === 'left' ||
-        request.status === 'removed' ||
-        request.status === 'banned' ||
-        (request.role !== undefined && request.role !== 'owner')
-    ) {
-        throwGroupPolicyDenied(
-            'last-owner',
-            'Cannot leave an active group without an owner.',
-        );
-    }
-}
-
-function toRoleGovernanceAction(
-    existing: GroupMember | undefined,
-    role: GroupMember['role'],
-): GroupGovernanceAction {
-    if (existing?.role === 'owner' && role !== 'owner') {
-        return 'demote';
-    }
-
-    return role === 'member' ? 'demote' : 'promote';
-}
-
-function isLastActiveOwnerInSnapshot(
-    snapshot: GroupSnapshot,
-    member: GroupMember,
-): boolean {
-    if (member.role !== 'owner' || member.status !== 'active') {
-        return false;
-    }
-
-    return snapshot.members.filter((entry) => entry.role === 'owner' && entry.status === 'active')
-        .length === 1;
-}
-
-function assertCanInviteMember(member: GroupMember | undefined): void {
-    if (member?.status === 'removed') {
-        throwGroupPolicyDenied(
-            'member-removed',
-            'Group member has been removed.',
-        );
-    }
-    if (member?.status === 'banned') {
-        throwGroupPolicyDenied(
-            'member-banned',
-            'Group member has been banned.',
-        );
-    }
-}
-
-function throwGroupPolicyDenied(
-    code: GroupPolicyDenied['code'],
-    message: string,
-): never {
-    throw new GroupPolicyDeniedError({
-        allowed: false,
-        code,
-        message,
-    });
-}
-
-function shouldRequireActiveGroupForUpdate(
-    existing: Group,
-    request: UpdateGroupRequest,
-    nowEpochMs: number,
-): boolean {
-    if (existing.status === 'active' && !isGroupExpired(existing, nowEpochMs)) {
-        return false;
-    }
-
-    return request.status === undefined || hasNonLifecycleGroupUpdateFields(request);
-}
-
-function isGroupExpired(group: Group, nowEpochMs: number): boolean {
-    return group.expiresAtEpochMs !== undefined &&
-        group.expiresAtEpochMs <= nowEpochMs;
-}
-
-function hasNonLifecycleGroupUpdateFields(request: UpdateGroupRequest): boolean {
-    return request.slug !== undefined ||
-        request.displayName !== undefined ||
-        request.description !== undefined ||
-        request.kind !== undefined ||
-        request.joinMode !== undefined ||
-        request.maxMembers !== undefined ||
-        request.maxSessionsPerMember !== undefined ||
-        request.metadata !== undefined ||
-        request.expiresAtEpochMs !== undefined ||
-        request.emptySinceEpochMs !== undefined ||
-        request.purgeAfterEpochMs !== undefined;
-}
-
-async function requireGroup(
-    repository: GroupStateRepository,
-    ref: GroupRef,
-): Promise<Group> {
-    const group = await repository.findGroup(ref);
-    if (!group) {
-        throw new NonRetryableException(`Group not found: ${ref.groupId}`);
-    }
-
-    return group;
-}
-
-async function hasLiveGroupPresenceSessions(
-    repository: GroupStateRepository,
-    ref: GroupRef,
-    atEpochMs: number,
-): Promise<boolean> {
-    const sessions = await repository.listPresenceSessions(ref);
-    return sessions.some((session) =>
-        session.disconnectedAtEpochMs === undefined &&
-        session.expiresAtEpochMs > atEpochMs
-    );
-}
-
-function nextGroupSnapshotVersion(group: Group): number {
-    return group.snapshotVersion + 1;
-}
-
-async function requireGroupSnapshot(
-    repository: GroupStateRepository,
-    ref: GroupRef,
-): Promise<GroupSnapshot> {
-    const snapshot = await repository.readSnapshot(ref);
-    if (!snapshot) {
-        throw new Error(`Group snapshot not found: ${ref.groupId}`);
-    }
-
-    return snapshot;
-}
-
-function isSameGroupMutation(current: Group, next: Group): boolean {
-    return (
-        current.slug === next.slug &&
-        current.displayName === next.displayName &&
-        current.description === next.description &&
-        current.kind === next.kind &&
-        current.status === next.status &&
-        current.joinMode === next.joinMode &&
-        current.maxMembers === next.maxMembers &&
-        current.maxSessionsPerMember === next.maxSessionsPerMember &&
-        jsonEquals(current.metadata, next.metadata) &&
-        current.expiresAtEpochMs === next.expiresAtEpochMs &&
-        current.emptySinceEpochMs === next.emptySinceEpochMs &&
-        current.purgeAfterEpochMs === next.purgeAfterEpochMs
-    );
-}
-
-function isSameGroupMemberMutation(
-    current: GroupMember,
-    next: GroupMember,
-): boolean {
-    return (
-        current.role === next.role &&
-        current.status === next.status &&
-        current.invitedByPrincipalId === next.invitedByPrincipalId &&
-        current.invitationExpiresAtEpochMs === next.invitationExpiresAtEpochMs
-    );
-}
-
-function isSameConnectedGroupPresenceSession(
-    current: GroupPresenceSession,
-    next: GroupPresenceSession,
-): boolean {
-    return (
-        current.principalId === next.principalId &&
-        current.connectedAtEpochMs === next.connectedAtEpochMs &&
-        current.disconnectedAtEpochMs === undefined &&
-        next.disconnectedAtEpochMs === undefined &&
-        current.disconnectReason === undefined &&
-        next.disconnectReason === undefined
-    );
-}
-
-function isSameDisconnectedGroupPresenceSession(
-    current: GroupPresenceSession,
-    next: GroupPresenceSession,
-): boolean {
-    return (
-        current.principalId === next.principalId &&
-        current.connectedAtEpochMs === next.connectedAtEpochMs &&
-        current.disconnectReason === next.disconnectReason &&
-        current.disconnectedAtEpochMs !== undefined &&
-        next.disconnectedAtEpochMs !== undefined
-    );
-}
-
-function newGroupEvent(
-    eventType: GroupEvent['eventType'],
-    group: Group,
-    request: MutationActorInput,
-    timestamp: number,
-    serviceId: string,
-): GroupEvent {
-    return {
-        applicationId: group.applicationId,
-        workspaceId: group.workspaceId,
-        groupId: group.groupId,
-        eventId: crypto.randomUUID(),
-        eventType,
-        snapshotVersion: group.snapshotVersion,
-        occurredAtEpochMs: timestamp,
-        actor: {
-            principalId: request.actorPrincipalId,
-            sessionId: request.actorSessionId,
-            serviceId,
+        requestId: typeof details.requestId === 'string' ? details.requestId : undefined,
+        applicationId: typeof details.applicationId === 'string'
+            ? details.applicationId
+            : undefined,
+        workspaceId: typeof details.workspaceId === 'string'
+            ? details.workspaceId
+            : undefined,
+        groupId: typeof details.groupId === 'string' ? details.groupId : undefined,
+                    principalId: typeof details.principalId === 'string'
+            ? details.principalId
+            : typeof details.actorPrincipalId === 'string'
+            ? details.actorPrincipalId
+            : typeof details.createdByPrincipalId === 'string'
+            ? details.createdByPrincipalId
+            : undefined,
+        sessionId: typeof details.sessionId === 'string' ? details.sessionId : undefined,
+    }, action);
+    return new Proxy(service, {
+        get(target, property, receiver) {
+            const value = Reflect.get(target, property, receiver);
+            if (typeof value !== 'function') return value;
+            return (...args: unknown[]) => {
+                const first = args[0];
+                const scope = first && typeof first === 'object' ? first as StateScope : undefined;
+                const request = args.at(-1);
+                const requestRecord = request && typeof request === 'object'
+                    ? request as Record<string, unknown>
+                    : {};
+                return timed(String(property), {
+                    ...(scope ?? {}),
+                    groupId: typeof args[1] === 'string'
+                        ? args[1]
+                        : requestRecord.groupId,
+                    sessionId: typeof args[2] === 'string' ? args[2] : undefined,
+                    ...requestRecord,
+                }, () => value.apply(target, args));
+            };
         },
-        reason: request.reason,
-        traceId: request.traceId,
-        requestId: request.requestId,
-    };
-}
-
-function toExpiredGroupPresenceRequestId(session: GroupPresenceSession): string {
-    return `expire-group-presence:${session.groupId}:${session.sessionId}:${session.expiresAtEpochMs}`;
-}
-
-function toGroupMemberEventType(
-    status: GroupMember['status'],
-): GroupEvent['eventType'] {
-    switch (status) {
-        case 'invited':
-            return 'member-invited';
-        case 'active':
-            return 'member-joined';
-        case 'left':
-            return 'member-left';
-        case 'removed':
-            return 'member-removed';
-        case 'banned':
-            return 'member-banned';
-    }
-}
-
-function toGroupAuditStamp(
-    request: MutationActorInput,
-    timestamp: number,
-    serviceId: string,
-    defaultPrincipalId?: string,
-): AuditStamp {
-    return {
-        atEpochMs: timestamp,
-        byPrincipalId: request.actorPrincipalId ?? defaultPrincipalId,
-        bySessionId: request.actorSessionId,
-        byServiceId: serviceId,
-        reason: request.reason,
-        traceId: request.traceId,
-        requestId: request.requestId,
-    };
+    });
 }

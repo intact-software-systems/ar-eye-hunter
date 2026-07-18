@@ -151,6 +151,7 @@ export async function createAndJoinStateGroup(
     displayName: string,
     principalId: string,
     sessionId: string,
+    generationId: string,
     scope: StateScope = defaultStateScope(),
     policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
     requestedGroupId?: string,
@@ -199,6 +200,7 @@ export async function createAndJoinStateGroup(
                     sessionId,
                     {
                         principalId,
+                        generationId,
                         actorPrincipalId: principalId,
                         actorSessionId: sessionId,
                         requestId: presenceRequestId,
@@ -427,6 +429,7 @@ export async function acceptStateGroupInvite(
     groupId: string,
     principalId: string,
     sessionId: string,
+    generationId: string,
     scope: StateScope = defaultStateScope(),
     policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupStateSnapshot> {
@@ -465,6 +468,7 @@ export async function acceptStateGroupInvite(
                     sessionId,
                     {
                         principalId,
+                        generationId,
                         actorPrincipalId: principalId,
                         actorSessionId: sessionId,
                         requestId: presenceRequestId,
@@ -680,6 +684,7 @@ export async function joinStateGroup(
     groupId: string,
     principalId: string,
     sessionId: string,
+    generationId: string,
     scope: StateScope = defaultStateScope(),
     policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
     intent: JoinStateGroupIntent = {},
@@ -720,6 +725,7 @@ export async function joinStateGroup(
                     sessionId,
                     {
                         principalId,
+                        generationId,
                         actorPrincipalId: principalId,
                         actorSessionId: sessionId,
                         requestId: presenceRequestId,
@@ -737,6 +743,7 @@ export async function leaveStateGroup(
     groupId: string,
     principalId: string,
     sessionId: string,
+    generationId: string,
     scope: StateScope = defaultStateScope(),
     policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue> = {},
 ): Promise<GroupStateSnapshot> {
@@ -764,6 +771,7 @@ export async function leaveStateGroup(
                         groupId,
                         sessionId,
                         {
+                            generationId,
                             principalId,
                             actorPrincipalId: principalId,
                             actorSessionId: sessionId,
@@ -852,6 +860,9 @@ export async function refreshStateHeartbeat(
                     snapshot.group.groupId,
                     clientData.sessionId,
                 );
+                const groupSessionGenerationId = snapshot.activeSessions.find(
+                    (session) => session.sessionId === clientData.sessionId,
+                )?.generationId ?? options.generationId;
 
                 return flow.commandStep(
                     `group:${snapshot.group.groupId}`,
@@ -860,6 +871,7 @@ export async function refreshStateHeartbeat(
                             snapshot.group.groupId,
                             clientData.sessionId,
                             {
+                                generationId: groupSessionGenerationId,
                                 principalId: clientData.clientId,
                                 actorPrincipalId: clientData.clientId,
                                 actorSessionId: clientData.sessionId,

@@ -278,6 +278,7 @@
         },
         "body": {
           "requestId": "presence-alice-{groupId}-{runId}",
+          "generationId": "generation-{runId}",
           "principalId": "{aliceClientId}"
         }
       },
@@ -304,6 +305,7 @@
         },
         "body": {
           "requestId": "presence-bob-{groupId}-{runId}",
+          "generationId": "generation-{runId}",
           "principalId": "{bobClientId}"
         }
       },

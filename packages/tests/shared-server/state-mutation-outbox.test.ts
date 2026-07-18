@@ -2449,7 +2449,7 @@ describe('StateMutationOutboxWork', () => {
         });
     });
 
-    it('keeps effect identities stable and records the oldest durable winner', async () => {
+    it('converges summaries before sync and leaves topology to the summary follow-up', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const accepted = createGroupSnapshot(1);
         const revision2 = createGroupSnapshot(2);
@@ -2523,16 +2523,14 @@ describe('StateMutationOutboxWork', () => {
 
         expect([...stateWinners.entries()]).toEqual([[
             `${stored.record.outboxId}:group-state-sync:snapshot`,
-            2,
+            3,
         ]]);
         expect([...presenceWinners.entries()]).toEqual([[
             `${stored.record.outboxId}:group-presence-summary:snapshot`,
             2,
         ]]);
-        expect([...topologyWinners.entries()]).toEqual([[
-            `${stored.record.outboxId}:rtc-topology-recompute:snapshot`,
-            3,
-        ]]);
+        expect([...topologyWinners.entries()]).toEqual([]);
+        expect(topologyPublisher.enqueueForStateMutation).not.toHaveBeenCalled();
         expect((await findOnlyRecord(runtime)).record.delivery).toEqual({
             status: 'delivered',
             deliveredAtEpochMs: expect.any(Number),

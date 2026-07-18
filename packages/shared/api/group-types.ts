@@ -99,6 +99,9 @@ export type GroupPresenceSession =
     sessionId: SessionId;
     principalId: PrincipalId;
 
+    generationId: string;
+    generationVersion: number;
+
     connectedAtEpochMs: number;
     lastHeartbeatAtEpochMs: number;
     expiresAtEpochMs: number;
@@ -107,8 +110,27 @@ export type GroupPresenceSession =
     disconnectReason?: string;
 }>;
 
+export type GroupStateCausalRevision = Readonly<{
+    groupRevision: number;
+    presenceRevision: number;
+}>;
+
+export type GroupPresenceSummary =
+    & GroupRef
+    & Readonly<{
+        causalRevision: GroupStateCausalRevision;
+        activePrincipalIds: readonly PrincipalId[];
+        activeSessionIds: readonly SessionId[];
+        activeSessions: readonly GroupPresenceSession[];
+        activePrincipalCount: number;
+        activeSessionCount: number;
+        computedAtEpochMs: number;
+    }>;
+
 export type GroupSnapshot = Readonly<{
+    /** Compatibility projection; causalRevision is authoritative. */
     stateRevision: number;
+    causalRevision: GroupStateCausalRevision;
     group: Group;
     members: readonly GroupMember[];
     activeSessions: readonly GroupPresenceSession[];

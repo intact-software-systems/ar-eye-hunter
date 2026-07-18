@@ -188,7 +188,7 @@ describe("GroupStateService command idempotency", () => {
     });
   });
 
-  it("replays createGroup with the same requestId without applying a different payload", async () => {
+  it("rejects createGroup reuse with the same requestId and different semantic content", async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const service = createGroupStateService({
       runtimeRepository,
@@ -215,17 +215,9 @@ describe("GroupStateService command idempotency", () => {
         createdByPrincipalId: "alice",
         requestId: "create-room-3",
       }),
-    ).resolves.toMatchObject({
-      status: "created",
-      result: {
-        right: {
-          snapshot: {
-            group: {
-              displayName: "Room 3",
-            },
-          },
-        },
-      },
+    ).rejects.toMatchObject({
+      code: "group-mutation-idempotency-conflict",
+      status: 409,
     });
 
     const repository = new GroupStateRepository(runtimeRepository);
@@ -363,6 +355,7 @@ describe("GroupStateService command idempotency", () => {
     const groupRef = toGroupRef("room-4");
     const request = {
       principalId: "alice",
+      generationId: "generation-session-1",
       reason: "closed",
       actorPrincipalId: "alice",
       requestId: "disconnect-session-1",
@@ -389,8 +382,8 @@ describe("GroupStateService command idempotency", () => {
           snapshot: {
             group: {
               ...groupRef,
-              snapshotVersion: 3,
-              presenceVersion: 2,
+              snapshotVersion: 1,
+              presenceVersion: 0,
             },
             activeSessions: [],
           },
@@ -414,7 +407,7 @@ describe("GroupStateService command idempotency", () => {
     ).toEqual(["group-created", "session-connected", "session-disconnected"]);
     expect(
       (await repository.readSnapshot(groupRef))?.group.snapshotVersion,
-    ).toBe(3);
+    ).toBe(1);
     expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
     expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
   });
@@ -510,8 +503,8 @@ describe("GroupStateService command idempotency", () => {
     expect(first[0].result.right?.snapshot).toMatchObject({
       group: {
         ...groupRef,
-        snapshotVersion: 3,
-        presenceVersion: 2,
+          snapshotVersion: 1,
+          presenceVersion: 0,
       },
       activeSessions: [],
       onlineMemberCount: 0,
@@ -560,6 +553,7 @@ describe("GroupStateService command idempotency", () => {
       "session-1",
       {
         principalId: "alice",
+        generationId: "generation-session-1",
         reason: "socket-closed",
         actorPrincipalId: "alice",
         actorSessionId: "session-1",
@@ -581,16 +575,10 @@ describe("GroupStateService command idempotency", () => {
     expect(
       (await repository.listEvents(groupRef)).map((event) => event.eventType),
     ).toEqual(["group-created", "session-connected", "session-disconnected"]);
-    expect(
-      runtimeRepository.locks.filter(
-        (lock) =>
-          lock.namespace === "group-state:presence-session-locks" &&
-          lock.key === "app-1:workspace-1:room-10:session-1",
-      ),
-    ).toHaveLength(2);
+    expect(runtimeRepository.locks).toEqual([]);
   });
 
-  it("documents that a late heartbeat can revive expired presence", async () => {
+  it("does not let a late heartbeat revive a terminal generation", async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     await seedGroup(runtimeRepository, "room-11");
     const expiresAtEpochMs = Date.now() - 1_000;
@@ -615,6 +603,7 @@ describe("GroupStateService command idempotency", () => {
       "session-1",
       {
         principalId: "alice",
+        generationId: "generation-session-1",
         actorPrincipalId: "alice",
         actorSessionId: "session-1",
         lastHeartbeatAtEpochMs: now + 1,
@@ -623,10 +612,7 @@ describe("GroupStateService command idempotency", () => {
       },
     );
 
-    expect(lateHeartbeat.result.right?.event?.eventType).toBe(
-      "session-heartbeat",
-    );
-    expect(lateHeartbeat.result.right?.snapshot.activeSessions).toHaveLength(1);
+    expect(lateHeartbeat.result.right?.event).toBeUndefined();
 
     const repository = new GroupStateRepository(runtimeRepository);
     const session = await repository.findPresenceSession({
@@ -634,18 +620,17 @@ describe("GroupStateService command idempotency", () => {
       sessionId: "session-1",
     });
     expect(session).toMatchObject({
-      lastHeartbeatAtEpochMs: now + 1,
-      expiresAtEpochMs: now + 60_000,
+      lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
+      expiresAtEpochMs,
+      disconnectedAtEpochMs: now,
+      disconnectReason: "expired",
     });
-    expect(session?.disconnectedAtEpochMs).toBeUndefined();
-    expect(session?.disconnectReason).toBeUndefined();
     expect(
       (await repository.listEvents(groupRef)).map((event) => event.eventType),
     ).toEqual([
       "group-created",
       "session-connected",
       "session-disconnected",
-      "session-heartbeat",
     ]);
   });
 
@@ -669,18 +654,19 @@ describe("GroupStateService command idempotency", () => {
       "session-1",
       {
         principalId: "alice",
+        generationId: "generation-session-1",
         lastHeartbeatAtEpochMs: 2_000,
         expiresAtEpochMs: 62_000,
         requestId: "heartbeat-causal-revision",
       },
     );
 
-    expect(written.result.right?.event).toBeUndefined();
+    expect(written.result.right?.event?.eventType).toBe("session-heartbeat");
     expect(written.result.right?.snapshot.group.snapshotVersion).toBe(
       before?.group.snapshotVersion,
     );
-    expect(written.result.right?.snapshot.stateRevision).toBeGreaterThan(
-      before?.stateRevision ?? 0,
+    expect(written.result.right?.snapshot.stateRevision).toBe(
+      before?.stateRevision,
     );
   });
 });
@@ -719,6 +705,7 @@ async function seedPresenceSession(
     serviceId: "group-service",
   }).connectPresenceSession(SCOPE, groupId, "session-1", {
     principalId: "alice",
+    generationId: "generation-session-1",
     actorPrincipalId: "alice",
     connectedAtEpochMs: 2_000,
     lastHeartbeatAtEpochMs: overrides.lastHeartbeatAtEpochMs ?? 2_000,

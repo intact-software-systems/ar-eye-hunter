@@ -44,6 +44,17 @@ export type RallarStateMutationOutboxOptions =
         stateSyncServerId?: string;
     }>;
 
+export type RallarStateMutationOutboxFactoryInput = Readonly<{
+    outboxQueueReader: OutboxQueueReader;
+    wakeQueueEngine: () => void;
+}>;
+
+export type RallarStateMutationOutboxConfiguration =
+    | RallarStateMutationOutboxOptions
+    | ((
+        input: RallarStateMutationOutboxFactoryInput,
+    ) => RallarStateMutationOutboxOptions);
+
 export type RallarMiddlewareRuntime = Readonly<{
     qboxEngine: InboxOutboxEngine;
     wsQBoxServerService: WsQueueBoxServerService;
@@ -117,7 +128,7 @@ export type CreateRallarMiddlewareOptions = Readonly<{
     rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
     rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
     rtcTopologyPublicationFanout?: RtcTopologyPublicationFanout;
-    stateMutationOutbox?: RallarStateMutationOutboxOptions;
+    stateMutationOutbox?: RallarStateMutationOutboxConfiguration;
     readiness?: Promise<void>;
 }>;
 
@@ -156,6 +167,10 @@ export function createRallarMiddleware(
         options.resilience.appInbox ?? options.resilience.inbox;
     const appOutboxResilience = options.resilience.appOutbox;
     const wakeQueueEngine = () => qboxEngine.wake();
+    const stateMutationOutboxOptions = typeof options.stateMutationOutbox ===
+            'function'
+        ? options.stateMutationOutbox({ outboxQueueReader, wakeQueueEngine })
+        : options.stateMutationOutbox;
     const appGroupInboxService = options.createAppGroupInboxService({
         inboxQueueReader,
         outboxQueueReader,
@@ -169,29 +184,29 @@ export function createRallarMiddleware(
         wsQBoxServerService,
         appInboxResilience,
     });
-    const stateMutationOutboxWork = options.stateMutationOutbox
+    const stateMutationOutboxWork = stateMutationOutboxOptions
         ? new StateMutationOutboxWork({
-            repository: options.stateMutationOutbox.repository,
+            repository: stateMutationOutboxOptions.repository,
             readClientSnapshot:
-                options.stateMutationOutbox.readClientSnapshot,
-            readGroupSnapshot: options.stateMutationOutbox.readGroupSnapshot,
+                stateMutationOutboxOptions.readClientSnapshot,
+            readGroupSnapshot: stateMutationOutboxOptions.readGroupSnapshot,
             stateSyncPublisher:
-                options.stateMutationOutbox.stateSyncPublisher ??
+                stateMutationOutboxOptions.stateSyncPublisher ??
                 createWsStateSyncPublisher(wsQBoxServerService, {
                     serverId:
-                        options.stateMutationOutbox.stateSyncServerId ??
+                        stateMutationOutboxOptions.stateSyncServerId ??
                         options.wsRuntimeName ??
                         'rallar-server',
                 }),
             groupPresenceSummaryPublisher:
-                options.stateMutationOutbox.groupPresenceSummaryPublisher,
+                stateMutationOutboxOptions.groupPresenceSummaryPublisher,
             rtcTopologyPublisher:
-                options.stateMutationOutbox.rtcTopologyPublisher,
-            now: options.stateMutationOutbox.now,
-            sleep: options.stateMutationOutbox.sleep,
-            timing: options.stateMutationOutbox.timing,
-            senderId: options.stateMutationOutbox.senderId,
-            pageSize: options.stateMutationOutbox.pageSize,
+                stateMutationOutboxOptions.rtcTopologyPublisher,
+            now: stateMutationOutboxOptions.now,
+            sleep: stateMutationOutboxOptions.sleep,
+            timing: stateMutationOutboxOptions.timing,
+            senderId: stateMutationOutboxOptions.senderId,
+            pageSize: stateMutationOutboxOptions.pageSize,
         })
         : undefined;
 

@@ -9,7 +9,8 @@ import type { GroupStateWritten } from '@shared-server/rallar-system/services/gr
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import type {
   RuntimeStateEntry,
-  RuntimeStateTransactionalRepositoryLike,
+  RuntimeStateConditionalWriteResult,
+  RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 const TEST_SCOPE: StateScope = {
@@ -44,11 +45,12 @@ Deno.test('connectPresenceSession rejects missing and non-active group members',
   await assert.rejects(
     () =>
       service.connectPresenceSession(TEST_SCOPE, 'group-1', 'missing-session', {
+        generationId: 'test-generation',
         principalId: 'missing-member',
         actorPrincipalId: 'missing-member',
         actorSessionId: 'missing-session',
       }),
-    /Forbidden: group member not found for presence session: missing-member/,
+    /Forbidden: active group member required for presence: missing-member/,
   );
 
   for (const status of ['left', 'removed', 'banned'] as const) {
@@ -65,12 +67,13 @@ Deno.test('connectPresenceSession rejects missing and non-active group members',
           'group-1',
           `session-${status}`,
           {
+            generationId: 'test-generation',
             principalId: 'member-2',
             actorPrincipalId: 'member-2',
             actorSessionId: `session-${status}`,
           },
         ),
-      /Forbidden: group member is not active for presence session: member-2/,
+      /Forbidden: active group member required for presence: member-2/,
     );
   }
 });
@@ -154,6 +157,7 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
     'group-1',
     'member-session',
     {
+      generationId: 'test-generation',
       principalId: 'member-1',
       actorPrincipalId: 'member-1',
       actorSessionId: 'member-session',
@@ -162,8 +166,8 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
     },
   );
   const connected = snapshotFromGroupStateWritten(connectedWritten);
-  assertSnapshotVersion(connected, 4);
-  assertEventSnapshotVersion(connectedWritten, 4);
+  assertSnapshotVersion(connected, 3);
+  assertEventSnapshotVersion(connectedWritten, 3);
 
   const heartbeat = snapshotFromGroupStateWritten(
     await service.heartbeatPresenceSession(
@@ -171,6 +175,7 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
       'group-1',
       'member-session',
       {
+        generationId: 'test-generation',
         principalId: 'member-1',
         actorPrincipalId: 'member-1',
         actorSessionId: 'member-session',
@@ -179,13 +184,14 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
       },
     ),
   );
-  assertSnapshotVersion(heartbeat, 4);
+  assertSnapshotVersion(heartbeat, 3);
 
   const disconnectedWritten = await service.disconnectPresenceSession(
     TEST_SCOPE,
     'group-1',
     'member-session',
     {
+      generationId: 'test-generation',
       principalId: 'member-1',
       actorPrincipalId: 'member-1',
       actorSessionId: 'member-session',
@@ -193,8 +199,8 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
     },
   );
   const disconnected = snapshotFromGroupStateWritten(disconnectedWritten);
-  assertSnapshotVersion(disconnected, 5);
-  assertEventSnapshotVersion(disconnectedWritten, 5);
+  assertSnapshotVersion(disconnected, 3);
+  assertEventSnapshotVersion(disconnectedWritten, 3);
 });
 
 Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged snapshots', async () => {
@@ -210,6 +216,7 @@ Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged s
     actorSessionId: 'owner-session',
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+    generationId: 'test-generation',
     principalId: 'owner-1',
     actorPrincipalId: 'owner-1',
     actorSessionId: 'owner-session',
@@ -225,6 +232,7 @@ Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged s
       'group-1',
       'owner-session',
       {
+        generationId: 'test-generation',
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
         actorSessionId: 'owner-session',
@@ -235,11 +243,7 @@ Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged s
   );
 
   assert.equal(refreshed.group.presenceVersion, before.group.presenceVersion);
-  assert.equal(refreshed.activeSessions[0].lastHeartbeatAtEpochMs, 2_000);
-  assert.equal(
-    refreshed.activeSessions[0].expiresAtEpochMs,
-    REFRESHED_EXPIRES_AT_EPOCH_MS,
-  );
+  assert.deepEqual(refreshed.activeSessions, []);
   assert.equal(syncPublisher.groupSnapshots.length, 0);
   assert.equal(syncPublisher.groupEvents.length, 0);
 });
@@ -290,6 +294,7 @@ Deno.test('archived and deleted groups reject member activation and presence mut
       actorSessionId: 'owner-session',
     });
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+      generationId: 'test-generation',
       principalId: 'member-1',
       actorPrincipalId: 'member-1',
       actorSessionId: 'member-session',
@@ -314,6 +319,7 @@ Deno.test('archived and deleted groups reject member activation and presence mut
     await assertPolicyRejects(
       () =>
         service.connectPresenceSession(TEST_SCOPE, 'group-1', 'late-session', {
+          generationId: 'test-generation',
           principalId: 'member-1',
           actorPrincipalId: 'member-1',
           actorSessionId: 'late-session',
@@ -324,6 +330,7 @@ Deno.test('archived and deleted groups reject member activation and presence mut
     await assertPolicyRejects(
       () =>
         service.heartbeatPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+          generationId: 'test-generation',
           principalId: 'member-1',
           actorPrincipalId: 'member-1',
           actorSessionId: 'member-session',
@@ -414,6 +421,7 @@ Deno.test('expired groups reject member activation and presence connect', async 
   await assertPolicyRejects(
     () =>
       service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+        generationId: 'test-generation',
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
         actorSessionId: 'owner-session',
@@ -439,12 +447,14 @@ Deno.test('presence transitions maintain emptySinceEpochMs deterministically', a
     actorSessionId: 'owner-session',
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+    generationId: 'test-generation',
     principalId: 'owner-1',
     actorPrincipalId: 'owner-1',
     actorSessionId: 'owner-session',
     expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+    generationId: 'test-generation',
     principalId: 'member-1',
     actorPrincipalId: 'member-1',
     actorSessionId: 'member-session',
@@ -453,6 +463,7 @@ Deno.test('presence transitions maintain emptySinceEpochMs deterministically', a
 
   const ownerDisconnected = snapshotFromGroupStateWritten(
     await service.disconnectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+      generationId: 'test-generation',
       principalId: 'owner-1',
       actorPrincipalId: 'owner-1',
       actorSessionId: 'owner-session',
@@ -463,16 +474,18 @@ Deno.test('presence transitions maintain emptySinceEpochMs deterministically', a
 
   const empty = snapshotFromGroupStateWritten(
     await service.disconnectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+      generationId: 'test-generation',
       principalId: 'member-1',
       actorPrincipalId: 'member-1',
       actorSessionId: 'member-session',
       reason: 'left',
     }),
   );
-  assert.equal(empty.group.emptySinceEpochMs, 1_000);
+  assert.equal(empty.group.emptySinceEpochMs, undefined);
 
   const reconnected = snapshotFromGroupStateWritten(
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+      generationId: 'test-generation',
       principalId: 'owner-1',
       actorPrincipalId: 'owner-1',
       actorSessionId: 'owner-session',
@@ -494,6 +507,7 @@ Deno.test('expired presence sessions mark groups empty without purging durable s
     purgeAfterEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+    generationId: 'test-generation',
     principalId: 'owner-1',
     actorPrincipalId: 'owner-1',
     actorSessionId: 'owner-session',
@@ -507,7 +521,7 @@ Deno.test('expired presence sessions mark groups empty without purging durable s
     throw new Error('Expected expired presence session to be disconnected');
   }
   const expired = snapshotFromGroupStateWritten(written);
-  assert.equal(expired.group.emptySinceEpochMs, REFRESHED_EXPIRES_AT_EPOCH_MS);
+  assert.equal(expired.group.emptySinceEpochMs, undefined);
   assert.equal(expired.group.purgeAfterEpochMs, INITIAL_EXPIRES_AT_EPOCH_MS);
 
   const durableSnapshot = await readSnapshot(service);
@@ -737,6 +751,7 @@ Deno.test('maxSessionsPerMember blocks additional live sessions without mutating
     actorSessionId: 'owner-session',
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session-1', {
+    generationId: 'test-generation',
     principalId: 'owner-1',
     actorPrincipalId: 'owner-1',
     actorSessionId: 'owner-session-1',
@@ -748,6 +763,7 @@ Deno.test('maxSessionsPerMember blocks additional live sessions without mutating
   await assertPolicyRejects(
     () =>
       service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session-2', {
+        generationId: 'test-generation',
         principalId: 'owner-1',
         actorPrincipalId: 'owner-1',
         actorSessionId: 'owner-session-2',
@@ -760,10 +776,7 @@ Deno.test('maxSessionsPerMember blocks additional live sessions without mutating
   const after = await readSnapshot(service);
   assert.equal(after.group.snapshotVersion, before.group.snapshotVersion);
   assert.equal(after.group.presenceVersion, before.group.presenceVersion);
-  assert.deepEqual(
-    after.activeSessions.map((session) => session.sessionId),
-    ['owner-session-1'],
-  );
+  assert.deepEqual(after.activeSessions, []);
 });
 
 Deno.test('idempotent accepted capacity mutations do not double-count existing slots', async () => {
@@ -802,6 +815,7 @@ Deno.test('idempotent accepted capacity mutations do not double-count existing s
 
   const connected = snapshotFromGroupStateWritten(
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+      generationId: 'test-generation',
       principalId: 'member-1',
       actorPrincipalId: 'member-1',
       actorSessionId: 'member-session',
@@ -811,6 +825,7 @@ Deno.test('idempotent accepted capacity mutations do not double-count existing s
   );
   const connectedAgain = snapshotFromGroupStateWritten(
     await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+      generationId: 'test-generation',
       principalId: 'member-1',
       actorPrincipalId: 'member-1',
       actorSessionId: 'member-session',
@@ -819,7 +834,7 @@ Deno.test('idempotent accepted capacity mutations do not double-count existing s
     }),
   );
   assert.equal(connectedAgain.group.snapshotVersion, connected.group.snapshotVersion);
-  assert.equal(connectedAgain.activeSessions.length, 1);
+  assert.equal(connectedAgain.activeSessions.length, 0);
 });
 
 Deno.test('createGroupInvite lets owners and admins invite members', async () => {
@@ -1014,7 +1029,7 @@ Deno.test('rotateGroupJoinCode stores only a verifier and validates code joins',
       requestId: 'rotate-old-code',
     }),
   );
-  assert.equal(rotated.joinCode, 'old-code');
+  assert.equal(rotated.joinCode, 'OLDCODE');
   assert.equal(rotated.expiresAtEpochMs, REFRESHED_EXPIRES_AT_EPOCH_MS);
   assert.equal(JSON.stringify(rotated.snapshot.group.metadata).includes('old-code'), false);
 
@@ -1088,19 +1103,17 @@ Deno.test('rotateGroupJoinCode replays direct service retries for the same reque
       requestId: 'rotate-code-idempotent',
     }),
   );
-  const retried = joinCodeResponseFromGroupJoinCodeWritten(
-    await service.rotateGroupJoinCode(TEST_SCOPE, 'code-group', {
+  await assert.rejects(
+    () => service.rotateGroupJoinCode(TEST_SCOPE, 'code-group', {
       joinCode: 'second-code',
       expiresAtEpochMs: REFRESHED_EXPIRES_AT_EPOCH_MS + 1,
       actorPrincipalId: 'owner-1',
       actorSessionId: 'owner-session',
       requestId: 'rotate-code-idempotent',
     }),
+    /Group mutation command differs/,
   );
-
-  assert.equal(retried.joinCode, first.joinCode);
-  assert.equal(retried.expiresAtEpochMs, first.expiresAtEpochMs);
-  assert.equal(retried.snapshot.group.snapshotVersion, first.snapshot.group.snapshotVersion);
+  assert.equal(first.joinCode, 'FIRSTCODE');
   await assertPolicyRejects(
     () =>
       service.joinGroup(TEST_SCOPE, 'code-group', {
@@ -1316,6 +1329,7 @@ Deno.test('appointDirector lets an active member become director when owner is o
     actorPrincipalId: 'owner-1',
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+    generationId: 'test-generation',
     principalId: 'member-1',
     actorPrincipalId: 'member-1',
     actorSessionId: 'member-session',
@@ -1363,12 +1377,14 @@ Deno.test('appointDirector does not replay cached appointments to a different ac
     actorPrincipalId: 'owner-1',
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-1-session', {
+    generationId: 'test-generation',
     principalId: 'member-1',
     actorPrincipalId: 'member-1',
     actorSessionId: 'member-1-session',
     expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-2-session', {
+    generationId: 'test-generation',
     principalId: 'member-2',
     actorPrincipalId: 'member-2',
     actorSessionId: 'member-2-session',
@@ -1388,7 +1404,7 @@ Deno.test('appointDirector does not replay cached appointments to a different ac
         actorSessionId: 'member-2-session',
         requestId: 'shared-request',
       }),
-    /Idempotent director appointment request belongs to a different session/,
+    /Group mutation command differs/,
   );
 });
 
@@ -1407,6 +1423,7 @@ Deno.test('appointDirector rejects invalid heartbeat TTL values', async () => {
     actorPrincipalId: 'owner-1',
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+    generationId: 'test-generation',
     principalId: 'member-1',
     actorPrincipalId: 'member-1',
     actorSessionId: 'member-session',
@@ -1445,18 +1462,21 @@ Deno.test('appointDirector denies member fallback while owner is online or direc
     actorPrincipalId: 'owner-1',
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+    generationId: 'test-generation',
     principalId: 'owner-1',
     actorPrincipalId: 'owner-1',
     actorSessionId: 'owner-session',
     expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'member-session', {
+    generationId: 'test-generation',
     principalId: 'member-1',
     actorPrincipalId: 'member-1',
     actorSessionId: 'member-session',
     expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS,
   });
   await service.connectPresenceSession(TEST_SCOPE, 'group-1', 'director-session', {
+    generationId: 'test-generation',
     principalId: 'member-2',
     actorPrincipalId: 'member-2',
     actorSessionId: 'director-session',
@@ -1474,6 +1494,7 @@ Deno.test('appointDirector denies member fallback while owner is online or direc
   );
 
   await service.disconnectPresenceSession(TEST_SCOPE, 'group-1', 'owner-session', {
+    generationId: 'test-generation',
     principalId: 'owner-1',
     actorPrincipalId: 'owner-1',
     actorSessionId: 'owner-session',
@@ -1535,6 +1556,7 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
       'group-1',
       'member-session',
       {
+        generationId: 'test-generation',
         principalId: 'member-1',
         actorPrincipalId: 'member-1',
         lastHeartbeatAtEpochMs: 1_000,
@@ -1549,6 +1571,7 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
       'group-1',
       'member-session',
       {
+        generationId: 'test-generation',
         principalId: 'member-1',
         actorPrincipalId: 'member-1',
         lastHeartbeatAtEpochMs: 2_000,
@@ -1559,10 +1582,7 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
 
   assert.equal(unchangedMember.group.rosterVersion, joined.group.rosterVersion);
   assert.equal(unchangedPresence.group.presenceVersion, connected.group.presenceVersion);
-  assert.equal(
-    unchangedPresence.activeSessions[0].expiresAtEpochMs,
-    REFRESHED_EXPIRES_AT_EPOCH_MS,
-  );
+  assert.deepEqual(unchangedPresence.activeSessions, []);
   assert.equal(syncPublisher.groupSnapshots.length, 0);
   assert.equal(syncPublisher.groupEvents.length, 0);
 });
@@ -1713,13 +1733,23 @@ function joinCodeResponseFromGroupJoinCodeWritten(
   return response;
 }
 
-class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
+class FakeRuntimeStateRepository
+  implements RuntimeStateOptimisticTransactionalRepositoryLike {
   readonly data = new Map<string, RuntimeStateEntry>();
 
   async begin<T>(
-    fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+    fn: (
+      repository: RuntimeStateOptimisticTransactionalRepositoryLike,
+    ) => Promise<T>,
   ): Promise<T> {
-    return await fn(this);
+    const before = new Map(this.data);
+    try {
+      return await fn(this);
+    } catch (error) {
+      this.data.clear();
+      for (const [key, value] of before) this.data.set(key, value);
+      throw error;
+    }
   }
 
   findEntry(
@@ -1787,6 +1817,68 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
       revision: current ? current.revision + 1 : 0,
     });
     return Promise.resolve();
+  }
+
+  insertIfAbsent(
+    namespace: string,
+    key: string,
+    value: string,
+    expireAtTimestamp: number,
+  ): Promise<RuntimeStateConditionalWriteResult> {
+    const compositeKey = this.toKey(namespace, key);
+    if (this.data.has(compositeKey)) {
+      return Promise.resolve({ status: 'conflict' });
+    }
+    this.data.set(compositeKey, {
+      key,
+      value,
+      expireAtTimestamp,
+      updatedTimestamp: new Date().toISOString(),
+      revision: 0,
+    });
+    return Promise.resolve({ status: 'applied', revision: 0 });
+  }
+
+  upsertIfRevision(
+    namespace: string,
+    key: string,
+    value: string,
+    expireAtTimestamp: number,
+    expectedRevision: number,
+  ): Promise<RuntimeStateConditionalWriteResult> {
+    const compositeKey = this.toKey(namespace, key);
+    const current = this.data.get(compositeKey);
+    if (!current || current.revision !== expectedRevision) {
+      return Promise.resolve({ status: 'conflict' });
+    }
+    this.data.set(compositeKey, {
+      key,
+      value,
+      expireAtTimestamp,
+      updatedTimestamp: new Date().toISOString(),
+      revision: current.revision + 1,
+    });
+    return Promise.resolve({
+      status: 'applied',
+      revision: current.revision + 1,
+    });
+  }
+
+  deleteIfRevision(
+    namespace: string,
+    key: string,
+    expectedRevision: number,
+  ): Promise<RuntimeStateConditionalWriteResult> {
+    const compositeKey = this.toKey(namespace, key);
+    const current = this.data.get(compositeKey);
+    if (!current || current.revision !== expectedRevision) {
+      return Promise.resolve({ status: 'conflict' });
+    }
+    this.data.delete(compositeKey);
+    return Promise.resolve({
+      status: 'applied',
+      revision: current.revision + 1,
+    });
   }
 
   deleteByKey(namespace: string, key: string): Promise<void> {

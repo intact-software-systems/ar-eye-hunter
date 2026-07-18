@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
-import { AppTopics } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
@@ -18,7 +17,10 @@ import { findClientStateSnapshotByPrincipalId } from '@shared/repository/client-
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
+import {
+    STATE_MUTATION_OUTBOX_NAMESPACE,
+    StateMutationOutboxRepository,
+} from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
@@ -29,7 +31,6 @@ import {
 import {
     AppGroupInboxService,
     AppInboxType,
-    type GroupMutationOutboxPublisher,
     type GroupCreateAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
     type GroupPresenceConnectAppInboxPayload,
@@ -40,6 +41,7 @@ import { createCachedGroupStateService } from '@shared-server/rallar-system/serv
 import { createCachedClientStateService } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
 import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
+import { StateMutationOutboxWork } from '@shared-server/rallar-system/services/StateMutationOutboxWork.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
@@ -53,7 +55,7 @@ describe('state sync publish failure characterization', () => {
         configureTestCacheRepositories();
     });
 
-    it('app inbox commits group state and updates process cache before retrying snapshot enqueue failure', async () => {
+    it('group app inbox commits state and durable intents without inline publication', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const enqueueOutboxIfAbsent = vi.fn(async () => {
             throw new Error('snapshot enqueue unavailable');
@@ -85,32 +87,31 @@ describe('state sync publish failure characterization', () => {
         expect(findGroupStateSnapshotByRef(groupRef)?.group.snapshotVersion).toBe(
             1,
         );
-        expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
-        expect(firstEnqueuedMessage(enqueueOutboxIfAbsent).payload.typeId).toBe(
-            AppTopics.groupStateSnapshot,
-        );
-        expect(entry.status).toBe(EntityStatus.RETRY);
+        expect(enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(await groupMutationOutboxRecords(runtimeRepository)).toEqual([
+            expect.objectContaining({
+                kind: 'group',
+                commandId: 'create-room-1',
+                effects: ['group-state-sync', 'group-presence-summary'],
+                delivery: { status: 'pending' },
+            }),
+        ]);
+        expect(entry.status).toBe(EntityStatus.COMPLETED);
         expect(entry.dequeueAudit.attempts).toBe(1);
-        expect(await results.findByKey(entry.key)).toBeUndefined();
+        expect(await results.findByKey(entry.key)).toMatchObject({
+            status: EntityStatus.COMPLETED,
+        });
     });
 
-    it('keeps a committed group mutation retryable when APP_OUTBOX registration fails', async () => {
+    it('drains a committed group intent after worker restart', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => ({
-            status: 'enqueued',
-            message,
-            entries: [],
-        }));
-        const groupMutationOutboxPublisher = {
-            enqueueForGroupSnapshot: vi.fn(async () => {
-                throw new Error('app outbox unavailable');
-            }),
-        };
+        const enqueueOutboxIfAbsent = vi.fn(async () => {
+            throw new Error('legacy publisher must stay unused');
+        });
         const { appInbox, reader, queue, results } = createGroupAppInbox(
             runtimeRepository,
             createPublisher(enqueueOutboxIfAbsent),
             1_500,
-            groupMutationOutboxPublisher,
         );
 
         const entry = await processCreateGroup(
@@ -128,11 +129,36 @@ describe('state sync publish failure characterization', () => {
             await new GroupStateRepository(runtimeRepository)
                 .readSnapshot(groupRef),
         ).toBeDefined();
-        expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(3);
-        expect(groupMutationOutboxPublisher.enqueueForGroupSnapshot)
-            .toHaveBeenCalledOnce();
-        expect(entry.status).toBe(EntityStatus.RETRY);
-        expect(await results.findByKey(entry.key)).toBeUndefined();
+        const stateSyncPublisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async () => undefined),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const summaryPublisher = {
+            enqueueForGroupSnapshot: vi.fn(async () => ({
+                effectiveSnapshotRevision: 1,
+            })),
+        };
+        const repository = new GroupStateRepository(runtimeRepository);
+        const restartedWork = new StateMutationOutboxWork({
+            repository: new StateMutationOutboxRepository(runtimeRepository),
+            readClientSnapshot: async () => undefined,
+            readGroupSnapshot: (ref) => repository.readSnapshot(ref),
+            stateSyncPublisher,
+            groupPresenceSummaryPublisher: summaryPublisher,
+        });
+
+        expect(await restartedWork.drainPending()).toMatchObject({ delivered: 1 });
+        expect(summaryPublisher.enqueueForGroupSnapshot).toHaveBeenCalledOnce();
+        expect(stateSyncPublisher.publishGroupSnapshot).toHaveBeenCalledOnce();
+        expect(enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect((await groupMutationOutboxRecords(runtimeRepository))[0])
+            .toMatchObject({ delivery: { status: 'delivered' } });
+        expect(entry.status).toBe(EntityStatus.COMPLETED);
+        expect(await results.findByKey(entry.key)).toMatchObject({
+            status: EntityStatus.COMPLETED,
+        });
     });
 
     it('client app inbox commits an outbox intent without invoking direct publication', async () => {
@@ -235,7 +261,7 @@ describe('state sync publish failure characterization', () => {
         }
     });
 
-    it('app inbox completes an active group session connect when state sync enqueue returns no-route', async () => {
+    it('group presence commits independently of inline state-sync routing', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => ({
             status: 'enqueued',
@@ -284,30 +310,38 @@ describe('state sync publish failure characterization', () => {
                 'session-alice',
             );
 
-            const durableSnapshot = await new GroupStateRepository(runtimeRepository)
-                .readSnapshot(groupRef);
-            expect(durableSnapshot?.activeSessions.map(session => session.sessionId))
-                .toEqual(['session-alice']);
-            expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(3);
-            expect(enqueueOutboxIfAbsent.mock.calls.map(([message]) =>
-                (message as ALMessage).payload.typeId
-            )).toEqual([
-                AppTopics.groupStateSnapshot,
-                AppTopics.groupDirectorySnapshot,
-                AppTopics.groupStateEvent,
-            ]);
+            const groupRepository = new GroupStateRepository(runtimeRepository);
+            expect(await groupRepository.findPresenceSession({
+                ...groupRef,
+                sessionId: 'session-alice',
+            })).toMatchObject({
+                generationId: 'generation-session-alice',
+                principalId: 'alice',
+            });
+            expect((await groupRepository.readSnapshot(groupRef))?.activeSessions)
+                .toEqual([]);
+            expect(enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(await groupMutationOutboxRecords(runtimeRepository)).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        commandId: 'connect-session-alice-room-no-route',
+                        effects: ['group-state-sync', 'group-presence-summary'],
+                        delivery: { status: 'pending' },
+                    }),
+                ]),
+            );
             expect(entry.status).toBe(EntityStatus.COMPLETED);
             expect(entry.dequeueAudit.attempts).toBe(1);
             expect(await results.findByKey(entry.key)).toMatchObject({
                 status: EntityStatus.COMPLETED,
             });
-            expect(warn).toHaveBeenCalledTimes(2);
+            expect(warn).not.toHaveBeenCalled();
         } finally {
             warn.mockRestore();
         }
     });
 
-    it('app inbox can enqueue a group snapshot before retrying a later group event enqueue failure', async () => {
+    it('group event publication failures are isolated behind the durable drainer', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const enqueuedMessages: ALMessage[] = [];
         const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => {
@@ -338,18 +372,22 @@ describe('state sync publish failure characterization', () => {
             groupRef.groupId,
         );
 
-        expect(enqueuedMessages.map((message) => message.payload.typeId)).toEqual([
-            AppTopics.groupStateSnapshot,
-            AppTopics.groupDirectorySnapshot,
-            AppTopics.groupStateEvent,
-        ]);
+        expect(enqueuedMessages).toEqual([]);
         expect(
             await new GroupStateRepository(runtimeRepository).readSnapshot(groupRef),
         ).toBeDefined();
         expect(findGroupStateSnapshotByRef(groupRef)).toBeDefined();
-        expect(entry.status).toBe(EntityStatus.RETRY);
+        expect(await groupMutationOutboxRecords(runtimeRepository)).toEqual([
+            expect.objectContaining({
+                commandId: 'create-room-2',
+                delivery: { status: 'pending' },
+            }),
+        ]);
+        expect(entry.status).toBe(EntityStatus.COMPLETED);
         expect(entry.dequeueAudit.attempts).toBe(1);
-        expect(await results.findByKey(entry.key)).toBeUndefined();
+        expect(await results.findByKey(entry.key)).toMatchObject({
+            status: EntityStatus.COMPLETED,
+        });
     });
 });
 
@@ -396,7 +434,6 @@ function createGroupAppInbox(
     runtimeRepository: FakeRuntimeStateRepository,
     publisher: ReturnType<typeof createPublisher>,
     now: number,
-    groupMutationOutboxPublisher?: GroupMutationOutboxPublisher,
 ): Readonly<{
     appInbox: AppGroupInboxService;
     reader: InboxQueueReader;
@@ -422,11 +459,7 @@ function createGroupAppInbox(
                 groupsRepository,
             }),
         }),
-        publisher,
         'state-service',
-        undefined,
-        undefined,
-        groupMutationOutboxPublisher,
     );
 
     return {
@@ -666,6 +699,7 @@ async function processConnectGroupPresence(
             sessionId,
             request: {
                 principalId,
+                generationId: `generation-${sessionId}`,
                 connectedAtEpochMs: 3_500,
                 lastHeartbeatAtEpochMs: 3_500,
                 expiresAtEpochMs: Date.now() + 60_000,
@@ -715,19 +749,12 @@ async function clientMutationOutboxRecords(
         .filter((record) => record.kind === 'client');
 }
 
-function firstEnqueuedMessage(
-    enqueueOutboxIfAbsent: Readonly<{
-        mock: Readonly<{
-            calls: readonly (readonly unknown[])[];
-        }>;
-    }>,
-): ALMessage {
-    const message = enqueueOutboxIfAbsent.mock.calls[0]?.[0];
-    if (message === undefined) {
-        throw new Error('Expected at least one enqueued message');
-    }
-
-    return message as ALMessage;
+async function groupMutationOutboxRecords(
+    runtimeRepository: FakeRuntimeStateRepository,
+): Promise<readonly Record<string, unknown>[]> {
+    return (await runtimeRepository.findAllEntries(STATE_MUTATION_OUTBOX_NAMESPACE))
+        .map((entry) => JSON.parse(entry.value) as Record<string, unknown>)
+        .filter((record) => record.kind === 'group');
 }
 
 async function waitForQueueEntry(queue: InMemoryQueueBox): Promise<void> {

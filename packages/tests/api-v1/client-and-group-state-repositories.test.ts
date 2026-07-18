@@ -10,6 +10,7 @@ import type {
     Group,
     GroupEvent,
     GroupMember,
+    GroupPresenceSummary,
     GroupPresenceSession,
 } from '@shared/api/group-types.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
@@ -518,6 +519,9 @@ describe('GroupStateRepository', () => {
         await groupRepository.putPresenceSession(activeSession);
         await groupRepository.putPresenceSession(disconnectedSession);
         await groupRepository.putPresenceSession(expiredSession);
+        await groupRepository.insertPresenceSummary(
+            createGroupPresenceSummary(group.groupId, [activeSession], 3),
+        );
         await groupRepository.appendEvent(createGroupEvent('evt-2', now + 2_000));
         await groupRepository.appendEvent(createGroupEvent('evt-1', now + 1_000));
 
@@ -547,7 +551,11 @@ describe('GroupStateRepository', () => {
         });
 
         expect(snapshot).toEqual({
-            stateRevision: 1,
+            stateRevision: 4,
+            causalRevision: {
+                groupRevision: 1,
+                presenceRevision: 3,
+            },
             group,
             members: [activeMember, invitedMember],
             activeSessions: [activeSession],
@@ -615,8 +623,9 @@ describe('GroupStateRepository', () => {
 
         await groupRepository.putGroup(group);
         await groupRepository.putMember(createGroupMember('principal-a', 'active'));
-        repository.onFindEntriesByPrefix = async () => {
-            if (repository.findEntriesByPrefixCalls !== 2) {
+        let groupReads = 0;
+        repository.onFindEntryAfterRead = async (namespace) => {
+            if (namespace !== 'group-state:groups' || ++groupReads !== 1) {
                 return;
             }
             await groupRepository.putMember(
@@ -663,13 +672,14 @@ describe('GroupStateRepository', () => {
         const group = createGroup();
 
         await groupRepository.putGroup(group);
-        repository.onFindEntriesByPrefix = async () => {
-            if (repository.findEntriesByPrefixCalls % 2 !== 0) {
+        let groupReads = 0;
+        repository.onFindEntryAfterRead = async (namespace) => {
+            if (namespace !== 'group-state:groups' || ++groupReads % 2 === 0) {
                 return;
             }
             await groupRepository.putGroup({
                 ...group,
-                displayName: `Revision ${repository.findEntriesByPrefixCalls}`,
+                displayName: `Revision ${groupReads}`,
             });
         };
 
@@ -677,7 +687,8 @@ describe('GroupStateRepository', () => {
             name: 'StateSnapshotReadConflictError',
             status: 503,
         });
-        expect(repository.findEntriesByPrefixCalls).toBe(6);
+        expect(repository.findEntriesByPrefixCalls).toBe(3);
+        expect(groupReads).toBe(6);
     });
 
     it('lists group snapshots with scope-wide child reads instead of per-group fanout', async () => {
@@ -702,6 +713,16 @@ describe('GroupStateRepository', () => {
                     groupId,
                     expiresAtEpochMs: now + 60_000,
                 }),
+            );
+            await groupRepository.insertPresenceSummary(
+                createGroupPresenceSummary(
+                    groupId,
+                    [createGroupSession(principalId, sessionId, {
+                        groupId,
+                        expiresAtEpochMs: now + 60_000,
+                    })],
+                    1,
+                ),
             );
         }
 
@@ -764,8 +785,8 @@ describe('GroupStateRepository', () => {
                 expect.objectContaining({ principalId: 'principal-new' }),
             ]),
         });
-        expect(repository.findEntriesByPrefixCalls).toBe(6);
-        expect(repository.findEntryCalls).toBe(2);
+        expect(repository.findEntriesByPrefixCalls).toBe(5);
+        expect(repository.findEntryCalls).toBe(3);
     });
 
     it('lists bounded group snapshot pages without scanning every group row', async () => {
@@ -824,8 +845,8 @@ describe('GroupStateRepository', () => {
             },
         ]);
         expect(repository.findEntriesByKeysCalls).toBe(1);
-        expect(repository.findEntriesByPrefixCalls).toBe(4);
-        expect(repository.findEntryCalls).toBe(0);
+        expect(repository.findEntriesByPrefixCalls).toBe(2);
+        expect(repository.findEntryCalls).toBe(2);
         expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(1);
     });
 
@@ -924,8 +945,8 @@ describe('GroupStateRepository', () => {
             ]),
         });
         expect(repository.findEntriesByKeysCalls).toBe(1);
-        expect(repository.findEntriesByPrefixCalls).toBe(4);
-        expect(repository.findEntryCalls).toBe(2);
+        expect(repository.findEntriesByPrefixCalls).toBe(2);
+        expect(repository.findEntryCalls).toBe(4);
     });
 
     it('keeps paged group snapshot scans inside the exact workspace scope', async () => {
@@ -1176,10 +1197,36 @@ function createGroupSession(
         groupId: 'group-1',
         principalId,
         sessionId,
+        generationId: `generation-${sessionId}`,
+        generationVersion: 1,
         connectedAtEpochMs: 10,
         lastHeartbeatAtEpochMs: 20,
         expiresAtEpochMs: Date.now() + 60_000,
         ...overrides,
+    };
+}
+
+function createGroupPresenceSummary(
+    groupId: string,
+    activeSessions: readonly GroupPresenceSession[],
+    presenceRevision: number,
+): GroupPresenceSummary {
+    return {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId,
+        causalRevision: {
+            groupRevision: 1,
+            presenceRevision,
+        },
+        activePrincipalIds: [...new Set(activeSessions.map((session) => session.principalId))],
+        activeSessionIds: activeSessions.map((session) => session.sessionId),
+        activeSessions,
+        activePrincipalCount: new Set(
+            activeSessions.map((session) => session.principalId),
+        ).size,
+        activeSessionCount: activeSessions.length,
+        computedAtEpochMs: 30,
     };
 }
 
@@ -1206,7 +1253,10 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     findEntriesByPrefixCalls = 0;
     findEntriesByKeysCalls = 0;
     maxRowsReturnedPerFindEntriesByPrefix = 0;
-    onFindEntryAfterRead?: () => void | Promise<void>;
+    onFindEntryAfterRead?: (
+        namespace: string,
+        key: string,
+    ) => void | Promise<void>;
     onFindEntriesByPrefix?: () => void | Promise<void>;
     onFindEntriesByKeys?: () => void | Promise<void>;
     findEntriesByPrefixPageCalls: Array<
@@ -1227,7 +1277,7 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
         this.findEntryCalls += 1;
         const entry = this.data.get(this.toKey(namespace, key));
-        await this.onFindEntryAfterRead?.();
+        await this.onFindEntryAfterRead?.(namespace, key);
         return entry ? { ...entry } : undefined;
     }
 

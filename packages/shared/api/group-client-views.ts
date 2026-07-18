@@ -1,6 +1,9 @@
 import type { ClientInfo } from './api-config.ts';
 import type { ClientSnapshot } from './client-types.ts';
-import type { GroupSnapshot } from './group-types.ts';
+import type {
+    GroupSnapshot,
+    GroupStateCausalRevision,
+} from './group-types.ts';
 
 export type AnyClientPresence = ClientInfo | ClientSnapshot;
 export type AnyGroupPresence = GroupSnapshot;
@@ -46,6 +49,35 @@ export function readGroupVersion(snapshot: AnyGroupPresence): number {
 
 export function readGroupStateRevision(snapshot: AnyGroupPresence): number {
     return snapshot.stateRevision;
+}
+
+export function readGroupCausalRevision(
+    snapshot: AnyGroupPresence,
+): GroupStateCausalRevision {
+    return snapshot.causalRevision;
+}
+
+export type GroupCausalRevisionOrder =
+    | 'equal'
+    | 'dominates'
+    | 'dominated'
+    | 'concurrent';
+
+/** Compare the authoritative group/presence tuple as a partial order. */
+export function compareGroupCausalRevision(
+    left: GroupStateCausalRevision,
+    right: GroupStateCausalRevision,
+): GroupCausalRevisionOrder {
+    const groupComparison = Math.sign(
+        left.groupRevision - right.groupRevision,
+    );
+    const presenceComparison = Math.sign(
+        left.presenceRevision - right.presenceRevision,
+    );
+    if (groupComparison === 0 && presenceComparison === 0) return 'equal';
+    if (groupComparison >= 0 && presenceComparison >= 0) return 'dominates';
+    if (groupComparison <= 0 && presenceComparison <= 0) return 'dominated';
+    return 'concurrent';
 }
 
 export function readClientVersion(snapshot: ClientSnapshot): number {

@@ -18,19 +18,16 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type {
-    GroupJoinCodeWritten,
-    GroupMutationWritten,
     GroupStateService,
     GroupStateWritten,
+    DisconnectPresenceBySessionRequest,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import {
     AppInboxEnqueueInput,
     AppInboxService,
@@ -161,15 +158,11 @@ export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
 
 export type GroupPresenceDisconnectBySessionIdAppInboxPayload = Readonly<{
     sessionId: string;
-    request?: DisconnectGroupPresenceSessionRequest;
+    request?: DisconnectPresenceBySessionRequest;
 }>;
 
 export type GroupExpiredPresenceSessionsAppInboxPayload = Readonly<{
     atEpochMs: number;
-}>;
-
-export type GroupMutationOutboxPublisher = Readonly<{
-    enqueueForGroupSnapshot(snapshot: GroupSnapshot): Promise<void>;
 }>;
 
 export class AppGroupInboxService extends AppInboxService {
@@ -178,11 +171,9 @@ export class AppGroupInboxService extends AppInboxService {
         public override readonly resourceInbox: ResourceInboxRepository,
         public override readonly resourceInboxResults: ResourceInboxResultsRepository,
         public readonly groupStateService: GroupStateService,
-        public readonly stateSyncPublisher: StateSyncPublisher,
         public override readonly serviceId: string,
         timing?: RallarTimingSink,
         options?: AppInboxServiceOptions,
-        private readonly groupMutationOutboxPublisher?: GroupMutationOutboxPublisher,
     ) {
         super(
             inbox,
@@ -202,8 +193,6 @@ export class AppGroupInboxService extends AppInboxService {
                     groupCreate.request,
                 );
 
-                await this.publishGroupStateWritten(groupStateWritten);
-
                 return groupStateWritten;
             },
         );
@@ -215,8 +204,6 @@ export class AppGroupInboxService extends AppInboxService {
                     update.groupId,
                     update.request,
                 );
-
-                await this.publishGroupStateWritten(groupStateWritten);
 
                 return groupStateWritten;
             },
@@ -231,8 +218,6 @@ export class AppGroupInboxService extends AppInboxService {
                         appointment.request,
                     );
 
-                await this.publishGroupStateWritten(groupStateWritten);
-
                 return groupStateWritten;
             },
         );
@@ -244,8 +229,6 @@ export class AppGroupInboxService extends AppInboxService {
                     join.groupId,
                     join.request,
                 );
-
-                await this.publishGroupStateWritten(groupStateWritten);
 
                 return groupStateWritten;
             },
@@ -261,8 +244,6 @@ export class AppGroupInboxService extends AppInboxService {
                         invite.request,
                     );
 
-                await this.publishGroupStateWritten(groupStateWritten);
-
                 return groupStateWritten;
             },
         );
@@ -277,8 +258,6 @@ export class AppGroupInboxService extends AppInboxService {
                         invite.request,
                     );
 
-                await this.publishGroupStateWritten(groupStateWritten);
-
                 return groupStateWritten;
             },
         );
@@ -292,8 +271,6 @@ export class AppGroupInboxService extends AppInboxService {
                         invite.request,
                     );
 
-                await this.publishGroupStateWritten(groupStateWritten);
-
                 return groupStateWritten;
             },
         );
@@ -305,8 +282,6 @@ export class AppGroupInboxService extends AppInboxService {
                     joinCode.groupId,
                     joinCode.request,
                 );
-
-                await this.publishGroupJoinCodeWritten(written);
 
                 return written;
             },
@@ -321,8 +296,6 @@ export class AppGroupInboxService extends AppInboxService {
                     member.request,
                 );
 
-                await this.publishGroupStateWritten(groupStateWritten);
-
                 return groupStateWritten;
             },
         );
@@ -335,8 +308,6 @@ export class AppGroupInboxService extends AppInboxService {
                     member.principalId,
                     member.request,
                 );
-
-                await this.publishGroupStateWritten(groupStateWritten);
 
                 return groupStateWritten;
             },
@@ -351,8 +322,6 @@ export class AppGroupInboxService extends AppInboxService {
                     member.request,
                 );
 
-                await this.publishGroupStateWritten(groupStateWritten);
-
                 return groupStateWritten;
             },
         );
@@ -365,8 +334,6 @@ export class AppGroupInboxService extends AppInboxService {
                     member.principalId,
                     member.request,
                 );
-
-                await this.publishGroupStateWritten(groupStateWritten);
 
                 return groupStateWritten;
             },
@@ -381,8 +348,6 @@ export class AppGroupInboxService extends AppInboxService {
                         transfer.request,
                     );
 
-                await this.publishGroupStateWritten(groupStateWritten);
-
                 return groupStateWritten;
             },
         );
@@ -395,8 +360,6 @@ export class AppGroupInboxService extends AppInboxService {
                     member.principalId,
                     member.request,
                 );
-
-                await this.publishGroupStateWritten(groupStateWritten);
 
                 return groupStateWritten;
             },
@@ -412,8 +375,6 @@ export class AppGroupInboxService extends AppInboxService {
                         presence.request,
                     );
 
-                await this.publishGroupStateWritten(groupStateWritten);
-
                 return groupStateWritten;
             },
         );
@@ -427,8 +388,6 @@ export class AppGroupInboxService extends AppInboxService {
                         presence.sessionId,
                         presence.request,
                     );
-
-                await this.publishGroupStateWritten(groupStateWritten);
 
                 return groupStateWritten;
             },
@@ -444,8 +403,6 @@ export class AppGroupInboxService extends AppInboxService {
                         presence.request,
                     );
 
-                await this.publishGroupStateWritten(groupStateWritten);
-
                 return groupStateWritten;
             },
         );
@@ -458,10 +415,6 @@ export class AppGroupInboxService extends AppInboxService {
                         presence.request,
                     );
 
-                for (const groupStateWritten of groupStateWrittenResults) {
-                    await this.publishGroupStateWritten(groupStateWritten);
-                }
-
                 return groupStateWrittenResults;
             },
         );
@@ -473,10 +426,6 @@ export class AppGroupInboxService extends AppInboxService {
                         input.atEpochMs,
                     );
 
-                for (const groupStateWritten of groupStateWrittenResults) {
-                    await this.publishGroupStateWritten(groupStateWritten);
-                }
-
                 return groupStateWrittenResults;
             },
         );
@@ -484,7 +433,7 @@ export class AppGroupInboxService extends AppInboxService {
 
     public async processPresenceDisconnectsBySessionId(
         sessionId: string,
-        request?: DisconnectGroupPresenceSessionRequest,
+        request?: DisconnectPresenceBySessionRequest,
     ) {
         return await this.processEntryUntilCompletion<
             GroupPresenceDisconnectBySessionIdAppInboxPayload,
@@ -517,44 +466,6 @@ export class AppGroupInboxService extends AppInboxService {
         this.processEntryNoWaitingIf<GroupExpiredPresenceSessionsAppInboxPayload>(
             this.toExpiredPresenceSessionsEnqueue(atEpochMs),
             entry => isCompletedOrFailed(entry.status),
-        );
-    }
-
-    private async publishGroupStateWritten(
-        groupStateWritten: GroupStateWritten,
-    ): Promise<void> {
-        if (groupStateWritten.result.right) {
-            await this.publishGroupMutation(groupStateWritten.result.right);
-        }
-    }
-
-    private async publishGroupJoinCodeWritten(
-        written: GroupJoinCodeWritten,
-    ): Promise<void> {
-        if (written.result.right) {
-            await this.publishGroupMutation(written.result.right);
-        }
-    }
-
-    private async publishGroupMutation(
-        written: GroupMutationWritten,
-    ): Promise<void> {
-        if (!written.event) {
-            return;
-        }
-
-        await this.stateSyncPublisher.publishGroupSnapshot(
-            written.snapshot,
-            this.serviceId,
-        );
-
-        await this.stateSyncPublisher.publishGroupEvent(
-            written.event,
-            this.serviceId,
-        );
-
-        await this.groupMutationOutboxPublisher?.enqueueForGroupSnapshot(
-            written.snapshot,
         );
     }
 

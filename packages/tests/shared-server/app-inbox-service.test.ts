@@ -433,15 +433,11 @@ describe('AppInboxService', () => {
             publishGroupSnapshot: vi.fn(async () => undefined),
             publishGroupEvent: vi.fn(async () => undefined),
         };
-        const groupMutationOutboxPublisher = {
-            enqueueForGroupSnapshot: vi.fn(async () => undefined),
-        };
         const service = new AppGroupInboxService(
             reader,
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
             (event) => timingEvents.push(event),
             {
@@ -451,7 +447,6 @@ describe('AppInboxService', () => {
                 waitMaxRetryIntervalMsecs: 1,
                 waitJitterRatio: 0,
             },
-            groupMutationOutboxPublisher,
         );
 
         const resultPromise = service.processEntryUntilCompletion<
@@ -484,26 +479,8 @@ describe('AppInboxService', () => {
         const result = await resultPromise;
         expect(result.right).toEqual(stateWritten);
         expect(groupStateService.createGroup).toHaveBeenCalledOnce();
-        // TEMP(Task 4): remove only after every group producer derives
-        // canonical SHA-256 internally before retry, persists the identical
-        // receipt/outbox digest, proves reordered replay and semantic conflict,
-        // accepts no caller hash, and writes every intent transactionally.
-        expect(publisher.publishGroupSnapshot).toHaveBeenCalledWith(
-            written.snapshot,
-            'server-12345678',
-        );
-        expect(publisher.publishGroupEvent).toHaveBeenCalledWith(
-            written.event,
-            'server-12345678',
-        );
-        expect(groupMutationOutboxPublisher.enqueueForGroupSnapshot)
-            .toHaveBeenCalledWith(written.snapshot);
-        expect(
-            publisher.publishGroupEvent.mock.invocationCallOrder[0],
-        ).toBeLessThan(
-            groupMutationOutboxPublisher.enqueueForGroupSnapshot.mock
-                .invocationCallOrder[0]!,
-        );
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
 
         const entry = readOnlyEntry(queue);
         expect(entry?.status).toBe(EntityStatus.COMPLETED);
@@ -575,19 +552,14 @@ describe('AppInboxService', () => {
             publishGroupSnapshot: vi.fn(async () => undefined),
             publishGroupEvent: vi.fn(async () => undefined),
         };
-        const groupMutationOutboxPublisher = {
-            enqueueForGroupSnapshot: vi.fn(async () => undefined),
-        };
         const service = new AppGroupInboxService(
             reader,
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
             undefined,
             undefined,
-            groupMutationOutboxPublisher,
         );
 
         await processCreateGroup(
@@ -599,8 +571,6 @@ describe('AppInboxService', () => {
 
         expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
-        expect(groupMutationOutboxPublisher.enqueueForGroupSnapshot)
-            .not.toHaveBeenCalled();
     });
 
     it('records app-inbox wait fallback timing when completion is not observed', async () => {
@@ -608,7 +578,7 @@ describe('AppInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const timingEvents: RallarTimingEvent[] = [];
-        const publisher = {
+        const _publisher = {
             publishClientSnapshot: vi.fn(async () => undefined),
             publishClientEvent: vi.fn(async () => undefined),
             publishGroupSnapshot: vi.fn(async () => undefined),
@@ -619,7 +589,6 @@ describe('AppInboxService', () => {
             queue as never,
             results as never,
             createGroupStateServiceStub({}),
-            publisher,
             'server-12345678',
             (event) => timingEvents.push(event),
             {
@@ -689,7 +658,6 @@ describe('AppInboxService', () => {
                 now: () => 1_000,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -716,8 +684,8 @@ describe('AppInboxService', () => {
         expect(second.right?.result.left).toBe(
             'Group already exists: duplicate-room',
         );
-        expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(1);
-        expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(1);
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
 
         const repository = new GroupStateRepository(runtimeRepository, {
             events: eventStore,
@@ -753,7 +721,6 @@ describe('AppInboxService', () => {
                 now: () => 2_000,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -814,6 +781,7 @@ describe('AppInboxService', () => {
                 sessionId: 'bob-session',
                 request: {
                     principalId: 'bob',
+                    generationId: 'bob-generation-1',
                     connectedAtEpochMs: 2_000,
                     lastHeartbeatAtEpochMs: 2_000,
                     expiresAtEpochMs: Date.now() + 60_000,
@@ -836,6 +804,7 @@ describe('AppInboxService', () => {
                 sessionId: 'bob-session',
                 request: {
                     principalId: 'bob',
+                    generationId: 'bob-generation-1',
                     lastHeartbeatAtEpochMs: 3_000,
                     expiresAtEpochMs: Date.now() + 60_000,
                     actorPrincipalId: 'bob',
@@ -857,6 +826,7 @@ describe('AppInboxService', () => {
                 sessionId: 'bob-session',
                 request: {
                     principalId: 'bob',
+                    generationId: 'bob-generation-1',
                     disconnectedAtEpochMs: 4_000,
                     actorPrincipalId: 'bob',
                     requestId: 'disconnect-bob-mutation-room',
@@ -870,26 +840,36 @@ describe('AppInboxService', () => {
                 .members.map((entry) => entry.principalId)
                 .sort(),
         ).toEqual(['alice', 'bob']);
-        expect(writtenSnapshot(connected).activeSessions).toHaveLength(1);
-        expect(writtenSnapshot(heartbeat).activeSessions[0]).toMatchObject({
-            sessionId: 'bob-session',
-            lastHeartbeatAtEpochMs: 3_000,
-        });
+        // Presence is a separate concurrency domain; request responses may
+        // permissively carry the older valid summary until outbox convergence.
+        expect(writtenSnapshot(connected).activeSessions).toHaveLength(0);
+        expect(writtenSnapshot(heartbeat).activeSessions).toHaveLength(0);
         expect(writtenSnapshot(disconnected).activeSessions).toHaveLength(0);
         expect(updated.right?.result.right?.event?.eventType).toBe('group-updated');
         expect(member.right?.result.right?.event?.eventType).toBe('member-joined');
         expect(connected.right?.result.right?.event?.eventType).toBe(
             'session-connected',
         );
-        expect(heartbeat.right?.result.right?.event).toBeUndefined();
+        expect(heartbeat.right?.result.right?.event?.eventType).toBe(
+            'session-heartbeat',
+        );
         expect(disconnected.right?.result.right?.event?.eventType).toBe(
             'session-disconnected',
         );
-        expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(5);
-        expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(5);
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
 
         const repository = new GroupStateRepository(runtimeRepository, {
             events: eventStore,
+        });
+        expect(await repository.findPresenceSession({
+            ...SCOPE,
+            groupId: 'mutation-room',
+            sessionId: 'bob-session',
+        })).toMatchObject({
+            generationId: 'bob-generation-1',
+            lastHeartbeatAtEpochMs: 3_000,
+            disconnectedAtEpochMs: 4_000,
         });
         const eventTypes = (
             await repository.listEvents({
@@ -897,13 +877,14 @@ describe('AppInboxService', () => {
                 groupId: 'mutation-room',
             })
         ).map((event) => event.eventType);
-        expect(eventTypes).toHaveLength(5);
+        expect(eventTypes).toHaveLength(6);
         expect(eventTypes).toEqual(
             expect.arrayContaining([
                 'group-created',
                 'group-updated',
                 'member-joined',
                 'session-connected',
+                'session-heartbeat',
                 'session-disconnected',
             ]),
         );
@@ -930,7 +911,6 @@ describe('AppInboxService', () => {
                 now: () => 2_000,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -974,7 +954,7 @@ describe('AppInboxService', () => {
                 scope: SCOPE,
                 groupId: 'replay-room',
                 request: {
-                    displayName: 'Different payload ignored by idempotency',
+                    displayName: 'Replay Room',
                     actorPrincipalId: 'alice',
                     requestId: 'update-replay-room',
                 },
@@ -985,8 +965,8 @@ describe('AppInboxService', () => {
         expect(replayed.right?.result.right?.event?.eventType).toBe(
             'group-updated',
         );
-        expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(1);
-        expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(1);
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('processes websocket group presence cleanup through the inbox', async () => {
@@ -1010,7 +990,6 @@ describe('AppInboxService', () => {
                 now: () => 2_000,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -1034,6 +1013,7 @@ describe('AppInboxService', () => {
                 sessionId: 'alice-ws-session',
                 request: {
                     principalId: 'alice',
+                    generationId: 'alice-ws-generation-1',
                     actorPrincipalId: 'alice',
                     actorSessionId: 'alice-ws-session',
                     expiresAtEpochMs: Date.now() + 60_000,
@@ -1056,8 +1036,8 @@ describe('AppInboxService', () => {
         expect(disconnected.right?.[0].result.right?.event?.eventType).toBe(
             'session-disconnected',
         );
-        expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(1);
-        expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(1);
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('processes expired group presence sessions through the inbox and publishes written mutations', async () => {
@@ -1093,6 +1073,7 @@ describe('AppInboxService', () => {
             'alice-session',
             {
                 principalId: 'alice',
+                generationId: 'alice-expired-generation-1',
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
                 lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
@@ -1107,7 +1088,6 @@ describe('AppInboxService', () => {
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
         );
 
@@ -1121,15 +1101,15 @@ describe('AppInboxService', () => {
             reason: 'expired',
         });
         expect(expired.right?.[0].result.right?.snapshot.activeSessions).toEqual([]);
-        expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(1);
-        expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(1);
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('keeps at most one active no-wait group expiry entry across timestamps', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const publisher = {
+        const _publisher = {
             publishClientSnapshot: vi.fn(async () => undefined),
             publishClientEvent: vi.fn(async () => undefined),
             publishGroupSnapshot: vi.fn(async () => undefined),
@@ -1143,7 +1123,6 @@ describe('AppInboxService', () => {
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
         );
 
@@ -1167,7 +1146,7 @@ describe('AppInboxService', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const publisher = {
+        const _publisher = {
             publishClientSnapshot: vi.fn(async () => undefined),
             publishClientEvent: vi.fn(async () => undefined),
             publishGroupSnapshot: vi.fn(async () => undefined),
@@ -1182,7 +1161,6 @@ describe('AppInboxService', () => {
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
         );
 
@@ -1215,7 +1193,7 @@ describe('AppInboxService', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const publisher = {
+        const _publisher = {
             publishClientSnapshot: vi.fn(async () => undefined),
             publishClientEvent: vi.fn(async () => undefined),
             publishGroupSnapshot: vi.fn(async () => undefined),
@@ -1229,7 +1207,6 @@ describe('AppInboxService', () => {
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
         );
 
@@ -1265,7 +1242,7 @@ describe('AppInboxService', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const publisher = {
+        const _publisher = {
             publishClientSnapshot: vi.fn(async () => undefined),
             publishClientEvent: vi.fn(async () => undefined),
             publishGroupSnapshot: vi.fn(async () => undefined),
@@ -1280,7 +1257,6 @@ describe('AppInboxService', () => {
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
         );
 
@@ -1341,7 +1317,6 @@ describe('AppInboxService', () => {
                 now: () => 2_000,
                 serviceId: 'server-12345678',
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -1364,7 +1339,7 @@ describe('AppInboxService', () => {
             },
         });
 
-        expect(result.left).toBe('Group not found: missing-room');
+        expect(result.left).toContain('Group not found: missing-room');
         expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
         expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
@@ -1389,7 +1364,6 @@ describe('AppInboxService', () => {
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
         );
 
@@ -1424,14 +1398,8 @@ describe('AppInboxService', () => {
                 requestId: 'join-request-1',
             },
         );
-        expect(publisher.publishGroupSnapshot).toHaveBeenCalledWith(
-            written.snapshot,
-            'server-12345678',
-        );
-        expect(publisher.publishGroupEvent).toHaveBeenCalledWith(
-            written.event,
-            'server-12345678',
-        );
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('processes group invite workflows through the inbox', async () => {
@@ -1456,7 +1424,6 @@ describe('AppInboxService', () => {
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
         );
 
@@ -1551,8 +1518,8 @@ describe('AppInboxService', () => {
                 requestId: 'invite-accept-1',
             },
         );
-        expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(3);
-        expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(3);
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('processes group join-code rotation through the inbox and publishes the mutation', async () => {
@@ -1583,7 +1550,6 @@ describe('AppInboxService', () => {
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
         );
 
@@ -1620,14 +1586,8 @@ describe('AppInboxService', () => {
                 requestId: 'rotate-code-1',
             },
         );
-        expect(publisher.publishGroupSnapshot).toHaveBeenCalledWith(
-            written.snapshot,
-            'server-12345678',
-        );
-        expect(publisher.publishGroupEvent).toHaveBeenCalledWith(
-            written.event,
-            'server-12345678',
-        );
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('processes membership governance mutations through the inbox and publishes the mutations', async () => {
@@ -1653,7 +1613,6 @@ describe('AppInboxService', () => {
             queue as never,
             results as never,
             groupStateService,
-            publisher,
             'server-12345678',
         );
 
@@ -1810,8 +1769,8 @@ describe('AppInboxService', () => {
                 requestId: 'transfer-owner',
             },
         );
-        expect(publisher.publishGroupSnapshot).toHaveBeenCalledTimes(5);
-        expect(publisher.publishGroupEvent).toHaveBeenCalledTimes(5);
+        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('preserves policy denial details in failed app inbox results', async () => {
@@ -1838,7 +1797,6 @@ describe('AppInboxService', () => {
                     });
                 }),
             }),
-            publisher,
             'server-12345678',
         );
 
@@ -1891,7 +1849,6 @@ describe('AppInboxService', () => {
                     throw new Error('Transient group update unavailable');
                 }),
             }),
-            publisher,
             'server-12345678',
             (event) => timingEvents.push(event),
         );

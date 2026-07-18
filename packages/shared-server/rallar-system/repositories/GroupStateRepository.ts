@@ -2,6 +2,7 @@ import type {
     Group,
     GroupEvent,
     GroupMember,
+    GroupPresenceSummary,
     GroupPresenceSession,
     GroupRef,
     GroupScope,
@@ -9,13 +10,18 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
-import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
-    GroupJoinCodeWritten,
-    GroupSnapshotPage,
-    GroupSnapshotPageOptions,
-    GroupStateWritten,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
+    RuntimeStateConditionalDeleteResult,
+    RuntimeStateConditionalWriteResult,
+} from '../../runtime-state/RuntimeStateRepository.ts';
+import {
+    RuntimeStateJsonStore,
+    type RuntimeStateEntryValue,
+} from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type {
+    GroupMutationIdempotencyRecord,
+} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { isLogicallyActiveSession, toSessionPurgeAfterEpochMs } from './session-expiry.ts';
 import { defaultGroupStateEventStoreFor, type GroupStateEventStore } from './StateEventStore.ts';
@@ -25,8 +31,8 @@ import { readStableStateSnapshot } from './state-snapshot-read.ts';
 const GROUPS_NAMESPACE = 'group-state:groups';
 const MEMBERS_NAMESPACE = 'group-state:members';
 const SESSIONS_NAMESPACE = 'group-state:sessions';
+const PRESENCE_SUMMARIES_NAMESPACE = 'group-state:presence-summaries';
 const IDEMPOTENT_NAMESPACE = 'group-state:idempotent';
-const JOIN_CODE_IDEMPOTENT_NAMESPACE = 'group-state:join-code-idempotent';
 
 export type GroupStateRepositoryOptions = Readonly<{
     events?: GroupStateEventStore;
@@ -43,55 +49,65 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         this.events = options.events ?? defaultGroupStateEventStoreFor(repository);
     }
 
-    async addIdempotentGroupStateWritten(
+    async insertIdempotentGroupMutationReceipt(
         ref: GroupRef,
         requestId: string,
-        groupStateWritten: GroupStateWritten,
+        record: GroupMutationIdempotencyRecord,
         purgeAfterEpochMs: number = NEVER_EXPIRE_AT_TIMESTAMP,
-    ): Promise<GroupStateWritten> {
-        await this.putValue(
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
             IDEMPOTENT_NAMESPACE,
             this.idempotentGroupKey(ref, requestId),
-            groupStateWritten,
+            record,
             purgeAfterEpochMs,
         );
-
-        return groupStateWritten;
     }
 
-    async findIdempotentGroupStateWritten(
+    async findIdempotentGroupMutationReceipt(
         ref: GroupRef,
         requestId: string,
-    ): Promise<GroupStateWritten | undefined> {
-        return await this.getValue<GroupStateWritten>(
+    ): Promise<GroupMutationIdempotencyRecord | undefined> {
+        return await this.getValue<GroupMutationIdempotencyRecord>(
             IDEMPOTENT_NAMESPACE,
             this.idempotentGroupKey(ref, requestId),
         );
     }
 
-    async addIdempotentGroupJoinCodeWritten(
+    async findIdempotentGroupMutationReceiptEntry(
         ref: GroupRef,
         requestId: string,
-        groupJoinCodeWritten: GroupJoinCodeWritten,
-        purgeAfterEpochMs: number = NEVER_EXPIRE_AT_TIMESTAMP,
-    ): Promise<GroupJoinCodeWritten> {
-        await this.putValue(
-            JOIN_CODE_IDEMPOTENT_NAMESPACE,
+    ): Promise<RuntimeStateEntryValue<GroupMutationIdempotencyRecord> | undefined> {
+        return await this.getEntryValue<GroupMutationIdempotencyRecord>(
+            IDEMPOTENT_NAMESPACE,
             this.idempotentGroupKey(ref, requestId),
-            groupJoinCodeWritten,
-            purgeAfterEpochMs,
         );
-
-        return groupJoinCodeWritten;
     }
 
-    async findIdempotentGroupJoinCodeWritten(
+    async findGroupEntry(
         ref: GroupRef,
-        requestId: string,
-    ): Promise<GroupJoinCodeWritten | undefined> {
-        return await this.getValue<GroupJoinCodeWritten>(
-            JOIN_CODE_IDEMPOTENT_NAMESPACE,
-            this.idempotentGroupKey(ref, requestId),
+    ): Promise<RuntimeStateEntryValue<Group> | undefined> {
+        return await this.getEntryValue<Group>(GROUPS_NAMESPACE, this.groupKey(ref));
+    }
+
+    async insertGroup(group: Group): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
+            GROUPS_NAMESPACE,
+            this.groupKey(group),
+            group,
+            group.purgeAfterEpochMs ?? this.neverExpireAtTimestamp(),
+        );
+    }
+
+    async updateGroup(
+        group: Group,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfRevision(
+            GROUPS_NAMESPACE,
+            this.groupKey(group),
+            group,
+            group.purgeAfterEpochMs ?? this.neverExpireAtTimestamp(),
+            expectedRevision,
         );
     }
 
@@ -109,11 +125,16 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async readStateRevision(ref: GroupRef): Promise<number | undefined> {
-        const stored = await this.getEntryValue<Group>(
-            GROUPS_NAMESPACE,
-            this.groupKey(ref),
-        );
-        return stored ? stored.entry.revision + 1 : undefined;
+        const [stored, summary] = await Promise.all([
+            this.findGroupEntry(ref),
+            this.findPresenceSummaryEntry(ref),
+        ]);
+        return stored
+            ? toGroupSnapshotStateRevision(
+                stored.entry.revision + 1,
+                summary?.value.causalRevision.presenceRevision ?? 0,
+            )
+            : undefined;
     }
 
     async listGroups(scope: GroupScope): Promise<readonly Group[]> {
@@ -129,12 +150,9 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             GROUPS_NAMESPACE,
             keyPrefix,
         );
-        const [members, sessions] = await Promise.all([
+        const [members, summaries] = await Promise.all([
             this.listValues<GroupMember>(MEMBERS_NAMESPACE, keyPrefix),
-            this.listValues<GroupPresenceSession>(
-                SESSIONS_NAMESPACE,
-                keyPrefix,
-            ),
+            this.listValues<GroupPresenceSummary>(PRESENCE_SUMMARIES_NAMESPACE, keyPrefix),
         ]);
         const groupsAfter = await this.listEntryValues<Group>(
             GROUPS_NAMESPACE,
@@ -147,12 +165,9 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             membersByGroupId.set(member.groupId, current);
         }
 
-        const activeSessionsByGroupId = new Map<string, GroupPresenceSession[]>();
-        for (const session of this.toActiveSessions(sessions)) {
-            const current = activeSessionsByGroupId.get(session.groupId) ?? [];
-            current.push(session);
-            activeSessionsByGroupId.set(session.groupId, current);
-        }
+        const summariesByGroupId = new Map(
+            summaries.map((summary) => [summary.groupId, summary]),
+        );
 
         const beforeByKey = new Map(
             groupsBefore.map((stored) => [stored.entry.key, stored]),
@@ -166,7 +181,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                 return this.toSnapshot(
                     stored.value,
                     membersByGroupId.get(stored.value.groupId) ?? [],
-                    activeSessionsByGroupId.get(stored.value.groupId) ?? [],
+                    summariesByGroupId.get(stored.value.groupId),
                     stored.entry.revision + 1,
                 );
             }),
@@ -232,11 +247,11 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
 
         const candidates = await Promise.all(
             pageGroups.map(async ({ entry, group }) => {
-                const [members, sessions] = await Promise.all([
+                const [members, summary] = await Promise.all([
                     this.listMembers(group),
-                    this.listPresenceSessions(group),
+                    this.findPresenceSummaryEntry(group),
                 ]);
-                return { entry, group, members, sessions: this.toActiveSessions(sessions) };
+                return { entry, group, members, summary: summary?.value };
             }),
         );
         const groupsAfter = await this.listEntryValuesByKeys<Group>(
@@ -258,7 +273,7 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                 return this.toSnapshot(
                     after.value,
                     candidate.members,
-                    candidate.sessions,
+                    candidate.summary,
                     after.entry.revision + 1,
                 );
             }),
@@ -326,6 +341,56 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
     }
 
+    async findPresenceEntry(
+        ref: GroupRef & Readonly<{ sessionId: string }>,
+    ): Promise<RuntimeStateEntryValue<GroupPresenceSession> | undefined> {
+        return await this.getEntryValue<GroupPresenceSession>(
+            SESSIONS_NAMESPACE,
+            this.sessionKey(ref),
+        );
+    }
+
+    async insertPresence(
+        session: GroupPresenceSession,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
+            SESSIONS_NAMESPACE,
+            this.sessionKey(session),
+            session,
+            toSessionPurgeAfterEpochMs(
+                session.expiresAtEpochMs,
+                session.disconnectedAtEpochMs,
+            ),
+        );
+    }
+
+    async updatePresence(
+        session: GroupPresenceSession,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfRevision(
+            SESSIONS_NAMESPACE,
+            this.sessionKey(session),
+            session,
+            toSessionPurgeAfterEpochMs(
+                session.expiresAtEpochMs,
+                session.disconnectedAtEpochMs,
+            ),
+            expectedRevision,
+        );
+    }
+
+    async deletePresence(
+        ref: GroupRef & Readonly<{ sessionId: string }>,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        return await this.deleteValueIfRevision(
+            SESSIONS_NAMESPACE,
+            this.sessionKey(ref),
+            expectedRevision,
+        );
+    }
+
     async findPresenceSession(
         ref: GroupRef & Readonly<{ sessionId: string }>,
     ): Promise<GroupPresenceSession | undefined> {
@@ -352,6 +417,38 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         ref: GroupRef & Readonly<{ sessionId: string }>,
     ): Promise<void> {
         await this.deleteValue(SESSIONS_NAMESPACE, this.sessionKey(ref));
+    }
+
+    async findPresenceSummaryEntry(
+        ref: GroupRef,
+    ): Promise<RuntimeStateEntryValue<GroupPresenceSummary> | undefined> {
+        return await this.getEntryValue<GroupPresenceSummary>(
+            PRESENCE_SUMMARIES_NAMESPACE,
+            this.groupKey(ref),
+        );
+    }
+
+    async insertPresenceSummary(
+        summary: GroupPresenceSummary,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
+            PRESENCE_SUMMARIES_NAMESPACE,
+            this.groupKey(summary),
+            summary,
+        );
+    }
+
+    async updatePresenceSummary(
+        summary: GroupPresenceSummary,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfRevision(
+            PRESENCE_SUMMARIES_NAMESPACE,
+            this.groupKey(summary),
+            summary,
+            NEVER_EXPIRE_AT_TIMESTAMP,
+            expectedRevision,
+        );
     }
 
     async appendEvent(event: GroupEvent): Promise<void> {
@@ -388,17 +485,17 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             readAggregate: async () =>
                 await this.getEntryValue<Group>(GROUPS_NAMESPACE, groupKey),
             readChildren: async () => {
-                const [members, sessions] = await Promise.all([
+                const [members, summary] = await Promise.all([
                     this.listMembers(ref),
-                    this.listPresenceSessions(ref),
+                    this.findPresenceSummaryEntry(ref),
                 ]);
-                return [members, this.toActiveSessions(sessions)] as const;
+                return [members, summary?.value] as const;
             },
-            assemble: (stored, members, activeSessions) =>
+            assemble: (stored, members, summary) =>
                 this.toSnapshot(
                     stored.value,
                     members,
-                    activeSessions,
+                    summary,
                     stored.entry.revision + 1,
                 ),
         });
@@ -407,9 +504,25 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     private toSnapshot(
         group: Group,
         members: readonly GroupMember[],
-        activeSessions: readonly GroupPresenceSession[],
-        stateRevision: number,
+        summaryOrSessions: GroupPresenceSummary | readonly GroupPresenceSession[] | undefined,
+        groupRevision: number,
     ): GroupSnapshot {
+        const activeMemberIds = new Set(
+            members.filter((member) => member.status === 'active')
+                .map((member) => member.principalId),
+        );
+        const summary = isPresenceSummary(summaryOrSessions)
+            ? summaryOrSessions
+            : undefined;
+        const sourceSessions: readonly GroupPresenceSession[] = summary
+            ? summary.activeSessions
+            : Array.isArray(summaryOrSessions)
+            ? summaryOrSessions as readonly GroupPresenceSession[]
+            : [];
+        const activeSessions = this.toActiveSessions(sourceSessions)
+            .filter((session) => activeMemberIds.has(session.principalId));
+        const presenceRevision = summary?.causalRevision.presenceRevision ?? 0;
+        const causalRevision = { groupRevision, presenceRevision };
         const activePrincipals = new Set(
             activeSessions.map((session) => session.principalId),
         );
@@ -418,8 +531,12 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
 
         return {
-            stateRevision,
-            group,
+            stateRevision: toGroupSnapshotStateRevision(
+                causalRevision.groupRevision,
+                causalRevision.presenceRevision,
+            ),
+            causalRevision,
+            group: { ...group, presenceVersion: presenceRevision },
             members,
             activeSessions,
             memberCount: activeMembers.length,
@@ -469,4 +586,25 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             ':',
         );
     }
+}
+
+export function toGroupSnapshotStateRevision(
+    groupRevision: number,
+    presenceRevision: number,
+): number {
+    if (
+        !Number.isSafeInteger(groupRevision) || groupRevision < 0 ||
+        !Number.isSafeInteger(presenceRevision) || presenceRevision < 0 ||
+        groupRevision > Number.MAX_SAFE_INTEGER - presenceRevision
+    ) {
+        throw new RangeError('Group causal revision cannot be projected safely');
+    }
+    return groupRevision + presenceRevision;
+}
+
+function isPresenceSummary(
+    value: GroupPresenceSummary | readonly GroupPresenceSession[] | undefined,
+): value is GroupPresenceSummary {
+    return value !== undefined && !Array.isArray(value) &&
+        'causalRevision' in value;
 }

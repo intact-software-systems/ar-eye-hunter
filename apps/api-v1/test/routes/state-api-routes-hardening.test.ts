@@ -181,6 +181,83 @@ Deno.test('client REST lifecycle accepts equal causal timestamp boundaries', asy
   assert.equal(processCalls.length, 3);
 });
 
+Deno.test('group REST presence lifecycle requires a valid generation before enqueue', async () => {
+  const processCalls: unknown[] = [];
+  const snapshot = createGroupSnapshot('room-1', ['alice']);
+  const deps = createGroupRouteDeps({
+    session: createAuthSession('alice'),
+    groupService: {},
+    processGroupAppInbox: (input) => {
+      processCalls.push(input);
+      return Promise.resolve({
+        status: 'ok',
+        result: { right: { snapshot } },
+      } as never);
+    },
+  });
+  const app = createGroupRouteApp(deps);
+  const session = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/sessions/alice-session';
+  const malformed = [
+    { method: 'PUT', path: session, body: {} },
+    {
+      method: 'POST',
+      path: `${session}/heartbeat`,
+      body: { generationId: { forged: true } },
+    },
+    {
+      method: 'POST',
+      path: `${session}/heartbeat`,
+      body: { generationId: 'generation-1', lastHeartbeatAtEpochMs: -1 },
+    },
+    {
+      method: 'POST',
+      path: `${session}/disconnect`,
+      body: {
+        generationId: 'generation-1',
+        lastHeartbeatAtEpochMs: 2,
+        disconnectedAtEpochMs: 1,
+      },
+    },
+  ] as const;
+  for (const testCase of malformed) {
+    const response = await app.request(testCase.path, {
+      method: testCase.method,
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(testCase.body),
+    });
+    assert.equal(response.status, 400, testCase.path);
+    assert.match((await response.json()).error, /Group|group/);
+  }
+  assert.equal(processCalls.length, 0);
+
+  for (const testCase of [
+    { method: 'PUT', path: session },
+    { method: 'POST', path: `${session}/heartbeat` },
+    { method: 'POST', path: `${session}/disconnect` },
+  ] as const) {
+    const response = await app.request(testCase.path, {
+      method: testCase.method,
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        generationId: 'generation-1',
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: 1,
+        ...(testCase.path.endsWith('/disconnect')
+          ? { disconnectedAtEpochMs: 1 }
+          : {}),
+      }),
+    });
+    assert.equal(response.status, 200, testCase.path);
+  }
+  assert.equal(processCalls.length, 3);
+});
+
 Deno.test('client REST mutation preserves explicit terminal idempotency 409', async () => {
   const conflict = Object.assign(
     new Error('Client mutation command differs for request same-request'),
@@ -1191,6 +1268,7 @@ function createGroupSnapshot(
 ): GroupSnapshot {
   return {
     stateRevision: 1,
+    causalRevision: { groupRevision: 1, presenceRevision: 0 },
     group: {
       ...TEST_SCOPE,
       groupId,

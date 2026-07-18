@@ -231,6 +231,7 @@
         },
         "body": {
           "requestId": "presence-owner-{sharedGroupId}-{runId}",
+          "generationId": "generation-{runId}",
           "principalId": "{ownerClientId}"
         }
       },
@@ -254,6 +255,7 @@
         },
         "body": {
           "requestId": "presence-owner-{churnGroupId}-{runId}",
+          "generationId": "generation-{runId}",
           "principalId": "{ownerClientId}"
         }
       },
@@ -400,6 +402,7 @@
                     },
                     "body": {
                       "requestId": "presence-primary-{loop.iteration}-{sharedGroupId}-{runId}",
+                      "generationId": "generation-{runId}",
                       "principalId": "{primaryClientId}"
                     }
                   },
@@ -423,6 +426,7 @@
                     },
                     "body": {
                       "requestId": "presence-primary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "generationId": "generation-{runId}",
                       "principalId": "{primaryClientId}"
                     }
                   },
@@ -446,6 +450,7 @@
                     },
                     "body": {
                       "requestId": "disconnect-primary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "generationId": "generation-{runId}",
                       "principalId": "{primaryClientId}"
                     }
                   },
@@ -469,6 +474,7 @@
                     },
                     "body": {
                       "requestId": "reconnect-primary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
                       "principalId": "{primaryClientId}"
                     }
                   },
@@ -613,6 +619,7 @@
                     },
                     "body": {
                       "requestId": "presence-secondary-{loop.iteration}-{sharedGroupId}-{runId}",
+                      "generationId": "generation-{runId}",
                       "principalId": "{secondaryClientId}"
                     }
                   },
@@ -636,6 +643,7 @@
                     },
                     "body": {
                       "requestId": "presence-secondary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "generationId": "generation-{runId}",
                       "principalId": "{secondaryClientId}"
                     }
                   },
@@ -659,6 +667,7 @@
                     },
                     "body": {
                       "requestId": "disconnect-secondary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "generationId": "generation-{runId}",
                       "principalId": "{secondaryClientId}"
                     }
                   },
@@ -682,6 +691,7 @@
                     },
                     "body": {
                       "requestId": "reconnect-secondary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
                       "principalId": "{secondaryClientId}"
                     }
                   },

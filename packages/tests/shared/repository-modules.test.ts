@@ -275,7 +275,7 @@ describe('repository modules', () => {
         );
     });
 
-    it('uses group stateRevision for cache ordering', () => {
+    it('uses the full group causal tuple for cache ordering', () => {
         const first = {
             ...createGroupSnapshot('group-1', 'Alpha', 1, ['self']),
             group: {
@@ -286,6 +286,7 @@ describe('repository modules', () => {
         const staleBySnapshotVersion = {
             ...createGroupSnapshot('group-1', 'Alpha', 99, ['self', 'peer-stale']),
             stateRevision: 0,
+            causalRevision: { groupRevision: 0, presenceRevision: 0 },
             group: {
                 ...createGroupSnapshot('group-1', 'Alpha', 99, ['self', 'peer-stale']).group,
                 snapshotVersion: 9,
@@ -307,7 +308,7 @@ describe('repository modules', () => {
         expect(findGroupStateSnapshotByRef(newer.group)).toEqual(newer);
     });
 
-    it('rejects stale and conflicting group state revisions', () => {
+    it('rejects stale and conflicting group causal revisions', () => {
         const accepted = {
             ...createGroupSnapshot('group-1', 'Alpha', 1, ['session-new']),
             stateRevision: 2,
@@ -315,6 +316,7 @@ describe('repository modules', () => {
         const stale = {
             ...createGroupSnapshot('group-1', 'Stale', 99, ['session-stale']),
             stateRevision: 1,
+            causalRevision: { groupRevision: 0, presenceRevision: 0 },
         } satisfies GroupSnapshot;
         const conflict = {
             ...accepted,
@@ -613,6 +615,10 @@ function createGroupSnapshot(
 
     return {
         stateRevision: membershipVersion,
+        causalRevision: {
+            groupRevision: membershipVersion,
+            presenceRevision: membershipVersion,
+        },
         group: {
             applicationId,
             workspaceId,
@@ -657,6 +663,8 @@ function createGroupSnapshot(
             groupId,
             sessionId,
             principalId: sessionId,
+            generationId: `generation-${sessionId}`,
+            generationVersion: 1,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: membershipVersion,
             expiresAtEpochMs: membershipVersion + 60_000,

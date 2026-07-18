@@ -438,6 +438,7 @@ describe('state API workflows', () => {
             'My Room',
             'principal-1',
             'session-1',
+            'generation-1',
         );
 
         expect(result.group.groupId).toBe('group-created');
@@ -447,6 +448,9 @@ describe('state API workflows', () => {
             slug: 'my-room',
             displayName: 'My Room',
             createdByPrincipalId: 'principal-1',
+        });
+        expect(fetchCalls[1].body).toMatchObject({
+            generationId: 'generation-1',
         });
     });
 
@@ -471,6 +475,7 @@ describe('state API workflows', () => {
             'Rallar',
             'principal-1',
             'session-1',
+            'generation-1',
             undefined,
             {},
             'rallar',
@@ -507,6 +512,7 @@ describe('state API workflows', () => {
             'Rallar',
             'principal-1',
             'session-1',
+            'generation-1',
             undefined,
             {},
             'rallar',
@@ -673,6 +679,7 @@ describe('state API workflows', () => {
             'Retry Room',
             'principal-1',
             'session-1',
+            'generation-1',
             undefined,
             { command: { maxAttempts: 2 } },
         );
@@ -697,7 +704,7 @@ describe('state API workflows', () => {
     });
 
     it('joins a state group with explicit join intent before connecting presence', async () => {
-        stubFetch(({ url, method, body }) => {
+        stubFetch(({ url, method }) => {
             if (
                 method === 'POST' &&
                 url.endsWith('/groups/group-1/join')
@@ -720,6 +727,7 @@ describe('state API workflows', () => {
                 'group-1',
                 'principal-1',
                 'session-1',
+                'generation-1',
                 undefined,
                 {},
                 {
@@ -741,6 +749,9 @@ describe('state API workflows', () => {
             actorPrincipalId: 'principal-1',
             actorSessionId: 'session-1',
         });
+        expect(fetchCalls[1].body).toMatchObject({
+            generationId: 'generation-1',
+        });
     });
 
     it('surfaces full-room policy codes from join workflows without connecting presence', async () => {
@@ -760,7 +771,7 @@ describe('state API workflows', () => {
         });
 
         await expect(
-            joinStateGroup('group-1', 'principal-1', 'session-1'),
+            joinStateGroup('group-1', 'principal-1', 'session-1', 'generation-1'),
         ).rejects.toMatchObject({
             status: 403,
             policyError: {
@@ -798,7 +809,7 @@ describe('state API workflows', () => {
         });
 
         await expect(
-            joinStateGroup('group-1', 'principal-1', 'session-1'),
+            joinStateGroup('group-1', 'principal-1', 'session-1', 'generation-1'),
         ).rejects.toMatchObject({
             status: 403,
             policyError: {
@@ -882,7 +893,12 @@ describe('state API workflows', () => {
         });
 
         await expect(
-            acceptStateGroupInvite('group-1', 'member-1', 'member-session'),
+            acceptStateGroupInvite(
+                'group-1',
+                'member-1',
+                'member-session',
+                'generation-1',
+            ),
         ).resolves.toMatchObject({
             group: { groupId: 'group-1' },
         });
@@ -897,6 +913,7 @@ describe('state API workflows', () => {
         });
         expect(fetchCalls[1].body).toMatchObject({
             principalId: 'member-1',
+            generationId: 'generation-1',
             actorPrincipalId: 'member-1',
             actorSessionId: 'member-session',
         });
@@ -1075,6 +1092,7 @@ describe('state API workflows', () => {
             'group-1',
             'principal-1',
             'session-1',
+            'generation-1',
             undefined,
             { command: { maxAttempts: 2 } },
         );
@@ -1121,11 +1139,13 @@ describe('state API workflows', () => {
             'group-1',
             'principal-1',
             'session-1',
+            'generation-1',
         );
 
         expect(result.group.groupId).toBe('group-1');
         expect(fetchCalls.map((call) => call.method)).toEqual(['POST', 'PUT']);
         expect(fetchCalls[0].body).toMatchObject({
+            generationId: 'generation-1',
             requestId: expect.any(String),
         });
         expect(fetchCalls[1].body).toMatchObject({
@@ -1171,6 +1191,7 @@ describe('state API workflows', () => {
             'group-1',
             'principal-1',
             'session-1',
+            'generation-1',
             undefined,
             { command: { maxAttempts: 2 } },
         );
@@ -1220,7 +1241,10 @@ describe('state API workflows', () => {
         });
 
         const result = await refreshStateHeartbeat(clientData, [
-            groupSnapshot('group-1'),
+            groupSnapshotWithActiveSession(
+                'group-1',
+                'accepted-group-generation',
+            ),
             groupSnapshot('group-2'),
         ], {
             generationId: 'generation-1',
@@ -1239,6 +1263,11 @@ describe('state API workflows', () => {
         expect(
             fetchCalls.filter((call) => call.url.includes('/groups/group-2/')),
         ).toHaveLength(1);
+        expect(
+            fetchCalls.find((call) => call.url.includes('/groups/group-1/'))?.body,
+        ).toMatchObject({
+            generationId: 'accepted-group-generation',
+        });
     });
 
     it('repairs missing client presence once after a scoped heartbeat 404', async () => {
@@ -1345,6 +1374,7 @@ describe('state API workflows', () => {
                 'Room 1',
                 'principal-1',
                 'session-1',
+                'generation-1',
                 undefined,
                 undefined,
                 'group-1',
@@ -1383,7 +1413,7 @@ describe('state API workflows', () => {
         });
 
         await expect(
-            joinStateGroup('group-1', 'principal-1', 'session-1'),
+            joinStateGroup('group-1', 'principal-1', 'session-1', 'generation-1'),
         ).rejects.toThrow('403');
 
         expect(connectUrls).toHaveLength(1);
@@ -1422,6 +1452,7 @@ describe('state API workflows', () => {
                 'Room 1',
                 'principal-1',
                 'session-1',
+                'generation-1',
                 undefined,
                 undefined,
                 'group-1',
@@ -1715,6 +1746,11 @@ function clientSnapshot(principalId: string): ClientSnapshot {
 
 function groupSnapshot(groupId: string): GroupSnapshot {
     return {
+        stateRevision: 2,
+        causalRevision: {
+            groupRevision: 1,
+            presenceRevision: 1,
+        },
         group: {
             applicationId: 'ar-eye-hunter',
             workspaceId: 'default',
@@ -1736,5 +1772,28 @@ function groupSnapshot(groupId: string): GroupSnapshot {
         activeSessions: [],
         memberCount: 0,
         onlineMemberCount: 0,
+    };
+}
+
+function groupSnapshotWithActiveSession(
+    groupId: string,
+    generationId: string,
+): GroupSnapshot {
+    const snapshot = groupSnapshot(groupId);
+    return {
+        ...snapshot,
+        activeSessions: [{
+            applicationId: snapshot.group.applicationId,
+            workspaceId: snapshot.group.workspaceId,
+            groupId,
+            principalId: 'principal-1',
+            sessionId: 'session-1',
+            generationId,
+            generationVersion: 1,
+            connectedAtEpochMs: 1,
+            lastHeartbeatAtEpochMs: 1,
+            expiresAtEpochMs: 121_000,
+        }],
+        onlineMemberCount: 1,
     };
 }

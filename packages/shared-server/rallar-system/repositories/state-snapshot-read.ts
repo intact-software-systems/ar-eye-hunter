@@ -16,11 +16,11 @@ export async function readStableStateSnapshot<Aggregate, ChildA, ChildB, Snapsho
     options: Readonly<{
         snapshotKey: string;
         readAggregate(): Promise<RuntimeStateEntryValue<Aggregate> | undefined>;
-        readChildren(): Promise<readonly [readonly ChildA[], readonly ChildB[]]>;
+        readChildren(): Promise<readonly [readonly ChildA[], ChildB]>;
         assemble(
             aggregate: RuntimeStateEntryValue<Aggregate>,
             childA: readonly ChildA[],
-            childB: readonly ChildB[],
+            childB: ChildB,
         ): Snapshot;
     }>,
 ): Promise<Snapshot | undefined> {

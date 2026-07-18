@@ -1,5 +1,11 @@
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 import {
+    compareGroupCausalRevision,
+    readGroupCausalRevision,
     readGroupStateRevision,
     readGroupVersion,
 } from '@shared/api/group-client-views.ts';
@@ -25,6 +31,9 @@ export type GroupStateSnapshotReadThroughCacheOptions = Readonly<{
 
 export type FindOrLoadGroupStateSnapshotOptions = Readonly<{
     minSnapshotVersion?: number;
+    /** Authoritative lower bound. Prefer this over minStateRevision. */
+    minCausalRevision?: GroupStateCausalRevision;
+    /** Compatibility projection only. */
     minStateRevision?: number;
 }>;
 
@@ -146,6 +155,13 @@ export class GroupStateSnapshotReadThroughCache {
             (
                 options.minSnapshotVersion === undefined ||
                 readGroupVersion(snapshot) >= options.minSnapshotVersion
+            ) &&
+            (
+                options.minCausalRevision === undefined ||
+                ['equal', 'dominates'].includes(compareGroupCausalRevision(
+                    readGroupCausalRevision(snapshot),
+                    options.minCausalRevision,
+                ))
             ) &&
             (
                 options.minStateRevision === undefined ||

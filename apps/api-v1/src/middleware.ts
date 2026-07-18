@@ -24,7 +24,9 @@ import {
 import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
+import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
@@ -166,26 +168,14 @@ function initialise(): Middleware {
     outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
     createAppGroupInboxService: ({
       inboxQueueReader,
-      outboxQueueReader,
-      wsQBoxServerService,
       wakeQueueEngine,
     }) => {
-      const stateSyncPublisher = createWsStateSyncPublisher(
-        wsQBoxServerService,
-        { serverId: myServerId, timing },
-      );
-      const topologyOutbox = createRtcTopologyOutboxPublisher({
-        outboxQueueReader,
-        senderId: myServerId,
-        wake: wakeQueueEngine,
-        now,
-      });
       const groupStateService = createCachedGroupStateService({
         durable: createGroupStateService({
           runtimeRepository: runtimeStateRepository,
           createGroupStateEventStore: createGroupStateEventRepository,
-          syncPublisher: stateSyncPublisher,
           serviceId: myServerId,
+          wakeStateMutationOutbox: wakeQueueEngine,
           timing,
         }),
         cache: groupSnapshotReadThroughCache,
@@ -195,11 +185,9 @@ function initialise(): Middleware {
         resourceInboxRepository,
         resourceInboxResultsRepository,
         groupStateService,
-        stateSyncPublisher,
         myServerId,
         timing,
         appInboxOptions,
-        topologyOutbox.publisher,
       );
     },
     createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) => {
@@ -235,6 +223,31 @@ function initialise(): Middleware {
     },
     clientsRepository,
     groupsRepository,
+    stateMutationOutbox: ({ outboxQueueReader, wakeQueueEngine }) => {
+      const topologyOutbox = createRtcTopologyOutboxPublisher({
+        outboxQueueReader,
+        senderId: myServerId,
+        wake: wakeQueueEngine,
+        now,
+      });
+      return {
+        repository: new StateMutationOutboxRepository(runtimeStateRepository),
+        readClientSnapshot: (ref) => clientsRepository.readSnapshot(ref),
+        readGroupSnapshot: (ref) => groupsRepository.readSnapshot(ref),
+        groupPresenceSummaryPublisher: new GroupPresenceSummaryWork({
+          runtimeRepository: runtimeStateRepository,
+          serviceId: myServerId,
+          wakeStateMutationOutbox: wakeQueueEngine,
+          now,
+          timing,
+        }),
+        rtcTopologyPublisher: topologyOutbox.publisher,
+        stateSyncServerId: myServerId,
+        senderId: myServerId,
+        now,
+        timing,
+      };
+    },
     rtcTopologyPublicationRepository,
     rtcTopologyExecutionRepository,
     rtcTopologyPublicationFanout,

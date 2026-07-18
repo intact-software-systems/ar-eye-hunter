@@ -249,6 +249,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                     createInput.displayName,
                     session.clientId,
                     session.sessionId,
+                    ctx.middleware.heartbeat.generationId,
                     operationScope,
                     policies,
                     createInput.groupId,
@@ -257,6 +258,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                     createInput.displayName,
                     session.clientId,
                     session.sessionId,
+                    ctx.middleware.heartbeat.generationId,
                     operationScope,
                     policies,
                     createInput.groupId,
@@ -344,6 +346,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                 roomId,
                 session.clientId,
                 session.sessionId,
+                ctx.middleware.heartbeat.generationId,
                 operationScope,
                 toRallarWorkflowPolicies(operationOptions),
                 {
@@ -590,6 +593,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                 roomId,
                 session.clientId,
                 session.sessionId,
+                ctx.middleware.heartbeat.generationId,
                 operationScope,
                 toRallarWorkflowPolicies(operationOptions),
             );
@@ -695,11 +699,12 @@ class BrowserRallarRoomsController implements RallarRoomsController {
         return await this.runTargetMutation(
             room,
             acceptOptions,
-            async (roomId, session, scope, policies) =>
+            async (roomId, session, scope, policies, generationId) =>
                 await apiWorkflows.acceptStateGroupInvite(
                     roomId,
                     session.clientId,
                     session.sessionId,
+                    generationId,
                     scope,
                     policies,
                 ),
@@ -808,6 +813,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
             session: AuthSession,
             scope: StateScope,
             policies: CommandsOrchestratorPolicies<StateGroupWorkflowValue>,
+            generationId: string,
         ) => Promise<GroupSnapshot>,
     ): Promise<GroupSnapshot> {
         return await this.options.runAuthAwareOperation(async () => {
@@ -829,6 +835,7 @@ class BrowserRallarRoomsController implements RallarRoomsController {
                 toRallarWorkflowPolicies<StateGroupWorkflowValue>(
                     operationOptions,
                 ),
+                ctx.middleware.heartbeat.generationId,
             );
             await this.options.acceptSnapshots(ctx, [], [snapshot], scope);
             return snapshot;
@@ -935,6 +942,8 @@ class BrowserRallarRoomsController implements RallarRoomsController {
 
         return await new Promise<RallarRoomPresenceWaitResult>((resolve) => {
             let settled = false;
+            // Assigned after subscription so synchronous callbacks can safely observe undefined.
+            // deno-lint-ignore prefer-const
             let timeout: ReturnType<typeof setTimeout> | undefined;
             let unsubscribe: RallarUnsubscribe = () => {};
             const finish = (result: RallarRoomPresenceWaitResult): void => {

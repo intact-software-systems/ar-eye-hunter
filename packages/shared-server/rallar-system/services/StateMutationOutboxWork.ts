@@ -213,12 +213,13 @@ export class StateMutationOutboxWork implements StateMutationOutboxWorkLike {
             validateStateMutationOutboxDelivery(plan);
             const deliveredSnapshotRevision =
                 await enqueueStateMutationOutboxDelivery(
-                plan,
-                this.options.stateSyncPublisher,
-                this.options.groupPresenceSummaryPublisher,
-                this.options.rtcTopologyPublisher,
-                this.senderId,
-            );
+                    plan,
+                    this.options,
+                    this.options.stateSyncPublisher,
+                    this.options.groupPresenceSummaryPublisher,
+                    this.options.rtcTopologyPublisher,
+                    this.senderId,
+                );
             outcome = {
                 status: 'delivered',
                 deliveredSnapshotRevision,
@@ -428,6 +429,7 @@ export async function writeStateMutationOutboxDelivery(
 
 async function enqueueStateMutationOutboxDelivery(
     plan: StateMutationOutboxDeliveryPlan,
+    snapshotReaders: StateMutationOutboxSnapshotReaders,
     stateSyncPublisher: StateSyncPublisher,
     groupPresenceSummaryPublisher: GroupPresenceSummaryWorkPublisher | undefined,
     rtcTopologyPublisher: RtcTopologyStateMutationPublisher | undefined,
@@ -473,7 +475,46 @@ async function enqueueStateMutationOutboxDelivery(
         return Math.min(...effectiveSnapshotRevisions);
     }
 
-    const groupSnapshot = snapshot as GroupSnapshot;
+    let groupSnapshot = snapshot as GroupSnapshot;
+    const convergesPresenceSummary = record.effects.includes(
+        'group-presence-summary',
+    );
+    if (convergesPresenceSummary) {
+        if (!groupPresenceSummaryPublisher) {
+            throw new Error(
+                `Group presence summary outbox adapter is unavailable for ${record.outboxId}`,
+            );
+        }
+        const result = await groupPresenceSummaryPublisher
+            .enqueueForGroupSnapshot(
+                groupSnapshot,
+                toStateMutationDeliveryId(
+                    record.outboxId,
+                    'group-presence-summary',
+                    'snapshot',
+                ),
+            );
+        effectiveSnapshotRevisions.push(
+            readEffectiveSnapshotRevision(
+                result,
+                acceptedSnapshotRevision,
+                record.outboxId,
+            ),
+        );
+
+        // The summary worker owns the presence component of the causal tuple.
+        // Re-read after it converges so downstream sync never republishes the
+        // pre-summary snapshot captured while planning this delivery.
+        const refreshed = await snapshotReaders.readGroupSnapshot(
+            record.aggregateRef,
+        );
+        if (!refreshed) {
+            throw new Error(
+                `Group snapshot disappeared after presence summary convergence for ${record.outboxId}`,
+            );
+        }
+        groupSnapshot = refreshed;
+    }
     if (record.effects.includes('group-state-sync')) {
         const result = await stateSyncPublisher.publishGroupSnapshot(
             groupSnapshot,
@@ -504,30 +545,10 @@ async function enqueueStateMutationOutboxDelivery(
             );
         }
     }
-    if (record.effects.includes('group-presence-summary')) {
-        if (!groupPresenceSummaryPublisher) {
-            throw new Error(
-                `Group presence summary outbox adapter is unavailable for ${record.outboxId}`,
-            );
-        }
-        const result = await groupPresenceSummaryPublisher
-            .enqueueForGroupSnapshot(
-                groupSnapshot,
-                toStateMutationDeliveryId(
-                    record.outboxId,
-                    'group-presence-summary',
-                    'snapshot',
-                ),
-            );
-        effectiveSnapshotRevisions.push(
-            readEffectiveSnapshotRevision(
-                result,
-                acceptedSnapshotRevision,
-                record.outboxId,
-            ),
-        );
-    }
-    if (record.effects.includes('rtc-topology-recompute')) {
+    if (
+        record.effects.includes('rtc-topology-recompute') &&
+        !convergesPresenceSummary
+    ) {
         if (!rtcTopologyPublisher) {
             throw new Error(
                 `RTC topology outbox adapter is unavailable for ${record.outboxId}`,

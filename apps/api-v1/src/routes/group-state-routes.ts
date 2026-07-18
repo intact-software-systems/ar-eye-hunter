@@ -74,6 +74,9 @@ import {
 } from '@shared/api/group-policy-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import {
+  validateGroupPresenceMutationRequest,
+} from '@shared-server/rallar-system/services/group-state-mutations.ts';
 
 const GROUP_POLICY_REASON_CODE_SET = new Set<string>(GROUP_POLICY_REASON_CODES);
 
@@ -736,6 +739,7 @@ export function init(
         const sessionId = c.req.param('sessionId');
         assertSelfSession(authSession, sessionId);
         const request = await readRequestWithRequestId<ConnectGroupPresenceSessionRequest>(c);
+        validateGroupPresenceMutationRequest('connectPresence', request);
         const written = unwrapGroupStateWritten(
           await deps.processGroupAppInbox<
             GroupPresenceConnectAppInboxPayload,
@@ -777,6 +781,7 @@ export function init(
         const request = await readRequestWithRequestId<HeartbeatGroupPresenceSessionRequest>(
           c,
         );
+        validateGroupPresenceMutationRequest('heartbeatPresence', request);
         const written = unwrapGroupStateWritten(
           await deps.processGroupAppInbox<
             GroupPresenceHeartbeatAppInboxPayload,
@@ -818,6 +823,7 @@ export function init(
         const request = await readRequestWithRequestId<DisconnectGroupPresenceSessionRequest>(
           c,
         );
+        validateGroupPresenceMutationRequest('disconnectPresence', request);
         const written = unwrapGroupStateWritten(
           await deps.processGroupAppInbox<
             GroupPresenceDisconnectAppInboxPayload,

@@ -1,5 +1,9 @@
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { readGroupStateRevision, readGroupVersion } from '@shared/api/group-client-views.ts';
+import {
+    compareGroupCausalRevision,
+    readGroupCausalRevision,
+    readGroupVersion,
+} from '@shared/api/group-client-views.ts';
 import {
     configureObservableLatestRepository,
     newObservableLatestRepositoryToken,
@@ -19,9 +23,9 @@ import {
 } from '@shared/cache/RepositoryInterfaces.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import {
-    decideStateSnapshotRevision,
     type StateSnapshotObservation,
     type StateSnapshotRevisionDecision,
+    StateSnapshotRevisionConflictError,
     toStateSnapshotObservation,
 } from './state-snapshot-revision.ts';
 
@@ -71,8 +75,7 @@ export function configureGroupStateSnapshotRepository(
         groupStateSnapshotRepositoryToken,
         {
             ...options,
-            equals: (left, right) =>
-                readGroupStateRevision(left) === readGroupStateRevision(right),
+            equals: jsonEquals,
         },
         manager,
     );
@@ -216,13 +219,7 @@ function writeGroupStateSnapshot(
     const repositoryKey = toGroupStateSnapshotRepositoryKey(snapshot.group);
     const current = repository.read(repositoryKey);
     const previousForIndex = repository.peek(repositoryKey);
-    const decision = decideStateSnapshotRevision({
-        entity: 'Group',
-        current,
-        incoming: snapshot,
-        stateRevisionOf: (value) => value.stateRevision,
-        equals: jsonEquals,
-    });
+    const decision = decideGroupSnapshotCausalRevision(current, snapshot);
 
     if (decision === 'inserted' || decision === 'advanced') {
         repository.set(repositoryKey, snapshot);
@@ -239,6 +236,26 @@ function writeGroupStateSnapshot(
     }
 
     return decision;
+}
+
+function decideGroupSnapshotCausalRevision(
+    current: GroupSnapshot | undefined,
+    incoming: GroupSnapshot,
+): StateSnapshotRevisionDecision {
+    if (!current) return 'inserted';
+
+    const order = compareGroupCausalRevision(
+        readGroupCausalRevision(incoming),
+        readGroupCausalRevision(current),
+    );
+    if (order === 'dominates') return 'advanced';
+    if (order === 'dominated' || order === 'concurrent') return 'stale';
+    if (jsonEquals(current, incoming)) return 'duplicate';
+
+    throw new StateSnapshotRevisionConflictError(
+        'Group',
+        incoming.stateRevision,
+    );
 }
 
 export function removeGroupStateSnapshotByRef(

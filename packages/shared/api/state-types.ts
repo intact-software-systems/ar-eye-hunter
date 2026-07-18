@@ -180,6 +180,7 @@ export type ConnectGroupPresenceSessionRequest =
     & MutationActorInput
     & Readonly<{
     principalId: string;
+    generationId: string;
     connectedAtEpochMs?: number;
     lastHeartbeatAtEpochMs?: number;
     expiresAtEpochMs?: number;
@@ -188,6 +189,7 @@ export type ConnectGroupPresenceSessionRequest =
 export type HeartbeatGroupPresenceSessionRequest =
     & MutationActorInput
     & Readonly<{
+    generationId: string;
     principalId?: string;
     lastHeartbeatAtEpochMs?: number;
     expiresAtEpochMs?: number;
@@ -196,6 +198,7 @@ export type HeartbeatGroupPresenceSessionRequest =
 export type DisconnectGroupPresenceSessionRequest =
     & MutationActorInput
     & Readonly<{
+    generationId: string;
     principalId?: string;
     disconnectedAtEpochMs?: number;
     lastHeartbeatAtEpochMs?: number;
