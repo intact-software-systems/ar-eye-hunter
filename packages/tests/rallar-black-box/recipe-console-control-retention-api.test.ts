@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import * as ts from 'typescript';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
+import { analyzeSourceFile } from '../helpers/source-analysis';
 import { ControlRunManagerHttpError as CanonicalHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import { ControlRunManagerHttpError as LegacyHttpError } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import {
@@ -789,50 +789,23 @@ function moduleImports(path: string): Array<{
     specifier: string;
     typeOnly: boolean;
 }> {
-    const file = sourceFile(path);
-    const imports: Array<{ specifier: string; typeOnly: boolean }> = [];
-    file.forEachChild(node => {
-        if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-            imports.push({
-                specifier: node.moduleSpecifier.text,
-                typeOnly: node.importClause?.isTypeOnly === true,
-            });
-        }
-        if (ts.isExportDeclaration(node) && node.moduleSpecifier &&
-            ts.isStringLiteral(node.moduleSpecifier)) {
-            imports.push({
-                specifier: node.moduleSpecifier.text,
-                typeOnly: node.isTypeOnly,
-            });
-        }
-    });
-    return imports;
+    const analysis = analyzeSourceFile(resolve(repositoryRoot, path));
+    return [
+        ...analysis.imports.map((entry) => ({
+            specifier: entry.specifier,
+            typeOnly: entry.typeOnly,
+        })),
+        ...analysis.exports.flatMap((entry) =>
+            entry.specifier
+                ? [{ specifier: entry.specifier, typeOnly: entry.typeOnly }]
+                : [],
+        ),
+    ];
 }
 
 function dynamicImports(path: string): string[] {
-    const file = sourceFile(path);
-    const imports: string[] = [];
-    function visit(node: ts.Node): void {
-        if (
-            ts.isCallExpression(node) &&
-            node.expression.kind === ts.SyntaxKind.ImportKeyword &&
-            node.arguments.length === 1 &&
-            ts.isStringLiteral(node.arguments[0])
-        ) {
-            imports.push(node.arguments[0].text);
-        }
-        ts.forEachChild(node, visit);
-    }
-    visit(file);
-    return imports;
-}
-
-function sourceFile(path: string): ts.SourceFile {
-    return ts.createSourceFile(
-        path,
-        source(path),
-        ts.ScriptTarget.Latest,
-        true,
-        path.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-    );
+    return analyzeSourceFile(resolve(repositoryRoot, path)).dynamicImports
+        .flatMap((entry) =>
+            entry.literal && entry.specifier ? [entry.specifier] : [],
+        );
 }

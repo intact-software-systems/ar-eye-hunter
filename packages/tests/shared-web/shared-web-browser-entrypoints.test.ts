@@ -1,7 +1,11 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import path from 'node:path';
-import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import {
+    analyzeSourceFile,
+    type SourceAnalysis,
+    type SourceImport,
+} from '../helpers/source-analysis';
 
 type BrowserEntrypoint = Readonly<{
     moduleId: string;
@@ -110,7 +114,7 @@ describe('shared-web browser entrypoints', () => {
         });
 
         it(`does not runtime-import the full rallar facade from ${entrypoint.moduleId}`, () => {
-            const sourceFile = readSourceFile(entrypoint.sourcePath);
+            const sourceFile = readSourceAnalysis(entrypoint.sourcePath);
 
             expect(collectRuntimeFullFacadeReferences(sourceFile)).toEqual([]);
         });
@@ -118,7 +122,7 @@ describe('shared-web browser entrypoints', () => {
 
     it('keeps public facade contracts independent from the full facade entrypoint', () => {
         const references = PUBLIC_FACADE_MODULES.flatMap((filePath) =>
-            collectFullFacadeReferences(readSourceFile(filePath)).map(
+            collectFullFacadeReferences(readSourceAnalysis(filePath)).map(
                 (reference) => `${filePath}: ${reference}`,
             )
         );
@@ -129,7 +133,7 @@ describe('shared-web browser entrypoints', () => {
     it('keeps public facade contracts independent from the aggregate contract', () => {
         const references = PUBLIC_FACADE_MODULES.flatMap((filePath) =>
             collectModuleReferences(
-                readSourceFile(filePath),
+                readSourceAnalysis(filePath),
                 '@shared-web/browser/rallar-facade-contract.ts',
             ).map((reference) => `${filePath}: ${reference}`)
         );
@@ -142,7 +146,7 @@ describe('shared-web browser entrypoints', () => {
             path.resolve('packages/shared-web/browser/rallar-runtime'),
         ).filter((fileName) => fileName.endsWith('.ts'));
         const references = runtimeFiles.flatMap((fileName) =>
-            collectFullFacadeReferences(readSourceFile(
+            collectFullFacadeReferences(readSourceAnalysis(
                 `packages/shared-web/browser/rallar-runtime/${fileName}`,
             )).map((reference) => `${fileName}: ${reference}`)
         );
@@ -159,7 +163,7 @@ describe('shared-web browser entrypoints', () => {
         );
         const references = runtimeFiles.flatMap((fileName) =>
             collectModuleReferences(
-                readSourceFile(
+                readSourceAnalysis(
                     `packages/shared-web/browser/rallar-runtime/${fileName}`,
                 ),
                 '@shared-web/browser/rallar-facade-contract.ts',
@@ -178,7 +182,7 @@ describe('shared-web browser entrypoints', () => {
         );
         const references = runtimeFiles.flatMap((fileName) =>
             collectModuleReferences(
-                readSourceFile(
+                readSourceAnalysis(
                     `packages/shared-web/browser/rallar-runtime/${fileName}`,
                 ),
                 '@shared-web/browser/data-caches.ts',
@@ -197,7 +201,7 @@ describe('shared-web browser entrypoints', () => {
         );
         const references = runtimeFiles.flatMap((fileName) =>
             collectModuleReferences(
-                readSourceFile(
+                readSourceAnalysis(
                     `packages/shared-web/browser/rallar-runtime/${fileName}`,
                 ),
                 '@shared-web/browser/rallar-runtime-context.ts',
@@ -225,14 +229,11 @@ describe('shared-web browser entrypoints', () => {
             fileName !== 'composition.ts'
         );
         const references = runtimeFiles.flatMap((fileName) => {
-            const sourceFile = readSourceFile(
+            const sourceFile = readSourceAnalysis(
                 `packages/shared-web/browser/rallar-runtime/${fileName}`,
             );
-            return sourceFile.statements
-                .filter((statement): statement is ts.ImportDeclaration =>
-                    ts.isImportDeclaration(statement)
-                )
-                .map(readModuleSpecifier)
+            return sourceFile.imports
+                .map((entry) => entry.specifier)
                 .filter((specifier) =>
                     specifier.startsWith(
                         '@shared-web/browser/rallar-runtime/',
@@ -254,7 +255,7 @@ describe('shared-web browser entrypoints', () => {
             ...BROWSER_ENTRYPOINTS.map((entrypoint) => entrypoint.sourcePath),
         ];
         const references = publicBarrels.flatMap((filePath) =>
-            collectInternalRuntimeExports(readSourceFile(filePath)).map(
+            collectInternalRuntimeExports(readSourceAnalysis(filePath)).map(
                 (reference) => `${filePath}: ${reference}`,
             )
         );
@@ -263,15 +264,15 @@ describe('shared-web browser entrypoints', () => {
     });
 
     it('keeps rallar.ts as a thin compatibility entrypoint', () => {
-        const sourceFile = readSourceFile(
+        const sourceFile = readSourceAnalysis(
             'packages/shared-web/browser/rallar.ts',
         );
-        const classNames = sourceFile.statements
-            .filter(ts.isClassDeclaration)
-            .map((statement) => statement.name?.text);
-        const runtimeImports = sourceFile.statements
-            .filter(ts.isImportDeclaration)
-            .map(readModuleSpecifier);
+        const classNames = sourceFile.topLevelDeclarations
+            .filter((declaration) => declaration.kind === 'class')
+            .map((declaration) => declaration.name);
+        const runtimeImports = sourceFile.imports
+            .filter(isRuntimeImport)
+            .map((entry) => entry.specifier);
 
         expect(classNames).not.toContain('BrowserRallarFacade');
         expect(runtimeImports).toContain(
@@ -281,113 +282,72 @@ describe('shared-web browser entrypoints', () => {
 });
 
 function collectFullFacadeReferences(
-    sourceFile: ts.SourceFile,
+    sourceFile: SourceAnalysis,
 ): readonly string[] {
-    const references: string[] = [];
-
-    for (const statement of sourceFile.statements) {
-        if (ts.isImportDeclaration(statement)) {
-            const moduleSpecifier = readModuleSpecifier(statement);
-            if (isFullFacadeSpecifier(moduleSpecifier)) {
-                references.push(`import ${moduleSpecifier}`);
-            }
-            continue;
-        }
-
-        if (ts.isExportDeclaration(statement)) {
-            const moduleSpecifier = readModuleSpecifier(statement);
-            if (isFullFacadeSpecifier(moduleSpecifier)) {
-                references.push(`export ${moduleSpecifier}`);
-            }
-        }
-    }
-
-    return references;
+    return [
+        ...sourceFile.imports
+            .map((entry) => entry.specifier)
+            .filter(isFullFacadeSpecifier)
+            .map((specifier) => `import ${specifier}`),
+        ...sourceFile.exports
+            .flatMap((entry) => entry.specifier ? [entry.specifier] : [])
+            .filter(isFullFacadeSpecifier)
+            .map((specifier) => `export ${specifier}`),
+    ];
 }
 
 function collectInternalRuntimeExports(
-    sourceFile: ts.SourceFile,
+    sourceFile: SourceAnalysis,
 ): readonly string[] {
-    return sourceFile.statements
-        .filter(ts.isExportDeclaration)
-        .map(readModuleSpecifier)
+    return sourceFile.exports
+        .flatMap((entry) => entry.specifier ? [entry.specifier] : [])
         .filter((moduleSpecifier) =>
             moduleSpecifier.includes('/rallar-runtime/')
         );
 }
 
 function collectModuleReferences(
-    sourceFile: ts.SourceFile,
+    sourceFile: SourceAnalysis,
     expectedSpecifier: string,
 ): readonly string[] {
-    return sourceFile.statements
-        .filter((statement): statement is ts.ImportDeclaration | ts.ExportDeclaration =>
-            ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)
-        )
-        .filter((statement) => readModuleSpecifier(statement) === expectedSpecifier)
-        .map((statement) =>
-            `${ts.isImportDeclaration(statement) ? 'import' : 'export'} ${expectedSpecifier}`
-        );
+    return [
+        ...sourceFile.imports
+            .filter((entry) => entry.specifier === expectedSpecifier)
+            .map(() => `import ${expectedSpecifier}`),
+        ...sourceFile.exports
+            .filter((entry) => entry.specifier === expectedSpecifier)
+            .map(() => `export ${expectedSpecifier}`),
+    ];
 }
 
 function collectRuntimeFullFacadeReferences(
-    sourceFile: ts.SourceFile,
+    sourceFile: SourceAnalysis,
 ): readonly string[] {
-    const references: string[] = [];
-
-    for (const statement of sourceFile.statements) {
-        if (ts.isImportDeclaration(statement)) {
-            const moduleSpecifier = readModuleSpecifier(statement);
-            if (
-                isFullFacadeSpecifier(moduleSpecifier) &&
-                statement.importClause?.isTypeOnly !== true
-            ) {
-                references.push(`import ${moduleSpecifier}`);
-            }
-            continue;
-        }
-
-        if (!ts.isExportDeclaration(statement)) {
-            continue;
-        }
-
-        const moduleSpecifier = readModuleSpecifier(statement);
-        if (
-            isFullFacadeSpecifier(moduleSpecifier) &&
-            !isTypeOnlyExport(statement)
-        ) {
-            references.push(`export ${moduleSpecifier}`);
-        }
-    }
-
-    return references;
+    return [
+        ...sourceFile.imports
+            .filter(isRuntimeImport)
+            .map((entry) => entry.specifier)
+            .filter(isFullFacadeSpecifier)
+            .map((specifier) => `import ${specifier}`),
+        ...sourceFile.exports
+            .filter((entry) => !entry.typeOnly)
+            .flatMap((entry) => entry.specifier ? [entry.specifier] : [])
+            .filter(isFullFacadeSpecifier)
+            .map((specifier) => `export ${specifier}`),
+    ];
 }
 
-function isTypeOnlyExport(statement: ts.ExportDeclaration): boolean {
-    if (statement.isTypeOnly) {
-        return true;
-    }
-
-    const exportClause = statement.exportClause;
-    return ts.isNamedExports(exportClause) &&
-        exportClause.elements.every((element) => element.isTypeOnly);
-}
-
-function readSourceFile(filePath: string): ts.SourceFile {
-    return ts.createSourceFile(
-        filePath,
-        readFileSync(path.resolve(process.cwd(), filePath), 'utf8'),
-        ts.ScriptTarget.Latest,
-        true,
-        ts.ScriptKind.TS,
+function isRuntimeImport(entry: SourceImport): boolean {
+    return !entry.typeOnly && (
+        entry.sideEffectOnly ||
+        entry.defaultImport !== undefined ||
+        entry.namespaceImport !== undefined ||
+        entry.namedImports.some((namedImport) => !namedImport.typeOnly)
     );
 }
 
-function readModuleSpecifier(
-    statement: ts.ImportDeclaration | ts.ExportDeclaration,
-): string {
-    const specifier = statement.moduleSpecifier;
-    return specifier && ts.isStringLiteral(specifier) ? specifier.text : '';
+function readSourceAnalysis(filePath: string): SourceAnalysis {
+    return analyzeSourceFile(path.resolve(process.cwd(), filePath));
 }
 
 function isFullFacadeSpecifier(specifier: string): boolean {

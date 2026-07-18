@@ -10,22 +10,24 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-    "baseUrl": "../..",
+    "types": [
+      "node"
+    ],
     "paths": {
       "@shared-test/*": [
-        "packages/shared-test/*"
+        "../../packages/shared-test/*"
       ],
       "@shared-server/*": [
-        "packages/shared-server/*"
+        "../../packages/shared-server/*"
       ],
       "@shared-web/*": [
-        "packages/shared-web/*"
+        "../../packages/shared-web/*"
       ],
       "@shared-graph/*": [
-        "packages/shared-graph/*"
+        "../../packages/shared-graph/*"
       ],
       "@shared/*": [
-        "packages/shared/*"
+        "../../packages/shared/*"
       ]
     }
   },

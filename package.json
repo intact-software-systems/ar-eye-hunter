@@ -11,6 +11,7 @@
     "dev": "npm run dev --workspaces",
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
+    "typecheck": "tsc -p packages/shared/tsconfig.json --noEmit && npm run typecheck --workspaces --if-present",
     "test": "npm run test:unit",
     "test:unit": "vitest run",
     "test:rallar-server-hardening": "vitest run packages/tests/shared-server/queuebox-pubsub-bridge.test.ts packages/tests/shared-server/state-sync-publisher.test.ts packages/tests/shared-server/app-inbox-service.test.ts packages/tests/shared-server/rallar-server-schema-docs.test.ts packages/tests/shared-server/state-sync-cache-hydration.test.ts packages/tests/shared-server/state-event-listing.test.ts packages/tests/api-v1/client-and-group-state-repositories.test.ts && cd apps/api-v1 && deno test --allow-env --allow-read test/services/state-api-resilience-middleware.test.ts test/routes/state-api-routes-hardening.test.ts test/db/postgres-queue-pubsub-bridge.test.ts test/db/in-memory-schema-bootstrap.test.ts test/db/pglite-sql-adapter.test.ts",
@@ -134,6 +135,8 @@
     "test:integration:rallar:real:live": "npm run test:integration:rallar:live"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.3",
+    "@electric-sql/pglite": "0.4.1",
     "@playwright/test": "1.61.1",
     "@vitest/ui": "4.0.17",
     "esbuild": "^0.27.7",
@@ -145,11 +148,8 @@
     "postgres": "^3.4.9",
     "prettier": "^3.2.5",
     "tsx": "^4.21.0",
-    "typescript": "^5.3.3",
+    "typescript": "7.0.2",
     "vite": "^8.0.11",
     "vitest": "4.0.17"
-  },
-  "dependencies": {
-    "@babylonjs/loaders": "^9.6.2"
   }
 }

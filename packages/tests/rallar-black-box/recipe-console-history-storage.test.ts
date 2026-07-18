@@ -4,8 +4,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import * as ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { analyzeSourceFile } from '../helpers/source-analysis';
 import {
     HISTORY_FILTER_PRESET_LIMITS,
     createHistoryFilterPreset,
@@ -695,23 +695,13 @@ describe('History filter persistence ownership', () => {
         );
 
         const references = (relativePath: string): readonly string[] => {
-            const text = source(relativePath);
-            const file = ts.createSourceFile(
+            const filePath = resolve(
+                process.cwd(),
+                'apps/rallar-black-box/src/recipe-console',
                 relativePath,
-                text,
-                ts.ScriptTarget.Latest,
-                true,
-                relativePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
             );
-            const matches: string[] = [];
-            const visit = (node: ts.Node): void => {
-                if (ts.isIdentifier(node) && node.text === 'localStorage') {
-                    matches.push(node.getText(file));
-                }
-                ts.forEachChild(node, visit);
-            };
-            visit(file);
-            return matches;
+            return analyzeSourceFile(filePath).identifierNames
+                .filter((name) => name === 'localStorage');
         };
         expect(references('history/use-history-filter-presets.ts')).toEqual([
             'localStorage',

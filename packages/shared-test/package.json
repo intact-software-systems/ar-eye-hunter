@@ -35,6 +35,6 @@
     "check:ts": "tsc -p tsconfig.json --noEmit",
     "lint": "npm run check:ts",
     "rtc:browser:validate": "deno run -A black-box-runner/rallar-browser-live-validation.mts",
-    "typecheck": "npm run check"
+    "typecheck": "npm run check:ts"
   }
 }

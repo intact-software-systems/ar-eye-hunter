@@ -7,6 +7,10 @@
     "strict": true,
     "jsx": "react-jsx",
     "allowImportingTsExtensions": true,
+    "types": [
+      "node",
+      "vite/client"
+    ],
     "lib": [
       "ES2023",
       "DOM"
