@@ -20,6 +20,7 @@ import {
     hashStateMutationCommand,
     toClientStateMutationCausalRevision,
     toGroupStateMutationCausalRevision,
+    toStateMutationOutboxId,
 } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import {
     StateMutationOutboxWork,
@@ -610,6 +611,761 @@ describe('StateMutationOutboxRepository', () => {
                 },
             },
         } as never)).toThrow('Invalid group aggregate ref');
+    });
+
+    it('rejects malformed mandatory strings before builder identity derivation', () => {
+        const valid = createClientRecord(createClientSnapshot(1), {
+            event: { kind: 'client', event: createClientEvent(1) },
+        });
+        const {
+            outboxId: _outboxId,
+            attempts: _attempts,
+            delivery: _delivery,
+            ...validInput
+        } = valid;
+        const cases: readonly Readonly<{
+            name: string;
+            mutate(input: typeof validInput): unknown;
+            error: string;
+        }>[] = [
+            {
+                name: 'numeric command id',
+                mutate: (input) => ({ ...input, commandId: 7 }),
+                error: 'Invalid state mutation outbox command id',
+            },
+            {
+                name: 'blank command id',
+                mutate: (input) => ({ ...input, commandId: ' \t ' }),
+                error: 'Invalid state mutation outbox command id',
+            },
+            {
+                name: 'object command id',
+                mutate: (input) => ({ ...input, commandId: { bad: true } }),
+                error: 'Invalid state mutation outbox command id',
+            },
+            {
+                name: 'array command id',
+                mutate: (input) => ({ ...input, commandId: ['bad'] }),
+                error: 'Invalid state mutation outbox command id',
+            },
+            {
+                name: 'numeric command hash',
+                mutate: (input) => ({ ...input, commandHash: 7 }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'object command hash',
+                mutate: (input) => ({
+                    ...input,
+                    commandHash: { bad: true },
+                }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'array command hash',
+                mutate: (input) => ({ ...input, commandHash: ['bad'] }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'blank command hash',
+                mutate: (input) => ({ ...input, commandHash: '  ' }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'blank application id',
+                mutate: (input) => ({
+                    ...input,
+                    aggregateRef: {
+                        ...input.aggregateRef,
+                        applicationId: ' ',
+                    },
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            applicationId: ' ',
+                        },
+                    },
+                }),
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'blank workspace id',
+                mutate: (input) => ({
+                    ...input,
+                    aggregateRef: {
+                        ...input.aggregateRef,
+                        workspaceId: '\t',
+                    },
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            workspaceId: '\t',
+                        },
+                    },
+                }),
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'object principal id',
+                mutate: (input) => ({
+                    ...input,
+                    aggregateRef: {
+                        ...input.aggregateRef,
+                        principalId: { bad: true },
+                    },
+                }),
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'numeric principal id',
+                mutate: (input) => ({
+                    ...input,
+                    aggregateRef: { ...input.aggregateRef, principalId: 7 },
+                }),
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'array principal id',
+                mutate: (input) => ({
+                    ...input,
+                    aggregateRef: {
+                        ...input.aggregateRef,
+                        principalId: ['alice'],
+                    },
+                }),
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'numeric event id',
+                mutate: (input) => ({
+                    ...input,
+                    event: {
+                        kind: 'client',
+                        event: { ...createClientEvent(1), eventId: 7 },
+                    },
+                }),
+                error: 'Client outbox event eventId is required',
+            },
+            {
+                name: 'blank event id',
+                mutate: (input) => ({
+                    ...input,
+                    event: {
+                        kind: 'client',
+                        event: { ...createClientEvent(1), eventId: '  ' },
+                    },
+                }),
+                error: 'Client outbox event eventId is required',
+            },
+            {
+                name: 'object event id',
+                mutate: (input) => ({
+                    ...input,
+                    event: {
+                        kind: 'client',
+                        event: { ...createClientEvent(1), eventId: { bad: true } },
+                    },
+                }),
+                error: 'Client outbox event eventId is required',
+            },
+            {
+                name: 'array event id',
+                mutate: (input) => ({
+                    ...input,
+                    event: {
+                        kind: 'client',
+                        event: { ...createClientEvent(1), eventId: ['bad'] },
+                    },
+                }),
+                error: 'Client outbox event eventId is required',
+            },
+            {
+                name: 'array actor principal id',
+                mutate: (input) => ({
+                    ...input,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            actor: { principalId: ['alice'] },
+                        },
+                    },
+                }),
+                error: 'Invalid client outbox event actor principalId',
+            },
+            {
+                name: 'blank actor service id',
+                mutate: (input) => ({
+                    ...input,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            actor: { serviceId: '  ' },
+                        },
+                    },
+                }),
+                error: 'Invalid client outbox event actor serviceId',
+            },
+            {
+                name: 'numeric actor service id',
+                mutate: (input) => ({
+                    ...input,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            actor: { serviceId: 7 },
+                        },
+                    },
+                }),
+                error: 'Invalid client outbox event actor serviceId',
+            },
+            {
+                name: 'object actor service id',
+                mutate: (input) => ({
+                    ...input,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            actor: { serviceId: { bad: true } },
+                        },
+                    },
+                }),
+                error: 'Invalid client outbox event actor serviceId',
+            },
+            {
+                name: 'object request id',
+                mutate: (input) => ({
+                    ...input,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            requestId: { bad: true },
+                        },
+                    },
+                }),
+                error: 'Invalid client outbox event requestId',
+            },
+            {
+                name: 'blank request id',
+                mutate: (input) => ({
+                    ...input,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            requestId: ' ',
+                        },
+                    },
+                }),
+                error: 'Invalid client outbox event requestId',
+            },
+        ];
+
+        for (const testCase of cases) {
+            expect(() => createStateMutationOutboxRecord(
+                testCase.mutate(structuredClone(validInput)) as never,
+            ), testCase.name).toThrow(testCase.error);
+        }
+
+        expect(() => toStateMutationOutboxId({
+            ...validInput,
+            commandId: 7,
+        } as never)).toThrow('Invalid state mutation outbox command id');
+    });
+
+    it('rejects malformed mandatory strings from persisted records', async () => {
+        const valid = createClientRecord(createClientSnapshot(1), {
+            event: { kind: 'client', event: createClientEvent(1) },
+        });
+        const retryable = {
+            ...valid,
+            attempts: {
+                count: 1,
+                last: {
+                    status: 'failed',
+                    attemptedAtEpochMs: 2_000,
+                    error: 'retry delivery',
+                },
+            },
+            delivery: { status: 'retryable' },
+        };
+        const cases: readonly Readonly<{
+            name: string;
+            mutate(record: typeof valid): unknown;
+            error: string;
+        }>[] = [
+            {
+                name: 'numeric outbox id',
+                mutate: (record) => ({ ...record, outboxId: 7 }),
+                error: 'Invalid state mutation outbox outbox id',
+            },
+            {
+                name: 'blank outbox id',
+                mutate: (record) => ({ ...record, outboxId: '  ' }),
+                error: 'Invalid state mutation outbox outbox id',
+            },
+            {
+                name: 'object outbox id',
+                mutate: (record) => ({ ...record, outboxId: { bad: true } }),
+                error: 'Invalid state mutation outbox outbox id',
+            },
+            {
+                name: 'array outbox id',
+                mutate: (record) => ({ ...record, outboxId: ['bad'] }),
+                error: 'Invalid state mutation outbox outbox id',
+            },
+            {
+                name: 'numeric command id',
+                mutate: (record) => ({ ...record, commandId: 7 }),
+                error: 'Invalid state mutation outbox command id',
+            },
+            {
+                name: 'object command id',
+                mutate: (record) => ({ ...record, commandId: { bad: true } }),
+                error: 'Invalid state mutation outbox command id',
+            },
+            {
+                name: 'array command id',
+                mutate: (record) => ({ ...record, commandId: ['bad'] }),
+                error: 'Invalid state mutation outbox command id',
+            },
+            {
+                name: 'blank command id',
+                mutate: (record) => ({ ...record, commandId: ' \t ' }),
+                error: 'Invalid state mutation outbox command id',
+            },
+            {
+                name: 'numeric command hash',
+                mutate: (record) => ({ ...record, commandHash: 7 }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'object command hash',
+                mutate: (record) => ({
+                    ...record,
+                    commandHash: { bad: true },
+                }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'array command hash',
+                mutate: (record) => ({ ...record, commandHash: ['bad'] }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'blank command hash',
+                mutate: (record) => ({ ...record, commandHash: ' \t ' }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'blank matching workspace id',
+                mutate: (record) => ({
+                    ...record,
+                    aggregateRef: {
+                        ...record.aggregateRef,
+                        workspaceId: ' ',
+                    },
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            workspaceId: ' ',
+                        },
+                    },
+                }),
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'numeric principal id',
+                mutate: (record) => ({
+                    ...record,
+                    aggregateRef: { ...record.aggregateRef, principalId: 7 },
+                }),
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'object principal id',
+                mutate: (record) => ({
+                    ...record,
+                    aggregateRef: {
+                        ...record.aggregateRef,
+                        principalId: { bad: true },
+                    },
+                }),
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'array principal id',
+                mutate: (record) => ({
+                    ...record,
+                    aggregateRef: {
+                        ...record.aggregateRef,
+                        principalId: ['alice'],
+                    },
+                }),
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'blank principal id',
+                mutate: (record) => ({
+                    ...record,
+                    aggregateRef: { ...record.aggregateRef, principalId: ' ' },
+                }),
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'numeric event id',
+                mutate: (record) => ({
+                    ...record,
+                    event: {
+                        kind: 'client',
+                        event: { ...createClientEvent(1), eventId: 7 },
+                    },
+                }),
+                error: 'Client outbox event eventId is required',
+            },
+            {
+                name: 'blank event id',
+                mutate: (record) => ({
+                    ...record,
+                    event: {
+                        kind: 'client',
+                        event: { ...createClientEvent(1), eventId: '  ' },
+                    },
+                }),
+                error: 'Client outbox event eventId is required',
+            },
+            {
+                name: 'object event id',
+                mutate: (record) => ({
+                    ...record,
+                    event: {
+                        kind: 'client',
+                        event: { ...createClientEvent(1), eventId: { bad: true } },
+                    },
+                }),
+                error: 'Client outbox event eventId is required',
+            },
+            {
+                name: 'array event id',
+                mutate: (record) => ({
+                    ...record,
+                    event: {
+                        kind: 'client',
+                        event: { ...createClientEvent(1), eventId: ['bad'] },
+                    },
+                }),
+                error: 'Client outbox event eventId is required',
+            },
+            {
+                name: 'numeric actor service id',
+                mutate: (record) => ({
+                    ...record,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            actor: { serviceId: 7 },
+                        },
+                    },
+                }),
+                error: 'Invalid client outbox event actor serviceId',
+            },
+            {
+                name: 'blank actor service id',
+                mutate: (record) => ({
+                    ...record,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            actor: { serviceId: ' ' },
+                        },
+                    },
+                }),
+                error: 'Invalid client outbox event actor serviceId',
+            },
+            {
+                name: 'object actor service id',
+                mutate: (record) => ({
+                    ...record,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            actor: { serviceId: { bad: true } },
+                        },
+                    },
+                }),
+                error: 'Invalid client outbox event actor serviceId',
+            },
+            {
+                name: 'array actor service id',
+                mutate: (record) => ({
+                    ...record,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            actor: { serviceId: ['bad'] },
+                        },
+                    },
+                }),
+                error: 'Invalid client outbox event actor serviceId',
+            },
+            {
+                name: 'numeric retry error',
+                mutate: () => ({
+                    ...retryable,
+                    attempts: {
+                        ...retryable.attempts,
+                        last: { ...retryable.attempts.last, error: 7 },
+                    },
+                }),
+                error: 'Failed state mutation outbox attempts require an error',
+            },
+            {
+                name: 'object retry error',
+                mutate: () => ({
+                    ...retryable,
+                    attempts: {
+                        ...retryable.attempts,
+                        last: {
+                            ...retryable.attempts.last,
+                            error: { bad: true },
+                        },
+                    },
+                }),
+                error: 'Failed state mutation outbox attempts require an error',
+            },
+            {
+                name: 'array retry error',
+                mutate: () => ({
+                    ...retryable,
+                    attempts: {
+                        ...retryable.attempts,
+                        last: { ...retryable.attempts.last, error: ['bad'] },
+                    },
+                }),
+                error: 'Failed state mutation outbox attempts require an error',
+            },
+            {
+                name: 'blank retry error',
+                mutate: () => ({
+                    ...retryable,
+                    attempts: {
+                        ...retryable.attempts,
+                        last: { ...retryable.attempts.last, error: ' \t ' },
+                    },
+                }),
+                error: 'Failed state mutation outbox attempts require an error',
+            },
+        ];
+
+        for (const testCase of cases) {
+            const runtime = new FakeRuntimeStateRepository();
+            const malformed = testCase.mutate(structuredClone(valid)) as
+                Record<string, unknown>;
+            const lookupId = typeof malformed.outboxId === 'string'
+                ? malformed.outboxId
+                : String(malformed.outboxId);
+            await insertRawOutboxRecord(runtime, malformed, lookupId);
+
+            await expect(
+                new StateMutationOutboxRepository(runtime).find(lookupId),
+                testCase.name,
+            ).rejects.toThrow(testCase.error);
+        }
+    });
+
+    it('rejects every malformed group identity string from builders and storage', async () => {
+        const valid = createGroupRecord(createGroupSnapshot(1), {
+            event: { kind: 'group', event: createGroupEvent(1) },
+        });
+        const {
+            outboxId: _outboxId,
+            attempts: _attempts,
+            delivery: _delivery,
+            ...validInput
+        } = valid;
+        const malformedStrings: readonly Readonly<{
+            name: string;
+            value: unknown;
+        }>[] = [
+            { name: 'number', value: 7 },
+            { name: 'object', value: { bad: true } },
+            { name: 'array', value: ['bad'] },
+            { name: 'blank', value: ' \t ' },
+        ];
+
+        for (const malformed of malformedStrings) {
+            const invalidAggregate = {
+                ...validInput,
+                aggregateRef: {
+                    ...validInput.aggregateRef,
+                    groupId: malformed.value,
+                },
+            };
+            const invalidEvent = {
+                ...validInput,
+                event: {
+                    kind: 'group',
+                    event: {
+                        ...createGroupEvent(1),
+                        groupId: malformed.value,
+                    },
+                },
+            };
+
+            expect(() => createStateMutationOutboxRecord(
+                invalidAggregate as never,
+            ), `builder aggregate ${malformed.name}`).toThrow(
+                'Invalid group aggregate ref',
+            );
+            expect(() => createStateMutationOutboxRecord(
+                invalidEvent as never,
+            ), `builder event ${malformed.name}`).toThrow(
+                'Invalid group aggregate ref',
+            );
+
+            for (const [label, record] of [
+                ['aggregate', { ...valid, aggregateRef: invalidAggregate.aggregateRef }],
+                ['event', { ...valid, event: invalidEvent.event }],
+            ] as const) {
+                const runtime = new FakeRuntimeStateRepository();
+                await insertRawOutboxRecord(runtime, record, valid.outboxId);
+                await expect(
+                    new StateMutationOutboxRepository(runtime).find(valid.outboxId),
+                    `stored ${label} ${malformed.name}`,
+                ).rejects.toThrow('Invalid group aggregate ref');
+            }
+        }
+    });
+
+    it('rejects malformed nested objects and non-numeric authoritative fields', async () => {
+        const valid = createClientRecord(createClientSnapshot(1), {
+            event: { kind: 'client', event: createClientEvent(1) },
+        });
+        const {
+            outboxId: _outboxId,
+            attempts: _attempts,
+            delivery: _delivery,
+            ...validInput
+        } = valid;
+        const builderCases: readonly Readonly<{
+            name: string;
+            input: unknown;
+            error: string;
+        }>[] = [
+            {
+                name: 'root',
+                input: null,
+                error: 'State mutation outbox input is required',
+            },
+            {
+                name: 'aggregate ref',
+                input: { ...validInput, aggregateRef: null },
+                error: 'Invalid client aggregate ref',
+            },
+            {
+                name: 'causal revision',
+                input: { ...validInput, acceptedCausalRevision: [] },
+                error: 'Invalid client state mutation outbox intent',
+            },
+            {
+                name: 'event wrapper',
+                input: { ...validInput, event: null },
+                error: 'Client state mutation outbox event is required',
+            },
+            {
+                name: 'created time boolean',
+                input: { ...validInput, createdAtEpochMs: true },
+                error: 'Invalid state mutation outbox created time',
+            },
+            {
+                name: 'causal revision string',
+                input: {
+                    ...validInput,
+                    acceptedCausalRevision: {
+                        ...validInput.acceptedCausalRevision,
+                        stateRevision: '1',
+                    },
+                },
+                error: 'Invalid state mutation outbox client state revision',
+            },
+        ];
+
+        for (const testCase of builderCases) {
+            expect(() => createStateMutationOutboxRecord(testCase.input as never),
+                testCase.name).toThrow(testCase.error);
+        }
+
+        const persistedCases: readonly Readonly<{
+            name: string;
+            record: unknown;
+            error: string;
+        }>[] = [
+            {
+                name: 'root',
+                record: null,
+                error: 'State mutation outbox record is required',
+            },
+            {
+                name: 'attempts',
+                record: { ...valid, attempts: null },
+                error: 'State mutation outbox attempts are required',
+            },
+            {
+                name: 'last attempt',
+                record: {
+                    ...valid,
+                    attempts: { count: 0, last: [] },
+                },
+                error: 'State mutation outbox last attempt is required',
+            },
+            {
+                name: 'delivery',
+                record: { ...valid, delivery: [] },
+                error: 'State mutation outbox delivery is required',
+            },
+            {
+                name: 'attempt count boolean',
+                record: {
+                    ...valid,
+                    attempts: { ...valid.attempts, count: true },
+                },
+                error: 'Invalid state mutation outbox attempt count',
+            },
+            {
+                name: 'event occurred time string',
+                record: {
+                    ...valid,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            occurredAtEpochMs: '1',
+                        },
+                    },
+                },
+                error: 'Invalid client outbox event occurred time',
+            },
+        ];
+
+        for (const testCase of persistedCases) {
+            const runtime = new FakeRuntimeStateRepository();
+            await insertRawOutboxRecord(runtime, testCase.record, valid.outboxId);
+            await expect(
+                new StateMutationOutboxRepository(runtime).find(valid.outboxId),
+                testCase.name,
+            ).rejects.toThrow(testCase.error);
+        }
     });
 
     it('rejects pending and internally inconsistent delivery transitions', async () => {

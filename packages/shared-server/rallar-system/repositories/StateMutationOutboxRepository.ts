@@ -344,13 +344,13 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
                     current: current ?? null,
                 };
             }
-            validateDeliveryTransition(current.record, input);
             const record: StateMutationOutboxRecord = {
                 ...current.record,
                 attempts: input.attempts,
                 delivery: input.delivery,
             } as StateMutationOutboxRecord;
             validateStateMutationOutboxRecord(record);
+            validateDeliveryTransition(current.record, input);
             const written = await transactional.putValueIfRevision(
                 STATE_MUTATION_OUTBOX_NAMESPACE,
                 toStateMutationOutboxKey(input.outboxId),
@@ -378,8 +378,7 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
 export function createStateMutationOutboxRecord(
     input: CreateStateMutationOutboxRecordInput,
 ): StateMutationOutboxRecord {
-    validateStateMutationOutboxKind(input.kind);
-    validateStateMutationOutboxEffects(input.effects);
+    validateStateMutationOutboxInput(input);
     const outboxId = toStateMutationOutboxId(input);
     const record = {
         ...input,
@@ -401,6 +400,7 @@ export function toStateMutationOutboxId(
         'commandId' | 'kind' | 'aggregateRef' | 'acceptedCausalRevision'
     >,
 ): string {
+    validateStateMutationOutboxIdentity(input, 'identity input');
     return `state-mutation-${fnv1a64(stableJsonStringify({
         commandId: input.commandId,
         kind: input.kind,
@@ -459,128 +459,216 @@ function toImmutableIntent(record: StateMutationOutboxRecord): unknown {
     };
 }
 
-function validateStateMutationOutboxRecord(
-    record: StateMutationOutboxRecord,
-): void {
-    validateStateMutationOutboxKind(record.kind);
-    if (!record.commandId || !record.commandHash || !record.outboxId) {
-        throw new TypeError('State mutation outbox identity fields are required');
+function validateStateMutationOutboxInput(
+    input: unknown,
+): asserts input is CreateStateMutationOutboxRecordInput {
+    if (!isRecord(input)) {
+        throw new TypeError('State mutation outbox input is required');
     }
-    assertSafeNonNegativeInteger(record.createdAtEpochMs, 'created time');
-    assertSafeNonNegativeInteger(record.attempts.count, 'attempt count');
-    validateStateMutationOutboxEffects(record.effects);
-    const expectedId = toStateMutationOutboxId(record);
-    if (record.outboxId !== expectedId) {
-        throw new TypeError(`Invalid state mutation outbox id: ${record.outboxId}`);
-    }
+    validateStateMutationOutboxIntent(input);
+}
 
-    if (record.kind === 'client') {
+function validateStateMutationOutboxIntent(
+    input: Readonly<Record<string, unknown>>,
+): asserts input is Readonly<Record<string, unknown>> &
+    CreateStateMutationOutboxRecordInput {
+    validateStateMutationOutboxIdentity(input, 'intent');
+    assertNonEmptyString(input.commandHash, 'command hash');
+    assertSafeNonNegativeInteger(input.createdAtEpochMs, 'created time');
+    validateStateMutationOutboxEffects(input.effects);
+
+    if (input.kind === 'client') {
+        if (input.effects.some((effect) => effect !== 'client-state-sync')) {
+            throw new TypeError('Invalid client state mutation outbox intent');
+        }
+        validateStateMutationOutboxEvent(input, input.effects);
+    } else {
+        if (input.effects.some((effect) => effect === 'client-state-sync')) {
+            throw new TypeError('Invalid group state mutation outbox intent');
+        }
+        validateStateMutationOutboxEvent(input, input.effects);
+    }
+}
+
+type StateMutationOutboxIdentityInput =
+    | Pick<
+        Extract<CreateStateMutationOutboxRecordInput, { kind: 'client' }>,
+        'commandId' | 'kind' | 'aggregateRef' | 'acceptedCausalRevision'
+    >
+    | Pick<
+        Extract<CreateStateMutationOutboxRecordInput, { kind: 'group' }>,
+        'commandId' | 'kind' | 'aggregateRef' | 'acceptedCausalRevision'
+    >;
+
+function validateStateMutationOutboxIdentity(
+    input: unknown,
+    rootLabel: string,
+): asserts input is Readonly<Record<string, unknown>> &
+    StateMutationOutboxIdentityInput {
+    if (!isRecord(input)) {
+        throw new TypeError(`State mutation outbox ${rootLabel} is required`);
+    }
+    validateStateMutationOutboxKind(input.kind);
+    assertNonEmptyString(input.commandId, 'command id');
+
+    if (input.kind === 'client') {
+        validateClientRef(input.aggregateRef);
         if (
-            record.acceptedCausalRevision.kind !== 'client' ||
-            record.effects.some((effect) => effect !== 'client-state-sync')
+            !isRecord(input.acceptedCausalRevision) ||
+            input.acceptedCausalRevision.kind !== 'client'
         ) {
             throw new TypeError('Invalid client state mutation outbox intent');
         }
-        validateClientRef(record.aggregateRef);
-        validateClientCausalRevision(record.acceptedCausalRevision);
-        switch (record.event.kind) {
+        validateClientCausalRevision(input.acceptedCausalRevision);
+        return;
+    }
+
+    validateGroupRef(input.aggregateRef);
+    if (
+        !isRecord(input.acceptedCausalRevision) ||
+        input.acceptedCausalRevision.kind !== 'group'
+    ) {
+        throw new TypeError('Invalid group state mutation outbox intent');
+    }
+    validateGroupCausalRevision(input.acceptedCausalRevision);
+}
+
+function validateStateMutationOutboxEvent(
+    input: Readonly<Record<string, unknown>> &
+        StateMutationOutboxIdentityInput,
+    effects: readonly StateMutationOutboxEffect[],
+): void {
+    if (!isRecord(input.event)) {
+        throw new TypeError(
+            `${input.kind === 'client' ? 'Client' : 'Group'} state mutation outbox event is required`,
+        );
+    }
+
+    if (input.kind === 'client') {
+        switch (input.event.kind) {
             case 'none':
-                break;
+                return;
             case 'client':
-                if (!record.effects.includes('client-state-sync')) {
+                if (!effects.includes('client-state-sync')) {
                     throw new TypeError(
                         'Client outbox events require client-state-sync',
                     );
                 }
-                validateClientEvent(record, record.event.event);
-                break;
+                validateClientEvent(
+                    input,
+                    input.event.event,
+                );
+                return;
             default:
                 throw new TypeError(
                     'Invalid client state mutation outbox event kind',
                 );
         }
-    } else if (record.kind === 'group') {
-        if (
-            record.acceptedCausalRevision.kind !== 'group' ||
-            record.effects.some((effect) => effect === 'client-state-sync')
-        ) {
-            throw new TypeError('Invalid group state mutation outbox intent');
-        }
-        validateGroupRef(record.aggregateRef);
-        validateGroupCausalRevision(record.acceptedCausalRevision);
-        switch (record.event.kind) {
-            case 'none':
-                break;
-            case 'group':
-                if (!record.effects.includes('group-state-sync')) {
-                    throw new TypeError(
-                        'Group outbox events require group-state-sync',
-                    );
-                }
-                validateGroupEvent(record, record.event.event);
-                break;
-            default:
-                throw new TypeError(
-                    'Invalid group state mutation outbox event kind',
-                );
-        }
     }
 
-    switch (record.attempts.last.status) {
+    switch (input.event.kind) {
+        case 'none':
+            return;
+        case 'group':
+            if (!effects.includes('group-state-sync')) {
+                throw new TypeError(
+                    'Group outbox events require group-state-sync',
+                );
+            }
+            validateGroupEvent(
+                input,
+                input.event.event,
+            );
+            return;
+        default:
+            throw new TypeError(
+                'Invalid group state mutation outbox event kind',
+            );
+    }
+}
+
+function validateStateMutationOutboxRecord(record: unknown): void {
+    if (!isRecord(record)) {
+        throw new TypeError('State mutation outbox record is required');
+    }
+    validateStateMutationOutboxIntent(record);
+    assertNonEmptyString(record.outboxId, 'outbox id');
+
+    if (!isRecord(record.attempts)) {
+        throw new TypeError('State mutation outbox attempts are required');
+    }
+    assertSafeNonNegativeInteger(record.attempts.count, 'attempt count');
+    if (!isRecord(record.attempts.last)) {
+        throw new TypeError('State mutation outbox last attempt is required');
+    }
+    const attempts = record.attempts;
+    const last = record.attempts.last;
+
+    if (!isRecord(record.delivery)) {
+        throw new TypeError('State mutation outbox delivery is required');
+    }
+    const delivery = record.delivery;
+
+    const expectedId = toStateMutationOutboxId(record);
+    if (record.outboxId !== expectedId) {
+        throw new TypeError(`Invalid state mutation outbox id: ${record.outboxId}`);
+    }
+
+    switch (last.status) {
         case 'never-attempted':
-            if (record.attempts.count !== 0) {
+            if (attempts.count !== 0) {
                 throw new TypeError(
                     'Never-attempted outbox metadata must have zero attempts',
                 );
             }
             break;
         case 'failed':
-            validateAttemptedStateMutationOutboxMetadata(record.attempts);
-            if (!record.attempts.last.error) {
+            validateAttemptedStateMutationOutboxMetadata(attempts);
+            if (!isNonEmptyString(last.error)) {
                 throw new TypeError(
                     'Failed state mutation outbox attempts require an error',
                 );
             }
             break;
         case 'succeeded':
-            validateAttemptedStateMutationOutboxMetadata(record.attempts);
+            validateAttemptedStateMutationOutboxMetadata(attempts);
             break;
         default:
             throw new TypeError(
-                `Unknown state mutation outbox attempt status: ${(record.attempts.last as { status?: unknown }).status}`,
+                `Unknown state mutation outbox attempt status: ${String(last.status)}`,
             );
     }
-    switch (record.delivery.status) {
+    switch (delivery.status) {
         case 'pending':
-            if (record.attempts.last.status !== 'never-attempted') {
+            if (last.status !== 'never-attempted') {
                 throw new TypeError(
                     'Pending outbox state requires never-attempted metadata',
                 );
             }
             break;
         case 'retryable':
-            if (record.attempts.last.status !== 'failed') {
+            if (last.status !== 'failed') {
                 throw new TypeError(
                     'Retryable outbox state requires failed attempt metadata',
                 );
             }
             break;
         case 'delivered':
-            if (record.attempts.last.status !== 'succeeded') {
+            if (last.status !== 'succeeded') {
                 throw new TypeError(
                     'Delivered outbox state requires successful attempt metadata',
                 );
             }
             assertSafeNonNegativeInteger(
-                record.delivery.deliveredAtEpochMs,
+                delivery.deliveredAtEpochMs,
                 'delivered time',
             );
             assertSafeNonNegativeInteger(
-                record.delivery.deliveredSnapshotRevision,
+                delivery.deliveredSnapshotRevision,
                 'delivered snapshot revision',
             );
             if (
-                record.delivery.deliveredSnapshotRevision <
+                delivery.deliveredSnapshotRevision <
                     record.acceptedCausalRevision.stateRevision
             ) {
                 throw new TypeError(
@@ -590,7 +678,7 @@ function validateStateMutationOutboxRecord(
             break;
         default:
             throw new TypeError(
-                `Unknown state mutation outbox delivery status: ${(record.delivery as { status?: unknown }).status}`,
+                `Unknown state mutation outbox delivery status: ${String(delivery.status)}`,
             );
     }
 }
@@ -649,12 +737,9 @@ function validateDeliveryTransition(
 }
 
 function validateAttemptedStateMutationOutboxMetadata(
-    attempts: StateMutationOutboxAttempts,
+    attempts: Readonly<Record<string, unknown>>,
 ): void {
-    const last = attempts.last as Exclude<
-        StateMutationOutboxLastAttempt,
-        { status: 'never-attempted' }
-    >;
+    const last = attempts.last as Readonly<Record<string, unknown>>;
     assertSafeNonNegativeInteger(last.attemptedAtEpochMs, 'last attempt time');
     if (attempts.count === 0) {
         throw new TypeError('Attempted outbox metadata must have a positive count');
@@ -669,8 +754,8 @@ function validateStateMutationOutboxKind(kind: unknown): asserts kind is
 }
 
 function validateStateMutationOutboxEffects(
-    effects: readonly StateMutationOutboxEffect[],
-): void {
+    effects: unknown,
+): asserts effects is readonly StateMutationOutboxEffect[] {
     if (!Array.isArray(effects) || effects.length === 0) {
         throw new TypeError('State mutation outbox effects are required');
     }
@@ -687,13 +772,16 @@ function validateStateMutationOutboxEffects(
 }
 
 function validateClientEvent(
-    record: ClientStateMutationOutboxRecord,
+    record: Pick<
+        ClientStateMutationOutboxRecord,
+        'aggregateRef' | 'acceptedCausalRevision'
+    >,
     event: unknown,
 ): void {
     if (!isRecord(event)) {
         throw new TypeError('Client outbox event is required');
     }
-    if (typeof event.eventId !== 'string' || !event.eventId) {
+    if (!isNonEmptyString(event.eventId)) {
         throw new TypeError('Client outbox event eventId is required');
     }
     if (!isKnownClientEventType(event.eventType)) {
@@ -702,8 +790,16 @@ function validateClientEvent(
         );
     }
     validateEventTimestamp(event.occurredAtEpochMs, 'Client');
+    assertSafeNonNegativeInteger(
+        event.snapshotVersion,
+        'client event snapshot version',
+    );
     validateEventActor(event.actor, 'Client');
-    validateOptionalEventString(event.clientInstanceId, 'Client', 'clientInstanceId');
+    validateOptionalEventString(
+        event.clientInstanceId,
+        'Client',
+        'clientInstanceId',
+    );
     validateOptionalEventString(event.sessionId, 'Client', 'sessionId');
     validateOptionalEventMetadata(event, 'Client');
     validateClientRef(event as ClientEvent);
@@ -724,13 +820,16 @@ function validateClientEvent(
 }
 
 function validateGroupEvent(
-    record: GroupStateMutationOutboxRecord,
+    record: Pick<
+        GroupStateMutationOutboxRecord,
+        'aggregateRef' | 'acceptedCausalRevision'
+    >,
     event: unknown,
 ): void {
     if (!isRecord(event)) {
         throw new TypeError('Group outbox event is required');
     }
-    if (typeof event.eventId !== 'string' || !event.eventId) {
+    if (!isNonEmptyString(event.eventId)) {
         throw new TypeError('Group outbox event eventId is required');
     }
     if (!isKnownGroupEventType(event.eventType)) {
@@ -739,6 +838,10 @@ function validateGroupEvent(
         );
     }
     validateEventTimestamp(event.occurredAtEpochMs, 'Group');
+    assertSafeNonNegativeInteger(
+        event.snapshotVersion,
+        'group event snapshot version',
+    );
     validateEventActor(event.actor, 'Group');
     validateOptionalEventMetadata(event, 'Group');
     validateGroupRef(event as GroupEvent);
@@ -795,7 +898,7 @@ function validateEventActor(
     }
     for (const field of fields) {
         const value = actor[field];
-        if (value !== undefined && (typeof value !== 'string' || !value)) {
+        if (value !== undefined && !isNonEmptyString(value)) {
             throw new TypeError(
                 `Invalid ${kind.toLowerCase()} outbox event actor ${field}`,
             );
@@ -822,7 +925,7 @@ function validateOptionalEventString(
     kind: 'Client' | 'Group',
     field: string,
 ): void {
-    if (value !== undefined && typeof value !== 'string') {
+    if (value !== undefined && !isNonEmptyString(value)) {
         throw new TypeError(
             `Invalid ${kind.toLowerCase()} outbox event ${field}`,
         );
@@ -834,7 +937,7 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 }
 
 function validateClientCausalRevision(
-    revision: ClientStateMutationCausalRevision,
+    revision: Readonly<Record<string, unknown>>,
 ): void {
     assertSafeNonNegativeInteger(revision.stateRevision, 'client state revision');
     assertSafeNonNegativeInteger(revision.snapshotVersion, 'client snapshot version');
@@ -842,7 +945,7 @@ function validateClientCausalRevision(
 }
 
 function validateGroupCausalRevision(
-    revision: GroupStateMutationCausalRevision,
+    revision: Readonly<Record<string, unknown>>,
 ): void {
     assertSafeNonNegativeInteger(revision.stateRevision, 'group state revision');
     assertSafeNonNegativeInteger(revision.snapshotVersion, 'group snapshot version');
@@ -851,28 +954,51 @@ function validateGroupCausalRevision(
     assertSafeNonNegativeInteger(revision.presenceVersion, 'group presence version');
 }
 
-function validateClientRef(ref: ClientPrincipalRef): void {
+function validateClientRef(ref: unknown): asserts ref is ClientPrincipalRef {
     if (
-        typeof ref.applicationId !== 'string' || !ref.applicationId ||
-        (ref.workspaceId !== undefined && typeof ref.workspaceId !== 'string') ||
-        typeof ref.principalId !== 'string' || !ref.principalId
+        !isRecord(ref) ||
+        !isNonEmptyString(ref.applicationId) ||
+        (ref.workspaceId !== undefined && !isNonEmptyString(ref.workspaceId)) ||
+        !isNonEmptyString(ref.principalId)
     ) {
         throw new TypeError('Invalid client aggregate ref');
     }
 }
 
-function validateGroupRef(ref: GroupRef): void {
+function validateGroupRef(ref: unknown): asserts ref is GroupRef {
     if (
-        typeof ref.applicationId !== 'string' || !ref.applicationId ||
-        (ref.workspaceId !== undefined && typeof ref.workspaceId !== 'string') ||
-        typeof ref.groupId !== 'string' || !ref.groupId
+        !isRecord(ref) ||
+        !isNonEmptyString(ref.applicationId) ||
+        (ref.workspaceId !== undefined && !isNonEmptyString(ref.workspaceId)) ||
+        !isNonEmptyString(ref.groupId)
     ) {
         throw new TypeError('Invalid group aggregate ref');
     }
 }
 
-function assertSafeNonNegativeInteger(value: number, label: string): void {
-    if (!Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
+function isNonEmptyString(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+function assertNonEmptyString(
+    value: unknown,
+    label: string,
+): asserts value is string {
+    if (!isNonEmptyString(value)) {
+        throw new TypeError(`Invalid state mutation outbox ${label}`);
+    }
+}
+
+function assertSafeNonNegativeInteger(
+    value: unknown,
+    label: string,
+): asserts value is number {
+    if (
+        typeof value !== 'number' ||
+        !Number.isSafeInteger(value) ||
+        value < 0 ||
+        Object.is(value, -0)
+    ) {
         throw new TypeError(`Invalid state mutation outbox ${label}: ${value}`);
     }
 }
