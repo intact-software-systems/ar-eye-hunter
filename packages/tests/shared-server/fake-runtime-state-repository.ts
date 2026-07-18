@@ -4,6 +4,10 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import {
+    assertRuntimeStateExpectedRevision,
+    assertRuntimeStateUpsertExpectedRevision,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 export class FakeRuntimeStateRepository
     implements RuntimeStateOptimisticTransactionalRepositoryLike {
@@ -139,6 +143,7 @@ export class FakeRuntimeStateRepository
         expireAtTimestamp: number,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        assertRuntimeStateUpsertExpectedRevision(expectedRevision);
         await this.beforeConditionalWrite?.('upsertIfRevision', namespace, key);
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
@@ -162,6 +167,7 @@ export class FakeRuntimeStateRepository
         key: string,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalDeleteResult> {
+        assertRuntimeStateExpectedRevision(expectedRevision);
         await this.beforeConditionalWrite?.('deleteIfRevision', namespace, key);
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);

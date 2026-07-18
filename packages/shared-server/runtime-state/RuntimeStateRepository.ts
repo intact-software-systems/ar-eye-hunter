@@ -102,8 +102,43 @@ export function isRuntimeStateConditionalRepositoryLike(
         typeof candidate.deleteIfRevision === 'function';
 }
 
+export function assertRuntimeStateExpectedRevision(
+    expectedRevision: number,
+): void {
+    assertRuntimeStateExpectedRevisionWithinLimit(
+        expectedRevision,
+        Number.MAX_SAFE_INTEGER,
+        'runtime state expected revision',
+    );
+}
+
+export function assertRuntimeStateUpsertExpectedRevision(
+    expectedRevision: number,
+): void {
+    assertRuntimeStateExpectedRevisionWithinLimit(
+        expectedRevision,
+        Number.MAX_SAFE_INTEGER - 1,
+        'runtime state upsert expected revision',
+    );
+}
+
 export function isRuntimeStatePrefixPageRepositoryLike(
     repository: RuntimeStateRepositoryLike,
 ): repository is RuntimeStateRepositoryLike & RuntimeStatePrefixPageRepositoryLike {
     return 'findEntriesByPrefixPage' in repository;
+}
+
+function assertRuntimeStateExpectedRevisionWithinLimit(
+    expectedRevision: number,
+    maximum: number,
+    label: string,
+): void {
+    if (
+        !Number.isSafeInteger(expectedRevision) ||
+        Object.is(expectedRevision, -0) ||
+        expectedRevision < 0 ||
+        expectedRevision > maximum
+    ) {
+        throw new Error(`Invalid ${label}: ${expectedRevision}`);
+    }
 }

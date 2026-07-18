@@ -4,6 +4,10 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import {
+    assertRuntimeStateExpectedRevision,
+    assertRuntimeStateUpsertExpectedRevision,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
 
@@ -257,6 +261,7 @@ export class PSqlRuntimeStateRepository
         expireAtTimestamp: number,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalWriteResult> {
+        assertRuntimeStateUpsertExpectedRevision(expectedRevision);
         const rows = await this.sql<Array<{ revision: number | string }>>`
             update runtime_state_store
             set store_value = ${value},
@@ -282,6 +287,7 @@ export class PSqlRuntimeStateRepository
         key: string,
         expectedRevision: number,
     ): Promise<RuntimeStateConditionalDeleteResult> {
+        assertRuntimeStateExpectedRevision(expectedRevision);
         const rows = await this.sql<Array<{ revision: number | string }>>`
             delete from runtime_state_store
             where store_namespace = ${namespace}
