@@ -4,6 +4,7 @@ import type { ClientSessionRef } from "@shared/api/client-types.ts";
 import type { GroupRef } from "@shared/api/group-types.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
 import type { PSqlSql } from "@shared-server/postgres/PostgresSqlClient.ts";
+import type { RuntimeStateEntry } from "@shared-server/runtime-state/RuntimeStateRepository.ts";
 import {
   createClientStateEventRepository,
   createClientStateRepository,
@@ -15,7 +16,6 @@ import { createClientStateService } from "@shared-server/rallar-system/services/
 import { createGroupStateService } from "@shared-server/rallar-system/services/group-state-service.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 
-const CLIENT_SESSION_LOCK_NAMESPACE = "client-state:session-locks";
 const GROUP_PRESENCE_SESSION_LOCK_NAMESPACE =
   "group-state:presence-session-locks";
 const POSTGRES_INTEGRATION_ENABLED =
@@ -60,15 +60,12 @@ const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
 
 describe("Postgres presence expiry concurrency", () => {
   postgresIt(
-    "serializes two client expiry workers and writes one durable expiry event",
+    "rebases client expiry CAS workers and preserves a concurrent reconnect",
     async () => {
       const databaseUrl = requireDatabaseUrl();
-      const tmpDirPath = await Deno.makeTempDir({
-        prefix: "rallar-client-expiry-concurrency-",
-      });
       const setupSql = await createSql(databaseUrl);
-      const lockSql = await createSql(databaseUrl);
-      const observerSql = await createSql(databaseUrl);
+      const leftSql = await createSql(databaseUrl);
+      const rightSql = await createSql(databaseUrl);
       const scope = uniqueScope("client-expiry-concurrency");
       const atEpochMs = Date.now();
       const sessionRef: ClientSessionRef = {
@@ -77,8 +74,6 @@ describe("Postgres presence expiry concurrency", () => {
         clientInstanceId: "browser-1",
         sessionId: "session-1",
       };
-      let heldLock: HeldAdvisoryLock | undefined;
-      const workerOutputs: Promise<ExpiryWorkerOutput>[] = [];
 
       try {
         await seedExpiredClientSession(
@@ -87,47 +82,14 @@ describe("Postgres presence expiry concurrency", () => {
           sessionRef,
           atEpochMs,
         );
-        heldLock = await holdAdvisoryLock(
-          lockSql,
-          CLIENT_SESSION_LOCK_NAMESPACE,
-          toClientSessionLockKey(sessionRef),
-        );
-
-        const leftPidFilePath = `${tmpDirPath}/left-client-pid.json`;
-        const rightPidFilePath = `${tmpDirPath}/right-client-pid.json`;
-        workerOutputs.push(
-          spawnExpiryWorker(databaseUrl, {
-            mode: "client",
-            scope,
-            atEpochMs,
-            pidFilePath: leftPidFilePath,
-          }),
-          spawnExpiryWorker(databaseUrl, {
-            mode: "client",
-            scope,
-            atEpochMs,
-            pidFilePath: rightPidFilePath,
-          }),
-        );
-
-        const [leftBackendPid, rightBackendPid] = await Promise.all([
-          waitForWorkerBackendPid(leftPidFilePath),
-          waitForWorkerBackendPid(rightPidFilePath),
+        const expiryBarrier = new PrincipalReadBarrier(2);
+        const [leftResults, rightResults] = await Promise.all([
+          createPostgresClientService(leftSql, expiryBarrier, atEpochMs)
+            .expireExpiredSessions(atEpochMs),
+          createPostgresClientService(rightSql, expiryBarrier, atEpochMs)
+            .expireExpiredSessions(atEpochMs),
         ]);
-        await waitForAdvisoryWaiters(
-          observerSql,
-          leftBackendPid,
-          rightBackendPid,
-          2,
-        );
-
-        heldLock.release();
-        await heldLock.done;
-        heldLock = undefined;
-
-        const [leftOutput, rightOutput] = await Promise.all(workerOutputs);
-        expect(leftOutput.mode).toBe("client");
-        expect(rightOutput.mode).toBe("client");
+        expect(leftResults.length + rightResults.length).toBe(1);
 
         const repository = createClientStateRepository(setupSql);
         const session = await repository.findSession(sessionRef);
@@ -138,24 +100,57 @@ describe("Postgres presence expiry concurrency", () => {
 
         expect(session).toMatchObject({
           status: "expired",
-          disconnectedAtEpochMs: atEpochMs,
+          disconnectedAtEpochMs: atEpochMs - 1_000,
           disconnectReason: "expired",
         });
         expect(
           events.filter((event) => event.eventType === "session-expired"),
         ).toHaveLength(1);
+
+        const reconnectRef: ClientSessionRef = {
+          ...scope,
+          principalId: "bob",
+          clientInstanceId: "browser-2",
+          sessionId: "session-reconnect",
+        };
+        await seedExpiredClientSession(
+          setupSql,
+          scope,
+          reconnectRef,
+          atEpochMs,
+        );
+        const reconnectBarrier = new PrincipalReadBarrier(2);
+        await Promise.all([
+          createPostgresClientService(leftSql, reconnectBarrier, atEpochMs)
+            .expireExpiredSessions(atEpochMs),
+          createPostgresClientService(rightSql, reconnectBarrier, atEpochMs + 1)
+            .connectSession(
+              scope,
+              reconnectRef.principalId,
+              reconnectRef.clientInstanceId,
+              reconnectRef.sessionId,
+              {
+                generationId: "generation-2",
+                connectionId: "connection-2",
+                connectedAtEpochMs: atEpochMs + 1,
+                lastHeartbeatAtEpochMs: atEpochMs + 1,
+                expiresAtEpochMs: atEpochMs + 60_000,
+                requestId: "postgres-reconnect-generation-2",
+              },
+            ),
+        ]);
+        expect(await repository.findSession(reconnectRef)).toMatchObject({
+          status: "active",
+          generationId: "generation-2",
+          generationVersion: 2,
+          connectionId: "connection-2",
+        });
       } finally {
-        if (heldLock) {
-          heldLock.release();
-          await heldLock.done.catch(() => undefined);
-        }
-        await Promise.allSettled(workerOutputs);
         await cleanupRuntimeState(setupSql, scope.applicationId);
         await Promise.all([
           setupSql.end(),
-          lockSql.end(),
-          observerSql.end(),
-          Deno.remove(tmpDirPath, { recursive: true }).catch(() => undefined),
+          leftSql.end(),
+          rightSql.end(),
         ]);
       }
     },
@@ -287,6 +282,7 @@ async function seedExpiredClientSession(
     sessionRef.clientInstanceId,
     sessionRef.sessionId,
     {
+      generationId: "generation-1",
       presenceState: "online",
       transport: "ws",
       authenticatedAtEpochMs: atEpochMs - 20_000,
@@ -471,7 +467,7 @@ async function cleanupRuntimeState(
     `;
 }
 
-async function createSql(databaseUrl: string): Promise<PostgresSql> {
+function createSql(databaseUrl: string): PostgresSql {
   const postgres = createRequire(import.meta.url)("postgres") as PostgresFactory;
 
   return postgres(databaseUrl, { max: 1, idle_timeout: 1 });
@@ -481,14 +477,62 @@ function toRuntimeRepository(sql: PostgresSql): PSqlRuntimeStateRepository {
   return new PSqlRuntimeStateRepository(sql as unknown as PSqlSql);
 }
 
-function toClientSessionLockKey(ref: ClientSessionRef): string {
-  return [
-    ref.applicationId,
-    ref.workspaceId ?? "_",
-    ref.principalId,
-    ref.clientInstanceId,
-    ref.sessionId,
-  ].join(":");
+function createPostgresClientService(
+  sql: PostgresSql,
+  barrier: PrincipalReadBarrier,
+  atEpochMs: number,
+) {
+  const runtimeRepository = new BarrierPSqlRuntimeStateRepository(
+    sql as unknown as PSqlSql,
+    barrier,
+  );
+  return createClientStateService({
+    runtimeRepository,
+    createClientStateEventStore: createClientStateEventRepository,
+    syncPublisher: createPublisher(),
+    now: () => atEpochMs,
+    sleep: () => Promise.resolve(),
+    serviceId: "postgres-client-cas-worker",
+  });
+}
+
+class BarrierPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {
+  constructor(
+    sql: PSqlSql,
+    private readonly barrier: PrincipalReadBarrier,
+  ) {
+    super(sql);
+  }
+
+  override async findEntry(
+    namespace: string,
+    key: string,
+  ): Promise<RuntimeStateEntry | undefined> {
+    const entry = await super.findEntry(namespace, key);
+    if (namespace === "client-state:principals") {
+      await this.barrier.arrive();
+    }
+    return entry;
+  }
+}
+
+class PrincipalReadBarrier {
+  private arrived = 0;
+  private readonly ready: Promise<void>;
+  private release!: () => void;
+
+  constructor(private readonly participants: number) {
+    this.ready = new Promise<void>((resolve) => {
+      this.release = resolve;
+    });
+  }
+
+  async arrive(): Promise<void> {
+    if (this.arrived >= this.participants) return;
+    this.arrived += 1;
+    if (this.arrived === this.participants) this.release();
+    await this.ready;
+  }
 }
 
 function toGroupPresenceSessionLockKey(
@@ -511,10 +555,10 @@ function uniqueScope(prefix: string): StateScope {
 
 function createPublisher(): StateSyncPublisher {
   return {
-    publishClientSnapshot: async () => undefined,
-    publishClientEvent: async () => undefined,
-    publishGroupSnapshot: async () => undefined,
-    publishGroupEvent: async () => undefined,
+    publishClientSnapshot: () => Promise.resolve(),
+    publishClientEvent: () => Promise.resolve(),
+    publishGroupSnapshot: () => Promise.resolve(),
+    publishGroupEvent: () => Promise.resolve(),
   };
 }
 

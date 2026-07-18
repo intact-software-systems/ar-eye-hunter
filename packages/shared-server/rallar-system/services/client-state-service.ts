@@ -1,47 +1,72 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
-    AuditStamp,
     ClientEvent,
-    ClientInstance,
-    ClientInstanceRef,
     ClientPlatform,
     ClientPresenceSnapshot,
-    ClientPrincipal,
     ClientPrincipalRef,
     ClientScope,
     ClientSession,
-    ClientSessionRef,
     ClientSnapshot,
 } from '@shared/api/client-types.ts';
 import type {
     ConnectClientSessionRequest,
     DisconnectClientSessionRequest,
     HeartbeatClientSessionRequest,
-    MutationActorInput,
     StateScope,
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
-import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, } from '@shared/api/state-types.ts';
-import { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
 import {
-    type ClientStateEventStore,
-} from '../repositories/StateEventStore.ts';
-import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
-import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
-import type { StateSyncPublisher } from '../state-sync-publisher.ts';
-import { arrayEquals, jsonEquals, } from '@shared/repository/state-utils.ts';
+    DEFAULT_STATE_APPLICATION_ID,
+    DEFAULT_STATE_WORKSPACE_ID,
+} from '@shared/api/state-types.ts';
+import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import type {
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+} from '../../runtime-state/RuntimeStateRepository.ts';
 import {
+    DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
+    requireConditionalWrite,
+    RuntimeStateRetryExhaustedError,
+    RuntimeStateWriteConflictError,
+    waitForRuntimeStateWriteRetry,
+} from '../../runtime-state/optimistic-runtime-state-write.ts';
+import { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
+import {
+    type ClientSessionExpiryCandidate,
+    toClientSessionExpiryCandidate,
+} from '../repositories/session-expiry.ts';
+import type { ClientStateEventStore } from '../repositories/StateEventStore.ts';
+import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
+import {
+    createStateMutationOutboxRecord,
+    hashStateMutationCommand,
+    StateMutationOutboxRepository,
+} from '../repositories/StateMutationOutboxRepository.ts';
+import type { StateSyncPublisher } from '../state-sync-publisher.ts';
+import type { StateEventListQuery } from '../state-event-listing.ts';
+import {
+    ClientMutationIdempotencyConflictError,
+    ClientMutationRejectedError,
+    computeClientMutation,
+    type ClientMutationCommand,
+    type ClientMutationComputed,
+    type ClientMutationFacts,
+    type ClientMutationRead,
+    type ClientMutationReceipt,
+    validateClientMutation,
+} from './client-state-mutations.ts';
+import {
+    nowMs,
+    recordRallarTiming,
     timeRallarAsync,
     type RallarTimingSink,
 } from './timing.ts';
-import type { StateEventListQuery } from '../state-event-listing.ts';
 
-const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-const CLIENT_SESSION_LOCK_NAMESPACE = 'client-state:session-locks';
+export { ClientMutationIdempotencyConflictError, ClientMutationRejectedError };
+export type { ClientMutationReceipt };
 
 export type RegisterAuthorisedWsClientInput = Readonly<{
     applicationId?: string;
@@ -120,803 +145,716 @@ export type ClientStateService = Readonly<{
         sessionId: string,
         reason?: string,
     ): Promise<ClientStateWritten>;
-    expireExpiredSessions(
-        atEpochMs?: number,
-    ): Promise<readonly ClientStateWritten[]>;
+    expireExpiredSessions(atEpochMs?: number): Promise<readonly ClientStateWritten[]>;
 }>;
 
 export type ClientStateServiceDependencies = Readonly<{
-    runtimeRepository: RuntimeStateTransactionalRepositoryLike;
+    runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
     createClientStateEventStore?: (
-        runtimeRepository: RuntimeStateTransactionalRepositoryLike,
+        runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
     ) => ClientStateEventStore;
+    /** Retained as a composition compatibility dependency; publication is outbox-owned. */
     syncPublisher: StateSyncPublisher;
     authSessionRepository?: Pick<AuthSessionRepository, 'findBySessionId'>;
     now?: () => number;
+    randomId?: () => string;
+    sleep?: (delayMs: number) => Promise<void>;
     serviceId: string;
     timing?: RallarTimingSink;
+}>;
+
+type ClientMutationExecution = Readonly<{
+    receipt: ClientMutationReceipt;
+    source: 'write' | 'replay' | 'no-op';
 }>;
 
 export function createClientStateService(
     dependencies: ClientStateServiceDependencies,
 ): ClientStateService {
     const runtimeRepository = dependencies.runtimeRepository;
-    const repositoryFor = (
-        repository: RuntimeStateTransactionalRepositoryLike,
-    ): ClientStateRepository =>
-        new ClientStateRepository(repository, {
-            events: dependencies.createClientStateEventStore?.(repository),
-        });
     const now = dependencies.now ?? (() => Date.now());
-    const serviceId = dependencies.serviceId;
+    const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
+    const repositoryFor = (
+        runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
+    ) => new ClientStateRepository(runtime, {
+        events: dependencies.createClientStateEventStore?.(runtime),
+    });
+
+    const executeReceipt = async (
+        command: ClientMutationCommand,
+        mutationAtEpochMs: number = now(),
+    ): Promise<ClientMutationExecution> => {
+        const facts: ClientMutationFacts = {
+            nowEpochMs: mutationAtEpochMs,
+            serviceId: dependencies.serviceId,
+            eventId: randomId(),
+            commandHash: await hashStateMutationCommand(command),
+        };
+        let lastConflict: RuntimeStateWriteConflictError | undefined;
+
+        for (
+            let attempt = 0;
+            attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS;
+            attempt++
+        ) {
+            const backoffMs = await waitForRuntimeStateWriteRetry(
+                attempt as 0 | 1 | 2,
+                { sleep: dependencies.sleep },
+            );
+            const read = await timeMutationPhase(
+                dependencies,
+                command,
+                'read',
+                { attempt, backoffMs },
+                async () => await readClientMutation(repositoryFor(runtimeRepository), command),
+            );
+            const computed = await timeMutationPhase(
+                dependencies,
+                command,
+                'compute',
+                { attempt, backoffMs },
+                () => computeClientMutation({ command, read, facts }),
+            );
+            await timeMutationPhase(
+                dependencies,
+                command,
+                'validate',
+                { attempt, backoffMs },
+                () => validateClientMutation({ command, read, computed, facts }),
+            );
+            if (computed.outcome === 'idempotency-conflict') {
+                throw new ClientMutationIdempotencyConflictError(
+                    command.commandId,
+                    computed.existingCommandHash,
+                    computed.receivedCommandHash,
+                );
+            }
+            if (computed.outcome === 'no-op' && command.requestId !== null) {
+                const inserted = await repositoryFor(runtimeRepository)
+                    .insertIdempotentClientStateWritten(
+                        command.aggregateRef,
+                        command.requestId,
+                        {
+                            requestId: command.requestId,
+                            commandHash: facts.commandHash,
+                            receipt: computed.receipt,
+                        },
+                    );
+                if (inserted.status === 'conflict') {
+                    lastConflict = new RuntimeStateWriteConflictError();
+                    recordMutationConflict(
+                        dependencies,
+                        command,
+                        attempt,
+                        backoffMs,
+                    );
+                    continue;
+                }
+            }
+            if (computed.outcome !== 'write') {
+                return { receipt: computed.receipt, source: computed.outcome };
+            }
+
+            try {
+                const receipt = await timeMutationPhase(
+                    dependencies,
+                    command,
+                    'write',
+                    { attempt, backoffMs },
+                    async () => await timeMutationPhase(
+                        dependencies,
+                        command,
+                        'transaction',
+                        { attempt, backoffMs },
+                        async () => await writeClientMutation(
+                            runtimeRepository,
+                            repositoryFor,
+                            computed,
+                        ),
+                    ),
+                );
+                return { receipt, source: 'write' };
+            } catch (error) {
+                if (!(error instanceof RuntimeStateWriteConflictError)) throw error;
+                lastConflict = error;
+                recordMutationConflict(dependencies, command, attempt, backoffMs);
+            }
+        }
+        throw new RuntimeStateRetryExhaustedError(
+            lastConflict ?? new RuntimeStateWriteConflictError(),
+        );
+    };
+
+    const executeCompatible = async (
+        command: ClientMutationCommand,
+    ): Promise<ClientStateWritten> => {
+        const { receipt } = await executeReceipt(command);
+        const snapshot = await repositoryFor(runtimeRepository).readSnapshot(
+            command.aggregateRef,
+        );
+        if (!snapshot) {
+            throw new ClientMutationRejectedError(
+                `Client snapshot not found: ${command.aggregateRef.principalId}`,
+            );
+        }
+        return {
+            status: 'ok',
+            result: Either.ofRight({
+                snapshot,
+                ...(receipt.event.kind === 'client'
+                    ? { event: receipt.event.event }
+                    : {}),
+            }),
+        };
+    };
 
     const service: ClientStateService = {
-        listSnapshots: async (scope) => {
-            return await repositoryFor(runtimeRepository).listSnapshots(scope);
-        },
-        readSnapshot: async (ref) => {
-            return await repositoryFor(runtimeRepository).readSnapshot(
-                ref,
-            );
-        },
-        readPresenceSnapshot: async (ref) => {
-            return await repositoryFor(runtimeRepository).readPresenceSnapshot(ref);
-        },
-        listEvents: async (ref) => {
-            return await repositoryFor(runtimeRepository).listEvents(ref);
-        },
-        listRecentEvents: async (ref, query) => {
-            return await repositoryFor(runtimeRepository).listRecentEvents(
-                ref,
-                query,
-            );
-        },
-        listEventPage: async (ref, query) => {
-            return await repositoryFor(runtimeRepository).listEventPage(
-                ref,
-                query,
-            );
-        },
-        upsertPrincipal: async (scope, principalId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const principalRef = {
-                    ...scope,
-                    principalId,
-                };
-                const idempotentWritten = await findIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const existing = await repository.findPrincipal(principalRef);
-                const principal = toPrincipal(
-                    scope,
-                    principalId,
-                    existing,
-                    request,
-                    now(),
-                    serviceId,
-                );
-
-                if (existing && isSameClientPrincipalMutation(existing, principal)) {
-                    return await addIdempotentClientMutationWritten(
-                        repository,
-                        principalRef,
-                        request.requestId,
-                        {
-                            snapshot: await requireClientSnapshot(repository, existing),
-                            event: undefined,
-                        },
-                    );
-                }
-
-                await repository.putPrincipal(principal);
-
-                const event = newClientEvent(
-                    existing ? 'principal-updated' : 'principal-created',
-                    principal,
-                    request,
-                    now(),
-                    serviceId,
-                );
-
-                await repository.appendEvent(event);
-
-                return await addIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    request.requestId,
-                    {
-                        snapshot: await requireClientSnapshot(repository, principal),
-                        event,
-                    },
-                );
-            });
-        },
-        upsertInstance: async (scope, principalId, clientInstanceId, request) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const principalRef = {
-                    ...scope,
-                    principalId,
-                };
-                const idempotentWritten = await findIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const existingPrincipal = await repository.findPrincipal({
-                    ...scope,
-                    principalId,
-                });
-                const principal = await ensurePrincipal(
-                    repository,
-                    scope,
-                    principalId,
-                    {
-                        username: principalId,
-                        displayName: principalId,
-                        actorPrincipalId: request.actorPrincipalId ?? principalId,
-                        actorSessionId: request.actorSessionId,
-                        reason: request.reason,
-                        traceId: request.traceId,
-                        requestId: request.requestId,
-                    },
-                    now(),
-                    serviceId,
-                );
-                const existing = await repository.findInstance({
-                    ...scope,
-                    principalId,
-                    clientInstanceId,
-                });
-                const instance = toInstance(
-                    principal,
-                    clientInstanceId,
-                    existing,
-                    request,
-                    now(),
-                    serviceId,
-                );
-
-                if (existing && isSameClientInstanceMutation(existing, instance)) {
-                    return await addIdempotentClientMutationWritten(
-                        repository,
-                        principalRef,
-                        request.requestId,
-                        {
-                            snapshot: await requireClientSnapshot(repository, principal),
-                            event: undefined,
-                        },
-                    );
-                }
-
-                await repository.putInstance(instance);
-                const snapshotPrincipal = existingPrincipal
-                    ? bumpPrincipalProfile(principal, request, now(), serviceId)
-                    : principal;
-                if (snapshotPrincipal !== principal) {
-                    await repository.putPrincipal(snapshotPrincipal);
-                }
-
-                const event = newClientEvent(
-                    request.status === 'revoked'
-                        ? 'instance-revoked'
-                        : existing
-                            ? 'instance-updated'
-                            : 'instance-registered',
-                    snapshotPrincipal,
-                    request,
-                    now(),
-                    serviceId,
-                    instance.clientInstanceId,
-                );
-
-                await repository.appendEvent(event);
-
-                return await addIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    request.requestId,
-                    {
-                        snapshot: await requireClientSnapshot(
-                            repository,
-                            snapshotPrincipal,
-                        ),
-                        event,
-                    },
-                );
-            });
-        },
+        listSnapshots: async (scope) =>
+            await repositoryFor(runtimeRepository).listSnapshots(scope),
+        readSnapshot: async (ref) =>
+            await repositoryFor(runtimeRepository).readSnapshot(ref),
+        readPresenceSnapshot: async (ref) =>
+            await repositoryFor(runtimeRepository).readPresenceSnapshot(ref),
+        listEvents: async (ref) =>
+            await repositoryFor(runtimeRepository).listEvents(ref),
+        listRecentEvents: async (ref, query) =>
+            await repositoryFor(runtimeRepository).listRecentEvents(ref, query),
+        listEventPage: async (ref, query) =>
+            await repositoryFor(runtimeRepository).listEventPage(ref, query),
+        upsertPrincipal: async (scope, principalId, request) =>
+            await executeCompatible(toUpsertPrincipalCommand(
+                scope,
+                principalId,
+                request,
+                randomId,
+            )),
+        upsertInstance: async (scope, principalId, clientInstanceId, request) =>
+            await executeCompatible(toUpsertInstanceCommand(
+                scope,
+                principalId,
+                clientInstanceId,
+                request,
+                randomId,
+            )),
         connectSession: async (
             scope,
             principalId,
             clientInstanceId,
             sessionId,
             request,
-        ) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const principalRef = {
-                    ...scope,
-                    principalId,
-                };
-                await lockClientSession(transactionRepository, {
-                    ...scope,
-                    principalId,
-                    clientInstanceId,
-                    sessionId,
-                });
-                const idempotentWritten = await findIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const principal = await ensurePrincipal(
-                    repository,
-                    scope,
-                    principalId,
-                    {
-                        username: principalId,
-                        displayName: principalId,
-                        actorPrincipalId: request.actorPrincipalId ?? principalId,
-                        actorSessionId: request.actorSessionId ?? sessionId,
-                        reason: request.reason,
-                        traceId: request.traceId,
-                        requestId: request.requestId,
-                    },
-                    now(),
-                    serviceId,
-                );
-
-                await ensureInstance(
-                    repository,
-                    principal,
-                    clientInstanceId,
-                    {
-                        platform: 'unknown',
-                        userAgent: undefined,
-                        capabilities: request.transport ? [request.transport] : [],
-                        actorPrincipalId: request.actorPrincipalId ?? principalId,
-                        actorSessionId: request.actorSessionId ?? sessionId,
-                        reason: request.reason,
-                        traceId: request.traceId,
-                        requestId: request.requestId,
-                    },
-                    now(),
-                    serviceId,
-                );
-
-                const existing = await repository.findSession({
-                    ...scope,
-                    principalId,
-                    clientInstanceId,
-                    sessionId,
-                });
-                const session = toActiveSession(
-                    principal,
-                    clientInstanceId,
-                    sessionId,
-                    existing,
-                    request,
-                    now(),
-                );
-
-                await repository.putSession(session);
-
-                let event: ClientEvent | undefined;
-                let snapshotPrincipal = principal;
-                let principalWritten = false;
-                if (existing && isSameActiveClientSession(existing, session)) {
-                    const nextPrincipal = rememberPrincipalLastSeen(
-                        principal,
-                        session.lastHeartbeatAtEpochMs,
-                    );
-                    if (nextPrincipal !== principal) {
-                        await repository.putPrincipal(nextPrincipal);
-                        principalWritten = true;
-                        snapshotPrincipal = nextPrincipal;
-                    }
-                } else {
-                    snapshotPrincipal = bumpPrincipalPresence(
-                        principal,
-                        session.lastHeartbeatAtEpochMs,
-                        request,
-                        now(),
-                        serviceId,
-                    );
-                    await repository.putPrincipal(snapshotPrincipal);
-                    principalWritten = true;
-
-                    event = newClientEvent(
-                        'session-connected',
-                        snapshotPrincipal,
-                        request,
-                        now(),
-                        serviceId,
-                        clientInstanceId,
-                        sessionId,
-                    );
-
-                    await repository.appendEvent(event);
-                }
-                if (!principalWritten) {
-                    await repository.putPrincipal(snapshotPrincipal);
-                }
-
-                return await addIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    request.requestId,
-                    {
-                        snapshot: await requireClientSnapshot(
-                            repository,
-                            snapshotPrincipal,
-                        ),
-                        event,
-                    },
-                );
-            });
-        },
+        ) => await executeCompatible(toConnectCommand(
+            'connectSession',
+            scope,
+            principalId,
+            clientInstanceId,
+            sessionId,
+            request,
+            randomId,
+            {},
+        )),
         heartbeatSession: async (
             scope,
             principalId,
             clientInstanceId,
             sessionId,
             request,
-        ) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const principalRef = {
-                    ...scope,
-                    principalId,
-                };
-                await lockClientSession(transactionRepository, {
-                    ...scope,
-                    principalId,
-                    clientInstanceId,
-                    sessionId,
-                });
-                const idempotentWritten = await findIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const principal = await repository.findPrincipal(principalRef);
-                if (!principal) {
-                    throw new NonRetryableException(`Client principal not found: ${principalId}`);
-                }
-
-                const existing = await repository.findSession({
-                    ...scope,
-                    principalId,
-                    clientInstanceId,
-                    sessionId,
-                });
-                if (!existing) {
-                    throw new NonRetryableException(`Client session not found: ${sessionId}`);
-                }
-
-                const heartbeatTimestamp = request.lastHeartbeatAtEpochMs ?? now();
-                const presenceState = request.presenceState ?? existing.presenceState;
-                const wasSemanticallyActive =
-                    existing.status === 'active' &&
-                    existing.presenceState === presenceState &&
-                    existing.disconnectedAtEpochMs === undefined &&
-                    existing.disconnectReason === undefined;
-                const session: ClientSession = {
-                    ...existing,
-                    status: 'active',
-                    presenceState,
-                    lastHeartbeatAtEpochMs: heartbeatTimestamp,
-                    expiresAtEpochMs:
-                        request.expiresAtEpochMs ??
-                        existing.expiresAtEpochMs ??
-                        heartbeatTimestamp + DEFAULT_SESSION_TTL_MS,
-                    disconnectedAtEpochMs: undefined,
-                    disconnectReason: undefined,
-                };
-
-                await repository.putSession(session);
-
-                let event: ClientEvent | undefined;
-                let snapshotPrincipal = principal;
-                let principalWritten = false;
-                if (wasSemanticallyActive) {
-                    const nextPrincipal = rememberPrincipalLastSeen(
-                        principal,
-                        heartbeatTimestamp,
-                    );
-                    if (nextPrincipal !== principal) {
-                        await repository.putPrincipal(nextPrincipal);
-                        principalWritten = true;
-                        snapshotPrincipal = nextPrincipal;
-                    }
-                } else {
-                    snapshotPrincipal = bumpPrincipalPresence(
-                        principal,
-                        heartbeatTimestamp,
-                        request,
-                        now(),
-                        serviceId,
-                    );
-                    await repository.putPrincipal(snapshotPrincipal);
-                    principalWritten = true;
-
-                    event = newClientEvent(
-                        'session-heartbeat',
-                        snapshotPrincipal,
-                        request,
-                        now(),
-                        serviceId,
-                        clientInstanceId,
-                        sessionId,
-                    );
-                    await repository.appendEvent(event);
-                }
-                if (!principalWritten) {
-                    await repository.putPrincipal(snapshotPrincipal);
-                }
-
-                return await addIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    request.requestId,
-                    {
-                        snapshot: await requireClientSnapshot(
-                            repository,
-                            snapshotPrincipal,
-                        ),
-                        event,
-                    },
-                );
-            });
-        },
+        ) => await executeCompatible(toHeartbeatCommand(
+            scope,
+            principalId,
+            clientInstanceId,
+            sessionId,
+            request,
+            randomId,
+        )),
         disconnectSession: async (
             scope,
             principalId,
             clientInstanceId,
             sessionId,
             request,
-        ) => {
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const principalRef = {
-                    ...scope,
-                    principalId,
-                };
-                await lockClientSession(transactionRepository, {
-                    ...scope,
-                    principalId,
-                    clientInstanceId,
-                    sessionId,
-                });
-                const idempotentWritten = await findIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    request.requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const principal = await repository.findPrincipal(principalRef);
-                if (!principal) {
-                    throw new NonRetryableException(`Client principal not found: ${principalId}`);
-                }
-
-                const existing = await repository.findSession({
-                    ...scope,
-                    principalId,
-                    clientInstanceId,
-                    sessionId,
-                });
-                if (!existing) {
-                    throw new NonRetryableException(`Client session not found: ${sessionId}`);
-                }
-                if (
-                    existing.status !== 'active' ||
-                    existing.disconnectedAtEpochMs !== undefined
-                ) {
-                    return await addIdempotentClientMutationWritten(
-                        repository,
-                        principalRef,
-                        request.requestId,
-                        {
-                            snapshot: await requireClientSnapshot(repository, principal),
-                            event: undefined,
-                        },
-                    );
-                }
-
-                const disconnectedAtEpochMs = request.disconnectedAtEpochMs ?? now();
-                const session: ClientSession = {
-                    ...existing,
-                    status: 'disconnected',
-                    lastHeartbeatAtEpochMs:
-                        request.lastHeartbeatAtEpochMs ?? existing.lastHeartbeatAtEpochMs,
-                    expiresAtEpochMs:
-                        request.expiresAtEpochMs ?? existing.expiresAtEpochMs,
-                    disconnectedAtEpochMs,
-                    disconnectReason:
-                        request.reason ?? existing.disconnectReason ?? 'closed',
-                };
-
-                await repository.putSession(session);
-
-                let event: ClientEvent | undefined;
-                let snapshotPrincipal = principal;
-                if (isSameDisconnectedClientSession(existing, session)) {
-                    const nextPrincipal = rememberPrincipalLastSeen(
-                        principal,
-                        session.lastHeartbeatAtEpochMs,
-                    );
-                    if (nextPrincipal !== principal) {
-                        await repository.putPrincipal(nextPrincipal);
-                        snapshotPrincipal = nextPrincipal;
-                    }
-                } else {
-                    snapshotPrincipal = bumpPrincipalPresence(
-                        principal,
-                        disconnectedAtEpochMs,
-                        request,
-                        now(),
-                        serviceId,
-                    );
-                    await repository.putPrincipal(snapshotPrincipal);
-
-                    event = newClientEvent(
-                        'session-disconnected',
-                        snapshotPrincipal,
-                        request,
-                        now(),
-                        serviceId,
-                        clientInstanceId,
-                        sessionId,
-                    );
-                    await repository.appendEvent(event);
-                }
-
-                return await addIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    request.requestId,
-                    {
-                        snapshot: await requireClientSnapshot(
-                            repository,
-                            snapshotPrincipal,
-                        ),
-                        event,
-                    },
-                );
-            });
-        },
+        ) => await executeCompatible(toDisconnectCommand(
+            'disconnectSession',
+            scope,
+            principalId,
+            clientInstanceId,
+            sessionId,
+            request,
+            randomId,
+        )),
         registerAuthorisedWsClientSession: async (authSession, input = {}) => {
-            const scope: StateScope = {
-                applicationId: input.applicationId ?? DEFAULT_STATE_APPLICATION_ID,
-                workspaceId: input.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-            };
+            const scope = toAuthorisedWsScope(input);
             const principalId = input.principalId ?? authSession.clientId;
             const clientInstanceId = input.clientInstanceId ?? authSession.clientId;
-            const expiresAtEpochMs =
-                input.expiresAtEpochMs ?? now() + DEFAULT_SESSION_TTL_MS;
-            const requestId = toAuthorisedWsClientRequestId(
-                'connect',
+            const connectionId = authSession.sessionId;
+            const requestId = `authorised-ws:connect:${authSession.sessionId}:${connectionId}`;
+            return await executeCompatible(toConnectCommand(
+                'connectAuthorisedWsSession',
+                scope,
+                principalId,
+                clientInstanceId,
                 authSession.sessionId,
-            );
-
-            return await runtimeRepository.begin(async (transactionRepository) => {
-                const repository = repositoryFor(transactionRepository);
-                const principalRef = {
-                    ...scope,
-                    principalId,
-                };
-                await lockClientSession(transactionRepository, {
-                    ...scope,
-                    principalId,
-                    clientInstanceId,
-                    sessionId: authSession.sessionId,
-                });
-                const idempotentWritten = await findIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
+                {
+                    generationId: connectionId,
+                    presenceState: 'online',
+                    transport: 'ws',
+                    connectionId,
+                    expiresAtEpochMs: input.expiresAtEpochMs ?? authSession.expiresAtEpochMs,
+                    actorPrincipalId: principalId,
+                    actorSessionId: authSession.sessionId,
                     requestId,
-                );
-                if (idempotentWritten) {
-                    return idempotentWritten;
-                }
-
-                const timestamp = now();
-                const principal = await ensurePrincipal(
-                    repository,
-                    scope,
-                    principalId,
-                    {
-                        username: authSession.username,
-                        displayName: input.displayName ?? authSession.username,
-                        status: 'active',
-                        roles: ['member'],
-                        metadata: {},
-                        actorPrincipalId: principalId,
-                        actorSessionId: authSession.sessionId,
-                        requestId,
-                    },
-                    timestamp,
-                    serviceId,
-                );
-
-                await ensureInstance(
-                    repository,
-                    principal,
-                    clientInstanceId,
-                    {
-                        status: 'active',
-                        platform: input.platform ?? 'web',
-                        userAgent: input.userAgent,
-                        capabilities: input.capabilities ?? ['ws'],
-                        actorPrincipalId: principalId,
-                        actorSessionId: authSession.sessionId,
-                        requestId,
-                    },
-                    timestamp,
-                    serviceId,
-                );
-
-                const existing = await repository.findSession({
-                    ...scope,
-                    principalId,
-                    clientInstanceId,
-                    sessionId: authSession.sessionId,
-                });
-                const session = toActiveSession(
-                    principal,
-                    clientInstanceId,
-                    authSession.sessionId,
-                    existing,
-                    {
-                        presenceState: 'online',
-                        transport: 'ws',
-                        connectionId: authSession.sessionId,
-                        authenticatedAtEpochMs: timestamp,
-                        connectedAtEpochMs: timestamp,
-                        lastHeartbeatAtEpochMs: timestamp,
-                        expiresAtEpochMs,
-                        actorPrincipalId: principalId,
-                        actorSessionId: authSession.sessionId,
-                        requestId,
-                    },
-                    timestamp,
-                );
-
-                await repository.putSession(session);
-                const snapshotPrincipal = bumpPrincipalPresence(
-                    principal,
-                    session.lastHeartbeatAtEpochMs,
-                    {
-                        actorPrincipalId: principalId,
-                        actorSessionId: authSession.sessionId,
-                        requestId,
-                    },
-                    timestamp,
-                    serviceId,
-                );
-                await repository.putPrincipal(snapshotPrincipal);
-
-                const event = newClientEvent(
-                    'session-connected',
-                    snapshotPrincipal,
-                    {
-                        actorPrincipalId: principalId,
-                        actorSessionId: authSession.sessionId,
-                        requestId,
-                    },
-                    timestamp,
-                    serviceId,
-                    clientInstanceId,
-                    authSession.sessionId,
-                );
-                await repository.appendEvent(event);
-
-                return await addIdempotentClientMutationWritten(
-                    repository,
-                    principalRef,
-                    requestId,
-                    {
-                        snapshot: await requireClientSnapshot(
-                            repository,
-                            snapshotPrincipal,
-                        ),
-                        event,
-                    },
-                );
-            });
+                },
+                randomId,
+                {
+                    platform: input.platform,
+                    userAgent: input.userAgent,
+                    capabilities: input.capabilities,
+                },
+            ));
         },
         disconnectAuthorisedWsClientSession: async (
             sessionId,
             reason = 'websocket-closed',
         ) => {
-            const authSessionRepository = dependencies.authSessionRepository;
             const session = await findClientSessionBySessionId(
-                runtimeRepository,
+                repositoryFor(runtimeRepository),
                 sessionId,
             );
-            const issuedSession =
-                await authSessionRepository?.findBySessionId(sessionId);
-            if (!session && !issuedSession) {
+            const issued = await dependencies.authSessionRepository?.findBySessionId(
+                sessionId,
+            );
+            if (!session && !issued) {
                 throw new NonRetryableException(`Client session not found: ${sessionId}`);
             }
-
-            const scope: StateScope = session
-                ? {
-                    applicationId: session.applicationId,
-                    workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-                }
-                : {
-                    applicationId: DEFAULT_STATE_APPLICATION_ID,
-                    workspaceId: DEFAULT_STATE_WORKSPACE_ID,
-                };
-            const principalId = session?.principalId ?? issuedSession!.clientId;
-            const clientInstanceId = session?.clientInstanceId ??
-                issuedSession!.clientId;
-
-            return await service.disconnectSession(
+            if (!session) {
+                throw new NonRetryableException(
+                    `Durable client connection generation not found: ${sessionId}`,
+                );
+            }
+            const scope: StateScope = {
+                applicationId: session.applicationId,
+                workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+            };
+            return await executeCompatible(toDisconnectCommand(
+                'disconnectAuthorisedWsSession',
                 scope,
-                principalId,
-                clientInstanceId,
+                session.principalId,
+                session.clientInstanceId,
                 sessionId,
                 {
+                    generationId: session.generationId,
                     reason,
-                    actorPrincipalId: principalId,
+                    actorPrincipalId: session.principalId,
                     actorSessionId: sessionId,
-                    requestId: toAuthorisedWsClientRequestId('disconnect', sessionId),
+                    requestId:
+                        `authorised-ws:disconnect:${sessionId}:${session.generationId}`,
                 },
-            );
+                randomId,
+            ));
         },
         expireExpiredSessions: async (atEpochMs = now()) => {
-            const repository = repositoryFor(runtimeRepository);
-            const sessions = (await repository.listAllSessions()).filter(
-                (session) =>
+            const sessions = (await repositoryFor(runtimeRepository).listAllSessions())
+                .filter((session) =>
                     session.status === 'active' &&
                     session.disconnectedAtEpochMs === undefined &&
-                    session.expiresAtEpochMs <= atEpochMs,
-            );
-            const writtenResults: ClientStateWritten[] = [];
-
-            for (const session of sessions) {
-                const written = await expireClientSession(
-                    runtimeRepository,
-                    repositoryFor,
-                    session,
-                    atEpochMs,
-                    serviceId,
+                    session.expiresAtEpochMs <= atEpochMs
+                )
+                .map(toClientSessionExpiryCandidate);
+            const results: ClientStateWritten[] = [];
+            for (const candidate of sessions) {
+                const command = toExpiryCommand(candidate);
+                const execution = await executeReceipt(command, atEpochMs);
+                if (execution.source !== 'write') continue;
+                const receipt = execution.receipt;
+                const snapshot = await repositoryFor(runtimeRepository).readSnapshot(
+                    command.aggregateRef,
                 );
-                if (written) {
-                    writtenResults.push(written);
-                }
+                if (!snapshot) continue;
+                results.push({
+                    status: 'ok',
+                    result: Either.ofRight({
+                        snapshot,
+                        ...(receipt.event.kind === 'client'
+                            ? { event: receipt.event.event }
+                            : {}),
+                    }),
+                });
             }
-
-            return writtenResults;
+            return results;
         },
     };
 
-    return withClientStateServiceTiming(service, dependencies.timing, serviceId);
+    return withClientStateServiceTiming(
+        service,
+        dependencies.timing,
+        dependencies.serviceId,
+    );
+}
+
+async function readClientMutation(
+    repository: ClientStateRepository,
+    command: ClientMutationCommand,
+): Promise<ClientMutationRead> {
+    const instanceRef = 'clientInstanceId' in command
+        ? { ...command.aggregateRef, clientInstanceId: command.clientInstanceId }
+        : null;
+    const sessionRef = instanceRef && 'sessionId' in command
+        ? { ...instanceRef, sessionId: command.sessionId }
+        : null;
+    const [idempotency, principal, instance, session] = await Promise.all([
+        command.requestId === null
+            ? Promise.resolve(undefined)
+            : repository.findIdempotentClientMutationReceiptEntry(
+                command.aggregateRef,
+                command.requestId,
+            ),
+        repository.findPrincipalEntry(command.aggregateRef),
+        instanceRef
+            ? repository.findInstanceEntry(instanceRef)
+            : Promise.resolve(undefined),
+        sessionRef
+            ? repository.findSessionEntry(sessionRef)
+            : Promise.resolve(undefined),
+    ]);
+    return {
+        idempotency: idempotency ?? null,
+        principal: principal ?? null,
+        instance: instance ?? null,
+        session: session ?? null,
+    };
+}
+
+async function writeClientMutation(
+    runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
+    repositoryFor: (
+        runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
+    ) => ClientStateRepository,
+    computed: Extract<ClientMutationComputed, { outcome: 'write' }>,
+): Promise<ClientMutationReceipt> {
+    return await runtime.begin(async (transaction) => {
+        const repository = repositoryFor(transaction);
+
+        // Aggregate ownership must be the first database statement.
+        requireConditionalWrite(computed.principal.operation === 'insert'
+            ? await repository.insertPrincipal(computed.principal.value)
+            : await repository.updatePrincipal(
+                computed.principal.value,
+                computed.principal.expectedRevision,
+            ));
+
+        await writeChildCandidate(repository, computed.instance, 'instance');
+        await writeChildCandidate(repository, computed.session, 'session');
+
+        if (computed.idempotency) {
+            requireConditionalWrite(
+                await repository.insertIdempotentClientStateWritten(
+                    computed.outbox.aggregateRef,
+                    computed.idempotency.requestId,
+                    computed.idempotency,
+                ),
+            );
+        }
+
+        await new StateMutationOutboxRepository(transaction).putOrLoad(
+            createStateMutationOutboxRecord(computed.outbox),
+        );
+        await repository.appendEvent(computed.event);
+        return computed.receipt;
+    });
+}
+
+async function writeChildCandidate(
+    repository: ClientStateRepository,
+    candidate: Extract<ClientMutationComputed, { outcome: 'write' }>['instance'] |
+        Extract<ClientMutationComputed, { outcome: 'write' }>['session'],
+    kind: 'instance' | 'session',
+): Promise<void> {
+    if (candidate.operation === 'none') return;
+    if (kind === 'instance') {
+        const value = candidate.value as Parameters<ClientStateRepository['insertInstance']>[0];
+        requireConditionalWrite(candidate.operation === 'insert'
+            ? await repository.insertInstance(value)
+            : await repository.updateInstance(value, candidate.expectedRevision));
+        return;
+    }
+    const value = candidate.value as Parameters<ClientStateRepository['insertSession']>[0];
+    requireConditionalWrite(candidate.operation === 'insert'
+        ? await repository.insertSession(value)
+        : await repository.updateSession(value, candidate.expectedRevision));
+}
+
+function toUpsertPrincipalCommand(
+    scope: StateScope,
+    principalId: string,
+    request: UpsertClientPrincipalRequest,
+    randomId: () => string,
+): ClientMutationCommand {
+    const commandId = request.requestId ?? randomId();
+    return {
+        operation: 'upsertPrincipal',
+        aggregateRef: { ...scope, principalId },
+        commandId,
+        requestId: request.requestId ?? null,
+        input: {
+            username: request.username,
+            displayName: request.displayName ?? null,
+            avatarUrl: request.avatarUrl ?? null,
+            status: request.status ?? null,
+            authProvider: request.authProvider ?? null,
+            externalSubjectId: request.externalSubjectId ?? null,
+            roles: request.roles ? [...request.roles] : null,
+            metadata: request.metadata ? structuredClone(request.metadata) : null,
+            lastSeenAtEpochMs: request.lastSeenAtEpochMs ?? null,
+            ...toActorInput(request),
+        },
+    };
+}
+
+function toUpsertInstanceCommand(
+    scope: StateScope,
+    principalId: string,
+    clientInstanceId: string,
+    request: UpsertClientInstanceRequest,
+    randomId: () => string,
+): ClientMutationCommand {
+    const commandId = request.requestId ?? randomId();
+    return {
+        operation: 'upsertInstance',
+        aggregateRef: { ...scope, principalId },
+        clientInstanceId,
+        commandId,
+        requestId: request.requestId ?? null,
+        input: {
+            status: request.status ?? null,
+            platform: request.platform ?? null,
+            deviceLabel: request.deviceLabel ?? null,
+            appVersion: request.appVersion ?? null,
+            userAgent: request.userAgent ?? null,
+            capabilities: request.capabilities ? [...request.capabilities] : null,
+            ...toActorInput(request),
+        },
+    };
+}
+
+function toConnectCommand(
+    operation: 'connectSession' | 'connectAuthorisedWsSession',
+    scope: StateScope,
+    principalId: string,
+    clientInstanceId: string,
+    sessionId: string,
+    request: ConnectClientSessionRequest,
+    randomId: () => string,
+    instance: Readonly<{
+        platform?: ClientPlatform;
+        userAgent?: string;
+        capabilities?: readonly string[];
+    }>,
+): ClientMutationCommand {
+    if (!request.generationId) {
+        throw new ClientMutationRejectedError('Connection generation id is required');
+    }
+    const commandId = request.requestId ?? randomId();
+    return {
+        operation,
+        aggregateRef: { ...scope, principalId },
+        clientInstanceId,
+        sessionId,
+        commandId,
+        requestId: request.requestId ?? null,
+        input: {
+            generationId: request.generationId,
+            presenceState: request.presenceState ?? null,
+            transport: request.transport ?? null,
+            connectionId: request.connectionId ?? null,
+            authenticatedAtEpochMs: request.authenticatedAtEpochMs ?? null,
+            connectedAtEpochMs: request.connectedAtEpochMs ?? null,
+            lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
+            expiresAtEpochMs: request.expiresAtEpochMs ?? null,
+            instancePlatform: instance.platform ?? null,
+            instanceUserAgent: instance.userAgent ?? null,
+            instanceCapabilities: instance.capabilities
+                ? [...instance.capabilities]
+                : null,
+            ...toActorInput(request),
+        },
+    };
+}
+
+function toHeartbeatCommand(
+    scope: StateScope,
+    principalId: string,
+    clientInstanceId: string,
+    sessionId: string,
+    request: HeartbeatClientSessionRequest,
+    randomId: () => string,
+): ClientMutationCommand {
+    if (!request.generationId) {
+        throw new ClientMutationRejectedError('Heartbeat generation id is required');
+    }
+    const commandId = request.requestId ?? randomId();
+    return {
+        operation: 'heartbeatSession',
+        aggregateRef: { ...scope, principalId },
+        clientInstanceId,
+        sessionId,
+        commandId,
+        requestId: request.requestId ?? null,
+        input: {
+            generationId: request.generationId,
+            presenceState: request.presenceState ?? null,
+            lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
+            expiresAtEpochMs: request.expiresAtEpochMs ?? null,
+            ...toActorInput(request),
+        },
+    };
+}
+
+function toDisconnectCommand(
+    operation: 'disconnectSession' | 'disconnectAuthorisedWsSession',
+    scope: StateScope,
+    principalId: string,
+    clientInstanceId: string,
+    sessionId: string,
+    request: DisconnectClientSessionRequest,
+    randomId: () => string,
+): ClientMutationCommand {
+    if (!request.generationId) {
+        throw new ClientMutationRejectedError('Disconnect generation id is required');
+    }
+    const commandId = request.requestId ?? randomId();
+    return {
+        operation,
+        aggregateRef: { ...scope, principalId },
+        clientInstanceId,
+        sessionId,
+        commandId,
+        requestId: request.requestId ?? null,
+        input: {
+            generationId: request.generationId,
+            disconnectedAtEpochMs: request.disconnectedAtEpochMs ?? null,
+            lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
+            expiresAtEpochMs: request.expiresAtEpochMs ?? null,
+            ...toActorInput(request),
+        },
+    };
+}
+
+function toExpiryCommand(session: ClientSessionExpiryCandidate): ClientMutationCommand {
+    const commandId = [
+        'expire-client-session',
+        session.sessionId,
+        session.generationId,
+        session.generationVersion,
+        session.observedExpiresAtEpochMs,
+    ].join(':');
+    return {
+        operation: 'expireSession',
+        aggregateRef: {
+            applicationId: session.applicationId,
+            ...(session.workspaceId === null ? {} : {
+                workspaceId: session.workspaceId,
+            }),
+            principalId: session.principalId,
+        },
+        clientInstanceId: session.clientInstanceId,
+        sessionId: session.sessionId,
+        commandId,
+        requestId: commandId,
+        input: {
+            generationId: session.generationId,
+            generationVersion: session.generationVersion,
+            observedExpiresAtEpochMs: session.observedExpiresAtEpochMs,
+            expiresAtEpochMs: session.observedExpiresAtEpochMs,
+            actorPrincipalId: session.principalId,
+            actorSessionId: session.sessionId,
+            reason: 'expired',
+            traceId: null,
+        },
+    };
+}
+
+function toActorInput(request: Readonly<{
+    actorPrincipalId?: string;
+    actorSessionId?: string;
+    reason?: string;
+    traceId?: string;
+}>) {
+    return {
+        actorPrincipalId: request.actorPrincipalId ?? null,
+        actorSessionId: request.actorSessionId ?? null,
+        reason: request.reason ?? null,
+        traceId: request.traceId ?? null,
+    };
+}
+
+function toAuthorisedWsScope(input: RegisterAuthorisedWsClientInput): StateScope {
+    return {
+        applicationId: input.applicationId ?? DEFAULT_STATE_APPLICATION_ID,
+        workspaceId: input.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+    };
+}
+
+async function findClientSessionBySessionId(
+    repository: ClientStateRepository,
+    sessionId: string,
+): Promise<ClientSession | undefined> {
+    const sessions = await repository.listAllSessions();
+    return sessions.find((session) =>
+        session.sessionId === sessionId && session.status === 'active' &&
+        session.disconnectedAtEpochMs === undefined
+    ) ?? sessions.find((session) => session.sessionId === sessionId);
+}
+
+async function timeMutationPhase<T>(
+    dependencies: ClientStateServiceDependencies,
+    command: ClientMutationCommand,
+    phase: 'read' | 'compute' | 'validate' | 'write' | 'transaction',
+    details: Readonly<{ attempt: number; backoffMs: number }>,
+    action: () => T | Promise<T>,
+): Promise<T> {
+    const startedAt = nowMs();
+    try {
+        const value = await action();
+        recordRallarTiming(dependencies.timing, {
+            component: 'client-state-service',
+            operation: `mutation.${phase}`,
+            serviceId: dependencies.serviceId,
+            requestId: command.requestId ?? undefined,
+            ...command.aggregateRef,
+            details: { ...details, mutationOperation: command.operation },
+        }, 'ok', nowMs() - startedAt);
+        return value;
+    } catch (error) {
+        recordRallarTiming(dependencies.timing, {
+            component: 'client-state-service',
+            operation: `mutation.${phase}`,
+            serviceId: dependencies.serviceId,
+            requestId: command.requestId ?? undefined,
+            ...command.aggregateRef,
+            details: { ...details, mutationOperation: command.operation },
+        }, 'error', nowMs() - startedAt, error);
+        throw error;
+    }
+}
+
+function recordMutationConflict(
+    dependencies: ClientStateServiceDependencies,
+    command: ClientMutationCommand,
+    attempt: number,
+    backoffMs: number,
+): void {
+    recordRallarTiming(dependencies.timing, {
+        component: 'client-state-service',
+        operation: 'mutation.conflict',
+        serviceId: dependencies.serviceId,
+        requestId: command.requestId ?? undefined,
+        ...command.aggregateRef,
+        details: {
+            attempt,
+            backoffMs,
+            conflict: true,
+            mutationOperation: command.operation,
+        },
+    }, 'ok', 0);
 }
 
 function withClientStateServiceTiming(
@@ -924,719 +862,55 @@ function withClientStateServiceTiming(
     timing: RallarTimingSink | undefined,
     serviceId: string,
 ): ClientStateService {
-    if (!timing) {
-        return service;
-    }
-
-    return {
-        listSnapshots: async (scope) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'client-state-service',
-                    operation: 'listSnapshots',
-                    serviceId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                },
-                () => service.listSnapshots(scope),
-            ),
-        readSnapshot: async (ref) =>
-            await timeRallarAsync(
-                timing,
-                toClientTimingInput(serviceId, 'readSnapshot', ref),
-                () => service.readSnapshot(ref),
-            ),
-        readPresenceSnapshot: async (ref) =>
-            await timeRallarAsync(
-                timing,
-                toClientTimingInput(serviceId, 'readPresenceSnapshot', ref),
-                () => service.readPresenceSnapshot(ref),
-            ),
-        listEvents: async (ref) =>
-            await timeRallarAsync(
-                timing,
-                toClientTimingInput(serviceId, 'listEvents', ref),
-                () => service.listEvents(ref),
-            ),
-        listRecentEvents: async (ref, query) =>
-            await timeRallarAsync(
-                timing,
-                toClientTimingInput(serviceId, 'listRecentEvents', ref),
-                () => service.listRecentEvents!(ref, query),
-            ),
-        listEventPage: async (ref, query) =>
-            await timeRallarAsync(
-                timing,
-                toClientTimingInput(serviceId, 'listEventPage', ref),
-                () => service.listEventPage(ref, query),
-            ),
-        upsertPrincipal: async (scope, principalId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'client-state-service',
-                    operation: 'upsertPrincipal',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    principalId,
-                    sessionId: request.actorSessionId,
-                },
-                () => service.upsertPrincipal(scope, principalId, request),
-            ),
-        upsertInstance: async (scope, principalId, clientInstanceId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'client-state-service',
-                    operation: 'upsertInstance',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    principalId,
-                    sessionId: request.actorSessionId,
-                    details: {
-                        clientInstanceId,
-                    },
-                },
-                () => service.upsertInstance(scope, principalId, clientInstanceId, request),
-            ),
-        connectSession: async (scope, principalId, clientInstanceId, sessionId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'client-state-service',
-                    operation: 'connectSession',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    principalId,
-                    sessionId,
-                    details: {
-                        clientInstanceId,
-                    },
-                },
-                () => service.connectSession(scope, principalId, clientInstanceId, sessionId, request),
-            ),
-        heartbeatSession: async (scope, principalId, clientInstanceId, sessionId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'client-state-service',
-                    operation: 'heartbeatSession',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    principalId,
-                    sessionId,
-                    details: {
-                        clientInstanceId,
-                    },
-                },
-                () => service.heartbeatSession(scope, principalId, clientInstanceId, sessionId, request),
-            ),
-        disconnectSession: async (scope, principalId, clientInstanceId, sessionId, request) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'client-state-service',
-                    operation: 'disconnectSession',
-                    serviceId,
-                    requestId: request.requestId,
-                    applicationId: scope.applicationId,
-                    workspaceId: scope.workspaceId,
-                    principalId,
-                    sessionId,
-                    details: {
-                        clientInstanceId,
-                    },
-                },
-                () => service.disconnectSession(scope, principalId, clientInstanceId, sessionId, request),
-            ),
-        registerAuthorisedWsClientSession: async (authSession, input) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'client-state-service',
-                    operation: 'registerAuthorisedWsClientSession',
-                    serviceId,
-                    requestId: authSession.sessionId,
-                    applicationId: input?.applicationId,
-                    workspaceId: input?.workspaceId,
-                    principalId: input?.principalId ?? authSession.clientId,
-                    sessionId: authSession.sessionId,
-                    details: {
-                        clientInstanceId: input?.clientInstanceId,
-                    },
-                },
-                () => service.registerAuthorisedWsClientSession(authSession, input),
-            ),
-        disconnectAuthorisedWsClientSession: async (sessionId, reason) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'client-state-service',
-                    operation: 'disconnectAuthorisedWsClientSession',
-                    serviceId,
-                    requestId: sessionId,
-                    sessionId,
-                    details: {
-                        reason,
-                    },
-                },
-                () => service.disconnectAuthorisedWsClientSession(sessionId, reason),
-            ),
-        expireExpiredSessions: async (atEpochMs) =>
-            await timeRallarAsync(
-                timing,
-                {
-                    component: 'client-state-service',
-                    operation: 'expireExpiredSessions',
-                    serviceId,
-                    details: {
-                        atEpochMs,
-                    },
-                },
-                () => service.expireExpiredSessions(atEpochMs),
-            ),
-    };
-}
-
-function toClientTimingInput(
-    serviceId: string,
-    operation: string,
-    ref: ClientPrincipalRef,
-) {
-    return {
-        component: 'client-state-service',
-        operation,
-        serviceId,
-        applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId,
-        principalId: ref.principalId,
-    };
-}
-
-async function findClientSessionBySessionId(
-    runtimeRepository: RuntimeStateTransactionalRepositoryLike,
-    sessionId: string,
-): Promise<ClientSession | undefined> {
-    const repository = new ClientStateRepository(runtimeRepository);
-    const sessions = await repository.listAllSessions();
-
-    return sessions.find((session) =>
-        session.sessionId === sessionId &&
-        session.status === 'active' &&
-        session.disconnectedAtEpochMs === undefined
-    ) ?? sessions.find((session) => session.sessionId === sessionId);
-}
-
-async function expireClientSession(
-    runtimeRepository: RuntimeStateTransactionalRepositoryLike,
-    repositoryFor: (
-        repository: RuntimeStateTransactionalRepositoryLike,
-    ) => ClientStateRepository,
-    candidate: ClientSession,
-    atEpochMs: number,
-    serviceId: string,
-): Promise<ClientStateWritten | undefined> {
-    return await runtimeRepository.begin(async (transactionRepository) => {
-        const repository = repositoryFor(transactionRepository);
-        const principalRef: ClientPrincipalRef = {
-            applicationId: candidate.applicationId,
-            workspaceId: candidate.workspaceId,
-            principalId: candidate.principalId,
-        };
-        await lockClientSession(transactionRepository, candidate);
-        const requestId = toExpiredClientSessionRequestId(candidate);
-        const idempotentWritten = await findIdempotentClientMutationWritten(
-            repository,
-            principalRef,
-            requestId,
-        );
-        if (idempotentWritten) {
-            return idempotentWritten;
-        }
-
-        const principal = await repository.findPrincipal(principalRef);
-        const existing = await repository.findSession(candidate);
-        if (
-            !principal ||
-            !existing ||
-            existing.status !== 'active' ||
-            existing.disconnectedAtEpochMs !== undefined ||
-            existing.expiresAtEpochMs > atEpochMs
-        ) {
-            return undefined;
-        }
-
-        const request: MutationActorInput = {
-            actorPrincipalId: existing.principalId,
-            actorSessionId: existing.sessionId,
-            reason: 'expired',
-            requestId,
-        };
-        const session: ClientSession = {
-            ...existing,
-            status: 'expired',
-            disconnectedAtEpochMs: atEpochMs,
-            disconnectReason: 'expired',
-        };
-
-        await repository.putSession(session);
-
-        const snapshotPrincipal = bumpPrincipalPresence(
-            principal,
-            atEpochMs,
-            request,
-            atEpochMs,
+    if (!timing) return service;
+    const timed = <T>(operation: string, details: Record<string, unknown>, action: () => Promise<T>) =>
+        timeRallarAsync(timing, {
+            component: 'client-state-service',
+            operation,
             serviceId,
-        );
-        await repository.putPrincipal(snapshotPrincipal);
-
-        const event = newClientEvent(
-            'session-expired',
-            snapshotPrincipal,
-            request,
-            atEpochMs,
-            serviceId,
-            existing.clientInstanceId,
-            existing.sessionId,
-        );
-        await repository.appendEvent(event);
-
-        return await addIdempotentClientMutationWritten(
-            repository,
-            principalRef,
-            requestId,
-            {
-                snapshot: await requireClientSnapshot(
-                    repository,
-                    snapshotPrincipal,
-                ),
-                event,
-            },
-        );
-    });
-}
-
-async function lockClientSession(
-    repository: RuntimeStateTransactionalRepositoryLike,
-    ref: ClientSessionRef,
-): Promise<void> {
-    await repository.lockKey(
-        CLIENT_SESSION_LOCK_NAMESPACE,
-        toClientSessionLockKey(ref),
-    );
-}
-
-function toClientSessionLockKey(ref: ClientSessionRef): string {
-    return [
-        ref.applicationId,
-        ref.workspaceId ?? '_',
-        ref.principalId,
-        ref.clientInstanceId,
-        ref.sessionId,
-    ].join(':');
-}
-
-async function findIdempotentClientMutationWritten(
-    repository: ClientStateRepository,
-    ref: ClientPrincipalRef,
-    requestId: string | undefined,
-): Promise<ClientStateWritten | undefined> {
-    if (!requestId) {
-        return undefined;
-    }
-
-    return await repository.findIdempotentClientStateWritten(ref, requestId);
-}
-
-async function addIdempotentClientMutationWritten(
-    repository: ClientStateRepository,
-    ref: ClientPrincipalRef,
-    requestId: string | undefined,
-    written: ClientMutationWritten,
-): Promise<ClientStateWritten> {
-    const clientStateWritten = toClientStateWritten(written);
-
-    if (!requestId) {
-        return clientStateWritten;
-    }
-
-    return await repository.addIdempotentClientStateWritten(
-        ref,
-        requestId,
-        clientStateWritten,
-    );
-}
-
-function toClientStateWritten(
-    written: ClientMutationWritten,
-): ClientStateWritten {
+            requestId: typeof details.requestId === 'string' ? details.requestId : undefined,
+            applicationId: typeof details.applicationId === 'string'
+                ? details.applicationId : undefined,
+            workspaceId: typeof details.workspaceId === 'string'
+                ? details.workspaceId : undefined,
+            principalId: typeof details.principalId === 'string'
+                ? details.principalId : undefined,
+            sessionId: typeof details.sessionId === 'string'
+                ? details.sessionId : undefined,
+        }, action);
     return {
-        status: 'ok',
-        result: Either.ofRight(written),
+        ...service,
+        upsertPrincipal: (scope, principalId, request) => timed('upsertPrincipal', {
+            ...scope, principalId, ...request, sessionId: request.actorSessionId,
+        }, () => service.upsertPrincipal(scope, principalId, request)),
+        upsertInstance: (scope, principalId, clientInstanceId, request) =>
+            timed('upsertInstance', { ...scope, principalId, clientInstanceId, ...request },
+                () => service.upsertInstance(scope, principalId, clientInstanceId, request)),
+        connectSession: (scope, principalId, clientInstanceId, sessionId, request) =>
+            timed('connectSession', {
+                ...scope, principalId, clientInstanceId, sessionId, ...request,
+            }, () => service.connectSession(scope, principalId, clientInstanceId, sessionId, request)),
+        heartbeatSession: (scope, principalId, clientInstanceId, sessionId, request) =>
+            timed('heartbeatSession', {
+                ...scope, principalId, clientInstanceId, sessionId, ...request,
+            }, () => service.heartbeatSession(scope, principalId, clientInstanceId, sessionId, request)),
+        disconnectSession: (scope, principalId, clientInstanceId, sessionId, request) =>
+            timed('disconnectSession', {
+                ...scope, principalId, clientInstanceId, sessionId, ...request,
+            }, () => service.disconnectSession(scope, principalId, clientInstanceId, sessionId, request)),
+        registerAuthorisedWsClientSession: (auth, input) =>
+            timed('registerAuthorisedWsClientSession', {
+                requestId: auth.sessionId,
+                applicationId: input?.applicationId,
+                workspaceId: input?.workspaceId,
+                principalId: input?.principalId ?? auth.clientId,
+                sessionId: auth.sessionId,
+            }, () => service.registerAuthorisedWsClientSession(auth, input)),
+        disconnectAuthorisedWsClientSession: (sessionId, reason) =>
+            timed('disconnectAuthorisedWsClientSession', { sessionId, reason },
+                () => service.disconnectAuthorisedWsClientSession(sessionId, reason)),
+        expireExpiredSessions: (atEpochMs) =>
+            timed('expireExpiredSessions', { atEpochMs },
+                () => service.expireExpiredSessions(atEpochMs)),
     };
-}
-
-function toAuthorisedWsClientRequestId(
-    operation: 'connect' | 'disconnect',
-    sessionId: string,
-): string {
-    return `authorised-ws:${operation}:${sessionId}`;
-}
-
-function toExpiredClientSessionRequestId(session: ClientSession): string {
-    return `expire-client-session:${session.sessionId}:${session.expiresAtEpochMs}`;
-}
-
-async function ensurePrincipal(
-    repository: ClientStateRepository,
-    scope: StateScope,
-    principalId: string,
-    request: UpsertClientPrincipalRequest,
-    timestamp: number,
-    serviceId: string,
-): Promise<ClientPrincipal> {
-    const existing = await repository.findPrincipal({
-        ...scope,
-        principalId,
-    });
-    if (existing) {
-        return existing;
-    }
-
-    const principal = toPrincipal(
-        scope,
-        principalId,
-        undefined,
-        request,
-        timestamp,
-        serviceId,
-    );
-    await repository.putPrincipal(principal);
-    return principal;
-}
-
-async function ensureInstance(
-    repository: ClientStateRepository,
-    principal: ClientPrincipal,
-    clientInstanceId: string,
-    request: UpsertClientInstanceRequest,
-    timestamp: number,
-    serviceId: string,
-): Promise<ClientInstance> {
-    const ref: ClientInstanceRef = {
-        applicationId: principal.applicationId,
-        workspaceId: principal.workspaceId,
-        principalId: principal.principalId,
-        clientInstanceId,
-    };
-    const existing = await repository.findInstance(ref);
-    if (existing) {
-        return existing;
-    }
-
-    const instance = toInstance(
-        principal,
-        clientInstanceId,
-        undefined,
-        request,
-        timestamp,
-        serviceId,
-    );
-    await repository.putInstance(instance);
-    return instance;
-}
-
-function toPrincipal(
-    scope: StateScope,
-    principalId: string,
-    existing: ClientPrincipal | undefined,
-    request: UpsertClientPrincipalRequest,
-    timestamp: number,
-    serviceId: string,
-): ClientPrincipal {
-    const updated = toAuditStamp(
-        request,
-        timestamp,
-        serviceId,
-        request.actorPrincipalId ?? principalId,
-    );
-    const status = request.status ?? existing?.status ?? 'active';
-
-    return {
-        applicationId: scope.applicationId,
-        workspaceId: scope.workspaceId,
-        principalId,
-        username: request.username,
-        displayName: request.displayName ?? existing?.displayName,
-        avatarUrl: request.avatarUrl ?? existing?.avatarUrl,
-        status,
-        authProvider: request.authProvider ?? existing?.authProvider,
-        externalSubjectId: request.externalSubjectId ?? existing?.externalSubjectId,
-        roles: request.roles ?? existing?.roles ?? [],
-        metadata: request.metadata ?? existing?.metadata ?? {},
-        snapshotVersion: existing ? existing.snapshotVersion + 1 : 1,
-        profileVersion: existing ? existing.profileVersion + 1 : 1,
-        presenceVersion: existing?.presenceVersion ?? 1,
-        created: existing?.created ?? updated,
-        updated,
-        disabled: status === 'disabled' ? updated : existing?.disabled,
-        deleted: status === 'deleted' ? updated : existing?.deleted,
-        lastSeenAtEpochMs: request.lastSeenAtEpochMs ?? existing?.lastSeenAtEpochMs,
-    };
-}
-
-function toInstance(
-    principal: ClientPrincipal,
-    clientInstanceId: string,
-    existing: ClientInstance | undefined,
-    request: UpsertClientInstanceRequest,
-    timestamp: number,
-    serviceId: string,
-): ClientInstance {
-    const updated = toAuditStamp(
-        request,
-        timestamp,
-        serviceId,
-        request.actorPrincipalId ?? principal.principalId,
-    );
-    const status = request.status ?? existing?.status ?? 'active';
-
-    return {
-        applicationId: principal.applicationId,
-        workspaceId: principal.workspaceId,
-        principalId: principal.principalId,
-        clientInstanceId,
-        status,
-        platform: request.platform ?? existing?.platform ?? 'unknown',
-        deviceLabel: request.deviceLabel ?? existing?.deviceLabel,
-        appVersion: request.appVersion ?? existing?.appVersion,
-        userAgent: request.userAgent ?? existing?.userAgent,
-        capabilities: request.capabilities ?? existing?.capabilities ?? [],
-        registered: existing?.registered ?? updated,
-        updated,
-        revoked: status === 'revoked' ? updated : existing?.revoked,
-    };
-}
-
-function toActiveSession(
-    principal: ClientPrincipal,
-    clientInstanceId: string,
-    sessionId: string,
-    existing: ClientSession | undefined,
-    request: ConnectClientSessionRequest,
-    timestamp: number,
-): ClientSession {
-    return {
-        applicationId: principal.applicationId,
-        workspaceId: principal.workspaceId,
-        principalId: principal.principalId,
-        clientInstanceId,
-        sessionId,
-        status: 'active',
-        presenceState: request.presenceState ?? existing?.presenceState ?? 'online',
-        transport: request.transport ?? existing?.transport ?? 'unknown',
-        connectionId: request.connectionId ?? existing?.connectionId,
-        authenticatedAtEpochMs:
-            request.authenticatedAtEpochMs ??
-            existing?.authenticatedAtEpochMs ??
-            timestamp,
-        connectedAtEpochMs:
-            request.connectedAtEpochMs ?? existing?.connectedAtEpochMs ?? timestamp,
-        lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? timestamp,
-        expiresAtEpochMs:
-            request.expiresAtEpochMs ?? timestamp + DEFAULT_SESSION_TTL_MS,
-        disconnectedAtEpochMs: undefined,
-        disconnectReason: undefined,
-    };
-}
-
-function bumpPrincipalPresence(
-    principal: ClientPrincipal,
-    lastSeenAtEpochMs: number,
-    request: MutationActorInput,
-    timestamp: number,
-    serviceId: string,
-): ClientPrincipal {
-    return {
-        ...principal,
-        snapshotVersion: principal.snapshotVersion + 1,
-        presenceVersion: principal.presenceVersion + 1,
-        updated: toAuditStamp(
-            request,
-            timestamp,
-            serviceId,
-            request.actorPrincipalId ?? principal.principalId,
-        ),
-        lastSeenAtEpochMs,
-    };
-}
-
-function bumpPrincipalProfile(
-    principal: ClientPrincipal,
-    request: MutationActorInput,
-    timestamp: number,
-    serviceId: string,
-): ClientPrincipal {
-    return {
-        ...principal,
-        snapshotVersion: principal.snapshotVersion + 1,
-        profileVersion: principal.profileVersion + 1,
-        updated: toAuditStamp(
-            request,
-            timestamp,
-            serviceId,
-            request.actorPrincipalId ?? principal.principalId,
-        ),
-    };
-}
-
-function rememberPrincipalLastSeen(
-    principal: ClientPrincipal,
-    lastSeenAtEpochMs: number,
-): ClientPrincipal {
-    if (
-        (principal.lastSeenAtEpochMs ?? Number.NEGATIVE_INFINITY) >=
-        lastSeenAtEpochMs
-    ) {
-        return principal;
-    }
-
-    return {
-        ...principal,
-        lastSeenAtEpochMs,
-    };
-}
-
-function isSameClientPrincipalMutation(
-    current: ClientPrincipal,
-    next: ClientPrincipal,
-): boolean {
-    return (
-        current.username === next.username &&
-        current.displayName === next.displayName &&
-        current.avatarUrl === next.avatarUrl &&
-        current.status === next.status &&
-        current.authProvider === next.authProvider &&
-        current.externalSubjectId === next.externalSubjectId &&
-        arrayEquals(current.roles, next.roles) &&
-        jsonEquals(current.metadata, next.metadata) &&
-        current.lastSeenAtEpochMs === next.lastSeenAtEpochMs
-    );
-}
-
-function isSameClientInstanceMutation(
-    current: ClientInstance,
-    next: ClientInstance,
-): boolean {
-    return (
-        current.status === next.status &&
-        current.platform === next.platform &&
-        current.deviceLabel === next.deviceLabel &&
-        current.appVersion === next.appVersion &&
-        current.userAgent === next.userAgent &&
-        arrayEquals(current.capabilities, next.capabilities)
-    );
-}
-
-function isSameActiveClientSession(
-    current: ClientSession,
-    next: ClientSession,
-): boolean {
-    return (
-        current.status === 'active' &&
-        next.status === 'active' &&
-        current.presenceState === next.presenceState &&
-        current.transport === next.transport &&
-        current.connectionId === next.connectionId &&
-        current.authenticatedAtEpochMs === next.authenticatedAtEpochMs &&
-        current.connectedAtEpochMs === next.connectedAtEpochMs &&
-        current.disconnectedAtEpochMs === undefined &&
-        next.disconnectedAtEpochMs === undefined &&
-        current.disconnectReason === undefined &&
-        next.disconnectReason === undefined
-    );
-}
-
-function isSameDisconnectedClientSession(
-    current: ClientSession,
-    next: ClientSession,
-): boolean {
-    return (
-        current.status === 'disconnected' &&
-        next.status === 'disconnected' &&
-        current.presenceState === next.presenceState &&
-        current.transport === next.transport &&
-        current.connectionId === next.connectionId &&
-        current.authenticatedAtEpochMs === next.authenticatedAtEpochMs &&
-        current.connectedAtEpochMs === next.connectedAtEpochMs &&
-        current.disconnectReason === next.disconnectReason
-    );
-}
-
-function newClientEvent(
-    eventType: ClientEvent['eventType'],
-    principal: ClientPrincipal,
-    request: MutationActorInput,
-    timestamp: number,
-    serviceId: string,
-    clientInstanceId?: string,
-    sessionId?: string,
-): ClientEvent {
-    return {
-        applicationId: principal.applicationId,
-        workspaceId: principal.workspaceId,
-        principalId: principal.principalId,
-        eventId: crypto.randomUUID(),
-        eventType,
-        snapshotVersion: principal.snapshotVersion,
-        clientInstanceId,
-        sessionId,
-        occurredAtEpochMs: timestamp,
-        actor: {
-            principalId: request.actorPrincipalId ?? principal.principalId,
-            sessionId: request.actorSessionId,
-            serviceId,
-        },
-        reason: request.reason,
-        traceId: request.traceId,
-        requestId: request.requestId,
-    };
-}
-
-function toAuditStamp(
-    request: MutationActorInput,
-    timestamp: number,
-    serviceId: string,
-    defaultPrincipalId?: string,
-): AuditStamp {
-    return {
-        atEpochMs: timestamp,
-        byPrincipalId: request.actorPrincipalId ?? defaultPrincipalId,
-        bySessionId: request.actorSessionId,
-        byServiceId: serviceId,
-        reason: request.reason,
-        traceId: request.traceId,
-        requestId: request.requestId,
-    };
-}
-
-async function requireClientSnapshot(
-    repository: ClientStateRepository,
-    ref: ClientPrincipalRef,
-): Promise<ClientSnapshot> {
-    const snapshot = await repository.readSnapshot(ref);
-    if (!snapshot) {
-        throw new Error(`Client snapshot not found: ${ref.principalId}`);
-    }
-
-    return snapshot;
 }

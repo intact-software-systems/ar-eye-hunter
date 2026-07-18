@@ -18,6 +18,7 @@ import { findClientStateSnapshotByPrincipalId } from '@shared/repository/client-
 import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
@@ -134,7 +135,7 @@ describe('state sync publish failure characterization', () => {
         expect(await results.findByKey(entry.key)).toBeUndefined();
     });
 
-    it('app inbox commits client state and updates process cache before retrying snapshot enqueue failure', async () => {
+    it('client app inbox commits an outbox intent without invoking direct publication', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const enqueueOutboxIfAbsent = vi.fn(async () => {
             throw new Error('client snapshot enqueue unavailable');
@@ -166,16 +167,23 @@ describe('state sync publish failure characterization', () => {
         expect(
             findClientStateSnapshotByPrincipalId('alice')?.principal.snapshotVersion,
         ).toBe(1);
-        expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
-        expect(firstEnqueuedMessage(enqueueOutboxIfAbsent).payload.typeId).toBe(
-            AppTopics.clientStateSnapshot,
-        );
-        expect(entry.status).toBe(EntityStatus.RETRY);
+        expect(enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(await clientMutationOutboxRecords(runtimeRepository)).toEqual([
+            expect.objectContaining({
+                kind: 'client',
+                commandId: 'upsert-client-alice',
+                effects: ['client-state-sync'],
+                delivery: { status: 'pending' },
+            }),
+        ]);
+        expect(entry.status).toBe(EntityStatus.COMPLETED);
         expect(entry.dequeueAudit.attempts).toBe(1);
-        expect(await results.findByKey(entry.key)).toBeUndefined();
+        expect(await results.findByKey(entry.key)).toMatchObject({
+            status: EntityStatus.COMPLETED,
+        });
     });
 
-    it('app inbox completes an active client session connect when snapshot enqueue returns no-route', async () => {
+    it('client session connect remains independent of the legacy publisher route', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => ({
             status: 'no-route',
@@ -207,19 +215,21 @@ describe('state sync publish failure characterization', () => {
                 .readSnapshot(principalRef);
             expect(durableSnapshot?.activeSessions.map(session => session.sessionId))
                 .toEqual(['session-alice']);
-            expect(enqueueOutboxIfAbsent).toHaveBeenCalledTimes(2);
-            expect(enqueueOutboxIfAbsent.mock.calls.map(([message]) =>
-                (message as ALMessage).payload.typeId
-            )).toEqual([
-                AppTopics.clientStateSnapshot,
-                AppTopics.clientStateEvent,
+            expect(enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+            expect(await clientMutationOutboxRecords(runtimeRepository)).toEqual([
+                expect.objectContaining({
+                    kind: 'client',
+                    commandId: 'connect-client-session-alice',
+                    effects: ['client-state-sync'],
+                    delivery: { status: 'pending' },
+                }),
             ]);
             expect(entry.status).toBe(EntityStatus.COMPLETED);
             expect(entry.dequeueAudit.attempts).toBe(1);
             expect(await results.findByKey(entry.key)).toMatchObject({
                 status: EntityStatus.COMPLETED,
             });
-            expect(warn).toHaveBeenCalledTimes(2);
+            expect(warn).not.toHaveBeenCalled();
         } finally {
             warn.mockRestore();
         }
@@ -565,6 +575,7 @@ async function processConnectClientSession(
             clientInstanceId,
             sessionId,
             request: {
+                generationId: `generation-${sessionId}`,
                 presenceState: 'online',
                 transport: 'ws',
                 actorPrincipalId: principalId,
@@ -694,6 +705,14 @@ function createPublisher(
             serverId: 'test-server',
         },
     );
+}
+
+async function clientMutationOutboxRecords(
+    runtimeRepository: FakeRuntimeStateRepository,
+): Promise<readonly Record<string, unknown>[]> {
+    return (await runtimeRepository.findAllEntries(STATE_MUTATION_OUTBOX_NAMESPACE))
+        .map((entry) => JSON.parse(entry.value) as Record<string, unknown>)
+        .filter((record) => record.kind === 'client');
 }
 
 function firstEnqueuedMessage(

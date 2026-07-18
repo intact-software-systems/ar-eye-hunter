@@ -103,6 +103,8 @@ export type ClientInstance = ClientInstanceRef & Readonly<{
 }>;
 
 export type ClientSession = ClientSessionRef & Readonly<{
+    generationId: string;
+    generationVersion: number;
     status: ClientSessionStatus;
     presenceState: ClientPresenceState;
     transport: ClientTransport;

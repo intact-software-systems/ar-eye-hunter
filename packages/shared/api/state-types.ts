@@ -51,6 +51,7 @@ export type UpsertClientInstanceRequest =
 export type ConnectClientSessionRequest =
     & MutationActorInput
     & Readonly<{
+    generationId: string;
     presenceState?: ClientPresenceState;
     transport?: ClientTransport;
     connectionId?: string;
@@ -63,6 +64,7 @@ export type ConnectClientSessionRequest =
 export type HeartbeatClientSessionRequest =
     & MutationActorInput
     & Readonly<{
+    generationId: string;
     presenceState?: ClientPresenceState;
     lastHeartbeatAtEpochMs?: number;
     expiresAtEpochMs?: number;
@@ -71,6 +73,7 @@ export type HeartbeatClientSessionRequest =
 export type DisconnectClientSessionRequest =
     & MutationActorInput
     & Readonly<{
+    generationId: string;
     disconnectedAtEpochMs?: number;
     lastHeartbeatAtEpochMs?: number;
     expiresAtEpochMs?: number;

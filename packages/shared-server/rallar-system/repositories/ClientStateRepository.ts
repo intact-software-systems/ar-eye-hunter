@@ -13,8 +13,14 @@ import type {
 } from '@shared/api/client-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
-import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
-import type { ClientStateWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
+import type { RuntimeStateConditionalWriteResult } from '../../runtime-state/RuntimeStateRepository.ts';
+import {
+    RuntimeStateJsonStore,
+    type RuntimeStateEntryValue,
+} from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type {
+    ClientMutationIdempotencyRecord,
+} from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { isLogicallyActiveSession, toSessionPurgeAfterEpochMs } from './session-expiry.ts';
 import { type ClientStateEventStore, defaultClientStateEventStoreFor } from './StateEventStore.ts';
@@ -41,27 +47,35 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         this.events = options.events ?? defaultClientStateEventStoreFor(repository);
     }
 
-    async addIdempotentClientStateWritten(
+    async insertIdempotentClientStateWritten(
         ref: ClientPrincipalRef,
         requestId: string,
-        clientStateWritten: ClientStateWritten,
+        record: ClientMutationIdempotencyRecord,
         purgeAfterEpochMs: number = NEVER_EXPIRE_AT_TIMESTAMP,
-    ): Promise<ClientStateWritten> {
-        await this.putValue(
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
             IDEMPOTENT_NAMESPACE,
             this.idempotentClientKey(ref, requestId),
-            clientStateWritten,
+            record,
             purgeAfterEpochMs,
         );
-
-        return clientStateWritten;
     }
 
-    async findIdempotentClientStateWritten(
+    async findIdempotentClientMutationReceipt(
         ref: ClientPrincipalRef,
         requestId: string,
-    ): Promise<ClientStateWritten | undefined> {
-        return await this.getValue<ClientStateWritten>(
+    ): Promise<ClientMutationIdempotencyRecord | undefined> {
+        return await this.getValue<ClientMutationIdempotencyRecord>(
+            IDEMPOTENT_NAMESPACE,
+            this.idempotentClientKey(ref, requestId),
+        );
+    }
+
+    async findIdempotentClientMutationReceiptEntry(
+        ref: ClientPrincipalRef,
+        requestId: string,
+    ): Promise<RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | undefined> {
+        return await this.getEntryValue<ClientMutationIdempotencyRecord>(
             IDEMPOTENT_NAMESPACE,
             this.idempotentClientKey(ref, requestId),
         );
@@ -81,6 +95,38 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         return await this.getValue<ClientPrincipal>(
             PRINCIPALS_NAMESPACE,
             this.principalKey(ref),
+        );
+    }
+
+    async findPrincipalEntry(
+        ref: ClientPrincipalRef,
+    ): Promise<RuntimeStateEntryValue<ClientPrincipal> | undefined> {
+        return await this.getEntryValue<ClientPrincipal>(
+            PRINCIPALS_NAMESPACE,
+            this.principalKey(ref),
+        );
+    }
+
+    async insertPrincipal(
+        principal: ClientPrincipal,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
+            PRINCIPALS_NAMESPACE,
+            this.principalKey(principal),
+            principal,
+        );
+    }
+
+    async updatePrincipal(
+        principal: ClientPrincipal,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfRevision(
+            PRINCIPALS_NAMESPACE,
+            this.principalKey(principal),
+            principal,
+            NEVER_EXPIRE_AT_TIMESTAMP,
+            expectedRevision,
         );
     }
 
@@ -172,6 +218,38 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         );
     }
 
+    async findInstanceEntry(
+        ref: ClientInstanceRef,
+    ): Promise<RuntimeStateEntryValue<ClientInstance> | undefined> {
+        return await this.getEntryValue<ClientInstance>(
+            INSTANCES_NAMESPACE,
+            this.instanceKey(ref),
+        );
+    }
+
+    async insertInstance(
+        instance: ClientInstance,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
+            INSTANCES_NAMESPACE,
+            this.instanceKey(instance),
+            instance,
+        );
+    }
+
+    async updateInstance(
+        instance: ClientInstance,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfRevision(
+            INSTANCES_NAMESPACE,
+            this.instanceKey(instance),
+            instance,
+            NEVER_EXPIRE_AT_TIMESTAMP,
+            expectedRevision,
+        );
+    }
+
     async listInstances(
         ref: ClientPrincipalRef,
     ): Promise<readonly ClientInstance[]> {
@@ -201,6 +279,45 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         return await this.getValue<ClientSession>(
             SESSIONS_NAMESPACE,
             this.sessionKey(ref),
+        );
+    }
+
+    async findSessionEntry(
+        ref: ClientSessionRef,
+    ): Promise<RuntimeStateEntryValue<ClientSession> | undefined> {
+        return await this.getEntryValue<ClientSession>(
+            SESSIONS_NAMESPACE,
+            this.sessionKey(ref),
+        );
+    }
+
+    async insertSession(
+        session: ClientSession,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
+            SESSIONS_NAMESPACE,
+            this.sessionKey(session),
+            session,
+            toSessionPurgeAfterEpochMs(
+                session.expiresAtEpochMs,
+                session.disconnectedAtEpochMs,
+            ),
+        );
+    }
+
+    async updateSession(
+        session: ClientSession,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfRevision(
+            SESSIONS_NAMESPACE,
+            this.sessionKey(session),
+            session,
+            toSessionPurgeAfterEpochMs(
+                session.expiresAtEpochMs,
+                session.disconnectedAtEpochMs,
+            ),
+            expectedRevision,
         );
     }
 

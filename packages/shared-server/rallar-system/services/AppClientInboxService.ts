@@ -17,7 +17,6 @@ import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type {
-    ClientMutationWritten,
     ClientStateService,
     ClientStateWritten,
     RegisterAuthorisedWsClientInput,
@@ -79,12 +78,12 @@ export type ClientSessionDisconnectAppInboxPayload = Readonly<{
 
 export type ClientAuthorisedWsSessionConnectAppInboxPayload = Readonly<{
     authSession: Omit<AuthSession, 'accessToken'>;
-    input?: RegisterAuthorisedWsClientInput;
+    input: RegisterAuthorisedWsClientInput;
 }>;
 
 export type ClientAuthorisedWsSessionDisconnectAppInboxPayload = Readonly<{
     sessionId: string;
-    reason?: string;
+    reason: string;
 }>;
 
 export type ClientExpiredSessionsAppInboxPayload = Readonly<{
@@ -122,8 +121,6 @@ export class AppClientInboxService extends AppInboxService {
                         principal.request,
                     );
 
-                await this.publishClientStateWritten(clientStateWritten);
-
                 return clientStateWritten;
             },
         );
@@ -136,8 +133,6 @@ export class AppClientInboxService extends AppInboxService {
                     instance.clientInstanceId,
                     instance.request,
                 );
-
-                await this.publishClientStateWritten(clientStateWritten);
 
                 return clientStateWritten;
             },
@@ -152,8 +147,6 @@ export class AppClientInboxService extends AppInboxService {
                     session.sessionId,
                     session.request,
                 );
-
-                await this.publishClientStateWritten(clientStateWritten);
 
                 return clientStateWritten;
             },
@@ -170,8 +163,6 @@ export class AppClientInboxService extends AppInboxService {
                         session.request,
                     );
 
-                await this.publishClientStateWritten(clientStateWritten);
-
                 return clientStateWritten;
             },
         );
@@ -186,8 +177,6 @@ export class AppClientInboxService extends AppInboxService {
                         session.sessionId,
                         session.request,
                     );
-
-                await this.publishClientStateWritten(clientStateWritten);
 
                 return clientStateWritten;
             },
@@ -204,8 +193,6 @@ export class AppClientInboxService extends AppInboxService {
                         session.input,
                     );
 
-                await this.publishClientStateWritten(clientStateWritten);
-
                 return clientStateWritten;
             },
         );
@@ -218,8 +205,6 @@ export class AppClientInboxService extends AppInboxService {
                         session.reason,
                     );
 
-                await this.publishClientStateWritten(clientStateWritten);
-
                 return clientStateWritten;
             },
         );
@@ -230,10 +215,6 @@ export class AppClientInboxService extends AppInboxService {
                     await this.clientStateService.expireExpiredSessions(
                         input.atEpochMs,
                     );
-
-                for (const clientStateWritten of clientStateWrittenResults) {
-                    await this.publishClientStateWritten(clientStateWritten);
-                }
 
                 return clientStateWrittenResults;
             },
@@ -268,7 +249,7 @@ export class AppClientInboxService extends AppInboxService {
                     sessionId: authSession.sessionId,
                     expiresAtEpochMs: authSession.expiresAtEpochMs,
                 },
-                input,
+                input: input ?? {},
             },
         });
     }
@@ -277,6 +258,7 @@ export class AppClientInboxService extends AppInboxService {
         sessionId: string,
         reason?: string,
     ) {
+        const disconnectReason = reason ?? 'websocket-closed';
         return await this.processEntryUntilCompletion<
             ClientAuthorisedWsSessionDisconnectAppInboxPayload,
             ClientStateWritten
@@ -287,7 +269,7 @@ export class AppClientInboxService extends AppInboxService {
             senderId: sessionId,
             data: {
                 sessionId,
-                reason,
+                reason: disconnectReason,
             },
         });
     }
@@ -306,32 +288,6 @@ export class AppClientInboxService extends AppInboxService {
         this.processEntryNoWaitingIf<ClientExpiredSessionsAppInboxPayload>(
             this.toExpiredSessionsEnqueue(atEpochMs),
             entry => isCompletedOrFailed(entry.status),
-        );
-    }
-
-    public async publishClientStateWritten(
-        clientStateWritten: ClientStateWritten,
-    ): Promise<void> {
-        if (clientStateWritten.result.right) {
-            await this.publishClientMutation(clientStateWritten.result.right);
-        }
-    }
-
-    private async publishClientMutation(
-        written: ClientMutationWritten,
-    ): Promise<void> {
-        if (!written.event) {
-            return;
-        }
-
-        await this.stateSyncPublisher.publishClientSnapshot(
-            written.snapshot,
-            this.serviceId,
-        );
-
-        await this.stateSyncPublisher.publishClientEvent(
-            written.event,
-            this.serviceId,
         );
     }
 

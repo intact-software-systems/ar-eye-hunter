@@ -114,6 +114,7 @@ describe('AppClientInboxService', () => {
                 clientInstanceId: 'alice-browser',
                 sessionId: 'alice-session',
                 request: {
+                    generationId: 'generation-alice-session',
                     presenceState: 'online',
                     actorPrincipalId: 'alice',
                     actorSessionId: 'alice-session',
@@ -137,6 +138,7 @@ describe('AppClientInboxService', () => {
                 clientInstanceId: 'alice-browser',
                 sessionId: 'alice-session',
                 request: {
+                    generationId: 'generation-alice-session',
                     presenceState: 'away',
                     actorPrincipalId: 'alice',
                     actorSessionId: 'alice-session',
@@ -160,6 +162,7 @@ describe('AppClientInboxService', () => {
                 clientInstanceId: 'alice-browser',
                 sessionId: 'alice-session',
                 request: {
+                    generationId: 'generation-alice-session',
                     reason: 'closed',
                     actorPrincipalId: 'alice',
                     actorSessionId: 'alice-session',
@@ -180,15 +183,11 @@ describe('AppClientInboxService', () => {
             lastHeartbeatAtEpochMs: 3_000,
         });
         expect(requireRightSnapshot(disconnected).activeSessions).toHaveLength(0);
-        // TEMP(Task 3): remove only after every client producer derives
-        // canonical SHA-256 internally before retry, persists the identical
-        // receipt/outbox digest, proves reordered replay and semantic conflict,
-        // accepts no caller hash, and writes the intent transactionally.
-        expect(publisher.publishClientSnapshot).toHaveBeenCalledTimes(5);
-        expect(publisher.publishClientEvent).toHaveBeenCalledTimes(5);
+        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
 
-    it('publishes stored idempotent mutation results when the service replays a request', async () => {
+    it('replays stored idempotent mutation results without direct publication', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
@@ -242,7 +241,7 @@ describe('AppClientInboxService', () => {
                 principalId: 'alice',
                 request: {
                     username: 'alice',
-                    displayName: 'Alice changed payload',
+                    displayName: 'Alice',
                     actorPrincipalId: 'alice',
                     requestId: 'upsert-client-alice',
                 },
@@ -253,11 +252,8 @@ describe('AppClientInboxService', () => {
         expect(requireRightWritten(replay).event).toEqual(
             requireRightWritten(first).event,
         );
-        expect(publisher.publishClientSnapshot).toHaveBeenCalledTimes(1);
-        expect(publisher.publishClientEvent).toHaveBeenCalledTimes(1);
-        expect(vi.mocked(publisher.publishClientEvent).mock.calls[0]?.[0]).toEqual(
-            requireRightWritten(first).event,
-        );
+        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
 
     it('processes authorised websocket lifecycle mutations through the inbox', async () => {
@@ -323,8 +319,8 @@ describe('AppClientInboxService', () => {
         expect(requireRightWritten(disconnected).event?.eventType).toBe(
             'session-disconnected',
         );
-        expect(publisher.publishClientSnapshot).toHaveBeenCalledTimes(1);
-        expect(publisher.publishClientEvent).toHaveBeenCalledTimes(1);
+        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
 
     it('processes authorised websocket connects in the requested state scope', async () => {
@@ -516,6 +512,7 @@ describe('AppClientInboxService', () => {
             'alice-browser',
             'alice-session',
             {
+                generationId: 'generation-alice-session',
                 presenceState: 'online',
                 actorPrincipalId: 'alice',
                 actorSessionId: 'alice-session',
@@ -546,8 +543,8 @@ describe('AppClientInboxService', () => {
             sessionId: 'alice-session',
         });
         expect(expired.right?.[0].result.right?.snapshot.activeSessions).toEqual([]);
-        expect(publisher.publishClientSnapshot).toHaveBeenCalledTimes(1);
-        expect(publisher.publishClientEvent).toHaveBeenCalledTimes(1);
+        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
+        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
 
     it('keeps at most one active no-wait client expiry entry across timestamps', async () => {

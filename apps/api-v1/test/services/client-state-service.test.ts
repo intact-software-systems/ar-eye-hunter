@@ -6,8 +6,10 @@ import type {
   ClientStateWritten,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import type {
+  RuntimeStateConditionalDeleteResult,
+  RuntimeStateConditionalWriteResult,
   RuntimeStateEntry,
-  RuntimeStateTransactionalRepositoryLike,
+  RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { createClientStateService } from '../../src/services/client-state-service.ts';
 import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
@@ -30,7 +32,7 @@ const NO_OP_SYNC_PUBLISHER: StateSyncPublisher = {
   },
 };
 
-Deno.test('heartbeatSession refreshes TTL without publishing unchanged snapshots', async () => {
+Deno.test('heartbeatSession refreshes TTL through an outbox-owned aggregate transition', async () => {
   const syncPublisher = createRecordingStateSyncPublisher();
   const service = createTestClientStateService(syncPublisher);
 
@@ -40,6 +42,7 @@ Deno.test('heartbeatSession refreshes TTL without publishing unchanged snapshots
     'instance-1',
     'session-1',
     {
+      generationId: 'generation-session-1',
       presenceState: 'online',
       actorPrincipalId: 'client-1',
       actorSessionId: 'session-1',
@@ -57,6 +60,7 @@ Deno.test('heartbeatSession refreshes TTL without publishing unchanged snapshots
       'instance-1',
       'session-1',
       {
+        generationId: 'generation-session-1',
         presenceState: 'online',
         actorPrincipalId: 'client-1',
         actorSessionId: 'session-1',
@@ -68,9 +72,12 @@ Deno.test('heartbeatSession refreshes TTL without publishing unchanged snapshots
 
   assert.equal(
     refreshed.principal.presenceVersion,
-    before.principal.presenceVersion,
+    before.principal.presenceVersion + 1,
   );
-  assert.equal(refreshed.principal.snapshotVersion, before.principal.snapshotVersion);
+  assert.equal(
+    refreshed.principal.snapshotVersion,
+    before.principal.snapshotVersion + 1,
+  );
   assert.equal(refreshed.activeSessions[0].lastHeartbeatAtEpochMs, 2_000);
   assert.equal(
     refreshed.activeSessions[0].expiresAtEpochMs,
@@ -90,6 +97,7 @@ Deno.test('heartbeatSession returns an event when presence state changes without
     'instance-1',
     'session-1',
     {
+      generationId: 'generation-session-1',
       presenceState: 'online',
       actorPrincipalId: 'client-1',
       actorSessionId: 'session-1',
@@ -106,6 +114,7 @@ Deno.test('heartbeatSession returns an event when presence state changes without
     'instance-1',
     'session-1',
     {
+      generationId: 'generation-session-1',
       presenceState: 'away',
       actorPrincipalId: 'client-1',
       actorSessionId: 'session-1',
@@ -273,6 +282,7 @@ Deno.test('semantic client mutations advance snapshotVersion', async () => {
     'instance-1',
     'session-1',
     {
+      generationId: 'generation-session-1',
       presenceState: 'online',
       actorPrincipalId: 'client-1',
       actorSessionId: 'session-1',
@@ -294,6 +304,7 @@ Deno.test('semantic client mutations advance snapshotVersion', async () => {
       'instance-1',
       'session-1',
       {
+        generationId: 'generation-session-1',
         presenceState: 'online',
         actorPrincipalId: 'client-1',
         actorSessionId: 'session-1',
@@ -302,7 +313,7 @@ Deno.test('semantic client mutations advance snapshotVersion', async () => {
       },
     ),
   );
-  assert.equal(heartbeatOnly.principal.snapshotVersion, 4);
+  assert.equal(heartbeatOnly.principal.snapshotVersion, 5);
 
   const presenceUpdatedWritten = await service.heartbeatSession(
     TEST_SCOPE,
@@ -310,6 +321,7 @@ Deno.test('semantic client mutations advance snapshotVersion', async () => {
     'instance-1',
     'session-1',
     {
+      generationId: 'generation-session-1',
       presenceState: 'away',
       actorPrincipalId: 'client-1',
       actorSessionId: 'session-1',
@@ -318,10 +330,10 @@ Deno.test('semantic client mutations advance snapshotVersion', async () => {
     },
   );
   const presenceUpdated = requireClientStateWrittenSnapshot(presenceUpdatedWritten);
-  assert.equal(presenceUpdated.principal.snapshotVersion, 5);
+  assert.equal(presenceUpdated.principal.snapshotVersion, 6);
   assert.equal(
     requireClientStateWrittenEvent(presenceUpdatedWritten).snapshotVersion,
-    5,
+    6,
   );
 
   const disconnectedWritten = await service.disconnectSession(
@@ -330,16 +342,17 @@ Deno.test('semantic client mutations advance snapshotVersion', async () => {
     'instance-1',
     'session-1',
     {
+      generationId: 'generation-session-1',
       actorPrincipalId: 'client-1',
       actorSessionId: 'session-1',
       lastHeartbeatAtEpochMs: 5_000,
     },
   );
   const disconnected = requireClientStateWrittenSnapshot(disconnectedWritten);
-  assert.equal(disconnected.principal.snapshotVersion, 6);
+  assert.equal(disconnected.principal.snapshotVersion, 7);
   assert.equal(
     requireClientStateWrittenEvent(disconnectedWritten).snapshotVersion,
-    6,
+    7,
   );
 });
 
@@ -426,11 +439,12 @@ async function readSnapshot(
   return snapshot;
 }
 
-class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
+class FakeRuntimeStateRepository
+  implements RuntimeStateOptimisticTransactionalRepositoryLike {
   readonly data = new Map<string, RuntimeStateEntry>();
 
   async begin<T>(
-    fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+    fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
   ): Promise<T> {
     return await fn(this);
   }
@@ -500,6 +514,60 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
       revision: current ? current.revision + 1 : 0,
     });
     return Promise.resolve();
+  }
+
+  insertIfAbsent(
+    namespace: string,
+    key: string,
+    value: string,
+    expireAtTimestamp: number,
+  ): Promise<RuntimeStateConditionalWriteResult> {
+    const compositeKey = this.toKey(namespace, key);
+    if (this.data.has(compositeKey)) return Promise.resolve({ status: 'conflict' });
+    this.data.set(compositeKey, {
+      key,
+      value,
+      expireAtTimestamp,
+      updatedTimestamp: new Date().toISOString(),
+      revision: 0,
+    });
+    return Promise.resolve({ status: 'applied', revision: 0 });
+  }
+
+  upsertIfRevision(
+    namespace: string,
+    key: string,
+    value: string,
+    expireAtTimestamp: number,
+    expectedRevision: number,
+  ): Promise<RuntimeStateConditionalWriteResult> {
+    const compositeKey = this.toKey(namespace, key);
+    const current = this.data.get(compositeKey);
+    if (!current || current.revision !== expectedRevision) {
+      return Promise.resolve({ status: 'conflict' });
+    }
+    const revision = current.revision + 1;
+    this.data.set(compositeKey, {
+      key,
+      value,
+      expireAtTimestamp,
+      updatedTimestamp: new Date().toISOString(),
+      revision,
+    });
+    return Promise.resolve({ status: 'applied', revision });
+  }
+
+  deleteIfRevision(
+    namespace: string,
+    key: string,
+    expectedRevision: number,
+  ): Promise<RuntimeStateConditionalDeleteResult> {
+    const compositeKey = this.toKey(namespace, key);
+    if (this.data.get(compositeKey)?.revision !== expectedRevision) {
+      return Promise.resolve({ status: 'conflict' });
+    }
+    this.data.delete(compositeKey);
+    return Promise.resolve({ status: 'applied' });
   }
 
   deleteByKey(namespace: string, key: string): Promise<void> {
