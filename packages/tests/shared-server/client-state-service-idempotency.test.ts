@@ -306,6 +306,7 @@ describe('ClientStateService command idempotency', () => {
             input: Readonly<{
                 applicationId: string;
                 workspaceId: string;
+                connectedAtEpochMs: number;
                 expiresAtEpochMs: number;
             }>,
         ) => ReturnType<typeof service.registerAuthorisedWsClientSession>;
@@ -318,6 +319,7 @@ describe('ClientStateService command idempotency', () => {
         const first = await register(authSession, 'ws-generation-1', {
             applicationId: SCOPE.applicationId,
             workspaceId: SCOPE.workspaceId,
+            connectedAtEpochMs: 100,
             expiresAtEpochMs,
         });
         await disconnect(authSession.sessionId, 'ws-generation-1', 'first-close');
@@ -327,6 +329,7 @@ describe('ClientStateService command idempotency', () => {
             {
                 applicationId: SCOPE.applicationId,
                 workspaceId: SCOPE.workspaceId,
+                connectedAtEpochMs: 200,
                 expiresAtEpochMs,
             },
         );
@@ -336,6 +339,7 @@ describe('ClientStateService command idempotency', () => {
             {
                 applicationId: SCOPE.applicationId,
                 workspaceId: SCOPE.workspaceId,
+                connectedAtEpochMs: 300,
                 expiresAtEpochMs,
             },
         );
@@ -407,6 +411,129 @@ describe('ClientStateService command idempotency', () => {
             );
             expect(receipt?.receipt.commandHash).toBe(record.commandHash);
         }
+    });
+
+    it('orders websocket generations by their server-owned start tuple and bootstraps the authorised principal', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const service = createClientStateService({
+            runtimeRepository,
+            syncPublisher: createPublisher(),
+            now: () => 10_000,
+            serviceId: 'client-service',
+        });
+        const authSession: AuthSession = {
+            clientId: 'alice',
+            username: 'alice-login',
+            accessToken: 'token',
+            sessionId: 'ws-session-ordered',
+            expiresAtEpochMs: 60_000,
+        };
+        const register = service.registerAuthorisedWsClientSession as unknown as (
+            auth: AuthSession,
+            generationId: string,
+            input: Readonly<{
+                applicationId: string;
+                workspaceId: string;
+                displayName: string;
+                connectedAtEpochMs: number;
+                expiresAtEpochMs: number;
+            }>,
+        ) => ReturnType<typeof service.registerAuthorisedWsClientSession>;
+        const expiresAtEpochMs = Date.now() + 60_000;
+
+        const newer = await register(authSession, 'generation-b', {
+            applicationId: SCOPE.applicationId,
+            workspaceId: SCOPE.workspaceId,
+            displayName: 'Alice Display',
+            connectedAtEpochMs: 200,
+            expiresAtEpochMs,
+        });
+        const entriesAfterNewer = runtimeRepository.data.size;
+        const delayedOlder = await register(authSession, 'generation-a', {
+            applicationId: SCOPE.applicationId,
+            workspaceId: SCOPE.workspaceId,
+            displayName: 'Ignored Old Display',
+            connectedAtEpochMs: 100,
+            expiresAtEpochMs,
+        });
+
+        expect(newer.result.right?.snapshot).toMatchObject({
+            principal: {
+                username: 'alice-login',
+                displayName: 'Alice Display',
+                roles: ['member'],
+            },
+            activeSessions: [{
+                generationId: 'generation-b',
+                connectedAtEpochMs: 200,
+            }],
+        });
+        expect(delayedOlder.result.right?.event).toBeUndefined();
+        expect(delayedOlder.result.right?.snapshot.activeSessions).toEqual([
+            expect.objectContaining({
+                generationId: 'generation-b',
+                connectedAtEpochMs: 200,
+            }),
+        ]);
+        expect(runtimeRepository.data.size).toBe(entriesAfterNewer);
+        await expect(register(authSession, 'generation-b', {
+            applicationId: SCOPE.applicationId,
+            workspaceId: SCOPE.workspaceId,
+            displayName: 'Different Canonical Display',
+            connectedAtEpochMs: 200,
+            expiresAtEpochMs,
+        })).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
+        const authorisedCommandId =
+            'authorised-ws:connect:ws-session-ordered:generation-b';
+        const authorisedOutbox = (await runtimeRepository.findAllEntries(
+            STATE_MUTATION_OUTBOX_NAMESPACE,
+        )).map((entry) => JSON.parse(entry.value)).find(
+            (record) => record.commandId === authorisedCommandId,
+        );
+        const authorisedReceipt = await new ClientStateRepository(runtimeRepository)
+            .findIdempotentClientMutationReceipt(
+                toClientPrincipalRef('alice'),
+                authorisedCommandId,
+            );
+        expect(authorisedReceipt?.receipt.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/u);
+        expect(authorisedOutbox?.commandHash).toBe(
+            authorisedReceipt?.receipt.commandHash,
+        );
+
+        await service.connectSession(
+            SCOPE,
+            'alice',
+            'alice-rest',
+            'rest-session',
+            {
+                generationId: 'rest-current',
+                connectedAtEpochMs: 300,
+                expiresAtEpochMs,
+                requestId: 'rest-current-connect',
+            },
+        );
+        const entriesAfterRestCurrent = runtimeRepository.data.size;
+        const missingOrderedFact = await service.connectSession(
+            SCOPE,
+            'alice',
+            'alice-rest',
+            'rest-session',
+            {
+                generationId: 'rest-arbitrary-old-token',
+                expiresAtEpochMs,
+                requestId: 'rest-missing-ordered-fact',
+            },
+        );
+        expect(missingOrderedFact.result.right?.event).toBeUndefined();
+        expect(missingOrderedFact.result.right?.snapshot.activeSessions).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    sessionId: 'rest-session',
+                    generationId: 'rest-current',
+                }),
+            ]),
+        );
+        expect(runtimeRepository.data.size).toBe(entriesAfterRestCurrent);
     });
 
     it('expires stale sessions once and leaves publication to the app inbox', async () => {

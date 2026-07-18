@@ -133,13 +133,13 @@ export class AppInboxService {
                 enqueue,
                 false,
                 true,
-                async (key) => {
+                async (key, wireEnqueue) => {
                     return await this.inbox.enqueueIfAbsent(
                         newALUntargetedMessage(
                             toAppInboxQueueCreatedBy(this.serviceId),
                             newALRoute(key.topicId, key.contextId, key.resourceId),
-                            enqueue.type.toString(),
-                            enqueue,
+                            wireEnqueue.type.toString(),
+                            wireEnqueue,
                         ),
                     );
                 }
@@ -158,13 +158,13 @@ export class AppInboxService {
                 enqueue,
                 false,
                 false,
-                async (key) => {
+                async (key, wireEnqueue) => {
                     return await this.inbox.enqueueIf(
                         newALUntargetedMessage(
                             toAppInboxQueueCreatedBy(this.serviceId),
                             newALRoute(key.topicId, key.contextId, key.resourceId),
-                            enqueue.type.toString(),
-                            enqueue,
+                            wireEnqueue.type.toString(),
+                            wireEnqueue,
                         ),
                         enqueueIf
                     );
@@ -182,13 +182,13 @@ export class AppInboxService {
             enqueue,
             true,
             true,
-            async (key) => {
+            async (key, wireEnqueue) => {
                 return await this.inbox.enqueueIfAbsent(
                     newALUntargetedMessage(
                         toAppInboxQueueCreatedBy(this.serviceId),
                         newALRoute(key.topicId, key.contextId, key.resourceId),
-                        enqueue.type.toString(),
-                        enqueue,
+                        wireEnqueue.type.toString(),
+                        wireEnqueue,
                     ),
                 );
             }
@@ -203,13 +203,13 @@ export class AppInboxService {
             enqueue,
             true,
             false,
-            async (key) => {
+            async (key, wireEnqueue) => {
                 return await this.inbox.enqueueIf(
                     newALUntargetedMessage(
                         toAppInboxQueueCreatedBy(this.serviceId),
                         newALRoute(key.topicId, key.contextId, key.resourceId),
-                        enqueue.type.toString(),
-                        enqueue,
+                        wireEnqueue.type.toString(),
+                        wireEnqueue,
                     ),
                     enqueueIf
                 );
@@ -221,9 +221,13 @@ export class AppInboxService {
         enqueue: AppInboxEnqueueInput<V>,
         waitForCompletion: boolean,
         enforceCommandIdentity: boolean,
-        enqueuer: (key: Key) => Promise<ResourceEntry | undefined>
+        enqueuer: (
+            key: Key,
+            wireEnqueue: AppInboxEnqueueInput<V>,
+        ) => Promise<ResourceEntry | undefined>
     ): Promise<Either<string, R>> {
-        const key: Key = this.toKey(enqueue);
+        const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
+        const key: Key = this.toKey(wireEnqueue);
 
         return await timeRallarAsync(
             this.timing,
@@ -246,17 +250,17 @@ export class AppInboxService {
                     'enqueue',
                     enqueue,
                     key,
-                    async () => await enqueuer(key),
+                    async () => await enqueuer(key, wireEnqueue),
                 );
                 if (entry && enforceCommandIdentity) {
-                    await assertMatchingAppInboxCommand(enqueue, entry);
+                    await assertMatchingAppInboxCommand(wireEnqueue, entry);
                 }
 
                 if (!waitForCompletion) {
                     return Either.ofLeft('No waiting for completion');
                 }
 
-                const isCompleted = await this.waitForCompletion(enqueue, key);
+                const isCompleted = await this.waitForCompletion(wireEnqueue, key);
 
                 if (!isCompleted) {
                     return Either.ofLeft('App inbox entry not completed');
@@ -629,6 +633,90 @@ async function assertMatchingAppInboxCommand<V>(
             receivedCommandHash,
         );
     }
+}
+
+function toJsonWireAppInboxEnqueue<V>(
+    enqueue: AppInboxEnqueueInput<V>,
+): AppInboxEnqueueInput<V> {
+    return toJsonWireValue(enqueue, '$', new Set()) as AppInboxEnqueueInput<V>;
+}
+
+function toJsonWireValue(
+    value: unknown,
+    path: string,
+    ancestors: Set<object>,
+): unknown {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+        return value;
+    }
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value)) rejectJsonWire(path, 'contains a non-finite number');
+        return Object.is(value, -0) ? 0 : value;
+    }
+    if (typeof value !== 'object') {
+        rejectJsonWire(path, `contains unsupported ${typeof value}`);
+    }
+    if (ancestors.has(value)) rejectJsonWire(path, 'contains a cycle');
+    ancestors.add(value);
+    try {
+        if (Array.isArray(value)) {
+            const descriptors = Object.getOwnPropertyDescriptors(value);
+            const result: unknown[] = [];
+            for (let index = 0; index < value.length; index++) {
+                const descriptor = descriptors[String(index)];
+                if (!descriptor || !('value' in descriptor)) {
+                    rejectJsonWire(`${path}[${index}]`, 'must be a dense data element');
+                }
+                if (descriptor.value === undefined ||
+                    typeof descriptor.value === 'function' ||
+                    typeof descriptor.value === 'symbol' ||
+                    typeof descriptor.value === 'bigint') {
+                    rejectJsonWire(`${path}[${index}]`, 'contains an unsupported array value');
+                }
+                result.push(toJsonWireValue(
+                    descriptor.value,
+                    `${path}[${index}]`,
+                    ancestors,
+                ));
+            }
+            for (const key of Reflect.ownKeys(descriptors)) {
+                if (typeof key === 'symbol') rejectJsonWire(path, 'contains a symbol key');
+                if (key === 'length' || /^(0|[1-9]\d*)$/u.test(key)) continue;
+                if (descriptors[key]?.enumerable) {
+                    rejectJsonWire(path, `contains unsupported array property ${key}`);
+                }
+            }
+            return result;
+        }
+
+        const prototype = Object.getPrototypeOf(value);
+        if (prototype !== Object.prototype && prototype !== null) {
+            rejectJsonWire(path, 'must contain only plain JSON objects');
+        }
+        const result: Record<string, unknown> = {};
+        const descriptors = Object.getOwnPropertyDescriptors(value);
+        for (const key of Reflect.ownKeys(descriptors)) {
+            if (typeof key === 'symbol') rejectJsonWire(path, 'contains a symbol key');
+            const descriptor = descriptors[key];
+            if (!descriptor.enumerable) continue;
+            if (!('value' in descriptor)) {
+                rejectJsonWire(`${path}.${key}`, 'contains an accessor');
+            }
+            if (descriptor.value === undefined) continue;
+            result[key] = toJsonWireValue(
+                descriptor.value,
+                `${path}.${key}`,
+                ancestors,
+            );
+        }
+        return result;
+    } finally {
+        ancestors.delete(value);
+    }
+}
+
+function rejectJsonWire(path: string, detail: string): never {
+    throw new TypeError(`App inbox JSON wire ${path} ${detail}`);
 }
 
 function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>): Readonly<{

@@ -23,6 +23,7 @@ export class ConnectionContext {
         public readonly id: string,
         public readonly socket: WebSocket,
         public readonly generationId: string = crypto.randomUUID(),
+        public readonly generationStartedAtEpochMs: number = Date.now(),
     ) {
     }
 
@@ -34,8 +35,34 @@ export class ConnectionContext {
 export class JsonWebSocketServer {
     private readonly webSocketServerCallbacks = new Map<string, WebSocketServerCallbacks>();
     private readonly onMessageCallbacks = new Map<string, WebSocketServerOnMessageCallback>();
+    private lastGenerationStartedAtEpochMs = -1;
 
     public readonly connections = new Map<string, ConnectionContext>();
+
+    createConnectionContext(
+        id: string,
+        socket: WebSocket,
+        generationId: string = crypto.randomUUID(),
+        observedAtEpochMs: number = Date.now(),
+    ): ConnectionContext {
+        if (!Number.isSafeInteger(observedAtEpochMs) || observedAtEpochMs < 0) {
+            throw new TypeError('WebSocket generation start must be a non-negative safe integer');
+        }
+        if (this.lastGenerationStartedAtEpochMs === Number.MAX_SAFE_INTEGER) {
+            throw new Error('WebSocket generation clock exhausted');
+        }
+        const generationStartedAtEpochMs = Math.max(
+            observedAtEpochMs,
+            this.lastGenerationStartedAtEpochMs + 1,
+        );
+        this.lastGenerationStartedAtEpochMs = generationStartedAtEpochMs;
+        return new ConnectionContext(
+            id,
+            socket,
+            generationId,
+            generationStartedAtEpochMs,
+        );
+    }
 
     // --------------------
     // Callback registry

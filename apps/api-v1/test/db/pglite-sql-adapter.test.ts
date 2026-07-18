@@ -92,7 +92,7 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
     const entry = await repository.findEntry('runtime-smoke', 'a');
     assert.equal(entry?.value, '{"value":3}');
     assert.equal(entry?.revision, 1);
-    assert.equal(typeof entry?.updatedTimestamp, 'string');
+    assert.match(entry?.updatedTimestamp ?? '', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
 
     const allEntries = await repository.findAllEntries('runtime-smoke');
     assert.deepEqual(allEntries.map((row) => row.key), ['a', 'b']);

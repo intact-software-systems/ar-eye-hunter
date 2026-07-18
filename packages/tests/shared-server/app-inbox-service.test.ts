@@ -65,6 +65,118 @@ describe('AppInboxType', () => {
 });
 
 describe('AppInboxService', () => {
+    it('uses the stored JSON wire identity for sparse member upserts and rejects unsafe values without invoking accessors', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const handler = vi.fn((data: GroupMemberUpsertAppInboxPayload) =>
+            Promise.resolve({ accepted: data })
+        );
+        const service = new AppInboxService(
+            reader,
+            queue as never,
+            results as never,
+            'server-12345678',
+            SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            undefined,
+            {
+                waitMaxElapsedMsecs: 5_000,
+                waitRetryIntervalMsecs: 1,
+                waitMaxRetryIntervalMsecs: 1,
+                waitJitterRatio: 0,
+            },
+        );
+        service.onStateMessage(AppInboxType.GROUP_MEMBER_UPSERT, handler);
+        const sparse = {
+            type: AppInboxType.GROUP_MEMBER_UPSERT,
+            resourceId: 'sparse-member-upsert',
+            contextId: 'ar-eye-hunter:default:group-1',
+            senderId: 'alice',
+            data: {
+                scope: SCOPE,
+                groupId: 'group-1',
+                principalId: 'alice',
+                request: {
+                    status: 'active' as const,
+                    role: undefined,
+                    actorPrincipalId: 'alice',
+                    requestId: 'sparse-member-upsert',
+                },
+            },
+        } satisfies AppInboxEnqueueInput<GroupMemberUpsertAppInboxPayload>;
+
+        const pending = service.processEntryUntilCompletion(sparse);
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        const first = await pending;
+
+        await expect(service.processEntryUntilCompletion({
+            ...sparse,
+            data: {
+                principalId: 'alice',
+                request: {
+                    requestId: 'sparse-member-upsert',
+                    actorPrincipalId: 'alice',
+                    status: 'active',
+                },
+                groupId: 'group-1',
+                scope: { workspaceId: 'default', applicationId: 'ar-eye-hunter' },
+            },
+        })).resolves.toEqual(first);
+        await expect(service.processEntryUntilCompletion({
+            ...sparse,
+            data: {
+                ...sparse.data,
+                request: { ...sparse.data.request, status: 'left' },
+            },
+        })).rejects.toMatchObject({ status: 409 });
+        expect(Object.hasOwn(sparse.data.request, 'role')).toBe(true);
+        expect(sparse.data.request.role).toBeUndefined();
+
+        let getterCalls = 0;
+        const unsafe = {
+            ...sparse,
+            resourceId: 'unsafe-member-upsert',
+            data: {
+                ...sparse.data,
+                request: { ...sparse.data.request },
+            },
+        };
+        Object.defineProperty(unsafe.data.request, 'role', {
+            enumerable: true,
+            get: () => {
+                getterCalls += 1;
+                return 'member';
+            },
+        });
+        await expect(service.processEntryUntilCompletion(unsafe)).rejects.toThrow(
+            /JSON wire|accessor/u,
+        );
+        expect(getterCalls).toBe(0);
+        await expect(service.processEntryUntilCompletion({
+            ...sparse,
+            resourceId: 'unsafe-array',
+            data: { ...sparse.data, unsafe: [undefined] },
+        } as never)).rejects.toThrow(/JSON wire|array/u);
+        const cycle: Record<string, unknown> = {};
+        cycle.self = cycle;
+        for (const [resourceId, value] of [
+            ['unsafe-function', () => undefined],
+            ['unsafe-bigint', 1n],
+            ['unsafe-cycle', cycle],
+            ['unsafe-nonfinite', Number.POSITIVE_INFINITY],
+        ] as const) {
+            await expect(service.processEntryUntilCompletion({
+                ...sparse,
+                resourceId,
+                data: { ...sparse.data, unsafe: value },
+            } as never)).rejects.toThrow(/JSON wire/u);
+        }
+        expect(handler).toHaveBeenCalledOnce();
+    });
+
     it('rejects different semantic content behind the same real queue id while replaying reordered equal content', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);

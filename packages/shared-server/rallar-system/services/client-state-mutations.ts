@@ -75,6 +75,9 @@ export type ClientMutationCommand =
             instancePlatform: ClientPlatform | null;
             instanceUserAgent: string | null;
             instanceCapabilities: readonly string[] | null;
+            principalUsername: string | null;
+            principalDisplayName: string | null;
+            principalRoles: readonly string[] | null;
         }>;
     }>)
     | (ClientMutationCommandBase & Readonly<{
@@ -168,8 +171,13 @@ export type ClientMutationOutboxCandidate = Readonly<{
 
 export type ClientMutationComputed =
     | Readonly<{
-        outcome: 'replay' | 'no-op';
+        outcome: 'replay';
         receipt: ClientMutationReceipt;
+    }>
+    | Readonly<{
+        outcome: 'no-op';
+        receipt: ClientMutationReceipt;
+        persistIdempotency: boolean;
     }>
     | Readonly<{
         outcome: 'idempotency-conflict';
@@ -306,8 +314,21 @@ export function validateClientMutationCommand(
                 input.instanceCapabilities,
                 'Client connect instanceCapabilities',
             );
+            requireNullableNonEmptyString(
+                input.principalUsername,
+                'Client connect principalUsername',
+            );
+            requireNullableNonEmptyString(
+                input.principalDisplayName,
+                'Client connect principalDisplayName',
+            );
+            requireNullableStringArray(
+                input.principalRoles,
+                'Client connect principalRoles',
+            );
+            validateConnectTimestampOrder(input);
             return;
-        case 'heartbeatSession':
+        case 'heartbeatSession': {
             validateSessionCommandRoot(value);
             requireExactKeys(input, HEARTBEAT_INPUT_KEYS, 'Client heartbeat input');
             validateGenerationId(input.generationId);
@@ -324,16 +345,35 @@ export function validateClientMutationCommand(
                 input.expiresAtEpochMs,
                 'Client heartbeat expiresAtEpochMs',
             );
+            const heartbeatAt = input.lastHeartbeatAtEpochMs as number | null;
+            const heartbeatExpiresAt = input.expiresAtEpochMs as number | null;
+            if (heartbeatAt !== null && heartbeatExpiresAt !== null &&
+                heartbeatExpiresAt < heartbeatAt) {
+                reject('Client heartbeat expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
+            }
             return;
+        }
         case 'disconnectSession':
-        case 'disconnectAuthorisedWsSession':
+        case 'disconnectAuthorisedWsSession': {
             validateSessionCommandRoot(value);
             requireExactKeys(input, DISCONNECT_INPUT_KEYS, 'Client disconnect input');
             validateGenerationId(input.generationId);
             for (const field of DISCONNECT_TIMESTAMP_FIELDS) {
                 requireNullableTimestamp(input[field], `Client disconnect ${field}`);
             }
+            const disconnectedAt = input.disconnectedAtEpochMs as number | null;
+            const disconnectHeartbeatAt = input.lastHeartbeatAtEpochMs as number | null;
+            const disconnectExpiresAt = input.expiresAtEpochMs as number | null;
+            if (disconnectedAt !== null && disconnectHeartbeatAt !== null &&
+                disconnectedAt < disconnectHeartbeatAt) {
+                reject('Client disconnect disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs');
+            }
+            if (disconnectExpiresAt !== null && disconnectHeartbeatAt !== null &&
+                disconnectExpiresAt < disconnectHeartbeatAt) {
+                reject('Client disconnect expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
+            }
             return;
+        }
         case 'expireSession':
             validateSessionCommandRoot(value);
             requireExactKeys(input, EXPIRY_INPUT_KEYS, 'Client expiry input');
@@ -347,6 +387,9 @@ export function validateClientMutationCommand(
                 'Client expiry observedExpiresAtEpochMs',
             );
             requireTimestamp(input.expiresAtEpochMs, 'Client expiry expiresAtEpochMs');
+            if (input.expiresAtEpochMs < input.observedExpiresAtEpochMs) {
+                reject('Client expiry expiresAtEpochMs must not predate observedExpiresAtEpochMs');
+            }
             return;
     }
 }
@@ -731,6 +774,21 @@ function computeConnect(
     if (existing?.generationId === command.input.generationId) {
         return noOpReceipt(command, read, facts);
     }
+    if (existing) {
+        // A REST compatibility connect without an ordered generation-start fact may
+        // create an absent session, but it cannot replace a distinct generation.
+        if (command.input.connectedAtEpochMs === null) {
+            return noOpReceipt(command, read, facts, false);
+        }
+        if (compareGenerationTuple(
+            command.input.connectedAtEpochMs,
+            command.input.generationId,
+            existing.connectedAtEpochMs,
+            existing.generationId,
+        ) <= 0) {
+            return noOpReceipt(command, read, facts, false);
+        }
+    }
     const principal = read.principal?.value ?? defaultPrincipal(command, facts);
     const instance = read.instance?.value ?? defaultInstance(command, principal, facts);
     const session = activeSession(command, principal, existing, facts);
@@ -750,6 +808,21 @@ function computeConnect(
     );
 }
 
+function compareGenerationTuple(
+    leftStartedAtEpochMs: number,
+    leftGenerationId: string,
+    rightStartedAtEpochMs: number,
+    rightGenerationId: string,
+): number {
+    // Starts are process-monotonic. Across servers, wall-clock time is the
+    // primary order and the opaque generation id deterministically breaks ties.
+    if (leftStartedAtEpochMs !== rightStartedAtEpochMs) {
+        return leftStartedAtEpochMs < rightStartedAtEpochMs ? -1 : 1;
+    }
+    if (leftGenerationId === rightGenerationId) return 0;
+    return leftGenerationId < rightGenerationId ? -1 : 1;
+}
+
 function computeHeartbeat(
     command: Extract<ClientMutationCommand, { operation: 'heartbeatSession' }>,
     read: ClientMutationRead,
@@ -759,11 +832,11 @@ function computeHeartbeat(
     const existing = requireSession(read, command);
     if (existing.generationId !== command.input.generationId ||
         existing.status !== 'active' || existing.disconnectedAtEpochMs !== undefined) {
-        return noOpReceipt(command, read, facts);
+        return noOpReceipt(command, read, facts, false);
     }
     const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? facts.nowEpochMs;
     if (heartbeatAt < existing.lastHeartbeatAtEpochMs) {
-        return noOpReceipt(command, read, facts);
+        return noOpReceipt(command, read, facts, false);
     }
     const session: ClientSession = {
         ...existing,
@@ -798,15 +871,25 @@ function computeDisconnect(
     const existing = requireSession(read, command);
     if (existing.generationId !== command.input.generationId ||
         existing.status !== 'active' || existing.disconnectedAtEpochMs !== undefined) {
-        return noOpReceipt(command, read, facts);
+        return noOpReceipt(command, read, facts, false);
     }
-    const disconnectedAt = command.input.disconnectedAtEpochMs ?? facts.nowEpochMs;
+    const heartbeatAt = Math.max(
+        existing.lastHeartbeatAtEpochMs,
+        command.input.lastHeartbeatAtEpochMs ?? existing.lastHeartbeatAtEpochMs,
+    );
+    const disconnectedAt = Math.max(
+        command.input.disconnectedAtEpochMs ?? facts.nowEpochMs,
+        heartbeatAt,
+    );
     const session: ClientSession = {
         ...existing,
         status: 'disconnected',
-        lastHeartbeatAtEpochMs: command.input.lastHeartbeatAtEpochMs ??
-            existing.lastHeartbeatAtEpochMs,
-        expiresAtEpochMs: command.input.expiresAtEpochMs ?? existing.expiresAtEpochMs,
+        lastHeartbeatAtEpochMs: heartbeatAt,
+        expiresAtEpochMs: Math.max(
+            existing.expiresAtEpochMs,
+            command.input.expiresAtEpochMs ?? existing.expiresAtEpochMs,
+            heartbeatAt,
+        ),
         disconnectedAtEpochMs: disconnectedAt,
         disconnectReason: command.input.reason ?? 'closed',
     };
@@ -835,7 +918,7 @@ function computeExpiry(
         existing.expiresAtEpochMs !== command.input.observedExpiresAtEpochMs ||
         existing.status !== 'active' || existing.disconnectedAtEpochMs !== undefined ||
         existing.expiresAtEpochMs > command.input.expiresAtEpochMs) {
-        return noOpReceipt(command, read, facts);
+        return noOpReceipt(command, read, facts, false);
     }
     const session: ClientSession = {
         ...existing,
@@ -913,6 +996,7 @@ function noOpReceipt(
     command: ClientMutationCommand,
     read: ClientMutationRead,
     facts: ClientMutationFacts,
+    persistIdempotency = true,
 ): ClientMutationComputed {
     const principal = read.principal?.value;
     if (!principal) {
@@ -922,6 +1006,7 @@ function noOpReceipt(
     }
     return {
         outcome: 'no-op',
+        persistIdempotency,
         receipt: {
             commandId: command.commandId,
             commandHash: facts.commandHash,
@@ -971,12 +1056,17 @@ function toPrincipal(
 
 function defaultPrincipal(command: ClientMutationCommand, facts: ClientMutationFacts): ClientPrincipal {
     const audit = toAudit(command, facts);
+    const connectInput = command.operation === 'connectSession' ||
+            command.operation === 'connectAuthorisedWsSession'
+        ? command.input
+        : undefined;
+    const username = connectInput?.principalUsername ?? command.aggregateRef.principalId;
     return {
         ...command.aggregateRef,
-        username: command.aggregateRef.principalId,
-        displayName: command.aggregateRef.principalId,
+        username,
+        displayName: connectInput?.principalDisplayName ?? username,
         status: 'active',
-        roles: [],
+        roles: connectInput?.principalRoles ?? [],
         metadata: {},
         snapshotVersion: 1,
         profileVersion: 1,
@@ -1280,7 +1370,8 @@ const CONNECT_INPUT_KEYS = [
     'generationId', 'presenceState', 'transport', 'connectionId',
     'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
     'expiresAtEpochMs', 'instancePlatform', 'instanceUserAgent',
-    'instanceCapabilities', ...ACTOR_INPUT_KEYS,
+    'instanceCapabilities', 'principalUsername', 'principalDisplayName',
+    'principalRoles', ...ACTOR_INPUT_KEYS,
 ] as const;
 const HEARTBEAT_INPUT_KEYS = [
     'generationId', 'presenceState', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs',
@@ -1325,6 +1416,25 @@ const RAW_DISCONNECT_REQUEST_KEYS = [
     'generationId', 'disconnectedAtEpochMs', 'lastHeartbeatAtEpochMs',
     'expiresAtEpochMs', ...RAW_ACTOR_KEYS,
 ] as const;
+
+function validateConnectTimestampOrder(
+    input: Readonly<Record<string, unknown>>,
+): void {
+    const authenticatedAt = input.authenticatedAtEpochMs as number | null;
+    const connectedAt = input.connectedAtEpochMs as number | null;
+    const heartbeatAt = input.lastHeartbeatAtEpochMs as number | null;
+    const expiresAt = input.expiresAtEpochMs as number | null;
+    if (authenticatedAt !== null && connectedAt !== null &&
+        authenticatedAt > connectedAt) {
+        reject('Client connect authenticatedAtEpochMs must not follow connectedAtEpochMs');
+    }
+    if (connectedAt !== null && heartbeatAt !== null && connectedAt > heartbeatAt) {
+        reject('Client connect lastHeartbeatAtEpochMs must not predate connectedAtEpochMs');
+    }
+    if (heartbeatAt !== null && expiresAt !== null && heartbeatAt > expiresAt) {
+        reject('Client connect expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
+    }
+}
 
 function reject(message: string): never {
     throw new ClientMutationRejectedError(message);
@@ -1383,6 +1493,10 @@ function requireNonEmptyString(value: unknown, label: string): asserts value is 
 
 function requireString(value: unknown, label: string): asserts value is string {
     if (typeof value !== 'string') reject(`${label} must be a string`);
+}
+
+function requireBoolean(value: unknown, label: string): asserts value is boolean {
+    if (typeof value !== 'boolean') reject(`${label} must be a boolean`);
 }
 
 function requireNullableString(value: unknown, label: string): void {
@@ -1663,6 +1777,23 @@ function validateSession(value: unknown, label: string): void {
     if (session.status !== 'active' && session.disconnectedAtEpochMs === undefined) {
         reject(`${label} terminal status requires disconnectedAtEpochMs`);
     }
+    const authenticatedAt = session.authenticatedAtEpochMs as number;
+    const connectedAt = session.connectedAtEpochMs as number;
+    const heartbeatAt = session.lastHeartbeatAtEpochMs as number;
+    const expiresAt = session.expiresAtEpochMs as number;
+    const disconnectedAt = session.disconnectedAtEpochMs as number | undefined;
+    if (authenticatedAt > connectedAt) {
+        reject(`${label}.authenticatedAtEpochMs must not follow connectedAtEpochMs`);
+    }
+    if (connectedAt > heartbeatAt) {
+        reject(`${label}.lastHeartbeatAtEpochMs must not predate connectedAtEpochMs`);
+    }
+    if (heartbeatAt > expiresAt) {
+        reject(`${label}.expiresAtEpochMs must not predate lastHeartbeatAtEpochMs`);
+    }
+    if (disconnectedAt !== undefined && disconnectedAt < heartbeatAt) {
+        reject(`${label}.disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs`);
+    }
 }
 
 function validateRuntimeEntry(value: unknown, label: string): void {
@@ -1868,8 +1999,19 @@ function validateClientMutationComputed(computed: unknown): void {
     const value = requirePlainRecord(computed, 'Client mutation computed');
     switch (value.outcome) {
         case 'replay':
-        case 'no-op':
             requireExactKeys(value, ['outcome', 'receipt'], 'Client mutation computed');
+            validateReceipt(value.receipt, 'Client mutation computed.receipt');
+            return;
+        case 'no-op':
+            requireExactKeys(
+                value,
+                ['outcome', 'receipt', 'persistIdempotency'],
+                'Client mutation computed',
+            );
+            requireBoolean(
+                value.persistIdempotency,
+                'Client mutation computed.persistIdempotency',
+            );
             validateReceipt(value.receipt, 'Client mutation computed.receipt');
             return;
         case 'idempotency-conflict':

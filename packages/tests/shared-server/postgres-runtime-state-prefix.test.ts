@@ -66,6 +66,11 @@ describe('Postgres runtime-state prefix selection', () => {
         firstChildKey,
         secondChildKey,
       ]);
+      for (const entry of entries) {
+        expect(entry.updatedTimestamp).toMatch(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u,
+        );
+      }
       expect(firstPage.map((entry) => entry.key)).toEqual([firstChildKey]);
       expect(secondPage.map((entry) => entry.key)).toEqual([secondChildKey]);
     } finally {

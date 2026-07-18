@@ -457,6 +457,43 @@ describe('runtime-state conditional writes', () => {
         );
     });
 
+    it('normalizes supported PostgreSQL timestamp values and rejects invalid or ambiguous driver strings', async () => {
+        const row = (updated_ts: unknown) => ({
+            store_namespace: 'state',
+            store_key: 'key',
+            store_value: 'value',
+            updated_ts,
+            expire_at_ts: '9999-12-31T23:59:59.999Z',
+            revision: 0,
+        });
+
+        await expect(new PSqlRuntimeStateRepository(
+            createResultSql(row(new Date('2026-07-19T00:30:00.000Z'))),
+        ).findEntry('state', 'key')).resolves.toMatchObject({
+            updatedTimestamp: '2026-07-19T00:30:00.000Z',
+        });
+        await expect(new PSqlRuntimeStateRepository(
+            createResultSql(row('2026-07-19 09:30:00+09')),
+        ).findEntry('state', 'key')).resolves.toMatchObject({
+            updatedTimestamp: '2026-07-19T00:30:00.000Z',
+        });
+
+        for (const updatedTimestamp of [
+            '',
+            '   ',
+            'not-a-date',
+            '07/19/2026 09:30:00',
+            '2026-07-19T09:30:00',
+            new Date(Number.NaN),
+        ]) {
+            await expect(new PSqlRuntimeStateRepository(
+                createResultSql(row(updatedTimestamp)),
+            ).findEntry('state', 'key')).rejects.toThrow(
+                /Invalid runtime state updated_ts/u,
+            );
+        }
+    });
+
     it('rejects invalid upsert revisions before SQL and fake mutation', async () => {
         const invalidRevisions = [
             Number.NaN,

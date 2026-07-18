@@ -78,6 +78,7 @@ export type RegisterAuthorisedWsClientInput = Readonly<{
     userAgent?: string;
     platform?: ClientPlatform;
     capabilities?: readonly string[];
+    connectedAtEpochMs?: number;
     expiresAtEpochMs?: number;
 }>;
 
@@ -233,7 +234,8 @@ export function createClientStateService(
                     computed.receivedCommandHash,
                 );
             }
-            if (computed.outcome === 'no-op' && command.requestId !== null) {
+            if (computed.outcome === 'no-op' && computed.persistIdempotency &&
+                command.requestId !== null) {
                 const inserted = await repositoryFor(runtimeRepository)
                     .insertIdempotentClientStateWritten(
                         command.aggregateRef,
@@ -405,6 +407,7 @@ export function createClientStateService(
                     presenceState: 'online',
                     transport: 'ws',
                     connectionId: generationId,
+                    connectedAtEpochMs: input.connectedAtEpochMs,
                     expiresAtEpochMs: input.expiresAtEpochMs ?? authSession.expiresAtEpochMs,
                     actorPrincipalId: principalId,
                     actorSessionId: authSession.sessionId,
@@ -415,6 +418,9 @@ export function createClientStateService(
                     platform: input.platform,
                     userAgent: input.userAgent,
                     capabilities: input.capabilities,
+                    principalUsername: authSession.username,
+                    principalDisplayName: input.displayName ?? authSession.username,
+                    principalRoles: ['member'],
                 },
             ));
         },
@@ -655,6 +661,9 @@ function toConnectCommand(
         platform?: ClientPlatform;
         userAgent?: string;
         capabilities?: readonly string[];
+        principalUsername?: string;
+        principalDisplayName?: string;
+        principalRoles?: readonly string[];
     }>,
 ): ClientMutationCommand {
     if (!request.generationId) {
@@ -681,6 +690,11 @@ function toConnectCommand(
             instanceUserAgent: instance.userAgent ?? null,
             instanceCapabilities: instance.capabilities
                 ? [...instance.capabilities]
+                : null,
+            principalUsername: instance.principalUsername ?? null,
+            principalDisplayName: instance.principalDisplayName ?? null,
+            principalRoles: instance.principalRoles
+                ? [...instance.principalRoles]
                 : null,
             ...toActorInput(request),
         },

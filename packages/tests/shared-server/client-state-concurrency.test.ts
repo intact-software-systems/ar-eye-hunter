@@ -491,6 +491,161 @@ describe('convergent client state', () => {
         }
     });
 
+    it('rejects causally impossible lifecycle timestamps in commands, stored reads, and computed state', async () => {
+        const base = {
+            aggregateRef: principalRef('alice'),
+            commandId: 'causal-command',
+            requestId: 'causal-command',
+        } as const;
+        const actor = {
+            actorPrincipalId: null,
+            actorSessionId: null,
+            reason: null,
+            traceId: null,
+        } as const;
+        const invalidCommands = [
+            invalidSessionCommand(base, actor, 'connectSession', {
+                authenticatedAtEpochMs: 1_001,
+                connectedAtEpochMs: 1_000,
+            }),
+            invalidSessionCommand(base, actor, 'connectSession', {
+                connectedAtEpochMs: 1_001,
+                lastHeartbeatAtEpochMs: 1_000,
+            }),
+            invalidSessionCommand(base, actor, 'heartbeatSession', {
+                lastHeartbeatAtEpochMs: 2_001,
+                expiresAtEpochMs: 2_000,
+            }),
+            invalidSessionCommand(base, actor, 'disconnectSession', {
+                disconnectedAtEpochMs: 999,
+                lastHeartbeatAtEpochMs: 1_000,
+            }),
+            invalidSessionCommand(base, actor, 'expireSession', {
+                observedExpiresAtEpochMs: 2_001,
+                expiresAtEpochMs: 2_000,
+            }),
+        ];
+        for (const command of invalidCommands) {
+            const error = (() => {
+                try {
+                    validateClientMutationCommand(command);
+                } catch (caught) {
+                    return caught;
+                }
+            })();
+            expect(error).toMatchObject({
+                code: 'client-mutation-rejected',
+                status: 400,
+            });
+        }
+
+        const validConnect = invalidSessionCommand(
+            { ...base, commandId: 'valid-connect', requestId: 'valid-connect' },
+            actor,
+            'connectSession',
+            {},
+        ) as ClientMutationCommand;
+        const computed = computeClientMutation({
+            command: validConnect,
+            read: { idempotency: null, principal: null, instance: null, session: null },
+            facts: validFacts(),
+        });
+        expect(computed.outcome).toBe('write');
+        if (computed.outcome !== 'write' || computed.session.operation === 'none') {
+            throw new Error('Expected a session write');
+        }
+        const corruptSession = {
+            ...computed.session.value,
+            expiresAtEpochMs: computed.session.value.lastHeartbeatAtEpochMs - 1,
+        };
+        const entry = (value: unknown) => ({
+            entry: {
+                key: 'stored',
+                value: JSON.stringify(value),
+                expireAtTimestamp: 10_000,
+                updatedTimestamp: '2026-07-19T00:00:00.000Z',
+                revision: 0,
+            },
+            value,
+        });
+        expect(() => computeClientMutation({
+            command: invalidSessionCommand(
+                { ...base, commandId: 'heartbeat-corrupt', requestId: 'heartbeat-corrupt' },
+                actor,
+                'heartbeatSession',
+                {},
+            ) as ClientMutationCommand,
+            read: {
+                idempotency: null,
+                principal: entry(computed.principal.value) as never,
+                instance: computed.instance.operation === 'none'
+                    ? null
+                    : entry(computed.instance.value) as never,
+                session: entry(corruptSession) as never,
+            },
+            facts: validFacts(),
+        })).toThrow(ClientMutationRejectedError);
+
+        const invalidComputed = structuredClone(computed);
+        if (invalidComputed.outcome !== 'write' ||
+            invalidComputed.session.operation === 'none') {
+            throw new Error('Expected a session write');
+        }
+        invalidComputed.session.value.expiresAtEpochMs =
+            invalidComputed.session.value.lastHeartbeatAtEpochMs - 1;
+        expect(() => validateClientMutation({
+            command: validConnect,
+            read: { idempotency: null, principal: null, instance: null, session: null },
+            computed: invalidComputed,
+            facts: validFacts(),
+        })).toThrow(ClientMutationRejectedError);
+
+        const runtime = new AggregateBarrierRepository();
+        await expect(createService(runtime, 1_000).heartbeatSession(
+            SCOPE,
+            'alice',
+            'browser',
+            'session-1',
+            {
+                generationId: 'generation-1',
+                lastHeartbeatAtEpochMs: 2_001,
+                expiresAtEpochMs: 2_000,
+                requestId: 'malformed-heartbeat',
+            },
+        )).rejects.toMatchObject({ status: 400 });
+        expect(runtime.data.size).toBe(0);
+
+        await connect(runtime, 'corrupt-session', 'corrupt-generation', BASE_EPOCH_MS);
+        const storedSession = [...runtime.data.entries()].find(([, stored]) => {
+            try {
+                return JSON.parse(stored.value).generationId === 'corrupt-generation';
+            } catch {
+                return false;
+            }
+        });
+        if (!storedSession) throw new Error('Expected stored client session');
+        const corruptValue = JSON.parse(storedSession[1].value);
+        corruptValue.expiresAtEpochMs = corruptValue.lastHeartbeatAtEpochMs - 1;
+        runtime.data.set(storedSession[0], {
+            ...storedSession[1],
+            value: JSON.stringify(corruptValue),
+        });
+        const corruptBefore = structuredClone([...runtime.data.entries()]);
+        await expect(createService(runtime, BASE_EPOCH_MS + 1_000).heartbeatSession(
+            SCOPE,
+            'alice',
+            'browser',
+            'corrupt-session',
+            {
+                generationId: 'corrupt-generation',
+                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 1_000,
+                expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
+                requestId: 'reject-corrupt-stored-session',
+            },
+        )).rejects.toMatchObject({ status: 400 });
+        expect([...runtime.data.entries()]).toEqual(corruptBefore);
+    });
+
     it('rejects malformed read entries and computed authoritative candidates', () => {
         const command = validPrincipalCommand();
         const facts = validFacts();
@@ -573,6 +728,9 @@ function invalidSessionCommand(
             instancePlatform: 'web',
             instanceUserAgent: null,
             instanceCapabilities: [],
+            principalUsername: null,
+            principalDisplayName: null,
+            principalRoles: null,
         }
         : operation.includes('heartbeat')
         ? {

@@ -27,17 +27,22 @@ export function init(app: Hono): void {
 
         upgraded = Deno.upgradeWebSocket(c.req.raw);
 
-        const connection = createAuthorisedWsConnectionContext(
+        const socketServer = getMiddleware().wsQBoxServerService.socket;
+        const connection = socketServer.createConnectionContext(
           authSession.sessionId,
           upgraded.socket,
         );
-        getMiddleware().wsQBoxServerService.socket.addConnection(connection);
+        socketServer.addConnection(connection);
 
         const clientStateWritten = await getMiddleware().appClientInboxService
           .processAuthorisedWsClientConnect(
             authSession,
             connection.generationId,
-            toAuthorisedWsClientInput(requestUrl, userAgent),
+            toAuthorisedWsClientInput(
+              requestUrl,
+              userAgent,
+              connection.generationStartedAtEpochMs,
+            ),
           );
         clientStateWritten.fold(
           (error) => {
@@ -77,6 +82,7 @@ export function createAuthorisedWsConnectionContext(
 export function toAuthorisedWsClientInput(
   url: URL,
   userAgent?: string,
+  connectedAtEpochMs?: number,
 ): RegisterAuthorisedWsClientInput {
   const applicationId = readNonEmptySearchParam(url, 'applicationId');
   const workspaceId = readNonEmptySearchParam(url, 'workspaceId');
@@ -85,6 +91,7 @@ export function toAuthorisedWsClientInput(
     ...(applicationId ? { applicationId } : {}),
     ...(workspaceId ? { workspaceId } : {}),
     ...(userAgent ? { userAgent } : {}),
+    ...(connectedAtEpochMs === undefined ? {} : { connectedAtEpochMs }),
   };
 }
 
