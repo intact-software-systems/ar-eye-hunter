@@ -5,13 +5,231 @@ import type {
     PSqlTransactionSql,
 } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { RuntimeStateJsonStore } from '@shared-server/runtime-state/RuntimeStateJsonStore.ts';
+import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
+    type RuntimeStateConditionalDeleteResult,
+    type RuntimeStateConditionalWriteResult,
     type RuntimeStateRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('runtime-state conditional writes', () => {
+    it('preserves and returns a live replacement raced against lazy expiry', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const store = new ExposedRuntimeStateJsonStore(repository);
+        await repository.insertIfAbsent(
+            'state',
+            'key',
+            JSON.stringify({ version: 'expired' }),
+            Date.now() - 1,
+        );
+        let replaced = false;
+        repository.beforeConditionalWrite = async (operation, namespace, key) => {
+            if (operation !== 'deleteIfRevision' || replaced) {
+                return;
+            }
+
+            replaced = true;
+            repository.beforeConditionalWrite = undefined;
+            await repository.upsertIfRevision(
+                namespace,
+                key,
+                JSON.stringify({ version: 'live' }),
+                NEVER_EXPIRE_AT_TIMESTAMP,
+                0,
+            );
+        };
+
+        await expect(store.read<{ version: string }>('state', 'key')).resolves
+            .toEqual({ version: 'live' });
+        await expect(repository.findEntry('state', 'key')).resolves.toMatchObject({
+            value: JSON.stringify({ version: 'live' }),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            revision: 1,
+        });
+    });
+
+    it('conditionally cleans a second expired revision after an expiry conflict', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const store = new ExposedRuntimeStateJsonStore(repository);
+        const expiredAt = Date.now() - 1;
+        await repository.insertIfAbsent(
+            'state',
+            'key',
+            JSON.stringify({ version: 0 }),
+            expiredAt,
+        );
+        let deleteAttempts = 0;
+        repository.beforeConditionalWrite = async (operation, namespace, key) => {
+            if (operation !== 'deleteIfRevision') {
+                return;
+            }
+
+            deleteAttempts += 1;
+            if (deleteAttempts === 1) {
+                await repository.upsertIfRevision(
+                    namespace,
+                    key,
+                    JSON.stringify({ version: 1 }),
+                    expiredAt,
+                    0,
+                );
+            }
+        };
+
+        await expect(store.read('state', 'key')).resolves.toBeUndefined();
+        expect(deleteAttempts).toBe(2);
+        await expect(repository.findEntry('state', 'key')).resolves.toBeUndefined();
+    });
+
+    it('returns absent when an expiry conflict winner disappears before reread', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const store = new ExposedRuntimeStateJsonStore(repository);
+        await repository.insertIfAbsent(
+            'state',
+            'key',
+            JSON.stringify({ version: 'expired' }),
+            Date.now() - 1,
+        );
+        repository.beforeConditionalWrite = (operation) => {
+            if (operation === 'deleteIfRevision') {
+                repository.deleteByKey('state', 'key');
+            }
+        };
+
+        await expect(store.read('state', 'key')).resolves.toBeUndefined();
+        await expect(repository.findEntry('state', 'key')).resolves.toBeUndefined();
+    });
+
+    it('exhausts exactly three conditional expiry attempts', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const store = new ExposedRuntimeStateJsonStore(repository);
+        const expiredAt = Date.now() - 1;
+        await repository.insertIfAbsent(
+            'state',
+            'key',
+            JSON.stringify({ version: 0 }),
+            expiredAt,
+        );
+        let deleteAttempts = 0;
+        repository.beforeConditionalWrite = async (operation, namespace, key) => {
+            if (operation !== 'deleteIfRevision') {
+                return;
+            }
+
+            const expectedRevision = deleteAttempts;
+            deleteAttempts += 1;
+            await repository.upsertIfRevision(
+                namespace,
+                key,
+                JSON.stringify({ version: deleteAttempts }),
+                expiredAt,
+                expectedRevision,
+            );
+        };
+
+        const read = store.read('state', 'key');
+        await expect(read).rejects.toBeInstanceOf(RuntimeStateRetryExhaustedError);
+        await expect(read).rejects.toMatchObject({
+            name: 'RuntimeStateRetryExhaustedError',
+            attempts: 3,
+            cause: expect.any(Error),
+        });
+        expect(deleteAttempts).toBe(3);
+        await expect(repository.findEntry('state', 'key')).resolves.toMatchObject({
+            revision: 3,
+        });
+        await expect(store.read('missing', 'key')).resolves.toBeUndefined();
+    });
+
+    it('serializes once and delegates protected JSON writes conditionally', async () => {
+        const repository = new FakeRuntimeStateRepository();
+        const store = new ExposedRuntimeStateJsonStore(repository);
+        let serializations = 0;
+        const value = {
+            toJSON() {
+                serializations += 1;
+                return { stored: true };
+            },
+        };
+
+        await expect(
+            store.insert('state', 'key', value, NEVER_EXPIRE_AT_TIMESTAMP),
+        ).resolves.toEqual({ status: 'applied', revision: 0 });
+        expect(serializations).toBe(1);
+        await expect(
+            store.update('state', 'key', value, NEVER_EXPIRE_AT_TIMESTAMP, 0),
+        ).resolves.toEqual({ status: 'applied', revision: 1 });
+        expect(serializations).toBe(2);
+        await expect(store.delete('state', 'key', 1)).resolves.toEqual({
+            status: 'applied',
+        });
+    });
+
+    it('fails conditional JSON helpers fast without repository capability', async () => {
+        let unconditionalWrites = 0;
+        let unconditionalDeletes = 0;
+        const repository: RuntimeStateRepositoryLike = {
+            findEntry: () => Promise.resolve(undefined),
+            findAllEntries: () => Promise.resolve([]),
+            upsert: () => {
+                unconditionalWrites += 1;
+                return Promise.resolve();
+            },
+            deleteByKey: () => {
+                unconditionalDeletes += 1;
+                return Promise.resolve();
+            },
+            deleteExpired: () => Promise.resolve(0),
+        };
+        const store = new ExposedRuntimeStateJsonStore(repository);
+
+        await expect(
+            store.insert('state', 'key', { stored: true }, NEVER_EXPIRE_AT_TIMESTAMP),
+        ).rejects.toThrow(/conditional runtime state repository/u);
+        await expect(
+            store.update(
+                'state',
+                'key',
+                { stored: true },
+                NEVER_EXPIRE_AT_TIMESTAMP,
+                0,
+            ),
+        ).rejects.toThrow(/conditional runtime state repository/u);
+        await expect(store.delete('state', 'key', 0)).rejects.toThrow(
+            /conditional runtime state repository/u,
+        );
+        expect(unconditionalWrites).toBe(0);
+        expect(unconditionalDeletes).toBe(0);
+    });
+
+    it('omits expired last-write-wins rows without an unsafe delete fallback', async () => {
+        let unconditionalDeletes = 0;
+        const expiredEntry = {
+            key: 'key',
+            value: JSON.stringify({ version: 'expired' }),
+            expireAtTimestamp: Date.now() - 1,
+            updatedTimestamp: new Date().toISOString(),
+            revision: 0,
+        } as const;
+        const repository: RuntimeStateRepositoryLike = {
+            findEntry: () => Promise.resolve(expiredEntry),
+            findAllEntries: () => Promise.resolve([expiredEntry]),
+            upsert: () => Promise.resolve(),
+            deleteByKey: () => {
+                unconditionalDeletes += 1;
+                return Promise.resolve();
+            },
+            deleteExpired: () => Promise.resolve(0),
+        };
+        const store = new ExposedRuntimeStateJsonStore(repository);
+
+        await expect(store.read('state', 'key')).resolves.toBeUndefined();
+        expect(unconditionalDeletes).toBe(0);
+    });
+
     it('applies writes only when the expected revision matches', async () => {
         const repository = new FakeRuntimeStateRepository();
 
@@ -348,6 +566,45 @@ describe('runtime-state conditional writes', () => {
             .toBeUndefined();
     });
 });
+
+class ExposedRuntimeStateJsonStore extends RuntimeStateJsonStore {
+    read<T>(namespace: string, key: string): Promise<T | undefined> {
+        return this.getValue<T>(namespace, key);
+    }
+
+    insert(
+        namespace: string,
+        key: string,
+        value: unknown,
+        expireAtTimestamp: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return this.putValueIfAbsent(namespace, key, value, expireAtTimestamp);
+    }
+
+    update(
+        namespace: string,
+        key: string,
+        value: unknown,
+        expireAtTimestamp: number,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return this.putValueIfRevision(
+            namespace,
+            key,
+            value,
+            expireAtTimestamp,
+            expectedRevision,
+        );
+    }
+
+    delete(
+        namespace: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        return this.deleteValueIfRevision(namespace, key, expectedRevision);
+    }
+}
 
 function createResultSql(
     result: unknown,

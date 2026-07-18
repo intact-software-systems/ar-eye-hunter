@@ -1,11 +1,20 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import {
+    isRuntimeStateConditionalRepositoryLike,
     isRuntimeStatePrefixPageRepositoryLike,
     isRuntimeStateTransactionalRepositoryLike,
+    type RuntimeStateConditionalDeleteResult,
+    type RuntimeStateConditionalRepositoryLike,
+    type RuntimeStateConditionalWriteResult,
     type RuntimeStateEntry,
     type RuntimeStateEntryPageOptions,
     type RuntimeStateRepositoryLike,
 } from './RuntimeStateRepository.ts';
+import {
+    DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
+    RuntimeStateRetryExhaustedError,
+    RuntimeStateWriteConflictError,
+} from './optimistic-runtime-state-write.ts';
 
 type ScopedRef = Readonly<{
     applicationId: string;
@@ -27,6 +36,40 @@ export class RuntimeStateJsonStore {
         expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP,
     ): Promise<void> {
         await this.repository.upsert(namespace, key, JSON.stringify(value), expireAtTimestamp);
+    }
+
+    protected async putValueIfAbsent(
+        namespace: string,
+        key: string,
+        value: unknown,
+        expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        const repository = this.conditionalRepository();
+        const serializedValue = JSON.stringify(value);
+        return await repository.insertIfAbsent(
+            namespace,
+            key,
+            serializedValue,
+            expireAtTimestamp,
+        );
+    }
+
+    protected async putValueIfRevision(
+        namespace: string,
+        key: string,
+        value: unknown,
+        expireAtTimestamp: number,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        const repository = this.conditionalRepository();
+        const serializedValue = JSON.stringify(value);
+        return await repository.upsertIfRevision(
+            namespace,
+            key,
+            serializedValue,
+            expireAtTimestamp,
+            expectedRevision,
+        );
     }
 
     protected async getValue<T>(namespace: string, key: string): Promise<T | undefined> {
@@ -135,6 +178,18 @@ export class RuntimeStateJsonStore {
         await this.repository.deleteByKey(namespace, key);
     }
 
+    protected async deleteValueIfRevision(
+        namespace: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        return await this.conditionalRepository().deleteIfRevision(
+            namespace,
+            key,
+            expectedRevision,
+        );
+    }
+
     protected scopeKey(scope: ScopedRef): string {
         return [
             this.toKeyPart('app', scope.applicationId),
@@ -182,12 +237,55 @@ export class RuntimeStateJsonStore {
         namespace: string,
         entry: RuntimeStateEntry,
     ): Promise<T | undefined> {
-        if (entry.expireAtTimestamp <= Date.now()) {
-            await this.repository.deleteByKey(namespace, entry.key);
-            return undefined;
+        let observedEntry = entry;
+        let lastConflict: RuntimeStateWriteConflictError | undefined;
+
+        for (
+            let attempt = 0;
+            attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS;
+            attempt += 1
+        ) {
+            if (observedEntry.expireAtTimestamp > Date.now()) {
+                return JSON.parse(observedEntry.value) as T;
+            }
+            if (!isRuntimeStateConditionalRepositoryLike(this.repository)) {
+                return undefined;
+            }
+
+            const result = await this.deleteValueIfRevision(
+                namespace,
+                observedEntry.key,
+                observedEntry.revision,
+            );
+            if (result.status === 'applied') {
+                return undefined;
+            }
+
+            lastConflict = new RuntimeStateWriteConflictError();
+            const replacement = await this.repository.findEntry(
+                namespace,
+                observedEntry.key,
+            );
+            if (!replacement) {
+                return undefined;
+            }
+            if (replacement.expireAtTimestamp > Date.now()) {
+                return JSON.parse(replacement.value) as T;
+            }
+            observedEntry = replacement;
         }
 
-        return JSON.parse(entry.value) as T;
+        throw new RuntimeStateRetryExhaustedError(
+            lastConflict ?? new RuntimeStateWriteConflictError(),
+        );
+    }
+
+    private conditionalRepository(): RuntimeStateRepositoryLike &
+        RuntimeStateConditionalRepositoryLike {
+        if (!isRuntimeStateConditionalRepositoryLike(this.repository)) {
+            throw new Error('A conditional runtime state repository is required');
+        }
+        return this.repository;
     }
 
     private toKeyPart(name: string, value?: string): string {
