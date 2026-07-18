@@ -51,6 +51,10 @@ export type ClientStateRouteAuthSession = Pick<
   'clientId' | 'sessionId'
 >;
 
+export type ProcessClientAppInbox = <V>(
+  enqueue: AppInboxEnqueueInput<V>,
+) => Promise<ClientStateWritten>;
+
 export type ClientStateRouteDependencies = Readonly<{
   getClientStateService?: () => ClientStateRouteService;
   requireApiAuthSession?: (
@@ -58,6 +62,7 @@ export type ClientStateRouteDependencies = Readonly<{
       header(name: string): string | undefined;
     },
   ) => Promise<ClientStateRouteAuthSession>;
+  processClientAppInbox?: ProcessClientAppInbox;
   hydrateStateSyncSnapshotCaches?: (
     input: StateSyncCacheHydrationInput,
   ) => Promise<StateSyncCacheHydrationResult>;
@@ -197,17 +202,20 @@ export function init(
           await readRequestWithRequestId<UpsertClientPrincipalRequest>(c),
           authSession,
         );
-        const snapshot = await processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>({
-          type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-          resourceId: request.requestId,
-          contextId: toClientAppInboxContextId(scope, principalId),
-          senderId: authSession.clientId,
-          data: {
-            scope,
-            principalId,
-            request,
+        const snapshot = await processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>(
+          deps,
+          {
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: request.requestId,
+            contextId: toClientAppInboxContextId(scope, principalId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              principalId,
+              request,
+            },
           },
-        });
+        );
         return c.json(snapshot);
       } catch (error) {
         return toErrorResponse(c, error);
@@ -228,18 +236,21 @@ export function init(
           await readRequestWithRequestId<UpsertClientInstanceRequest>(c),
           authSession,
         );
-        const snapshot = await processClientAppInbox<ClientInstanceUpsertAppInboxPayload>({
-          type: AppInboxType.CLIENT_INSTANCE_UPSERT,
-          resourceId: request.requestId,
-          contextId: toClientAppInboxContextId(scope, principalId),
-          senderId: authSession.clientId,
-          data: {
-            scope,
-            principalId,
-            clientInstanceId,
-            request,
+        const snapshot = await processClientAppInbox<ClientInstanceUpsertAppInboxPayload>(
+          deps,
+          {
+            type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+            resourceId: request.requestId,
+            contextId: toClientAppInboxContextId(scope, principalId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              principalId,
+              clientInstanceId,
+              request,
+            },
           },
-        });
+        );
         return c.json(snapshot);
       } catch (error) {
         return toErrorResponse(c, error);
@@ -265,19 +276,22 @@ export function init(
           await readRequestWithRequestId<ConnectClientSessionRequest>(c),
           authSession,
         );
-        const snapshot = await processClientAppInbox<ClientSessionConnectAppInboxPayload>({
-          type: AppInboxType.CLIENT_SESSION_CONNECT,
-          resourceId: request.requestId,
-          contextId: toClientAppInboxContextId(scope, principalId),
-          senderId: authSession.clientId,
-          data: {
-            scope,
-            principalId,
-            clientInstanceId,
-            sessionId,
-            request,
+        const snapshot = await processClientAppInbox<ClientSessionConnectAppInboxPayload>(
+          deps,
+          {
+            type: AppInboxType.CLIENT_SESSION_CONNECT,
+            resourceId: request.requestId,
+            contextId: toClientAppInboxContextId(scope, principalId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              principalId,
+              clientInstanceId,
+              sessionId,
+              request,
+            },
           },
-        });
+        );
         return c.json(snapshot);
       } catch (error) {
         return toErrorResponse(c, error);
@@ -303,19 +317,22 @@ export function init(
           await readRequestWithRequestId<HeartbeatClientSessionRequest>(c),
           authSession,
         );
-        const snapshot = await processClientAppInbox<ClientSessionHeartbeatAppInboxPayload>({
-          type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
-          resourceId: request.requestId,
-          contextId: toClientAppInboxContextId(scope, principalId),
-          senderId: authSession.clientId,
-          data: {
-            scope,
-            principalId,
-            clientInstanceId,
-            sessionId,
-            request,
+        const snapshot = await processClientAppInbox<ClientSessionHeartbeatAppInboxPayload>(
+          deps,
+          {
+            type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
+            resourceId: request.requestId,
+            contextId: toClientAppInboxContextId(scope, principalId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              principalId,
+              clientInstanceId,
+              sessionId,
+              request,
+            },
           },
-        });
+        );
         return c.json(snapshot);
       } catch (error) {
         return toErrorResponse(c, error);
@@ -341,19 +358,22 @@ export function init(
           await readRequestWithRequestId<DisconnectClientSessionRequest>(c),
           authSession,
         );
-        const snapshot = await processClientAppInbox<ClientSessionDisconnectAppInboxPayload>({
-          type: AppInboxType.CLIENT_SESSION_DISCONNECT,
-          resourceId: request.requestId,
-          contextId: toClientAppInboxContextId(scope, principalId),
-          senderId: authSession.clientId,
-          data: {
-            scope,
-            principalId,
-            clientInstanceId,
-            sessionId,
-            request,
+        const snapshot = await processClientAppInbox<ClientSessionDisconnectAppInboxPayload>(
+          deps,
+          {
+            type: AppInboxType.CLIENT_SESSION_DISCONNECT,
+            resourceId: request.requestId,
+            contextId: toClientAppInboxContextId(scope, principalId),
+            senderId: authSession.clientId,
+            data: {
+              scope,
+              principalId,
+              clientInstanceId,
+              sessionId,
+              request,
+            },
           },
-        });
+        );
         return c.json(snapshot);
       } catch (error) {
         return toErrorResponse(c, error);
@@ -370,6 +390,8 @@ function toClientStateRouteDependencies(
       getClientStateService,
     requireApiAuthSession: dependencies.requireApiAuthSession ??
       defaultRequireApiAuthSession,
+    processClientAppInbox: dependencies.processClientAppInbox ??
+      defaultProcessClientAppInbox,
     hydrateStateSyncSnapshotCaches: dependencies.hydrateStateSyncSnapshotCaches ??
       defaultHydrateStateSyncSnapshotCaches,
   };
@@ -439,21 +461,40 @@ function isDefined<T>(value: T | undefined): value is T {
 }
 
 async function processClientAppInbox<V>(
+  deps: Required<ClientStateRouteDependencies>,
   enqueue: AppInboxEnqueueInput<V>,
 ): Promise<ClientSnapshot> {
+  const written = await deps.processClientAppInbox(enqueue);
+  const snapshot = requireClientStateWrittenSnapshot(written);
+  await hydrateClientMutationSnapshot(deps, snapshot);
+  return snapshot;
+}
+
+async function defaultProcessClientAppInbox<V>(
+  enqueue: AppInboxEnqueueInput<V>,
+): Promise<ClientStateWritten> {
   const result = await getMiddleware().appClientInboxService.processEntryUntilCompletion<
     V,
     ClientStateWritten
-  >(
-    enqueue,
-  );
+  >(enqueue);
 
   return result.fold(
     (error) => {
       throw new Error(error);
     },
-    (value) => requireClientStateWrittenSnapshot(value),
+    (value) => value,
   );
+}
+
+async function hydrateClientMutationSnapshot(
+  deps: Required<ClientStateRouteDependencies>,
+  snapshot: ClientSnapshot,
+): Promise<void> {
+  try {
+    await deps.hydrateStateSyncSnapshotCaches({ clients: [snapshot] });
+  } catch (error) {
+    console.warn('Failed to hydrate client mutation snapshot cache', error);
+  }
 }
 
 function requireClientStateWrittenSnapshot(

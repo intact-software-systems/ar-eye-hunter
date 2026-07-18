@@ -6,6 +6,8 @@ import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
+import type { ClientStateWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import {
   type AppInboxEnqueueInput,
   AppInboxType,
@@ -183,6 +185,127 @@ Deno.test('state read routes hydrate process snapshot caches after successful cl
       { groups: [groupSnapshot] },
     ]);
   });
+});
+
+Deno.test('client mutation routes hydrate the receiving node cache from remotely processed results', async () => {
+  const baseSnapshot = createClientSnapshot('alice');
+  const snapshot: ClientSnapshot = {
+    ...baseSnapshot,
+    stateRevision: 3,
+    principal: {
+      ...baseSnapshot.principal,
+      snapshotVersion: 3,
+      presenceVersion: 2,
+    },
+    activeSessions: [{
+      ...TEST_SCOPE,
+      principalId: 'alice',
+      clientInstanceId: 'instance-1',
+      sessionId: 'alice-session',
+      status: 'active',
+      presenceState: 'online',
+      transport: 'ws',
+      authenticatedAtEpochMs: 1,
+      connectedAtEpochMs: 1,
+      lastHeartbeatAtEpochMs: 1,
+      expiresAtEpochMs: 9_999_999_999_999,
+    }],
+    isOnline: true,
+    activeSessionCount: 1,
+    lastSeenAtEpochMs: 1,
+  };
+  const hydrationInputs: unknown[] = [];
+  let cachedSnapshot = baseSnapshot;
+  const app = new Hono();
+  clientStateRoutes.init(app, {
+    getClientStateService: () => ({
+      listSnapshots: () => Promise.resolve([]),
+      readSnapshot: () => Promise.resolve(cachedSnapshot),
+      readPresenceSnapshot: () => Promise.resolve(undefined),
+      listEvents: () => Promise.resolve([]),
+      listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
+    }),
+    requireApiAuthSession: () => Promise.resolve(createAuthSession('alice')),
+    processClientAppInbox: <V>(
+      _input: AppInboxEnqueueInput<V>,
+    ): Promise<ClientStateWritten> =>
+      Promise.resolve({
+        status: 'ok',
+        result: Either.ofRight({ snapshot }),
+      }),
+    hydrateStateSyncSnapshotCaches: (input) => {
+      hydrationInputs.push(input);
+      cachedSnapshot = input.clients?.[0] ?? cachedSnapshot;
+      return Promise.resolve({ clientSnapshotCount: 1, groupSnapshotCount: 0 });
+    },
+  });
+
+  const response = await app.request(
+    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/instances/instance-1/sessions/alice-session',
+    {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ requestId: 'connect-alice-session' }),
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), snapshot);
+  assert.deepEqual(hydrationInputs, [{ clients: [snapshot] }]);
+
+  const readResponse = await app.request(
+    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice',
+    { headers: { authorization: 'Bearer token' } },
+  );
+
+  assert.equal(readResponse.status, 200);
+  assert.deepEqual(await readResponse.json(), snapshot);
+});
+
+Deno.test('client mutation routes preserve committed success when cache hydration fails', async () => {
+  const snapshot = createClientSnapshot('alice');
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args);
+  try {
+    const deps = createClientRouteDeps({
+      session: createAuthSession('alice'),
+      clientService: {},
+      processClientAppInbox: () =>
+        Promise.resolve({
+          status: 'ok',
+          result: Either.ofRight({ snapshot }),
+        }),
+      hydrateStateSyncSnapshotCaches: () =>
+        Promise.reject(new Error('local cache observer failed')),
+    });
+    const app = createClientRouteApp(deps);
+
+    const response = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal',
+      {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer token',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId: 'upsert-alice-principal',
+          username: 'alice',
+        }),
+      },
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), snapshot);
+    assert.equal(warnings.length, 1);
+    assert.equal(warnings[0]?.[0], 'Failed to hydrate client mutation snapshot cache');
+  } finally {
+    console.warn = originalWarn;
+  }
 });
 
 Deno.test('state event page routes call paged services instead of full-history listEvents', async () => {
@@ -890,6 +1013,9 @@ function createClientRouteDeps(
     hydrateStateSyncSnapshotCaches?: clientStateRoutes.ClientStateRouteDependencies[
       'hydrateStateSyncSnapshotCaches'
     ];
+    processClientAppInbox?: clientStateRoutes.ClientStateRouteDependencies[
+      'processClientAppInbox'
+    ];
   }>,
 ):
   & Required<clientStateRoutes.ClientStateRouteDependencies>
@@ -910,6 +1036,8 @@ function createClientRouteDeps(
       authCalls += 1;
       return Promise.resolve(input.session);
     },
+    processClientAppInbox: input.processClientAppInbox ??
+      (() => Promise.reject(new Error('Unexpected client mutation route call'))),
     hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
       (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
     authCallCount: () => authCalls,
