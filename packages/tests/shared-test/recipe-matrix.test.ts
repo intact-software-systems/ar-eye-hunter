@@ -487,6 +487,7 @@ describe('black-box runner recipe matrix', () => {
         pollSteps.forEach(step => {
             expect(step.type).toBe('parallel');
             expect(step.maxConcurrency).toBe(15);
+            expect(step.nonBlockingFailure).toBe(true);
             expect((step.groups as unknown[])).toHaveLength(15);
         });
 
@@ -560,16 +561,50 @@ describe('black-box runner recipe matrix', () => {
         });
 
         const receipts = afterChurn.find(step =>
-            step.name === 'assertEffectfulReceiptsExposeOutboxIdsAndConverge'
+            step.name === 'assertFinalBoundedConvergenceAndCausalHistory'
         );
         expect(receipts).toMatchObject({
             type: 'assert',
             actual: expect.any(Object),
             expect: { body: expect.any(Object) },
         });
-        expect((receipts?.actual as Record<string, unknown>).receipts).toEqual(expect.any(Object));
-        expect((receipts?.actual as Record<string, unknown>).monotonicCausalTuples)
+        expect((receipts?.actual as Record<string, unknown>).causalHistory)
             .toEqual(expect.any(Object));
+        expect((receipts?.expect as { missingActualValue?: unknown }).missingActualValue)
+            .toBe('MISSING');
+        expect((receipts?.expect as { monotonicPaths?: unknown }).monotonicPaths)
+            .toEqual(expect.any(Array));
+
+        groupIds.forEach(groupId => {
+            const groupLabel = groupId.replace(/^group/, '').replace(/Id$/, '').toLowerCase();
+            const finalTopology = afterChurn.find(step =>
+                step.name === `finalReconfigure${groupLabel}Topology`
+            );
+            expect((finalTopology?.request as { body?: Record<string, unknown> })?.body?.publish).toBe(true);
+
+            const observedEffect = afterChurn.find(step =>
+                step.name === `observe${groupLabel}PublishedTopologyEffect`
+            );
+            expect(observedEffect).toMatchObject({
+                type: 'http',
+                connection: 'apiPrimary',
+                request: {
+                    method: 'GET',
+                    path: expect.stringContaining('/topology'),
+                },
+            });
+            expect((observedEffect?.request as { outputs?: Record<string, unknown> })?.outputs)
+                .toHaveProperty(`observedGroup${groupId.slice(5, -2)}IdTopologySnapshotVersion`);
+        });
+
+        const receiptEffects = afterChurn.find(step =>
+            step.name === 'assertPublishedTopologyEffectsMatchReceipts'
+        );
+        expect(receiptEffects).toMatchObject({
+            type: 'assert',
+            actual: { receipts: expect.any(Object), observedEffects: expect.any(Object) },
+            expect: { body: expect.any(Object) },
+        });
     });
 
     it('advertises the API-v1 profile in recipe-matrix CLI usage', () => {

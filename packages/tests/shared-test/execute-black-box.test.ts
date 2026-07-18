@@ -279,6 +279,261 @@ describe('executeBlackBox', () => {
         expect(report.outputs.afterFailure).toBe('still-runs');
     });
 
+    it('continues after a non-blocking convergence failure and gates on a later successful attempt', async () => {
+        const report = await executeBlackBox(
+            [
+                {
+                    ASSERT: {
+                        request: {
+                            actual: { convergence: 'pending' },
+                            nonBlockingFailure: true,
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1,
+                        },
+                        response: {
+                            body: { convergence: 'ready' },
+                        },
+                    },
+                    pollAttemptOne: {},
+                },
+                {
+                    SET: {
+                        request: {
+                            output: 'convergenceAttemptTwo',
+                            value: 'ready',
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 2,
+                        },
+                        response: {},
+                    },
+                    pollAttemptTwo: {},
+                },
+                {
+                    ASSERT: {
+                        request: {
+                            actual: { convergence: 'ready' },
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 3,
+                        },
+                        response: {
+                            body: { convergence: 'ready' },
+                        },
+                    },
+                    assertFinalBoundedConvergence: {},
+                },
+            ],
+            0,
+            { failFast: true },
+        );
+
+        expect(report.resultsByName.pollAttemptOne).toHaveLength(1);
+        expect(report.resultsByName.pollAttemptOne[0].status).toBe('FAILURE');
+        expect(report.resultsByName.pollAttemptOne[0].nonBlockingFailure).toBe(true);
+        expect(report.resultsByName.pollAttemptTwo).toHaveLength(1);
+        expect(report.resultsByName.assertFinalBoundedConvergence[0].status).toBe('SUCCESS');
+        expect(report.summary.failure).toBe(0);
+        expect(report.summary.nonBlockingFailure).toBe(1);
+    });
+
+    it('fails a convergence assertion when a causal history regresses', async () => {
+        const report = await executeBlackBox([
+            {
+                ASSERT: {
+                    request: {
+                        actual: {
+                            causalHistory: {
+                                groupState: [4, 7, 6],
+                            },
+                        },
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {
+                        body: {
+                            causalHistory: {
+                                groupState: [4, 7, 6],
+                            },
+                        },
+                        monotonicPaths: ['causalHistory.groupState'],
+                    },
+                },
+                assertCausalHistoryIsMonotonic: {},
+            },
+        ]);
+
+        expect(report.resultsByName.assertCausalHistoryIsMonotonic[0].status).toBe('FAILURE');
+        expect(report.resultsByName.assertCausalHistoryIsMonotonic[0].result)
+            .toBe('Assert monotonic comparison failed');
+        expect(report.summary.failure).toBe(1);
+    });
+
+    it('resolves transform-backed assert actual values with a missing-observation fallback', async () => {
+        const report = await executeBlackBox([
+            {
+                ASSERT: {
+                    request: {
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {
+                        actual: {
+                            transform: {
+                                value: {
+                                    observed: {
+                                        coalesce: [
+                                            { path: 'outputs.missingCausalRevision' },
+                                            'MISSING',
+                                        ],
+                                    },
+                                },
+                            },
+                        },
+                        body: { observed: 'MISSING' },
+                    },
+                },
+                assertMissingObservationIsRecorded: {},
+            },
+        ]);
+
+        expect(report.resultsByName.assertMissingObservationIsRecorded[0].status).toBe('SUCCESS');
+        expect(report.resultsByName.assertMissingObservationIsRecorded[0].actual)
+            .toEqual({ observed: 'MISSING' });
+    });
+
+    it('records missing direct assert observations without aborting the final assertion', async () => {
+        const report = await executeBlackBox([
+            {
+                ASSERT: {
+                    request: {
+                        scenarioExecutionNumber: 1,
+                        interactionExecutionNumber: 1,
+                    },
+                    response: {
+                        actual: { observed: '{outputs.missingCausalRevision}' },
+                        missingActualValue: 'MISSING',
+                        body: { observed: 'MISSING' },
+                    },
+                },
+                assertMissingDirectObservationIsRecorded: {},
+            },
+        ]);
+
+        expect(report.resultsByName.assertMissingDirectObservationIsRecorded[0].status).toBe('SUCCESS');
+        expect(report.resultsByName.assertMissingDirectObservationIsRecorded[0].actual)
+            .toEqual({ observed: 'MISSING' });
+    });
+
+    it('continues after a failed non-blocking parallel convergence poll', async () => {
+        const report = await executeBlackBox(
+            [
+                {
+                    PARALLEL: {
+                        request: {
+                            nonBlockingFailure: true,
+                            groups: [
+                                {
+                                    name: 'pending-causal-read',
+                                    steps: [
+                                        {
+                                            ASSERT: {
+                                                request: {
+                                                    actual: { convergence: 'pending' },
+                                                    scenarioExecutionNumber: 1,
+                                                    interactionExecutionNumber: 2,
+                                                },
+                                                response: { body: { convergence: 'ready' } },
+                                            },
+                                            pendingCausalRead: {},
+                                        },
+                                    ],
+                                },
+                            ],
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1,
+                        },
+                        response: {},
+                    },
+                    pollAttemptOne: {},
+                },
+                {
+                    SET: {
+                        request: {
+                            output: 'laterAttemptRan',
+                            value: true,
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 3,
+                        },
+                        response: {},
+                    },
+                    pollAttemptTwo: {},
+                },
+            ],
+            0,
+            { failFast: true },
+        );
+
+        expect(report.resultsByName.pollAttemptOne[0].nonBlockingFailure).toBe(true);
+        expect(report.resultsByName.pollAttemptTwo).toHaveLength(1);
+        expect(report.summary.failure).toBe(0);
+        expect(report.summary.nonBlockingFailure).toBe(2);
+    });
+
+    it('defers output-extraction failures inside a non-blocking parallel poll', async () => {
+        const report = await executeBlackBox(
+            [
+                {
+                    PARALLEL: {
+                        request: {
+                            nonBlockingFailure: true,
+                            groups: [
+                                {
+                                    name: 'pending-causal-output',
+                                    steps: [
+                                        {
+                                            SET: {
+                                                request: {
+                                                    output: 'missingCausalRevision',
+                                                    outputPath: 'body.missing',
+                                                    value: { body: { present: true } },
+                                                    scenarioExecutionNumber: 1,
+                                                    interactionExecutionNumber: 2,
+                                                },
+                                                response: {},
+                                            },
+                                            capturePendingCausalRevision: {},
+                                        },
+                                    ],
+                                },
+                            ],
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 1,
+                        },
+                        response: {},
+                    },
+                    pollWithMissingCausalOutput: {},
+                },
+                {
+                    SET: {
+                        request: {
+                            output: 'laterAttemptRan',
+                            value: true,
+                            scenarioExecutionNumber: 1,
+                            interactionExecutionNumber: 3,
+                        },
+                        response: {},
+                    },
+                    pollAfterMissingCausalOutput: {},
+                },
+            ],
+            0,
+            { failFast: true },
+        );
+
+        expect(report.resultsByName.capturePendingCausalRevision[0].nonBlockingFailure).toBe(true);
+        expect(report.resultsByName.pollAfterMissingCausalOutput).toHaveLength(1);
+        expect(report.summary.failure).toBe(0);
+    });
+
     it('supports variables in placeholders', async () => {
         const report = await executeBlackBox(
             [

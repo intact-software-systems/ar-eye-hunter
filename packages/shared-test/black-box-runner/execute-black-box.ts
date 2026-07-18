@@ -934,6 +934,36 @@ function resolvePlaceholders(value: any, context: any): any {
     return value;
 }
 
+function resolveAssertActual(value: any, context: any, missingActualValue: any): any {
+    if (typeof value === 'string') {
+        try {
+            return resolveStringPlaceholders(value, context);
+        } catch (error) {
+            if (missingActualValue !== undefined) {
+                return missingActualValue;
+            }
+            throw error;
+        }
+    }
+
+    if (Array.isArray(value)) {
+        return value.map(item => resolveAssertActual(item, context, missingActualValue));
+    }
+
+    if (value && typeof value === 'object') {
+        if (isTransformOnlySpec(value as Record<string, unknown>)) {
+            return value;
+        }
+
+        return Object.fromEntries(
+            Object.entries(value)
+                .map(([key, nested]) => [key, resolveAssertActual(nested, context, missingActualValue)]),
+        );
+    }
+
+    return value;
+}
+
 function toResultKey(interactionData: any): string {
     return [
         interactionData.name,
@@ -955,17 +985,25 @@ function storeInteractionData(interactionData: any, context: any): any {
         ...interactionData,
         resultKey,
     }, context);
+    const storedResult = resultWithKey?.status === FAILURE &&
+            (resultWithKey?.nonBlockingFailure === true ||
+                resultWithKey?.interaction?.request?.nonBlockingFailure === true)
+        ? {
+            ...resultWithKey,
+            nonBlockingFailure: true,
+        }
+        : resultWithKey;
 
-    context.results[resultKey] = resultWithKey;
-    context.resultsList.push(resultWithKey);
+    context.results[resultKey] = storedResult;
+    context.resultsList.push(storedResult);
 
     if (!context.resultsByName[interactionData.name]) {
         context.resultsByName[interactionData.name] = [];
     }
 
-    context.resultsByName[interactionData.name].push(resultWithKey);
+    context.resultsByName[interactionData.name].push(storedResult);
 
-    return resultWithKey;
+    return storedResult;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -1521,7 +1559,51 @@ function toAssertFailureStatus(config: any, interaction: any, actual: any, resul
     };
 }
 
-function executeAssertInteraction(interaction: any, config: any, _context: any): Promise<any> {
+function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
+    if (!Array.isArray(paths)) {
+        return [];
+    }
+
+    return paths.flatMap<any>(path => {
+        if (typeof path !== 'string' || path.length <= 0) {
+            return [{ path, error: 'Monotonic assertion paths must be non-empty strings.' }];
+        }
+
+        let values: unknown;
+        try {
+            values = resolvePath(path, actual);
+        } catch (error) {
+            return [{
+                path,
+                error: error instanceof Error ? error.message : String(error),
+            }];
+        }
+
+        if (!Array.isArray(values) || values.length <= 0) {
+            return [{ path, values, error: 'Monotonic assertion path must resolve to a non-empty array.' }];
+        }
+
+        const numericValues = values.map(value => Number(value));
+        if (numericValues.some(value => !Number.isFinite(value))) {
+            return [{ path, values, error: 'Monotonic assertion values must be finite numbers.' }];
+        }
+
+        const regressionIndex = numericValues.findIndex((value, index) =>
+            index > 0 && value < numericValues[index - 1]
+        );
+        return regressionIndex < 0
+            ? []
+            : [{
+                path,
+                values,
+                regressionIndex,
+                previous: numericValues[regressionIndex - 1],
+                current: numericValues[regressionIndex],
+            }];
+    });
+}
+
+function executeAssertInteraction(interaction: any, config: any, context: any): Promise<any> {
     const expectedAlternatives = Array.isArray(interaction.response.anyOf)
         ? interaction.response.anyOf
         : [];
@@ -1532,7 +1614,16 @@ function executeAssertInteraction(interaction: any, config: any, _context: any):
             : interaction.response.expected;
 
     const actual = interaction.response.actual !== undefined
-        ? interaction.response.actual
+        ? isRecord(interaction.response.actual) && interaction.response.actual.transform !== undefined
+            ? evaluateTransformSpec(interaction.response.actual.transform, {
+                context,
+                operatorPath: 'assert.actual',
+            })
+            : resolveAssertActual(
+                interaction.response.actual,
+                context,
+                interaction.response.missingActualValue,
+            )
         : interaction.request.actual;
 
     if (expected === undefined && expectedAlternatives.length <= 0) {
@@ -1550,6 +1641,23 @@ function executeAssertInteraction(interaction: any, config: any, _context: any):
             interaction,
             actual,
             'Assert step is missing actual value. Use actual or expect.actual.',
+        ));
+    }
+
+    const monotonicFailures = monotonicComparisonFailures(
+        actual,
+        interaction.response.monotonicPaths,
+    );
+    if (monotonicFailures.length > 0) {
+        return Promise.resolve(toAssertFailureStatus(
+            config,
+            interaction,
+            actual,
+            'Assert monotonic comparison failed',
+            {
+                monotonicPaths: interaction.response.monotonicPaths,
+                failures: monotonicFailures,
+            },
         ));
     }
 
@@ -2959,13 +3067,16 @@ function toResultEntries(results: any): any[] {
 
 function toSummary(results: any, options: any, startedAtEpochMs: number, endedAtEpochMs: number): any {
     const entries = toResultEntries(results);
-    const failures = entries.filter(entry => entry?.status === FAILURE);
+    const observedFailures = entries.filter(entry => entry?.status === FAILURE);
+    const failures = observedFailures.filter(entry => entry?.nonBlockingFailure !== true);
     const successes = entries.filter(entry => entry?.status === SUCCESS);
 
     return {
         total: entries.length,
         success: successes.length,
         failure: failures.length,
+        observedFailure: observedFailures.length,
+        nonBlockingFailure: observedFailures.length - failures.length,
         failFast: options.failFast !== false,
         durationMs: endedAtEpochMs - startedAtEpochMs,
         firstFailure: failures.length > 0
@@ -3245,7 +3356,12 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
     interaction.request = interactionWithConfig.PARALLEL
         ? toParallelRequest(interaction.request, context)
         : toRequest(interaction.request, context);
-    interaction.response = resolvePlaceholders(interaction.response || {}, context);
+    const rawResponse = interaction.response || {};
+    const {actual: rawAssertActual, ...responseWithoutAssertActual} = rawResponse;
+    interaction.response = resolvePlaceholders(responseWithoutAssertActual, context);
+    if (interactionWithConfig.ASSERT && rawAssertActual !== undefined) {
+        interaction.response.actual = rawAssertActual;
+    }
 
     const config = {
         interactionName: toInteractionName(interactionWithConfig),
@@ -3322,6 +3438,7 @@ function toParallelFailureStatus(config: any, interaction: any, result: string, 
         repeatIndex: config.interaction.request.repeatIndex,
         expected: interaction.response,
         actual: details,
+        ...config,
     };
 }
 
@@ -3337,6 +3454,7 @@ function toParallelSuccessStatus(config: any, interaction: any, actual: any): an
         repeatIndex: config.interaction.request.repeatIndex,
         expected: interaction.response,
         actual,
+        ...config,
     };
 }
 
@@ -3400,6 +3518,7 @@ async function executeParallelInteraction(interaction: any, config: any, context
         const stepResults = await executeBlackBoxRecursive(steps, 0, {
             ...context.options,
             failFast: groupFailFast,
+            nonBlockingFailure: interaction.request.nonBlockingFailure === true,
         }, context);
         const resultValues = Object.values(stepResults || {}) as any[];
         const failureCount = resultValues.filter(result => result?.status === FAILURE).length;
@@ -3448,13 +3567,22 @@ function executeBlackBoxRecursive(
     context: any,
 ): Promise<any> {
     const executeNext = (interactionData: any): any => {
-        const storedInteractionData = storeInteractionData(interactionData, context);
+        const storedInteractionData = storeInteractionData(
+            options.nonBlockingFailure === true
+                ? { ...interactionData, nonBlockingFailure: true }
+                : interactionData,
+            context,
+        );
 
         const data = {
             [toResultKey(storedInteractionData)]: storedInteractionData,
         };
 
-        if (storedInteractionData.status === FAILURE && options.failFast !== false) {
+        if (
+            storedInteractionData.status === FAILURE &&
+            storedInteractionData.nonBlockingFailure !== true &&
+            options.failFast !== false
+        ) {
             return data;
         }
 
