@@ -425,6 +425,21 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         return this.findPrefixEntries(namespace, keyPrefix);
     }
 
+    async findEntriesByKeys(
+        namespace: string,
+        keys: readonly string[],
+    ): Promise<readonly RuntimeStateEntry[]> {
+        const keySet = new Set(keys);
+        return [...this.data.entries()]
+            .filter(
+                ([compositeKey]) =>
+                    this.toNamespace(compositeKey) === namespace &&
+                    keySet.has(this.toStoreKey(compositeKey)),
+            )
+            .map(([, entry]) => ({ ...entry }))
+            .sort((left, right) => left.key.localeCompare(right.key));
+    }
+
     async findEntriesByPrefixPage(
         namespace: string,
         keyPrefix: string,

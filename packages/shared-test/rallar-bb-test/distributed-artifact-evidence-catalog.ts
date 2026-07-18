@@ -10,7 +10,10 @@ import {
     deriveDistributedArtifactEvidenceSource,
     projectDistributedArtifactEvidenceIndex,
 } from './distributed-artifact-evidence-index.ts';
-import { compareEvidenceEntries } from './distributed-artifact-evidence-utils.ts';
+import {
+    compareEvidenceEntries,
+    selectPrimaryDistributedArtifactResultFailure,
+} from './distributed-artifact-evidence-utils.ts';
 import { prepareDistributedArtifactEvidenceCatalogAuthority } from
     './distributed-artifact-evidence-window.ts';
 
@@ -90,6 +93,7 @@ async function createDistributedArtifactEvidenceCatalog(
     let primaryAnalysisFailure: CatalogCandidate | undefined;
     let latestFallbackFailure: CatalogCandidate | undefined;
     let latestDiagnostic: CatalogCandidate | undefined;
+    let primaryResultFailure: CatalogCandidate | undefined;
     const rawSearchValue = createRawSearchValueResolver(input);
 
     await visitDistinctCatalogEntries(sourceEntries, candidate => {
@@ -110,10 +114,18 @@ async function createDistributedArtifactEvidenceCatalog(
         if (entry.kind === 'diagnostic') {
             latestDiagnostic = laterCandidate(latestDiagnostic, candidate);
         }
+        const selectedResultFailure = selectPrimaryDistributedArtifactResultFailure(
+            [primaryResultFailure?.entry, entry].filter(
+                (value): value is DistributedArtifactEvidenceEntry => value !== undefined,
+            ),
+            input.analysis.failure?.commandId,
+        );
+        if (selectedResultFailure === entry) primaryResultFailure = candidate;
         work.peakRetainedEntryReferences = Math.max(
             work.peakRetainedEntryReferences,
             newest.size + Number(Boolean(primaryAnalysisFailure ?? latestFallbackFailure)) +
-                Number(Boolean(latestDiagnostic)),
+                Number(Boolean(latestDiagnostic)) +
+                Number(Boolean(primaryResultFailure)),
         );
     }, work, rawSearchValue);
 
@@ -122,6 +134,7 @@ async function createDistributedArtifactEvidenceCatalog(
         newest.values(),
         primaryFailure,
         latestDiagnostic,
+        primaryResultFailure,
     );
     work.sortedRetainedEntries = retained.length;
     work.retainedModelDigests = retained.length;
@@ -246,10 +259,11 @@ function retainCatalogCandidates(
     newestCandidates: readonly CatalogCandidate[],
     primaryFailure: CatalogCandidate | undefined,
     latestDiagnostic: CatalogCandidate | undefined,
+    primaryResultFailure: CatalogCandidate | undefined,
 ): CatalogCandidate[] {
     const retained: CatalogCandidate[] = [];
     const retainedIds = new Set<string>();
-    for (const anchor of [primaryFailure, latestDiagnostic]) {
+    for (const anchor of [primaryFailure, latestDiagnostic, primaryResultFailure]) {
         if (anchor && !retainedIds.has(anchor.entry.id)) {
             retained.push(anchor);
             retainedIds.add(anchor.entry.id);

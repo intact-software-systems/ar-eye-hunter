@@ -224,9 +224,10 @@ describe('createGroupRoomWsAuthorizer', () => {
         await groupRepository.putGroup(staleGroup.group);
         await groupRepository.putMember(staleGroup.members[0]!);
         await groupRepository.putPresenceSession(staleGroup.activeSessions[0]!);
-        expect(await readThroughCache.findOrLoadByRef(staleGroup.group)).toEqual(
-            staleGroup,
-        );
+        expect(await readThroughCache.findOrLoadByRef(staleGroup.group)).toEqual({
+            ...staleGroup,
+            stateRevision: 1,
+        });
         expect(
             findGroupStateSnapshotByRef(staleGroup.group)?.group.snapshotVersion,
         ).toBe(1);
@@ -289,9 +290,10 @@ describe('createGroupRoomWsAuthorizer', () => {
         await groupRepository.putGroup(group.group);
         await groupRepository.putMember(group.members[0]!);
         await groupRepository.putPresenceSession(group.activeSessions[0]!);
-        await expect(readThroughCache.findOrLoadByRef(group.group)).resolves.toEqual(
-            group,
-        );
+        await expect(readThroughCache.findOrLoadByRef(group.group)).resolves.toEqual({
+            ...group,
+            stateRevision: 1,
+        });
 
         vi.setSystemTime(1_001);
 
@@ -471,9 +473,10 @@ describe('createGroupRoomWsAuthorizer', () => {
         await groupRepository.putGroup(staleGroup.group);
         await groupRepository.putMember(staleGroup.members[0]!);
         await groupRepository.putPresenceSession(staleGroup.activeSessions[0]!);
-        await expect(readThroughCache.findOrLoadByRef(staleGroup.group)).resolves.toEqual(
-            staleGroup,
-        );
+        await expect(readThroughCache.findOrLoadByRef(staleGroup.group)).resolves.toEqual({
+            ...staleGroup,
+            stateRevision: 1,
+        });
         await groupRepository.putGroup(currentGroup.group);
         await groupRepository.putMember(currentGroup.members[0]!);
         await groupRepository.putPresenceSession(currentGroup.activeSessions[0]!);

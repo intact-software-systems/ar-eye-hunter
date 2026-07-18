@@ -63,6 +63,7 @@ function createGroupSnapshot(
     const workspaceId = 'workspace-1';
 
     return {
+        stateRevision: 1,
         group: {
             applicationId,
             workspaceId,

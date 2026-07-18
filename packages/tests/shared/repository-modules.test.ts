@@ -7,6 +7,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
     configureClientStateSnapshotRepository,
+    findClientStateSnapshotByRef,
     findClientStateSnapshotByPrincipalId,
     getAllClientStateSnapshots,
     onClientStateSnapshotChange,
@@ -57,6 +58,29 @@ describe('repository modules', () => {
             ]);
     });
 
+    it('stores same-principal client snapshots by fully scoped ref', () => {
+        const workspaceA = createClientSnapshot('client-1', 'session-a', 1);
+        const workspaceB = {
+            ...createClientSnapshot('client-1', 'session-b', 1),
+            principal: {
+                ...createClientSnapshot('client-1', 'session-b', 1).principal,
+                workspaceId: 'workspace-2',
+            },
+            instances: createClientSnapshot('client-1', 'session-b', 1).instances
+                .map((instance) => ({ ...instance, workspaceId: 'workspace-2' })),
+            activeSessions: createClientSnapshot('client-1', 'session-b', 1)
+                .activeSessions
+                .map((session) => ({ ...session, workspaceId: 'workspace-2' })),
+        } satisfies ClientSnapshot;
+
+        expect(setClientStateSnapshotByPrincipalId('client-1', workspaceA)).toBe(true);
+        expect(setClientStateSnapshotByPrincipalId('client-1', workspaceB)).toBe(true);
+
+        expect(findClientStateSnapshotByRef(workspaceA.principal)).toEqual(workspaceA);
+        expect(findClientStateSnapshotByRef(workspaceB.principal)).toEqual(workspaceB);
+        expect(getAllClientStateSnapshots()).toHaveLength(2);
+    });
+
     it('emits client snapshot changes only for accepted writes', async () => {
         const changes: string[] = [];
         const unsubscribe = onClientStateSnapshotChange((change) => {
@@ -80,19 +104,21 @@ describe('repository modules', () => {
 
             expect(setClientStateSnapshotByPrincipalId('client-1', first)).toBe(true);
             expect(setClientStateSnapshotByPrincipalId('client-1', first)).toBe(false);
-            expect(setClientStateSnapshotByPrincipalId('client-1', refreshed)).toBe(false);
+            expect(() =>
+                setClientStateSnapshotByPrincipalId('client-1', refreshed)
+            ).toThrow('Client snapshot revision conflict');
             expect(setClientStateSnapshotByPrincipalId('client-1', stale)).toBe(false);
             expect(setClientStateSnapshotByPrincipalId('client-1', newer)).toBe(true);
             await waitForClientStateSnapshotChangesIdle();
 
             expect(findClientStateSnapshotByPrincipalId('client-1')).toEqual(newer);
-            expect(changes).toEqual(['created', 'refreshed', 'updated']);
+            expect(changes).toEqual(['created', 'updated']);
         } finally {
             unsubscribe();
         }
     });
 
-    it('uses client principal snapshotVersion for cache ordering', () => {
+    it('uses client stateRevision for cache ordering', () => {
         const first = {
             ...createClientSnapshot('client-1', 'session-1', 1),
             principal: {
@@ -102,6 +128,7 @@ describe('repository modules', () => {
         } satisfies ClientSnapshot;
         const staleBySnapshotVersion = {
             ...createClientSnapshot('client-1', 'session-1', 99),
+            stateRevision: 0,
             principal: {
                 ...createClientSnapshot('client-1', 'session-1', 99).principal,
                 snapshotVersion: 9,
@@ -121,6 +148,27 @@ describe('repository modules', () => {
         expect(findClientStateSnapshotByPrincipalId('client-1')).toEqual(first);
         expect(setClientStateSnapshotByPrincipalId('client-1', newer)).toBe(true);
         expect(findClientStateSnapshotByPrincipalId('client-1')).toEqual(newer);
+    });
+
+    it('rejects stale and conflicting client state revisions', () => {
+        const accepted = {
+            ...createClientSnapshot('client-1', 'session-new', 1),
+            stateRevision: 2,
+        } satisfies ClientSnapshot;
+        const stale = {
+            ...createClientSnapshot('client-1', 'session-stale', 99),
+            stateRevision: 1,
+        } satisfies ClientSnapshot;
+        const conflict = {
+            ...accepted,
+            activeSessionCount: 0,
+        } satisfies ClientSnapshot;
+
+        expect(setClientStateSnapshotByPrincipalId('client-1', accepted)).toBe(true);
+        expect(setClientStateSnapshotByPrincipalId('client-1', stale)).toBe(false);
+        expect(findClientStateSnapshotByPrincipalId('client-1')).toEqual(accepted);
+        expect(() => setClientStateSnapshotByPrincipalId('client-1', conflict))
+            .toThrow('Client snapshot revision conflict');
     });
 
     it('stores group snapshots by scoped ref, keeps newer versions, and finds memberships', () => {
@@ -227,7 +275,7 @@ describe('repository modules', () => {
         );
     });
 
-    it('uses group aggregate snapshotVersion for cache ordering', () => {
+    it('uses group stateRevision for cache ordering', () => {
         const first = {
             ...createGroupSnapshot('group-1', 'Alpha', 1, ['self']),
             group: {
@@ -237,6 +285,7 @@ describe('repository modules', () => {
         } satisfies GroupSnapshot;
         const staleBySnapshotVersion = {
             ...createGroupSnapshot('group-1', 'Alpha', 99, ['self', 'peer-stale']),
+            stateRevision: 0,
             group: {
                 ...createGroupSnapshot('group-1', 'Alpha', 99, ['self', 'peer-stale']).group,
                 snapshotVersion: 9,
@@ -256,6 +305,27 @@ describe('repository modules', () => {
         expect(findGroupStateSnapshotByRef(first.group)).toEqual(first);
         expect(setGroupStateSnapshot(newer)).toBe(true);
         expect(findGroupStateSnapshotByRef(newer.group)).toEqual(newer);
+    });
+
+    it('rejects stale and conflicting group state revisions', () => {
+        const accepted = {
+            ...createGroupSnapshot('group-1', 'Alpha', 1, ['session-new']),
+            stateRevision: 2,
+        } satisfies GroupSnapshot;
+        const stale = {
+            ...createGroupSnapshot('group-1', 'Stale', 99, ['session-stale']),
+            stateRevision: 1,
+        } satisfies GroupSnapshot;
+        const conflict = {
+            ...accepted,
+            onlineMemberCount: 0,
+        } satisfies GroupSnapshot;
+
+        expect(setGroupStateSnapshot(accepted)).toBe(true);
+        expect(setGroupStateSnapshot(stale)).toBe(false);
+        expect(findGroupStateSnapshotByRef(accepted.group)).toEqual(accepted);
+        expect(() => setGroupStateSnapshot(conflict))
+            .toThrow('Group snapshot revision conflict');
     });
 
     it('emits group snapshot changes only for accepted writes', async () => {
@@ -284,13 +354,14 @@ describe('repository modules', () => {
 
             expect(setGroupStateSnapshot(first)).toBe(true);
             expect(setGroupStateSnapshot(first)).toBe(false);
-            expect(setGroupStateSnapshot(refreshed)).toBe(false);
+            expect(() => setGroupStateSnapshot(refreshed))
+                .toThrow('Group snapshot revision conflict');
             expect(setGroupStateSnapshot(stale)).toBe(false);
             expect(setGroupStateSnapshot(newer)).toBe(true);
             await waitForGroupStateSnapshotChangesIdle();
 
             expect(findGroupStateSnapshotByRef(newer.group)).toEqual(newer);
-            expect(changes).toEqual(['created', 'refreshed', 'updated']);
+            expect(changes).toEqual(['created', 'updated']);
         } finally {
             unsubscribe();
         }
@@ -307,6 +378,8 @@ describe('repository modules', () => {
         createAndSetStarOverlays([group]);
 
         expect(findOverlayById(overlayId)).toEqual({
+            sourceGroupStateRevision: group.stateRevision,
+            state: 'active',
             overlayId,
             groupRef: group.group,
             topology: 'star',
@@ -347,6 +420,8 @@ describe('repository modules', () => {
 
         try {
             const first = {
+                sourceGroupStateRevision: 1,
+                state: 'active',
                 overlayId: 'group-1',
                 name: 'Alpha',
                 createdByClientId: 'owner',
@@ -379,6 +454,41 @@ describe('repository modules', () => {
         } finally {
             unsubscribe();
         }
+    });
+
+    it('orders revisioned overlays by source group revision and retains removal tombstones', () => {
+        const first = {
+            overlayId: 'overlay-1',
+            sourceGroupStateRevision: 2,
+            state: 'active',
+            name: 'Room',
+            createdByClientId: 'owner',
+            createdAtEpochMs: 1,
+            nextHopSessionIds: ['peer-a'],
+            overlayVersion: 1,
+            updatedAtEpochMs: 2,
+        } satisfies OverlayInfo;
+        setOverlayById(first.overlayId, first);
+        setOverlayById(first.overlayId, {
+            ...first,
+            sourceGroupStateRevision: 1,
+            overlayVersion: 99,
+            nextHopSessionIds: ['stale-peer'],
+        });
+        expect(findOverlayById(first.overlayId)).toEqual(first);
+
+        const removed = {
+            ...first,
+            sourceGroupStateRevision: 3,
+            state: 'removed',
+            nextHopSessionIds: [],
+        } satisfies OverlayInfo;
+        setOverlayById(first.overlayId, removed);
+        expect(findOverlayById(first.overlayId)).toBeUndefined();
+        expect(getAllOverlays()).toEqual([]);
+
+        setOverlayById(first.overlayId, first);
+        expect(findOverlayById(first.overlayId)).toBeUndefined();
     });
 
     it('normalizes RTT pair keys and keeps only newer measurements', () => {
@@ -440,6 +550,7 @@ function createClientSnapshot(
         : [];
 
     return {
+        stateRevision: version,
         principal: {
             applicationId,
             workspaceId,
@@ -501,6 +612,7 @@ function createGroupSnapshot(
     const workspaceId = scope.workspaceId ?? 'workspace-1';
 
     return {
+        stateRevision: membershipVersion,
         group: {
             applicationId,
             workspaceId,

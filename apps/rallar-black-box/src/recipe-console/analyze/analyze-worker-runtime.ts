@@ -194,6 +194,7 @@ export function createAnalyzeWorkerRuntime(
             const model = finalizeAnalyzeArtifactModel(
                 prepared,
                 collections.index,
+                collections.catalog.entries,
             );
             if (
                 decoded.declaredDistributedRunId !== undefined &&

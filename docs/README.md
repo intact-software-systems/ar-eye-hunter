@@ -41,6 +41,9 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
 - [Rallar RTC RTT Reporting](./rallar-rtc-rtt-reporting.md) Browser to server
   RTC RTT reporting flow, server acceptance policy, and bounded per-client RTT
   reporting degree.
+- [Convergent State And RTC Topology Architecture](./rallar-convergent-state-and-rtc-topology.md)
+  Durable causal revisions, optimistic snapshot reads, atomic topology
+  execution, cross-server authorization, fanout, and retry guarantees.
 
 ## Repo Codex Skills
 
@@ -52,14 +55,6 @@ the `building-rallar-apps` skill and inspect the relevant `examples/**`. Codex
 can select specialist skills from each `SKILL.md` frontmatter description;
 explicitly name a skill in the prompt when you want to guarantee its use, for
 example: "Use the `rallar-realtime` and `rallar-testing` skills."
-
-## Implementation Notes
-
-- [API-v1 In-Memory SQL Performance Mode](../iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md)
-  Completed implementation context for running API-v1 performance tests with a
-  single server process and an embedded PGlite SQL backend, including backend
-  configuration, the PGlite SQL adapter, local queue pub/sub, and black-box
-  validation scripts for API-v1 memory mode.
 
 ## Source Files
 

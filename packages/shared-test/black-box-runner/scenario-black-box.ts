@@ -1210,11 +1210,15 @@ function resolveTrafficTemplate<T>(value: T, root: JsonRecord): T {
     if (typeof value === 'string') {
         const exactPlaceholderMatch = value.match(/^\{([^{}]+)}$/);
         if (exactPlaceholderMatch) {
-            return resolveTemplatePath(exactPlaceholderMatch[1], root) as T;
+            const resolved = resolveTemplatePath(exactPlaceholderMatch[1], root);
+            return (resolved === undefined ? value : resolved) as T;
         }
 
-        return value.replaceAll(/\{([^{}]+)}/g, (_match, path) => {
-            return stringifyTemplateValue(resolveTemplatePath(path, root));
+        return value.replaceAll(/\{([^{}]+)}/g, (match, path) => {
+            const resolved = resolveTemplatePath(path, root);
+            return resolved === undefined
+                ? match
+                : stringifyTemplateValue(resolved);
         }) as T;
     }
 

@@ -44,8 +44,16 @@ export function readGroupVersion(snapshot: AnyGroupPresence): number {
     return snapshot.group.snapshotVersion;
 }
 
+export function readGroupStateRevision(snapshot: AnyGroupPresence): number {
+    return snapshot.stateRevision;
+}
+
 export function readClientVersion(snapshot: ClientSnapshot): number {
     return snapshot.principal.snapshotVersion;
+}
+
+export function readClientStateRevision(snapshot: ClientSnapshot): number {
+    return snapshot.stateRevision;
 }
 
 export function isGroupActive(snapshot: AnyGroupPresence): boolean {

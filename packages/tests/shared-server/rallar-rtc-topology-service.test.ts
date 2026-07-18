@@ -404,7 +404,7 @@ describe('RallarRtcTopologyService', () => {
         ).snapshot.topology).toBe('mesh');
     });
 
-    it('does not publish unchanged next-hop maps', () => {
+    it('retains the graph version while advancing an unchanged group revision', () => {
         const group = createGroupSnapshot('room-1', createMemberIds(5));
         const service = new RallarRtcTopologyService({
             now: () => 100,
@@ -413,6 +413,7 @@ describe('RallarRtcTopologyService', () => {
         const first = service.updateGroupTopology(group);
         const second = service.updateGroupTopology({
             ...group,
+            stateRevision: 2,
             group: {
                 ...group.group,
                 snapshotVersion: 2,
@@ -421,7 +422,9 @@ describe('RallarRtcTopologyService', () => {
 
         expect(first.changed).toBe(true);
         expect(second.changed).toBe(false);
-        expect(second.snapshot).toBe(first.snapshot);
+        expect(second.snapshot).not.toBe(first.snapshot);
+        expect(second.snapshot.version).toBe(first.snapshot.version);
+        expect(second.snapshot.sourceGroupStateRevision).toBe(2);
     });
 
     it('republishes tree topology when RTT measurements change next hops', () => {
@@ -699,6 +702,7 @@ function createGroupSnapshot(
     const workspaceId = 'workspace-1';
 
     return {
+        stateRevision: 1,
         group: {
             applicationId,
             workspaceId,

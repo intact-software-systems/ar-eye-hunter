@@ -464,6 +464,8 @@ describe('browser data caches state scope filtering', () => {
             2,
         );
         const topology: RallarOverlayTopologySnapshot = {
+            sourceGroupStateRevision: 1,
+            state: 'active',
             overlayId: toScopedOverlayId(groupSnapshot.group),
             groupRef: groupSnapshot.group,
             name: 'room-a',
@@ -507,6 +509,39 @@ describe('browser data caches state scope filtering', () => {
             overlayVersion: 1,
         });
         expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledOnce();
+
+        const removed = {
+            ...topology,
+            sourceGroupStateRevision: 2,
+            state: 'removed' as const,
+            nextHopsBySessionId: {
+                'session-a': [],
+                'session-b': [],
+            },
+        };
+        await onInboxMessage?.(
+            newALBroadcastMessage(
+                'server-2',
+                newALEventRoute(AppTopics.overlayTopology, 'room-a', 'topology-2'),
+                'room',
+                AppTopics.overlayTopology,
+                removed,
+                { groupRef: groupSnapshot.group },
+            ),
+        );
+        await onInboxMessage?.(
+            newALBroadcastMessage(
+                'server-1',
+                newALEventRoute(AppTopics.overlayTopology, 'room-a', 'topology-stale'),
+                'room',
+                AppTopics.overlayTopology,
+                topology,
+                { groupRef: groupSnapshot.group },
+            ),
+        );
+
+        expect(findOverlayById(topology.overlayId)).toBeUndefined();
+        expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(3);
     });
 
     it('uses snapshot hydration as convergence after state event details are missed', async () => {
@@ -622,6 +657,7 @@ function createClientSnapshot(
     snapshotVersion: number,
 ): ClientSnapshot {
     return {
+        stateRevision: snapshotVersion,
         principal: {
             applicationId,
             workspaceId,
@@ -669,6 +705,7 @@ function createGroupSnapshot(
     snapshotVersion: number,
 ): GroupSnapshot {
     return {
+        stateRevision: snapshotVersion,
         group: {
             applicationId,
             workspaceId,

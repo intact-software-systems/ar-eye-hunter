@@ -1,7 +1,6 @@
 import type { Sql } from 'postgres';
 import postgres from 'postgres';
 import { tryWith } from '@shared/resilience/TryWith.ts';
-import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 import { readPostgresConnectionUrl } from './db.ts';
 
 let listenSqlInstance: Sql | undefined;
@@ -22,11 +21,11 @@ export function getListenSql(): Sql {
   return listenSqlInstance;
 }
 
-export async function startListening(
+export async function startListening<T extends Readonly<{ publisherId: string }>>(
   channel: string,
   options: Readonly<{
     publisherId: string;
-    onMessage: (payload: QueueBoxPubSubMessage) => void | Promise<void>;
+    onMessage: (payload: T) => void | Promise<void>;
   }>,
 ) {
   await tryWith(
@@ -35,7 +34,7 @@ export async function startListening(
         .listen(
           channel,
           async (payload: string) => {
-            const publisherPayload = JSON.parse(payload) as QueueBoxPubSubMessage;
+            const publisherPayload = JSON.parse(payload) as T;
 
             if (publisherPayload.publisherId === options.publisherId) {
               // I sent it so ignore it

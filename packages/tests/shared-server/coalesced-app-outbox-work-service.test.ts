@@ -74,7 +74,7 @@ describe('CoalescedAppOutboxWorkService', () => {
             });
     });
 
-    it('detects a reserved generation made stale by newer work', async () => {
+    it('keeps a reserved generation immutable when newer work arrives', async () => {
         const queue = new InMemoryQueueBox();
         const service = new CoalescedAppOutboxWorkService(
             new OutboxQueueReader(queue),
@@ -95,7 +95,7 @@ describe('CoalescedAppOutboxWorkService', () => {
         );
         const reservedEntry = [...reserved.values()][0]!;
 
-        await service.enqueue<TestWork>({
+        const successor = await service.enqueue<TestWork>({
             type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
             topicId: 'app-outbox.rtc-topology',
             resourceId: 'overlay-1',
@@ -103,7 +103,12 @@ describe('CoalescedAppOutboxWorkService', () => {
             data: { overlayId: 'overlay-1', snapshotVersion: 2 },
         });
 
-        expect(await service.isReservedEntryStale(reservedEntry)).toBe(true);
+        expect(successor.blockedByReserved).toBe(true);
+        expect(successor.entry).toEqual(reservedEntry);
+        expect(successor.envelope.data.snapshotVersion).toBe(1);
+        expect(successor.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD])
+            .toMatchObject({ generation: 1 });
+        expect(await service.isReservedEntryStale(reservedEntry)).toBe(false);
     });
 });
 

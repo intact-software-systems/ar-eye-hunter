@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -10,6 +10,8 @@ import {
     parseApiV1BlackBoxArgs,
     readBoundedLogTail,
     toApiV1BlackBoxEnvironment,
+    toClusterRecipeMatrixCommand,
+    toManagedApiServerPlans,
     toApiV1ServerCommand,
     waitForManagedApiReady,
 } from '../../shared-test/black-box-runner/api-v1-black-box-run.mts';
@@ -160,8 +162,21 @@ async function runManagedApiRunner(port: number, artifactDir: string, timeoutMs 
 }
 
 describe('api-v1 black-box run helper', () => {
+    it('starts two API servers for the local Postgres black-box command', async () => {
+        const packageJson = JSON.parse(await readFile(
+            path.join(repoRoot, 'packages/shared-test/package.json'),
+            'utf8',
+        )) as { scripts?: Record<string, string> };
+
+        expect(packageJson.scripts?.['bb:api-v1:postgres']).toContain(
+            '--secondary-port=18081',
+        );
+    });
+
     it('defaults to Postgres on port 18080', () => {
-        expect(parseApiV1BlackBoxArgs([])).toMatchObject({
+        const options = parseApiV1BlackBoxArgs([]);
+
+        expect(options).toMatchObject({
             backend: 'postgres',
             port: 18080,
             profile: 'api-v1-black-box',
@@ -170,6 +185,28 @@ describe('api-v1 black-box run helper', () => {
             runMigrations: true,
             recipesOnly: false,
         });
+        expect(options).not.toHaveProperty('secondaryPort');
+    });
+
+    it('accepts a distinct secondary Postgres API port', () => {
+        expect(parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--port=18080',
+            '--secondary-port=18081',
+        ])).toMatchObject({
+            backend: 'postgres',
+            port: 18080,
+            secondaryPort: 18081,
+        });
+    });
+
+    it.each([
+        ['same as the primary port', ['--port=18080', '--secondary-port=18080']],
+        ['outside the port range', ['--secondary-port=65536']],
+        ['with pglite-memory', ['--backend=pglite-memory', '--secondary-port=18081']],
+        ['in recipes-only mode', ['--recipes-only', '--secondary-port=18081']],
+    ])('rejects a secondary API port %s', (_label, args) => {
+        expect(() => parseApiV1BlackBoxArgs(args)).toThrow(/secondary/i);
     });
 
     it('keeps recipes-only mode free of server and migration side effects', () => {
@@ -205,6 +242,56 @@ describe('api-v1 black-box run helper', () => {
         );
         expect(env.AUTH_STATIC_CLIENTS_MODE).toBe('demo');
         expect(env.AUTH_REGISTRATION_MODE).toBe('public');
+    });
+
+    it('exposes secondary HTTP and WebSocket URLs only for a two-server run', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--port=18080',
+            '--secondary-port=18081',
+        ]);
+        const env = toApiV1BlackBoxEnvironment(options, {});
+
+        expect(env.RALLAR_API_BASE_URL).toBe('http://127.0.0.1:18080');
+        expect(env.RALLAR_WS_BASE_URL).toBe('ws://127.0.0.1:18080');
+        expect(env.RALLAR_API_BASE_URL_SECONDARY).toBe(
+            'http://127.0.0.1:18081',
+        );
+        expect(env.RALLAR_WS_BASE_URL_SECONDARY).toBe(
+            'ws://127.0.0.1:18081',
+        );
+    });
+
+    it('plans isolated process URLs and log files for both managed servers', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--port=18080',
+            '--secondary-port=18081',
+        ]);
+        const env = toApiV1BlackBoxEnvironment(options, {});
+
+        expect(toManagedApiServerPlans(options, env, '/tmp/api-v1-bb')).toEqual([
+            expect.objectContaining({
+                port: 18080,
+                baseUrl: 'http://127.0.0.1:18080',
+                logPath: '/tmp/api-v1-bb/api-v1-server.log',
+                env: expect.objectContaining({
+                    PORT: '18080',
+                    RALLAR_API_BASE_URL: 'http://127.0.0.1:18080',
+                    RALLAR_WS_BASE_URL: 'ws://127.0.0.1:18080',
+                }),
+            }),
+            expect.objectContaining({
+                port: 18081,
+                baseUrl: 'http://127.0.0.1:18081',
+                logPath: '/tmp/api-v1-bb/api-v1-server-secondary.log',
+                env: expect.objectContaining({
+                    PORT: '18081',
+                    RALLAR_API_BASE_URL: 'http://127.0.0.1:18081',
+                    RALLAR_WS_BASE_URL: 'ws://127.0.0.1:18081',
+                }),
+            }),
+        ]);
     });
 
     it('preserves explicit black-box operator token secret values', () => {
@@ -270,6 +357,23 @@ describe('api-v1 black-box run helper', () => {
             '--allow-env',
             '--allow-read',
             'apps/api-v1/src/main.ts',
+        ]);
+    });
+
+    it('runs every two-server cluster recipe through the cluster profile', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--secondary-port=18081',
+        ]);
+
+        expect(toClusterRecipeMatrixCommand(options, '/tmp/api-v1-bb')).toEqual([
+            'deno',
+            'run',
+            '-A',
+            'packages/shared-test/black-box-runner/recipe-matrix.mts',
+            '--profile=api-v1-black-box-cluster',
+            '--require-gates',
+            '--artifact-dir=/tmp/api-v1-bb/cluster',
         ]);
     });
 

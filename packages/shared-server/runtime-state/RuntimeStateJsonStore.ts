@@ -12,6 +12,11 @@ type ScopedRef = Readonly<{
     workspaceId?: string;
 }>;
 
+export type RuntimeStateEntryValue<T> = Readonly<{
+    entry: RuntimeStateEntry;
+    value: T;
+}>;
+
 export class RuntimeStateJsonStore {
     constructor(protected readonly repository: RuntimeStateRepositoryLike) {}
 
@@ -25,17 +30,63 @@ export class RuntimeStateJsonStore {
     }
 
     protected async getValue<T>(namespace: string, key: string): Promise<T | undefined> {
+        return (await this.getEntryValue<T>(namespace, key))?.value;
+    }
+
+    protected async listValues<T>(namespace: string, keyPrefix?: string): Promise<readonly T[]> {
+        return (await this.listEntryValues<T>(namespace, keyPrefix))
+            .map(({ value }) => value);
+    }
+
+    protected async getEntryValue<T>(
+        namespace: string,
+        key: string,
+    ): Promise<RuntimeStateEntryValue<T> | undefined> {
         const entry = await this.repository.findEntry(namespace, key);
         if (!entry) {
             return undefined;
         }
 
-        return await this.toLiveValue<T>(namespace, entry);
+        const value = await this.toLiveValue<T>(namespace, entry);
+        return value === undefined ? undefined : { entry, value };
     }
 
-    protected async listValues<T>(namespace: string, keyPrefix?: string): Promise<readonly T[]> {
+    protected async listEntryValues<T>(
+        namespace: string,
+        keyPrefix?: string,
+    ): Promise<readonly RuntimeStateEntryValue<T>[]> {
         const entries = await this.listEntries(namespace, keyPrefix);
-        return await this.toLiveValues<T>(namespace, entries);
+        const values: RuntimeStateEntryValue<T>[] = [];
+        for (const entry of entries) {
+            const value = await this.toLiveValue<T>(namespace, entry);
+            if (value !== undefined) {
+                values.push({ entry, value });
+            }
+        }
+        return values;
+    }
+
+    protected async listEntryValuesByKeys<T>(
+        namespace: string,
+        keys: readonly string[],
+    ): Promise<readonly RuntimeStateEntryValue<T>[]> {
+        if (keys.length === 0) {
+            return [];
+        }
+
+        const entries = isRuntimeStateTransactionalRepositoryLike(this.repository)
+            ? await this.repository.findEntriesByKeys(namespace, keys)
+            : (await Promise.all(
+                keys.map((key) => this.repository.findEntry(namespace, key)),
+            )).filter((entry): entry is RuntimeStateEntry => entry !== undefined);
+        const values: RuntimeStateEntryValue<T>[] = [];
+        for (const entry of entries) {
+            const value = await this.toLiveValue<T>(namespace, entry);
+            if (value !== undefined) {
+                values.push({ entry, value });
+            }
+        }
+        return values;
     }
 
     protected async listEntriesPage(

@@ -500,12 +500,13 @@ export class WebRtcGroupManager {
         const scoped = this.overlayCache.read(scopedOverlayId) ??
             this.overlayCache.peek(scopedOverlayId);
         if (scoped) {
-            return scoped;
+            return scoped.state === 'removed' ? undefined : scoped;
         }
 
         const legacy = this.overlayCache.read(groupRef.groupId) ??
             this.overlayCache.peek(groupRef.groupId);
-        return legacy && isOverlayForGroupRef(legacy, groupRef)
+        return legacy && legacy.state !== 'removed' &&
+                isOverlayForGroupRef(legacy, groupRef)
             ? legacy
             : undefined;
     }

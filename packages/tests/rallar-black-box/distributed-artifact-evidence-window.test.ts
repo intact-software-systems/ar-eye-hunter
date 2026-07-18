@@ -231,7 +231,7 @@ describe('distributed artifact evidence catalog windows', () => {
             exactRepeatsDropped: 0,
             distinctEntries: 20_007,
             peakCanonicalBatchSize: 128,
-            peakRetainedEntryReferences: 20_002,
+            peakRetainedEntryReferences: 20_003,
             sortedRetainedEntries: 20_000,
             retainedModelDigests: 20_000,
             haystacksBuilt: 20_000,
@@ -241,6 +241,15 @@ describe('distributed artifact evidence catalog windows', () => {
         expect(catalogWork.maxRetainedRawSearchValueLength).toBeLessThanOrEqual(2_000);
         expect(catalog.entries.some(entry => entry.id === catalog.primaryFailureId)).toBe(true);
         expect(catalog.entries.some(entry => entry.id === catalog.latestDiagnosticId)).toBe(true);
+        expect(catalog.entries.find(entry =>
+            entry.kind === 'result' && entry.status === 'failed'
+        )).toMatchObject({
+            commandId: inputForFixture(fixture).analysis.failure?.commandId,
+            failureDetails: {
+                code: 'SCALE_UPSTREAM_UNAVAILABLE',
+                message: expect.stringContaining('Expected HTTP 200'),
+            },
+        });
         expect(repeated.entries.map(entry => entry.id))
             .toEqual(catalog.entries.map(entry => entry.id));
         expect((await searchDistributedArtifactEvidenceWindow(catalog, {

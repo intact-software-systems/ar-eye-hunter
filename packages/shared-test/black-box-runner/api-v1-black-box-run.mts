@@ -5,6 +5,7 @@ export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory'
 export type ApiV1BlackBoxOptions = Readonly<{
     backend: ApiV1BlackBoxBackend
     port: number
+    secondaryPort?: number
     profile: string
     artifactDir: string
     runId: string
@@ -51,10 +52,18 @@ type ManagedApiServer = Readonly<{
     streamsDrained: Promise<void>
 }>
 
+export type ManagedApiServerPlan = Readonly<{
+    port: number
+    baseUrl: string
+    logPath: string
+    env: Record<string, string>
+}>
+
 const SCRIPT_DIR = new URL('.', import.meta.url)
 const REPO_ROOT = new URL('../../../', SCRIPT_DIR)
 const API_CONFIG_PATH = 'apps/api-v1/deno.json'
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts'
+const API_V1_CLUSTER_MATRIX_PROFILE = 'api-v1-black-box-cluster'
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb'
 const LOG_TAIL_MAX_BYTES = 4096
 const MANAGED_SECRET_ENV_KEY = /(?:^|_)(?:PASSWORD|PASSWD|TOKEN|SECRET|DATABASE_URL|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)(?:_|$)/i
@@ -80,15 +89,35 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
         throw new Error('--port must be an integer from 1 to 65535.')
     }
 
+    const secondaryPortValue = values.get('--secondary-port')
+    const secondaryPort = secondaryPortValue === undefined
+        ? undefined
+        : Number(secondaryPortValue)
+    if (secondaryPort !== undefined) {
+        if (!Number.isInteger(secondaryPort) || secondaryPort < 1 || secondaryPort > 65535) {
+            throw new Error('--secondary-port must be an integer from 1 to 65535.')
+        }
+        if (secondaryPort === port) {
+            throw new Error('--secondary-port must differ from --port.')
+        }
+        if (backend !== 'postgres') {
+            throw new Error('--secondary-port requires --backend=postgres.')
+        }
+    }
+
     const runId = String(values.get('--run-id') ?? defaultRunId())
     const artifactDir = String(
         values.get('--artifact-dir') ?? `.artifacts/api-v1-black-box/${backend}`,
     )
     const recipesOnly = values.get('--recipes-only') === true
+    if (recipesOnly && secondaryPort !== undefined) {
+        throw new Error('--secondary-port is not available with --recipes-only.')
+    }
 
     return {
         backend,
         port,
+        ...(secondaryPort === undefined ? {} : { secondaryPort }),
         profile: String(values.get('--profile') ?? (
             recipesOnly ? 'api-v1-black-box-recipes' : 'api-v1-black-box'
         )),
@@ -120,6 +149,12 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_WS_BASE_URL = options.recipesOnly
         ? env.RALLAR_WS_BASE_URL ?? defaultWsBaseUrl
         : defaultWsBaseUrl
+    if (options.secondaryPort !== undefined) {
+        env.RALLAR_API_BASE_URL_SECONDARY =
+            `http://127.0.0.1:${options.secondaryPort}`
+        env.RALLAR_WS_BASE_URL_SECONDARY =
+            `ws://127.0.0.1:${options.secondaryPort}`
+    }
     env.RALLAR_BB_RUN_ID = options.runId
     env.RALLAR_ICE_MODE = env.RALLAR_ICE_MODE ?? 'local'
     env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET = env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET
@@ -141,6 +176,42 @@ export function toApiV1BlackBoxEnvironment(
     }
 
     return env
+}
+
+export function toManagedApiServerPlans(
+    options: ApiV1BlackBoxOptions,
+    env: Record<string, string>,
+    artifactDir: string,
+): readonly ManagedApiServerPlan[] {
+    const root = artifactDir.replace(/\/+$/, '')
+    return [
+        {
+            port: options.port,
+            baseUrl: `http://127.0.0.1:${options.port}`,
+            logPath: `${root}/api-v1-server.log`,
+            env: toManagedApiServerEnvironment(env, options.port),
+        },
+        ...(options.secondaryPort === undefined
+            ? []
+            : [{
+                port: options.secondaryPort,
+                baseUrl: `http://127.0.0.1:${options.secondaryPort}`,
+                logPath: `${root}/api-v1-server-secondary.log`,
+                env: toManagedApiServerEnvironment(env, options.secondaryPort),
+            }]),
+    ]
+}
+
+function toManagedApiServerEnvironment(
+    env: Record<string, string>,
+    port: number,
+): Record<string, string> {
+    return {
+        ...env,
+        PORT: String(port),
+        RALLAR_API_BASE_URL: `http://127.0.0.1:${port}`,
+        RALLAR_WS_BASE_URL: `ws://127.0.0.1:${port}`,
+    }
 }
 
 export function toApiV1ServerCommand(_options: ApiV1BlackBoxOptions): readonly string[] {
@@ -165,6 +236,21 @@ function toRecipeMatrixCommand(options: ApiV1BlackBoxOptions, artifactDir: strin
         `--profile=${options.profile}`,
         ...(options.requireGates ? ['--require-gates'] : []),
         `--artifact-dir=${artifactDir}`,
+    ]
+}
+
+export function toClusterRecipeMatrixCommand(
+    options: ApiV1BlackBoxOptions,
+    artifactDir: string,
+): readonly string[] {
+    return [
+        'deno',
+        'run',
+        '-A',
+        'packages/shared-test/black-box-runner/recipe-matrix.mts',
+        `--profile=${API_V1_CLUSTER_MATRIX_PROFILE}`,
+        ...(options.requireGates ? ['--require-gates'] : []),
+        `--artifact-dir=${artifactDir.replace(/\/+$/, '')}/cluster`,
     ]
 }
 
@@ -205,19 +291,18 @@ async function runCommand(command: readonly string[], env: Record<string, string
 
 function startServer(
     options: ApiV1BlackBoxOptions,
-    env: Record<string, string>,
-    logPath: string,
+    plan: ManagedApiServerPlan,
 ): ManagedApiServer {
     const [command, ...args] = toApiV1ServerCommand(options)
     const child = new Deno.Command(command, {
         args,
         cwd: repoRootPath(),
-        env,
+        env: plan.env,
         stdout: 'piped',
         stderr: 'piped',
     }).spawn()
 
-    const expectedStartupMarker = `Server started on port ${options.port}.`
+    const expectedStartupMarker = `Server started on port ${plan.port}.`
     const stdoutDecoder = new TextDecoder()
     let stdoutTail = ''
     let startupObserved = false
@@ -236,10 +321,10 @@ function startServer(
     const streamPumps: Promise<void>[] = []
 
     if (child.stdout) {
-        streamPumps.push(appendStreamToFile(child.stdout, logPath, observeStdout))
+        streamPumps.push(appendStreamToFile(child.stdout, plan.logPath, observeStdout))
     }
     if (child.stderr) {
-        streamPumps.push(appendStreamToFile(child.stderr, logPath))
+        streamPumps.push(appendStreamToFile(child.stderr, plan.logPath))
     }
 
     return {
@@ -635,6 +720,12 @@ async function runRecipeMatrix(
     artifactDir: string,
 ): Promise<void> {
     await runCommand(toRecipeMatrixCommand(options, artifactDir), env)
+    if (options.secondaryPort !== undefined) {
+        await runCommand(
+            toClusterRecipeMatrixCommand(options, artifactDir),
+            env,
+        )
+    }
 }
 
 async function stopServer(child: Deno.ChildProcess | undefined): Promise<void> {
@@ -666,8 +757,11 @@ async function main(): Promise<void> {
     const options = parseApiV1BlackBoxArgs(Deno.args)
     const env = toApiV1BlackBoxEnvironment(options, Deno.env.toObject())
     const artifactDir = resolveArtifactDir(options.artifactDir)
-    const logPath = artifactDir.replace(/\/+$/, '') + '/api-v1-server.log'
-    let server: ManagedApiServer | undefined
+    const serverPlans = toManagedApiServerPlans(options, env, artifactDir)
+    const servers: Array<Readonly<{
+        plan: ManagedApiServerPlan
+        server: ManagedApiServer
+    }>> = []
 
     await Deno.mkdir(artifactDir, { recursive: true })
     if (options.runMigrations) {
@@ -676,21 +770,27 @@ async function main(): Promise<void> {
 
     try {
         if (!options.recipesOnly) {
-            await Deno.writeTextFile(logPath, '')
-            server = startServer(options, env, logPath)
-            await waitForManagedApiReady({
-                baseUrl: env.RALLAR_API_BASE_URL,
-                logPath,
-                childStatus: server.child.status,
-                startup: server.startup,
-                streamsDrained: server.streamsDrained,
-                diagnosticSecrets: managedApiDiagnosticSecrets(env),
-            })
+            for (const plan of serverPlans) {
+                await Deno.writeTextFile(plan.logPath, '')
+                servers.push({ plan, server: startServer(options, plan) })
+            }
+            await Promise.all(servers.map(({ plan, server }) =>
+                waitForManagedApiReady({
+                    baseUrl: plan.baseUrl,
+                    logPath: plan.logPath,
+                    childStatus: server.child.status,
+                    startup: server.startup,
+                    streamsDrained: server.streamsDrained,
+                    diagnosticSecrets: managedApiDiagnosticSecrets(plan.env),
+                })
+            ))
         }
 
         await runRecipeMatrix(options, env, artifactDir)
     } finally {
-        await stopServer(server?.child)
+        await Promise.allSettled(
+            [...servers].reverse().map(({ server }) => stopServer(server.child)),
+        )
     }
 }
 

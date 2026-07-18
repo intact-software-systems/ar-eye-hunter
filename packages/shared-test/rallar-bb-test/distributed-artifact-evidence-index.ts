@@ -24,6 +24,7 @@ import {
     boundedEvidenceTextLimit,
     compareEvidenceEntries,
     deduplicateArtifactEvidenceEntries,
+    selectPrimaryDistributedArtifactResultFailure,
 } from './distributed-artifact-evidence-utils.ts';
 import { deriveDistributedRunMonitor } from './distributed-run-monitor.ts';
 
@@ -122,7 +123,15 @@ export function projectDistributedArtifactEvidenceIndex(
         DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
         MAX_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
     );
-    const bounded = retainActionableEvidence(source.entries, limit)
+    const primaryResultFailure = selectPrimaryDistributedArtifactResultFailure(
+        source.entries,
+        input.analysis.failure?.commandId,
+    );
+    const bounded = retainActionableEvidence(
+        source.entries,
+        limit,
+        primaryResultFailure,
+    )
         .sort(compareEvidenceEntries);
     return {
         analysis: input.analysis,
@@ -136,7 +145,11 @@ export function projectDistributedArtifactEvidenceIndex(
 
 function retainActionableEvidence<
     Entry extends DistributedArtifactEvidenceIndex['entries'][number],
->(entries: readonly Entry[], limit: number): Entry[] {
+>(
+    entries: readonly Entry[],
+    limit: number,
+    primaryResultFailure: Entry | undefined,
+): Entry[] {
     if (entries.length <= limit) return [...entries];
     if (limit === 0) return [];
     const retained: Entry[] = [];
@@ -149,6 +162,9 @@ function retainActionableEvidence<
     );
     if (latestDiagnostic && retained.length < limit) {
         retained.push(latestDiagnostic);
+    }
+    if (primaryResultFailure && retained.length < limit) {
+        retained.push(primaryResultFailure);
     }
     const retainedIds = new Set(retained.map(entry => entry.id));
     retained.push(...[...entries]

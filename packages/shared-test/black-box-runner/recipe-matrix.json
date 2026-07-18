@@ -907,6 +907,54 @@
       "description": "No-browser API-v1 authenticated raw WebSocket routing recipe."
     },
     {
+      "id": "api-v1-rtc-topology-convergence",
+      "recipe": "tests/api-v1/api-v1-rtc-topology-convergence.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box-cluster"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-rtc-topology-convergence",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          }
+        ]
+      },
+      "description": "No-browser two-server convergence test for immutable RTC topology revisions and PostgreSQL-backed WebSocket fanout."
+    },
+    {
+      "id": "api-v1-state-topology-churn",
+      "recipe": "tests/api-v1/api-v1-state-topology-churn.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box-cluster"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-state-topology-churn",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          }
+        ]
+      },
+      "description": "Bounded two-server load recipe with 12 clients contending across two groups and disconnect/reconnect presence churn."
+    },
+    {
       "id": "api-v1-scope-isolation",
       "recipe": "tests/api-v1/api-v1-scope-isolation.json",
       "category": "api-v1-black-box",

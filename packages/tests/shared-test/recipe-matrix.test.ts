@@ -321,6 +321,86 @@ describe('black-box runner recipe matrix', () => {
         });
     });
 
+    it('defines a no-browser two-server topology convergence recipe', () => {
+        const { entries } = readMatrix();
+        const entry = entries.find(candidate =>
+            candidate.id === 'api-v1-rtc-topology-convergence'
+        );
+
+        expect(entry).toMatchObject({
+            category: 'api-v1-black-box',
+            mode: 'run',
+            expectedExitCode: 0,
+            profiles: ['api-v1-black-box-cluster'],
+            requires: {
+                httpServices: [
+                    {
+                        name: 'Rallar API primary',
+                        env: 'RALLAR_API_BASE_URL',
+                        default: 'http://127.0.0.1:18080',
+                    },
+                    {
+                        name: 'Rallar API secondary',
+                        env: 'RALLAR_API_BASE_URL_SECONDARY',
+                        default: 'http://127.0.0.1:18081',
+                    },
+                ],
+            },
+        });
+        expect(entry?.requires?.playwright).not.toBe(true);
+        expect(entry?.profiles).not.toContain('api-v1-black-box-recipes');
+
+        const recipe = readRecipe(entry!.recipe);
+        const connections = recipe.connections as Record<
+            string,
+            { type?: string }
+        >;
+        expect(Object.values(connections).filter(connection =>
+            connection.type === 'http'
+        )).toHaveLength(2);
+        expect(Object.values(connections).filter(connection =>
+            connection.type === 'ws'
+        )).toHaveLength(2);
+        expect(Object.values(connections).some(connection =>
+            connection.type === 'rtc'
+        )).toBe(false);
+        expect(JSON.stringify(recipe)).not.toContain('rallar-browser');
+        expect(JSON.stringify(recipe)).not.toContain('RTCPeerConnection');
+        expect((recipe.steps as Array<{ type?: string }>).some(step =>
+            step.type === 'parallel'
+        )).toBe(true);
+    });
+
+    it('defines bounded two-server multi-client and multi-group churn coverage', () => {
+        const { entries } = readMatrix();
+        const entry = entries.find(candidate =>
+            candidate.id === 'api-v1-state-topology-churn'
+        );
+
+        expect(entry).toMatchObject({
+            category: 'api-v1-black-box',
+            mode: 'run',
+            expectedExitCode: 0,
+            profiles: ['api-v1-black-box-cluster'],
+        });
+        expect(entry?.requires?.playwright).not.toBe(true);
+
+        const recipe = readRecipe(entry!.recipe);
+        const parallel = (recipe.steps as Array<Record<string, unknown>>)
+            .find(step => step.name === 'runConcurrentClientChurn') as {
+                type?: string;
+                groups?: Array<{ steps?: Array<Record<string, unknown>> }>;
+            };
+        expect(parallel.type).toBe('parallel');
+        expect(parallel.groups).toHaveLength(2);
+        expect(parallel.groups?.map(group => {
+            const loop = group.steps?.find(step => step.type === 'loop');
+            return loop?.count;
+        })).toEqual([6, 6]);
+        expect(JSON.stringify(recipe)).toContain('disconnect');
+        expect(JSON.stringify(recipe)).toContain('topology/reconfigure');
+    });
+
     it('advertises the API-v1 profile in recipe-matrix CLI usage', () => {
         const source = readFileSync(path.join(runnerRoot, 'recipe-matrix.mts'), 'utf8');
 

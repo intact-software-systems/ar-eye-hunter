@@ -78,6 +78,11 @@ async function main(): Promise<void> {
         if (snapshots.length !== CLIENTS) {
             throw new Error(`Expected ${CLIENTS} snapshots, got ${snapshots.length}`);
         }
+        if (repository.findEntriesByPrefixCalls !== 4 || repository.findEntryCalls !== 0) {
+            throw new Error(
+                `Expected four prefix reads and zero point reads, got ${repository.findEntriesByPrefixCalls} and ${repository.findEntryCalls}`,
+            );
+        }
         results.push({
             run,
             durationMs,
@@ -149,6 +154,20 @@ class CountingRuntimeStateRepository implements RuntimeStateTransactionalReposit
             rows.length,
         );
         return rows;
+    }
+
+    async findEntriesByKeys(
+        namespace: string,
+        keys: readonly string[],
+    ): Promise<readonly RuntimeStateEntry[]> {
+        const keySet = new Set(keys);
+        return [...this.data.entries()]
+            .filter(([compositeKey]) =>
+                this.toNamespace(compositeKey) === namespace &&
+                keySet.has(this.toStoreKey(compositeKey))
+            )
+            .map(([, entry]) => ({ ...entry }))
+            .sort((left, right) => left.key.localeCompare(right.key));
     }
 
     async upsert(

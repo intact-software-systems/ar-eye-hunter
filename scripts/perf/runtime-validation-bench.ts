@@ -174,6 +174,19 @@ class RuntimeStatePrefixBenchRepository
         return rows;
     }
 
+    async findEntriesByKeys(
+        namespace: string,
+        keys: readonly string[],
+    ): Promise<readonly RuntimeStateEntry[]> {
+        if (namespace !== this.namespace) {
+            return [];
+        }
+        const keySet = new Set(keys);
+        return this.entries
+            .filter((entry) => keySet.has(entry.key))
+            .map((entry) => ({ ...entry }));
+    }
+
     async findEntriesByPrefixPage(
         namespace: string,
         keyPrefix: string,

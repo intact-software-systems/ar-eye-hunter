@@ -226,6 +226,10 @@ describe('Rallar repo skill and documentation integrity', () => {
 
     it('routes composition and validation from the specialist skills', () => {
         const platform = readRepo('.agents/skills/rallar-platform/SKILL.md');
+        const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+        const packageCodeStyle = readRepo(
+            '.agents/skills/rallar-code-writing/references/package-code-style.md',
+        );
         const games = readRepo('.agents/skills/rallar-games/SKILL.md');
         const realtime = readRepo('.agents/skills/rallar-realtime/SKILL.md');
         const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
@@ -239,6 +243,20 @@ describe('Rallar repo skill and documentation integrity', () => {
         expect(realtime).toContain('building-rallar-apps');
         expectAll(games, ['message.raw.targets', 'realtime payload', 'roomRef']);
         expectAll(realtime, ['message.raw.targets', 'realtime payload', 'roomRef']);
+        expect(platform).toContain('Required fields are the default');
+        expect(platform).toMatch(/absence is a meaningful domain\s+state/);
+        expect(platform).toMatch(/explicitly ask\s+the human/);
+        expect(codeWriting).toMatch(/required public and persisted fields/);
+        expect(codeWriting).toMatch(/backwards-compatibility fallback/);
+        expectAll(packageCodeStyle, [
+            'Do not use optional fields as a compatibility shortcut',
+            'discriminated union',
+        ]);
+        expectAll(realtime, [
+            'optimistic reconciliation',
+            'Ignore stale observations',
+            'Keep graph planning and recomputation outside locks',
+        ]);
         expect(testing).toContain('rallar-skill-integrity.test.ts');
         expect(testCommands).toContain(
             'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts',
@@ -301,13 +319,16 @@ describe('Rallar repo skill and documentation integrity', () => {
             "import { rallar } from '@shared-web/browser/rallar.ts';",
         );
         expect(docsIndex).toContain(
+            './rallar-api-v1-in-memory-performance-mode.md',
+        );
+        expect(docsIndex).not.toContain(
             '../iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md',
         );
         expect(
             existsSync(
                 path.join(
                     repoRoot,
-                    'iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md',
+                    'docs/rallar-api-v1-in-memory-performance-mode.md',
                 ),
             ),
         ).toBe(true);

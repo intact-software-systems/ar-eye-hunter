@@ -27,6 +27,7 @@ import type {
   GroupMutationWritten,
   GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
+import type { CachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import {
   type GroupCreateAppInboxPayload,
   type GroupDirectorAppointAppInboxPayload,
@@ -76,14 +77,16 @@ import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-type
 
 const GROUP_POLICY_REASON_CODE_SET = new Set<string>(GROUP_POLICY_REASON_CODES);
 
-export type GroupStateRouteService = Pick<
-  GroupStateService,
-  | 'listSnapshots'
-  | 'readSnapshot'
-  | 'listEvents'
-  | 'listRecentEvents'
-  | 'listEventPage'
->;
+export type GroupStateRouteService =
+  & Pick<
+    GroupStateService,
+    | 'listSnapshots'
+    | 'readSnapshot'
+    | 'listEvents'
+    | 'listRecentEvents'
+    | 'listEventPage'
+  >
+  & Pick<CachedGroupStateService, 'readCurrentSnapshot'>;
 
 export type GroupStateRouteAuthSession = Pick<
   AuthSession,
@@ -140,7 +143,7 @@ export function init(
     async (c) => {
       try {
         const groupId = c.req.param('groupId');
-        const snapshot = await deps.getGroupStateService().readSnapshot({
+        const snapshot = await deps.getGroupStateService().readCurrentSnapshot({
           ...toScope(c),
           groupId,
         });
@@ -882,7 +885,7 @@ async function assertCanReadGroupRef(
     return;
   }
 
-  const snapshot = await deps.getGroupStateService().readSnapshot(ref);
+  const snapshot = await deps.getGroupStateService().readCurrentSnapshot(ref);
   if (!snapshot) {
     throw new Error(`Group not found: ${ref.groupId}`);
   }

@@ -27,6 +27,14 @@ import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppG
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import {
+  type CachedClientStateService,
+  createCachedClientStateService,
+} from '@shared-server/rallar-system/services/cached-client-state-service.ts';
+import {
+  type CachedGroupStateService,
+  createCachedGroupStateService,
+} from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { myPublisherId, myServerId } from './runtime/runtime-identity.ts';
 import { toResilienceDto } from './middleware-resilience.ts';
@@ -38,10 +46,12 @@ import {
   createRuntimeStateRepository,
 } from './repository/createStateRepositories.ts';
 import { sql } from './db/db.ts';
-import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import {
   createGroupStateSnapshotReadThroughCache,
 } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
+import {
+  createClientStateSnapshotReadThroughCache,
+} from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
 import {
   initPresenceExpiryReconciliation,
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
@@ -52,8 +62,31 @@ import {
   queuePubSubDeliveryForConfig,
   shouldInstallQueuePubSubBridge,
 } from './db/api-v1-queue-pubsub-bridge.ts';
+import {
+  DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+  RtcTopologyPublicationRepository,
+} from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import {
+  createRtcTopologyPublicationFanout,
+  type RtcTopologyPublicationFanout,
+} from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
+import { createApiV1RtcTopologyClusterTransport } from './db/api-v1-rtc-topology-cluster-transport.ts';
 
-export type Middleware = RallarMiddlewareRuntime;
+export type Middleware = Omit<
+  RallarMiddlewareRuntime,
+  | 'clientStateService'
+  | 'groupStateService'
+  | 'rtcTopologyPublicationRepository'
+  | 'rtcTopologyExecutionRepository'
+  | 'rtcTopologyPublicationFanout'
+> & Readonly<{
+  clientStateService: CachedClientStateService;
+  groupStateService: CachedGroupStateService;
+  rtcTopologyPublicationRepository: RtcTopologyPublicationRepository;
+  rtcTopologyExecutionRepository: RtcTopologyExecutionRepository;
+  rtcTopologyPublicationFanout: RtcTopologyPublicationFanout;
+}>;
 
 let middleware: Middleware | undefined = undefined;
 
@@ -83,10 +116,36 @@ function initialise(): Middleware {
   const clientsRepository = createClientStateRepository(sql);
   const groupsRepository = createGroupStateRepository(sql);
   const timing = getApiTimingSink();
+  const now = () => Date.now();
   const appInboxOptions = getApiAppInboxServiceOptions();
   const pubSubConfig = readApiV1DatabasePubSubConfig();
   const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
     groupsRepository,
+  });
+  const clientSnapshotReadThroughCache = createClientStateSnapshotReadThroughCache({
+    clientsRepository,
+  });
+  const runtimeStateRepository = createRuntimeStateRepository(sql);
+  const rtcTopologyPublicationRepository =
+    new RtcTopologyPublicationRepository(
+      runtimeStateRepository,
+      DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+      now,
+    );
+  const rtcTopologyExecutionRepository =
+    new RtcTopologyExecutionRepository(
+      runtimeStateRepository,
+      DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+      now,
+    );
+  const rtcTopologyPublicationFanout = createRtcTopologyPublicationFanout({
+    publisherId: myPublisherId,
+    repository: rtcTopologyPublicationRepository,
+    transport: createApiV1RtcTopologyClusterTransport(
+      pubSubConfig,
+      myPublisherId,
+    ),
+    server: webSocketServer,
   });
 
   configureServerWsQBoxALRuntimeStores(wsRuntimeName, { sql: postgresSql });
@@ -103,7 +162,6 @@ function initialise(): Middleware {
     webSocketServer,
     wsRuntimeName,
     findGroupSnapshotByRef: (ref) => groupSnapshotReadThroughCache.findByRef(ref),
-    findGroupSnapshotById: groupStateSnapshotsRepository.findLatestGroupSnapshotById,
     inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
     outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
     createAppGroupInboxService: ({
@@ -120,18 +178,23 @@ function initialise(): Middleware {
         outboxQueueReader,
         senderId: myServerId,
         wake: wakeQueueEngine,
+        now,
       });
-      return new AppGroupInboxService(
-        inboxQueueReader,
-        resourceInboxRepository,
-        resourceInboxResultsRepository,
-        createGroupStateService({
-          runtimeRepository: createRuntimeStateRepository(sql),
+      const groupStateService = createCachedGroupStateService({
+        durable: createGroupStateService({
+          runtimeRepository: runtimeStateRepository,
           createGroupStateEventStore: createGroupStateEventRepository,
           syncPublisher: stateSyncPublisher,
           serviceId: myServerId,
           timing,
         }),
+        cache: groupSnapshotReadThroughCache,
+      });
+      return new AppGroupInboxService(
+        inboxQueueReader,
+        resourceInboxRepository,
+        resourceInboxResultsRepository,
+        groupStateService,
         stateSyncPublisher,
         myServerId,
         timing,
@@ -144,17 +207,21 @@ function initialise(): Middleware {
         wsQBoxServerService,
         { serverId: myServerId, timing },
       );
-      return new AppClientInboxService(
-        inboxQueueReader,
-        resourceInboxRepository,
-        resourceInboxResultsRepository,
-        createClientStateService({
-          runtimeRepository: createRuntimeStateRepository(sql),
+      const clientStateService = createCachedClientStateService({
+        durable: createClientStateService({
+          runtimeRepository: runtimeStateRepository,
           createClientStateEventStore: createClientStateEventRepository,
           syncPublisher: stateSyncPublisher,
           serviceId: myServerId,
           timing,
         }),
+        cache: clientSnapshotReadThroughCache,
+      });
+      return new AppClientInboxService(
+        inboxQueueReader,
+        resourceInboxRepository,
+        resourceInboxResultsRepository,
+        clientStateService,
         stateSyncPublisher,
         myServerId,
         timing,
@@ -168,6 +235,10 @@ function initialise(): Middleware {
     },
     clientsRepository,
     groupsRepository,
+    rtcTopologyPublicationRepository,
+    rtcTopologyExecutionRepository,
+    rtcTopologyPublicationFanout,
+    readiness: rtcTopologyPublicationFanout.readiness,
   });
 
   if (shouldInstallQueuePubSubBridge(pubSubConfig)) {
@@ -184,5 +255,44 @@ function initialise(): Middleware {
   initPresenceExpiryReconciliation(runtime)
     .catch((e) => console.error('Failed to initialise presence expiry reconciliation:', e));
 
-  return runtime;
+  return requireApiMiddleware(runtime);
+}
+
+function requireApiMiddleware(runtime: RallarMiddlewareRuntime): Middleware {
+  if (!isCachedClientStateService(runtime.clientStateService)) {
+    throw new Error('API middleware requires the cached client state service');
+  }
+  if (!isCachedGroupStateService(runtime.groupStateService)) {
+    throw new Error('API middleware requires the cached group state service');
+  }
+  if (!runtime.rtcTopologyPublicationRepository) {
+    throw new Error('API middleware requires the RTC topology publication repository');
+  }
+  if (!runtime.rtcTopologyExecutionRepository) {
+    throw new Error('API middleware requires the RTC topology execution repository');
+  }
+  if (!runtime.rtcTopologyPublicationFanout) {
+    throw new Error('API middleware requires the RTC topology publication fanout');
+  }
+
+  return {
+    ...runtime,
+    clientStateService: runtime.clientStateService,
+    groupStateService: runtime.groupStateService,
+    rtcTopologyPublicationRepository: runtime.rtcTopologyPublicationRepository,
+    rtcTopologyExecutionRepository: runtime.rtcTopologyExecutionRepository,
+    rtcTopologyPublicationFanout: runtime.rtcTopologyPublicationFanout,
+  };
+}
+
+function isCachedClientStateService(
+  service: RallarMiddlewareRuntime['clientStateService'],
+): service is CachedClientStateService {
+  return 'observeSnapshot' in service;
+}
+
+function isCachedGroupStateService(
+  service: RallarMiddlewareRuntime['groupStateService'],
+): service is CachedGroupStateService {
+  return 'readCurrentSnapshot' in service;
 }

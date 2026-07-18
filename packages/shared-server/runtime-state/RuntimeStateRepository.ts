@@ -28,6 +28,10 @@ export type RuntimeStateTransactionalRepositoryLike = RuntimeStateRepositoryLike
             namespace: string,
             keyPrefix: string,
         ): Promise<readonly RuntimeStateEntry[]>;
+        findEntriesByKeys(
+            namespace: string,
+            keys: readonly string[],
+        ): Promise<readonly RuntimeStateEntry[]>;
         lockKey(namespace: string, key: string): Promise<void>;
     }>;
 
@@ -42,7 +46,10 @@ export type RuntimeStatePrefixPageRepositoryLike = Readonly<{
 export function isRuntimeStateTransactionalRepositoryLike(
     repository: RuntimeStateRepositoryLike,
 ): repository is RuntimeStateTransactionalRepositoryLike {
-    return 'begin' in repository && 'findEntriesByPrefix' in repository && 'lockKey' in repository;
+    return 'begin' in repository &&
+        'findEntriesByPrefix' in repository &&
+        'findEntriesByKeys' in repository &&
+        'lockKey' in repository;
 }
 
 export function isRuntimeStatePrefixPageRepositoryLike(

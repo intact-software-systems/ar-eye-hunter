@@ -5,6 +5,11 @@
 - Favor single-purpose modules with exported functions, constants, and explicit `Readonly` types.
 - Keep public inputs and outputs obvious; avoid functions that secretly read mutable process or browser state.
 - Use discriminated unions and narrow result objects for status-heavy behavior.
+- Make fields mandatory when every valid authoritative value contains them.
+  Do not use optional fields as a compatibility shortcut or to make partially
+  constructed values type-check. Represent genuine alternatives with a
+  discriminated union and use separate input/output types when construction is
+  staged.
 - Keep helpers close to their domain, then export through existing barrels only when the API is meant for consumers.
 - Preserve existing exports and import paths unless removal is explicitly requested.
 

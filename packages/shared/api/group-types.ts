@@ -108,6 +108,7 @@ export type GroupPresenceSession =
 }>;
 
 export type GroupSnapshot = Readonly<{
+    stateRevision: number;
     group: Group;
     members: readonly GroupMember[];
     activeSessions: readonly GroupPresenceSession[];

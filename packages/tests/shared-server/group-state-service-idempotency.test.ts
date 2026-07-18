@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GroupRef } from "@shared/api/group-types.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
-import type { RuntimeStateEntry } from "@shared-server/runtime-state/RuntimeStateRepository.ts";
 import { GroupStateRepository } from "@shared-server/rallar-system/repositories/GroupStateRepository.ts";
 import { createGroupStateService } from "@shared-server/rallar-system/services/group-state-service.ts";
 import type { RallarTimingEvent } from "@shared-server/rallar-system/services/timing.ts";
@@ -149,8 +148,8 @@ describe("GroupStateService command idempotency", () => {
     ).toEqual(["group-created"]);
   });
 
-  it("returns the createGroup snapshot without reading it back from the repository", async () => {
-    const runtimeRepository = new PrefixReadFailingRuntimeStateRepository();
+  it("returns the stored revisioned createGroup snapshot", async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
     const service = createGroupStateService({
       runtimeRepository,
       syncPublisher: createPublisher(),
@@ -172,6 +171,7 @@ describe("GroupStateService command idempotency", () => {
       result: {
         right: {
           snapshot: {
+            stateRevision: 1,
             members: [
               {
                 principalId: "alice",
@@ -648,6 +648,41 @@ describe("GroupStateService command idempotency", () => {
       "session-heartbeat",
     ]);
   });
+
+  it("advances causal state revision for a heartbeat-only snapshot change", async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    await seedGroup(runtimeRepository, "room-heartbeat-revision");
+    await seedPresenceSession(runtimeRepository, "room-heartbeat-revision");
+    const repository = new GroupStateRepository(runtimeRepository);
+    const groupRef = toGroupRef("room-heartbeat-revision");
+    const before = await repository.readSnapshot(groupRef);
+    const service = createGroupStateService({
+      runtimeRepository,
+      syncPublisher: createPublisher(),
+      now: () => 2_000,
+      serviceId: "group-service",
+    });
+
+    const written = await service.heartbeatPresenceSession(
+      SCOPE,
+      groupRef.groupId,
+      "session-1",
+      {
+        principalId: "alice",
+        lastHeartbeatAtEpochMs: 2_000,
+        expiresAtEpochMs: 62_000,
+        requestId: "heartbeat-causal-revision",
+      },
+    );
+
+    expect(written.result.right?.event).toBeUndefined();
+    expect(written.result.right?.snapshot.group.snapshotVersion).toBe(
+      before?.group.snapshotVersion,
+    );
+    expect(written.result.right?.snapshot.stateRevision).toBeGreaterThan(
+      before?.stateRevision ?? 0,
+    );
+  });
 });
 
 async function seedGroup(
@@ -724,15 +759,4 @@ function createPublisher(
       }
     }),
   };
-}
-
-class PrefixReadFailingRuntimeStateRepository extends FakeRuntimeStateRepository {
-  override findEntriesByPrefix(
-    namespace: string,
-    keyPrefix: string,
-  ): Promise<readonly RuntimeStateEntry[]> {
-    return Promise.reject(
-      new Error(`Unexpected createGroup snapshot readback: ${namespace}/${keyPrefix}`),
-    );
-  }
 }

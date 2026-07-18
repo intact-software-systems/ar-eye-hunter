@@ -38,6 +38,23 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 - Treat broad `mod.ts` barrels as compatibility surfaces; avoid moving symbols in ways that break imports.
 - When editing shared contracts, inspect both browser and server consumers before changing a type.
 
+## Contract Shape And Compatibility
+
+- Required fields are the default for public, persisted, queued, and replicated
+  contracts. Use an optional field only when absence is a meaningful domain
+  state that consumers are expected to handle.
+- Do not weaken an authoritative output type merely because an intermediate
+  builder or migration step is incomplete. Use a separate input type, a
+  discriminated union, or an explicit migration adapter at the boundary.
+- Strong contracts enable permissive convergence: mandatory causal metadata
+  lets consumers accept newer observations, ignore stale ones, and detect
+  equal-revision corruption without guessing.
+- Backwards compatibility is a product decision, not an automatic default. If
+  a design or implementation plan would retain a legacy field, work shape,
+  import path, or fallback, explicitly ask the human to approve that scope
+  before implementation. When approval already appears in the request, record
+  the compatibility boundary and its retirement condition in the plan.
+
 ## Validation
 
 Use the rallar-testing skill for command selection. At minimum, type-check the changed package and run targeted tests for the touched domain.

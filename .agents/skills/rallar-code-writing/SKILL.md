@@ -26,6 +26,17 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 6. Add or update behavior tests with the code change.
 7. Use the rallar-testing skill to pick targeted checks and package type-checks.
 
+## Contract Defaults
+
+- Prefer required public and persisted fields. Optional fields are appropriate
+  only when omission has domain meaning; convenience during construction is
+  not domain meaning.
+- Model incomplete construction with a separate input type or discriminated
+  union, then produce a fully populated authoritative value at the boundary.
+- Do not add a backwards-compatibility fallback by default. Before a plan
+  keeps a legacy field, message shape, import, or runtime path, explicitly ask
+  the human to approve compatibility and document how long it remains.
+
 ## Shape Decision
 
 - Use a pure function for parsing, validation, transformation, derivation, routing decisions, key building, and policy checks.

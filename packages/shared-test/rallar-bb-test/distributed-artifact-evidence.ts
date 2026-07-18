@@ -40,5 +40,8 @@ export {
     searchDistributedArtifactEvidenceWindow,
 } from './distributed-artifact-evidence-window.ts';
 export {
+    selectPrimaryDistributedArtifactResultFailure,
+} from './distributed-artifact-evidence-utils.ts';
+export {
     composeDistributedArtifactIssueMarkdown,
 } from './distributed-artifact-issue-markdown.ts';

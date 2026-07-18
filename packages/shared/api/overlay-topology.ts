@@ -4,6 +4,8 @@ import type { GroupRef } from './group-types.ts';
 export type RallarRtcTopologyKind = 'star' | 'tree' | 'mesh';
 
 export type RallarOverlayTopologySnapshot = Readonly<{
+    sourceGroupStateRevision: number;
+    state: 'active' | 'removed';
     overlayId: OverlayId;
     groupRef: GroupRef;
     name: string;
@@ -17,11 +19,23 @@ export type RallarOverlayTopologySnapshot = Readonly<{
     updatedAtEpochMs: number;
 }>;
 
+export function compareOverlayTopologyCausalTuple(
+    left: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateRevision' | 'version'>,
+    right: Pick<RallarOverlayTopologySnapshot, 'sourceGroupStateRevision' | 'version'>,
+): number {
+    if (left.sourceGroupStateRevision !== right.sourceGroupStateRevision) {
+        return left.sourceGroupStateRevision - right.sourceGroupStateRevision;
+    }
+    return left.version - right.version;
+}
+
 export function toOverlayInfoForSession(
     snapshot: RallarOverlayTopologySnapshot,
     sessionId: string,
 ): OverlayInfo {
     return {
+        sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
+        state: snapshot.state,
         overlayId: snapshot.overlayId,
         groupRef: snapshot.groupRef,
         topology: snapshot.topology,

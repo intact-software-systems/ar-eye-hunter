@@ -98,6 +98,11 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
 
     const prefixedEntries = await repository.findEntriesByPrefix('runtime-smoke', 'a');
     assert.deepEqual(prefixedEntries.map((row) => row.key), ['a']);
+    const keyedEntries = await repository.findEntriesByKeys(
+      'runtime-smoke',
+      ['b', 'missing', 'a', 'b'],
+    );
+    assert.deepEqual(keyedEntries.map((row) => row.key), ['a', 'b']);
 
     await assert.rejects(
       async () => {
