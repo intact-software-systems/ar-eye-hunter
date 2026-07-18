@@ -103,6 +103,40 @@ Deno.test('strict state read routes allow active group members and reject non-me
   });
 });
 
+Deno.test('group snapshot reads probe durable state instead of trusting a warm cache', async () => {
+  await withStrictReadAuth(false, async () => {
+    const staleSnapshot = createGroupSnapshot('room-1', ['alice']);
+    const currentSnapshot = createGroupSnapshot('room-1', ['alice', 'bob']);
+    let cachedReadCount = 0;
+    let currentReadCount = 0;
+    const groupService = {
+      readSnapshot: () => {
+        cachedReadCount += 1;
+        return Promise.resolve(staleSnapshot);
+      },
+      readCurrentSnapshot: () => {
+        currentReadCount += 1;
+        return Promise.resolve(currentSnapshot);
+      },
+    };
+    const deps = createGroupRouteDeps({
+      session: createAuthSession('alice'),
+      groupService,
+    });
+    const app = createGroupRouteApp(deps);
+
+    const response = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
+      { headers: { authorization: 'Bearer token' } },
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), currentSnapshot);
+    assert.equal(cachedReadCount, 0);
+    assert.equal(currentReadCount, 1);
+  });
+});
+
 Deno.test('state read routes hydrate process snapshot caches after successful client and group REST reads', async () => {
   await withStrictReadAuth(false, async () => {
     const clientSnapshot = createClientSnapshot('alice');
@@ -894,10 +928,14 @@ function createGroupRouteDeps(
     ];
   }>,
 ): Required<groupStateRoutes.GroupStateRouteDependencies> {
+  const readSnapshot = input.groupService.readSnapshot ??
+    (() => Promise.resolve(undefined));
+
   return {
     getGroupStateService: () => ({
       listSnapshots: () => Promise.resolve([]),
-      readSnapshot: () => Promise.resolve(undefined),
+      readSnapshot,
+      readCurrentSnapshot: input.groupService.readCurrentSnapshot ?? readSnapshot,
       listEvents: () => Promise.resolve([]),
       listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
       ...input.groupService,
