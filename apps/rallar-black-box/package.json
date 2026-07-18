@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
     "worker:headless": "tsx scripts/headless-worker.ts"
   },
   "dependencies": {

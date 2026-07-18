@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "lint": "eslint . --max-warnings=0",
     "smoke:rendered": "tsx scripts/rendered-smoke.ts",
     "typecheck": "tsc --noEmit"
   },
