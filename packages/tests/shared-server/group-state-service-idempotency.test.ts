@@ -670,6 +670,98 @@ describe("GroupStateService command idempotency", () => {
       before?.stateRevision,
     );
   });
+
+  it("rejects a heartbeat that would advance past expiry without extending expiry", async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const storedHeartbeatAtEpochMs = Date.now() + 60_000;
+    const storedExpiresAtEpochMs = storedHeartbeatAtEpochMs + 1_000;
+    const lateHeartbeatAtEpochMs = storedExpiresAtEpochMs + 1_000;
+    await seedGroup(runtimeRepository, "room-heartbeat-expiry-invariant");
+    await seedPresenceSession(runtimeRepository, "room-heartbeat-expiry-invariant", {
+      lastHeartbeatAtEpochMs: storedHeartbeatAtEpochMs,
+      expiresAtEpochMs: storedExpiresAtEpochMs,
+    });
+    const service = createGroupStateService({
+      runtimeRepository,
+      now: () => lateHeartbeatAtEpochMs,
+      serviceId: "group-service",
+    });
+
+    await expect(service.heartbeatPresenceSession(
+      SCOPE,
+      "room-heartbeat-expiry-invariant",
+      "session-1",
+      {
+        principalId: "alice",
+        generationId: "generation-session-1",
+        actorPrincipalId: "alice",
+        actorSessionId: "session-1",
+        lastHeartbeatAtEpochMs: lateHeartbeatAtEpochMs,
+        requestId: "heartbeat-without-expiry-extension",
+      },
+    )).rejects.toThrow(/expiry|expires/i);
+
+    const repository = new GroupStateRepository(runtimeRepository);
+    expect(await repository.findPresenceSession({
+      ...SCOPE,
+      groupId: "room-heartbeat-expiry-invariant",
+      sessionId: "session-1",
+    })).toMatchObject({
+      lastHeartbeatAtEpochMs: storedHeartbeatAtEpochMs,
+      expiresAtEpochMs: storedExpiresAtEpochMs,
+    });
+    expect(await repository.listEvents({
+      ...SCOPE,
+      groupId: "room-heartbeat-expiry-invariant",
+    })).toHaveLength(2);
+  });
+
+  it("rejects reassigning an existing presence session to another principal", async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    await seedGroup(runtimeRepository, "room-session-principal-invariant");
+    await seedPresenceSession(runtimeRepository, "room-session-principal-invariant");
+    const service = createGroupStateService({
+      runtimeRepository,
+      now: () => 3_000,
+      serviceId: "group-service",
+    });
+    await service.upsertMember(SCOPE, "room-session-principal-invariant", "bob", {
+      status: "active",
+      actorPrincipalId: "bob",
+      requestId: "activate-bob-for-session-reassignment",
+    });
+
+    await expect(service.connectPresenceSession(
+      SCOPE,
+      "room-session-principal-invariant",
+      "session-1",
+      {
+        principalId: "bob",
+        generationId: "bob-generation",
+        connectedAtEpochMs: 3_000,
+        lastHeartbeatAtEpochMs: 3_000,
+        expiresAtEpochMs: 60_000,
+        actorPrincipalId: "bob",
+        actorSessionId: "session-1",
+        requestId: "reassign-session-to-bob",
+      },
+    )).rejects.toThrow(/principal|session/i);
+
+    const repository = new GroupStateRepository(runtimeRepository);
+    expect(await repository.findPresenceSession({
+      ...SCOPE,
+      groupId: "room-session-principal-invariant",
+      sessionId: "session-1",
+    })).toMatchObject({
+      principalId: "alice",
+      generationId: "generation-session-1",
+    });
+    expect((await repository.findPresenceAdmissionEntry({
+      ...SCOPE,
+      groupId: "room-session-principal-invariant",
+      principalId: "bob",
+    }))?.value.admittedSessions ?? []).toHaveLength(0);
+  });
 });
 
 async function seedGroup(

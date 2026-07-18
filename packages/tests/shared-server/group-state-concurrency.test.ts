@@ -156,6 +156,126 @@ describe('convergent group and presence state', () => {
         expect(read).toEqual(createMutationRead());
     });
 
+    it('rejects a wrong-scope owner member before it can authorize a mutation', () => {
+        const command = createMutationCommand();
+        const read = createMutationRead();
+        const wrongScopeOwner = {
+            ...read.actorMember!,
+            groupId: 'another-room',
+        };
+        const forgedRead: GroupMutationRead = {
+            ...read,
+            actorMember: wrongScopeOwner,
+            actorMemberEntry: {
+                ...read.actorMemberEntry!,
+                entry: {
+                    ...read.actorMemberEntry!.entry,
+                    value: JSON.stringify(wrongScopeOwner),
+                },
+                value: wrongScopeOwner,
+            },
+        };
+
+        expect(() => computeGroupMutation({
+            command,
+            read: forgedRead,
+            facts: createMutationFacts(),
+        })).toThrow(/scope|groupId|group/i);
+    });
+
+    it('rejects corrupt persisted entry envelopes and domain values before compute', () => {
+        const command = createMutationCommand();
+        const facts = createMutationFacts();
+        const base = createMutationRead();
+        const cases: readonly GroupMutationRead[] = [
+            {
+                ...base,
+                group: {
+                    ...base.group!,
+                    entry: { ...base.group!.entry, revision: -1 },
+                },
+            },
+            {
+                ...base,
+                actorMemberEntry: {
+                    ...base.actorMemberEntry!,
+                    entry: {
+                        ...base.actorMemberEntry!.entry,
+                        value: JSON.stringify({
+                            ...base.actorMemberEntry!.value,
+                            role: 'admin',
+                        }),
+                    },
+                },
+            },
+            {
+                ...base,
+                actorMember: { ...base.actorMember!, role: 'root' as never },
+                actorMemberEntry: {
+                    ...base.actorMemberEntry!,
+                    entry: {
+                        ...base.actorMemberEntry!.entry,
+                        value: JSON.stringify({
+                            ...base.actorMemberEntry!.value,
+                            role: 'root',
+                        }),
+                    },
+                    value: { ...base.actorMemberEntry!.value, role: 'root' as never },
+                },
+            },
+        ];
+
+        for (const read of cases) {
+            expect(() => computeGroupMutation({ command, read, facts }))
+                .toThrow(/revision|entry|role|stored/i);
+        }
+    });
+
+    it('rejects malformed computed guards, receipts, and outbox projections', () => {
+        const command = createMutationCommand();
+        const read = createMutationRead();
+        const facts = createMutationFacts();
+        const computed = computeGroupMutation({ command, read, facts });
+        if (computed.outcome !== 'write') throw new Error('Expected write computation');
+        const cases = [
+            {
+                ...computed,
+                guard: {
+                    ...computed.guard,
+                    value: { ...computed.guard.value, groupId: 'wrong-room' },
+                },
+            },
+            {
+                ...computed,
+                receipt: { ...computed.receipt, stateRevision: -1 },
+            },
+            {
+                ...computed,
+                outbox: {
+                    ...computed.outbox,
+                    acceptedCausalRevision: {
+                        ...computed.outbox.acceptedCausalRevision,
+                        snapshotVersion:
+                            computed.outbox.acceptedCausalRevision.snapshotVersion + 1,
+                    },
+                },
+            },
+            {
+                ...computed,
+                outbox: { ...computed.outbox, effects: ['unknown-effect'] },
+            },
+        ] as const;
+
+        for (const malformed of cases) {
+            expect(() => validateGroupMutation({
+                command,
+                read,
+                facts,
+                computed: malformed as never,
+            })).toThrow(/scope|revision|snapshot|effect|outbox|receipt/i);
+        }
+    });
+
     it('rejects equal-content corruption and non-dominating presence summary writes', () => {
         const group = createMutationRead().group!;
         const base: GroupPresenceSummary = {
@@ -845,6 +965,18 @@ describe('convergent group and presence state', () => {
         const summary = await repository.findPresenceSummaryEntry(
             groupRef('summary-room'),
         );
+        expect(Object.keys(summary?.value ?? {}).toSorted()).toEqual([
+            'activePrincipalCount',
+            'activePrincipalIds',
+            'activeSessionCount',
+            'activeSessionIds',
+            'activeSessions',
+            'applicationId',
+            'causalRevision',
+            'computedAtEpochMs',
+            'groupId',
+            'workspaceId',
+        ]);
         expect(summary?.value).toMatchObject({
             causalRevision: {
                 groupRevision: expect.any(Number),
@@ -900,57 +1032,62 @@ function createMutationRead(): GroupMutationRead {
     const audit = {
         atEpochMs: 1_000,
         byPrincipalId: 'alice',
-        bySessionId: null,
         byServiceId: 'group-service',
-        reason: null,
-        traceId: null,
         requestId: 'seed',
     } as const;
+    const group = {
+        ...groupRef('pure-room'),
+        displayName: 'Before',
+        kind: 'room' as const,
+        status: 'active' as const,
+        joinMode: 'open' as const,
+        metadata: {},
+        activeMemberCount: 1,
+        ownerPrincipalId: 'alice',
+        snapshotVersion: 1,
+        metadataVersion: 1,
+        rosterVersion: 1,
+        presenceVersion: 0,
+        created: audit,
+        updated: audit,
+    };
+    const actorMember = {
+        ...groupRef('pure-room'),
+        principalId: 'alice',
+        role: 'owner' as const,
+        status: 'active' as const,
+        joined: audit,
+        updated: audit,
+    };
+    const entry = (key: string, value: unknown) => ({
+        entry: {
+            key,
+            value: JSON.stringify(value),
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+            updatedTimestamp: new Date(0).toISOString(),
+            revision: 0,
+        },
+        value,
+    });
     return {
         idempotency: null,
-        group: {
-            entry: {
-                key: 'group',
-                value: '',
-                expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-                updatedTimestamp: new Date(0).toISOString(),
-                revision: 0,
-            },
-            value: {
-                ...groupRef('pure-room'),
-                displayName: 'Before',
-                kind: 'room',
-                status: 'active',
-                joinMode: 'open',
-                metadata: {},
-                activeMemberCount: 1,
-                ownerPrincipalId: 'alice',
-                snapshotVersion: 1,
-                metadataVersion: 1,
-                rosterVersion: 1,
-                presenceVersion: 0,
-                created: audit,
-                updated: audit,
-            },
-        },
-        actorMember: {
-            ...groupRef('pure-room'),
-            principalId: 'alice',
-            role: 'owner',
-            status: 'active',
-            joined: audit,
-            updated: audit,
-        },
+        group: entry('group', group),
+        actorMember,
         targetMember: null,
         authorityMember: null,
         directorMember: null,
+        actorMemberEntry: entry('member:alice', actorMember),
+        targetMemberEntry: null,
+        authorityMemberEntry: null,
+        directorMemberEntry: null,
         targetPresence: null,
         targetAdmission: null,
         authorityAdmission: null,
         directorAdmission: null,
         authorityPresenceSessions: [],
+        authorityPresenceSessionEntries: [],
         presenceSummary: null,
-    };
+    } as GroupMutationRead;
 }
 
 function createMutationFacts(): GroupMutationFacts {
@@ -961,6 +1098,7 @@ function createMutationFacts(): GroupMutationFacts {
         commandHash: `sha256:${'a'.repeat(64)}`,
         joinCodeVerifier: null,
         internalAuthority: 'none',
+        authenticatedAuthority: null,
     };
 }
 

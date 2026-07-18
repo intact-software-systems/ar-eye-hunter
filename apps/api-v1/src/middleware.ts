@@ -43,6 +43,7 @@ import { toResilienceDto } from './middleware-resilience.ts';
 import {
   createClientStateEventRepository,
   createClientStateRepository,
+  createAuthSessionRepository,
   createGroupStateEventRepository,
   createGroupStateRepository,
   createRuntimeStateRepository,
@@ -173,6 +174,7 @@ function initialise(): Middleware {
       const groupStateService = createCachedGroupStateService({
         durable: createGroupStateService({
           runtimeRepository: runtimeStateRepository,
+          authSessionRepository: createAuthSessionRepository(runtimeStateRepository),
           createGroupStateEventStore: createGroupStateEventRepository,
           serviceId: myServerId,
           wakeStateMutationOutbox: wakeQueueEngine,

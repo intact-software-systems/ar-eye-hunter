@@ -189,7 +189,7 @@ Deno.test('group REST presence lifecycle requires a valid generation before enqu
     groupService: {
       readCurrentSnapshot: () => Promise.resolve(snapshot),
     },
-    processGroupAppInbox: (input) => {
+    processGroupAppInbox: (_authority, input) => {
       processCalls.push(input);
       return Promise.resolve({
         outcome: 'applied',
@@ -258,6 +258,70 @@ Deno.test('group REST presence lifecycle requires a valid generation before enqu
     assert.equal(response.status, 200, testCase.path);
   }
   assert.equal(processCalls.length, 3);
+});
+
+Deno.test('all non-presence group REST mutations reject malformed bodies before inbox enqueue', async () => {
+  const processCalls: unknown[] = [];
+  const snapshot = createGroupSnapshot('room-1', ['alice']);
+  const ownerSnapshot: GroupSnapshot = {
+    ...snapshot,
+    members: snapshot.members.map((member) => ({ ...member, role: 'owner' as const })),
+  };
+  const deps = createGroupRouteDeps({
+    session: createAuthSession('alice'),
+    groupService: {
+      readSnapshot: () => Promise.resolve(ownerSnapshot),
+    },
+    processGroupAppInbox: (_authority, input) => {
+      processCalls.push(input);
+      return Promise.reject(new Error('Malformed request reached group inbox'));
+    },
+  });
+  const app = createGroupRouteApp(deps);
+  const base = '/api/state/apps/app-1/workspaces/workspace-1/groups';
+  const group = `${base}/room-1`;
+  const cases = [
+    { method: 'POST', path: base, body: { displayName: 7, kind: 'room', groupId: 'room-2' } },
+    { method: 'PUT', path: group, body: { status: 'unknown' } },
+    { method: 'POST', path: `${group}/director/appoint`, body: { heartbeatTtlMs: 0 } },
+    { method: 'POST', path: `${group}/join`, body: { inviteToken: 7 } },
+    { method: 'POST', path: `${group}/invites/accept`, body: { reason: 7 } },
+    {
+      method: 'POST',
+      path: `${group}/join-code/rotate`,
+      body: { joinCode: '', expiresAtEpochMs: 0 },
+    },
+    {
+      method: 'POST',
+      path: `${group}/invites/bob`,
+      body: { invitationExpiresAtEpochMs: -1 },
+    },
+    { method: 'POST', path: `${group}/invites/bob/revoke`, body: { traceId: 7 } },
+    { method: 'POST', path: `${group}/members/bob/remove`, body: { reason: {} } },
+    { method: 'POST', path: `${group}/members/bob/ban`, body: { requestId: {} } },
+    { method: 'POST', path: `${group}/members/bob/unban`, body: { traceId: [] } },
+    { method: 'PUT', path: `${group}/members/bob/role`, body: { role: 'superuser' } },
+    { method: 'POST', path: `${group}/owner/transfer`, body: { newOwnerPrincipalId: '' } },
+    {
+      method: 'PUT',
+      path: `${group}/members/alice`,
+      body: { status: 'active', invitationExpiresAtEpochMs: -1 },
+    },
+  ] as const;
+
+  for (const testCase of cases) {
+    const response = await app.request(testCase.path, {
+      method: testCase.method,
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(testCase.body),
+    });
+    assert.equal(response.status, 400, `${testCase.method} ${testCase.path}`);
+    assert.match((await response.json()).error, /Group|group/);
+  }
+  assert.equal(processCalls.length, 0);
 });
 
 Deno.test('client REST mutation preserves explicit terminal idempotency 409', async () => {
@@ -633,7 +697,10 @@ Deno.test('group join route enqueues explicit join intent with authenticated act
     const deps = createGroupRouteDeps({
       session: createAuthSession('alice'),
       groupService: {},
-      processGroupAppInbox: <V, R>(input: AppInboxEnqueueInput<V>): Promise<R> => {
+      processGroupAppInbox: <V, R>(
+        _authority: groupStateRoutes.GroupStateRouteAuthSession,
+        input: AppInboxEnqueueInput<V>,
+      ): Promise<R> => {
         enqueued.push(input);
         return Promise.resolve({
           status: 'ok',
@@ -693,7 +760,10 @@ Deno.test('group invite routes enqueue safe invite workflows with authenticated 
     const deps = createGroupRouteDeps({
       session: createAuthSession('alice'),
       groupService: {},
-      processGroupAppInbox: <V, R>(input: AppInboxEnqueueInput<V>): Promise<R> => {
+      processGroupAppInbox: <V, R>(
+        _authority: groupStateRoutes.GroupStateRouteAuthSession,
+        input: AppInboxEnqueueInput<V>,
+      ): Promise<R> => {
         enqueued.push(input);
         return Promise.resolve({
           status: 'ok',
@@ -812,7 +882,10 @@ Deno.test('group join-code route enqueues rotation workflow with authenticated a
     const deps = createGroupRouteDeps({
       session: createAuthSession('alice'),
       groupService: {},
-      processGroupAppInbox: <V, R>(input: AppInboxEnqueueInput<V>): Promise<R> => {
+      processGroupAppInbox: <V, R>(
+        _authority: groupStateRoutes.GroupStateRouteAuthSession,
+        input: AppInboxEnqueueInput<V>,
+      ): Promise<R> => {
         enqueued.push(input);
         return Promise.resolve({
           status: 'ok',
@@ -871,7 +944,10 @@ Deno.test('group governance routes enqueue safe workflows with authenticated act
     const deps = createGroupRouteDeps({
       session: createAuthSession('alice'),
       groupService: {},
-      processGroupAppInbox: <V, R>(input: AppInboxEnqueueInput<V>): Promise<R> => {
+      processGroupAppInbox: <V, R>(
+        _authority: groupStateRoutes.GroupStateRouteAuthSession,
+        input: AppInboxEnqueueInput<V>,
+      ): Promise<R> => {
         enqueued.push(input);
         return Promise.resolve({
           status: 'ok',
@@ -1145,7 +1221,7 @@ function installAuthMiddleware(
 
 function createClientRouteDeps(
   input: Readonly<{
-    session: AuthSession;
+    session: AuthSession & groupStateRoutes.GroupStateRouteAuthSession;
     clientService: Partial<clientStateRoutes.ClientStateRouteService>;
     hydrateStateSyncSnapshotCaches?: clientStateRoutes.ClientStateRouteDependencies[
       'hydrateStateSyncSnapshotCaches'
@@ -1183,7 +1259,7 @@ function createClientRouteDeps(
 
 function createGroupRouteDeps(
   input: Readonly<{
-    session: AuthSession;
+    session: AuthSession & groupStateRoutes.GroupStateRouteAuthSession;
     groupService: Partial<groupStateRoutes.GroupStateRouteService>;
     hydrateStateSyncSnapshotCaches?: groupStateRoutes.GroupStateRouteDependencies[
       'hydrateStateSyncSnapshotCaches'
@@ -1230,12 +1306,15 @@ async function withStrictReadAuth(
   }
 }
 
-function createAuthSession(clientId: string): AuthSession {
+function createAuthSession(
+  clientId: string,
+): AuthSession & groupStateRoutes.GroupStateRouteAuthSession {
   return {
     clientId,
     accessToken: 'token',
     username: clientId,
     sessionId: `${clientId}-session`,
+    issuedAtEpochMs: Date.now() - 1_000,
     expiresAtEpochMs: Date.now() + 60_000,
   };
 }

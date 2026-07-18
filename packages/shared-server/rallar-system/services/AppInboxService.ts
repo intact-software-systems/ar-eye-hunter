@@ -77,8 +77,15 @@ export type AppInboxEnqueueInput<V> = {
     resourceId?: string;
     contextId?: string;
     senderId?: string;
+    authority?: unknown;
     data: V;
 };
+
+export type AppInboxMessageContext = Readonly<{
+    enqueue: AppInboxEnqueueInput<unknown>;
+    message: ALMessage;
+    entry: ResourceEntry;
+}>;
 
 export type AppInboxServiceOptions = Readonly<{
     phaseTiming?: boolean;
@@ -367,7 +374,7 @@ export class AppInboxService {
 
     onStateMessage<V>(
         type: AppInboxType,
-        handler: (data: V) => Promise<unknown>,
+        handler: (data: V, context: AppInboxMessageContext) => Promise<unknown>,
     ): void {
         this.inbox.onInboxMessageDo(
             type,
@@ -398,7 +405,11 @@ export class AppInboxService {
                                     'handler-action',
                                     enqueue,
                                     entry.key,
-                                    async () => await handler(enqueue.data),
+                                    async () => await handler(enqueue.data, {
+                                        enqueue,
+                                        message,
+                                        entry,
+                                    }),
                                 );
                                 await this.timePhase(
                                     'write-result',
@@ -744,10 +755,12 @@ function rejectJsonWire(path: string, detail: string): never {
 
 function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>): Readonly<{
     type: AppInboxType;
+    authority: unknown;
     data: unknown;
 }> {
     return {
         type: enqueue.type,
+        authority: enqueue.authority ?? null,
         data: enqueue.data,
     };
 }

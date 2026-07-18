@@ -6,6 +6,7 @@ import {
 import type { CachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import { myServerId } from '../runtime/runtime-identity.ts';
 import {
+  createAuthSessionRepository,
   createGroupStateEventRepository,
   createRuntimeStateRepository,
 } from '../repository/createStateRepositories.ts';
@@ -20,8 +21,10 @@ export type ApiGroupStateService = GroupStateService & Pick<
 >;
 
 export function getGroupStateService(): ApiGroupStateService {
+  const runtimeRepository = createRuntimeStateRepository();
   const durable = createGroupStateService({
-    runtimeRepository: createRuntimeStateRepository(),
+    runtimeRepository,
+    authSessionRepository: createAuthSessionRepository(runtimeRepository),
     createGroupStateEventStore: createGroupStateEventRepository,
     syncPublisher: getWsStateSyncPublisher(),
     serviceId: myServerId,

@@ -40,6 +40,7 @@ import {
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import {
     DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
     requireConditionalWrite,
@@ -54,6 +55,10 @@ import {
     StateMutationOutboxRepository,
 } from '../repositories/StateMutationOutboxRepository.ts';
 import type { GroupStateEventStore } from '../repositories/StateEventStore.ts';
+import type {
+    AuthSessionRepository,
+    IssuedAuthSession,
+} from '../repositories/AuthSessionRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
 import {
     computeGroupMutation,
@@ -114,7 +119,56 @@ export type DisconnectPresenceBySessionRequest = Omit<
     'generationId'
 >;
 
+export type GroupMutationAuthorityProof = Readonly<{
+    version: 1;
+    principalId: string;
+    sessionId: string;
+    sessionIssuedAtEpochMs: number;
+    sessionExpiresAtEpochMs: number;
+    commandMac: string;
+}>;
+
+export type GroupMutationAuthority =
+    | IssuedAuthSession
+    | GroupMutationAuthorityProof;
+
+export type GroupMutationDescriptor = Readonly<{
+    operation: GroupMutationCommand['operation'];
+    scope: StateScope;
+    groupId: string;
+    targetPrincipalId: string | null;
+    sessionId: string | null;
+    request:
+        | CreateGroupRequest
+        | UpdateGroupRequest
+        | AppointGroupDirectorRequest
+        | JoinGroupRequest
+        | CreateGroupInviteRequest
+        | RevokeGroupInviteRequest
+        | AcceptGroupInviteRequest
+        | RotateGroupJoinCodeRequest
+        | RemoveGroupMemberRequest
+        | BanGroupMemberRequest
+        | UnbanGroupMemberRequest
+        | SetGroupMemberRoleRequest
+        | TransferGroupOwnershipRequest
+        | UpsertGroupMemberRequest
+        | ConnectGroupPresenceSessionRequest
+        | HeartbeatGroupPresenceSessionRequest
+        | DisconnectGroupPresenceSessionRequest;
+}>;
+
+export type GroupMutationPreparation = Readonly<{
+    authorityProof: GroupMutationAuthorityProof;
+    causalToken: string;
+    queueResourceId: string;
+}>;
+
 export type GroupStateService = Readonly<{
+    prepareMutation?(
+        descriptor: GroupMutationDescriptor,
+        authority: IssuedAuthSession,
+    ): Promise<GroupMutationPreparation>;
     listSnapshots(scope: GroupScope): Promise<readonly GroupSnapshot[]>;
     listSnapshotsPage(
         scope: GroupScope,
@@ -132,114 +186,137 @@ export type GroupStateService = Readonly<{
         ref: GroupRef,
         query: StateEventListQuery,
     ): Promise<StateEventPage<GroupEvent>>;
-    createGroup(scope: StateScope, request: CreateGroupRequest): Promise<GroupStateWritten>;
+    createGroup(
+        scope: StateScope,
+        request: CreateGroupRequest,
+        authority?: GroupMutationAuthority,
+    ): Promise<GroupStateWritten>;
     updateGroup(
         scope: StateScope,
         groupId: string,
         request: UpdateGroupRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     appointDirector(
         scope: StateScope,
         groupId: string,
         request: AppointGroupDirectorRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     joinGroup(
         scope: StateScope,
         groupId: string,
         request: JoinGroupRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     createGroupInvite(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: CreateGroupInviteRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     revokeGroupInvite(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: RevokeGroupInviteRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     acceptGroupInvite(
         scope: StateScope,
         groupId: string,
         request: AcceptGroupInviteRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     rotateGroupJoinCode(
         scope: StateScope,
         groupId: string,
         request: RotateGroupJoinCodeRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupJoinCodeWritten>;
     removeGroupMember(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: RemoveGroupMemberRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     banGroupMember(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: BanGroupMemberRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     unbanGroupMember(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: UnbanGroupMemberRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     setGroupMemberRole(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: SetGroupMemberRoleRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     transferGroupOwnership(
         scope: StateScope,
         groupId: string,
         request: TransferGroupOwnershipRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     upsertMember(
         scope: StateScope,
         groupId: string,
         principalId: string,
         request: UpsertGroupMemberRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     connectPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: ConnectGroupPresenceSessionRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     connectPresenceSessionReceipt(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: ConnectGroupPresenceSessionRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupMutationReceipt>;
     heartbeatPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: HeartbeatGroupPresenceSessionRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     heartbeatPresenceSessionReceipt(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: HeartbeatGroupPresenceSessionRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupMutationReceipt>;
     disconnectPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: DisconnectGroupPresenceSessionRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupStateWritten>;
     disconnectPresenceSessionReceipt(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: DisconnectGroupPresenceSessionRequest,
+        authority?: GroupMutationAuthority,
     ): Promise<GroupMutationReceipt>;
     disconnectPresenceSessionsBySessionId(
         sessionId: string,
@@ -271,7 +348,18 @@ export type GroupStateServiceDependencies = Readonly<{
     /** Wake the durable mutation drainer after a transaction commits. */
     wakeStateMutationOutbox?: () => void;
     timing?: RallarTimingSink;
+    authSessionRepository?: Pick<AuthSessionRepository, 'findBySessionId'>;
 }>;
+
+export class GroupMutationAuthorizationError extends Error {
+    readonly status = 403;
+    readonly code = 'group-mutation-authority-denied';
+
+    constructor(message: string) {
+        super(`Forbidden: ${message}`);
+        this.name = 'GroupMutationAuthorizationError';
+    }
+}
 
 export class GroupMutationIdempotencyConflictError extends Error {
     readonly status = 409;
@@ -308,6 +396,8 @@ export function createGroupStateService(
         command: GroupMutationCommand,
         mutationAtEpochMs: number = now(),
         internalAuthority: GroupMutationFacts['internalAuthority'] = 'none',
+        authenticatedAuthority: GroupMutationFacts['authenticatedAuthority'] = null,
+        reverifyAuthority?: () => Promise<void>,
     ): Promise<GroupMutationExecution> => {
         validateGroupMutationCommand(command);
         const facts: GroupMutationFacts = {
@@ -317,6 +407,7 @@ export function createGroupStateService(
             commandHash: await hashStateMutationCommand(command),
             joinCodeVerifier: await commandJoinCodeVerifier(command),
             internalAuthority,
+            authenticatedAuthority,
         };
         let lastConflict: RuntimeStateWriteConflictError | undefined;
         for (let attempt = 0; attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS; attempt += 1) {
@@ -324,6 +415,7 @@ export function createGroupStateService(
                 attempt as 0 | 1 | 2,
                 { sleep: dependencies.sleep },
             );
+            await reverifyAuthority?.();
             const read = await timeMutationPhase(
                 dependencies,
                 command,
@@ -390,8 +482,16 @@ export function createGroupStateService(
     const executeCompatible = async (
         command: GroupMutationCommand,
         internalAuthority: GroupMutationFacts['internalAuthority'] = 'none',
+        authenticatedAuthority: GroupMutationFacts['authenticatedAuthority'] = null,
+        reverifyAuthority?: () => Promise<void>,
     ): Promise<GroupStateWritten> => {
-        const execution = await executeReceipt(command, now(), internalAuthority);
+        const execution = await executeReceipt(
+            command,
+            now(),
+            internalAuthority,
+            authenticatedAuthority,
+            reverifyAuthority,
+        );
         if (execution.receipt.outcome === 'rejected') {
             return {
                 status: 'error',
@@ -415,7 +515,141 @@ export function createGroupStateService(
         };
     };
 
+    const prepareMutation = dependencies.authSessionRepository
+        ? async (
+            descriptor: GroupMutationDescriptor,
+            authority: IssuedAuthSession,
+        ): Promise<GroupMutationPreparation> => {
+            const verified = await verifyGroupMutationAuthority(
+                dependencies.authSessionRepository!,
+                descriptor,
+                authority,
+                now(),
+            );
+            requireGroupMutationRequestId(verified.descriptor);
+            const command = toDescriptorCommand(
+                verified.descriptor,
+                randomId,
+                now(),
+            );
+            const read = await readGroupMutation(repositoryFor(runtime), command);
+            const authorityProof = await createGroupMutationAuthorityProof(
+                verified.session,
+                verified.descriptor,
+            );
+            const causalToken = await sha256CanonicalJson(
+                toGroupMutationCausalSurface(read),
+            );
+            const queueResourceId = `g-${(await sha256CanonicalJson({
+                requestId: command.requestId,
+                authoritySession: {
+                    sessionId: verified.session.sessionId,
+                    issuedAtEpochMs: verified.session.issuedAtEpochMs,
+                    expiresAtEpochMs: verified.session.expiresAtEpochMs,
+                },
+                commandMac: authorityProof.commandMac,
+                causalToken,
+            })).slice(0, 34)}`;
+            return { authorityProof, causalToken, queueResourceId };
+        }
+        : undefined;
+
+    const executeAuthenticatedReceipt = async (
+        descriptor: GroupMutationDescriptor,
+        authority: GroupMutationAuthority | undefined,
+    ): Promise<Readonly<{
+        command: GroupMutationCommand;
+        execution: GroupMutationExecution;
+    }>> => {
+        if (!dependencies.authSessionRepository) {
+            const command = toDescriptorCommand(descriptor, randomId, now());
+            return { command, execution: await executeReceipt(command) };
+        }
+        if (!authority) {
+            throw new GroupMutationAuthorizationError(
+                'Authenticated mutation authority is required.',
+            );
+        }
+        const verified = await verifyGroupMutationAuthority(
+            dependencies.authSessionRepository,
+            descriptor,
+            authority,
+            now(),
+        );
+        const command = toDescriptorCommand(verified.descriptor, randomId, now());
+        const reverify = async () => {
+            const current = await verifyGroupMutationAuthority(
+                dependencies.authSessionRepository!,
+                descriptor,
+                authority,
+                now(),
+            );
+            if (canonicalJson(current.descriptor) !== canonicalJson(verified.descriptor)) {
+                throw new GroupMutationAuthorizationError(
+                    'Authenticated mutation authority changed during retry.',
+                );
+            }
+        };
+        return {
+            command,
+            execution: await executeReceipt(
+                command,
+                now(),
+                'none',
+                {
+                    principalId: verified.session.clientId,
+                    sessionId: verified.session.sessionId,
+                },
+                reverify,
+            ),
+        };
+    };
+
+    const executeAuthenticatedCompatible = async (
+        descriptor: GroupMutationDescriptor,
+        authority: GroupMutationAuthority | undefined,
+    ): Promise<GroupStateWritten> => {
+        if (!dependencies.authSessionRepository) {
+            return await executeCompatible(toDescriptorCommand(descriptor, randomId, now()));
+        }
+        if (!authority) {
+            throw new GroupMutationAuthorizationError(
+                'Authenticated mutation authority is required.',
+            );
+        }
+        const verified = await verifyGroupMutationAuthority(
+            dependencies.authSessionRepository,
+            descriptor,
+            authority,
+            now(),
+        );
+        const command = toDescriptorCommand(verified.descriptor, randomId, now());
+        const reverify = async () => {
+            const current = await verifyGroupMutationAuthority(
+                dependencies.authSessionRepository!,
+                descriptor,
+                authority,
+                now(),
+            );
+            if (canonicalJson(current.descriptor) !== canonicalJson(verified.descriptor)) {
+                throw new GroupMutationAuthorizationError(
+                    'Authenticated mutation authority changed during retry.',
+                );
+            }
+        };
+        return await executeCompatible(
+            command,
+            'none',
+            {
+                principalId: verified.session.clientId,
+                sessionId: verified.session.sessionId,
+            },
+            reverify,
+        );
+    };
+
     const service: GroupStateService = {
+        ...(prepareMutation ? { prepareMutation } : {}),
         listSnapshots: async (scope) => await repositoryFor(runtime).listSnapshots(scope),
         listSnapshotsPage: async (scope, options) =>
             await repositoryFor(runtime).listSnapshotsPage(scope, options),
@@ -427,27 +661,50 @@ export function createGroupStateService(
             await repositoryFor(runtime).listRecentEvents(ref, query),
         listEventPage: async (ref, query) =>
             await repositoryFor(runtime).listEventPage(ref, query),
-        createGroup: async (scope, request) =>
-            await executeCompatible(toCreateCommand(scope, request, randomId)),
-        updateGroup: async (scope, groupId, request) =>
-            await executeCompatible(toUpdateCommand(scope, groupId, request, randomId)),
-        appointDirector: async (scope, groupId, request) =>
-            await executeCompatible(toDirectorCommand(scope, groupId, request, randomId)),
-        joinGroup: async (scope, groupId, request) =>
-            await executeCompatible(toJoinCommand('joinGroup', scope, groupId, request, randomId)),
-        createGroupInvite: async (scope, groupId, principalId, request) =>
-            await executeCompatible(toInviteCommand(scope, groupId, principalId, request, randomId)),
-        revokeGroupInvite: async (scope, groupId, principalId, request) =>
-            await executeCompatible(toTargetCommand(
-                'revokeGroupInvite', scope, groupId, principalId, request, randomId,
-            )),
-        acceptGroupInvite: async (scope, groupId, request) =>
-            await executeCompatible(toJoinCommand(
-                'acceptGroupInvite', scope, groupId, request, randomId,
-            )),
-        rotateGroupJoinCode: async (scope, groupId, request) => {
-            const command = toRotateCommand(scope, groupId, request, randomId, now());
-            const execution = await executeReceipt(command);
+        createGroup: async (scope, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor('createGroup', scope, request.groupId, request),
+                authority,
+            ),
+        updateGroup: async (scope, groupId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor('updateGroup', scope, groupId, request),
+                authority,
+            ),
+        appointDirector: async (scope, groupId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor('appointDirector', scope, groupId, request),
+                authority,
+            ),
+        joinGroup: async (scope, groupId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor('joinGroup', scope, groupId, request),
+                authority,
+            ),
+        createGroupInvite: async (scope, groupId, principalId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor(
+                    'createGroupInvite', scope, groupId, request, principalId,
+                ),
+                authority,
+            ),
+        revokeGroupInvite: async (scope, groupId, principalId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor(
+                    'revokeGroupInvite', scope, groupId, request, principalId,
+                ),
+                authority,
+            ),
+        acceptGroupInvite: async (scope, groupId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor('acceptGroupInvite', scope, groupId, request),
+                authority,
+            ),
+        rotateGroupJoinCode: async (scope, groupId, request, authority) => {
+            const { command, execution } = await executeAuthenticatedReceipt(
+                mutationDescriptor('rotateGroupJoinCode', scope, groupId, request),
+                authority,
+            );
             if (execution.receipt.outcome === 'rejected') {
                 return {
                     status: 'error',
@@ -473,50 +730,88 @@ export function createGroupStateService(
                 }),
             };
         },
-        removeGroupMember: async (scope, groupId, principalId, request) =>
-            await executeCompatible(toTargetCommand(
-                'removeGroupMember', scope, groupId, principalId, request, randomId,
-            )),
-        banGroupMember: async (scope, groupId, principalId, request) =>
-            await executeCompatible(toTargetCommand(
-                'banGroupMember', scope, groupId, principalId, request, randomId,
-            )),
-        unbanGroupMember: async (scope, groupId, principalId, request) =>
-            await executeCompatible(toTargetCommand(
-                'unbanGroupMember', scope, groupId, principalId, request, randomId,
-            )),
-        setGroupMemberRole: async (scope, groupId, principalId, request) =>
-            await executeCompatible(toRoleCommand(scope, groupId, principalId, request, randomId)),
-        transferGroupOwnership: async (scope, groupId, request) =>
-            await executeCompatible(toTransferCommand(scope, groupId, request, randomId)),
-        upsertMember: async (scope, groupId, principalId, request) =>
-            await executeCompatible(toUpsertMemberCommand(
-                scope, groupId, principalId, request, randomId,
-            )),
-        connectPresenceSession: async (scope, groupId, sessionId, request) =>
-            await executeCompatible(toConnectPresenceCommand(
-                scope, groupId, sessionId, request, randomId,
-            )),
-        connectPresenceSessionReceipt: async (scope, groupId, sessionId, request) =>
-            (await executeReceipt(toConnectPresenceCommand(
-                scope, groupId, sessionId, request, randomId,
-            ))).receipt,
-        heartbeatPresenceSession: async (scope, groupId, sessionId, request) =>
-            await executeCompatible(toHeartbeatPresenceCommand(
-                scope, groupId, sessionId, request, randomId,
-            )),
-        heartbeatPresenceSessionReceipt: async (scope, groupId, sessionId, request) =>
-            (await executeReceipt(toHeartbeatPresenceCommand(
-                scope, groupId, sessionId, request, randomId,
-            ))).receipt,
-        disconnectPresenceSession: async (scope, groupId, sessionId, request) =>
-            await executeCompatible(toDisconnectPresenceCommand(
-                scope, groupId, sessionId, request, randomId,
-            )),
-        disconnectPresenceSessionReceipt: async (scope, groupId, sessionId, request) =>
-            (await executeReceipt(toDisconnectPresenceCommand(
-                scope, groupId, sessionId, request, randomId,
-            ))).receipt,
+        removeGroupMember: async (scope, groupId, principalId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor('removeGroupMember', scope, groupId, request, principalId),
+                authority,
+            ),
+        banGroupMember: async (scope, groupId, principalId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor('banGroupMember', scope, groupId, request, principalId),
+                authority,
+            ),
+        unbanGroupMember: async (scope, groupId, principalId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor('unbanGroupMember', scope, groupId, request, principalId),
+                authority,
+            ),
+        setGroupMemberRole: async (scope, groupId, principalId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor('setGroupMemberRole', scope, groupId, request, principalId),
+                authority,
+            ),
+        transferGroupOwnership: async (scope, groupId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor(
+                    'transferGroupOwnership', scope, groupId, request,
+                    request.newOwnerPrincipalId,
+                ),
+                authority,
+            ),
+        upsertMember: async (scope, groupId, principalId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor('upsertMember', scope, groupId, request, principalId),
+                authority,
+            ),
+        connectPresenceSession: async (scope, groupId, sessionId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor(
+                    'connectPresence', scope, groupId, request, request.principalId, sessionId,
+                ),
+                authority,
+            ),
+        connectPresenceSessionReceipt: async (
+            scope, groupId, sessionId, request, authority,
+        ) => (await executeAuthenticatedReceipt(
+            mutationDescriptor(
+                'connectPresence', scope, groupId, request, request.principalId, sessionId,
+            ),
+            authority,
+        )).execution.receipt,
+        heartbeatPresenceSession: async (scope, groupId, sessionId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor(
+                    'heartbeatPresence', scope, groupId, request,
+                    request.principalId ?? null, sessionId,
+                ),
+                authority,
+            ),
+        heartbeatPresenceSessionReceipt: async (
+            scope, groupId, sessionId, request, authority,
+        ) => (await executeAuthenticatedReceipt(
+            mutationDescriptor(
+                'heartbeatPresence', scope, groupId, request,
+                request.principalId ?? null, sessionId,
+            ),
+            authority,
+        )).execution.receipt,
+        disconnectPresenceSession: async (scope, groupId, sessionId, request, authority) =>
+            await executeAuthenticatedCompatible(
+                mutationDescriptor(
+                    'disconnectPresence', scope, groupId, request,
+                    request.principalId ?? null, sessionId,
+                ),
+                authority,
+            ),
+        disconnectPresenceSessionReceipt: async (
+            scope, groupId, sessionId, request, authority,
+        ) => (await executeAuthenticatedReceipt(
+            mutationDescriptor(
+                'disconnectPresence', scope, groupId, request,
+                request.principalId ?? null, sessionId,
+            ),
+            authority,
+        )).execution.receipt,
         disconnectPresenceSessionsBySessionId: async (sessionId, request = {}) => {
             const written = await service.disconnectPresenceSessionsBySessionIdWritten(
                 sessionId,
@@ -581,6 +876,405 @@ export function createGroupStateService(
     return withGroupStateServiceTiming(service, dependencies.timing, dependencies.serviceId);
 }
 
+type VerifiedGroupMutationAuthority = Readonly<{
+    session: IssuedAuthSession;
+    descriptor: GroupMutationDescriptor;
+}>;
+
+function mutationDescriptor(
+    operation: GroupMutationDescriptor['operation'],
+    scope: StateScope,
+    groupId: string,
+    request: GroupMutationDescriptor['request'],
+    targetPrincipalId: string | null = null,
+    sessionId: string | null = null,
+): GroupMutationDescriptor {
+    return {
+        operation,
+        scope,
+        groupId,
+        targetPrincipalId,
+        sessionId,
+        request,
+    };
+}
+
+async function verifyGroupMutationAuthority(
+    repository: Pick<AuthSessionRepository, 'findBySessionId'>,
+    descriptor: GroupMutationDescriptor,
+    authority: GroupMutationAuthority,
+    nowEpochMs: number,
+): Promise<VerifiedGroupMutationAuthority> {
+    const claimed = isGroupMutationAuthorityProof(authority)
+        ? {
+            clientId: authority.principalId,
+            sessionId: authority.sessionId,
+            issuedAtEpochMs: authority.sessionIssuedAtEpochMs,
+            expiresAtEpochMs: authority.sessionExpiresAtEpochMs,
+        }
+        : authority;
+    const session = await repository.findBySessionId(claimed.sessionId);
+    if (
+        !session ||
+        session.clientId !== claimed.clientId ||
+        session.sessionId !== claimed.sessionId ||
+        session.issuedAtEpochMs !== claimed.issuedAtEpochMs ||
+        session.expiresAtEpochMs !== claimed.expiresAtEpochMs ||
+        session.expiresAtEpochMs <= nowEpochMs
+    ) {
+        throw new GroupMutationAuthorizationError(
+            'Authenticated session is missing, expired, revoked, or mismatched.',
+        );
+    }
+    if (!isGroupMutationAuthorityProof(authority)) {
+        if (!await constantTimeSecretEqual(session.accessToken, authority.accessToken)) {
+            throw new GroupMutationAuthorizationError(
+                'Authenticated session credential is invalid.',
+            );
+        }
+    }
+    const trustedDescriptor = toTrustedMutationDescriptor(descriptor, {
+        principalId: session.clientId,
+        sessionId: session.sessionId,
+    });
+    if (isGroupMutationAuthorityProof(authority)) {
+        const expected = await createGroupMutationAuthorityProof(
+            session,
+            trustedDescriptor,
+        );
+        if (!constantTimeHexEqual(expected.commandMac, authority.commandMac)) {
+            throw new GroupMutationAuthorizationError(
+                'Authenticated mutation proof does not match the command.',
+            );
+        }
+    }
+    return { session, descriptor: trustedDescriptor };
+}
+
+function toTrustedMutationDescriptor(
+    descriptor: GroupMutationDescriptor,
+    authority: Readonly<{ principalId: string; sessionId: string }>,
+): GroupMutationDescriptor {
+    const request = descriptor.request as GroupMutationDescriptor['request'] & Readonly<{
+        actorPrincipalId?: string;
+        actorSessionId?: string;
+        createdByPrincipalId?: string;
+        principalId?: string;
+    }>;
+    if (
+        request.actorPrincipalId !== undefined &&
+        request.actorPrincipalId !== authority.principalId
+    ) {
+        throw new GroupMutationAuthorizationError(
+            'Request actor principal does not match authenticated principal.',
+        );
+    }
+    if (
+        request.actorSessionId !== undefined &&
+        request.actorSessionId !== authority.sessionId
+    ) {
+        throw new GroupMutationAuthorizationError(
+            'Request actor session does not match authenticated session.',
+        );
+    }
+    if (
+        descriptor.operation === 'createGroup' &&
+        request.createdByPrincipalId !== authority.principalId
+    ) {
+        throw new GroupMutationAuthorizationError(
+            'Group creator does not match authenticated principal.',
+        );
+    }
+    if (
+        descriptor.operation === 'connectPresence' ||
+        descriptor.operation === 'heartbeatPresence' ||
+        descriptor.operation === 'disconnectPresence'
+    ) {
+        if (descriptor.sessionId !== authority.sessionId) {
+            throw new GroupMutationAuthorizationError(
+                'Presence session does not match authenticated session.',
+            );
+        }
+        if (
+            request.principalId !== undefined &&
+            request.principalId !== authority.principalId
+        ) {
+            throw new GroupMutationAuthorizationError(
+                'Presence principal does not match authenticated principal.',
+            );
+        }
+    }
+    return {
+        ...descriptor,
+        request: {
+            ...request,
+            actorPrincipalId: authority.principalId,
+            actorSessionId: authority.sessionId,
+        },
+    };
+}
+
+async function createGroupMutationAuthorityProof(
+    session: IssuedAuthSession,
+    descriptor: GroupMutationDescriptor,
+): Promise<GroupMutationAuthorityProof> {
+    return {
+        version: 1,
+        principalId: session.clientId,
+        sessionId: session.sessionId,
+        sessionIssuedAtEpochMs: session.issuedAtEpochMs,
+        sessionExpiresAtEpochMs: session.expiresAtEpochMs,
+        commandMac: await hmacSha256Hex(
+            session.accessToken,
+            canonicalJson({
+                purpose: 'rallar-group-mutation-authority',
+                version: 1,
+                descriptor,
+            }),
+        ),
+    };
+}
+
+function isGroupMutationAuthorityProof(
+    authority: GroupMutationAuthority,
+): authority is GroupMutationAuthorityProof {
+    return 'version' in authority && authority.version === 1 &&
+        'commandMac' in authority;
+}
+
+function requireGroupMutationRequestId(descriptor: GroupMutationDescriptor): void {
+    const requestId = descriptor.request.requestId;
+    if (typeof requestId !== 'string' || requestId.length === 0) {
+        throw new NonRetryableException(
+            'Authenticated app inbox mutation requestId is required.',
+        );
+    }
+}
+
+function toDescriptorCommand(
+    descriptor: GroupMutationDescriptor,
+    randomId: () => string,
+    nowEpochMs: number,
+): GroupMutationCommand {
+    switch (descriptor.operation) {
+        case 'createGroup': {
+            const request = descriptor.request as CreateGroupRequest;
+            if (request.groupId !== descriptor.groupId) {
+                throw new NonRetryableException('Group create identity is inconsistent');
+            }
+            return toCreateCommand(descriptor.scope, request, randomId);
+        }
+        case 'updateGroup':
+            return toUpdateCommand(
+                descriptor.scope,
+                descriptor.groupId,
+                descriptor.request as UpdateGroupRequest,
+                randomId,
+            );
+        case 'appointDirector':
+            return toDirectorCommand(
+                descriptor.scope,
+                descriptor.groupId,
+                descriptor.request as AppointGroupDirectorRequest,
+                randomId,
+            );
+        case 'joinGroup':
+        case 'acceptGroupInvite':
+            return toJoinCommand(
+                descriptor.operation,
+                descriptor.scope,
+                descriptor.groupId,
+                descriptor.request as JoinGroupRequest | AcceptGroupInviteRequest,
+                randomId,
+            );
+        case 'createGroupInvite':
+            return toInviteCommand(
+                descriptor.scope,
+                descriptor.groupId,
+                requireTargetPrincipalId(descriptor),
+                descriptor.request as CreateGroupInviteRequest,
+                randomId,
+            );
+        case 'revokeGroupInvite':
+        case 'removeGroupMember':
+        case 'banGroupMember':
+        case 'unbanGroupMember':
+            return toTargetCommand(
+                descriptor.operation,
+                descriptor.scope,
+                descriptor.groupId,
+                requireTargetPrincipalId(descriptor),
+                descriptor.request as RevokeGroupInviteRequest,
+                randomId,
+            );
+        case 'setGroupMemberRole':
+            return toRoleCommand(
+                descriptor.scope,
+                descriptor.groupId,
+                requireTargetPrincipalId(descriptor),
+                descriptor.request as SetGroupMemberRoleRequest,
+                randomId,
+            );
+        case 'transferGroupOwnership': {
+            const request = descriptor.request as TransferGroupOwnershipRequest;
+            if (descriptor.targetPrincipalId !== request.newOwnerPrincipalId) {
+                throw new NonRetryableException('Ownership target identity is inconsistent');
+            }
+            return toTransferCommand(
+                descriptor.scope,
+                descriptor.groupId,
+                request,
+                randomId,
+            );
+        }
+        case 'upsertMember':
+            return toUpsertMemberCommand(
+                descriptor.scope,
+                descriptor.groupId,
+                requireTargetPrincipalId(descriptor),
+                descriptor.request as UpsertGroupMemberRequest,
+                randomId,
+            );
+        case 'rotateGroupJoinCode':
+            return toRotateCommand(
+                descriptor.scope,
+                descriptor.groupId,
+                descriptor.request as RotateGroupJoinCodeRequest,
+                randomId,
+                nowEpochMs,
+            );
+        case 'connectPresence':
+            return toConnectPresenceCommand(
+                descriptor.scope,
+                descriptor.groupId,
+                requireSessionId(descriptor),
+                descriptor.request as ConnectGroupPresenceSessionRequest,
+                randomId,
+            );
+        case 'heartbeatPresence':
+            return toHeartbeatPresenceCommand(
+                descriptor.scope,
+                descriptor.groupId,
+                requireSessionId(descriptor),
+                descriptor.request as HeartbeatGroupPresenceSessionRequest,
+                randomId,
+            );
+        case 'disconnectPresence':
+            return toDisconnectPresenceCommand(
+                descriptor.scope,
+                descriptor.groupId,
+                requireSessionId(descriptor),
+                descriptor.request as DisconnectGroupPresenceSessionRequest,
+                randomId,
+            );
+    }
+}
+
+function requireTargetPrincipalId(descriptor: GroupMutationDescriptor): string {
+    if (!descriptor.targetPrincipalId) {
+        throw new NonRetryableException('Group mutation target principal is required');
+    }
+    return descriptor.targetPrincipalId;
+}
+
+function requireSessionId(descriptor: GroupMutationDescriptor): string {
+    if (!descriptor.sessionId) {
+        throw new NonRetryableException('Group mutation session is required');
+    }
+    return descriptor.sessionId;
+}
+
+function toGroupMutationCausalSurface(read: GroupMutationRead): unknown {
+    const revision = (value: RuntimeStateEntryValue<unknown> | null) =>
+        value?.entry.revision ?? null;
+    return {
+        idempotency: revision(read.idempotency),
+        group: revision(read.group),
+        actorMember: revision(read.actorMemberEntry),
+        targetMember: revision(read.targetMemberEntry),
+        authorityMember: revision(read.authorityMemberEntry),
+        directorMember: revision(read.directorMemberEntry),
+        targetPresence: revision(read.targetPresence),
+        targetAdmission: revision(read.targetAdmission),
+        authorityAdmission: revision(read.authorityAdmission),
+        directorAdmission: revision(read.directorAdmission),
+        authorityPresenceSessions: read.authorityPresenceSessionEntries
+            .map(({ entry, value }) => ({
+                sessionId: value.sessionId,
+                revision: entry.revision,
+            }))
+            .toSorted((left, right) => left.sessionId.localeCompare(right.sessionId)),
+        presenceSummary: revision(read.presenceSummary),
+    };
+}
+
+async function hmacSha256Hex(secret: string, value: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign'],
+    );
+    const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(value));
+    return bytesToHex(new Uint8Array(signature));
+}
+
+async function sha256CanonicalJson(value: unknown): Promise<string> {
+    const digest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(canonicalJson(value)),
+    );
+    return bytesToHex(new Uint8Array(digest));
+}
+
+async function constantTimeSecretEqual(left: string, right: string): Promise<boolean> {
+    const [leftDigest, rightDigest] = await Promise.all([
+        sha256CanonicalJson(left),
+        sha256CanonicalJson(right),
+    ]);
+    return constantTimeHexEqual(leftDigest, rightDigest);
+}
+
+function constantTimeHexEqual(left: string, right: string): boolean {
+    const length = Math.max(left.length, right.length);
+    let difference = left.length ^ right.length;
+    for (let index = 0; index < length; index += 1) {
+        difference |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
+    }
+    return difference === 0;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+    return Array.from(bytes)
+        .map((value) => value.toString(16).padStart(2, '0'))
+        .join('');
+}
+
+function canonicalJson(value: unknown): string {
+    if (value === null || typeof value === 'boolean' || typeof value === 'string') {
+        return JSON.stringify(value);
+    }
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value)) {
+            throw new TypeError('Canonical JSON number must be finite');
+        }
+        return JSON.stringify(Object.is(value, -0) ? 0 : value);
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(canonicalJson).join(',')}]`;
+    }
+    if (!value || typeof value !== 'object') {
+        throw new TypeError('Canonical JSON value is unsupported');
+    }
+    return `{${Object.entries(value)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+        .join(',')}}`;
+}
+
 async function readGroupMutation(
     repository: GroupStateRepository,
     command: GroupMutationCommand,
@@ -614,13 +1308,19 @@ async function readGroupMutation(
         : targetPresence?.value.principalId ?? actorPrincipalId;
     const ownerPrincipalId = group?.value.ownerPrincipalId;
     const director = readRallarGroupDirectorAppointment(group?.value.metadata);
-    const [actorMember, targetMember, targetAdmission, authorityMember,
-        authorityAdmission, directorMember, directorAdmission] = await Promise.all([
+    const [actorMemberEntry, targetMemberEntry, targetAdmission, authorityMemberEntry,
+        authorityAdmission, directorMemberEntry, directorAdmission] = await Promise.all([
         actorPrincipalId
-            ? repository.findMember({ ...command.aggregateRef, principalId: actorPrincipalId })
+            ? repository.findMemberEntry({
+                ...command.aggregateRef,
+                principalId: actorPrincipalId,
+            })
             : Promise.resolve(undefined),
         targetPrincipalId && targetPrincipalId !== actorPrincipalId
-            ? repository.findMember({ ...command.aggregateRef, principalId: targetPrincipalId })
+            ? repository.findMemberEntry({
+                ...command.aggregateRef,
+                principalId: targetPrincipalId,
+            })
             : Promise.resolve(undefined),
         targetPrincipalId
             ? repository.findPresenceAdmissionEntry({
@@ -631,7 +1331,7 @@ async function readGroupMutation(
         command.operation === 'appointDirector' && ownerPrincipalId &&
                 ownerPrincipalId !== actorPrincipalId &&
                 ownerPrincipalId !== targetPrincipalId
-            ? repository.findMember({
+            ? repository.findMemberEntry({
                 ...command.aggregateRef,
                 principalId: ownerPrincipalId,
             })
@@ -646,7 +1346,7 @@ async function readGroupMutation(
                 director.principalId !== actorPrincipalId &&
                 director.principalId !== targetPrincipalId &&
                 director.principalId !== ownerPrincipalId
-            ? repository.findMember({
+            ? repository.findMemberEntry({
                 ...command.aggregateRef,
                 principalId: director.principalId,
             })
@@ -658,43 +1358,51 @@ async function readGroupMutation(
             })
             : Promise.resolve(undefined),
     ]);
-    const authorityPresenceSessions = await Promise.all(
+    const authorityPresenceSessionEntries = await Promise.all(
         [
             ...(authorityAdmission?.value.admittedSessions ?? []),
             ...(directorAdmission?.value.admittedSessions ?? []),
         ].map((session) =>
-            repository.findPresenceSession({
+            repository.findPresenceEntry({
                 ...command.aggregateRef,
                 sessionId: session.sessionId,
             })
         ),
     ).then((sessions) => sessions.filter(
-        (session): session is GroupPresenceSession => session !== undefined,
+        (session): session is NonNullable<typeof session> => session !== undefined,
     ));
+    const resolvedTargetMemberEntry = targetPrincipalId === actorPrincipalId
+        ? actorMemberEntry
+        : targetMemberEntry;
+    const resolvedAuthorityMemberEntry = ownerPrincipalId === actorPrincipalId
+        ? actorMemberEntry
+        : ownerPrincipalId === targetPrincipalId
+        ? targetMemberEntry
+        : authorityMemberEntry;
+    const resolvedDirectorMemberEntry = director?.principalId === actorPrincipalId
+        ? actorMemberEntry
+        : director?.principalId === targetPrincipalId
+        ? targetMemberEntry
+        : director?.principalId === ownerPrincipalId
+        ? authorityMemberEntry
+        : directorMemberEntry;
     return {
         idempotency: idempotency ?? null,
         group: group ?? null,
-        actorMember: actorMember ?? null,
-        targetMember: targetPrincipalId === actorPrincipalId
-            ? actorMember ?? null
-            : targetMember ?? null,
-        authorityMember: ownerPrincipalId === actorPrincipalId
-            ? actorMember ?? null
-            : ownerPrincipalId === targetPrincipalId
-            ? targetMember ?? null
-            : authorityMember ?? null,
-        directorMember: director?.principalId === actorPrincipalId
-            ? actorMember ?? null
-            : director?.principalId === targetPrincipalId
-            ? targetMember ?? null
-            : director?.principalId === ownerPrincipalId
-            ? authorityMember ?? null
-            : directorMember ?? null,
+        actorMember: actorMemberEntry?.value ?? null,
+        targetMember: resolvedTargetMemberEntry?.value ?? null,
+        authorityMember: resolvedAuthorityMemberEntry?.value ?? null,
+        directorMember: resolvedDirectorMemberEntry?.value ?? null,
+        actorMemberEntry: actorMemberEntry ?? null,
+        targetMemberEntry: resolvedTargetMemberEntry ?? null,
+        authorityMemberEntry: resolvedAuthorityMemberEntry ?? null,
+        directorMemberEntry: resolvedDirectorMemberEntry ?? null,
         targetPresence: targetPresence ?? null,
         targetAdmission: targetAdmission ?? null,
         authorityAdmission: authorityAdmission ?? null,
         directorAdmission: directorAdmission ?? null,
-        authorityPresenceSessions,
+        authorityPresenceSessions: authorityPresenceSessionEntries.map(({ value }) => value),
+        authorityPresenceSessionEntries,
         presenceSummary: presenceSummary ?? null,
     };
 }
@@ -1226,7 +1934,13 @@ function withGroupStateServiceTiming(
             return (...args: unknown[]) => {
                 const first = args[0];
                 const scope = first && typeof first === 'object' ? first as StateScope : undefined;
-                const request = args.at(-1);
+                const request = args.findLast((candidate) =>
+                    Boolean(
+                        candidate &&
+                        typeof candidate === 'object' &&
+                        'requestId' in candidate,
+                    )
+                );
                 const requestRecord = request && typeof request === 'object'
                     ? request as Record<string, unknown>
                     : {};

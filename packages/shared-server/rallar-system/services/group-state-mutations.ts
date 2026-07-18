@@ -207,11 +207,16 @@ export type GroupMutationRead = Readonly<{
     targetMember: GroupMember | null;
     authorityMember: GroupMember | null;
     directorMember: GroupMember | null;
+    actorMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
+    targetMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
+    authorityMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
+    directorMemberEntry: RuntimeStateEntryValue<GroupMember> | null;
     targetPresence: RuntimeStateEntryValue<GroupPresenceSession> | null;
     targetAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
     authorityAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
     directorAdmission: RuntimeStateEntryValue<GroupPresenceAdmission> | null;
     authorityPresenceSessions: readonly GroupPresenceSession[];
+    authorityPresenceSessionEntries: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
     presenceSummary: RuntimeStateEntryValue<GroupPresenceSummary> | null;
 }>;
 
@@ -222,6 +227,10 @@ export type GroupMutationFacts = Readonly<{
     commandHash: string;
     joinCodeVerifier: string | null;
     internalAuthority: 'none' | 'expiry' | 'session-cleanup';
+    authenticatedAuthority: Readonly<{
+        principalId: string;
+        sessionId: string;
+    }> | null;
 }>;
 
 export type GroupPresenceSummaryRead = Readonly<{
@@ -317,6 +326,119 @@ export class GroupMutationRejectedError extends Error {
     constructor(message: string) {
         super(message);
         this.name = 'GroupMutationRejectedError';
+    }
+}
+
+export function validateGroupMutationRequest(
+    operation: GroupMutationCommand['operation'],
+    request: unknown,
+): void {
+    requireJsonSafe(request, `Group ${operation} request`);
+    const input = requireRecord(request, `Group ${operation} request`);
+    assertExactKeys(input, GROUP_MUTATION_REQUEST_KEYS[operation],
+        `Group ${operation} request`);
+    requireNonEmptyString(input.requestId, `Group ${operation} requestId`);
+    requireNonEmptyString(input.actorPrincipalId,
+        `Group ${operation} actorPrincipalId`);
+    requireNonEmptyString(input.actorSessionId,
+        `Group ${operation} actorSessionId`);
+    for (const key of ['reason', 'traceId']) {
+        if (input[key] !== undefined) {
+            requireNonEmptyString(input[key], `Group ${operation} ${key}`);
+        }
+    }
+    const optionalString = (key: string) => {
+        if (input[key] !== undefined) {
+            requireNonEmptyString(input[key], `Group ${operation} ${key}`);
+        }
+    };
+    const optionalPositiveInteger = (key: string) => {
+        if (input[key] !== undefined) {
+            requirePositiveSafeInteger(input[key], `Group ${operation} ${key}`);
+        }
+    };
+    switch (operation) {
+        case 'createGroup':
+            requireNonEmptyString(input.groupId, 'Group createGroup groupId');
+            optionalString('slug');
+            requireNonEmptyString(input.displayName, 'Group createGroup displayName');
+            optionalString('description');
+            requireOneOf(input.kind, ['party', 'room', 'team', 'custom'], 'Group kind');
+            if (input.joinMode !== undefined) {
+                requireOneOf(input.joinMode, ['invite-only', 'code', 'open'],
+                    'Group joinMode');
+            }
+            optionalPositiveInteger('maxMembers');
+            optionalPositiveInteger('maxSessionsPerMember');
+            if (input.metadata !== undefined) requireRecord(input.metadata, 'Group metadata');
+            requireNonEmptyString(input.createdByPrincipalId,
+                'Group createGroup createdByPrincipalId');
+            optionalPositiveInteger('expiresAtEpochMs');
+            optionalPositiveInteger('purgeAfterEpochMs');
+            return;
+        case 'updateGroup':
+            optionalString('slug');
+            optionalString('displayName');
+            optionalString('description');
+            if (input.kind !== undefined) requireOneOf(input.kind,
+                ['party', 'room', 'team', 'custom'], 'Group kind');
+            if (input.status !== undefined) requireOneOf(input.status,
+                ['active', 'archived', 'deleted'], 'Group status');
+            if (input.joinMode !== undefined) requireOneOf(input.joinMode,
+                ['invite-only', 'code', 'open'], 'Group joinMode');
+            optionalPositiveInteger('maxMembers');
+            optionalPositiveInteger('maxSessionsPerMember');
+            if (input.metadata !== undefined) requireRecord(input.metadata, 'Group metadata');
+            optionalPositiveInteger('expiresAtEpochMs');
+            optionalPositiveInteger('emptySinceEpochMs');
+            optionalPositiveInteger('purgeAfterEpochMs');
+            return;
+        case 'appointDirector':
+            optionalPositiveInteger('heartbeatTtlMs');
+            return;
+        case 'joinGroup':
+        case 'acceptGroupInvite':
+            optionalString('inviteToken');
+            optionalString('joinCode');
+            return;
+        case 'createGroupInvite':
+            optionalPositiveInteger('invitationExpiresAtEpochMs');
+            return;
+        case 'setGroupMemberRole':
+            requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
+            return;
+        case 'transferGroupOwnership':
+            requireNonEmptyString(input.newOwnerPrincipalId,
+                'Group transferGroupOwnership newOwnerPrincipalId');
+            return;
+        case 'upsertMember':
+            if (input.role !== undefined) {
+                requireOneOf(input.role, ['owner', 'admin', 'member'], 'Group role');
+            }
+            requireOneOf(input.status,
+                ['invited', 'active', 'left', 'removed', 'banned'],
+                'Group member status');
+            optionalString('invitedByPrincipalId');
+            optionalPositiveInteger('invitationExpiresAtEpochMs');
+            return;
+        case 'rotateGroupJoinCode':
+            optionalString('joinCode');
+            optionalPositiveInteger('expiresAtEpochMs');
+            return;
+        case 'connectPresence':
+            validateGroupPresenceMutationRequest('connectPresence', request);
+            return;
+        case 'heartbeatPresence':
+            validateGroupPresenceMutationRequest('heartbeatPresence', request);
+            return;
+        case 'disconnectPresence':
+            validateGroupPresenceMutationRequest('disconnectPresence', request);
+            return;
+        case 'revokeGroupInvite':
+        case 'removeGroupMember':
+        case 'banGroupMember':
+        case 'unbanGroupMember':
+            return;
     }
 }
 
@@ -459,8 +581,9 @@ export function computeGroupMutation(input: Readonly<{
 }>): GroupMutationComputed {
     const { command, read, facts } = input;
     validateGroupMutationCommand(command);
-    validateGroupMutationRead(read);
+    validateGroupMutationRead(read, command.aggregateRef);
     validateFacts(facts);
+    validateAuthenticatedAuthority(command, facts);
     if (read.idempotency) {
         return read.idempotency.value.commandHash === facts.commandHash
             ? { outcome: 'replay', receipt: read.idempotency.value.receipt }
@@ -512,9 +635,16 @@ export function validateGroupMutation(input: Readonly<{
     computed: GroupMutationComputed;
 }>): void {
     validateGroupMutationCommand(input.command);
-    validateGroupMutationRead(input.read);
+    validateGroupMutationRead(input.read, input.command.aggregateRef);
     validateFacts(input.facts);
+    validateAuthenticatedAuthority(input.command, input.facts);
     requireJsonSafe(input.computed, 'Group mutation computed result');
+    validateComputedMutationShape(
+        input.command,
+        input.read,
+        input.facts,
+        input.computed,
+    );
     if (input.computed.outcome === 'idempotency-conflict') return;
     const receipt = input.computed.receipt;
     if (receipt.commandHash !== input.facts.commandHash) {
@@ -539,27 +669,526 @@ export function validateGroupMutation(input: Readonly<{
     }
 }
 
-function validateGroupMutationRead(read: GroupMutationRead): void {
+function validateGroupMutationRead(read: GroupMutationRead, ref: GroupRef): void {
     requireJsonSafe(read, 'Group mutation read');
     assertExactKeys(read as unknown as Record<string, unknown>, [
         'idempotency', 'group', 'actorMember', 'targetMember', 'authorityMember',
-        'directorMember', 'targetPresence', 'targetAdmission',
+        'directorMember', 'actorMemberEntry', 'targetMemberEntry',
+        'authorityMemberEntry', 'directorMemberEntry', 'targetPresence', 'targetAdmission',
         'authorityAdmission', 'directorAdmission', 'authorityPresenceSessions',
+        'authorityPresenceSessionEntries', 'presenceSummary',
+    ], 'Group mutation read');
+    assertRequiredKeys(read as unknown as Record<string, unknown>, [
+        'idempotency', 'group', 'actorMember', 'targetMember', 'authorityMember',
+        'directorMember', 'actorMemberEntry', 'targetMemberEntry',
+        'authorityMemberEntry', 'directorMemberEntry', 'targetPresence',
+        'targetAdmission', 'authorityAdmission', 'directorAdmission',
+        'authorityPresenceSessions', 'authorityPresenceSessionEntries',
         'presenceSummary',
     ], 'Group mutation read');
     if (read.group) {
-        const group = read.group.value;
-        requireNonEmptyString(group.ownerPrincipalId, 'Group ownerPrincipalId');
-        requirePositiveSafeInteger(group.activeMemberCount, 'Group activeMemberCount');
+        validateRuntimeEntryValue(read.group, 'Stored group');
+        validateStoredGroup(read.group.value, ref);
     }
-    if (read.targetPresence) validateStoredGeneration(read.targetPresence.value);
-    for (const session of read.authorityPresenceSessions) validateStoredGeneration(session);
-    for (const admission of [
-        read.targetAdmission,
-        read.authorityAdmission,
-        read.directorAdmission,
+    validateMemberReadPair(read.actorMember, read.actorMemberEntry, ref,
+        'Actor member');
+    validateMemberReadPair(read.targetMember, read.targetMemberEntry, ref,
+        'Target member');
+    validateMemberReadPair(read.authorityMember, read.authorityMemberEntry, ref,
+        'Authority member');
+    validateMemberReadPair(read.directorMember, read.directorMemberEntry, ref,
+        'Director member');
+    if (read.targetPresence) {
+        validateRuntimeEntryValue(read.targetPresence, 'Stored target presence');
+        validatePresenceSession(read.targetPresence.value, ref,
+            'Stored target presence');
+    }
+    for (const [label, admission] of [
+        ['Target admission', read.targetAdmission],
+        ['Authority admission', read.authorityAdmission],
+        ['Director admission', read.directorAdmission],
+    ] as const) {
+        if (!admission) continue;
+        validateRuntimeEntryValue(admission, label);
+        validatePresenceAdmission(admission.value, ref);
+    }
+    if (!Array.isArray(read.authorityPresenceSessions) ||
+        !Array.isArray(read.authorityPresenceSessionEntries)) {
+        throw new TypeError('Authority presence sessions must be arrays');
+    }
+    if (read.authorityPresenceSessions.length !==
+        read.authorityPresenceSessionEntries.length) {
+        throw new TypeError('Authority presence sessions differ from stored entries');
+    }
+    read.authorityPresenceSessionEntries.forEach((entry, index) => {
+        validateRuntimeEntryValue(entry, 'Stored authority presence');
+        validatePresenceSession(entry.value, ref, 'Stored authority presence');
+        if (!jsonEquals(entry.value, read.authorityPresenceSessions[index])) {
+            throw new TypeError('Authority presence session differs from stored entry');
+        }
+    });
+    if (read.presenceSummary) {
+        validateRuntimeEntryValue(read.presenceSummary, 'Stored presence summary');
+        validatePresenceSummaryValue(read.presenceSummary.value, ref);
+    }
+    if (read.idempotency) {
+        validateRuntimeEntryValue(read.idempotency, 'Stored group idempotency');
+        validateIdempotencyRecord(read.idempotency.value, ref);
+    }
+}
+
+function validateRuntimeEntryValue<T>(
+    stored: RuntimeStateEntryValue<T>,
+    label: string,
+): void {
+    const wrapper = requireRecord(stored, label);
+    assertExactKeys(wrapper, ['entry', 'value'], label);
+    assertRequiredKeys(wrapper, ['entry', 'value'], label);
+    const entry = requireRecord(wrapper.entry, `${label} entry`);
+    assertExactKeys(entry, [
+        'key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision',
+    ], `${label} entry`);
+    assertRequiredKeys(entry, [
+        'key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision',
+    ], `${label} entry`);
+    requireNonEmptyString(entry.key, `${label} entry key`);
+    if (typeof entry.value !== 'string') {
+        throw new TypeError(`${label} entry value must be serialized JSON`);
+    }
+    if (!Number.isSafeInteger(entry.expireAtTimestamp) ||
+        (entry.expireAtTimestamp as number) < 0) {
+        throw new TypeError(`${label} expiry must be a non-negative safe integer`);
+    }
+    requireNonNegativeSafeInteger(entry.revision, `${label} revision`);
+    requireNonEmptyString(entry.updatedTimestamp, `${label} updatedTimestamp`);
+    if (Number.isNaN(Date.parse(entry.updatedTimestamp as string))) {
+        throw new TypeError(`${label} updatedTimestamp must be an ISO timestamp`);
+    }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(entry.value as string);
+    } catch {
+        throw new TypeError(`${label} entry value must be valid JSON`);
+    }
+    if (!jsonEquals(parsed, wrapper.value)) {
+        throw new TypeError(`${label} entry value differs from parsed value`);
+    }
+}
+
+function validateStoredGroup(group: Group, ref: GroupRef): void {
+    const value = requireRecord(group, 'Stored group value');
+    assertExactKeys(value, [
+        'applicationId', 'workspaceId', 'groupId', 'slug', 'displayName',
+        'description', 'kind', 'status', 'joinMode', 'maxMembers',
+        'maxSessionsPerMember', 'metadata', 'activeMemberCount',
+        'ownerPrincipalId', 'snapshotVersion', 'metadataVersion', 'rosterVersion',
+        'presenceVersion', 'created', 'updated', 'archived', 'deleted',
+        'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs',
+    ], 'Stored group value');
+    assertRequiredKeys(value, [
+        'applicationId', 'groupId', 'displayName', 'kind', 'status', 'joinMode',
+        'metadata', 'activeMemberCount', 'ownerPrincipalId', 'snapshotVersion',
+        'metadataVersion', 'rosterVersion', 'presenceVersion', 'created', 'updated',
+    ], 'Stored group value');
+    validateScopedValue(group, ref, 'Stored group');
+    optionalNonEmptyString(value.slug, 'Stored group slug');
+    requireNonEmptyString(value.displayName, 'Stored group displayName');
+    optionalNonEmptyString(value.description, 'Stored group description');
+    requireOneOf(value.kind, ['party', 'room', 'team', 'custom'], 'Stored group kind');
+    requireOneOf(value.status, ['active', 'archived', 'deleted'], 'Stored group status');
+    requireOneOf(value.joinMode, ['invite-only', 'code', 'open'],
+        'Stored group joinMode');
+    optionalPositiveSafeInteger(value.maxMembers, 'Stored group maxMembers');
+    optionalPositiveSafeInteger(value.maxSessionsPerMember,
+        'Stored group maxSessionsPerMember');
+    requireRecord(value.metadata, 'Stored group metadata');
+    requirePositiveSafeInteger(value.activeMemberCount, 'Stored group activeMemberCount');
+    requireNonEmptyString(value.ownerPrincipalId, 'Stored group ownerPrincipalId');
+    requirePositiveSafeInteger(value.snapshotVersion, 'Stored group snapshotVersion');
+    requirePositiveSafeInteger(value.metadataVersion, 'Stored group metadataVersion');
+    requirePositiveSafeInteger(value.rosterVersion, 'Stored group rosterVersion');
+    requireNonNegativeSafeInteger(value.presenceVersion, 'Stored group presenceVersion');
+    validateAuditStamp(value.created, 'Stored group created');
+    validateAuditStamp(value.updated, 'Stored group updated');
+    if (value.archived !== undefined) validateAuditStamp(value.archived,
+        'Stored group archived');
+    if (value.deleted !== undefined) validateAuditStamp(value.deleted,
+        'Stored group deleted');
+    optionalPositiveSafeInteger(value.expiresAtEpochMs, 'Stored group expiresAtEpochMs');
+    optionalPositiveSafeInteger(value.emptySinceEpochMs, 'Stored group emptySinceEpochMs');
+    optionalPositiveSafeInteger(value.purgeAfterEpochMs, 'Stored group purgeAfterEpochMs');
+}
+
+function validateMemberReadPair(
+    member: GroupMember | null,
+    stored: RuntimeStateEntryValue<GroupMember> | null,
+    ref: GroupRef,
+    label: string,
+): void {
+    if ((member === null) !== (stored === null)) {
+        throw new TypeError(`${label} differs from stored entry presence`);
+    }
+    if (!member || !stored) return;
+    validateRuntimeEntryValue(stored, `Stored ${label.toLowerCase()}`);
+    validateStoredMember(stored.value, ref, label);
+    if (!jsonEquals(member, stored.value)) {
+        throw new TypeError(`${label} differs from stored entry value`);
+    }
+}
+
+function validateStoredMember(member: GroupMember, ref: GroupRef, label: string): void {
+    const value = requireRecord(member, `${label} value`);
+    assertExactKeys(value, [
+        'applicationId', 'workspaceId', 'groupId', 'principalId', 'role', 'status',
+        'joined', 'updated', 'left', 'removed', 'banned', 'invitedByPrincipalId',
+        'invitationExpiresAtEpochMs',
+    ], `${label} value`);
+    assertRequiredKeys(value, [
+        'applicationId', 'groupId', 'principalId', 'role', 'status', 'joined', 'updated',
+    ], `${label} value`);
+    validateScopedValue(member, ref, label);
+    requireNonEmptyString(value.principalId, `${label} principalId`);
+    requireOneOf(value.role, ['owner', 'admin', 'member'], `${label} role`);
+    requireOneOf(value.status, ['invited', 'active', 'left', 'removed', 'banned'],
+        `${label} status`);
+    validateAuditStamp(value.joined, `${label} joined`);
+    validateAuditStamp(value.updated, `${label} updated`);
+    for (const key of ['left', 'removed', 'banned'] as const) {
+        if (value[key] !== undefined) validateAuditStamp(value[key], `${label} ${key}`);
+    }
+    optionalNonEmptyString(value.invitedByPrincipalId, `${label} invitedByPrincipalId`);
+    optionalPositiveSafeInteger(value.invitationExpiresAtEpochMs,
+        `${label} invitationExpiresAtEpochMs`);
+}
+
+function validatePresenceSession(
+    session: GroupPresenceSession,
+    ref: GroupRef,
+    label: string,
+): void {
+    const value = requireRecord(session, `${label} value`);
+    assertExactKeys(value, [
+        'applicationId', 'workspaceId', 'groupId', 'sessionId', 'principalId',
+        'generationId', 'generationVersion', 'connectedAtEpochMs',
+        'lastHeartbeatAtEpochMs', 'expiresAtEpochMs', 'disconnectedAtEpochMs',
+        'disconnectReason',
+    ], `${label} value`);
+    assertRequiredKeys(value, [
+        'applicationId', 'groupId', 'sessionId', 'principalId', 'generationId',
+        'generationVersion', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
+        'expiresAtEpochMs',
+    ], `${label} value`);
+    validateScopedValue(session, ref, label);
+    requireNonEmptyString(value.sessionId, `${label} sessionId`);
+    requireNonEmptyString(value.principalId, `${label} principalId`);
+    requireNonEmptyString(value.generationId, `${label} generationId`);
+    validateStoredGeneration(session);
+    requirePositiveSafeInteger(value.lastHeartbeatAtEpochMs,
+        `${label} lastHeartbeatAtEpochMs`);
+    requirePositiveSafeInteger(value.expiresAtEpochMs, `${label} expiresAtEpochMs`);
+    if ((value.lastHeartbeatAtEpochMs as number) < session.connectedAtEpochMs ||
+        (value.expiresAtEpochMs as number) < (value.lastHeartbeatAtEpochMs as number)) {
+        throw new TypeError(`${label} timestamps are causally inconsistent`);
+    }
+    optionalPositiveSafeInteger(value.disconnectedAtEpochMs,
+        `${label} disconnectedAtEpochMs`);
+    optionalNonEmptyString(value.disconnectReason, `${label} disconnectReason`);
+    if (value.disconnectedAtEpochMs !== undefined &&
+        (value.disconnectedAtEpochMs as number) < (value.lastHeartbeatAtEpochMs as number)) {
+        throw new TypeError(`${label} disconnect predates heartbeat`);
+    }
+}
+
+function validatePresenceSummaryValue(summary: GroupPresenceSummary, ref: GroupRef): void {
+    const value = requireRecord(summary, 'Stored presence summary value');
+    assertExactKeys(value, [
+        'applicationId', 'workspaceId', 'groupId', 'causalRevision',
+        'activePrincipalIds', 'activeSessionIds', 'activeSessions',
+        'activePrincipalCount', 'activeSessionCount', 'computedAtEpochMs',
+    ], 'Stored presence summary value');
+    assertRequiredKeys(value, [
+        'applicationId', 'groupId', 'causalRevision', 'activePrincipalIds',
+        'activeSessionIds', 'activeSessions', 'activePrincipalCount',
+        'activeSessionCount', 'computedAtEpochMs',
+    ], 'Stored presence summary value');
+    validateScopedValue(summary, ref, 'Stored presence summary');
+    validateCausalRevision(summary.causalRevision, 'Stored presence summary');
+    if (!Array.isArray(summary.activePrincipalIds) ||
+        !Array.isArray(summary.activeSessionIds) ||
+        !Array.isArray(summary.activeSessions)) {
+        throw new TypeError('Stored presence summary collections must be arrays');
+    }
+    for (const principalId of summary.activePrincipalIds) {
+        requireNonEmptyString(principalId, 'Stored presence summary principalId');
+    }
+    for (const sessionId of summary.activeSessionIds) {
+        requireNonEmptyString(sessionId, 'Stored presence summary sessionId');
+    }
+    for (const session of summary.activeSessions) {
+        validatePresenceSession(session, ref, 'Stored presence summary session');
+    }
+    requireNonNegativeSafeInteger(summary.activePrincipalCount,
+        'Stored presence summary activePrincipalCount');
+    requireNonNegativeSafeInteger(summary.activeSessionCount,
+        'Stored presence summary activeSessionCount');
+    requirePositiveSafeInteger(summary.computedAtEpochMs,
+        'Stored presence summary computedAtEpochMs');
+    const canonicalSessions = summary.activeSessions.toSorted((left, right) =>
+        left.sessionId.localeCompare(right.sessionId) ||
+        left.generationVersion - right.generationVersion
+    );
+    const canonicalPrincipals = [...new Set(
+        summary.activeSessions.map((session) => session.principalId),
+    )].toSorted();
+    if (summary.activePrincipalCount !== summary.activePrincipalIds.length ||
+        summary.activeSessionCount !== summary.activeSessionIds.length ||
+        summary.activeSessionCount !== summary.activeSessions.length ||
+        !jsonEquals(summary.activePrincipalIds, canonicalPrincipals) ||
+        !jsonEquals(summary.activeSessions, canonicalSessions) ||
+        !jsonEquals(summary.activeSessionIds,
+            summary.activeSessions.map((session) => session.sessionId))) {
+        throw new TypeError('Stored presence summary facts are inconsistent');
+    }
+}
+
+function validateIdempotencyRecord(
+    record: GroupMutationIdempotencyRecord,
+    ref: GroupRef,
+): void {
+    const value = requireRecord(record, 'Stored group idempotency value');
+    assertExactKeys(value, ['requestId', 'commandHash', 'receipt'],
+        'Stored group idempotency value');
+    assertRequiredKeys(value, ['requestId', 'commandHash', 'receipt'],
+        'Stored group idempotency value');
+    requireNonEmptyString(value.requestId, 'Stored group idempotency requestId');
+    validateCommandHash(value.commandHash, 'Stored group idempotency commandHash');
+    validateMutationReceipt(value.receipt, ref, 'Stored group idempotency receipt');
+    if ((value.receipt as GroupMutationReceipt).commandHash !== value.commandHash) {
+        throw new TypeError('Stored group idempotency hashes differ');
+    }
+}
+
+function validateComputedMutationShape(
+    command: GroupMutationCommand,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts,
+    computed: GroupMutationComputed,
+): void {
+    const value = computed as unknown as Record<string, unknown>;
+    switch (computed.outcome) {
+        case 'replay':
+        case 'no-op':
+        case 'rejected':
+            assertExactKeys(value, ['outcome', 'receipt'],
+                'Group mutation computed result');
+            assertRequiredKeys(value, ['outcome', 'receipt'],
+                'Group mutation computed result');
+            validateMutationReceipt(computed.receipt, command.aggregateRef,
+                'Group mutation computed receipt');
+            if (computed.receipt.commandHash !== facts.commandHash) {
+                throw new TypeError('Group mutation computed receipt hash differs from facts');
+            }
+            if (computed.outcome !== 'replay' &&
+                computed.receipt.outcome !== computed.outcome) {
+                throw new TypeError('Group mutation computed receipt outcome differs');
+            }
+            return;
+        case 'idempotency-conflict':
+            assertExactKeys(value, [
+                'outcome', 'existingCommandHash', 'receivedCommandHash',
+            ], 'Group mutation computed result');
+            assertRequiredKeys(value, [
+                'outcome', 'existingCommandHash', 'receivedCommandHash',
+            ], 'Group mutation computed result');
+            validateCommandHash(computed.existingCommandHash,
+                'Group mutation existingCommandHash');
+            validateCommandHash(computed.receivedCommandHash,
+                'Group mutation receivedCommandHash');
+            if (computed.receivedCommandHash !== facts.commandHash) {
+                throw new TypeError('Group mutation conflict hash differs from facts');
+            }
+            return;
+        case 'write':
+            assertExactKeys(value, [
+                'outcome', 'guard', 'members', 'initialPresenceSummary',
+                'presenceAdmission', 'event', 'receipt', 'idempotency', 'outbox',
+            ], 'Group mutation computed result');
+            assertRequiredKeys(value, [
+                'outcome', 'guard', 'members', 'initialPresenceSummary',
+                'presenceAdmission', 'event', 'receipt', 'idempotency', 'outbox',
+            ], 'Group mutation computed result');
+            validateComputedWrite(command, read, facts, computed);
+            return;
+    }
+}
+
+function validateComputedWrite(
+    command: GroupMutationCommand,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts,
+    computed: Extract<GroupMutationComputed, { outcome: 'write' }>,
+): void {
+    const ref = command.aggregateRef;
+    const guard = computed.guard as unknown as Record<string, unknown>;
+    assertExactKeys(guard, [
+        'kind', 'operation', 'value',
+        ...(computed.guard.operation === 'update' ? ['expectedRevision'] : []),
+    ], 'Group mutation computed guard');
+    assertRequiredKeys(guard, [
+        'kind', 'operation', 'value',
+        ...(computed.guard.operation === 'update' ? ['expectedRevision'] : []),
+    ], 'Group mutation computed guard');
+    requireOneOf(computed.guard.kind, ['group', 'presence'],
+        'Group mutation computed guard kind');
+    requireOneOf(computed.guard.operation, ['insert', 'update'],
+        'Group mutation computed guard operation');
+    if (computed.guard.operation === 'update') {
+        requireNonNegativeSafeInteger(computed.guard.expectedRevision,
+            'Group mutation computed guard expectedRevision');
+    }
+    if (computed.guard.kind === 'group') {
+        validateStoredGroup(computed.guard.value, ref);
+        const expectedRevision = read.group?.entry.revision;
+        if (computed.guard.operation === 'insert') {
+            if (read.group !== null) {
+                throw new TypeError('Group insert guard has an existing predecessor');
+            }
+        } else if (computed.guard.expectedRevision !== expectedRevision) {
+            throw new TypeError('Group update guard revision differs from predecessor');
+        }
+    } else {
+        validatePresenceSession(computed.guard.value, ref,
+            'Group mutation computed presence guard');
+        const expectedRevision = read.targetPresence?.entry.revision;
+        if (computed.guard.operation === 'insert') {
+            if (read.targetPresence !== null) {
+                throw new TypeError('Presence insert guard has an existing predecessor');
+            }
+        } else if (computed.guard.expectedRevision !== expectedRevision) {
+            throw new TypeError('Presence update guard revision differs from predecessor');
+        }
+    }
+    if (!Array.isArray(computed.members)) {
+        throw new TypeError('Group mutation computed members must be an array');
+    }
+    for (const member of computed.members) {
+        validateStoredMember(member, ref, 'Group mutation computed member');
+    }
+    if (computed.initialPresenceSummary !== null) {
+        validatePresenceSummaryValue(computed.initialPresenceSummary, ref);
+    }
+    if (computed.presenceAdmission !== null) {
+        const admission = computed.presenceAdmission as unknown as Record<string, unknown>;
+        assertExactKeys(admission, [
+            'operation', 'value',
+            ...(computed.presenceAdmission.operation === 'update'
+                ? ['expectedRevision']
+                : []),
+        ], 'Group mutation computed admission');
+        assertRequiredKeys(admission, [
+            'operation', 'value',
+            ...(computed.presenceAdmission.operation === 'update'
+                ? ['expectedRevision']
+                : []),
+        ], 'Group mutation computed admission');
+        requireOneOf(computed.presenceAdmission.operation, ['insert', 'update'],
+            'Group mutation computed admission operation');
+        validatePresenceAdmission(computed.presenceAdmission.value, ref);
+        if (computed.presenceAdmission.operation === 'update') {
+            requireNonNegativeSafeInteger(computed.presenceAdmission.expectedRevision,
+                'Group mutation computed admission expectedRevision');
+        }
+    }
+    validateGroupEvent(computed.event, ref, 'Group mutation computed event');
+    validateMutationReceipt(computed.receipt, ref, 'Group mutation computed receipt');
+    if (computed.receipt.outcome !== 'applied' ||
+        computed.receipt.commandId !== command.commandId ||
+        computed.receipt.commandHash !== facts.commandHash) {
+        throw new TypeError('Group mutation computed receipt differs from command');
+    }
+    if (computed.idempotency !== null) {
+        validateIdempotencyRecord(computed.idempotency, ref);
+        if (computed.idempotency.requestId !== command.requestId ||
+            !jsonEquals(computed.idempotency.receipt, computed.receipt)) {
+            throw new TypeError('Group mutation computed idempotency differs from receipt');
+        }
+    } else if (command.requestId !== null) {
+        throw new TypeError('Group mutation computed idempotency is missing');
+    }
+    validateComputedOutbox(command, read, facts, computed);
+}
+
+function validateComputedOutbox(
+    command: GroupMutationCommand,
+    read: GroupMutationRead,
+    facts: GroupMutationFacts,
+    computed: Extract<GroupMutationComputed, { outcome: 'write' }>,
+): void {
+    const outbox = computed.outbox as unknown as Record<string, unknown>;
+    assertExactKeys(outbox, [
+        'kind', 'aggregateRef', 'commandId', 'commandHash', 'createdAtEpochMs',
+        'acceptedCausalRevision', 'effects', 'event',
+    ], 'Group mutation computed outbox');
+    assertRequiredKeys(outbox, [
+        'kind', 'aggregateRef', 'commandId', 'commandHash', 'createdAtEpochMs',
+        'acceptedCausalRevision', 'effects', 'event',
+    ], 'Group mutation computed outbox');
+    if (computed.outbox.kind !== 'group') {
+        throw new TypeError('Group mutation computed outbox kind is invalid');
+    }
+    validateGroupRef(computed.outbox.aggregateRef);
+    if (!jsonEquals(computed.outbox.aggregateRef, command.aggregateRef)) {
+        throw new TypeError('Group mutation computed outbox scope differs from command');
+    }
+    if (computed.outbox.commandId !== command.commandId ||
+        computed.outbox.commandHash !== facts.commandHash ||
+        computed.outbox.createdAtEpochMs !== facts.nowEpochMs) {
+        throw new TypeError('Group mutation computed outbox identity differs from command');
+    }
+    if (!jsonEquals(computed.outbox.effects,
+        ['group-state-sync', 'group-presence-summary'])) {
+        throw new TypeError('Group mutation computed outbox effects are invalid');
+    }
+    const revision = requireRecord(
+        computed.outbox.acceptedCausalRevision,
+        'Group mutation computed outbox causal revision',
+    );
+    assertExactKeys(revision, [
+        'kind', 'stateRevision', 'snapshotVersion', 'metadataVersion',
+        'rosterVersion', 'presenceVersion',
+    ], 'Group mutation computed outbox causal revision');
+    assertRequiredKeys(revision, [
+        'kind', 'stateRevision', 'snapshotVersion', 'metadataVersion',
+        'rosterVersion', 'presenceVersion',
+    ], 'Group mutation computed outbox causal revision');
+    if (revision.kind !== 'group') {
+        throw new TypeError('Group mutation computed outbox revision kind is invalid');
+    }
+    for (const key of [
+        'stateRevision', 'snapshotVersion', 'metadataVersion', 'rosterVersion',
+        'presenceVersion',
     ]) {
-        if (admission) validatePresenceAdmission(admission.value);
+        requireNonNegativeSafeInteger(revision[key],
+            `Group mutation computed outbox ${key}`);
+    }
+    const group = computed.guard.kind === 'group'
+        ? computed.guard.value
+        : requireGroup(read, command.aggregateRef).value;
+    if (revision.stateRevision !== computed.receipt.stateRevision ||
+        revision.snapshotVersion !== group.snapshotVersion ||
+        revision.presenceVersion !== computed.receipt.causalRevision.presenceRevision) {
+        throw new TypeError('Group mutation computed outbox revision differs from receipt');
+    }
+    if (revision.metadataVersion !== group.metadataVersion ||
+        revision.rosterVersion !== group.rosterVersion) {
+        throw new TypeError('Group mutation computed outbox versions differ from group');
+    }
+    const event = requireRecord(computed.outbox.event,
+        'Group mutation computed outbox event');
+    assertExactKeys(event, ['kind', 'event'], 'Group mutation computed outbox event');
+    assertRequiredKeys(event, ['kind', 'event'], 'Group mutation computed outbox event');
+    if (event.kind !== 'group' || !jsonEquals(event.event, computed.event)) {
+        throw new TypeError('Group mutation computed outbox event differs from event');
     }
 }
 
@@ -654,7 +1283,9 @@ export function computeGroupPresenceSummary(input: Readonly<{
         return { outcome: 'no-op', summary: current };
     }
     const summary: GroupPresenceSummary = {
-        ...ref,
+        applicationId: ref.applicationId,
+        ...(ref.workspaceId === undefined ? {} : { workspaceId: ref.workspaceId }),
+        groupId: ref.groupId,
         causalRevision: {
             groupRevision,
             presenceRevision:
@@ -1236,6 +1867,11 @@ function computeConnectPresence(
     const incomingOrder = [connectedAt, command.input.generationId] as const;
     if (existing) {
         validateStoredGeneration(existing.value);
+        if (existing.value.principalId !== command.input.principalId) {
+            throw new GroupMutationRejectedError(
+                'A presence session cannot be reassigned to another principal.',
+            );
+        }
         const currentOrder = [
             existing.value.generationVersion,
             existing.value.generationId,
@@ -1309,13 +1945,19 @@ function computeHeartbeatPresence(
     if (!member || member.status !== 'active') return noOp(command, read, facts);
     const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? facts.nowEpochMs;
     if (heartbeatAt < existing.value.lastHeartbeatAtEpochMs) return noOp(command, read, facts);
+    const expiresAt = Math.max(
+        existing.value.expiresAtEpochMs,
+        command.input.expiresAtEpochMs ?? existing.value.expiresAtEpochMs,
+    );
+    if (expiresAt < heartbeatAt) {
+        throw new GroupMutationRejectedError(
+            'Presence heartbeat expiry must not predate the heartbeat.',
+        );
+    }
     const session: GroupPresenceSession = {
         ...existing.value,
         lastHeartbeatAtEpochMs: heartbeatAt,
-        expiresAtEpochMs: Math.max(
-            existing.value.expiresAtEpochMs,
-            command.input.expiresAtEpochMs ?? existing.value.expiresAtEpochMs,
-        ),
+        expiresAtEpochMs: expiresAt,
     };
     if (jsonEquals(existing.value, session)) return noOp(command, read, facts);
     return presenceWrite(command, read, facts, session, 'update', 'session-heartbeat');
@@ -1857,10 +2499,26 @@ function isExactlyAdmitted(
         ) === true;
 }
 
-function validatePresenceAdmission(admission: GroupPresenceAdmission): void {
+function validatePresenceAdmission(
+    admission: GroupPresenceAdmission,
+    ref?: GroupRef,
+): void {
+    const value = requireRecord(admission, 'Presence admission');
+    assertExactKeys(value, [
+        'applicationId', 'workspaceId', 'groupId', 'principalId',
+        'admittedSessions', 'updatedAtEpochMs',
+    ], 'Presence admission');
+    assertRequiredKeys(value, [
+        'applicationId', 'groupId', 'principalId', 'admittedSessions',
+        'updatedAtEpochMs',
+    ], 'Presence admission');
+    if (ref) validateScopedValue(admission, ref, 'Presence admission');
     requireNonEmptyString(admission.principalId, 'Presence admission principalId');
     requirePositiveSafeInteger(admission.updatedAtEpochMs,
         'Presence admission updatedAtEpochMs');
+    if (!Array.isArray(admission.admittedSessions)) {
+        throw new TypeError('Presence admission sessions must be an array');
+    }
     const canonical = admission.admittedSessions.toSorted((left, right) =>
         left.sessionId.localeCompare(right.sessionId)
     );
@@ -1869,6 +2527,13 @@ function validatePresenceAdmission(admission: GroupPresenceAdmission): void {
     }
     const sessionIds = new Set<string>();
     for (const session of admission.admittedSessions) {
+        const sessionValue = requireRecord(session, 'Presence admission session');
+        assertExactKeys(sessionValue, [
+            'sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs',
+        ], 'Presence admission session');
+        assertRequiredKeys(sessionValue, [
+            'sessionId', 'generationId', 'generationVersion', 'connectedAtEpochMs',
+        ], 'Presence admission session');
         requireNonEmptyString(session.sessionId, 'Presence admission sessionId');
         requireNonEmptyString(session.generationId, 'Presence admission generationId');
         requirePositiveSafeInteger(session.generationVersion,
@@ -2079,7 +2744,7 @@ function validateFacts(facts: GroupMutationFacts): void {
     requireJsonSafe(facts, 'Group mutation facts');
     assertExactKeys(facts as unknown as Record<string, unknown>, [
         'nowEpochMs', 'serviceId', 'eventId', 'commandHash',
-        'joinCodeVerifier', 'internalAuthority',
+        'joinCodeVerifier', 'internalAuthority', 'authenticatedAuthority',
     ], 'Group mutation facts');
     if (!Number.isSafeInteger(facts.nowEpochMs) || facts.nowEpochMs < 0) {
         throw new TypeError('Group mutation timestamp is invalid');
@@ -2091,6 +2756,170 @@ function validateFacts(facts: GroupMutationFacts): void {
     }
     if (!['none', 'expiry', 'session-cleanup'].includes(facts.internalAuthority)) {
         throw new TypeError('Group mutation internal authority is invalid');
+    }
+    if (facts.authenticatedAuthority !== null) {
+        const authority = requireRecord(
+            facts.authenticatedAuthority,
+            'Group mutation authenticated authority',
+        );
+        assertExactKeys(authority, ['principalId', 'sessionId'],
+            'Group mutation authenticated authority');
+        requireNonEmptyString(authority.principalId,
+            'Group mutation authenticated authority principalId');
+        requireNonEmptyString(authority.sessionId,
+            'Group mutation authenticated authority sessionId');
+    }
+    if (facts.joinCodeVerifier !== null) {
+        requireNonEmptyString(facts.joinCodeVerifier,
+            'Group mutation joinCodeVerifier');
+    }
+    if (facts.internalAuthority !== 'none' && facts.authenticatedAuthority !== null) {
+        throw new TypeError('Internal group authority cannot also be authenticated authority');
+    }
+}
+
+function validateAuthenticatedAuthority(
+    command: GroupMutationCommand,
+    facts: GroupMutationFacts,
+): void {
+    const authority = facts.authenticatedAuthority;
+    if (!authority) return;
+    if (command.input.actorPrincipalId !== authority.principalId ||
+        command.input.actorSessionId !== authority.sessionId) {
+        throw new TypeError('Group mutation actor differs from authenticated authority');
+    }
+}
+
+function validateScopedValue(
+    value: Pick<GroupRef, 'applicationId' | 'workspaceId' | 'groupId'>,
+    ref: GroupRef,
+    label: string,
+): void {
+    requireNonEmptyString(value.applicationId, `${label} applicationId`);
+    requireNonEmptyString(value.groupId, `${label} groupId`);
+    if (value.workspaceId !== undefined) {
+        requireNonEmptyString(value.workspaceId, `${label} workspaceId`);
+    }
+    if (value.applicationId !== ref.applicationId ||
+        value.workspaceId !== ref.workspaceId || value.groupId !== ref.groupId) {
+        throw new TypeError(`${label} scope differs from mutation group`);
+    }
+}
+
+function validateAuditStamp(value: unknown, label: string): void {
+    const audit = requireRecord(value, label);
+    assertExactKeys(audit, [
+        'atEpochMs', 'byPrincipalId', 'bySessionId', 'byServiceId', 'reason',
+        'traceId', 'requestId',
+    ], label);
+    assertRequiredKeys(audit, ['atEpochMs'], label);
+    requireNonNegativeSafeInteger(audit.atEpochMs, `${label} atEpochMs`);
+    for (const key of [
+        'byPrincipalId', 'bySessionId', 'byServiceId', 'reason', 'traceId', 'requestId',
+    ]) {
+        optionalNonEmptyString(audit[key], `${label} ${key}`);
+    }
+}
+
+function validateCausalRevision(value: unknown, label: string): void {
+    const revision = requireRecord(value, `${label} causalRevision`);
+    assertExactKeys(revision, ['groupRevision', 'presenceRevision'],
+        `${label} causalRevision`);
+    assertRequiredKeys(revision, ['groupRevision', 'presenceRevision'],
+        `${label} causalRevision`);
+    requireNonNegativeSafeInteger(revision.groupRevision,
+        `${label} groupRevision`);
+    requireNonNegativeSafeInteger(revision.presenceRevision,
+        `${label} presenceRevision`);
+}
+
+function validateMutationReceipt(
+    value: unknown,
+    ref: GroupRef,
+    label: string,
+): void {
+    const receipt = requireRecord(value, label);
+    assertExactKeys(receipt, [
+        'commandId', 'commandHash', 'outcome', 'stateRevision', 'snapshotVersion',
+        'causalRevision', 'event', 'joinCode', 'joinCodeExpiresAtEpochMs',
+        'rejection',
+    ], label);
+    assertRequiredKeys(receipt, [
+        'commandId', 'commandHash', 'outcome', 'stateRevision', 'snapshotVersion',
+        'causalRevision', 'event', 'joinCode', 'joinCodeExpiresAtEpochMs',
+        'rejection',
+    ], label);
+    requireNonEmptyString(receipt.commandId, `${label} commandId`);
+    validateCommandHash(receipt.commandHash, `${label} commandHash`);
+    requireOneOf(receipt.outcome, ['applied', 'no-op', 'rejected'],
+        `${label} outcome`);
+    requireNonNegativeSafeInteger(receipt.stateRevision, `${label} stateRevision`);
+    requireNonNegativeSafeInteger(receipt.snapshotVersion, `${label} snapshotVersion`);
+    validateCausalRevision(receipt.causalRevision, label);
+    const event = requireRecord(receipt.event, `${label} event`);
+    requireOneOf(event.kind, ['none', 'group'], `${label} event kind`);
+    if (event.kind === 'none') {
+        assertExactKeys(event, ['kind'], `${label} event`);
+        assertRequiredKeys(event, ['kind'], `${label} event`);
+    } else {
+        assertExactKeys(event, ['kind', 'event'], `${label} event`);
+        assertRequiredKeys(event, ['kind', 'event'], `${label} event`);
+        validateGroupEvent(event.event, ref, `${label} event`);
+    }
+    if (receipt.joinCode !== null) {
+        requireNonEmptyString(receipt.joinCode, `${label} joinCode`);
+    }
+    if (receipt.joinCodeExpiresAtEpochMs !== null) {
+        requirePositiveSafeInteger(receipt.joinCodeExpiresAtEpochMs,
+            `${label} joinCodeExpiresAtEpochMs`);
+    }
+    if ((receipt.joinCode === null) !== (receipt.joinCodeExpiresAtEpochMs === null)) {
+        throw new TypeError(`${label} join-code fields must have matching presence`);
+    }
+    if (receipt.rejection !== null) {
+        requireNonEmptyString(receipt.rejection, `${label} rejection`);
+    }
+    if ((receipt.outcome === 'rejected') !== (receipt.rejection !== null)) {
+        throw new TypeError(`${label} rejection differs from outcome`);
+    }
+}
+
+function validateGroupEvent(value: unknown, ref: GroupRef, label: string): void {
+    const event = requireRecord(value, label);
+    assertExactKeys(event, [
+        'applicationId', 'workspaceId', 'groupId', 'eventId', 'eventType',
+        'snapshotVersion', 'occurredAtEpochMs', 'actor', 'reason', 'traceId',
+        'requestId', 'payload',
+    ], label);
+    assertRequiredKeys(event, [
+        'applicationId', 'groupId', 'eventId', 'eventType', 'snapshotVersion',
+        'occurredAtEpochMs', 'actor',
+    ], label);
+    validateScopedValue(event as unknown as GroupRef, ref, label);
+    requireNonEmptyString(event.eventId, `${label} eventId`);
+    requireOneOf(event.eventType, [
+        'group-created', 'group-updated', 'group-archived', 'group-deleted',
+        'member-invited', 'member-joined', 'member-left', 'member-removed',
+        'member-banned', 'member-unbanned', 'member-role-changed',
+        'ownership-transferred', 'session-connected', 'session-heartbeat',
+        'session-disconnected',
+    ], `${label} eventType`);
+    requireNonNegativeSafeInteger(event.snapshotVersion, `${label} snapshotVersion`);
+    requireNonNegativeSafeInteger(event.occurredAtEpochMs, `${label} occurredAtEpochMs`);
+    const actor = requireRecord(event.actor, `${label} actor`);
+    assertExactKeys(actor, ['principalId', 'sessionId', 'serviceId'], `${label} actor`);
+    for (const key of ['principalId', 'sessionId', 'serviceId']) {
+        optionalNonEmptyString(actor[key], `${label} actor ${key}`);
+    }
+    optionalNonEmptyString(event.reason, `${label} reason`);
+    optionalNonEmptyString(event.traceId, `${label} traceId`);
+    optionalNonEmptyString(event.requestId, `${label} requestId`);
+    if (event.payload !== undefined) requireRecord(event.payload, `${label} payload`);
+}
+
+function validateCommandHash(value: unknown, label: string): void {
+    if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
+        throw new TypeError(`${label} is invalid`);
     }
 }
 
@@ -2113,6 +2942,15 @@ function assertExactKeys(
     const allowedSet = new Set(allowed);
     const unexpected = Object.keys(value).find((key) => !allowedSet.has(key));
     if (unexpected) throw new TypeError(`${label} has unexpected key: ${unexpected}`);
+}
+
+function assertRequiredKeys(
+    value: Readonly<Record<string, unknown>>,
+    required: readonly string[],
+    label: string,
+): void {
+    const missing = required.find((key) => !Object.hasOwn(value, key));
+    if (missing) throw new TypeError(`${label} is missing mandatory key: ${missing}`);
 }
 
 function validateOperationInput(
@@ -2238,6 +3076,20 @@ function requireNonEmptyString(value: unknown, label: string): asserts value is 
     }
 }
 
+function optionalNonEmptyString(value: unknown, label: string): void {
+    if (value !== undefined) requireNonEmptyString(value, label);
+}
+
+function requireNonNegativeSafeInteger(value: unknown, label: string): asserts value is number {
+    if (!Number.isSafeInteger(value) || (value as number) < 0) {
+        throw new TypeError(`${label} must be a non-negative safe integer`);
+    }
+}
+
+function optionalPositiveSafeInteger(value: unknown, label: string): void {
+    if (value !== undefined) requirePositiveSafeInteger(value, label);
+}
+
 function requireJsonSafe(value: unknown, label: string): void {
     const seen = new Set<object>();
     const visit = (current: unknown): void => {
@@ -2301,6 +3153,39 @@ const PRESENCE_GROUP_MUTATION_OPERATIONS = new Set<GroupMutationCommand['operati
 const ACTOR_INPUT_KEYS = [
     'actorPrincipalId', 'actorSessionId', 'reason', 'traceId',
 ] as const;
+
+const MUTATION_REQUEST_KEYS = [...ACTOR_INPUT_KEYS, 'requestId'] as const;
+
+const GROUP_MUTATION_REQUEST_KEYS: Readonly<
+    Record<GroupMutationCommand['operation'], readonly string[]>
+> = {
+    createGroup: [...MUTATION_REQUEST_KEYS, 'groupId', 'slug', 'displayName',
+        'description', 'kind', 'joinMode', 'maxMembers', 'maxSessionsPerMember',
+        'metadata', 'createdByPrincipalId', 'expiresAtEpochMs', 'purgeAfterEpochMs'],
+    updateGroup: [...MUTATION_REQUEST_KEYS, 'slug', 'displayName', 'description',
+        'kind', 'status', 'joinMode', 'maxMembers', 'maxSessionsPerMember',
+        'metadata', 'expiresAtEpochMs', 'emptySinceEpochMs', 'purgeAfterEpochMs'],
+    appointDirector: [...MUTATION_REQUEST_KEYS, 'heartbeatTtlMs'],
+    joinGroup: [...MUTATION_REQUEST_KEYS, 'inviteToken', 'joinCode'],
+    acceptGroupInvite: MUTATION_REQUEST_KEYS,
+    createGroupInvite: [...MUTATION_REQUEST_KEYS, 'invitationExpiresAtEpochMs'],
+    revokeGroupInvite: MUTATION_REQUEST_KEYS,
+    removeGroupMember: MUTATION_REQUEST_KEYS,
+    banGroupMember: MUTATION_REQUEST_KEYS,
+    unbanGroupMember: MUTATION_REQUEST_KEYS,
+    setGroupMemberRole: [...MUTATION_REQUEST_KEYS, 'role'],
+    transferGroupOwnership: [...MUTATION_REQUEST_KEYS, 'newOwnerPrincipalId'],
+    upsertMember: [...MUTATION_REQUEST_KEYS, 'role', 'status',
+        'invitedByPrincipalId', 'invitationExpiresAtEpochMs'],
+    rotateGroupJoinCode: [...MUTATION_REQUEST_KEYS, 'joinCode', 'expiresAtEpochMs'],
+    connectPresence: [...MUTATION_REQUEST_KEYS, 'principalId', 'generationId',
+        'connectedAtEpochMs', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs'],
+    heartbeatPresence: [...MUTATION_REQUEST_KEYS, 'principalId', 'generationId',
+        'lastHeartbeatAtEpochMs', 'expiresAtEpochMs'],
+    disconnectPresence: [...MUTATION_REQUEST_KEYS, 'principalId', 'generationId',
+        'generationVersion', 'observedExpiresAtEpochMs', 'disconnectedAtEpochMs',
+        'lastHeartbeatAtEpochMs', 'expiresAtEpochMs'],
+};
 
 const GROUP_MUTATION_INPUT_KEYS: Readonly<
     Record<GroupMutationCommand['operation'], readonly string[]>

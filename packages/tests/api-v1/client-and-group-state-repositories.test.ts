@@ -513,7 +513,7 @@ describe('GroupStateRepository', () => {
             expiresAtEpochMs: now - 1,
         });
 
-        await groupRepository.putGroup(group);
+        await putGroupFixture(groupRepository, group);
         await groupRepository.putMember(activeMember);
         await groupRepository.putMember(invitedMember);
         await groupRepository.putPresenceSession(activeSession);
@@ -581,7 +581,7 @@ describe('GroupStateRepository', () => {
         });
         const group = createGroup();
 
-        await groupRepository.putGroup(group);
+        await putGroupFixture(groupRepository, group);
         await groupRepository.putGroup({
             ...group,
             displayName: 'Updated group',
@@ -604,6 +604,8 @@ describe('GroupStateRepository', () => {
         });
         const group = createGroup();
 
+        await groupRepository.putMember(createGroupOwner(group));
+
         await Promise.all([
             groupRepository.putGroup({ ...group, displayName: 'A' }),
             groupRepository.putGroup({ ...group, displayName: 'B' }),
@@ -619,21 +621,22 @@ describe('GroupStateRepository', () => {
         const groupRepository = new GroupStateRepository(repository, {
             events: new InMemoryGroupStateEventStore(),
         });
-        const group = createGroup();
+        const group = { ...createGroup(), activeMemberCount: 2 };
 
-        await groupRepository.putGroup(group);
-        await groupRepository.putMember(createGroupMember('principal-a', 'active'));
+        await putGroupFixture(groupRepository, group);
+        await groupRepository.putMember(createGroupMember('principal-b', 'active'));
         let groupReads = 0;
         repository.onFindEntryAfterRead = async (namespace) => {
             if (namespace !== 'group-state:groups' || ++groupReads !== 1) {
                 return;
             }
             await groupRepository.putMember(
-                createGroupMember('principal-a', 'banned'),
+                createGroupMember('principal-b', 'banned'),
             );
             await groupRepository.putGroup({
                 ...group,
                 displayName: 'Current group',
+                activeMemberCount: 1,
             });
         };
 
@@ -642,7 +645,9 @@ describe('GroupStateRepository', () => {
         expect(snapshot).toMatchObject({
             stateRevision: 2,
             group: { displayName: 'Current group' },
-            members: [{ status: 'banned' }],
+            members: expect.arrayContaining([
+                expect.objectContaining({ principalId: 'principal-b', status: 'banned' }),
+            ]),
         });
     });
 
@@ -652,7 +657,7 @@ describe('GroupStateRepository', () => {
             events: new InMemoryGroupStateEventStore(),
         });
         const group = createGroup('group-delete');
-        await groupRepository.putGroup(group);
+        await putGroupFixture(groupRepository, group);
         await groupRepository.putMember(
             createGroupMember('principal-a', 'active', group.groupId),
         );
@@ -671,7 +676,7 @@ describe('GroupStateRepository', () => {
         });
         const group = createGroup();
 
-        await groupRepository.putGroup(group);
+        await putGroupFixture(groupRepository, group);
         let groupReads = 0;
         repository.onFindEntryAfterRead = async (namespace) => {
             if (namespace !== 'group-state:groups' || ++groupReads % 2 === 0) {
@@ -704,7 +709,7 @@ describe('GroupStateRepository', () => {
             const principalId = `principal-${String(index).padStart(4, '0')}`;
             const sessionId = `session-${String(index).padStart(4, '0')}`;
 
-            await groupRepository.putGroup(createGroup(groupId));
+            await putGroupFixture(groupRepository, createGroup(groupId));
             await groupRepository.putMember(
                 createGroupMember(principalId, 'active', groupId),
             );
@@ -749,7 +754,7 @@ describe('GroupStateRepository', () => {
             events: new InMemoryGroupStateEventStore(),
         });
         for (const groupId of ['group-0', 'group-1', 'group-2']) {
-            await groupRepository.putGroup(createGroup(groupId));
+            await putGroupFixture(groupRepository, createGroup(groupId));
             await groupRepository.putMember(
                 createGroupMember(`principal-${groupId}`, 'active', groupId),
             );
@@ -766,6 +771,7 @@ describe('GroupStateRepository', () => {
             await groupRepository.putGroup({
                 ...createGroup('group-0'),
                 displayName: 'Changed',
+                activeMemberCount: 2,
             });
             await groupRepository.removeGroup(createGroup('group-1'));
         };
@@ -801,7 +807,7 @@ describe('GroupStateRepository', () => {
             const groupId = `group-${String(index).padStart(4, '0')}`;
             const principalId = `principal-${String(index).padStart(4, '0')}`;
 
-            await groupRepository.putGroup(createGroup(groupId));
+            await putGroupFixture(groupRepository, createGroup(groupId));
             await groupRepository.putMember(
                 createGroupMember(principalId, 'active', groupId),
             );
@@ -856,13 +862,13 @@ describe('GroupStateRepository', () => {
             events: new InMemoryGroupStateEventStore(),
         });
 
-        await groupRepository.putGroup({
+        await putGroupFixture(groupRepository, {
             ...createGroup('group-0000'),
             purgeAfterEpochMs: Date.now() - 1,
         });
-        await groupRepository.putGroup(createGroup('group-0001'));
-        await groupRepository.putGroup(createGroup('group-0002'));
-        await groupRepository.putGroup(createGroup('group-0003'));
+        await putGroupFixture(groupRepository, createGroup('group-0001'));
+        await putGroupFixture(groupRepository, createGroup('group-0002'));
+        await putGroupFixture(groupRepository, createGroup('group-0003'));
 
         const page = await (groupRepository as unknown as {
             listSnapshotsPage(
@@ -895,8 +901,8 @@ describe('GroupStateRepository', () => {
         const groupRepository = new GroupStateRepository(repository, {
             events: new InMemoryGroupStateEventStore(),
         });
-        await groupRepository.putGroup(createGroup('group-0000'));
-        await groupRepository.putGroup(createGroup('group-0001'));
+        await putGroupFixture(groupRepository, createGroup('group-0000'));
+        await putGroupFixture(groupRepository, createGroup('group-0001'));
         repository.onFindEntriesByKeys = async () => {
             repository.onFindEntriesByKeys = undefined;
             await groupRepository.removeGroup(createGroup('group-0000'));
@@ -920,9 +926,9 @@ describe('GroupStateRepository', () => {
             events: new InMemoryGroupStateEventStore(),
         });
         const group = createGroup('group-0000');
-        await groupRepository.putGroup(group);
+        await putGroupFixture(groupRepository, group);
         await groupRepository.putMember(
-            createGroupMember('principal-old', 'active', group.groupId),
+            createGroupMember('principal-0000', 'active', group.groupId),
         );
         repository.resetCounters();
         repository.onFindEntriesByKeys = async () => {
@@ -930,7 +936,11 @@ describe('GroupStateRepository', () => {
             await groupRepository.putMember(
                 createGroupMember('principal-new', 'active', group.groupId),
             );
-            await groupRepository.putGroup({ ...group, displayName: 'Changed' });
+            await groupRepository.putGroup({
+                ...group,
+                displayName: 'Changed',
+                activeMemberCount: 2,
+            });
         };
 
         const page = await groupRepository.listSnapshotsPage({
@@ -955,8 +965,8 @@ describe('GroupStateRepository', () => {
             events: new InMemoryGroupStateEventStore(),
         });
 
-        await groupRepository.putGroup(createGroup('room-current'));
-        await groupRepository.putGroup({
+        await putGroupFixture(groupRepository, createGroup('room-current'));
+        await putGroupFixture(groupRepository, {
             ...createGroup('room-sibling'),
             workspaceId: 'workspace-10',
         });
@@ -1160,6 +1170,8 @@ function createGroup(groupId = 'group-1'): Group {
         status: 'active',
         joinMode: 'invite-only',
         metadata: {},
+        activeMemberCount: 1,
+        ownerPrincipalId: ownerPrincipalIdFor(groupId),
         snapshotVersion: 6,
         metadataVersion: 1,
         rosterVersion: 2,
@@ -1179,11 +1191,40 @@ function createGroupMember(
         workspaceId: 'workspace-1',
         groupId,
         principalId,
-        role: 'member',
+        role: principalId === ownerPrincipalIdFor(groupId) ? 'owner' : 'member',
         status,
         joined: { atEpochMs: 1, byServiceId: 'seed' },
         updated: { atEpochMs: 2, byServiceId: 'seed' },
     };
+}
+
+async function putGroupFixture(
+    repository: GroupStateRepository,
+    group: Group,
+): Promise<void> {
+    await repository.putGroup(group);
+    await repository.putMember(createGroupOwner(group));
+}
+
+function createGroupOwner(group: Group): GroupMember {
+    return {
+        applicationId: group.applicationId,
+        ...(group.workspaceId === undefined ? {} : { workspaceId: group.workspaceId }),
+        groupId: group.groupId,
+        principalId: group.ownerPrincipalId,
+        role: 'owner',
+        status: 'active',
+        joined: { atEpochMs: 1, byServiceId: 'seed' },
+        updated: { atEpochMs: 2, byServiceId: 'seed' },
+    };
+}
+
+function ownerPrincipalIdFor(groupId: string): string {
+    if (groupId === 'group-1' || groupId === 'group-delete') return 'principal-a';
+    const paged = /^group-(\d{4})$/.exec(groupId);
+    if (paged) return `principal-${paged[1]}`;
+    if (/^group-\d$/.test(groupId)) return `principal-${groupId}`;
+    return `owner-${groupId}`;
 }
 
 function createGroupSession(

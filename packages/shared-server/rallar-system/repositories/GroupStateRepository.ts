@@ -332,6 +332,15 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
     }
 
+    async findMemberEntry(
+        ref: GroupRef & Readonly<{ principalId: string }>,
+    ): Promise<RuntimeStateEntryValue<GroupMember> | undefined> {
+        return await this.getEntryValue<GroupMember>(
+            MEMBERS_NAMESPACE,
+            this.memberKey(ref),
+        );
+    }
+
     async listMembers(ref: GroupRef): Promise<readonly GroupMember[]> {
         return await this.listValues<GroupMember>(
             MEMBERS_NAMESPACE,
