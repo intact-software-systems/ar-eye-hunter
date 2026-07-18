@@ -656,8 +656,9 @@ describe("GroupStateService command idempotency", () => {
         principalId: "alice",
         generationId: "generation-session-1",
         lastHeartbeatAtEpochMs: 2_000,
-        expiresAtEpochMs: 62_000,
+        expiresAtEpochMs: Date.now() + 120_000,
         requestId: "heartbeat-causal-revision",
+        actorPrincipalId: "alice",
       },
     );
 

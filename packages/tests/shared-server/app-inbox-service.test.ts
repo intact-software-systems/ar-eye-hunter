@@ -52,6 +52,7 @@ import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
+import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
@@ -769,7 +770,7 @@ describe('AppInboxService', () => {
         });
         const connected = await processAppInbox<
             GroupPresenceConnectAppInboxPayload,
-            GroupStateWritten
+            GroupMutationReceipt
         >(service, reader, {
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
             resourceId: 'connect-bob-mutation-room',
@@ -792,7 +793,7 @@ describe('AppInboxService', () => {
         });
         const heartbeat = await processAppInbox<
             GroupPresenceHeartbeatAppInboxPayload,
-            GroupStateWritten
+            GroupMutationReceipt
         >(service, reader, {
             type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
             resourceId: 'heartbeat-bob-mutation-room',
@@ -814,7 +815,7 @@ describe('AppInboxService', () => {
         });
         const disconnected = await processAppInbox<
             GroupPresenceDisconnectAppInboxPayload,
-            GroupStateWritten
+            GroupMutationReceipt
         >(service, reader, {
             type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
             resourceId: 'disconnect-bob-mutation-room',
@@ -842,18 +843,21 @@ describe('AppInboxService', () => {
         ).toEqual(['alice', 'bob']);
         // Presence is a separate concurrency domain; request responses may
         // permissively carry the older valid summary until outbox convergence.
-        expect(writtenSnapshot(connected).activeSessions).toHaveLength(0);
-        expect(writtenSnapshot(heartbeat).activeSessions).toHaveLength(0);
-        expect(writtenSnapshot(disconnected).activeSessions).toHaveLength(0);
+        expect(connected.right?.outcome).toBe('applied');
+        expect(heartbeat.right?.outcome).toBe('applied');
+        expect(disconnected.right?.outcome).toBe('applied');
         expect(updated.right?.result.right?.event?.eventType).toBe('group-updated');
         expect(member.right?.result.right?.event?.eventType).toBe('member-joined');
-        expect(connected.right?.result.right?.event?.eventType).toBe(
+        expect(connected.right?.event.kind === 'group' &&
+            connected.right.event.event.eventType).toBe(
             'session-connected',
         );
-        expect(heartbeat.right?.result.right?.event?.eventType).toBe(
+        expect(heartbeat.right?.event.kind === 'group' &&
+            heartbeat.right.event.event.eventType).toBe(
             'session-heartbeat',
         );
-        expect(disconnected.right?.result.right?.event?.eventType).toBe(
+        expect(disconnected.right?.event.kind === 'group' &&
+            disconnected.right.event.event.eventType).toBe(
             'session-disconnected',
         );
         expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();

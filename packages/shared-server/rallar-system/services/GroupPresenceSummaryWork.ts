@@ -14,7 +14,8 @@ import {
     hashStateMutationCommand,
     StateMutationOutboxRepository,
 } from '../repositories/StateMutationOutboxRepository.ts';
-import { GroupStateRepository, toGroupSnapshotStateRevision } from '../repositories/GroupStateRepository.ts';
+import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
+import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import {
     computeGroupPresenceSummary,
     type GroupPresenceSummaryComputed,
@@ -65,16 +66,16 @@ export class GroupPresenceSummaryWork {
             );
             const started = performance.now();
             const repository = new GroupStateRepository(this.options.runtimeRepository);
-            const [group, members, presenceSessions, current] = await Promise.all([
+            const [group, admissions, presenceSessions, current] = await Promise.all([
                 repository.findGroupEntry(ref),
-                repository.listMembers(ref),
+                repository.listPresenceAdmissions(ref),
                 repository.listPresenceSessions(ref),
                 repository.findPresenceSummaryEntry(ref),
             ]);
             if (!group) throw new Error(`Group not found for presence summary: ${ref.groupId}`);
             const read = {
                 group,
-                members,
+                admissions,
                 presenceSessions,
                 current: current ?? null,
             };

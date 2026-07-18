@@ -2,12 +2,14 @@ import type {
     Group,
     GroupEvent,
     GroupMember,
+    GroupPresenceAdmission,
     GroupPresenceSummary,
     GroupPresenceSession,
     GroupRef,
     GroupScope,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
+import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type {
@@ -32,6 +34,7 @@ const GROUPS_NAMESPACE = 'group-state:groups';
 const MEMBERS_NAMESPACE = 'group-state:members';
 const SESSIONS_NAMESPACE = 'group-state:sessions';
 const PRESENCE_SUMMARIES_NAMESPACE = 'group-state:presence-summaries';
+const PRESENCE_ADMISSIONS_NAMESPACE = 'group-state:presence-admissions';
 const IDEMPOTENT_NAMESPACE = 'group-state:idempotent';
 
 export type GroupStateRepositoryOptions = Readonly<{
@@ -125,15 +128,28 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async readStateRevision(ref: GroupRef): Promise<number | undefined> {
+        const causalRevision = await this.readCausalRevision(ref);
+        return causalRevision
+            ? toGroupSnapshotStateRevision(
+                causalRevision.groupRevision,
+                causalRevision.presenceRevision,
+            )
+            : undefined;
+    }
+
+    async readCausalRevision(
+        ref: GroupRef,
+    ): Promise<import('@shared/api/group-types.ts').GroupStateCausalRevision | undefined> {
         const [stored, summary] = await Promise.all([
             this.findGroupEntry(ref),
             this.findPresenceSummaryEntry(ref),
         ]);
         return stored
-            ? toGroupSnapshotStateRevision(
-                stored.entry.revision + 1,
-                summary?.value.causalRevision.presenceRevision ?? 0,
-            )
+            ? {
+                groupRevision: stored.entry.revision + 1,
+                presenceRevision:
+                    summary?.value.causalRevision.presenceRevision ?? 0,
+            }
             : undefined;
     }
 
@@ -409,6 +425,47 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         );
     }
 
+    async findPresenceAdmissionEntry(
+        ref: GroupRef & Readonly<{ principalId: string }>,
+    ): Promise<RuntimeStateEntryValue<GroupPresenceAdmission> | undefined> {
+        return await this.getEntryValue<GroupPresenceAdmission>(
+            PRESENCE_ADMISSIONS_NAMESPACE,
+            this.presenceAdmissionKey(ref),
+        );
+    }
+
+    async insertPresenceAdmission(
+        admission: GroupPresenceAdmission,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
+            PRESENCE_ADMISSIONS_NAMESPACE,
+            this.presenceAdmissionKey(admission),
+            admission,
+        );
+    }
+
+    async updatePresenceAdmission(
+        admission: GroupPresenceAdmission,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfRevision(
+            PRESENCE_ADMISSIONS_NAMESPACE,
+            this.presenceAdmissionKey(admission),
+            admission,
+            NEVER_EXPIRE_AT_TIMESTAMP,
+            expectedRevision,
+        );
+    }
+
+    async listPresenceAdmissions(
+        ref: GroupRef,
+    ): Promise<readonly GroupPresenceAdmission[]> {
+        return await this.listValues<GroupPresenceAdmission>(
+            PRESENCE_ADMISSIONS_NAMESPACE,
+            this.presenceAdmissionPrefix(ref),
+        );
+    }
+
     async listAllPresenceSessions(): Promise<readonly GroupPresenceSession[]> {
         return await this.listValues<GroupPresenceSession>(SESSIONS_NAMESPACE);
     }
@@ -529,6 +586,18 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
         const activeMembers = members.filter(
             (member) => member.status === 'active',
         );
+        const activeOwners = activeMembers.filter((member) =>
+            member.role === 'owner'
+        );
+        if (
+            group.activeMemberCount !== activeMembers.length ||
+            activeOwners.length !== 1 ||
+            activeOwners[0]?.principalId !== group.ownerPrincipalId
+        ) {
+            throw new TypeError(
+                `Group roster facts are inconsistent: ${group.groupId}`,
+            );
+        }
 
         return {
             stateRevision: toGroupSnapshotStateRevision(
@@ -586,20 +655,19 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             ':',
         );
     }
-}
 
-export function toGroupSnapshotStateRevision(
-    groupRevision: number,
-    presenceRevision: number,
-): number {
-    if (
-        !Number.isSafeInteger(groupRevision) || groupRevision < 0 ||
-        !Number.isSafeInteger(presenceRevision) || presenceRevision < 0 ||
-        groupRevision > Number.MAX_SAFE_INTEGER - presenceRevision
-    ) {
-        throw new RangeError('Group causal revision cannot be projected safely');
+    private presenceAdmissionPrefix(ref: GroupRef): string {
+        return this.childKeyPrefix(this.groupKey(ref));
     }
-    return groupRevision + presenceRevision;
+
+    private presenceAdmissionKey(
+        ref: GroupRef & Readonly<{ principalId: string }>,
+    ): string {
+        return [
+            this.groupKey(ref),
+            this.idKey('principal', ref.principalId),
+        ].join(':');
+    }
 }
 
 function isPresenceSummary(

@@ -61,6 +61,10 @@ export type Group =
     maxSessionsPerMember?: number;
     metadata: Record<string, unknown>;
 
+    /** Guarded roster facts maintained with every authoritative group write. */
+    activeMemberCount: number;
+    ownerPrincipalId: PrincipalId;
+
     snapshotVersion: number;
     metadataVersion: number;
     rosterVersion: number;
@@ -125,6 +129,26 @@ export type GroupPresenceSummary =
         activePrincipalCount: number;
         activeSessionCount: number;
         computedAtEpochMs: number;
+    }>;
+
+export type GroupPresenceAdmissionSession = Readonly<{
+    sessionId: SessionId;
+    generationId: string;
+    /**
+     * Deterministic monotonic projection of connectedAtEpochMs. Together with
+     * generationId this is the total-order and fencing identity.
+     */
+    generationVersion: number;
+    connectedAtEpochMs: number;
+}>;
+
+export type GroupPresenceAdmission =
+    & GroupRef
+    & Readonly<{
+        principalId: PrincipalId;
+        /** Canonical: sorted by sessionId and unique by sessionId. */
+        admittedSessions: readonly GroupPresenceAdmissionSession[];
+        updatedAtEpochMs: number;
     }>;
 
 export type GroupSnapshot = Readonly<{

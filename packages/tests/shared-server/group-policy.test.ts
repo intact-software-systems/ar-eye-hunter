@@ -450,6 +450,8 @@ function snapshot(
         activeSessions?: readonly GroupPresenceSession[];
     }> = {},
 ): GroupSnapshot {
+    const members = options.members ?? [member('alice', {role: 'owner'})];
+    const activeSessions = options.activeSessions ?? [];
     const group: Group = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
@@ -468,9 +470,12 @@ function snapshot(
         created: {atEpochMs: 1, byServiceId: 'test'},
         updated: {atEpochMs: 1, byServiceId: 'test'},
         ...options,
+        activeMemberCount: options.activeMemberCount ??
+            members.filter((entry) => entry.status === 'active').length,
+        ownerPrincipalId: options.ownerPrincipalId ?? members.find((entry) =>
+            entry.status === 'active' && entry.role === 'owner'
+        )?.principalId ?? 'alice',
     };
-    const members = options.members ?? [member('alice', {role: 'owner'})];
-    const activeSessions = options.activeSessions ?? [];
 
     return {
         group,

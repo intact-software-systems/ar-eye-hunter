@@ -1,4 +1,8 @@
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
 import type {
@@ -14,6 +18,7 @@ export type CachedGroupStateServiceCache = Readonly<{
         ref: GroupRef,
         options?: Readonly<{
             minSnapshotVersion?: number;
+            minCausalRevision?: GroupStateCausalRevision;
             minStateRevision?: number;
         }>,
     ): Promise<GroupSnapshot | undefined>;
@@ -27,6 +32,7 @@ export type CachedGroupStateService = GroupStateService & Readonly<{
         ref: GroupRef,
         options: Readonly<{
             minSnapshotVersion?: number;
+            minCausalRevision?: GroupStateCausalRevision;
             minStateRevision?: number;
         }>,
     ): Promise<GroupSnapshot | undefined>;
@@ -36,11 +42,11 @@ export function createCachedGroupStateService(options: Readonly<{
     durable: GroupStateService;
     cache: CachedGroupStateServiceCache;
 }>): CachedGroupStateService {
-    const observeSnapshot = async (
+    const observeSnapshot = (
         snapshot: GroupSnapshot,
     ): Promise<GroupSnapshot> => {
         options.cache.observe(snapshot);
-        return snapshot;
+        return Promise.resolve(snapshot);
     };
     const observeMutation = async <T extends GroupMutationWritten>(
         mutation: T,
@@ -86,11 +92,11 @@ export function createCachedGroupStateService(options: Readonly<{
         ...options.durable,
         observeSnapshot,
         readCurrentSnapshot: async (ref) => {
-            const stateRevision = await options.durable.readStateRevision(ref);
-            return stateRevision === undefined
+            const causalRevision = await options.durable.readCausalRevision(ref);
+            return causalRevision === undefined
                 ? undefined
                 : await options.cache.findOrLoadByRef(ref, {
-                    minStateRevision: stateRevision,
+                    minCausalRevision: causalRevision,
                 });
         },
         readSnapshotAtLeast: async (ref, readOptions) =>

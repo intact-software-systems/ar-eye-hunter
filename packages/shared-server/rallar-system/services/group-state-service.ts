@@ -4,6 +4,7 @@ import type {
     GroupRef,
     GroupScope,
     GroupSnapshot,
+    GroupStateCausalRevision,
 } from '@shared/api/group-types.ts';
 import type {
     AcceptGroupInviteRequest,
@@ -34,6 +35,7 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 import {
     DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
     normalizeRallarGroupDirectorHeartbeatTtlMs,
+    readRallarGroupDirectorAppointment,
 } from '@shared/api/group-director.ts';
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
@@ -120,6 +122,7 @@ export type GroupStateService = Readonly<{
     ): Promise<GroupSnapshotPage>;
     readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
     readStateRevision(ref: GroupRef): Promise<number | undefined>;
+    readCausalRevision(ref: GroupRef): Promise<GroupStateCausalRevision | undefined>;
     listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
     listRecentEvents?(
         ref: GroupRef,
@@ -208,18 +211,36 @@ export type GroupStateService = Readonly<{
         sessionId: string,
         request: ConnectGroupPresenceSessionRequest,
     ): Promise<GroupStateWritten>;
+    connectPresenceSessionReceipt(
+        scope: StateScope,
+        groupId: string,
+        sessionId: string,
+        request: ConnectGroupPresenceSessionRequest,
+    ): Promise<GroupMutationReceipt>;
     heartbeatPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: HeartbeatGroupPresenceSessionRequest,
     ): Promise<GroupStateWritten>;
+    heartbeatPresenceSessionReceipt(
+        scope: StateScope,
+        groupId: string,
+        sessionId: string,
+        request: HeartbeatGroupPresenceSessionRequest,
+    ): Promise<GroupMutationReceipt>;
     disconnectPresenceSession(
         scope: StateScope,
         groupId: string,
         sessionId: string,
         request: DisconnectGroupPresenceSessionRequest,
     ): Promise<GroupStateWritten>;
+    disconnectPresenceSessionReceipt(
+        scope: StateScope,
+        groupId: string,
+        sessionId: string,
+        request: DisconnectGroupPresenceSessionRequest,
+    ): Promise<GroupMutationReceipt>;
     disconnectPresenceSessionsBySessionId(
         sessionId: string,
         request?: DisconnectPresenceBySessionRequest,
@@ -286,6 +307,7 @@ export function createGroupStateService(
     const executeReceipt = async (
         command: GroupMutationCommand,
         mutationAtEpochMs: number = now(),
+        internalAuthority: GroupMutationFacts['internalAuthority'] = 'none',
     ): Promise<GroupMutationExecution> => {
         validateGroupMutationCommand(command);
         const facts: GroupMutationFacts = {
@@ -294,6 +316,7 @@ export function createGroupStateService(
             eventId: randomId(),
             commandHash: await hashStateMutationCommand(command),
             joinCodeVerifier: await commandJoinCodeVerifier(command),
+            internalAuthority,
         };
         let lastConflict: RuntimeStateWriteConflictError | undefined;
         for (let attempt = 0; attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS; attempt += 1) {
@@ -332,26 +355,6 @@ export function createGroupStateService(
                     computed.receivedCommandHash,
                 );
             }
-            if (
-                (computed.outcome === 'no-op' || computed.outcome === 'rejected') &&
-                computed.persistIdempotency && command.requestId !== null
-            ) {
-                const inserted = await repositoryFor(runtime)
-                    .insertIdempotentGroupMutationReceipt(
-                        command.aggregateRef,
-                        command.requestId,
-                        {
-                            requestId: command.requestId,
-                            commandHash: facts.commandHash,
-                            receipt: computed.receipt,
-                        },
-                    );
-                if (inserted.status === 'conflict') {
-                    lastConflict = new RuntimeStateWriteConflictError();
-                    recordMutationConflict(dependencies, command, attempt, backoffMs);
-                    continue;
-                }
-            }
             if (computed.outcome !== 'write') {
                 return { receipt: computed.receipt, source: computed.outcome };
             }
@@ -386,8 +389,9 @@ export function createGroupStateService(
 
     const executeCompatible = async (
         command: GroupMutationCommand,
+        internalAuthority: GroupMutationFacts['internalAuthority'] = 'none',
     ): Promise<GroupStateWritten> => {
-        const execution = await executeReceipt(command);
+        const execution = await executeReceipt(command, now(), internalAuthority);
         if (execution.receipt.outcome === 'rejected') {
             return {
                 status: 'error',
@@ -417,6 +421,7 @@ export function createGroupStateService(
             await repositoryFor(runtime).listSnapshotsPage(scope, options),
         readSnapshot: async (ref) => await repositoryFor(runtime).readSnapshot(ref),
         readStateRevision: async (ref) => await repositoryFor(runtime).readStateRevision(ref),
+        readCausalRevision: async (ref) => await repositoryFor(runtime).readCausalRevision(ref),
         listEvents: async (ref) => await repositoryFor(runtime).listEvents(ref),
         listRecentEvents: async (ref, query) =>
             await repositoryFor(runtime).listRecentEvents(ref, query),
@@ -492,14 +497,26 @@ export function createGroupStateService(
             await executeCompatible(toConnectPresenceCommand(
                 scope, groupId, sessionId, request, randomId,
             )),
+        connectPresenceSessionReceipt: async (scope, groupId, sessionId, request) =>
+            (await executeReceipt(toConnectPresenceCommand(
+                scope, groupId, sessionId, request, randomId,
+            ))).receipt,
         heartbeatPresenceSession: async (scope, groupId, sessionId, request) =>
             await executeCompatible(toHeartbeatPresenceCommand(
                 scope, groupId, sessionId, request, randomId,
             )),
+        heartbeatPresenceSessionReceipt: async (scope, groupId, sessionId, request) =>
+            (await executeReceipt(toHeartbeatPresenceCommand(
+                scope, groupId, sessionId, request, randomId,
+            ))).receipt,
         disconnectPresenceSession: async (scope, groupId, sessionId, request) =>
             await executeCompatible(toDisconnectPresenceCommand(
                 scope, groupId, sessionId, request, randomId,
             )),
+        disconnectPresenceSessionReceipt: async (scope, groupId, sessionId, request) =>
+            (await executeReceipt(toDisconnectPresenceCommand(
+                scope, groupId, sessionId, request, randomId,
+            ))).receipt,
         disconnectPresenceSessionsBySessionId: async (sessionId, request = {}) => {
             const written = await service.disconnectPresenceSessionsBySessionIdWritten(
                 sessionId,
@@ -517,22 +534,18 @@ export function createGroupStateService(
                 );
             const written: GroupStateWritten[] = [];
             for (const session of sessions) {
-                written.push(await service.disconnectPresenceSession(
+                written.push(await executeCompatible(toDisconnectPresenceCommand(
                     {
                         applicationId: session.applicationId,
                         workspaceId: session.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-                    },
-                    session.groupId,
-                    session.sessionId,
-                    {
+                    }, session.groupId, session.sessionId, {
                         ...request,
                         generationId: session.generationId,
                         principalId: request.principalId ?? session.principalId,
                         actorPrincipalId:
                             request.actorPrincipalId ?? session.principalId,
                         actorSessionId: request.actorSessionId ?? session.sessionId,
-                    },
-                ));
+                    }, randomId), 'session-cleanup'));
             }
             return written;
         },
@@ -545,7 +558,7 @@ export function createGroupStateService(
             const written: GroupStateWritten[] = [];
             for (const session of candidates) {
                 const command = toExpiryCommand(session, atEpochMs);
-                const execution = await executeReceipt(command, atEpochMs);
+                const execution = await executeReceipt(command, atEpochMs, 'expiry');
                 if (execution.source !== 'write') continue;
                 const snapshot = await repositoryFor(runtime).readSnapshot(
                     command.aggregateRef,
@@ -572,32 +585,117 @@ async function readGroupMutation(
     repository: GroupStateRepository,
     command: GroupMutationCommand,
 ): Promise<GroupMutationRead> {
-    const [idempotency, group, members, targetPresence, presenceSummary, presenceSessions] =
-        await Promise.all([
-            command.requestId === null
-                ? Promise.resolve(undefined)
-                : repository.findIdempotentGroupMutationReceiptEntry(
-                    command.aggregateRef,
-                    command.requestId,
-                ),
-            repository.findGroupEntry(command.aggregateRef),
-            repository.listMembers(command.aggregateRef),
-            'sessionId' in command
-                ? repository.findPresenceEntry({
-                    ...command.aggregateRef,
-                    sessionId: command.sessionId,
-                })
-                : Promise.resolve(undefined),
-            repository.findPresenceSummaryEntry(command.aggregateRef),
-            repository.listPresenceSessions(command.aggregateRef),
-        ]);
+    const presenceSessionId = 'sessionId' in command
+        ? command.sessionId
+        : command.operation === 'appointDirector'
+        ? command.input.actorSessionId
+        : null;
+    const [idempotency, group, targetPresence, presenceSummary] = await Promise.all([
+        command.requestId === null
+            ? Promise.resolve(undefined)
+            : repository.findIdempotentGroupMutationReceiptEntry(
+                command.aggregateRef,
+                command.requestId,
+            ),
+        repository.findGroupEntry(command.aggregateRef),
+        presenceSessionId
+            ? repository.findPresenceEntry({
+                ...command.aggregateRef,
+                sessionId: presenceSessionId,
+            })
+            : Promise.resolve(undefined),
+        repository.findPresenceSummaryEntry(command.aggregateRef),
+    ]);
+    const actorPrincipalId = command.input.actorPrincipalId;
+    const targetPrincipalId = 'targetPrincipalId' in command
+        ? command.targetPrincipalId
+        : command.operation === 'connectPresence'
+        ? command.input.principalId
+        : targetPresence?.value.principalId ?? actorPrincipalId;
+    const ownerPrincipalId = group?.value.ownerPrincipalId;
+    const director = readRallarGroupDirectorAppointment(group?.value.metadata);
+    const [actorMember, targetMember, targetAdmission, authorityMember,
+        authorityAdmission, directorMember, directorAdmission] = await Promise.all([
+        actorPrincipalId
+            ? repository.findMember({ ...command.aggregateRef, principalId: actorPrincipalId })
+            : Promise.resolve(undefined),
+        targetPrincipalId && targetPrincipalId !== actorPrincipalId
+            ? repository.findMember({ ...command.aggregateRef, principalId: targetPrincipalId })
+            : Promise.resolve(undefined),
+        targetPrincipalId
+            ? repository.findPresenceAdmissionEntry({
+                ...command.aggregateRef,
+                principalId: targetPrincipalId,
+            })
+            : Promise.resolve(undefined),
+        command.operation === 'appointDirector' && ownerPrincipalId &&
+                ownerPrincipalId !== actorPrincipalId &&
+                ownerPrincipalId !== targetPrincipalId
+            ? repository.findMember({
+                ...command.aggregateRef,
+                principalId: ownerPrincipalId,
+            })
+            : Promise.resolve(undefined),
+        command.operation === 'appointDirector' && ownerPrincipalId
+            ? repository.findPresenceAdmissionEntry({
+                ...command.aggregateRef,
+                principalId: ownerPrincipalId,
+            })
+            : Promise.resolve(undefined),
+        command.operation === 'appointDirector' && director &&
+                director.principalId !== actorPrincipalId &&
+                director.principalId !== targetPrincipalId &&
+                director.principalId !== ownerPrincipalId
+            ? repository.findMember({
+                ...command.aggregateRef,
+                principalId: director.principalId,
+            })
+            : Promise.resolve(undefined),
+        command.operation === 'appointDirector' && director
+            ? repository.findPresenceAdmissionEntry({
+                ...command.aggregateRef,
+                principalId: director.principalId,
+            })
+            : Promise.resolve(undefined),
+    ]);
+    const authorityPresenceSessions = await Promise.all(
+        [
+            ...(authorityAdmission?.value.admittedSessions ?? []),
+            ...(directorAdmission?.value.admittedSessions ?? []),
+        ].map((session) =>
+            repository.findPresenceSession({
+                ...command.aggregateRef,
+                sessionId: session.sessionId,
+            })
+        ),
+    ).then((sessions) => sessions.filter(
+        (session): session is GroupPresenceSession => session !== undefined,
+    ));
     return {
         idempotency: idempotency ?? null,
         group: group ?? null,
-        members,
+        actorMember: actorMember ?? null,
+        targetMember: targetPrincipalId === actorPrincipalId
+            ? actorMember ?? null
+            : targetMember ?? null,
+        authorityMember: ownerPrincipalId === actorPrincipalId
+            ? actorMember ?? null
+            : ownerPrincipalId === targetPrincipalId
+            ? targetMember ?? null
+            : authorityMember ?? null,
+        directorMember: director?.principalId === actorPrincipalId
+            ? actorMember ?? null
+            : director?.principalId === targetPrincipalId
+            ? targetMember ?? null
+            : director?.principalId === ownerPrincipalId
+            ? authorityMember ?? null
+            : directorMember ?? null,
         targetPresence: targetPresence ?? null,
+        targetAdmission: targetAdmission ?? null,
+        authorityAdmission: authorityAdmission ?? null,
+        directorAdmission: directorAdmission ?? null,
+        authorityPresenceSessions,
         presenceSummary: presenceSummary ?? null,
-        presenceSessions,
     };
 }
 
@@ -625,6 +723,17 @@ async function writeGroupMutation(
                 : await repository.updatePresence(
                     computed.guard.value,
                     computed.guard.expectedRevision,
+                ));
+        }
+
+        if (computed.presenceAdmission) {
+            requireConditionalWrite(computed.presenceAdmission.operation === 'insert'
+                ? await repository.insertPresenceAdmission(
+                    computed.presenceAdmission.value,
+                )
+                : await repository.updatePresenceAdmission(
+                    computed.presenceAdmission.value,
+                    computed.presenceAdmission.expectedRevision,
                 ));
         }
 
@@ -675,6 +784,8 @@ function toCreateCommand(
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             purgeAfterEpochMs: request.purgeAfterEpochMs ?? null,
             ...actorInput(request),
+            actorPrincipalId:
+                request.actorPrincipalId ?? request.createdByPrincipalId,
         },
     };
 }
@@ -883,6 +994,7 @@ function toConnectPresenceCommand(
             lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs ?? null,
             expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             ...actorInput(request),
+            actorPrincipalId: request.actorPrincipalId ?? request.principalId,
         },
     };
 }

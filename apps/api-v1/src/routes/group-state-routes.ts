@@ -75,6 +75,7 @@ import {
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
+  type GroupMutationReceipt,
   validateGroupPresenceMutationRequest,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 
@@ -740,10 +741,9 @@ export function init(
         assertSelfSession(authSession, sessionId);
         const request = await readRequestWithRequestId<ConnectGroupPresenceSessionRequest>(c);
         validateGroupPresenceMutationRequest('connectPresence', request);
-        const written = unwrapGroupStateWritten(
-          await deps.processGroupAppInbox<
+        const receipt = await deps.processGroupAppInbox<
             GroupPresenceConnectAppInboxPayload,
-            GroupStateWritten
+            GroupMutationReceipt
           >({
             type: AppInboxType.GROUP_PRESENCE_CONNECT,
             resourceId: request.requestId,
@@ -760,9 +760,12 @@ export function init(
                 actorSessionId: authSession.sessionId,
               },
             },
-          }),
-        );
-        return c.json(written.snapshot);
+          });
+        return c.json(await readReceiptSnapshot(
+          deps.getGroupStateService(),
+          { ...scope, groupId },
+          receipt,
+        ));
       } catch (error) {
         return toErrorResponse(c, error);
       }
@@ -782,10 +785,9 @@ export function init(
           c,
         );
         validateGroupPresenceMutationRequest('heartbeatPresence', request);
-        const written = unwrapGroupStateWritten(
-          await deps.processGroupAppInbox<
+        const receipt = await deps.processGroupAppInbox<
             GroupPresenceHeartbeatAppInboxPayload,
-            GroupStateWritten
+            GroupMutationReceipt
           >({
             type: AppInboxType.GROUP_PRESENCE_HEARTBEAT,
             resourceId: request.requestId,
@@ -802,9 +804,12 @@ export function init(
                 actorSessionId: authSession.sessionId,
               },
             },
-          }),
-        );
-        return c.json(written.snapshot);
+          });
+        return c.json(await readReceiptSnapshot(
+          deps.getGroupStateService(),
+          { ...scope, groupId },
+          receipt,
+        ));
       } catch (error) {
         return toErrorResponse(c, error);
       }
@@ -824,10 +829,9 @@ export function init(
           c,
         );
         validateGroupPresenceMutationRequest('disconnectPresence', request);
-        const written = unwrapGroupStateWritten(
-          await deps.processGroupAppInbox<
+        const receipt = await deps.processGroupAppInbox<
             GroupPresenceDisconnectAppInboxPayload,
-            GroupStateWritten
+            GroupMutationReceipt
           >({
             type: AppInboxType.GROUP_PRESENCE_DISCONNECT,
             resourceId: request.requestId,
@@ -844,9 +848,12 @@ export function init(
                 actorSessionId: authSession.sessionId,
               },
             },
-          }),
-        );
-        return c.json(written.snapshot);
+          });
+        return c.json(await readReceiptSnapshot(
+          deps.getGroupStateService(),
+          { ...scope, groupId },
+          receipt,
+        ));
       } catch (error) {
         return toErrorResponse(c, error);
       }
@@ -1023,6 +1030,21 @@ async function readRequestWithRequestId<T extends { requestId?: string }>(c: {
     ...requestBody,
     requestId,
   };
+}
+
+async function readReceiptSnapshot(
+  service: GroupStateRouteService,
+  ref: GroupRef,
+  receipt: GroupMutationReceipt,
+): Promise<GroupSnapshot> {
+  if (receipt.outcome === 'rejected') {
+    throw new Error(receipt.rejection ?? 'Group presence mutation rejected');
+  }
+  const snapshot = await service.readCurrentSnapshot(ref);
+  if (!snapshot) {
+    throw new Error(`Group snapshot not found after mutation: ${ref.groupId}`);
+  }
+  return snapshot;
 }
 
 function unwrapGroupStateWritten(written: GroupStateWritten): GroupMutationWritten {

@@ -78,7 +78,7 @@ Deno.test('connectPresenceSession rejects missing and non-active group members',
   }
 });
 
-Deno.test('upsertMember preserves existing roles across leave and rejoin', async () => {
+Deno.test('upsertMember preserves existing admin roles across leave and rejoin', async () => {
   const service = createTestGroupStateService();
   await service.createGroup(TEST_SCOPE, {
     groupId: 'group-1',
@@ -89,26 +89,26 @@ Deno.test('upsertMember preserves existing roles across leave and rejoin', async
     actorPrincipalId: 'owner-1',
     actorSessionId: 'owner-session',
   });
-  await service.upsertMember(TEST_SCOPE, 'group-1', 'owner-2', {
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'admin-1', {
     status: 'active',
-    role: 'owner',
+    role: 'admin',
     actorPrincipalId: 'owner-1',
     actorSessionId: 'owner-session',
   });
 
-  await service.upsertMember(TEST_SCOPE, 'group-1', 'owner-1', {
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'admin-1', {
     status: 'left',
-    actorPrincipalId: 'owner-1',
-    actorSessionId: 'owner-session',
+    actorPrincipalId: 'admin-1',
+    actorSessionId: 'admin-session',
   });
-  assertMember(await readSnapshot(service), 'owner-1', 'owner', 'left');
+  assertMember(await readSnapshot(service), 'admin-1', 'admin', 'left');
 
-  await service.upsertMember(TEST_SCOPE, 'group-1', 'owner-1', {
+  await service.upsertMember(TEST_SCOPE, 'group-1', 'admin-1', {
     status: 'active',
-    actorPrincipalId: 'owner-1',
-    actorSessionId: 'owner-session',
+    actorPrincipalId: 'admin-1',
+    actorSessionId: 'admin-session',
   });
-  assertMember(await readSnapshot(service), 'owner-1', 'owner', 'active');
+  assertMember(await readSnapshot(service), 'admin-1', 'admin', 'active');
 });
 
 Deno.test('semantic group mutations advance snapshotVersion', async () => {
@@ -195,6 +195,7 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
       principalId: 'member-1',
       actorPrincipalId: 'member-1',
       actorSessionId: 'member-session',
+      disconnectedAtEpochMs: 3_000,
       reason: 'left',
     },
   );

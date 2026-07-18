@@ -367,43 +367,43 @@ export class AppGroupInboxService extends AppInboxService {
         this.onStateMessage<GroupPresenceConnectAppInboxPayload>(
             AppInboxType.GROUP_PRESENCE_CONNECT,
             async (presence) => {
-                const groupStateWritten =
-                    await this.groupStateService.connectPresenceSession(
+                const receipt =
+                    await this.groupStateService.connectPresenceSessionReceipt(
                         presence.scope,
                         presence.groupId,
                         presence.sessionId,
                         presence.request,
                     );
 
-                return groupStateWritten;
+                return receipt;
             },
         );
         this.onStateMessage<GroupPresenceHeartbeatAppInboxPayload>(
             AppInboxType.GROUP_PRESENCE_HEARTBEAT,
             async (presence) => {
-                const groupStateWritten =
-                    await this.groupStateService.heartbeatPresenceSession(
+                const receipt =
+                    await this.groupStateService.heartbeatPresenceSessionReceipt(
                         presence.scope,
                         presence.groupId,
                         presence.sessionId,
                         presence.request,
                     );
 
-                return groupStateWritten;
+                return receipt;
             },
         );
         this.onStateMessage<GroupPresenceDisconnectAppInboxPayload>(
             AppInboxType.GROUP_PRESENCE_DISCONNECT,
             async (presence) => {
-                const groupStateWritten =
-                    await this.groupStateService.disconnectPresenceSession(
+                const receipt =
+                    await this.groupStateService.disconnectPresenceSessionReceipt(
                         presence.scope,
                         presence.groupId,
                         presence.sessionId,
                         presence.request,
                     );
 
-                return groupStateWritten;
+                return receipt;
             },
         );
         this.onStateMessage<GroupPresenceDisconnectBySessionIdAppInboxPayload>(

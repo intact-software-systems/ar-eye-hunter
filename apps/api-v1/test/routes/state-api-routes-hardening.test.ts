@@ -186,12 +186,14 @@ Deno.test('group REST presence lifecycle requires a valid generation before enqu
   const snapshot = createGroupSnapshot('room-1', ['alice']);
   const deps = createGroupRouteDeps({
     session: createAuthSession('alice'),
-    groupService: {},
+    groupService: {
+      readCurrentSnapshot: () => Promise.resolve(snapshot),
+    },
     processGroupAppInbox: (input) => {
       processCalls.push(input);
       return Promise.resolve({
-        status: 'ok',
-        result: { right: { snapshot } },
+        outcome: 'applied',
+        causalRevision: snapshot.causalRevision,
       } as never);
     },
   });
@@ -1277,6 +1279,8 @@ function createGroupSnapshot(
       status: 'active',
       joinMode: 'open',
       metadata: {},
+      activeMemberCount: activePrincipalIds.length,
+      ownerPrincipalId: activePrincipalIds[0] ?? 'alice',
       snapshotVersion: 1,
       metadataVersion: 1,
       rosterVersion: 1,
@@ -1288,7 +1292,9 @@ function createGroupSnapshot(
       ...TEST_SCOPE,
       groupId,
       principalId,
-      role: 'member' as const,
+      role: principalId === activePrincipalIds[0]
+        ? 'owner' as const
+        : 'member' as const,
       status: 'active' as const,
       joined: { atEpochMs: 1, byServiceId: 'test' },
       updated: { atEpochMs: 1, byServiceId: 'test' },

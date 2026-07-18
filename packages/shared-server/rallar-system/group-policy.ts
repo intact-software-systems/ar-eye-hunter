@@ -509,7 +509,7 @@ function wouldExceedMemberCap(
         return false;
     }
 
-    return snapshot.members.filter((entry) => entry.status === 'active').length >= cap;
+    return snapshot.group.activeMemberCount >= cap;
 }
 
 function denyForBlockedMember(
@@ -584,8 +584,7 @@ function isLastActiveOwner(
         return false;
     }
 
-    return snapshot.members.filter((entry) => entry.role === 'owner' && entry.status === 'active')
-        .length === 1;
+    return snapshot.group.ownerPrincipalId === member.principalId;
 }
 
 function removesOwner(action: GroupGovernanceAction): boolean {

@@ -51,6 +51,21 @@ export function readGroupStateRevision(snapshot: AnyGroupPresence): number {
     return snapshot.stateRevision;
 }
 
+/** Compatibility projection only; the causal tuple remains authoritative. */
+export function toGroupSnapshotStateRevision(
+    groupRevision: number,
+    presenceRevision: number,
+): number {
+    if (
+        !Number.isSafeInteger(groupRevision) || groupRevision < 0 ||
+        !Number.isSafeInteger(presenceRevision) || presenceRevision < 0 ||
+        groupRevision > Number.MAX_SAFE_INTEGER - presenceRevision
+    ) {
+        throw new RangeError('Group causal revision cannot be projected safely');
+    }
+    return groupRevision + presenceRevision;
+}
+
 export function readGroupCausalRevision(
     snapshot: AnyGroupPresence,
 ): GroupStateCausalRevision {

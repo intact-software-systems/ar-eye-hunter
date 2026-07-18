@@ -115,6 +115,28 @@ function createGroupSnapshot(
     snapshotVersion: number,
     sessionIds: readonly string[],
 ): GroupSnapshot {
+    const members: GroupMember[] = [
+        {
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'group-1',
+            principalId: 'alice',
+            role: 'owner',
+            status: 'active',
+            joined: { atEpochMs: 1 },
+            updated: { atEpochMs: snapshotVersion },
+        },
+        ...sessionIds.map((sessionId) => ({
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            groupId: 'group-1',
+            principalId: `principal-${sessionId}`,
+            role: 'member' as const,
+            status: 'active' as const,
+            joined: { atEpochMs: 1 },
+            updated: { atEpochMs: snapshotVersion },
+        })),
+    ];
     const group: Group = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
@@ -124,6 +146,8 @@ function createGroupSnapshot(
         status: 'active',
         joinMode: 'open',
         metadata: {},
+        activeMemberCount: members.length,
+        ownerPrincipalId: 'alice',
         snapshotVersion,
         metadataVersion: 1,
         rosterVersion: 1,
@@ -131,14 +155,6 @@ function createGroupSnapshot(
         created: { atEpochMs: 1 },
         updated: { atEpochMs: snapshotVersion },
     };
-    const members: GroupMember[] = sessionIds.map((sessionId) => ({
-        ...group,
-        principalId: `principal-${sessionId}`,
-        role: 'member',
-        status: 'active',
-        joined: { atEpochMs: 1 },
-        updated: { atEpochMs: snapshotVersion },
-    }));
     const activeSessions: GroupPresenceSession[] = sessionIds.map(
         (sessionId) => ({
             ...group,
@@ -162,6 +178,6 @@ function createGroupSnapshot(
         members,
         activeSessions,
         memberCount: members.length,
-        onlineMemberCount: members.length,
+        onlineMemberCount: sessionIds.length,
     };
 }

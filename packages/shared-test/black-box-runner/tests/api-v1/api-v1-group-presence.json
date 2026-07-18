@@ -220,6 +220,98 @@
       }
     },
     {
+      "name": "pollGroupPresenceAttempt1",
+      "type": "parallel",
+      "nonBlockingFailure": true,
+      "maxConcurrency": 1,
+      "timeoutMs": 10000,
+      "groups": [
+        {
+          "name": "presence-attempt-1",
+          "steps": [
+            {
+              "name": "readPresenceAttempt1",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "activeSessions": [
+                    {
+                      "sessionId": "{aliceSessionId}",
+                      "principalId": "{aliceClientId}",
+                      "generationId": "generation-{runId}"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delayBeforePresencePoll2",
+      "type": "set",
+      "output": "presencePollDelay2",
+      "value": { "attempt": 2, "delayMs": 500 },
+      "request": { "delayMs": 500 }
+    },
+    {
+      "name": "pollGroupPresenceAttempt2",
+      "type": "parallel",
+      "nonBlockingFailure": true,
+      "maxConcurrency": 1,
+      "timeoutMs": 10000,
+      "groups": [
+        {
+          "name": "presence-attempt-2",
+          "steps": [
+            {
+              "name": "readPresenceAttempt2",
+              "type": "http",
+              "connection": "api",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "activeSessions": [
+                    {
+                      "sessionId": "{aliceSessionId}",
+                      "principalId": "{aliceClientId}",
+                      "generationId": "generation-{runId}"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delayBeforeFinalPresencePoll",
+      "type": "set",
+      "output": "presenceFinalPollDelay",
+      "value": { "attempt": 3, "delayMs": 1000 },
+      "request": { "delayMs": 1000 }
+    },
+    {
       "name": "readGroupSnapshot",
       "type": "http",
       "connection": "api",
@@ -241,6 +333,13 @@
             {
               "principalId": "{aliceClientId}",
               "status": "active"
+            }
+          ],
+          "activeSessions": [
+            {
+              "sessionId": "{aliceSessionId}",
+              "principalId": "{aliceClientId}",
+              "generationId": "generation-{runId}"
             }
           ]
         }

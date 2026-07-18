@@ -32,6 +32,7 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 const SCOPE: StateScope = {
@@ -62,6 +63,82 @@ describe('convergent group and presence state', () => {
         expect(() => validateGroupMutationCommand(command)).toThrow(
             /command|key|hash/i,
         );
+
+        expect(() => validateGroupMutationCommand(createMutationCommand({
+            input: {
+                ...createMutationCommand().input,
+                unexpected: true,
+            },
+        } as never))).toThrow(/unexpected|key/i);
+    });
+
+    it('re-authorizes group mutation actors from the current retry read', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'authorization-room');
+
+        await expect(createService(runtime, 2_000).updateGroup(
+            SCOPE,
+            'authorization-room',
+            {
+                displayName: 'Unauthorized',
+                actorPrincipalId: 'mallory',
+                requestId: 'unauthorized-update',
+            },
+        )).rejects.toMatchObject({ status: 403 });
+        expect((await requireSnapshot(runtime, 'authorization-room')).group.displayName)
+            .toBe('authorization-room');
+    });
+
+    it('does not make a stale no-op receipt durable', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'ephemeral-no-op-room');
+        const service = createService(runtime, 2_000);
+        await service.updateGroup(SCOPE, 'ephemeral-no-op-room', {
+            displayName: 'ephemeral-no-op-room',
+            actorPrincipalId: 'alice',
+            requestId: 'retry-after-no-op',
+        });
+        await service.updateGroup(SCOPE, 'ephemeral-no-op-room', {
+            displayName: 'Changed',
+            actorPrincipalId: 'alice',
+            requestId: 'change-between-retries',
+        });
+        await service.updateGroup(SCOPE, 'ephemeral-no-op-room', {
+            displayName: 'ephemeral-no-op-room',
+            actorPrincipalId: 'alice',
+            requestId: 'retry-after-no-op',
+        });
+
+        expect((await requireSnapshot(runtime, 'ephemeral-no-op-room')).group.displayName)
+            .toBe('ephemeral-no-op-room');
+        expect(await new GroupStateRepository(runtime)
+            .findIdempotentGroupMutationReceipt(
+                groupRef('ephemeral-no-op-room'),
+                'retry-after-no-op',
+            )).toMatchObject({ receipt: { outcome: 'applied' } });
+    });
+
+    it('does not persist a rejected receipt, event, or outbox effect', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'ephemeral-rejection-room');
+        const result = await createService(runtime, 2_000).createGroup(SCOPE, {
+            groupId: 'ephemeral-rejection-room',
+            displayName: 'Duplicate',
+            kind: 'room',
+            createdByPrincipalId: 'alice',
+            actorPrincipalId: 'alice',
+            requestId: 'rejected-duplicate-create',
+        });
+        expect(result).toMatchObject({ status: 'error' });
+        const repository = new GroupStateRepository(runtime);
+        expect(await repository.findIdempotentGroupMutationReceipt(
+            groupRef('ephemeral-rejection-room'),
+            'rejected-duplicate-create',
+        )).toBeUndefined();
+        expect(await outboxFor(runtime, 'rejected-duplicate-create')).toEqual([]);
+        expect((await repository.listEvents(groupRef('ephemeral-rejection-room')))
+            .filter((event) => event.requestId === 'rejected-duplicate-create'))
+            .toEqual([]);
     });
 
     it('keeps pure mutation computation synchronous, deterministic, and input preserving', () => {
@@ -101,7 +178,7 @@ describe('convergent group and presence state', () => {
         };
         const read = {
             group,
-            members: [],
+            admissions: [],
             presenceSessions: [],
             current,
         };
@@ -220,11 +297,11 @@ describe('convergent group and presence state', () => {
             ),
         ]);
 
-        expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+        expect(results[1]).toMatchObject({ status: 'fulfilled' });
         const snapshot = await requireSnapshot(runtime, 'join-ban-room');
         expect(snapshot.members.find((member) => member.principalId === 'bob'))
             .toMatchObject({ status: 'banned' });
-        expect(snapshot.group.snapshotVersion).toBe(4);
+        expect(snapshot.group.snapshotVersion).toBe(3);
     });
 
     it('rebases ownership transfer versus target removal without losing a winner', async () => {
@@ -276,6 +353,54 @@ describe('convergent group and presence state', () => {
         ).toBe(true);
     });
 
+    it('re-authorizes a queued admin update after a concurrent demotion', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'demotion-race-room');
+        await createService(runtime, 1_100).upsertMember(
+            SCOPE,
+            'demotion-race-room',
+            'bob',
+            {
+                status: 'active',
+                role: 'admin',
+                actorPrincipalId: 'alice',
+                requestId: 'activate-admin-bob',
+            },
+        );
+        runtime.conflictNextGroupDisplayName('Must not commit after demotion');
+        runtime.armGroupReadBarrier(2);
+        const [demotion, staleUpdate] = await Promise.allSettled([
+            createService(runtime, 2_000).setGroupMemberRole(
+                SCOPE,
+                'demotion-race-room',
+                'bob',
+                {
+                    role: 'member',
+                    actorPrincipalId: 'alice',
+                    requestId: 'demote-bob',
+                },
+            ),
+            createService(runtime, 2_001).updateGroup(
+                SCOPE,
+                'demotion-race-room',
+                {
+                    displayName: 'Must not commit after demotion',
+                    actorPrincipalId: 'bob',
+                    requestId: 'queued-admin-update',
+                },
+            ),
+        ]);
+        expect(demotion.status).toBe('fulfilled');
+        expect(staleUpdate).toMatchObject({
+            status: 'rejected',
+            reason: { status: 403 },
+        });
+        const snapshot = await requireSnapshot(runtime, 'demotion-race-room');
+        expect(snapshot.group.displayName).toBe('demotion-race-room');
+        expect(snapshot.members.find((member) => member.principalId === 'bob'))
+            .toMatchObject({ role: 'member', status: 'active' });
+    });
+
     it('accepts two independent presence sessions without a group aggregate guard', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'two-session-room');
@@ -314,12 +439,12 @@ describe('convergent group and presence state', () => {
             expect.objectContaining({
                 sessionId: 'session-a',
                 generationId: 'generation-a',
-                generationVersion: 1,
+                generationVersion: 2_000,
             }),
             expect.objectContaining({
                 sessionId: 'session-b',
                 generationId: 'generation-b',
-                generationVersion: 1,
+                generationVersion: 2_001,
             }),
         ]));
     });
@@ -388,6 +513,7 @@ describe('convergent group and presence state', () => {
                 'session-a',
                 {
                     generationId: 'generation-1',
+                    actorPrincipalId: 'alice',
                     lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_500,
                     expiresAtEpochMs: BASE_EPOCH_MS + 5_000,
                     requestId: 'heartbeat-generation-1',
@@ -399,6 +525,7 @@ describe('convergent group and presence state', () => {
                 'session-a',
                 {
                     generationId: 'generation-1',
+                    actorPrincipalId: 'alice',
                     disconnectedAtEpochMs: BASE_EPOCH_MS + 2_501,
                     requestId: 'disconnect-generation-1',
                 },
@@ -408,7 +535,7 @@ describe('convergent group and presence state', () => {
             .findPresenceSession({ ...groupRef('presence-room'), sessionId: 'session-a' });
         expect(disconnected).toMatchObject({
             generationId: 'generation-1',
-            generationVersion: 1,
+            generationVersion: BASE_EPOCH_MS + 2_000,
             disconnectedAtEpochMs: BASE_EPOCH_MS + 2_501,
         });
         expect(runtime.groupGuards).toBe(0);
@@ -436,9 +563,107 @@ describe('convergent group and presence state', () => {
         });
         expect(reconnected).toMatchObject({
             generationId: 'generation-2',
-            generationVersion: 2,
+            generationVersion: BASE_EPOCH_MS + 3_001,
         });
         expect(reconnected?.disconnectedAtEpochMs).toBeUndefined();
+    });
+
+    it('converges generation and heartbeat order for AB and BA delivery', async () => {
+        const run = async (reverse: boolean) => {
+            const runtime = new GroupBarrierRepository();
+            await seedOpenGroup(runtime, `ordered-${reverse}`);
+            const service = createService(runtime, BASE_EPOCH_MS + 1_000);
+            const connects = [
+                {
+                    generationId: 'generation-a',
+                    connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
+                    requestId: `connect-a-${reverse}`,
+                },
+                {
+                    generationId: 'generation-z',
+                    connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                    expiresAtEpochMs: BASE_EPOCH_MS + 10_000,
+                    requestId: `connect-z-${reverse}`,
+                },
+            ];
+            for (const request of reverse ? connects.toReversed() : connects) {
+                await service.connectPresenceSession(
+                    SCOPE,
+                    `ordered-${reverse}`,
+                    'session-a',
+                    { principalId: 'alice', ...request },
+                );
+            }
+            const heartbeats = [
+                { expiresAtEpochMs: BASE_EPOCH_MS + 12_000, requestId: `hb-a-${reverse}` },
+                { expiresAtEpochMs: BASE_EPOCH_MS + 14_000, requestId: `hb-z-${reverse}` },
+            ];
+            for (const request of reverse ? heartbeats.toReversed() : heartbeats) {
+                await service.heartbeatPresenceSession(
+                    SCOPE,
+                    `ordered-${reverse}`,
+                    'session-a',
+                    {
+                        generationId: 'generation-z',
+                        actorPrincipalId: 'alice',
+                        lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 3_000,
+                        ...request,
+                    },
+                );
+            }
+            return await new GroupStateRepository(runtime).findPresenceSession({
+                ...groupRef(`ordered-${reverse}`),
+                sessionId: 'session-a',
+            });
+        };
+
+        const [ab, ba] = await Promise.all([run(false), run(true)]);
+        expect(ab).toMatchObject({
+            generationId: 'generation-z',
+            generationVersion: BASE_EPOCH_MS + 2_000,
+            expiresAtEpochMs: BASE_EPOCH_MS + 14_000,
+        });
+        expect(ba && { ...ba, groupId: ab?.groupId }).toEqual(ab);
+    });
+
+    it('admits only one concurrent last session for a member', async () => {
+        const runtime = new GroupBarrierRepository();
+        await createService(runtime, 1_000).createGroup(SCOPE, {
+            groupId: 'session-cap-room',
+            displayName: 'Session cap',
+            kind: 'room',
+            joinMode: 'open',
+            maxSessionsPerMember: 1,
+            createdByPrincipalId: 'alice',
+            requestId: 'seed-session-cap',
+        });
+        runtime.armPresenceReadBarrier(2);
+        const results = await Promise.allSettled([
+            createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
+                SCOPE, 'session-cap-room', 'session-a', {
+                    principalId: 'alice', generationId: 'generation-a',
+                    requestId: 'session-cap-a',
+                },
+            ),
+            createService(runtime, BASE_EPOCH_MS + 2_001).connectPresenceSession(
+                SCOPE, 'session-cap-room', 'session-b', {
+                    principalId: 'alice', generationId: 'generation-b',
+                    requestId: 'session-cap-b',
+                },
+            ),
+        ]);
+        expect(results.filter((result) =>
+            result.status === 'fulfilled' && result.value.status === 'ok'
+        )).toHaveLength(1);
+        const admission = await new GroupStateRepository(runtime)
+            .findPresenceAdmissionEntry({
+                ...groupRef('session-cap-room'),
+                principalId: 'alice',
+            });
+        expect(admission?.value.admittedSessions).toHaveLength(1);
     });
 
     it('advances 100 independent heartbeats without acquiring the group guard', async () => {
@@ -459,6 +684,7 @@ describe('convergent group and presence state', () => {
                 {
                     principalId,
                     generationId: `generation-${index}`,
+                    actorPrincipalId: `member-${index}`,
                     expiresAtEpochMs: BASE_EPOCH_MS + 50_000,
                     requestId: `connect-${index}`,
                 },
@@ -466,12 +692,14 @@ describe('convergent group and presence state', () => {
         }
         runtime.resetGuards();
         await Promise.all(Array.from({ length: 100 }, (_, index) =>
-            createService(runtime, BASE_EPOCH_MS + 3_000 + index).heartbeatPresenceSession(
+            createService(runtime, BASE_EPOCH_MS + 3_000 + index)
+                .heartbeatPresenceSessionReceipt(
                 SCOPE,
                 'heartbeat-room',
                 `session-${index}`,
                 {
                     generationId: `generation-${index}`,
+                    actorPrincipalId: `member-${index}`,
                     lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 3_000 + index,
                     expiresAtEpochMs: BASE_EPOCH_MS + 60_000 + index,
                     requestId: `heartbeat-${index}`,
@@ -480,6 +708,23 @@ describe('convergent group and presence state', () => {
         ));
         expect(runtime.groupGuards).toBe(0);
         expect(runtime.presenceGuards).toBe(100);
+        expect(runtime.hotPathListReads).toBe(0);
+        expect(runtime.compatibilitySnapshotListReads).toBe(0);
+
+        await createService(runtime, BASE_EPOCH_MS + 4_000)
+            .heartbeatPresenceSession(
+                SCOPE,
+                'heartbeat-room',
+                'session-0',
+                {
+                    generationId: 'generation-0',
+                    actorPrincipalId: 'member-0',
+                    lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 4_000,
+                    expiresAtEpochMs: BASE_EPOCH_MS + 70_000,
+                    requestId: 'compatibility-heartbeat',
+                },
+            );
+        expect(runtime.compatibilitySnapshotListReads).toBeGreaterThan(0);
     });
 
     it('stores compact first-writer receipts and exact canonical digest outbox identity', async () => {
@@ -490,16 +735,19 @@ describe('convergent group and presence state', () => {
         await service.updateGroup(SCOPE, 'digest-room', {
             displayName: 'After',
             metadata: { alpha: 1, beta: 2 },
+            actorPrincipalId: 'alice',
             requestId: 'same-request',
         });
         await service.updateGroup(SCOPE, 'digest-room', {
             metadata: { beta: 2, alpha: 1 },
             displayName: 'After',
+            actorPrincipalId: 'alice',
             requestId: 'same-request',
         });
         await expect(service.updateGroup(SCOPE, 'digest-room', {
             displayName: 'Different',
             metadata: { alpha: 1, beta: 2 },
+            actorPrincipalId: 'alice',
             requestId: 'same-request',
         })).rejects.toBeInstanceOf(GroupMutationIdempotencyConflictError);
 
@@ -519,6 +767,51 @@ describe('convergent group and presence state', () => {
         expect(JSON.stringify(stored)).not.toContain('activeSessions');
         expect(JSON.stringify(stored)).not.toContain('members');
         expect(wake).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows only one semantic command for a concurrent shared request id', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'same-request-race');
+        runtime.armGroupReadBarrier(2);
+        const results = await Promise.allSettled([
+            createService(runtime, 2_000).updateGroup(SCOPE, 'same-request-race', {
+                displayName: 'Winner A',
+                actorPrincipalId: 'alice',
+                requestId: 'shared-semantic-request',
+            }),
+            createService(runtime, 2_001).updateGroup(SCOPE, 'same-request-race', {
+                displayName: 'Winner B',
+                actorPrincipalId: 'alice',
+                requestId: 'shared-semantic-request',
+            }),
+        ]);
+        expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+        expect(results.filter((result) =>
+            result.status === 'rejected' &&
+            result.reason instanceof GroupMutationIdempotencyConflictError
+        )).toHaveLength(1);
+        expect(['Winner A', 'Winner B']).toContain(
+            (await requireSnapshot(runtime, 'same-request-race')).group.displayName,
+        );
+    });
+
+    it('uses bounded retry delays and exposes exhaustion after forced conflicts', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'retry-exhaustion-room');
+        runtime.failNextGroupCas(3);
+        const sleep = vi.fn(() => Promise.resolve());
+        await expect(createService(runtime, 2_000, undefined, sleep).updateGroup(
+            SCOPE,
+            'retry-exhaustion-room',
+            {
+                displayName: 'Never committed',
+                actorPrincipalId: 'alice',
+                requestId: 'retry-exhaustion',
+            },
+        )).rejects.toBeInstanceOf(RuntimeStateRetryExhaustedError);
+        expect(sleep.mock.calls.map(([delay]) => delay)).toEqual([2, 8]);
+        expect((await requireSnapshot(runtime, 'retry-exhaustion-room')).group.displayName)
+            .toBe('retry-exhaustion-room');
     });
 
     it('retries summary CAS and restart without duplicating the sole topology follow-up', async () => {
@@ -630,6 +923,8 @@ function createMutationRead(): GroupMutationRead {
                 status: 'active',
                 joinMode: 'open',
                 metadata: {},
+                activeMemberCount: 1,
+                ownerPrincipalId: 'alice',
                 snapshotVersion: 1,
                 metadataVersion: 1,
                 rosterVersion: 1,
@@ -638,10 +933,23 @@ function createMutationRead(): GroupMutationRead {
                 updated: audit,
             },
         },
-        members: [],
+        actorMember: {
+            ...groupRef('pure-room'),
+            principalId: 'alice',
+            role: 'owner',
+            status: 'active',
+            joined: audit,
+            updated: audit,
+        },
+        targetMember: null,
+        authorityMember: null,
+        directorMember: null,
         targetPresence: null,
+        targetAdmission: null,
+        authorityAdmission: null,
+        directorAdmission: null,
+        authorityPresenceSessions: [],
         presenceSummary: null,
-        presenceSessions: [],
     };
 }
 
@@ -652,12 +960,15 @@ function createMutationFacts(): GroupMutationFacts {
         eventId: 'event-1',
         commandHash: `sha256:${'a'.repeat(64)}`,
         joinCodeVerifier: null,
+        internalAuthority: 'none',
     };
 }
 
 class GroupBarrierRepository extends FakeRuntimeStateRepository {
     groupGuards = 0;
     presenceGuards = 0;
+    hotPathListReads = 0;
+    compatibilitySnapshotListReads = 0;
     private groupReadsRemaining = 0;
     private groupReadsArrived = 0;
     private releaseGroupReads: (() => void) | undefined;
@@ -666,9 +977,19 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     private releasePresenceReads: (() => void) | undefined;
     private transactionTail: Promise<void> = Promise.resolve();
     private presenceSummaryConflictsRemaining = 0;
+    private groupConflictsRemaining = 0;
+    private conflictingGroupDisplayName: string | undefined;
 
     failNextPresenceSummaryCas(): void {
         this.presenceSummaryConflictsRemaining = 1;
+    }
+
+    failNextGroupCas(count: number): void {
+        this.groupConflictsRemaining = count;
+    }
+
+    conflictNextGroupDisplayName(displayName: string): void {
+        this.conflictingGroupDisplayName = displayName;
     }
 
     armGroupReadBarrier(readers: number): void {
@@ -684,6 +1005,27 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     resetGuards(): void {
         this.groupGuards = 0;
         this.presenceGuards = 0;
+        this.hotPathListReads = 0;
+        this.compatibilitySnapshotListReads = 0;
+    }
+
+    override findEntriesByPrefix(
+        namespace: string,
+        keyPrefix: string,
+    ): Promise<readonly RuntimeStateEntry[]> {
+        if (
+            (namespace === 'group-state:members' || namespace === 'group-state:sessions') &&
+            new Error().stack?.includes('readGroupMutation')
+        ) {
+            this.hotPathListReads += 1;
+        }
+        if (
+            (namespace === 'group-state:members' || namespace === 'group-state:sessions') &&
+            new Error().stack?.includes('readStableStateSnapshot')
+        ) {
+            this.compatibilitySnapshotListReads += 1;
+        }
+        return super.findEntriesByPrefix(namespace, keyPrefix);
     }
 
     override async findEntry(
@@ -735,6 +1077,21 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
     ): Promise<RuntimeStateConditionalWriteResult> {
         this.recordGuard(namespace);
         if (
+            namespace === 'group-state:groups' &&
+            this.conflictingGroupDisplayName !== undefined &&
+            JSON.parse(value).displayName === this.conflictingGroupDisplayName
+        ) {
+            this.conflictingGroupDisplayName = undefined;
+            return Promise.resolve({ status: 'conflict' });
+        }
+        if (
+            namespace === 'group-state:groups' &&
+            this.groupConflictsRemaining > 0
+        ) {
+            this.groupConflictsRemaining -= 1;
+            return Promise.resolve({ status: 'conflict' });
+        }
+        if (
             namespace === 'group-state:presence-summaries' &&
             this.presenceSummaryConflictsRemaining > 0
         ) {
@@ -784,6 +1141,7 @@ function createService(
     runtimeRepository: GroupBarrierRepository,
     nowEpochMs: number,
     wakeStateMutationOutbox?: () => void,
+    sleep: (delayMs: number) => Promise<void> = () => Promise.resolve(),
 ) {
     let id = 0;
     return createGroupStateService({
@@ -791,7 +1149,7 @@ function createService(
         syncPublisher: createPublisher(),
         now: () => nowEpochMs,
         randomId: () => `id-${nowEpochMs}-${++id}`,
-        sleep: () => Promise.resolve(),
+        sleep,
         serviceId: 'group-service',
         wakeStateMutationOutbox,
     });
