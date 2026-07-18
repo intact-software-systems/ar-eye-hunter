@@ -15,8 +15,23 @@ const MUTATION_MIX = [
   'topology-source',
 ] as const;
 
+const INTENT_KINDS: Record<string, readonly string[]> = {
+  'profile-instance': [
+    'client-snapshot:profile',
+    'client-event:profile',
+    'client-snapshot:instance',
+    'client-event:instance',
+  ],
+  membership: ['group-snapshot', 'group-event', 'topology-publication'],
+  'presence-connect': ['group-snapshot', 'group-event', 'topology-publication'],
+  'presence-heartbeat': [],
+  'presence-disconnect': ['group-snapshot', 'group-event', 'topology-publication'],
+  config: ['group-snapshot', 'group-event', 'topology-publication'],
+  'topology-source': ['topology-publication'],
+};
+
 describe('API-v1 state-write performance artifact contract', () => {
-  it('accepts the exact workloads, scale, repetitions, raw samples, metrics, and correctness counters', () => {
+  it('accepts coherent baseline raw samples, summaries, durable linkage, sources, and stack use', () => {
     expect(validateStateWriteArtifact(validArtifact())).toEqual([]);
   });
 
@@ -29,53 +44,155 @@ describe('API-v1 state-write performance artifact contract', () => {
     ]));
   });
 
-  it('rejects omitted conflict and retry-exhaustion metrics', () => {
+  it('rejects missing metric-source disclosures', () => {
     const artifact = validArtifact();
-    delete (artifact.workloads[0]!.summary.outcomes as { conflicted?: number }).conflicted;
-    delete (artifact.workloads[0]!.samples[0]!.outcomes as { exhausted?: number }).exhausted;
-
-    const errors = validateStateWriteArtifact(artifact);
-    expect(errors).toEqual(expect.arrayContaining([
-      expect.stringContaining('conflicted'),
-      expect.stringContaining('exhausted'),
-    ]));
-  });
-
-  it('rejects missing phase, PostgreSQL, SQL, receipt, or outbox metrics', () => {
-    const artifact = validArtifact();
-    delete (artifact.workloads[1]!.summary.timingsMs as { validate?: number }).validate;
-    delete (artifact.workloads[1]!.summary.postgres as { walBytes?: number }).walBytes;
-    delete (artifact.workloads[1]!.summary.sql as { rowsRead?: number }).rowsRead;
-    delete (artifact.workloads[1]!.summary.correctness as { receiptCount?: number }).receiptCount;
-    delete (artifact.workloads[1]!.summary.correctness as { outboxIntentCount?: number })
-      .outboxIntentCount;
-
-    const errors = validateStateWriteArtifact(artifact);
-    expect(errors).toEqual(expect.arrayContaining([
-      expect.stringContaining('timingsMs.validate'),
-      expect.stringContaining('postgres.walBytes'),
-      expect.stringContaining('sql.rowsRead'),
-      expect.stringContaining('correctness.receiptCount'),
-      expect.stringContaining('correctness.outboxIntentCount'),
-    ]));
-  });
-
-  it('requires every measured run and latency sample so tail observations cannot be discarded', () => {
-    const artifact = validArtifact();
-    artifact.workloads[2]!.samples.pop();
+    delete artifact.measurement.counterSources.lockWait;
+    delete artifact.measurement.counterSources.computeTiming;
+    delete artifact.measurement.counterSources.attempts;
 
     expect(validateStateWriteArtifact(artifact)).toEqual(expect.arrayContaining([
-      expect.stringContaining('samples must contain exactly measurement.measuredRuns entries'),
+      expect.stringContaining('counterSources.lockWait'),
+      expect.stringContaining('counterSources.computeTiming'),
+      expect.stringContaining('counterSources.attempts'),
     ]));
   });
 
-  it('enforces uncontended tail-latency and shared/hot throughput budgets', () => {
+  it('requires exactly three measured runs and all 700 command latency tails per run', () => {
+    const missingRun = validArtifact();
+    missingRun.workloads[2].samples.pop();
+    const missingTail = validArtifact();
+    missingTail.workloads[0].samples[0].latencySamplesMs.pop();
+
+    expect(validateStateWriteArtifact(missingRun)).toEqual(expect.arrayContaining([
+      expect.stringContaining('samples must contain exactly measurement.measuredRuns entries'),
+    ]));
+    expect(validateStateWriteArtifact(missingTail)).toEqual(expect.arrayContaining([
+      expect.stringContaining('must contain exactly 700 command latencies'),
+    ]));
+  });
+
+  it('rejects favorable summaries that disagree with raw latency, throughput, outcomes, SQL, or transaction samples', () => {
+    const artifact = validArtifact();
+    artifact.workloads[0].summary.latencyMs.p99 = 0;
+    artifact.workloads[0].summary.throughputPerSecond *= 2;
+    artifact.workloads[0].summary.outcomes.attempts = 1;
+    artifact.workloads[0].summary.sql.statements = 1;
+    artifact.workloads[0].summary.postgres.transactionDurationMs = 1;
+
+    expect(validateStateWriteArtifact(artifact)).toEqual(expect.arrayContaining([
+      expect.stringContaining('summary.latencyMs.p99 does not match raw samples'),
+      expect.stringContaining('summary.throughputPerSecond does not match raw samples'),
+      expect.stringContaining('summary.outcomes.attempts does not match raw samples'),
+      expect.stringContaining('summary.sql.statements does not match sample median'),
+      expect.stringContaining(
+        'summary.postgres.transactionDurationMs does not match sample median',
+      ),
+    ]));
+  });
+
+  it('rejects a raw exhausted command even when the declared summary is favorable', () => {
+    const artifact = validArtifact();
+    artifact.workloads[1].samples[0].attemptObservations[0].outcome = 'exhausted';
+
+    expect(validateStateWriteArtifact(artifact)).toEqual(expect.arrayContaining([
+      expect.stringContaining('raw exhausted attempts must be zero'),
+      expect.stringContaining('outcomes.exhausted does not match attempt observations'),
+    ]));
+  });
+
+  it('derives attempts and conflicts from raw timing-sink observations', () => {
+    const artifact = validArtifact();
+    artifact.workloads[1].samples[0].attemptObservations.push({
+      commandId: artifact.workloads[1].samples[0].commands[0].commandId,
+      attempt: 2,
+      outcome: 'conflicted',
+      source: 'client-state-service.cas-attempt',
+    });
+
+    expect(validateStateWriteArtifact(artifact)).toEqual(expect.arrayContaining([
+      expect.stringContaining('outcomes.attempts does not match attempt observations'),
+      expect.stringContaining('outcomes.conflicted does not match attempt observations'),
+      expect.stringContaining('attemptsPerAcceptedMutation does not match attempt observations'),
+    ]));
+  });
+
+  it('rejects a run where both independent stacks did not execute commands', () => {
+    const artifact = validArtifact();
+    for (const command of artifact.workloads[0].samples[0].commands) {
+      command.stackIndex = 0;
+    }
+    artifact.workloads[0].samples[0].stackCommandCounts = [700, 0];
+
+    expect(validateStateWriteArtifact(artifact)).toEqual(expect.arrayContaining([
+      expect.stringContaining('both independent service stacks must execute commands'),
+    ]));
+  });
+
+  it('rejects missing, duplicate, or incorrectly linked durable receipts and outbox intents', () => {
+    const missingReceipt = validArtifact();
+    missingReceipt.workloads[0].samples[0].durable.receiptCommandIds.pop();
+    const duplicateIntent = validArtifact();
+    const intents = duplicateIntent.workloads[0].samples[0].durable.outboxIntents;
+    intents[1].intentId = intents[0].intentId;
+    const wrongKind = validArtifact();
+    wrongKind.workloads[0].samples[0].durable.outboxIntents[0].intentKind = 'topology-publication';
+
+    expect(validateStateWriteArtifact(missingReceipt)).toEqual(expect.arrayContaining([
+      expect.stringContaining('durable receipts must match accepted command IDs exactly'),
+    ]));
+    expect(validateStateWriteArtifact(duplicateIntent)).toEqual(expect.arrayContaining([
+      expect.stringContaining('durable outbox intent IDs must be unique'),
+    ]));
+    expect(validateStateWriteArtifact(wrongKind)).toEqual(expect.arrayContaining([
+      expect.stringContaining('durable outbox intents do not match the mutation contract'),
+    ]));
+  });
+
+  it('rejects zero durable receipts or intents hidden behind favorable correctness summaries', () => {
+    const artifact = validArtifact();
+    artifact.workloads[2].samples[0].durable.receiptCommandIds = [];
+    artifact.workloads[2].samples[0].durable.outboxIntents = [];
+
+    expect(validateStateWriteArtifact(artifact)).toEqual(expect.arrayContaining([
+      expect.stringContaining('durable receipts must match accepted command IDs exactly'),
+      expect.stringContaining('durable outbox intents do not match the mutation contract'),
+      expect.stringContaining('correctness.receiptCount does not match durable records'),
+      expect.stringContaining('correctness.outboxIntentCount does not match durable records'),
+    ]));
+  });
+
+  it('makes the Task 10 presence-split declaration and evidence non-bypassable', () => {
     const baseline = validArtifact();
-    const candidate = validArtifact();
-    candidate.workloads[0].summary.latencyMs.p95 = 7.36;
-    candidate.workloads[0].summary.latencyMs.p99 = 7.36;
-    candidate.workloads[1].summary.throughputPerSecond = 6_999;
-    candidate.workloads[2].summary.throughputPerSecond = 6_999;
+    const omitted = validArtifact({ candidate: true });
+    delete omitted.features;
+    const falseCandidate = validArtifact({ candidate: true });
+    falseCandidate.features.presenceSplitFromGroupAggregate = false;
+    falseCandidate.features.governance = 'pre-remediation-baseline';
+
+    expect(compareStateWriteArtifacts(baseline, omitted)).toEqual(expect.arrayContaining([
+      expect.stringContaining('candidate must declare presenceSplitFromGroupAggregate=true'),
+    ]));
+    expect(compareStateWriteArtifacts(baseline, falseCandidate)).toEqual(expect.arrayContaining([
+      expect.stringContaining('candidate must declare presenceSplitFromGroupAggregate=true'),
+    ]));
+  });
+
+  it('requires shared throughput to improve after the mandated presence split', () => {
+    const baseline = validArtifact();
+    const candidate = validArtifact({ candidate: true });
+    setDurations(candidate.workloads[1], 100);
+
+    expect(compareStateWriteArtifacts(baseline, candidate)).toContain(
+      'shared throughput must improve after presence is split from the group aggregate',
+    );
+  });
+
+  it('enforces uncontended tail-latency and shared/hot throughput budgets from coherent raw data', () => {
+    const baseline = validArtifact();
+    const candidate = validArtifact({ candidate: true });
+    setLatencies(candidate.workloads[0], 8);
+    setDurations(candidate.workloads[1], 110);
+    setDurations(candidate.workloads[2], 110);
 
     expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(expect.arrayContaining([
       expect.stringContaining('uncontended latency p95'),
@@ -85,32 +202,16 @@ describe('API-v1 state-write performance artifact contract', () => {
     ]));
   });
 
-  it('requires shared throughput to improve after the presence split', () => {
+  it('allows only reasoned median resource increases', () => {
     const baseline = validArtifact();
-    const candidate = validArtifact();
-    candidate.features = { presenceSplitFromGroupAggregate: true };
-
-    expect(compareStateWriteArtifacts(baseline, candidate)).toContain(
-      'shared throughput must improve after presence is split from the group aggregate',
-    );
-  });
-
-  it('allows only reasoned median resource increases and enforces retry exhaustion', () => {
-    const baseline = validArtifact();
-    const candidate = validArtifact();
+    const candidate = validArtifact({ candidate: true });
     for (const sample of candidate.workloads[1].samples) {
       sample.sql.statements += 1;
     }
-    candidate.workloads[0].summary.outcomes.exhausted = 1;
-    candidate.workloads[1].summary.outcomes.exhausted = 1;
-    candidate.workloads[2].summary.outcomes.exhausted = 1;
+    refreshSummary(candidate.workloads[1]);
 
-    const errors = compareStateWriteArtifacts(baseline, candidate);
-    expect(errors).toEqual(expect.arrayContaining([
+    expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(expect.arrayContaining([
       expect.stringContaining('median sql.statements increased without a recorded reason'),
-      expect.stringContaining('uncontended retry exhaustion must remain zero'),
-      expect.stringContaining('shared retry exhaustion must remain zero'),
-      expect.stringContaining('hot retry exhaustion exceeded baseline'),
     ]));
 
     candidate.regressionReasons = [{
@@ -123,29 +224,51 @@ describe('API-v1 state-write performance artifact contract', () => {
     ]));
   });
 
-  it('requires DBW linkage for baseline correctness failures without relaxing the candidate', () => {
+  it('requires DBW linkage for baseline durable failures without relaxing the candidate', () => {
     const baseline = validArtifact();
-    const candidate = validArtifact();
-    baseline.workloads[2].summary.correctness.receiptCount -= 1;
+    const candidate = validArtifact({ candidate: true });
+    removeReceiptAndRefresh(baseline.workloads[2], false);
 
     expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(expect.arrayContaining([
       expect.stringContaining('baseline correctness already fails'),
       expect.stringContaining('no DBW finding linkage'),
     ]));
 
-    baseline.workloads[2].summary.correctness.dbwFindings = ['DBW-EXAMPLE'];
-    candidate.workloads[2].summary.correctness.receiptCount -= 1;
-    candidate.workloads[2].summary.correctness.dbwFindings = ['DBW-EXAMPLE'];
+    for (const sample of baseline.workloads[2].samples) {
+      sample.correctness.dbwFindings = ['DBW-EXAMPLE'];
+    }
+    refreshSummary(baseline.workloads[2]);
+    removeReceiptAndRefresh(candidate.workloads[2], true);
     expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(expect.arrayContaining([
       expect.stringContaining('candidate correctness failed'),
     ]));
   });
+
+  it('selects both service stacks deterministically and rejects fractional or NaN CLI counts', async () => {
+    const bench = await import(
+      '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
+    ) as Record<string, (...args: unknown[]) => unknown>;
+
+    expect(bench.selectServiceStack).toBeTypeOf('function');
+    expect(Array.from({ length: 100 }, (_, index) => bench.selectServiceStack(index, 2)))
+      .toEqual(Array.from({ length: 100 }, (_, index) => index % 2));
+    expect(bench.parseBenchmarkOptions).toBeTypeOf('function');
+    expect(() => bench.parseBenchmarkOptions(['--runs=3.5'])).toThrow(/integer/);
+    expect(() => bench.parseBenchmarkOptions(['--runs=NaN'])).toThrow(/integer/);
+    expect(() => bench.parseBenchmarkOptions(['--warmup=1.5'])).toThrow(/integer/);
+    expect(() => bench.parseBenchmarkOptions(['--concurrency=10.5'])).toThrow(/integer/);
+  });
 });
 
-function validArtifact(): any {
+function validArtifact(options: { candidate?: boolean } = {}): any {
+  const workloads = [
+    workload('uncontended', 100),
+    workload('shared', 5, options.candidate ? 90 : 100),
+    workload('hot', 1),
+  ];
   return {
     schemaVersion: STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
-    gitCommit: 'a76c6ee012345678901234567890123456789012',
+    gitCommit: 'edf4a529d065dae58d6a9ec3df0af6f6d5486065',
     backend: 'postgres',
     generatedAt: '2026-07-18T00:00:00.000Z',
     measurement: {
@@ -154,54 +277,87 @@ function validArtifact(): any {
       concurrency: 10,
       mutationTimingExcludes: ['setup', 'authentication', 'http'],
       tailSamplesDiscarded: false,
+      counterSources: counterSources(),
     },
-    workloads: [
-      workload('uncontended', 100),
-      workload('shared', 5),
-      workload('hot', 1),
-    ],
+    features: options.candidate
+      ? {
+        presenceSplitFromGroupAggregate: true,
+        governance: 'task10-post-remediation-candidate',
+        evidence: 'presence state stored independently from the group aggregate',
+      }
+      : {
+        presenceSplitFromGroupAggregate: false,
+        governance: 'pre-remediation-baseline',
+        evidence: 'Task 0B baseline recorded before Task 1',
+      },
+    regressionReasons: [],
+    workloads,
   };
 }
 
-function workload(name: string, groups: number): any {
-  const samples = Array.from({ length: 3 }, (_, runIndex) => sample(runIndex));
-  return {
+function workload(name: string, groups: number, durationMs = 100): any {
+  const samples = Array.from({ length: 3 }, (_, runIndex) => sample(runIndex, durationMs));
+  const value = {
     name,
     scale: { clients: 100, groups, concurrency: 10 },
     mutationMix: [...MUTATION_MIX],
     warmupRuns: 1,
     measuredRuns: 3,
     samples,
-    summary: metrics(samples.flatMap((entry) => entry.latencySamplesMs)),
+    summary: {},
   };
+  refreshSummary(value);
+  return value;
 }
 
-function sample(runIndex: number): any {
+function sample(runIndex: number, durationMs: number): any {
+  const commands = MUTATION_MIX.flatMap((kind) =>
+    Array.from({ length: 100 }, (_, ordinal) => ({
+      commandId: `run-${runIndex}:${kind}:${ordinal}`,
+      kind,
+      latencyMs: ordinal % 7 + 1,
+      stackIndex: ordinal % 2,
+      status: 'accepted',
+    }))
+  );
+  const attemptObservations = commands.flatMap((command) => {
+    const sources = command.kind === 'profile-instance'
+      ? ['client-state-service.upsertPrincipal', 'client-state-service.upsertInstance']
+      : [`${command.kind}.production-operation`];
+    return sources.map((source) => ({
+      commandId: command.commandId,
+      attempt: 1,
+      outcome: 'accepted',
+      source,
+    }));
+  });
+  const receiptCommandIds = commands.map((command) => command.commandId);
+  const outboxIntents = commands.flatMap((command) =>
+    INTENT_KINDS[command.kind].map((intentKind, index) => ({
+      intentId: `${command.commandId}:intent:${index}`,
+      commandId: command.commandId,
+      intentKind,
+    }))
+  );
+  const latencySamplesMs = commands.map((command) => command.latencyMs);
   return {
     runIndex,
-    durationMs: 100,
-    throughputPerSecond: 7000,
-    latencySamplesMs: [1, 2, 3, 4, 5, 6, 7],
-    ...metrics([1, 2, 3, 4, 5, 6, 7]),
-  };
-}
-
-function metrics(latencySamplesMs: number[]): any {
-  return {
-    latencyMs: { p50: 4, p95: 7, p99: 7 },
-    throughputPerSecond: 7000,
+    durationMs,
+    throughputPerSecond: commands.length / (durationMs / 1_000),
+    latencySamplesMs,
+    commands,
+    attemptObservations,
+    stackCommandCounts: [350, 350],
+    durable: { receiptCommandIds, outboxIntents },
+    latencyMs: percentileSummary(latencySamplesMs),
     outcomes: {
-      accepted: latencySamplesMs.length,
+      accepted: 700,
       conflicted: 0,
       exhausted: 0,
-      attempts: latencySamplesMs.length,
-      attemptsPerAcceptedMutation: 1,
+      attempts: 800,
+      attemptsPerAcceptedMutation: 800 / 700,
     },
-    sql: {
-      statements: 20,
-      rowsRead: 10,
-      serializedResultBytes: 1000,
-    },
+    sql: { statements: 20, rowsRead: 10, serializedResultBytes: 1000 },
     postgres: {
       transactionDurationMs: 80,
       lockWaitMs: 0,
@@ -212,19 +368,131 @@ function metrics(latencySamplesMs: number[]): any {
     },
     timingsMs: {
       read: 20,
-      compute: 5,
-      validate: 5,
+      compute: 0,
+      validate: 0,
       write: 40,
       transaction: 80,
       outbox: 10,
     },
     correctness: {
-      acceptedCommandCount: latencySamplesMs.length,
-      receiptCount: latencySamplesMs.length,
-      effectfulCommandCount: latencySamplesMs.length,
-      requiredOutboxIntentCount: latencySamplesMs.length * 2,
-      outboxIntentCount: latencySamplesMs.length * 2,
+      acceptedCommandCount: 700,
+      receiptCount: 700,
+      effectfulCommandCount: 600,
+      requiredOutboxIntentCount: 1700,
+      outboxIntentCount: 1700,
       dbwFindings: [],
     },
+  };
+}
+
+function refreshSummary(workloadValue: any): void {
+  const samples = workloadValue.samples;
+  const latencySamples = samples.flatMap((entry: any) => entry.latencySamplesMs);
+  const accepted = sum(samples.map((entry: any) => entry.outcomes.accepted));
+  const attempts = sum(samples.map((entry: any) => entry.outcomes.attempts));
+  workloadValue.summary = {
+    latencyMs: percentileSummary(latencySamples),
+    throughputPerSecond: accepted / (sum(samples.map((entry: any) => entry.durationMs)) / 1_000),
+    outcomes: {
+      accepted,
+      conflicted: sum(samples.map((entry: any) => entry.outcomes.conflicted)),
+      exhausted: sum(samples.map((entry: any) => entry.outcomes.exhausted)),
+      attempts,
+      attemptsPerAcceptedMutation: attempts / accepted,
+    },
+    sql: medianObject(samples.map((entry: any) => entry.sql)),
+    postgres: medianObject(samples.map((entry: any) => entry.postgres)),
+    timingsMs: medianObject(samples.map((entry: any) => entry.timingsMs)),
+    correctness: {
+      acceptedCommandCount: sum(
+        samples.map((entry: any) => entry.correctness.acceptedCommandCount),
+      ),
+      receiptCount: sum(samples.map((entry: any) => entry.correctness.receiptCount)),
+      effectfulCommandCount: sum(
+        samples.map((entry: any) => entry.correctness.effectfulCommandCount),
+      ),
+      requiredOutboxIntentCount: sum(
+        samples.map((entry: any) => entry.correctness.requiredOutboxIntentCount),
+      ),
+      outboxIntentCount: sum(samples.map((entry: any) => entry.correctness.outboxIntentCount)),
+      dbwFindings: [...new Set(samples.flatMap((entry: any) => entry.correctness.dbwFindings))],
+    },
+  };
+}
+
+function setDurations(workloadValue: any, durationMs: number): void {
+  for (const sampleValue of workloadValue.samples) {
+    sampleValue.durationMs = durationMs;
+    sampleValue.throughputPerSecond = 700 / (durationMs / 1_000);
+  }
+  refreshSummary(workloadValue);
+}
+
+function setLatencies(workloadValue: any, latencyMs: number): void {
+  for (const sampleValue of workloadValue.samples) {
+    for (const command of sampleValue.commands) {
+      command.latencyMs = latencyMs;
+    }
+    sampleValue.latencySamplesMs = sampleValue.commands.map((command: any) => command.latencyMs);
+    sampleValue.latencyMs = percentileSummary(sampleValue.latencySamplesMs);
+  }
+  refreshSummary(workloadValue);
+}
+
+function removeReceiptAndRefresh(workloadValue: any, linkFinding: boolean): void {
+  for (const sampleValue of workloadValue.samples) {
+    sampleValue.durable.receiptCommandIds.pop();
+    sampleValue.correctness.receiptCount -= 1;
+    sampleValue.correctness.dbwFindings = linkFinding ? ['DBW-EXAMPLE'] : [];
+  }
+  refreshSummary(workloadValue);
+}
+
+function percentileSummary(values: number[]): { p50: number; p95: number; p99: number } {
+  return {
+    p50: percentile(values, 0.50),
+    p95: percentile(values, 0.95),
+    p99: percentile(values, 0.99),
+  };
+}
+
+function percentile(values: number[], ratio: number): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.ceil(sorted.length * ratio) - 1];
+}
+
+function medianObject(values: Record<string, number>[]): Record<string, number> {
+  return Object.fromEntries(
+    Object.keys(values[0]).map((key) => [key, median(values.map((value) => value[key]))]),
+  );
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+function counterSources(): Record<string, string> {
+  return {
+    sql: 'thin postgres.js wrapper',
+    rowsRead: 'returned rows from read-classified SQL',
+    serializedResultBytes: 'UTF-8 JSON bytes returned by SQL',
+    transactionDuration: 'postgres.js begin wall duration',
+    lockWait: '5ms pg_stat_activity Lock sampling',
+    cpu: 'benchmark process user plus system CPU',
+    sharedBuffers: 'DB-wide pg_stat_database delta',
+    wal: 'cluster pg_current_wal_lsn delta',
+    readTiming: 'read-classified production repository SQL',
+    computeTiming: 'production timing-sink compute observations; zero if unavailable',
+    validateTiming: 'production timing-sink validate observations; zero if unavailable',
+    writeTiming: 'write-classified production repository SQL including receipts',
+    outboxTiming: 'resource_inbox repository SQL only',
+    attempts: 'production service/timing-sink attempt observations',
+    receipts: 'persisted resource_inbox_results rows queried after the phase',
+    outboxIntents: 'persisted resource_inbox rows queried after the phase',
   };
 }

@@ -3,24 +3,34 @@
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-export const STATE_WRITE_ARTIFACT_SCHEMA_VERSION = 'rallar.api-v1.state-write.v1';
+export const STATE_WRITE_ARTIFACT_SCHEMA_VERSION = 'rallar.api-v1.state-write.v2';
+export const STATE_WRITE_COMMANDS_PER_RUN = 700;
+
+export const STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
+  'profile-instance': Object.freeze([
+    'client-snapshot:profile',
+    'client-event:profile',
+    'client-snapshot:instance',
+    'client-event:instance',
+  ]),
+  membership: Object.freeze(['group-snapshot', 'group-event', 'topology-publication']),
+  'presence-connect': Object.freeze(['group-snapshot', 'group-event', 'topology-publication']),
+  'presence-heartbeat': Object.freeze([]),
+  'presence-disconnect': Object.freeze([
+    'group-snapshot',
+    'group-event',
+    'topology-publication',
+  ]),
+  config: Object.freeze(['group-snapshot', 'group-event', 'topology-publication']),
+  'topology-source': Object.freeze(['topology-publication']),
+});
 
 const WORKLOADS = new Map([
   ['uncontended', { clients: 100, groups: 100, concurrency: 10 }],
   ['shared', { clients: 100, groups: 5, concurrency: 10 }],
   ['hot', { clients: 100, groups: 1, concurrency: 10 }],
 ]);
-
-const MUTATION_MIX = [
-  'profile-instance',
-  'membership',
-  'presence-connect',
-  'presence-heartbeat',
-  'presence-disconnect',
-  'config',
-  'topology-source',
-];
-
+const MUTATION_MIX = Object.keys(STATE_WRITE_MUTATION_CONTRACT);
 const TIMING_BUCKETS = ['read', 'compute', 'validate', 'write', 'transaction', 'outbox'];
 const SQL_METRICS = ['statements', 'rowsRead', 'serializedResultBytes'];
 const POSTGRES_METRICS = [
@@ -45,21 +55,38 @@ const CORRECTNESS_METRICS = [
   'requiredOutboxIntentCount',
   'outboxIntentCount',
 ];
+const COUNTER_SOURCES = [
+  'sql',
+  'rowsRead',
+  'serializedResultBytes',
+  'transactionDuration',
+  'lockWait',
+  'cpu',
+  'sharedBuffers',
+  'wal',
+  'readTiming',
+  'computeTiming',
+  'validateTiming',
+  'writeTiming',
+  'outboxTiming',
+  'attempts',
+  'receipts',
+  'outboxIntents',
+];
 
 export function validateStateWriteArtifact(artifact) {
   const errors = [];
   if (!isObject(artifact)) {
     return ['artifact must be an object'];
   }
-
   if (artifact.schemaVersion !== STATE_WRITE_ARTIFACT_SCHEMA_VERSION) {
     errors.push(`schemaVersion must be ${STATE_WRITE_ARTIFACT_SCHEMA_VERSION}`);
   }
   if (typeof artifact.gitCommit !== 'string' || !/^[0-9a-f]{7,40}$/i.test(artifact.gitCommit)) {
     errors.push('gitCommit must be a 7-40 character hexadecimal commit');
   }
-  if (typeof artifact.backend !== 'string' || artifact.backend.length === 0) {
-    errors.push('backend must be a non-empty string');
+  if (artifact.backend !== 'postgres') {
+    errors.push('backend must equal postgres');
   }
   if (
     typeof artifact.generatedAt !== 'string' || !Number.isFinite(Date.parse(artifact.generatedAt))
@@ -68,6 +95,7 @@ export function validateStateWriteArtifact(artifact) {
   }
 
   validateMeasurement(artifact.measurement, errors);
+  validateFeatures(artifact.features, errors);
 
   if (!Array.isArray(artifact.workloads)) {
     errors.push('workloads must be an array');
@@ -82,25 +110,12 @@ export function validateStateWriteArtifact(artifact) {
   ) {
     errors.push('workloads must contain uncontended, shared, and hot exactly once');
   }
-
   for (const [index, workload] of artifact.workloads.entries()) {
     validateWorkload(workload, artifact.measurement, `workloads[${index}]`, errors);
   }
-
-  if (artifact.features !== undefined) {
-    if (
-      !isObject(artifact.features) ||
-      typeof artifact.features.presenceSplitFromGroupAggregate !== 'boolean'
-    ) {
-      errors.push(
-        'features.presenceSplitFromGroupAggregate must be boolean when features is present',
-      );
-    }
+  if (!Array.isArray(artifact.regressionReasons)) {
+    errors.push('regressionReasons must be an array');
   }
-  if (artifact.regressionReasons !== undefined && !Array.isArray(artifact.regressionReasons)) {
-    errors.push('regressionReasons must be an array when present');
-  }
-
   return errors;
 }
 
@@ -108,50 +123,45 @@ export function compareStateWriteArtifacts(baseline, candidate) {
   const errors = [
     ...validateStateWriteArtifact(baseline).map((error) => `baseline: ${error}`),
     ...validateStateWriteArtifact(candidate).map((error) => `candidate: ${error}`),
+    ...validateCandidatePresenceSplit(candidate),
   ];
+  appendCorrectnessGateErrors(errors, baseline, candidate);
   if (errors.length > 0) {
     return errors;
   }
-  if (baseline.backend !== candidate.backend) {
-    errors.push(`backend differs: baseline=${baseline.backend}, candidate=${candidate.backend}`);
-  }
 
-  const baselineByName = new Map(baseline.workloads.map((workload) => [workload.name, workload]));
-  const candidateByName = new Map(candidate.workloads.map((workload) => [workload.name, workload]));
+  const baselineByName = derivedWorkloads(baseline);
+  const candidateByName = derivedWorkloads(candidate);
   const uncontendedBaseline = baselineByName.get('uncontended');
   const uncontendedCandidate = candidateByName.get('uncontended');
-
   compareMaximumRegression(
     errors,
     'uncontended latency p95',
-    uncontendedBaseline.summary.latencyMs.p95,
-    uncontendedCandidate.summary.latencyMs.p95,
+    uncontendedBaseline.latencyMs.p95,
+    uncontendedCandidate.latencyMs.p95,
     0.05,
   );
   compareMaximumRegression(
     errors,
     'uncontended latency p99',
-    uncontendedBaseline.summary.latencyMs.p99,
-    uncontendedCandidate.summary.latencyMs.p99,
+    uncontendedBaseline.latencyMs.p99,
+    uncontendedCandidate.latencyMs.p99,
     0.05,
   );
 
   for (const name of ['shared', 'hot']) {
-    const baselineWorkload = baselineByName.get(name);
-    const candidateWorkload = candidateByName.get(name);
-    if (
-      candidateWorkload.summary.throughputPerSecond < baselineWorkload.summary.throughputPerSecond
-    ) {
+    const baselineThroughput = baselineByName.get(name).throughputPerSecond;
+    const candidateThroughput = candidateByName.get(name).throughputPerSecond;
+    if (candidateThroughput < baselineThroughput) {
       errors.push(
-        `${name} throughput regressed: baseline=${baselineWorkload.summary.throughputPerSecond}, ` +
-          `candidate=${candidateWorkload.summary.throughputPerSecond}`,
+        `${name} throughput regressed: baseline=${baselineThroughput}, ` +
+          `candidate=${candidateThroughput}`,
       );
     }
   }
   if (
-    candidate.features?.presenceSplitFromGroupAggregate === true &&
-    candidateByName.get('shared').summary.throughputPerSecond <=
-      baselineByName.get('shared').summary.throughputPerSecond
+    candidateByName.get('shared').throughputPerSecond <=
+      baselineByName.get('shared').throughputPerSecond
   ) {
     errors.push('shared throughput must improve after presence is split from the group aggregate');
   }
@@ -167,12 +177,8 @@ export function compareStateWriteArtifacts(baseline, candidate) {
         ['postgres', 'transactionDurationMs'],
       ]
     ) {
-      const baselineMedian = median(
-        baselineWorkload.samples.map((sample) => sample[container][metric]),
-      );
-      const candidateMedian = median(
-        candidateWorkload.samples.map((sample) => sample[container][metric]),
-      );
+      const baselineMedian = baselineWorkload[container][metric];
+      const candidateMedian = candidateWorkload[container][metric];
       if (
         candidateMedian > baselineMedian &&
         !hasRecordedReason(candidate, name, `${container}.${metric}`)
@@ -186,13 +192,13 @@ export function compareStateWriteArtifacts(baseline, candidate) {
   }
 
   for (const name of ['uncontended', 'shared']) {
-    const exhausted = candidateByName.get(name).summary.outcomes.exhausted;
+    const exhausted = candidateByName.get(name).outcomes.exhausted;
     if (exhausted !== 0) {
       errors.push(`${name} retry exhaustion must remain zero; received ${exhausted}`);
     }
   }
-  const baselineHotExhausted = baselineByName.get('hot').summary.outcomes.exhausted;
-  const candidateHotExhausted = candidateByName.get('hot').summary.outcomes.exhausted;
+  const baselineHotExhausted = baselineByName.get('hot').outcomes.exhausted;
+  const candidateHotExhausted = candidateByName.get('hot').outcomes.exhausted;
   if (candidateHotExhausted > baselineHotExhausted) {
     errors.push(
       `hot retry exhaustion exceeded baseline: baseline=${baselineHotExhausted}, ` +
@@ -200,26 +206,46 @@ export function compareStateWriteArtifacts(baseline, candidate) {
     );
   }
 
+  return errors;
+}
+
+function appendCorrectnessGateErrors(errors, baseline, candidate) {
+  if (!hasDerivableWorkloads(baseline) || !hasDerivableWorkloads(candidate)) {
+    return;
+  }
+  const baselineByName = derivedWorkloads(baseline);
+  const candidateByName = derivedWorkloads(candidate);
   for (const name of WORKLOADS.keys()) {
-    const baselineWorkload = baselineByName.get(name);
-    const candidateWorkload = candidateByName.get(name);
-    const baselineFailures = correctnessFailures(baselineWorkload.summary.correctness);
-    if (
-      baselineFailures.length > 0 &&
-      baselineWorkload.summary.correctness.dbwFindings.length === 0
-    ) {
+    const baselineCorrectness = baselineByName.get(name)?.correctness;
+    const candidateCorrectness = candidateByName.get(name)?.correctness;
+    if (!baselineCorrectness || !candidateCorrectness) {
+      continue;
+    }
+    const baselineFailures = correctnessFailures(baselineCorrectness);
+    if (baselineFailures.length > 0 && baselineCorrectness.dbwFindings.length === 0) {
       errors.push(
         `${name} baseline correctness already fails (${
           baselineFailures.join(', ')
         }) but has no DBW finding linkage`,
       );
     }
-    for (const failure of correctnessFailures(candidateWorkload.summary.correctness)) {
+    for (const failure of correctnessFailures(candidateCorrectness)) {
       errors.push(`${name} candidate correctness failed: ${failure}`);
     }
   }
+}
 
-  return errors;
+function hasDerivableWorkloads(artifact) {
+  return Array.isArray(artifact?.workloads) && artifact.workloads.length === WORKLOADS.size &&
+    artifact.workloads.every((workload) =>
+      WORKLOADS.has(workload?.name) && Array.isArray(workload.samples) &&
+      workload.samples.length > 0 && workload.samples.every((sample) =>
+        Array.isArray(sample?.commands) && Array.isArray(sample?.attemptObservations) &&
+        Array.isArray(sample?.durable?.receiptCommandIds) &&
+        Array.isArray(sample?.durable?.outboxIntents) &&
+        Array.isArray(sample?.correctness?.dbwFindings)
+      )
+    );
 }
 
 function validateMeasurement(measurement, errors) {
@@ -239,13 +265,54 @@ function validateMeasurement(measurement, errors) {
   if (measurement.tailSamplesDiscarded !== false) {
     errors.push('measurement.tailSamplesDiscarded must be false');
   }
-  const exclusions = measurement.mutationTimingExcludes;
   if (
-    !Array.isArray(exclusions) ||
-    !['setup', 'authentication', 'http'].every((value) => exclusions.includes(value))
+    !Array.isArray(measurement.mutationTimingExcludes) ||
+    !['setup', 'authentication', 'http'].every((value) =>
+      measurement.mutationTimingExcludes.includes(value)
+    )
   ) {
     errors.push('measurement.mutationTimingExcludes must include setup, authentication, and http');
   }
+  for (const source of COUNTER_SOURCES) {
+    if (
+      !isObject(measurement.counterSources) ||
+      typeof measurement.counterSources[source] !== 'string' ||
+      measurement.counterSources[source].trim().length === 0
+    ) {
+      errors.push(`measurement.counterSources.${source} must be a non-empty disclosure`);
+    }
+  }
+}
+
+function validateFeatures(features, errors) {
+  if (!isObject(features)) {
+    errors.push('features must be an object with governed presence-split metadata');
+    return;
+  }
+  if (typeof features.presenceSplitFromGroupAggregate !== 'boolean') {
+    errors.push('features.presenceSplitFromGroupAggregate must be boolean');
+  }
+  for (const field of ['governance', 'evidence']) {
+    if (typeof features[field] !== 'string' || features[field].trim().length === 0) {
+      errors.push(`features.${field} must be a non-empty string`);
+    }
+  }
+}
+
+function validateCandidatePresenceSplit(candidate) {
+  const features = candidate?.features;
+  if (
+    features?.presenceSplitFromGroupAggregate !== true ||
+    features?.governance !== 'task10-post-remediation-candidate' ||
+    typeof features?.evidence !== 'string' ||
+    features.evidence.trim().length === 0
+  ) {
+    return [
+      'candidate must declare presenceSplitFromGroupAggregate=true with ' +
+      'task10-post-remediation-candidate governance and evidence',
+    ];
+  }
+  return [];
 }
 
 function validateWorkload(workload, measurement, path, errors) {
@@ -276,22 +343,266 @@ function validateWorkload(workload, measurement, path, errors) {
     errors.push(`${path}.samples must contain exactly measurement.measuredRuns entries`);
   } else {
     for (const [index, sample] of workload.samples.entries()) {
-      validateMetrics(sample, `${path}.samples[${index}]`, errors, true);
-      if (sample.runIndex !== index) {
-        errors.push(`${path}.samples[${index}].runIndex must equal ${index}`);
-      }
-      requireMetric(sample, 'durationMs', `${path}.samples[${index}]`, errors);
-      if (!Array.isArray(sample.latencySamplesMs) || sample.latencySamplesMs.length === 0) {
-        errors.push(`${path}.samples[${index}].latencySamplesMs must be a non-empty array`);
-      } else if (sample.latencySamplesMs.some((value) => !isNonNegativeNumber(value))) {
-        errors.push(`${path}.samples[${index}].latencySamplesMs must contain non-negative numbers`);
-      }
+      validateSample(sample, `${path}.samples[${index}]`, index, errors);
+    }
+    if (workload.samples.length > 0) {
+      const derived = deriveWorkloadSummary(workload.samples);
+      validateDerivedSummary(workload.summary, derived, `${path}.summary`, errors);
     }
   }
-  validateMetrics(workload.summary, `${path}.summary`, errors, false);
 }
 
-function validateMetrics(metrics, path, errors, rawSample) {
+function validateSample(sample, path, runIndex, errors) {
+  validateMetrics(sample, path, errors);
+  if (sample.runIndex !== runIndex) {
+    errors.push(`${path}.runIndex must equal ${runIndex}`);
+  }
+  requireMetric(sample, 'durationMs', path, errors);
+  if (
+    !Array.isArray(sample.latencySamplesMs) ||
+    sample.latencySamplesMs.length !== STATE_WRITE_COMMANDS_PER_RUN
+  ) {
+    errors.push(`${path}.latencySamplesMs must contain exactly 700 command latencies`);
+  }
+  if (!Array.isArray(sample.commands) || sample.commands.length !== STATE_WRITE_COMMANDS_PER_RUN) {
+    errors.push(`${path}.commands must contain exactly 700 raw command records`);
+    return;
+  }
+
+  const commandIds = new Set();
+  const kindCounts = new Map(MUTATION_MIX.map((kind) => [kind, 0]));
+  const stackCounts = [0, 0];
+  for (const [index, command] of sample.commands.entries()) {
+    const commandPath = `${path}.commands[${index}]`;
+    if (
+      !isObject(command) || typeof command.commandId !== 'string' || command.commandId.length === 0
+    ) {
+      errors.push(`${commandPath}.commandId must be non-empty`);
+      continue;
+    }
+    if (commandIds.has(command.commandId)) {
+      errors.push(`${path}.command IDs must be unique`);
+    }
+    commandIds.add(command.commandId);
+    if (!MUTATION_MIX.includes(command.kind)) {
+      errors.push(`${commandPath}.kind is not in the mutation contract`);
+    } else {
+      kindCounts.set(command.kind, kindCounts.get(command.kind) + 1);
+    }
+    if (command.status !== 'accepted') {
+      errors.push(
+        `${commandPath}.status must be accepted; failed/missing raw commands are invalid`,
+      );
+    }
+    if (!isNonNegativeNumber(command.latencyMs)) {
+      errors.push(`${commandPath}.latencyMs must be non-negative`);
+    }
+    if (sample.latencySamplesMs?.[index] !== command.latencyMs) {
+      errors.push(`${path}.latencySamplesMs must exactly preserve raw command latency order`);
+    }
+    if (command.stackIndex !== 0 && command.stackIndex !== 1) {
+      errors.push(`${commandPath}.stackIndex must be 0 or 1`);
+    } else {
+      stackCounts[command.stackIndex] += 1;
+    }
+  }
+  for (const kind of MUTATION_MIX) {
+    if (kindCounts.get(kind) !== 100) {
+      errors.push(`${path}.commands must contain exactly 100 ${kind} commands`);
+    }
+  }
+  if (stackCounts.some((count) => count === 0)) {
+    errors.push(`${path}: both independent service stacks must execute commands`);
+  }
+  if (!sameNumericArray(sample.stackCommandCounts, stackCounts)) {
+    errors.push(`${path}.stackCommandCounts does not match raw commands`);
+  }
+
+  const dbwFindings = Array.isArray(sample.correctness?.dbwFindings)
+    ? sample.correctness.dbwFindings
+    : [];
+  const attempts = deriveAttempts(sample.attemptObservations, commandIds, path, errors);
+  compareNumber(
+    sample.outcomes?.attempts,
+    attempts.attempts,
+    `${path}.outcomes.attempts`,
+    errors,
+    'attempt observations',
+  );
+  compareNumber(
+    sample.outcomes?.conflicted,
+    attempts.conflicted,
+    `${path}.outcomes.conflicted`,
+    errors,
+    'attempt observations',
+  );
+  compareNumber(
+    sample.outcomes?.exhausted,
+    attempts.exhausted,
+    `${path}.outcomes.exhausted`,
+    errors,
+    'attempt observations',
+  );
+  compareNumber(
+    sample.outcomes?.attemptsPerAcceptedMutation,
+    attempts.attempts / STATE_WRITE_COMMANDS_PER_RUN,
+    `${path}.outcomes.attemptsPerAcceptedMutation`,
+    errors,
+    'attempt observations',
+  );
+  if (attempts.exhausted !== 0) {
+    errors.push(`${path}: raw exhausted attempts must be zero`);
+  }
+
+  const durable = deriveDurableCorrectness(sample, commandIds, dbwFindings, path, errors);
+  compareNumber(
+    sample.correctness?.acceptedCommandCount,
+    STATE_WRITE_COMMANDS_PER_RUN,
+    `${path}.correctness.acceptedCommandCount`,
+    errors,
+    'raw commands',
+  );
+  compareNumber(
+    sample.correctness?.receiptCount,
+    durable.receiptCount,
+    `${path}.correctness.receiptCount`,
+    errors,
+    'durable records',
+  );
+  compareNumber(
+    sample.correctness?.effectfulCommandCount,
+    durable.effectfulCommandCount,
+    `${path}.correctness.effectfulCommandCount`,
+    errors,
+    'mutation contract',
+  );
+  compareNumber(
+    sample.correctness?.requiredOutboxIntentCount,
+    durable.requiredOutboxIntentCount,
+    `${path}.correctness.requiredOutboxIntentCount`,
+    errors,
+    'mutation contract',
+  );
+  compareNumber(
+    sample.correctness?.outboxIntentCount,
+    durable.outboxIntentCount,
+    `${path}.correctness.outboxIntentCount`,
+    errors,
+    'durable records',
+  );
+  compareNumber(
+    sample.outcomes?.accepted,
+    STATE_WRITE_COMMANDS_PER_RUN,
+    `${path}.outcomes.accepted`,
+    errors,
+    'raw commands',
+  );
+
+  const latency = percentileSummary(sample.commands.map((command) => command.latencyMs));
+  for (const metric of ['p50', 'p95', 'p99']) {
+    compareNumber(
+      sample.latencyMs?.[metric],
+      latency[metric],
+      `${path}.latencyMs.${metric}`,
+      errors,
+      'raw samples',
+    );
+  }
+  compareNumber(
+    sample.throughputPerSecond,
+    STATE_WRITE_COMMANDS_PER_RUN / (sample.durationMs / 1_000),
+    `${path}.throughputPerSecond`,
+    errors,
+    'raw commands',
+  );
+}
+
+function deriveAttempts(observations, commandIds, path, errors) {
+  if (!Array.isArray(observations)) {
+    errors.push(`${path}.attemptObservations must be an array`);
+    return { attempts: 0, conflicted: 0, exhausted: 0 };
+  }
+  const observedCommands = new Set();
+  let conflicted = 0;
+  let exhausted = 0;
+  for (const [index, observation] of observations.entries()) {
+    const observationPath = `${path}.attemptObservations[${index}]`;
+    if (!isObject(observation) || !commandIds.has(observation.commandId)) {
+      errors.push(`${observationPath}.commandId must link to a raw command`);
+      continue;
+    }
+    observedCommands.add(observation.commandId);
+    if (!Number.isInteger(observation.attempt) || observation.attempt < 1) {
+      errors.push(`${observationPath}.attempt must be a positive integer`);
+    }
+    if (!['accepted', 'conflicted', 'exhausted'].includes(observation.outcome)) {
+      errors.push(`${observationPath}.outcome is invalid`);
+    }
+    if (typeof observation.source !== 'string' || observation.source.trim().length === 0) {
+      errors.push(`${observationPath}.source must disclose a timing-sink source`);
+    }
+    conflicted += observation.outcome === 'conflicted' ? 1 : 0;
+    exhausted += observation.outcome === 'exhausted' ? 1 : 0;
+  }
+  if (observedCommands.size !== commandIds.size) {
+    errors.push(`${path}.attemptObservations must cover every raw command`);
+  }
+  return { attempts: observations.length, conflicted, exhausted };
+}
+
+function deriveDurableCorrectness(sample, commandIds, dbwFindings, path, errors) {
+  const receipts = sample.durable?.receiptCommandIds;
+  const intents = sample.durable?.outboxIntents;
+  const receiptIds = Array.isArray(receipts) ? receipts : [];
+  const intentRecords = Array.isArray(intents) ? intents : [];
+  if (!Array.isArray(receipts)) {
+    errors.push(`${path}.durable.receiptCommandIds must be an array`);
+  }
+  if (!Array.isArray(intents)) {
+    errors.push(`${path}.durable.outboxIntents must be an array`);
+  }
+  const receiptSet = new Set(receiptIds);
+  if (receiptSet.size !== receiptIds.length) {
+    errors.push(`${path}.durable receipt command IDs must be unique`);
+  }
+  const acceptedIds = [...commandIds].sort();
+  if (!sameStringArray([...receiptSet].sort(), acceptedIds) && dbwFindings.length === 0) {
+    errors.push(`${path}.durable receipts must match accepted command IDs exactly`);
+  }
+
+  const intentIds = intentRecords.map((intent) => intent?.intentId);
+  if (new Set(intentIds).size !== intentIds.length) {
+    errors.push(`${path}.durable outbox intent IDs must be unique`);
+  }
+  const expected = sample.commands.flatMap((command) =>
+    STATE_WRITE_MUTATION_CONTRACT[command.kind].map((intentKind) =>
+      `${command.commandId}\u0000${intentKind}`
+    )
+  ).sort();
+  const actual = intentRecords.map((intent, index) => {
+    if (
+      !isObject(intent) || typeof intent.intentId !== 'string' ||
+      !commandIds.has(intent.commandId) || typeof intent.intentKind !== 'string'
+    ) {
+      errors.push(`${path}.durable.outboxIntents[${index}] must link a unique intent to a command`);
+    }
+    return `${intent?.commandId}\u0000${intent?.intentKind}`;
+  }).sort();
+  if (!sameStringArray(actual, expected) && dbwFindings.length === 0) {
+    errors.push(`${path}.durable outbox intents do not match the mutation contract`);
+  }
+  const effectfulCommandCount =
+    sample.commands.filter((command) => STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0)
+      .length;
+  return {
+    receiptCount: receiptIds.length,
+    effectfulCommandCount,
+    requiredOutboxIntentCount: expected.length,
+    outboxIntentCount: intentRecords.length,
+  };
+}
+
+function validateMetrics(metrics, path, errors) {
   if (!isObject(metrics)) {
     errors.push(`${path} must be an object`);
     return;
@@ -318,15 +629,134 @@ function validateMetrics(metrics, path, errors, rawSample) {
   if (!Array.isArray(metrics.correctness?.dbwFindings)) {
     errors.push(`${path}.correctness.dbwFindings must be an array`);
   }
-  if (rawSample && metrics.outcomes?.accepted !== metrics.correctness?.acceptedCommandCount) {
-    errors.push(`${path} accepted outcome and correctness command count must agree`);
+}
+
+function deriveWorkloadSummary(samples) {
+  const latencySamples = samples.flatMap((sample) =>
+    sample.commands.map((command) => command.latencyMs)
+  );
+  const accepted = samples.reduce((total, sample) => total + sample.commands.length, 0);
+  const durationMs = sum(samples.map((sample) => sample.durationMs));
+  const attemptMetrics = samples.map((sample) => ({
+    attempts: sample.attemptObservations.length,
+    conflicted: sample.attemptObservations.filter((entry) => entry.outcome === 'conflicted').length,
+    exhausted: sample.attemptObservations.filter((entry) => entry.outcome === 'exhausted').length,
+  }));
+  const attempts = sum(attemptMetrics.map((entry) => entry.attempts));
+  const dbwFindings = [...new Set(samples.flatMap((sample) => sample.correctness.dbwFindings))];
+  return {
+    latencyMs: percentileSummary(latencySamples),
+    throughputPerSecond: accepted / (durationMs / 1_000),
+    outcomes: {
+      accepted,
+      conflicted: sum(attemptMetrics.map((entry) => entry.conflicted)),
+      exhausted: sum(attemptMetrics.map((entry) => entry.exhausted)),
+      attempts,
+      attemptsPerAcceptedMutation: attempts / accepted,
+    },
+    sql: medianObject(samples.map((sample) => sample.sql)),
+    postgres: medianObject(samples.map((sample) => sample.postgres)),
+    timingsMs: medianObject(samples.map((sample) => sample.timingsMs)),
+    correctness: {
+      acceptedCommandCount: accepted,
+      receiptCount: sum(samples.map((sample) => sample.durable.receiptCommandIds.length)),
+      effectfulCommandCount: sum(
+        samples.map((sample) =>
+          sample.commands.filter((command) =>
+            STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0
+          ).length
+        ),
+      ),
+      requiredOutboxIntentCount: sum(samples.map((sample) =>
+        sample.commands.reduce(
+          (total, command) => total + STATE_WRITE_MUTATION_CONTRACT[command.kind].length,
+          0,
+        )
+      )),
+      outboxIntentCount: sum(samples.map((sample) => sample.durable.outboxIntents.length)),
+      dbwFindings,
+    },
+  };
+}
+
+function validateDerivedSummary(summary, derived, path, errors) {
+  validateMetrics(summary, path, errors);
+  for (const metric of ['p50', 'p95', 'p99']) {
+    compareNumber(
+      summary?.latencyMs?.[metric],
+      derived.latencyMs[metric],
+      `${path}.latencyMs.${metric}`,
+      errors,
+      'raw samples',
+    );
+  }
+  compareNumber(
+    summary?.throughputPerSecond,
+    derived.throughputPerSecond,
+    `${path}.throughputPerSecond`,
+    errors,
+    'raw samples',
+  );
+  for (const metric of OUTCOME_METRICS) {
+    compareNumber(
+      summary?.outcomes?.[metric],
+      derived.outcomes[metric],
+      `${path}.outcomes.${metric}`,
+      errors,
+      'raw samples',
+    );
+  }
+  for (const metric of SQL_METRICS) {
+    compareNumber(
+      summary?.sql?.[metric],
+      derived.sql[metric],
+      `${path}.sql.${metric}`,
+      errors,
+      'sample median',
+    );
+  }
+  for (const metric of POSTGRES_METRICS) {
+    compareNumber(
+      summary?.postgres?.[metric],
+      derived.postgres[metric],
+      `${path}.postgres.${metric}`,
+      errors,
+      'sample median',
+    );
+  }
+  for (const metric of TIMING_BUCKETS) {
+    compareNumber(
+      summary?.timingsMs?.[metric],
+      derived.timingsMs[metric],
+      `${path}.timingsMs.${metric}`,
+      errors,
+      'sample median',
+    );
+  }
+  for (const metric of CORRECTNESS_METRICS) {
+    compareNumber(
+      summary?.correctness?.[metric],
+      derived.correctness[metric],
+      `${path}.correctness.${metric}`,
+      errors,
+      'raw durable samples',
+    );
+  }
+  if (
+    !sameStringArray(
+      [...(summary?.correctness?.dbwFindings ?? [])].sort(),
+      [...derived.correctness.dbwFindings].sort(),
+    )
+  ) {
+    errors.push(`${path}.correctness.dbwFindings does not match raw samples`);
   }
 }
 
-function requireMetric(container, metric, path, errors) {
-  if (!isObject(container) || !isNonNegativeNumber(container[metric])) {
-    errors.push(`${path}.${metric} must be a non-negative finite number`);
-  }
+function derivedWorkloads(artifact) {
+  return new Map(artifact.workloads.map((workload) => [
+    workload.name,
+    deriveWorkloadSummary(workload.samples),
+  ]));
 }
 
 function correctnessFailures(correctness) {
@@ -344,9 +774,33 @@ function correctnessFailures(correctness) {
   return failures;
 }
 
+function percentileSummary(values) {
+  return {
+    p50: percentile(values, 0.50),
+    p95: percentile(values, 0.95),
+    p99: percentile(values, 0.99),
+  };
+}
+
+function percentile(values, ratio) {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.ceil(sorted.length * ratio) - 1];
+}
+
+function medianObject(values) {
+  return Object.fromEntries(
+    Object.keys(values[0]).map((key) => [key, median(values.map((value) => value[key]))]),
+  );
+}
+
+function median(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
 function compareMaximumRegression(errors, label, baseline, candidate, ratio) {
-  const maximum = baseline * (1 + ratio);
-  if (candidate > maximum) {
+  if (candidate > baseline * (1 + ratio)) {
     errors.push(
       `${label} regressed by more than ${
         ratio * 100
@@ -356,16 +810,40 @@ function compareMaximumRegression(errors, label, baseline, candidate, ratio) {
 }
 
 function hasRecordedReason(candidate, workload, metric) {
-  return candidate.regressionReasons?.some((entry) =>
+  return candidate.regressionReasons.some((entry) =>
     entry && entry.workload === workload && entry.metric === metric &&
     typeof entry.reason === 'string' && entry.reason.trim().length > 0
-  ) ?? false;
+  );
 }
 
-function median(values) {
-  const sorted = [...values].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+function compareNumber(actual, expected, path, errors, source) {
+  if (!numbersEqual(actual, expected)) {
+    errors.push(`${path} does not match ${source}: expected=${expected}, actual=${actual}`);
+  }
+}
+
+function numbersEqual(left, right) {
+  return isNonNegativeNumber(left) && isNonNegativeNumber(right) &&
+    Math.abs(left - right) <= Math.max(1e-9, Math.abs(right) * 1e-9);
+}
+
+function requireMetric(container, metric, path, errors) {
+  if (!isObject(container) || !isNonNegativeNumber(container[metric])) {
+    errors.push(`${path}.${metric} must be a non-negative finite number`);
+  }
+}
+
+function sameNumericArray(left, right) {
+  return Array.isArray(left) && left.length === right.length &&
+    left.every((value, index) => value === right[index]);
+}
+
+function sameStringArray(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function sum(values) {
+  return values.reduce((total, value) => total + value, 0);
 }
 
 function isObject(value) {

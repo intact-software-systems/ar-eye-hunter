@@ -108,6 +108,7 @@ npm run perf:api-v1:state-write -- \
   --backend=postgres \
   --warmup=1 \
   --runs=3 \
+  --concurrency=10 \
   --out=tmp/perf/api-v1-state-write-baseline.json
 ```
 
@@ -120,13 +121,23 @@ membership, presence connect/heartbeat/disconnect, group config, and topology
 source config. Workload group counts are 100 (`uncontended`), five (`shared`),
 and one (`hot`).
 
-Artifacts use schema `rallar.api-v1.state-write.v1` and retain every measured
-run and command-latency sample. They include latency percentiles, throughput,
-outcomes and attempts, SQL/row/serialized-byte metrics, transaction and phase
-timings, PostgreSQL lock/buffer/WAL counters, process CPU time, and receipt/outbox
-correctness counters. PostgreSQL buffer and WAL counters are captured immediately
-before and after each measured phase; lock waits are sampled from
+Artifacts use schema `rallar.api-v1.state-write.v2`. Each measured run retains
+exactly 700 command records and latencies (100 of every mutation kind), balanced
+service-stack counts, and production-service timing observations for attempts.
+It also includes latency percentiles, throughput, SQL/row/serialized-byte
+metrics, transaction and production phase timings, PostgreSQL lock/buffer/WAL
+counters, and process CPU time. PostgreSQL buffer and WAL counters are captured
+immediately before and after each measured phase; lock waits are sampled from
 `pg_stat_activity` while the phase runs.
+
+Receipts are persisted with the production replacement path and outbox entries
+carry deterministic intent IDs, originating command IDs, and contract intent
+kinds. After timed execution, the harness independently queries
+`resource_inbox_results` and `resource_inbox`; the artifact's durable evidence
+and correctness counters are derived from those rows, not from in-memory write
+counters. The required intent contract includes client snapshot/event intents,
+group snapshot/event intents, group topology publication, and topology-source
+publication. Every metric source is disclosed in `measurement.counterSources`.
 
 Compare a candidate with its unmodified baseline:
 
@@ -139,8 +150,13 @@ node scripts/perf/compare-api-v1-state-write-results.mjs \
 The comparison rejects invalid artifacts, uncontended p95/p99 regressions above
 5%, shared or hot throughput regressions, unreasoned median SQL/row/byte/
 transaction increases, disallowed retry exhaustion, and any candidate receipt or
-outbox cardinality failure. A baseline correctness failure remains a failure
-sample and must link to a DBW finding; it never weakens candidate expectations.
+outbox contract failure. A candidate must declare the governed Task 10
+presence-split feature with evidence and must improve shared-group throughput.
+Consequently, comparing a pre-remediation baseline with itself is expected to
+fail. A baseline correctness failure remains a failure sample and must link to a
+DBW finding; it never weakens candidate expectations. The validator recomputes
+all percentiles, throughput, outcome, attempt, median, and correctness summaries
+from raw records before applying comparison gates.
 
 ## Focused Runtime Harness
 
