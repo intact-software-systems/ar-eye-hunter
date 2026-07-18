@@ -21,10 +21,7 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-    "types": [
-      "deno.ns",
-      "deno.unstable"
-    ],
+    "types": [],
     "lib": [
       "ES2023",
       "DOM",

@@ -838,7 +838,7 @@
       },
       "npm:ar-eye-hunter-v1@0.1.0": {
         "dependencies": [
-          "npm:@babylonjs/core@8",
+          "npm:@babylonjs/core@9.17.0",
           "npm:@js-temporal/polyfill@~0.5.1",
           "npm:@mlc-ai/web-llm@~0.2.84",
           "npm:graphology@0.26",
@@ -846,11 +846,7 @@
           "npm:react@19"
         ]
       },
-      "npm:ar-platform-monorepo@0.1.0": {
-        "dependencies": [
-          "npm:@babylonjs/loaders@^9.6.2"
-        ]
-      },
+      "npm:ar-platform-monorepo@0.1.0": {},
       "npm:rallar-black-box-headless@0.1.0": {},
       "npm:rallar-black-box@0.1.0": {
         "dependencies": [
@@ -863,8 +859,8 @@
       },
       "npm:relic-hunters-v1@0.1.0": {
         "dependencies": [
-          "npm:@babylonjs/core@8",
-          "npm:@babylonjs/loaders@^8.56.2",
+          "npm:@babylonjs/core@9.17.0",
+          "npm:@babylonjs/loaders@9.17.0",
           "npm:@js-temporal/polyfill@~0.5.1",
           "npm:graphology@0.26",
           "npm:react-dom@19",

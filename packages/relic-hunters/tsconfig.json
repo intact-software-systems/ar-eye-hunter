@@ -10,22 +10,22 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-    "baseUrl": "../..",
+    "types": [],
     "paths": {
       "@relic-hunters/*": [
-        "packages/relic-hunters/*"
+        "../../packages/relic-hunters/*"
       ],
       "@shared-web/*": [
-        "packages/shared-web/*"
+        "../../packages/shared-web/*"
       ],
       "@shared-server/*": [
-        "packages/shared-server/*"
+        "../../packages/shared-server/*"
       ],
       "@shared-graph/*": [
-        "packages/shared-graph/*"
+        "../../packages/shared-graph/*"
       ],
       "@shared/*": [
-        "packages/shared/*"
+        "../../packages/shared/*"
       ]
     }
   },

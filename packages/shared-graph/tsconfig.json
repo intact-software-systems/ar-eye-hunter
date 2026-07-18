@@ -10,16 +10,16 @@
     "strict": true,
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
-    "baseUrl": "../..",
+    "types": [],
     "paths": {
       "@shared-web/*": [
-        "packages/shared-web/*"
+        "../../packages/shared-web/*"
       ],
       "@shared-graph/*": [
-        "packages/shared-graph/*"
+        "../../packages/shared-graph/*"
       ],
       "@shared/*": [
-        "packages/shared/*"
+        "../../packages/shared/*"
       ]
     }
   },

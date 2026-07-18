@@ -622,7 +622,7 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.getByRole('button', { name: 'Atmosphere' }).first()).toBeVisible();
     });
 
-    test('scene doorway prompt primes a move plan without submitting it', async ({ page }) => {
+    test('room selection primes a move plan without submitting it', async ({ page }) => {
         test.setTimeout(60_000);
         const room = groupSnapshot({ onlineMemberCount: 1 });
         const commandBodies: unknown[] = [];
@@ -645,11 +645,11 @@ test.describe('Relic Hunters web app', () => {
         await expect(canvas).toBeVisible();
         await expect.poll(() => sceneHasVisiblePixels(page)).toBe(true);
 
-        await page.keyboard.down('w');
-        const movePrompt = page.getByRole('button', { name: /Move to Hallway/ });
-        await expect(movePrompt).toBeVisible({ timeout: 15_000 });
-        await movePrompt.click();
-        await page.keyboard.up('w');
+        await page
+            .getByLabel('Castle room map')
+            .getByRole('button', { name: 'Hallway' })
+            .click();
+        await page.getByRole('button', { name: 'Prime Move → Hallway' }).click();
 
         await expect(page.getByText('Step into an adjacent room')).toBeVisible();
         await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
@@ -878,7 +878,7 @@ test.describe('Relic Hunters web app', () => {
         await expect(page.getByLabel('Castle room map').getByRole('button', { name: 'Trap Room' })).toHaveClass(/clue-target/);
     });
 
-    test('shows the review phase before continuing to the next turn', async ({ page }) => {
+    test('shows the review phase before the director continues to the next turn', async ({ page }) => {
         test.setTimeout(60_000);
         const commandBodies: unknown[] = [];
         await installBrowserDoubles(page);
@@ -915,11 +915,11 @@ test.describe('Relic Hunters web app', () => {
             'Alice searched the crates and marked a false supply trail.',
         );
 
-        await page.getByRole('button', { name: 'Continue to next turn' }).click();
-
+        await expect.poll(() =>
+            commandBodies.some((body) => isCommandKind(body, 'continue-review'))
+        ).toBe(true);
         await expect(page.getByLabel('Current turn summary')).toContainText('Choose one plan');
         await expect(page.getByRole('button', { name: 'Submit Plan' })).toBeEnabled();
-        expect(commandBodies.some((body) => isCommandKind(body, 'continue-review'))).toBe(true);
     });
 
     test('Rallar browser bootstrap reads server config, state snapshots, and opens WebSocket', async ({ page }) => {
