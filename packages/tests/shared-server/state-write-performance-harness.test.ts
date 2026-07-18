@@ -347,6 +347,51 @@ describe('API-v1 state-write performance artifact contract', () => {
     expect(() => bench.parseBenchmarkOptions(['--runs=0'])).toThrow(/integer/);
     expect(() => bench.parseBenchmarkOptions(['--concurrency=-1'])).toThrow(/integer/);
   });
+
+  it('returns descriptive errors instead of throwing for malformed JSON-like derivation inputs', () => {
+    const mutations: Array<[string, (artifact: any) => void]> = [
+      ['unsupported command kind', (artifact) => {
+        artifact.workloads[0].samples[0].commands[0].kind = 'unsupported-kind';
+      }],
+      ['missing command kind', (artifact) => {
+        delete artifact.workloads[0].samples[0].commands[0].kind;
+      }],
+      ['null sample', (artifact) => {
+        artifact.workloads[0].samples[0] = null;
+      }],
+      ['missing commands array', (artifact) => {
+        delete artifact.workloads[0].samples[0].commands;
+      }],
+      ['null raw command', (artifact) => {
+        artifact.workloads[0].samples[0].commands[0] = null;
+      }],
+      ['missing attempt observations', (artifact) => {
+        delete artifact.workloads[0].samples[0].attemptObservations;
+      }],
+      ['null attempt observation', (artifact) => {
+        artifact.workloads[0].samples[0].attemptObservations[0] = null;
+      }],
+      ['missing durable evidence', (artifact) => {
+        delete artifact.workloads[0].samples[0].durable;
+      }],
+    ];
+
+    for (const [label, mutate] of mutations) {
+      const malformed = validArtifact();
+      mutate(malformed);
+
+      expect(() => validateStateWriteArtifact(malformed), label).not.toThrow();
+      expect(validateStateWriteArtifact(malformed), label).not.toEqual([]);
+      expect(() => compareStateWriteArtifacts(validArtifact(), malformed), label).not.toThrow();
+      expect(compareStateWriteArtifacts(validArtifact(), malformed), label).toEqual(
+        expect.arrayContaining([expect.stringContaining('candidate:')]),
+      );
+      expect(() => compareStateWriteArtifacts(malformed, validArtifact({ candidate: true })), label)
+        .not.toThrow();
+      expect(compareStateWriteArtifacts(malformed, validArtifact({ candidate: true })), label)
+        .toEqual(expect.arrayContaining([expect.stringContaining('baseline:')]));
+    }
+  });
 });
 
 function validArtifact(options: { candidate?: boolean } = {}): any {

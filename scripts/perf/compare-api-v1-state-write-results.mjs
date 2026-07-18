@@ -76,6 +76,21 @@ const COUNTER_SOURCES = [
 
 export function validateStateWriteArtifact(
   artifact,
+  options = {},
+) {
+  try {
+    return validateStateWriteArtifactInternal(artifact, options);
+  } catch (error) {
+    return [
+      `artifact contains malformed nested data that could not be derived safely: ${
+        errorMessage(error)
+      }`,
+    ];
+  }
+}
+
+function validateStateWriteArtifactInternal(
+  artifact,
   { allowDbwLinkedDurableDefects = true } = {},
 ) {
   const errors = [];
@@ -129,11 +144,25 @@ export function validateStateWriteArtifact(
 }
 
 export function compareStateWriteArtifacts(baseline, candidate) {
+  try {
+    return compareStateWriteArtifactsInternal(baseline, candidate);
+  } catch (error) {
+    return [
+      `comparison contains malformed nested data that could not be derived safely: ${
+        errorMessage(error)
+      }`,
+    ];
+  }
+}
+
+function compareStateWriteArtifactsInternal(baseline, candidate) {
+  const baselineValidation = validateStateWriteArtifact(baseline);
+  const candidateValidation = validateStateWriteArtifact(candidate, {
+    allowDbwLinkedDurableDefects: false,
+  });
   const errors = [
-    ...validateStateWriteArtifact(baseline).map((error) => `baseline: ${error}`),
-    ...validateStateWriteArtifact(candidate, { allowDbwLinkedDurableDefects: false }).map(
-      (error) => `candidate: ${error}`,
-    ),
+    ...baselineValidation.map((error) => `baseline: ${error}`),
+    ...candidateValidation.map((error) => `candidate: ${error}`),
     ...validateCandidatePresenceSplit(candidate),
   ];
   appendCorrectnessGateErrors(errors, baseline, candidate);
@@ -250,12 +279,7 @@ function hasDerivableWorkloads(artifact) {
   return Array.isArray(artifact?.workloads) && artifact.workloads.length === WORKLOADS.size &&
     artifact.workloads.every((workload) =>
       WORKLOADS.has(workload?.name) && Array.isArray(workload.samples) &&
-      workload.samples.length > 0 && workload.samples.every((sample) =>
-        Array.isArray(sample?.commands) && Array.isArray(sample?.attemptObservations) &&
-        Array.isArray(sample?.durable?.receiptCommandIds) &&
-        Array.isArray(sample?.durable?.outboxIntents) &&
-        Array.isArray(sample?.correctness?.dbwFindings)
-      )
+      workload.samples.length > 0 && workload.samples.every(canDeriveWorkloadSample)
     );
 }
 
@@ -368,15 +392,20 @@ function validateWorkload(
         allowDbwLinkedDurableDefects,
       );
     }
-    if (workload.samples.length > 0) {
+    if (workload.samples.length > 0 && workload.samples.every(canDeriveWorkloadSample)) {
       const derived = deriveWorkloadSummary(workload.samples);
       validateDerivedSummary(workload.summary, derived, `${path}.summary`, errors);
+    } else if (workload.samples.length > 0) {
+      errors.push(`${path}.summary cannot be derived from structurally malformed samples`);
     }
   }
 }
 
 function validateSample(sample, path, runIndex, errors, allowDbwLinkedDurableDefects) {
   validateMetrics(sample, path, errors);
+  if (!isObject(sample)) {
+    return;
+  }
   if (sample.runIndex !== runIndex) {
     errors.push(`${path}.runIndex must equal ${runIndex}`);
   }
@@ -690,7 +719,7 @@ function deriveDurableCorrectness(
     errors.push(`${path}.durable outbox intent IDs must be unique`);
   }
   const expected = acceptedCommands.flatMap((command) =>
-    STATE_WRITE_MUTATION_CONTRACT[command.kind].map((intentKind, index) =>
+    (STATE_WRITE_MUTATION_CONTRACT[command.kind] ?? []).map((intentKind, index) =>
       `${command.commandId}:intent:${index}\u0000${command.commandId}\u0000${intentKind}`
     )
   ).sort();
@@ -711,7 +740,9 @@ function deriveDurableCorrectness(
     errors.push(`${path}.durable outbox intents do not match the mutation contract`);
   }
   const effectfulCommandCount =
-    acceptedCommands.filter((command) => STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0)
+    acceptedCommands.filter((command) =>
+      (STATE_WRITE_MUTATION_CONTRACT[command.kind]?.length ?? 0) > 0
+    )
       .length;
   return {
     receiptCount: receiptIds.length,
@@ -748,6 +779,35 @@ function validateMetrics(metrics, path, errors) {
   if (!Array.isArray(metrics.correctness?.dbwFindings)) {
     errors.push(`${path}.correctness.dbwFindings must be an array`);
   }
+}
+
+function canDeriveWorkloadSample(sample) {
+  return isObject(sample) &&
+    isNonNegativeNumber(sample.durationMs) &&
+    Array.isArray(sample.commands) &&
+    sample.commands.every((command) =>
+      isObject(command) && MUTATION_MIX.includes(command.kind) &&
+      typeof command.commandId === 'string' &&
+      ['accepted', 'exhausted'].includes(command.status) &&
+      isNonNegativeNumber(command.latencyMs)
+    ) &&
+    Array.isArray(sample.attemptObservations) &&
+    sample.attemptObservations.every((observation) =>
+      isObject(observation) && typeof observation.commandId === 'string' &&
+      typeof observation.operationId === 'string' &&
+      Number.isInteger(observation.attempt) &&
+      ['accepted', 'conflicted', 'exhausted'].includes(observation.outcome) &&
+      typeof observation.terminal === 'boolean' &&
+      typeof observation.source === 'string'
+    ) &&
+    isObject(sample.durable) &&
+    Array.isArray(sample.durable.receiptCommandIds) &&
+    Array.isArray(sample.durable.outboxIntents) &&
+    isObject(sample.correctness) &&
+    Array.isArray(sample.correctness.dbwFindings) &&
+    isObject(sample.sql) &&
+    isObject(sample.postgres) &&
+    isObject(sample.timingsMs);
 }
 
 function deriveWorkloadSummary(samples) {
@@ -979,6 +1039,10 @@ function isObject(value) {
 
 function isNonNegativeNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function main() {

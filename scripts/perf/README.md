@@ -172,6 +172,10 @@ from raw records before applying comparison gates. Standalone validation can
 retain a known baseline durable defect when linked to a DBW finding, but
 candidate comparison always applies strict unique receipt/intent ID, command,
 and intent-kind linkage; candidate DBW tags cannot waive those invariants.
+Validation and comparison are total over parsed JSON-like input: malformed
+nested samples, unsupported mutation kinds, missing evidence containers, or
+invalid derivation records produce path-oriented baseline/candidate errors
+instead of throwing from summary or durable-contract derivation.
 
 Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
 runs 1–100, and concurrency 1–256. Task 0B further requires exactly one warmup,
