@@ -7,10 +7,12 @@ import type { OperationalStatus } from '../ui/StatusMark.tsx';
 import { InspectorHost } from './InspectorHost.tsx';
 import { PrimaryNavigation } from './PrimaryNavigation.tsx';
 import { TopCommandBar } from './TopCommandBar.tsx';
+import type { AccountSettingsPanelProps } from './AccountSettingsPanel.tsx';
 import { useRecipeConsolePresentation } from './use-responsive-presentation.ts';
 import styles from './RecipeConsoleShell.module.css';
 
 export type RecipeConsoleShellProps = Readonly<{
+    accountSettings: AccountSettingsPanelProps;
     currentView: RecipeConsoleView;
     urlIssues: readonly RecipeConsoleUrlIssue[];
     commandBarContext: ReactNode;
@@ -31,6 +33,7 @@ export type RecipeConsoleShellProps = Readonly<{
 }>;
 
 export function RecipeConsoleShell({
+    accountSettings,
     currentView,
     urlIssues,
     commandBarContext,
@@ -68,6 +71,7 @@ export function RecipeConsoleShell({
             data-recipe-console-shell
         >
             <TopCommandBar
+                accountSettings={accountSettings}
                 context={commandBarContext}
                 height={presentation.commandBarHeight}
                 issues={urlIssues}

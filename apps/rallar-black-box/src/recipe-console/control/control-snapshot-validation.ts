@@ -12,6 +12,10 @@ export function validateControlServerCoreSnapshot(value: unknown): void {
     requireUniqueStringField(runs, 'runId', 'runs');
 }
 
+export function validateControlRunSnapshot(value: unknown): void {
+    validateControlServerCoreSnapshot({ runs: [value] });
+}
+
 export function validateControlDistributedRuns(
     value: unknown,
 ): asserts value is readonly ControlDistributedRunSnapshot[] {

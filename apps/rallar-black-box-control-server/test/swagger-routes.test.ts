@@ -29,7 +29,12 @@ function assertEquals<T>(actual: T, expected: T): void {
 }
 
 Deno.test('control OpenAPI spec describes the current server and control endpoints', () => {
-  const request = new Request('http://127.0.0.1:5180/openapi.json');
+  const request = new Request('http://internal-control:5180/openapi.json', {
+    headers: {
+      'x-forwarded-host': 'control.rallar.intactss.com',
+      'x-forwarded-proto': 'https',
+    },
+  });
   const spec = controlOpenApiSpec(request) as {
     openapi?: string;
     servers?: readonly { url: string }[];
@@ -37,7 +42,7 @@ Deno.test('control OpenAPI spec describes the current server and control endpoin
   };
 
   assertEquals(spec.openapi, '3.1.0');
-  assertEquals(spec.servers?.[0]?.url, 'http://127.0.0.1:5180');
+  assertEquals(spec.servers?.[0]?.url, '/');
   assert(spec.paths?.['/health']);
   assert(spec.paths?.['/retention/cleanup']);
   assert(spec.paths?.['/distributed-runs']);
@@ -182,7 +187,10 @@ Deno.test('swagger route serves OpenAPI JSON', async () => {
 
   const body = await response.json();
   assertEquals(body.info.title, 'Rallar Black Box Control Server');
-  assertEquals(body.servers[0].url, 'http://localhost:5180');
+  assertEquals(body.servers[0], {
+    url: '/',
+    description: 'Current control server',
+  });
 });
 
 Deno.test('swagger route applies configured CORS origins', () => {

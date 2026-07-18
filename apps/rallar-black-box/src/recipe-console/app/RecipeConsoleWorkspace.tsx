@@ -10,13 +10,16 @@ import { recipeConsoleMonitorControlRunSelectionPatch } from
 import type { RecipeConsoleView } from '../routing/url-state-contract.ts';
 import { useRecipeConsoleUrlState } from '../routing/use-recipe-console-url-state.ts';
 import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
+import type { RecipeConsoleAccountSettings } from '../shell/AccountSettingsPanel.tsx';
 import { useRecipeConsolePresentation } from
     '../shell/use-responsive-presentation.ts';
 import { owningWindowFocusAnchor } from
     '../ui/owning-window-focus-anchor.ts';
 import { RecipeConsoleActiveWork } from './RecipeConsoleActiveWork.tsx';
 
-export function RecipeConsoleWorkspace() {
+export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
+    accountSettings: RecipeConsoleAccountSettings;
+}>) {
     const urlState = useRecipeConsoleUrlState();
     const presentation = useRecipeConsolePresentation();
     const control = useRecipeConsoleControlWorkspace({
@@ -180,6 +183,11 @@ export function RecipeConsoleWorkspace() {
     return (
         <div className="recipe-console" data-view={urlState.state.view}>
             <RecipeConsoleShell
+                accountSettings={{
+                    ...accountSettings,
+                    lastControlError:
+                        control.connection.query.lastError?.message,
+                }}
                 commandBarContext={commandBarContext}
                 commandBarStatus={control.status.status}
                 commandBarStatusLabel={control.status.label}

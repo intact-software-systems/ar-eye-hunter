@@ -297,7 +297,9 @@ export async function fetchControlRunSnapshot(input: Readonly<{
     ), {
         headers: authorizationHeaders(input.token),
     });
-    return readJsonResponse<ControlRunSnapshot>(response);
+    const document = await readJsonResponseDocument<ControlRunSnapshot>(response);
+    rememberControlResponseDocument(document.value, document.text);
+    return document.value;
 }
 
 export async function enqueueBulkControlCommand(input: Readonly<{

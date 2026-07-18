@@ -56,6 +56,13 @@ export async function installRecipeConsoleAnalyzeFixture(
             await fulfillJson(route, { runs: [controlRun] });
             return;
         }
+        if (
+            request.method() === 'GET' &&
+            url.pathname === `/runs/${controlRun.runId}`
+        ) {
+            await fulfillJson(route, controlRun);
+            return;
+        }
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
             distributedRunReads += 1;
             await fulfillJson(route, { distributedRuns: [distributedRun] });

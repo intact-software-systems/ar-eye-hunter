@@ -56,6 +56,13 @@ export async function installRecipeConsoleScaleControlFixture(
             });
             return;
         }
+        const runDetailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
+        if (runDetailMatch) {
+            const runId = decodeURIComponent(runDetailMatch[1]);
+            const run = snapshot.runs.find(candidate => candidate.runId === runId);
+            await fulfillJson(route, run ?? { error: 'Control run not found.' }, run ? 200 : 404);
+            return;
+        }
         if (url.pathname === '/distributed-runs') {
             await route.fulfill({
                 status: 200,

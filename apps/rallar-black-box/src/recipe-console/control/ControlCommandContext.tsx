@@ -23,12 +23,19 @@ export function controlCommandStatus(
                 }
                 : { status: 'partial', label: `Partial · ${query.reachability}` };
         case 'stale':
-            return query.authorization === 'required'
-                ? {
+            if (query.authorization === 'required') {
+                return {
                     status: 'warning',
                     label: `Authorization required · ${query.reachability} · stale`,
-                }
-                : { status: 'stale', label: `Stale · ${query.reachability}` };
+                };
+            }
+            if (query.lastError?.kind === 'timeout') {
+                return {
+                    status: 'stale',
+                    label: `${controlTimeoutLabel(query.lastError.message)} · last known`,
+                };
+            }
+            return { status: 'stale', label: `Stale · ${query.reachability}` };
         case 'offline':
             if (query.authorization === 'required') {
                 return {
@@ -36,10 +43,25 @@ export function controlCommandStatus(
                     label: `Authorization required · ${query.reachability}`,
                 };
             }
+            if (query.lastError?.kind === 'timeout') {
+                return {
+                    status: 'failed',
+                    label: `${controlTimeoutLabel(query.lastError.message)} · ${query.reachability}`,
+                };
+            }
             return query.reachability === 'reachable'
                 ? { status: 'warning', label: 'Control error · reachable' }
                 : { status: 'failed', label: `Offline · ${query.reachability}` };
     }
+}
+
+function controlTimeoutLabel(message: string): string {
+    const timeoutMs = Number.parseInt(
+        message.match(/after\s+(\d+)\s*ms\b/i)?.[1] ?? '',
+        10,
+    );
+    if (!Number.isFinite(timeoutMs)) return 'Control request timed out';
+    return `Timed out after ${Number((timeoutMs / 1_000).toFixed(2))} s`;
 }
 
 export function controlCommandActiveRunLabel(
