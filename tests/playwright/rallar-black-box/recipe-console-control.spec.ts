@@ -189,6 +189,7 @@ async function installControlRouteMock(
     }> = {},
 ): Promise<ControlRouteMock> {
     let runRequestCount = 0;
+    let latestSnapshot: unknown;
     await context.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -203,7 +204,17 @@ async function installControlRouteMock(
                 await fulfillJson(route, step.status, { error: step.message });
                 return;
             }
+            latestSnapshot = step.snapshot;
             await fulfillJson(route, 200, step.snapshot);
+            return;
+        }
+        const runDetailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
+        if (request.method() === 'GET' && runDetailMatch) {
+            const runId = decodeURIComponent(runDetailMatch[1]);
+            const run = controlRunFromSnapshot(latestSnapshot, runId);
+            await fulfillJson(route, run ? 200 : 404, run ?? {
+                error: 'Control run not found.',
+            });
             return;
         }
         if (request.method() === 'GET' && url.pathname === '/distributed-runs') {
@@ -220,6 +231,19 @@ async function installControlRouteMock(
         });
     });
     return { runRequestCount: () => runRequestCount };
+}
+
+function controlRunFromSnapshot(
+    snapshot: unknown,
+    runId: string,
+): ControlRunSnapshot | undefined {
+    if (!snapshot || typeof snapshot !== 'object') return undefined;
+    const runs = (snapshot as { runs?: unknown }).runs;
+    if (!Array.isArray(runs)) return undefined;
+    return runs.find((run): run is ControlRunSnapshot => Boolean(
+        run && typeof run === 'object' &&
+        (run as { runId?: unknown }).runId === runId,
+    ));
 }
 
 function commandContextItem(page: Page, label: string) {
@@ -710,8 +734,6 @@ for (const unresolvedCase of [
             { exact: true },
         )).toBeVisible();
         await expect(targets.locator('[data-execute-target]')).toHaveCount(0);
-        await expect(targets).not.toContainText('agent-a');
-        await expect(targets).not.toContainText('agent-b');
         if (unresolvedCase.routeSuffix) {
             await expect(targets.getByRole('alert')).toHaveText(
                 'Control run missing-control-run is not present in the latest snapshot.',

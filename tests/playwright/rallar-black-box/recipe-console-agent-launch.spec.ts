@@ -403,6 +403,27 @@ async function installAgentLaunchControl(
             releaseTokenResponses = resolve;
         })
         : undefined;
+    const currentRuns = (): ControlRunSnapshot[] => {
+        const byRun = new Map<string, ControlAgentSnapshot[]>();
+        for (const agent of agents.values()) {
+            const rows = byRun.get(agent.runId) ?? [];
+            rows.push(agent);
+            byRun.set(agent.runId, rows);
+        }
+        const now = Date.now();
+        return [...byRun].map(([runId, rows]) => ({
+            runId,
+            createdAtEpochMs: now - 1_000,
+            updatedAtEpochMs: now,
+            agents: rows,
+            commands: [],
+            results: [],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: [],
+        }));
+    };
     await context.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -427,21 +448,21 @@ async function installAgentLaunchControl(
             return;
         }
         if (request.method() === 'GET' && url.pathname === '/runs') {
-            const byRun = new Map<string, ControlAgentSnapshot[]>();
-            for (const agent of agents.values()) {
-                const rows = byRun.get(agent.runId) ?? [];
-                rows.push(agent);
-                byRun.set(agent.runId, rows);
-            }
-            const now = Date.now();
-            const runs: ControlRunSnapshot[] = [...byRun].map(([runId, rows]) => ({
-                runId,
-                createdAtEpochMs: now - 1_000,
-                updatedAtEpochMs: now,
-                agents: rows,
-                commands: [], results: [], events: [], stats: [], reports: [], heartbeats: [],
-            }));
-            await fulfillJson(route, { runs, distributedRuns: [] });
+            await fulfillJson(route, {
+                runs: currentRuns(),
+                distributedRuns: [],
+            });
+            return;
+        }
+        const detailMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
+        if (request.method() === 'GET' && detailMatch) {
+            const runId = decodeURIComponent(detailMatch[1]);
+            const run = currentRuns().find(candidate => candidate.runId === runId);
+            await fulfillJson(
+                route,
+                run ?? { error: 'Control run not found.' },
+                run ? 200 : 404,
+            );
             return;
         }
         await fulfillJson(route, { error: 'Not found.' }, 404);

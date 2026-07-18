@@ -122,6 +122,13 @@ export async function installRecipeConsoleFleetFixture(
         }
         if (
             request.method() === 'GET' &&
+            url.pathname === `/runs/${controlRun.runId}`
+        ) {
+            await fulfillJson(route, controlRun);
+            return;
+        }
+        if (
+            request.method() === 'GET' &&
             url.pathname === `/fleet/reports/${FLEET_REPORT_ID}/artifacts`
         ) {
             artifactReads += 1;

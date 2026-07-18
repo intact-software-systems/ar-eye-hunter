@@ -11,8 +11,6 @@ import type {
 } from '../control/control-api.ts';
 import type { ControlQuerySnapshot, ControlQueryStatus } from
     '../control/control-query.ts';
-import { controlSnapshotRevisionOf } from
-    '../control/control-snapshot-revision.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
 export type RecipeConsoleHistoryProvenance = Readonly<{
@@ -32,7 +30,6 @@ export type RecipeConsoleHistoryCollection = Readonly<{
     provenance: RecipeConsoleHistoryProvenance;
     counts: Readonly<{ available: number; total: number }>;
     fingerprint: string;
-    revision?: object;
     work: Readonly<{
         controlRunVisits: number;
         distributedRunVisits: number;
@@ -80,12 +77,10 @@ export function createRecipeConsoleHistoryCollection(
             };
         });
     const source = input.query.provenance?.distributedRunsSource ?? 'unavailable';
-    const revision = controlSnapshotRevisionOf(input.query.snapshot);
     return {
         provenance: historyProvenance(input.query),
         counts: { available: distributedRuns.length, total: entries.length },
         fingerprint: historyWindowFingerprint(source, input.urlState),
-        ...(revision === undefined ? {} : { revision }),
         work: {
             controlRunVisits: controlRuns.length,
             distributedRunVisits: distributedRuns.length,
