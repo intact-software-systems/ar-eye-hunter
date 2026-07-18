@@ -1,16 +1,25 @@
 import type {
+    RuntimeStateConditionalDeleteResult,
+    RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
-    RuntimeStateTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 export class FakeRuntimeStateRepository
-    implements RuntimeStateTransactionalRepositoryLike {
+    implements RuntimeStateOptimisticTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
     readonly locks: Array<Readonly<{ namespace: string; key: string }>> = [];
     beforeUpsert?: (namespace: string, key: string) => void | Promise<void>;
+    beforeConditionalWrite?: (
+        operation: 'insertIfAbsent' | 'upsertIfRevision' | 'deleteIfRevision',
+        namespace: string,
+        key: string,
+    ) => void | Promise<void>;
 
     async begin<T>(
-        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+        fn: (
+            repository: RuntimeStateOptimisticTransactionalRepositoryLike,
+        ) => Promise<T>,
     ): Promise<T> {
         const before = new Map(this.data);
         try {
@@ -99,6 +108,69 @@ export class FakeRuntimeStateRepository
             updatedTimestamp: new Date().toISOString(),
             revision: current ? current.revision + 1 : 0,
         });
+    }
+
+    async insertIfAbsent(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        await this.beforeConditionalWrite?.('insertIfAbsent', namespace, key);
+        const compositeKey = this.toKey(namespace, key);
+        if (this.data.has(compositeKey)) {
+            return { status: 'conflict' };
+        }
+
+        this.data.set(compositeKey, {
+            key,
+            value,
+            expireAtTimestamp,
+            updatedTimestamp: new Date().toISOString(),
+            revision: 0,
+        });
+        return { status: 'applied', revision: 0 };
+    }
+
+    async upsertIfRevision(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        await this.beforeConditionalWrite?.('upsertIfRevision', namespace, key);
+        const compositeKey = this.toKey(namespace, key);
+        const current = this.data.get(compositeKey);
+        if (!current || current.revision !== expectedRevision) {
+            return { status: 'conflict' };
+        }
+
+        const revision = current.revision + 1;
+        this.data.set(compositeKey, {
+            key,
+            value,
+            expireAtTimestamp,
+            updatedTimestamp: new Date().toISOString(),
+            revision,
+        });
+        return { status: 'applied', revision };
+    }
+
+    async deleteIfRevision(
+        namespace: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        await this.beforeConditionalWrite?.('deleteIfRevision', namespace, key);
+        const compositeKey = this.toKey(namespace, key);
+        const current = this.data.get(compositeKey);
+        if (!current || current.revision !== expectedRevision) {
+            return { status: 'conflict' };
+        }
+
+        this.data.delete(compositeKey);
+        return { status: 'applied' };
     }
 
     deleteByKey(namespace: string, key: string): Promise<void> {

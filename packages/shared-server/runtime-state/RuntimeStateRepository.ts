@@ -19,6 +19,35 @@ export type RuntimeStateRepositoryLike = Readonly<{
     deleteExpired(namespace: string): Promise<number>;
 }>;
 
+export type RuntimeStateConditionalWriteResult =
+    | Readonly<{ status: 'applied'; revision: number }>
+    | Readonly<{ status: 'conflict' }>;
+
+export type RuntimeStateConditionalDeleteResult =
+    | Readonly<{ status: 'applied' }>
+    | Readonly<{ status: 'conflict' }>;
+
+export type RuntimeStateConditionalRepositoryLike = Readonly<{
+    insertIfAbsent(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<RuntimeStateConditionalWriteResult>;
+    upsertIfRevision(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult>;
+    deleteIfRevision(
+        namespace: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult>;
+}>;
+
 export type RuntimeStateTransactionalRepositoryLike = RuntimeStateRepositoryLike &
     Readonly<{
         begin<T>(
@@ -33,6 +62,17 @@ export type RuntimeStateTransactionalRepositoryLike = RuntimeStateRepositoryLike
             keys: readonly string[],
         ): Promise<readonly RuntimeStateEntry[]>;
         lockKey(namespace: string, key: string): Promise<void>;
+    }>;
+
+export type RuntimeStateOptimisticTransactionalRepositoryLike =
+    & Omit<RuntimeStateTransactionalRepositoryLike, 'begin'>
+    & RuntimeStateConditionalRepositoryLike
+    & Readonly<{
+        begin<T>(
+            fn: (
+                repository: RuntimeStateOptimisticTransactionalRepositoryLike,
+            ) => Promise<T>,
+        ): Promise<T>;
     }>;
 
 export type RuntimeStatePrefixPageRepositoryLike = Readonly<{
@@ -50,6 +90,14 @@ export function isRuntimeStateTransactionalRepositoryLike(
         'findEntriesByPrefix' in repository &&
         'findEntriesByKeys' in repository &&
         'lockKey' in repository;
+}
+
+export function isRuntimeStateConditionalRepositoryLike(
+    repository: RuntimeStateRepositoryLike,
+): repository is RuntimeStateRepositoryLike & RuntimeStateConditionalRepositoryLike {
+    return 'insertIfAbsent' in repository &&
+        'upsertIfRevision' in repository &&
+        'deleteIfRevision' in repository;
 }
 
 export function isRuntimeStatePrefixPageRepositoryLike(

@@ -1,6 +1,8 @@
 import type {
+    RuntimeStateConditionalDeleteResult,
+    RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
-    RuntimeStateTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
@@ -16,11 +18,14 @@ type RuntimeStateRow = Readonly<{
     revision: number | string;
 }>;
 
-export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
+export class PSqlRuntimeStateRepository
+    implements RuntimeStateOptimisticTransactionalRepositoryLike {
     constructor(public readonly sql: PSqlSql) {}
 
     async begin<T>(
-        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+        fn: (
+            repository: RuntimeStateOptimisticTransactionalRepositoryLike,
+        ) => Promise<T>,
     ): Promise<T> {
         return (await this.sql.begin(
             async (sql: PSqlTransactionSql) =>
@@ -177,6 +182,74 @@ export class PSqlRuntimeStateRepository implements RuntimeStateTransactionalRepo
                               updated_ts   = now(),
                               revision     = runtime_state_store.revision + 1
         `;
+    }
+
+    async insertIfAbsent(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        const rows = await this.sql<Array<{ revision: number | string }>>`
+            insert into runtime_state_store (store_namespace,
+                                             store_key,
+                                             store_value,
+                                             expire_at_ts,
+                                             updated_ts,
+                                             revision)
+            values (${namespace},
+                    ${key},
+                    ${value},
+                    ${toPgDate(expireAtTimestamp)},
+                    now(),
+                    0)
+            on conflict (store_namespace, store_key) do nothing
+            returning revision
+        `;
+
+        return rows[0]
+            ? { status: 'applied', revision: Number(rows[0].revision) }
+            : { status: 'conflict' };
+    }
+
+    async upsertIfRevision(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        const rows = await this.sql<Array<{ revision: number | string }>>`
+            update runtime_state_store
+            set store_value = ${value},
+                expire_at_ts = ${toPgDate(expireAtTimestamp)},
+                updated_ts = now(),
+                revision = revision + 1
+            where store_namespace = ${namespace}
+              and store_key = ${key}
+              and revision = ${expectedRevision}
+            returning revision
+        `;
+
+        return rows[0]
+            ? { status: 'applied', revision: Number(rows[0].revision) }
+            : { status: 'conflict' };
+    }
+
+    async deleteIfRevision(
+        namespace: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        const rows = await this.sql<Array<{ revision: number | string }>>`
+            delete from runtime_state_store
+            where store_namespace = ${namespace}
+              and store_key = ${key}
+              and revision = ${expectedRevision}
+            returning revision
+        `;
+
+        return rows[0] ? { status: 'applied' } : { status: 'conflict' };
     }
 
     async deleteByKey(namespace: string, key: string): Promise<void> {
