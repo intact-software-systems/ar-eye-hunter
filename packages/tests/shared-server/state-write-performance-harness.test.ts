@@ -258,7 +258,7 @@ describe('API-v1 state-write performance artifact contract', () => {
     expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(expect.arrayContaining([
       expect.stringContaining('candidate'),
       expect.stringContaining('durable receipts must match accepted command IDs exactly'),
-      expect.stringContaining('durable.outboxIntents[0] must link'),
+      expect.stringContaining('durable.outboxIntents[0] must contain'),
     ]));
 
     const intentIdCandidate = validArtifact({ candidate: true });
@@ -390,6 +390,84 @@ describe('API-v1 state-write performance artifact contract', () => {
         .not.toThrow();
       expect(compareStateWriteArtifacts(malformed, validArtifact({ candidate: true })), label)
         .toEqual(expect.arrayContaining([expect.stringContaining('baseline:')]));
+    }
+  });
+
+  it('never lets DBW baseline retention waive malformed durable records or finding IDs', () => {
+    const malformedDurable: Array<[string, (sample: any) => void]> = [
+      ['null receipt', (sample) => {
+        sample.durable.receiptCommandIds[0] = null;
+      }],
+      ['empty receipt', (sample) => {
+        sample.durable.receiptCommandIds[0] = '';
+      }],
+      ['null outbox record', (sample) => {
+        sample.durable.outboxIntents[0] = null;
+      }],
+      ['empty outbox fields', (sample) => {
+        sample.durable.outboxIntents[0] = { intentId: '', commandId: '', intentKind: '' };
+      }],
+      ['unknown outbox command', (sample) => {
+        sample.durable.outboxIntents[0].commandId = 'unknown-command';
+      }],
+    ];
+
+    for (const [label, mutate] of malformedDurable) {
+      const malformed = validArtifact();
+      const sampleValue = malformed.workloads[0].samples[0];
+      mutate(sampleValue);
+      sampleValue.correctness.dbwFindings = ['DBW-MALFORMED'];
+      refreshSummary(malformed.workloads[0]);
+
+      expect(validateStateWriteArtifact(malformed), label).not.toEqual([]);
+      expect(compareStateWriteArtifacts(malformed, validArtifact({ candidate: true })), label)
+        .toEqual(expect.arrayContaining([expect.stringContaining('baseline:')]));
+      expect(compareStateWriteArtifacts(validArtifact(), malformed), label).toEqual(
+        expect.arrayContaining([expect.stringContaining('candidate:')]),
+      );
+    }
+
+    for (const finding of [null, '', 'NOT-A-DBW-FINDING', 42, 'DBW_']) {
+      const malformed = validArtifact();
+      malformed.workloads[0].samples[0].correctness.dbwFindings = [finding];
+      refreshSummary(malformed.workloads[0]);
+      expect(validateStateWriteArtifact(malformed), String(finding)).toEqual(
+        expect.arrayContaining([expect.stringContaining('dbwFindings[0]')]),
+      );
+    }
+  });
+
+  it('rejects malformed regression reasons and never lets them authorize a resource increase', () => {
+    const malformedReasons = [
+      null,
+      [],
+      {},
+      { workload: 'unsupported', metric: 'sql.statements', reason: 'A substantive explanation' },
+      { workload: 'shared', metric: 'unsupported.metric', reason: 'A substantive explanation' },
+      { workload: 'shared', metric: 'sql.statements', reason: '' },
+      { workload: 'shared', metric: 'sql.statements', reason: 'short' },
+      {
+        workload: 'shared',
+        metric: 'sql.statements',
+        reason: 'A substantive explanation',
+        unexpected: true,
+      },
+    ];
+
+    for (const [index, reason] of malformedReasons.entries()) {
+      const candidate = validArtifact({ candidate: true });
+      for (const sampleValue of candidate.workloads[1].samples) {
+        sampleValue.sql.statements += 1;
+      }
+      refreshSummary(candidate.workloads[1]);
+      candidate.regressionReasons = [reason];
+
+      expect(validateStateWriteArtifact(candidate), String(index)).toEqual(
+        expect.arrayContaining([expect.stringContaining('regressionReasons[0]')]),
+      );
+      expect(compareStateWriteArtifacts(validArtifact(), candidate), String(index)).toEqual(
+        expect.arrayContaining([expect.stringContaining('candidate: regressionReasons[0]')]),
+      );
     }
   });
 });

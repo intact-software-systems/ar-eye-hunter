@@ -73,6 +73,13 @@ const COUNTER_SOURCES = [
   'receipts',
   'outboxIntents',
 ];
+const DBW_FINDING_PATTERN = /^DBW-[A-Z0-9]+(?:-[A-Z0-9]+)*$/;
+const REGRESSION_REASON_METRICS = new Set([
+  'sql.statements',
+  'sql.rowsRead',
+  'sql.serializedResultBytes',
+  'postgres.transactionDurationMs',
+]);
 
 export function validateStateWriteArtifact(
   artifact,
@@ -137,9 +144,7 @@ function validateStateWriteArtifactInternal(
       allowDbwLinkedDurableDefects,
     );
   }
-  if (!Array.isArray(artifact.regressionReasons)) {
-    errors.push('regressionReasons must be an array');
-  }
+  validateRegressionReasons(artifact.regressionReasons, errors);
   return errors;
 }
 
@@ -330,6 +335,34 @@ function validateFeatures(features, errors) {
   for (const field of ['governance', 'evidence']) {
     if (typeof features[field] !== 'string' || features[field].trim().length === 0) {
       errors.push(`features.${field} must be a non-empty string`);
+    }
+  }
+}
+
+function validateRegressionReasons(reasons, errors) {
+  if (!Array.isArray(reasons)) {
+    errors.push('regressionReasons must be an array');
+    return;
+  }
+  const expectedFields = ['metric', 'reason', 'workload'];
+  for (const [index, entry] of reasons.entries()) {
+    const path = `regressionReasons[${index}]`;
+    if (!isObject(entry)) {
+      errors.push(`${path} must be an object`);
+      continue;
+    }
+    const fields = Object.keys(entry).sort();
+    if (!sameStringArray(fields, expectedFields)) {
+      errors.push(`${path} must contain exactly workload, metric, and reason`);
+    }
+    if (!WORKLOADS.has(entry.workload)) {
+      errors.push(`${path}.workload must be uncontended, shared, or hot`);
+    }
+    if (!REGRESSION_REASON_METRICS.has(entry.metric)) {
+      errors.push(`${path}.metric is not a supported regression metric`);
+    }
+    if (typeof entry.reason !== 'string' || entry.reason.trim().length < 10) {
+      errors.push(`${path}.reason must be a substantive non-empty explanation`);
     }
   }
 }
@@ -701,10 +734,21 @@ function deriveDurableCorrectness(
   if (!Array.isArray(intents)) {
     errors.push(`${path}.durable.outboxIntents must be an array`);
   }
-  const canRetainBaselineDefect = allowDbwLinkedDurableDefects && dbwFindings.length > 0;
+  const canRetainBaselineDefect = allowDbwLinkedDurableDefects &&
+    dbwFindings.length > 0 && dbwFindings.every(isValidDbwFinding);
   const acceptedCommands = [...commandsById.values()].filter((command) =>
     command.status === 'accepted'
   );
+  for (const [index, receiptCommandId] of receiptIds.entries()) {
+    if (
+      typeof receiptCommandId !== 'string' || receiptCommandId.trim().length === 0 ||
+      !commandsById.has(receiptCommandId)
+    ) {
+      errors.push(
+        `${path}.durable.receiptCommandIds[${index}] must be a non-empty raw command ID`,
+      );
+    }
+  }
   const receiptSet = new Set(receiptIds);
   if (receiptSet.size !== receiptIds.length && !canRetainBaselineDefect) {
     errors.push(`${path}.durable receipt command IDs must be unique`);
@@ -725,14 +769,16 @@ function deriveDurableCorrectness(
   ).sort();
   const actual = intentRecords.map((intent, index) => {
     if (
-      !isObject(intent) || typeof intent.intentId !== 'string' ||
-      !commandsById.has(intent.commandId) || typeof intent.intentKind !== 'string'
+      !isObject(intent) ||
+      typeof intent.intentId !== 'string' || intent.intentId.trim().length === 0 ||
+      typeof intent.commandId !== 'string' || intent.commandId.trim().length === 0 ||
+      !commandsById.has(intent.commandId) ||
+      typeof intent.intentKind !== 'string' || intent.intentKind.trim().length === 0
     ) {
-      if (!canRetainBaselineDefect) {
-        errors.push(
-          `${path}.durable.outboxIntents[${index}] must link a unique intent to a command`,
-        );
-      }
+      errors.push(
+        `${path}.durable.outboxIntents[${index}] must contain non-empty intentId, commandId, ` +
+          'and intentKind fields and reference a raw command',
+      );
     }
     return `${intent?.intentId}\u0000${intent?.commandId}\u0000${intent?.intentKind}`;
   }).sort();
@@ -776,9 +822,23 @@ function validateMetrics(metrics, path, errors) {
   for (const metric of CORRECTNESS_METRICS) {
     requireMetric(metrics.correctness, metric, `${path}.correctness`, errors);
   }
-  if (!Array.isArray(metrics.correctness?.dbwFindings)) {
-    errors.push(`${path}.correctness.dbwFindings must be an array`);
+  validateDbwFindings(metrics.correctness?.dbwFindings, `${path}.correctness`, errors);
+}
+
+function validateDbwFindings(findings, path, errors) {
+  if (!Array.isArray(findings)) {
+    errors.push(`${path}.dbwFindings must be an array`);
+    return;
   }
+  for (const [index, finding] of findings.entries()) {
+    if (!isValidDbwFinding(finding)) {
+      errors.push(`${path}.dbwFindings[${index}] must be a governed DBW-... finding ID`);
+    }
+  }
+}
+
+function isValidDbwFinding(value) {
+  return typeof value === 'string' && DBW_FINDING_PATTERN.test(value);
 }
 
 function canDeriveWorkloadSample(sample) {

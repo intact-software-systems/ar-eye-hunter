@@ -172,10 +172,22 @@ from raw records before applying comparison gates. Standalone validation can
 retain a known baseline durable defect when linked to a DBW finding, but
 candidate comparison always applies strict unique receipt/intent ID, command,
 and intent-kind linkage; candidate DBW tags cannot waive those invariants.
+DBW retention never waives record structure: every receipt is a nonempty raw
+command ID, every outbox record has nonempty intent/command/kind strings and a
+raw-command reference, and finding IDs must match the governed `DBW-...`
+format. Only exactness, uniqueness, or cardinality mismatches in a known
+baseline sample may be retained with a valid finding ID.
 Validation and comparison are total over parsed JSON-like input: malformed
 nested samples, unsupported mutation kinds, missing evidence containers, or
 invalid derivation records produce path-oriented baseline/candidate errors
 instead of throwing from summary or durable-contract derivation.
+
+Resource-regression reasons contain exactly `workload`, `metric`, and `reason`.
+The workload must be uncontended, shared, or hot; the metric must be one of
+`sql.statements`, `sql.rowsRead`, `sql.serializedResultBytes`, or
+`postgres.transactionDurationMs`; and the explanation must be substantive
+(at least ten non-whitespace characters). Malformed entries cannot authorize a
+regression.
 
 Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
 runs 1–100, and concurrency 1–256. Task 0B further requires exactly one warmup,
