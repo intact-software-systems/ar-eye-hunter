@@ -121,7 +121,7 @@ membership, presence connect/heartbeat/disconnect, group config, and topology
 source config. Workload group counts are 100 (`uncontended`), five (`shared`),
 and one (`hot`).
 
-Artifacts use schema `rallar.api-v1.state-write.v2`. Each measured run retains
+Artifacts use schema `rallar.api-v1.state-write.v3`. Each measured run retains
 exactly 700 command records and latencies (100 of every mutation kind), balanced
 service-stack counts, and production-service timing observations for attempts.
 It also includes latency percentiles, throughput, SQL/row/serialized-byte
@@ -129,6 +129,18 @@ metrics, transaction and production phase timings, PostgreSQL lock/buffer/WAL
 counters, and process CPU time. PostgreSQL buffer and WAL counters are captured
 immediately before and after each measured phase; lock waits are sampled from
 `pg_stat_activity` while the phase runs.
+
+Attempt observations use an explicit command-envelope model. Each operation has
+an `operationId`, contiguous attempt numbers beginning at one, nonterminal
+`conflicted` observations when applicable, and exactly one final `accepted` or
+`exhausted` observation. Profile and instance are separate operations; the
+other mutation kinds use one command operation. Current production services do
+not expose internal retry events, so the baseline honestly records one terminal
+accepted envelope observation for each successful production service call.
+Command accepted/exhausted outcomes, conflict counts, attempt counts, and
+attempts per accepted mutation are derived from these histories. Coherent hot
+baseline exhaustion is representable; comparison permits candidate hot
+exhaustion only up to that baseline while requiring zero in uncontended/shared.
 
 Receipts are persisted with the production replacement path and outbox entries
 carry deterministic intent IDs, originating command IDs, and contract intent
@@ -156,7 +168,14 @@ Consequently, comparing a pre-remediation baseline with itself is expected to
 fail. A baseline correctness failure remains a failure sample and must link to a
 DBW finding; it never weakens candidate expectations. The validator recomputes
 all percentiles, throughput, outcome, attempt, median, and correctness summaries
-from raw records before applying comparison gates.
+from raw records before applying comparison gates. Standalone validation can
+retain a known baseline durable defect when linked to a DBW finding, but
+candidate comparison always applies strict unique receipt/intent ID, command,
+and intent-kind linkage; candidate DBW tags cannot waive those invariants.
+
+Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
+runs 1–100, and concurrency 1–256. Task 0B further requires exactly one warmup,
+at least three measured runs, and concurrency 10.
 
 ## Focused Runtime Harness
 

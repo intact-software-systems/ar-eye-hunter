@@ -90,12 +90,12 @@ describe('API-v1 state-write performance artifact contract', () => {
     ]));
   });
 
-  it('rejects a raw exhausted command even when the declared summary is favorable', () => {
+  it('rejects an exhausted terminal hidden behind an accepted command status', () => {
     const artifact = validArtifact();
     artifact.workloads[1].samples[0].attemptObservations[0].outcome = 'exhausted';
 
     expect(validateStateWriteArtifact(artifact)).toEqual(expect.arrayContaining([
-      expect.stringContaining('raw exhausted attempts must be zero'),
+      expect.stringContaining('status does not match its coherent terminal attempt outcome'),
       expect.stringContaining('outcomes.exhausted does not match attempt observations'),
     ]));
   });
@@ -104,8 +104,10 @@ describe('API-v1 state-write performance artifact contract', () => {
     const artifact = validArtifact();
     artifact.workloads[1].samples[0].attemptObservations.push({
       commandId: artifact.workloads[1].samples[0].commands[0].commandId,
+      operationId: 'profile',
       attempt: 2,
       outcome: 'conflicted',
+      terminal: false,
       source: 'client-state-service.cas-attempt',
     });
 
@@ -244,6 +246,80 @@ describe('API-v1 state-write performance artifact contract', () => {
     ]));
   });
 
+  it('never lets a candidate DBW tag waive exact durable command and intent linkage', () => {
+    const baseline = validArtifact();
+    const candidate = validArtifact({ candidate: true });
+    const sampleValue = candidate.workloads[1].samples[0];
+    sampleValue.durable.receiptCommandIds[0] = 'bogus-unique-command';
+    sampleValue.durable.outboxIntents[0].commandId = 'bogus-unique-command';
+    sampleValue.correctness.dbwFindings = ['DBW-ARBITRARY-WAIVER'];
+    refreshSummary(candidate.workloads[1]);
+
+    expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(expect.arrayContaining([
+      expect.stringContaining('candidate'),
+      expect.stringContaining('durable receipts must match accepted command IDs exactly'),
+      expect.stringContaining('durable.outboxIntents[0] must link'),
+    ]));
+
+    const intentIdCandidate = validArtifact({ candidate: true });
+    intentIdCandidate.workloads[1].samples[0].durable.outboxIntents[0].intentId =
+      'bogus-unique-intent';
+    intentIdCandidate.workloads[1].samples[0].correctness.dbwFindings = [
+      'DBW-ARBITRARY-WAIVER',
+    ];
+    refreshSummary(intentIdCandidate.workloads[1]);
+    expect(compareStateWriteArtifacts(baseline, intentIdCandidate)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('candidate'),
+        expect.stringContaining('durable outbox intents do not match the mutation contract'),
+      ]),
+    );
+  });
+
+  it('rejects all-conflicted attempt histories with no terminal command outcome', () => {
+    const artifact = validArtifact();
+    const sampleValue = artifact.workloads[0].samples[0];
+    const command = sampleValue.commands[100];
+    sampleValue.attemptObservations = sampleValue.attemptObservations.filter(
+      (entry: any) => entry.commandId !== command.commandId,
+    );
+    sampleValue.attemptObservations.push({
+      commandId: command.commandId,
+      operationId: 'command',
+      attempt: 1,
+      outcome: 'conflicted',
+      terminal: false,
+      source: 'group-state-service.cas-attempt',
+    });
+    refreshSampleOutcomes(sampleValue);
+    refreshSummary(artifact.workloads[0]);
+
+    expect(validateStateWriteArtifact(artifact)).toEqual(expect.arrayContaining([
+      expect.stringContaining('exactly one terminal outcome'),
+    ]));
+  });
+
+  it('accepts coherent hot baseline exhaustion and enforces the candidate hot ceiling', () => {
+    const baseline = validArtifact();
+    makeCommandExhausted(baseline.workloads[2].samples[0], 699);
+    refreshSummary(baseline.workloads[2]);
+    expect(validateStateWriteArtifact(baseline)).toEqual([]);
+
+    const allowedCandidate = validArtifact({ candidate: true });
+    makeCommandExhausted(allowedCandidate.workloads[2].samples[0], 699);
+    refreshSummary(allowedCandidate.workloads[2]);
+    expect(compareStateWriteArtifacts(baseline, allowedCandidate)).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('hot retry exhaustion exceeded baseline')]),
+    );
+
+    const rejectedCandidate = structuredClone(allowedCandidate);
+    makeCommandExhausted(rejectedCandidate.workloads[2].samples[1], 699);
+    refreshSummary(rejectedCandidate.workloads[2]);
+    expect(compareStateWriteArtifacts(baseline, rejectedCandidate)).toEqual(
+      expect.arrayContaining([expect.stringContaining('hot retry exhaustion exceeded baseline')]),
+    );
+  });
+
   it('selects both service stacks deterministically and rejects fractional or NaN CLI counts', async () => {
     const bench = await import(
       '../../../scripts/perf/api-v1-state-write-concurrency-bench.ts'
@@ -257,6 +333,19 @@ describe('API-v1 state-write performance artifact contract', () => {
     expect(() => bench.parseBenchmarkOptions(['--runs=NaN'])).toThrow(/integer/);
     expect(() => bench.parseBenchmarkOptions(['--warmup=1.5'])).toThrow(/integer/);
     expect(() => bench.parseBenchmarkOptions(['--concurrency=10.5'])).toThrow(/integer/);
+    for (const value of ['9007199254740992', '1e308']) {
+      expect(() => bench.parseBenchmarkOptions([`--warmup=${value}`])).toThrow(
+        /safe integer|at most/,
+      );
+      expect(() => bench.parseBenchmarkOptions([`--runs=${value}`])).toThrow(
+        /safe integer|at most/,
+      );
+      expect(() => bench.parseBenchmarkOptions([`--concurrency=${value}`])).toThrow(
+        /safe integer|at most/,
+      );
+    }
+    expect(() => bench.parseBenchmarkOptions(['--runs=0'])).toThrow(/integer/);
+    expect(() => bench.parseBenchmarkOptions(['--concurrency=-1'])).toThrow(/integer/);
   });
 });
 
@@ -326,8 +415,14 @@ function sample(runIndex: number, durationMs: number): any {
       : [`${command.kind}.production-operation`];
     return sources.map((source) => ({
       commandId: command.commandId,
+      operationId: source.includes('upsertPrincipal')
+        ? 'profile'
+        : source.includes('upsertInstance')
+        ? 'instance'
+        : 'command',
       attempt: 1,
       outcome: 'accepted',
+      terminal: true,
       source,
     }));
   });
@@ -388,15 +483,28 @@ function sample(runIndex: number, durationMs: number): any {
 function refreshSummary(workloadValue: any): void {
   const samples = workloadValue.samples;
   const latencySamples = samples.flatMap((entry: any) => entry.latencySamplesMs);
-  const accepted = sum(samples.map((entry: any) => entry.outcomes.accepted));
-  const attempts = sum(samples.map((entry: any) => entry.outcomes.attempts));
+  const accepted = sum(
+    samples.map((entry: any) =>
+      entry.commands.filter((command: any) => command.status === 'accepted').length
+    ),
+  );
+  const attempts = sum(samples.map((entry: any) => entry.attemptObservations.length));
   workloadValue.summary = {
     latencyMs: percentileSummary(latencySamples),
     throughputPerSecond: accepted / (sum(samples.map((entry: any) => entry.durationMs)) / 1_000),
     outcomes: {
       accepted,
-      conflicted: sum(samples.map((entry: any) => entry.outcomes.conflicted)),
-      exhausted: sum(samples.map((entry: any) => entry.outcomes.exhausted)),
+      conflicted: sum(
+        samples.map((entry: any) =>
+          entry.attemptObservations.filter((attempt: any) => attempt.outcome === 'conflicted')
+            .length
+        ),
+      ),
+      exhausted: sum(
+        samples.map((entry: any) =>
+          entry.commands.filter((command: any) => command.status === 'exhausted').length
+        ),
+      ),
       attempts,
       attemptsPerAcceptedMutation: attempts / accepted,
     },
@@ -404,9 +512,7 @@ function refreshSummary(workloadValue: any): void {
     postgres: medianObject(samples.map((entry: any) => entry.postgres)),
     timingsMs: medianObject(samples.map((entry: any) => entry.timingsMs)),
     correctness: {
-      acceptedCommandCount: sum(
-        samples.map((entry: any) => entry.correctness.acceptedCommandCount),
-      ),
+      acceptedCommandCount: accepted,
       receiptCount: sum(samples.map((entry: any) => entry.correctness.receiptCount)),
       effectfulCommandCount: sum(
         samples.map((entry: any) => entry.correctness.effectfulCommandCount),
@@ -418,6 +524,54 @@ function refreshSummary(workloadValue: any): void {
       dbwFindings: [...new Set(samples.flatMap((entry: any) => entry.correctness.dbwFindings))],
     },
   };
+}
+
+function refreshSampleOutcomes(sampleValue: any): void {
+  const accepted =
+    sampleValue.commands.filter((command: any) => command.status === 'accepted').length;
+  const attempts = sampleValue.attemptObservations.length;
+  sampleValue.outcomes = {
+    accepted,
+    conflicted: sampleValue.attemptObservations.filter(
+      (attempt: any) => attempt.outcome === 'conflicted',
+    ).length,
+    exhausted: sampleValue.commands.filter((command: any) => command.status === 'exhausted').length,
+    attempts,
+    attemptsPerAcceptedMutation: attempts / accepted,
+  };
+}
+
+function makeCommandExhausted(sampleValue: any, commandIndex: number): void {
+  const command = sampleValue.commands[commandIndex];
+  command.status = 'exhausted';
+  sampleValue.attemptObservations = sampleValue.attemptObservations.filter(
+    (entry: any) => entry.commandId !== command.commandId,
+  );
+  sampleValue.attemptObservations.push({
+    commandId: command.commandId,
+    operationId: 'command',
+    attempt: 1,
+    outcome: 'exhausted',
+    terminal: true,
+    source: 'group-topology-management-service.retry-budget',
+  });
+  sampleValue.durable.receiptCommandIds = sampleValue.durable.receiptCommandIds.filter(
+    (commandId: string) => commandId !== command.commandId,
+  );
+  sampleValue.durable.outboxIntents = sampleValue.durable.outboxIntents.filter(
+    (intent: any) => intent.commandId !== command.commandId,
+  );
+  sampleValue.correctness = {
+    ...sampleValue.correctness,
+    acceptedCommandCount: sampleValue.correctness.acceptedCommandCount - 1,
+    receiptCount: sampleValue.correctness.receiptCount - 1,
+    effectfulCommandCount: sampleValue.correctness.effectfulCommandCount - 1,
+    requiredOutboxIntentCount: sampleValue.correctness.requiredOutboxIntentCount - 1,
+    outboxIntentCount: sampleValue.correctness.outboxIntentCount - 1,
+  };
+  refreshSampleOutcomes(sampleValue);
+  sampleValue.throughputPerSecond = sampleValue.outcomes.accepted /
+    (sampleValue.durationMs / 1_000);
 }
 
 function setDurations(workloadValue: any, durationMs: number): void {

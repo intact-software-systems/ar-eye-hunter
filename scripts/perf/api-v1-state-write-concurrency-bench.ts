@@ -28,7 +28,6 @@ import {
   type RallarTimingEvent,
   type RallarTimingSink,
   recordRallarTiming,
-  timeRallarAsync,
 } from '@shared-server/rallar-system/services/timing.ts';
 import {
   STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
@@ -38,6 +37,9 @@ import {
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 const CLIENT_COUNT = 100;
 const REQUIRED_CONCURRENCY = 10;
+const MAX_WARMUP_RUNS = 10;
+const MAX_MEASURED_RUNS = 100;
+const MAX_CONCURRENCY = 256;
 const RECEIPT_TOPIC = 'state-write-bench-receipt';
 const OUTBOX_TOPIC = 'state-write-bench-outbox';
 const MUTATION_MIX = [
@@ -110,12 +112,14 @@ type RawCommand = {
   kind: MutationKind;
   latencyMs: number;
   stackIndex: number;
-  status: 'accepted';
+  status: 'accepted' | 'exhausted';
 };
 type AttemptObservation = {
   commandId: string;
+  operationId: string;
   attempt: number;
   outcome: 'accepted' | 'conflicted' | 'exhausted';
+  terminal: boolean;
   source: string;
 };
 type DurableEvidence = {
@@ -301,7 +305,7 @@ async function main(): Promise<void> {
             'write-classified production SQL duration excluding resource_inbox outbox writes',
           outboxTiming: 'resource_inbox SQL duration from the postgres.js wrapper',
           attempts:
-            'production service timing-sink events correlated by requestId; detailed retry observations supersede terminal service observations per request',
+            'explicit state-write command-envelope timing events around production service calls; each successful call records one terminal accepted attempt, with profile and instance recorded as distinct operations; current services expose no internal retry events',
           receipts:
             'independent post-phase query of resource_inbox_results rows for the benchmark scope',
           outboxIntents:
@@ -385,12 +389,12 @@ async function runWorkloadPhase(input: {
   const walBytes = await walDifference(input.adminSql, postgresBefore.walLsn, postgresAfter.walLsn);
   const durable = await queryDurableEvidence(input.adminSql, scope.applicationId);
   const attemptObservations = deriveAttemptObservations(context.timingEvents, rawCommands);
-  const accepted = rawCommands.length;
+  const accepted = rawCommands.filter((command) => command.status === 'accepted').length;
   const attempts = attemptObservations.length;
   const outcomes: OutcomeMetrics = {
     accepted,
     conflicted: attemptObservations.filter((entry) => entry.outcome === 'conflicted').length,
-    exhausted: attemptObservations.filter((entry) => entry.outcome === 'exhausted').length,
+    exhausted: rawCommands.filter((command) => command.status === 'exhausted').length,
     attempts,
   };
   const correctness = deriveCorrectness(rawCommands, durable);
@@ -778,14 +782,11 @@ async function executeMutation(
       return groupWrittenEffect(written, command.requestId);
     }
     case 'topology-source': {
-      const result = await timeRallarAsync(
+      const result = await observeProductionAttempt(
         timing,
-        {
-          component: 'group-topology-management-service',
-          operation: 'putConfig',
-          serviceId: runtime.serviceId,
-          requestId: command.requestId,
-        },
+        runtime,
+        command.requestId,
+        'putConfig',
         () =>
           runtime.topology.putConfig({
             groupRef: { ...scope, groupId: command.groupId },
@@ -852,24 +853,66 @@ function groupWrittenEffect(written: GroupMutationWritten, requestId: string): C
   };
 }
 
-function observeProductionAttempt<T>(
+async function observeProductionAttempt<T>(
   timing: RallarTimingSink,
   runtime: ServiceRuntime,
   requestId: string,
   operation: string,
   action: () => Promise<T>,
 ): Promise<T> {
-  return timeRallarAsync(
-    timing,
-    {
-      component: 'state-write-production-service-call',
-      operation,
-      serviceId: runtime.serviceId,
-      requestId,
-      details: { attempt: 1, outcome: 'accepted' },
-    },
-    action,
-  );
+  const startedAt = performance.now();
+  const timingInput = {
+    component: 'state-write-command-envelope',
+    operation,
+    serviceId: runtime.serviceId,
+    requestId,
+  } as const;
+  try {
+    const result = await action();
+    recordRallarTiming(
+      timing,
+      {
+        ...timingInput,
+        details: {
+          operationId: attemptOperationId(operation),
+          attempt: 1,
+          outcome: 'accepted',
+          terminal: true,
+        },
+      },
+      'ok',
+      performance.now() - startedAt,
+    );
+    return result;
+  } catch (error) {
+    recordRallarTiming(
+      timing,
+      {
+        ...timingInput,
+        details: {
+          operationId: attemptOperationId(operation),
+          attempt: 1,
+          outcome: 'operation-error',
+          terminal: true,
+        },
+      },
+      'error',
+      performance.now() - startedAt,
+      error,
+    );
+    throw error;
+  }
+}
+
+function attemptOperationId(operation: string): 'profile' | 'instance' | 'command' {
+  switch (operation) {
+    case 'upsertPrincipal':
+      return 'profile';
+    case 'upsertInstance':
+      return 'instance';
+    default:
+      return 'command';
+  }
 }
 
 async function seedCompleteState(
@@ -1020,44 +1063,39 @@ function deriveAttemptObservations(
   events: readonly RallarTimingEvent[],
   commands: readonly RawCommand[],
 ): AttemptObservation[] {
-  const productionComponents = new Set([
-    'state-write-production-service-call',
-    'client-state-service',
-    'group-state-service',
-    'group-topology-management-service',
-  ]);
   return commands.flatMap((command) => {
     const correlated = events.filter((event) =>
-      productionComponents.has(event.component) &&
+      event.component === 'state-write-command-envelope' &&
       typeof event.requestId === 'string' &&
       (event.requestId === command.commandId || event.requestId.startsWith(`${command.commandId}-`))
     );
-    const byRequest = Map.groupBy(correlated, (event) => event.requestId!);
-    return [...byRequest.values()].flatMap((requestEvents) => {
-      const detailed = requestEvents.filter((event) =>
-        event.component !== 'state-write-production-service-call' &&
-        Number.isInteger(event.details?.attempt) && Number(event.details?.attempt) > 0
-      );
-      const fallback = requestEvents.filter((event) =>
-        event.component === 'state-write-production-service-call' ||
-        event.component === 'group-topology-management-service'
-      ).slice(-1);
-      const observations = detailed.length > 0 ? detailed : fallback;
-      return observations.map((event, index) => ({
+    return correlated.map((event) => {
+      const outcome = event.details?.outcome;
+      const operationId = event.details?.operationId;
+      const terminal = event.details?.terminal;
+      const attempt = event.details?.attempt;
+      if (
+        event.status !== 'ok' ||
+        (outcome !== 'accepted' && outcome !== 'conflicted' && outcome !== 'exhausted') ||
+        typeof operationId !== 'string' ||
+        typeof terminal !== 'boolean' ||
+        typeof attempt !== 'number' ||
+        !Number.isSafeInteger(attempt) || attempt < 1
+      ) {
+        throw new Error(
+          `Invalid explicit command-envelope attempt observation for ${command.commandId}`,
+        );
+      }
+      return {
         commandId: command.commandId,
-        attempt: Number(event.details?.attempt ?? index + 1),
-        outcome: timingOutcome(event),
+        operationId,
+        attempt,
+        outcome,
+        terminal,
         source: `${event.component}.${event.operation}`,
-      }));
+      };
     });
   });
-}
-
-function timingOutcome(event: RallarTimingEvent): AttemptObservation['outcome'] {
-  const outcome = String(event.details?.outcome ?? '').toLowerCase();
-  if (outcome.includes('exhaust')) return 'exhausted';
-  if (outcome.includes('conflict') || outcome.includes('retry')) return 'conflicted';
-  return 'accepted';
 }
 
 async function queryDurableEvidence(sql: Sql, contextId: string): Promise<DurableEvidence> {
@@ -1102,19 +1140,24 @@ function deriveCorrectness(
   durable: DurableEvidence,
 ): CorrectnessMetrics {
   const requiredOutboxIntentCount = sum(
-    commands.map((command) => STATE_WRITE_MUTATION_CONTRACT[command.kind].length),
+    commands.map((command) =>
+      command.status === 'accepted' ? STATE_WRITE_MUTATION_CONTRACT[command.kind].length : 0
+    ),
   );
   const effectfulCommandCount =
-    commands.filter((command) => STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0).length;
+    commands.filter((command) =>
+      command.status === 'accepted' && STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0
+    ).length;
+  const acceptedCommandCount = commands.filter((command) => command.status === 'accepted').length;
   const dbwFindings: string[] = [];
-  if (durable.receiptCommandIds.length !== commands.length) {
+  if (durable.receiptCommandIds.length !== acceptedCommandCount) {
     dbwFindings.push('DBW-RECEIPT-CARDINALITY');
   }
   if (durable.outboxIntents.length !== requiredOutboxIntentCount) {
     dbwFindings.push('DBW-OUTBOX-CARDINALITY');
   }
   return {
-    acceptedCommandCount: commands.length,
+    acceptedCommandCount,
     receiptCount: durable.receiptCommandIds.length,
     effectfulCommandCount,
     requiredOutboxIntentCount,
@@ -1381,13 +1424,14 @@ export function parseBenchmarkOptions(args: readonly string[]): {
   );
   return {
     backend: values.get('backend') || 'postgres',
-    warmup: parseIntegerOption('warmup', values.get('warmup'), 1, 0),
-    runs: parseIntegerOption('runs', values.get('runs'), 3, 1),
+    warmup: parseIntegerOption('warmup', values.get('warmup'), 1, 1, MAX_WARMUP_RUNS),
+    runs: parseIntegerOption('runs', values.get('runs'), 3, 1, MAX_MEASURED_RUNS),
     concurrency: parseIntegerOption(
       'concurrency',
       values.get('concurrency'),
       REQUIRED_CONCURRENCY,
       1,
+      MAX_CONCURRENCY,
     ),
     out: values.get('out') || 'tmp/perf/api-v1-state-write-results.json',
   };
@@ -1398,10 +1442,13 @@ function parseIntegerOption(
   raw: string | undefined,
   fallback: number,
   minimum: number,
+  maximum: number,
 ): number {
   const value = raw === undefined || raw === '' ? fallback : Number(raw);
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value < minimum) {
-    throw new Error(`--${name} must be a finite integer >= ${minimum}; received ${raw}`);
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(
+      `--${name} must be a safe integer between ${minimum} and ${maximum}; received ${raw}`,
+    );
   }
   return value;
 }
