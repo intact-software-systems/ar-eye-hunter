@@ -216,10 +216,11 @@ export function createRallarServer(
       },
       installWebSocketLifecycle: (runtime) => {
         initSharedWsLifecycle(runtime.wsQBoxServerService, {
-          disconnectClientSession: async (sessionId) => {
+          disconnectClientSession: async (sessionId, generationId) => {
             const result = await runtime.appClientInboxService
               .processAuthorisedWsClientDisconnect(
                 sessionId,
+                generationId,
               );
             result.fold(
               (error) => {

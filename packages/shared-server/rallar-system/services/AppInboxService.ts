@@ -16,6 +16,7 @@ import {
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { type RallarTimingDetails, type RallarTimingSink, recordRallarTiming, timeRallarAsync, } from './timing.ts';
 import { isGroupPolicyDeniedError } from '../group-policy.ts';
+import { hashStateMutationCommand } from '../repositories/StateMutationOutboxRepository.ts';
 import {
     toAppInboxQueueCreatedBy,
     toAppInboxQueueKey,
@@ -55,6 +56,20 @@ export enum AppInboxType {
 }
 
 export { NonRetryableException };
+
+export class AppInboxIdempotencyConflictError extends Error {
+    readonly code = 'app-inbox-idempotency-conflict';
+    readonly status = 409;
+
+    constructor(
+        readonly resourceId: string,
+        readonly existingCommandHash: string,
+        readonly receivedCommandHash: string,
+    ) {
+        super(`App inbox idempotency conflict for resource ${resourceId}`);
+        this.name = 'AppInboxIdempotencyConflictError';
+    }
+}
 
 export type AppInboxEnqueueInput<V> = {
     type: AppInboxType;
@@ -117,6 +132,7 @@ export class AppInboxService {
         this.processEntryUntilCompletionInternal(
                 enqueue,
                 false,
+                true,
                 async (key) => {
                     return await this.inbox.enqueueIfAbsent(
                         newALUntargetedMessage(
@@ -141,6 +157,7 @@ export class AppInboxService {
         this.processEntryUntilCompletionInternal(
                 enqueue,
                 false,
+                false,
                 async (key) => {
                     return await this.inbox.enqueueIf(
                         newALUntargetedMessage(
@@ -164,6 +181,7 @@ export class AppInboxService {
         return await this.processEntryUntilCompletionInternal(
             enqueue,
             true,
+            true,
             async (key) => {
                 return await this.inbox.enqueueIfAbsent(
                     newALUntargetedMessage(
@@ -184,6 +202,7 @@ export class AppInboxService {
         return await this.processEntryUntilCompletionInternal(
             enqueue,
             true,
+            false,
             async (key) => {
                 return await this.inbox.enqueueIf(
                     newALUntargetedMessage(
@@ -201,6 +220,7 @@ export class AppInboxService {
     private async processEntryUntilCompletionInternal<V, R = V>(
         enqueue: AppInboxEnqueueInput<V>,
         waitForCompletion: boolean,
+        enforceCommandIdentity: boolean,
         enqueuer: (key: Key) => Promise<ResourceEntry | undefined>
     ): Promise<Either<string, R>> {
         const key: Key = this.toKey(enqueue);
@@ -222,12 +242,15 @@ export class AppInboxService {
                 },
             },
             async () => {
-                await this.timePhase(
+                const entry = await this.timePhase(
                     'enqueue',
                     enqueue,
                     key,
                     async () => await enqueuer(key),
                 );
+                if (entry && enforceCommandIdentity) {
+                    await assertMatchingAppInboxCommand(enqueue, entry);
+                }
 
                 if (!waitForCompletion) {
                     return Either.ofLeft('No waiting for completion');
@@ -566,7 +589,73 @@ function toTerminalAppInboxError(error: unknown): unknown | undefined {
         return error instanceof Error ? error.message : String(error);
     }
 
+    if (isTerminalDomainError(error)) {
+        return {
+            error: error.message,
+            code: error.code,
+            message: error.message,
+            status: error.status,
+        };
+    }
+
     return undefined;
+}
+
+async function assertMatchingAppInboxCommand<V>(
+    incoming: AppInboxEnqueueInput<V>,
+    entry: ResourceEntry,
+): Promise<void> {
+    const receivedCommandHash = await hashStateMutationCommand(
+        toLogicalAppInboxCommand(incoming),
+    );
+    let existing: AppInboxEnqueueInput<unknown>;
+    try {
+        const message = JSON.parse(entry.resource) as ALMessage;
+        existing = JSON.parse(message.payload.resource) as AppInboxEnqueueInput<unknown>;
+    } catch {
+        throw new AppInboxIdempotencyConflictError(
+            entry.key.resourceId,
+            'invalid-existing-command',
+            receivedCommandHash,
+        );
+    }
+    const existingCommandHash = await hashStateMutationCommand(
+        toLogicalAppInboxCommand(existing),
+    );
+    if (existingCommandHash !== receivedCommandHash) {
+        throw new AppInboxIdempotencyConflictError(
+            entry.key.resourceId,
+            existingCommandHash,
+            receivedCommandHash,
+        );
+    }
+}
+
+function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>): Readonly<{
+    type: AppInboxType;
+    data: unknown;
+}> {
+    return {
+        type: enqueue.type,
+        data: enqueue.data,
+    };
+}
+
+function isTerminalDomainError(error: unknown): error is Readonly<{
+    code: string;
+    message: string;
+    status: number;
+}> {
+    return Boolean(
+        error instanceof Error &&
+        'code' in error &&
+        typeof error.code === 'string' &&
+        'status' in error &&
+        typeof error.status === 'number' &&
+        Number.isSafeInteger(error.status) &&
+        error.status >= 400 &&
+        error.status < 500,
+    );
 }
 
 function isSerializedPolicyDenial(value: unknown): value is Readonly<{

@@ -92,6 +92,7 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
     const entry = await repository.findEntry('runtime-smoke', 'a');
     assert.equal(entry?.value, '{"value":3}');
     assert.equal(entry?.revision, 1);
+    assert.equal(typeof entry?.updatedTimestamp, 'string');
 
     const allEntries = await repository.findAllEntries('runtime-smoke');
     assert.deepEqual(allEntries.map((row) => row.key), ['a', 'b']);
@@ -119,6 +120,34 @@ Deno.test('PSqlRuntimeStateRepository runs against PGlite SQL adapter', async ()
     await repository.upsert('runtime-smoke', 'expired', 'expired', PAST_MS);
     assert.equal(await repository.deleteExpired('runtime-smoke'), 1);
     assert.equal(await repository.findEntry('runtime-smoke', 'expired'), undefined);
+  });
+});
+
+Deno.test('PGlite runtime-state transactions isolate nested savepoint rollback', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new PSqlRuntimeStateRepository(sql);
+
+    await repository.begin(async (outer) => {
+      await outer.upsert('nested-tx', 'outer', 'outer', FUTURE_MS);
+      await assert.rejects(
+        async () => {
+          await outer.begin(async (inner) => {
+            await inner.upsert('nested-tx', 'rolled-back', 'rolled-back', FUTURE_MS);
+            throw new Error('rollback nested savepoint');
+          });
+        },
+        /rollback nested savepoint/,
+      );
+      assert.equal(await outer.findEntry('nested-tx', 'rolled-back'), undefined);
+
+      await outer.begin(async (inner) => {
+        await inner.upsert('nested-tx', 'committed', 'committed', FUTURE_MS);
+      });
+    });
+
+    assert.equal((await repository.findEntry('nested-tx', 'outer'))?.value, 'outer');
+    assert.equal((await repository.findEntry('nested-tx', 'committed'))?.value, 'committed');
+    assert.equal(await repository.findEntry('nested-tx', 'rolled-back'), undefined);
   });
 });
 
@@ -184,18 +213,18 @@ Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async 
     const clients = new ClientStateRepository(runtime);
     const groups = new GroupStateRepository(runtime);
 
-    await clients.putPrincipal({
+    assert.equal((await clients.insertPrincipal({
       applicationId: 'app',
       workspaceId: 'foo',
       principalId: 'alice',
       presenceVersion: 1,
-    } as never);
-    await clients.putPrincipal({
+    } as never)).status, 'applied');
+    assert.equal((await clients.insertPrincipal({
       applicationId: 'app',
       workspaceId: 'foobar',
       principalId: 'bob',
       presenceVersion: 1,
-    } as never);
+    } as never)).status, 'applied');
     await groups.putGroup({
       applicationId: 'app',
       workspaceId: 'foo',

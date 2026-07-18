@@ -17,7 +17,7 @@ type RuntimeStateRow = Readonly<{
     store_namespace: string;
     store_key: string;
     store_value: string;
-    updated_ts: string;
+    updated_ts: unknown;
     expire_at_ts: string;
     revision: number | string;
 }>;
@@ -369,9 +369,24 @@ function toEntry(row: RuntimeStateRow): RuntimeStateEntry {
         key: row.store_key,
         value: row.store_value,
         expireAtTimestamp,
-        updatedTimestamp: row.updated_ts,
+        updatedTimestamp: toRuntimeStateUpdatedTimestamp(row.updated_ts),
         revision: parseRuntimeStateRevision(row.revision),
     };
+}
+
+function toRuntimeStateUpdatedTimestamp(value: unknown): string {
+    if (typeof value === 'string') {
+        if (value.trim().length === 0) {
+            throw new Error('Invalid runtime state updated_ts: empty string');
+        }
+        return value;
+    }
+
+    if (value instanceof Date && Number.isFinite(value.getTime())) {
+        return value.toISOString();
+    }
+
+    throw new Error('Invalid runtime state updated_ts driver value');
 }
 
 function parseRuntimeStateRevision(value: number | string): number {

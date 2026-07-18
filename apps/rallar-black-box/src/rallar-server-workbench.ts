@@ -74,6 +74,7 @@ export type RallarServerWorkbenchVariables = Readonly<{
     workspaceId: string;
     principalId: string;
     sessionId: string;
+    generationId: string;
     clientInstanceId: string;
     groupId: string;
     username: string;
@@ -258,6 +259,7 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}',
         requiresAuth: true,
         body: {
+            generationId: '{generationId}',
             presenceState: 'online',
             transport: 'rtc',
             connectionId: 'rallar-black-box',
@@ -271,6 +273,7 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/heartbeat',
         requiresAuth: true,
         body: {
+            generationId: '{generationId}',
             presenceState: 'online',
         },
     },
@@ -281,7 +284,9 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         method: 'POST',
         pathTemplate: '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/instances/{clientInstanceId}/sessions/{sessionId}/disconnect',
         requiresAuth: true,
-        body: {},
+        body: {
+            generationId: '{generationId}',
+        },
     },
     {
         presetId: 'groups-list',
@@ -507,6 +512,7 @@ export function defaultRallarServerWorkbenchVariables(input: Partial<RallarServe
         workspaceId: input.workspaceId || DEFAULT_STATE_WORKSPACE_ID,
         principalId,
         sessionId,
+        generationId: input.generationId || crypto.randomUUID(),
         clientInstanceId: input.clientInstanceId || `${sessionId}-browser`,
         groupId: input.groupId || 'rallar-black-box-room',
         username: input.username || principalId,
@@ -523,6 +529,7 @@ export function createRallarServerRestCollectionTemplates(
         principalId: variables.principalId,
         clientInstanceId: variables.clientInstanceId,
         sessionId: variables.sessionId,
+        generationId: variables.generationId,
         username: variables.username,
         missingGroupId: `${variables.groupId}-missing`,
         otherPrincipalId: `${variables.principalId}-not-self`,
@@ -630,12 +637,28 @@ export function createRallarServerRestCollectionTemplates(
                         attachAuth: true,
                         responseBodyMode: 'json',
                         body: {
+                            generationId: '{{generationId}}',
                             presenceState: 'online',
                             transport: 'rtc',
                             connectionId: 'rallar-black-box',
                         },
                     },
                     expect: { status: [200, 201] },
+                },
+                {
+                    stepId: 'heartbeat-client-session',
+                    label: 'Heartbeat client session',
+                    request: {
+                        method: 'POST',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/clients/{{principalId}}/instances/{{clientInstanceId}}/sessions/{{sessionId}}/heartbeat',
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {
+                            generationId: '{{generationId}}',
+                            presenceState: 'online',
+                        },
+                    },
+                    expect: { status: 200 },
                 },
                 {
                     stepId: 'connect-group-presence',
@@ -660,6 +683,20 @@ export function createRallarServerRestCollectionTemplates(
                         query: { limit: 20 },
                         attachAuth: true,
                         responseBodyMode: 'json',
+                    },
+                    expect: { status: 200 },
+                },
+                {
+                    stepId: 'disconnect-client-session',
+                    label: 'Disconnect client session',
+                    request: {
+                        method: 'POST',
+                        path: '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}/clients/{{principalId}}/instances/{{clientInstanceId}}/sessions/{{sessionId}}/disconnect',
+                        attachAuth: true,
+                        responseBodyMode: 'json',
+                        body: {
+                            generationId: '{{generationId}}',
+                        },
                     },
                     expect: { status: 200 },
                 },

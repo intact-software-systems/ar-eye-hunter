@@ -14,7 +14,9 @@ import {
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
+    AppInboxService,
     AppGroupInboxService,
     type AppInboxEnqueueInput,
     AppInboxType,
@@ -49,6 +51,7 @@ import { toResultsDomain } from '@shared-server/postgres/resource-inbox/reposito
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'ar-eye-hunter',
@@ -62,6 +65,128 @@ describe('AppInboxType', () => {
 });
 
 describe('AppInboxService', () => {
+    it('rejects different semantic content behind the same real queue id while replaying reordered equal content', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const handler = vi.fn((data: Readonly<Record<string, unknown>>) =>
+            Promise.resolve({ accepted: data })
+        );
+        const service = new AppInboxService(
+            reader,
+            queue as never,
+            results as never,
+            'server-12345678',
+            SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            undefined,
+            {
+                waitMaxElapsedMsecs: 5_000,
+                waitRetryIntervalMsecs: 1,
+                waitMaxRetryIntervalMsecs: 1,
+                waitJitterRatio: 0,
+            },
+        );
+        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
+        const firstInput = {
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: 'same-public-request',
+            contextId: 'app:workspace:alice',
+            senderId: 'alice',
+            data: {
+                principalId: 'alice',
+                request: {
+                    requestId: 'same-public-request',
+                    metadata: { alpha: 1, beta: 2 },
+                },
+            },
+        } as const;
+        const firstPromise = service.processEntryUntilCompletion(firstInput);
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+
+        const first = await firstPromise;
+        const reordered = await service.processEntryUntilCompletion({
+            senderId: 'alice',
+            contextId: 'app:workspace:alice',
+            resourceId: 'same-public-request',
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            data: {
+                request: {
+                    metadata: { beta: 2, alpha: 1 },
+                    requestId: 'same-public-request',
+                },
+                principalId: 'alice',
+            },
+        });
+
+        expect(reordered).toEqual(first);
+        await expect(service.processEntryUntilCompletion({
+            ...firstInput,
+            data: {
+                ...firstInput.data,
+                request: {
+                    ...firstInput.data.request,
+                    metadata: { alpha: 1, beta: 3 },
+                },
+            },
+        })).rejects.toMatchObject({
+            name: 'AppInboxIdempotencyConflictError',
+            code: 'app-inbox-idempotency-conflict',
+            status: 409,
+        });
+        expect(handler).toHaveBeenCalledOnce();
+    });
+
+    it('stores client idempotency conflict as terminal without queue retry', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const service = new AppInboxService(
+            reader,
+            queue as never,
+            results as never,
+            'server-12345678',
+            SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            undefined,
+            {
+                waitMaxElapsedMsecs: 5_000,
+                waitRetryIntervalMsecs: 1,
+                waitMaxRetryIntervalMsecs: 1,
+                waitJitterRatio: 0,
+            },
+        );
+        const handler = vi.fn(() => Promise.reject(
+            new ClientMutationIdempotencyConflictError(
+                'same-request',
+                `sha256:${'a'.repeat(64)}`,
+                `sha256:${'b'.repeat(64)}`,
+            ),
+        ));
+        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
+        const pending = service.processEntryUntilCompletion({
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: 'same-request',
+            contextId: 'app:workspace:alice',
+            data: { requestId: 'same-request', username: 'alice' },
+        });
+
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        const result = await pending;
+
+        expect(JSON.parse(result.left ?? '{}')).toMatchObject({
+            code: 'client-mutation-idempotency-conflict',
+            status: 409,
+        });
+        expect(handler).toHaveBeenCalledOnce();
+        expect(readOnlyEntry(queue)?.status).toBe(EntityStatus.COMPLETED);
+        expect(readOnlyEntry(queue)?.dequeueAudit.attempts).toBe(1);
+    });
+
     it('processes createGroup through the inbox and stores a readable result with bounded queue keys', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);

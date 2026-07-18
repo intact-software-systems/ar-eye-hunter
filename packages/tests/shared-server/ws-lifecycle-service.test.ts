@@ -3,7 +3,7 @@ import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerS
 import { initWsLifecycle } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
 
 type WebSocketLifecycleCallbacks = Readonly<{
-    onClose?: (socket: Readonly<{ id: string }>) => Promise<void>;
+    onClose?: (socket: Readonly<{ id: string; generationId: string }>) => Promise<void>;
 }>;
 
 describe('ws lifecycle service', () => {
@@ -26,9 +26,15 @@ describe('ws lifecycle service', () => {
         };
 
         initWsLifecycle(wsQBoxServerService, handlers);
-        await callbacks.get('handle-ws-lifecycle')?.onClose?.({ id: 'session-1' });
+        await callbacks.get('handle-ws-lifecycle')?.onClose?.({
+            id: 'session-1',
+            generationId: 'generation-1',
+        });
 
-        expect(handlers.disconnectClientSession).toHaveBeenCalledWith('session-1');
+        expect(handlers.disconnectClientSession).toHaveBeenCalledWith(
+            'session-1',
+            'generation-1',
+        );
         expect(handlers.disconnectGroupSessionsBySessionId).toHaveBeenCalledWith(
             'session-1',
             {

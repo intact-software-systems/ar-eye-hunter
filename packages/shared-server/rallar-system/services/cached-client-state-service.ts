@@ -125,17 +125,27 @@ export function createCachedClientStateService(options: Readonly<{
                     request,
                 ),
             ),
-        registerAuthorisedWsClientSession: async (authSession, input) =>
+        registerAuthorisedWsClientSession: async (
+            authSession,
+            generationId,
+            input,
+        ) =>
             await observeWritten(
                 await options.durable.registerAuthorisedWsClientSession(
                     authSession,
+                    generationId,
                     input,
                 ),
             ),
-        disconnectAuthorisedWsClientSession: async (sessionId, reason) =>
+        disconnectAuthorisedWsClientSession: async (
+            sessionId,
+            generationId,
+            reason,
+        ) =>
             await observeWritten(
                 await options.durable.disconnectAuthorisedWsClientSession(
                     sessionId,
+                    generationId,
                     reason,
                 ),
             ),

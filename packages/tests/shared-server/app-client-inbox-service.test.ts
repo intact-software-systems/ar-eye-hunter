@@ -295,7 +295,7 @@ describe('AppClientInboxService', () => {
         );
 
         const connected = await processAppInboxMethod(reader, () =>
-            service.processAuthorisedWsClientConnect(authSession, {
+            service.processAuthorisedWsClientConnect(authSession, 'generation-1', {
                 expiresAtEpochMs: Date.now() + 60_000,
                 userAgent: 'Browser',
             })
@@ -306,6 +306,7 @@ describe('AppClientInboxService', () => {
         const disconnected = await processAppInboxMethod(reader, () =>
             service.processAuthorisedWsClientDisconnect(
                 authSession.sessionId,
+                'generation-1',
                 'socket-closed',
             )
         );
@@ -350,7 +351,7 @@ describe('AppClientInboxService', () => {
         );
 
         const connected = await processAppInboxMethod(reader, () =>
-            service.processAuthorisedWsClientConnect(authSession, {
+            service.processAuthorisedWsClientConnect(authSession, 'generation-admin', {
                 applicationId: 'ar-eye-hunter',
                 workspaceId: 'default',
                 expiresAtEpochMs: Date.now() + 60_000,
@@ -407,13 +408,13 @@ describe('AppClientInboxService', () => {
         );
 
         const defaultConnect = await processAppInboxMethod(reader, () =>
-            service.processAuthorisedWsClientConnect(authSession, {
+            service.processAuthorisedWsClientConnect(authSession, 'generation-default', {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
             })
         );
         const scopedConnect = await processAppInboxMethod(reader, () =>
-            service.processAuthorisedWsClientConnect(authSession, {
+            service.processAuthorisedWsClientConnect(authSession, 'generation-scoped', {
                 applicationId: 'ar-eye-hunter',
                 workspaceId: 'default',
             })
@@ -466,7 +467,7 @@ describe('AppClientInboxService', () => {
         );
 
         await processAppInboxMethod(reader, () =>
-            service.processAuthorisedWsClientConnect(authSession, {
+            service.processAuthorisedWsClientConnect(authSession, 'generation-scoped', {
                 applicationId: 'ar-eye-hunter',
                 workspaceId: 'default',
                 expiresAtEpochMs: Date.now() + 60_000,
@@ -475,6 +476,7 @@ describe('AppClientInboxService', () => {
         const disconnected = await processAppInboxMethod(reader, () =>
             service.processAuthorisedWsClientDisconnect(
                 authSession.sessionId,
+                'generation-scoped',
                 'socket-closed',
             )
         );

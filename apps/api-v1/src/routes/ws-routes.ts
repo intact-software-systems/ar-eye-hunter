@@ -27,13 +27,16 @@ export function init(app: Hono): void {
 
         upgraded = Deno.upgradeWebSocket(c.req.raw);
 
-        getMiddleware().wsQBoxServerService.socket.addConnection(
-          new ConnectionContext(authSession.sessionId, upgraded.socket),
+        const connection = createAuthorisedWsConnectionContext(
+          authSession.sessionId,
+          upgraded.socket,
         );
+        getMiddleware().wsQBoxServerService.socket.addConnection(connection);
 
         const clientStateWritten = await getMiddleware().appClientInboxService
           .processAuthorisedWsClientConnect(
             authSession,
+            connection.generationId,
             toAuthorisedWsClientInput(requestUrl, userAgent),
           );
         clientStateWritten.fold(
@@ -61,6 +64,14 @@ export function init(app: Hono): void {
       }
     },
   );
+}
+
+export function createAuthorisedWsConnectionContext(
+  sessionId: string,
+  socket: WebSocket,
+  generationId: string = crypto.randomUUID(),
+): ConnectionContext {
+  return new ConnectionContext(sessionId, socket, generationId);
 }
 
 export function toAuthorisedWsClientInput(

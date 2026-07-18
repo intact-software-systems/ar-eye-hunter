@@ -17,6 +17,7 @@ const retryIntervalMsecs = 5000;
 
 export type HeartbeatHandle = Readonly<{
     sessionId: string;
+    generationId: string;
     stop(): void;
 }>;
 
@@ -37,9 +38,11 @@ export async function initHeartbeat(
 
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const generationId = crypto.randomUUID();
 
     const handle: HeartbeatHandle = {
         sessionId: clientData.sessionId,
+        generationId,
         stop() {
             stopped = true;
             if (timer !== undefined) {
@@ -65,7 +68,7 @@ export async function initHeartbeat(
 
     const runHeartbeat = async (): Promise<void> => {
         try {
-            await refreshHeartbeat(clientData, options);
+            await refreshHeartbeat(clientData, generationId, options);
             schedule(intervalMsecs);
         } catch (error) {
             if (isUnauthorizedApiError(error)) {
@@ -94,6 +97,7 @@ export function stopHeartbeat(handle: HeartbeatHandle | undefined = activeHeartb
 
 async function refreshHeartbeat(
     clientData: ClientInfo,
+    generationId: string,
     options: InitHeartbeatOptions,
 ): Promise<void> {
     const joinedGroups = groupStateSnapshotsRepository
@@ -106,6 +110,7 @@ async function refreshHeartbeat(
         );
 
     const refreshed = await refreshStateHeartbeat(clientData, joinedGroups, {
+        generationId,
         authSession: options.authSession,
         scope: options.scope,
         policies: options.policies,

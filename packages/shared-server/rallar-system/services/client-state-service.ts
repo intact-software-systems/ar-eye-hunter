@@ -57,6 +57,7 @@ import {
     type ClientMutationRead,
     type ClientMutationReceipt,
     validateClientMutation,
+    validateClientMutationCommand,
 } from './client-state-mutations.ts';
 import {
     nowMs,
@@ -139,10 +140,12 @@ export type ClientStateService = Readonly<{
     ): Promise<ClientStateWritten>;
     registerAuthorisedWsClientSession(
         authSession: AuthSession,
+        generationId: string,
         input?: RegisterAuthorisedWsClientInput,
     ): Promise<ClientStateWritten>;
     disconnectAuthorisedWsClientSession(
         sessionId: string,
+        generationId: string,
         reason?: string,
     ): Promise<ClientStateWritten>;
     expireExpiredSessions(atEpochMs?: number): Promise<readonly ClientStateWritten[]>;
@@ -184,6 +187,7 @@ export function createClientStateService(
         command: ClientMutationCommand,
         mutationAtEpochMs: number = now(),
     ): Promise<ClientMutationExecution> => {
+        validateClientMutationCommand(command);
         const facts: ClientMutationFacts = {
             nowEpochMs: mutationAtEpochMs,
             serviceId: dependencies.serviceId,
@@ -381,12 +385,15 @@ export function createClientStateService(
             request,
             randomId,
         )),
-        registerAuthorisedWsClientSession: async (authSession, input = {}) => {
+        registerAuthorisedWsClientSession: async (
+            authSession,
+            generationId,
+            input = {},
+        ) => {
             const scope = toAuthorisedWsScope(input);
             const principalId = input.principalId ?? authSession.clientId;
             const clientInstanceId = input.clientInstanceId ?? authSession.clientId;
-            const connectionId = authSession.sessionId;
-            const requestId = `authorised-ws:connect:${authSession.sessionId}:${connectionId}`;
+            const requestId = `authorised-ws:connect:${authSession.sessionId}:${generationId}`;
             return await executeCompatible(toConnectCommand(
                 'connectAuthorisedWsSession',
                 scope,
@@ -394,10 +401,10 @@ export function createClientStateService(
                 clientInstanceId,
                 authSession.sessionId,
                 {
-                    generationId: connectionId,
+                    generationId,
                     presenceState: 'online',
                     transport: 'ws',
-                    connectionId,
+                    connectionId: generationId,
                     expiresAtEpochMs: input.expiresAtEpochMs ?? authSession.expiresAtEpochMs,
                     actorPrincipalId: principalId,
                     actorSessionId: authSession.sessionId,
@@ -413,6 +420,7 @@ export function createClientStateService(
         },
         disconnectAuthorisedWsClientSession: async (
             sessionId,
+            generationId,
             reason = 'websocket-closed',
         ) => {
             const session = await findClientSessionBySessionId(
@@ -441,12 +449,12 @@ export function createClientStateService(
                 session.clientInstanceId,
                 sessionId,
                 {
-                    generationId: session.generationId,
+                    generationId,
                     reason,
                     actorPrincipalId: session.principalId,
                     actorSessionId: sessionId,
                     requestId:
-                        `authorised-ws:disconnect:${sessionId}:${session.generationId}`,
+                        `authorised-ws:disconnect:${sessionId}:${generationId}`,
                 },
                 randomId,
             ));
@@ -898,17 +906,29 @@ function withClientStateServiceTiming(
             timed('disconnectSession', {
                 ...scope, principalId, clientInstanceId, sessionId, ...request,
             }, () => service.disconnectSession(scope, principalId, clientInstanceId, sessionId, request)),
-        registerAuthorisedWsClientSession: (auth, input) =>
+        registerAuthorisedWsClientSession: (auth, generationId, input) =>
             timed('registerAuthorisedWsClientSession', {
                 requestId: auth.sessionId,
                 applicationId: input?.applicationId,
                 workspaceId: input?.workspaceId,
                 principalId: input?.principalId ?? auth.clientId,
                 sessionId: auth.sessionId,
-            }, () => service.registerAuthorisedWsClientSession(auth, input)),
-        disconnectAuthorisedWsClientSession: (sessionId, reason) =>
-            timed('disconnectAuthorisedWsClientSession', { sessionId, reason },
-                () => service.disconnectAuthorisedWsClientSession(sessionId, reason)),
+                generationId,
+            }, () => service.registerAuthorisedWsClientSession(
+                auth,
+                generationId,
+                input,
+            )),
+        disconnectAuthorisedWsClientSession: (sessionId, generationId, reason) =>
+            timed('disconnectAuthorisedWsClientSession', {
+                sessionId,
+                generationId,
+                reason,
+            }, () => service.disconnectAuthorisedWsClientSession(
+                sessionId,
+                generationId,
+                reason,
+            )),
         expireExpiredSessions: (atEpochMs) =>
             timed('expireExpiredSessions', { atEpochMs },
                 () => service.expireExpiredSessions(atEpochMs)),

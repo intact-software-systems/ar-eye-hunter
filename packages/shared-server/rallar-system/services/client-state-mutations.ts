@@ -11,6 +11,13 @@ import type {
     ClientTransport,
 } from '@shared/api/client-types.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type {
+    ConnectClientSessionRequest,
+    DisconnectClientSessionRequest,
+    HeartbeatClientSessionRequest,
+    UpsertClientInstanceRequest,
+    UpsertClientPrincipalRequest,
+} from '@shared/api/state-types.ts';
 
 type NullableActorInput = Readonly<{
     actorPrincipalId: string | null;
@@ -196,10 +203,296 @@ export class ClientMutationIdempotencyConflictError extends Error {
 
 export class ClientMutationRejectedError extends Error {
     readonly code = 'client-mutation-rejected';
+    readonly status = 400;
 
     constructor(message: string) {
         super(message);
         this.name = 'ClientMutationRejectedError';
+    }
+}
+
+export function validateClientMutationCommand(
+    command: unknown,
+): asserts command is ClientMutationCommand {
+    const value = requirePlainRecord(command, 'Client mutation command');
+    const operation = value.operation;
+    if (!CLIENT_MUTATION_OPERATIONS.has(operation as string)) {
+        reject('Client mutation command operation is invalid');
+    }
+    requireNonEmptyString(value.commandId, 'Client mutation commandId');
+    requireNullableNonEmptyString(value.requestId, 'Client mutation requestId');
+    validatePrincipalRef(value.aggregateRef, 'Client mutation aggregateRef');
+    const input = requirePlainRecord(value.input, 'Client mutation input');
+    validateActorInput(input);
+
+    switch (operation) {
+        case 'upsertPrincipal':
+            requireExactKeys(value, COMMAND_BASE_KEYS, 'Client principal command');
+            requireExactKeys(input, PRINCIPAL_INPUT_KEYS, 'Client principal input');
+            requireNonEmptyString(input.username, 'Client principal username');
+            requireNullableString(input.displayName, 'Client principal displayName');
+            requireNullableString(input.avatarUrl, 'Client principal avatarUrl');
+            requireNullableEnum(
+                input.status,
+                CLIENT_PRINCIPAL_STATUSES,
+                'Client principal status',
+            );
+            requireNullableString(input.authProvider, 'Client principal authProvider');
+            requireNullableString(
+                input.externalSubjectId,
+                'Client principal externalSubjectId',
+            );
+            requireNullableStringArray(input.roles, 'Client principal roles');
+            requireNullableJsonRecord(input.metadata, 'Client principal metadata');
+            requireNullableTimestamp(
+                input.lastSeenAtEpochMs,
+                'Client principal lastSeenAtEpochMs',
+            );
+            return;
+        case 'upsertInstance':
+            requireExactKeys(value, INSTANCE_COMMAND_KEYS, 'Client instance command');
+            requireNonEmptyString(value.clientInstanceId, 'Client instance id');
+            requireExactKeys(input, INSTANCE_INPUT_KEYS, 'Client instance input');
+            requireNullableEnum(
+                input.status,
+                CLIENT_INSTANCE_STATUSES,
+                'Client instance status',
+            );
+            requireNullableEnum(
+                input.platform,
+                CLIENT_PLATFORMS,
+                'Client instance platform',
+            );
+            requireNullableString(input.deviceLabel, 'Client instance deviceLabel');
+            requireNullableString(input.appVersion, 'Client instance appVersion');
+            requireNullableString(input.userAgent, 'Client instance userAgent');
+            requireNullableStringArray(
+                input.capabilities,
+                'Client instance capabilities',
+            );
+            return;
+        case 'connectSession':
+        case 'connectAuthorisedWsSession':
+            validateSessionCommandRoot(value);
+            requireExactKeys(input, CONNECT_INPUT_KEYS, 'Client connect input');
+            validateGenerationId(input.generationId);
+            requireNullableEnum(
+                input.presenceState,
+                CLIENT_PRESENCE_STATES,
+                'Client connect presenceState',
+            );
+            requireNullableEnum(
+                input.transport,
+                CLIENT_TRANSPORTS,
+                'Client connect transport',
+            );
+            requireNullableNonEmptyString(
+                input.connectionId,
+                'Client connect connectionId',
+            );
+            for (const field of CONNECT_TIMESTAMP_FIELDS) {
+                requireNullableTimestamp(input[field], `Client connect ${field}`);
+            }
+            requireNullableEnum(
+                input.instancePlatform,
+                CLIENT_PLATFORMS,
+                'Client connect instancePlatform',
+            );
+            requireNullableString(
+                input.instanceUserAgent,
+                'Client connect instanceUserAgent',
+            );
+            requireNullableStringArray(
+                input.instanceCapabilities,
+                'Client connect instanceCapabilities',
+            );
+            return;
+        case 'heartbeatSession':
+            validateSessionCommandRoot(value);
+            requireExactKeys(input, HEARTBEAT_INPUT_KEYS, 'Client heartbeat input');
+            validateGenerationId(input.generationId);
+            requireNullableEnum(
+                input.presenceState,
+                CLIENT_PRESENCE_STATES,
+                'Client heartbeat presenceState',
+            );
+            requireNullableTimestamp(
+                input.lastHeartbeatAtEpochMs,
+                'Client heartbeat lastHeartbeatAtEpochMs',
+            );
+            requireNullableTimestamp(
+                input.expiresAtEpochMs,
+                'Client heartbeat expiresAtEpochMs',
+            );
+            return;
+        case 'disconnectSession':
+        case 'disconnectAuthorisedWsSession':
+            validateSessionCommandRoot(value);
+            requireExactKeys(input, DISCONNECT_INPUT_KEYS, 'Client disconnect input');
+            validateGenerationId(input.generationId);
+            for (const field of DISCONNECT_TIMESTAMP_FIELDS) {
+                requireNullableTimestamp(input[field], `Client disconnect ${field}`);
+            }
+            return;
+        case 'expireSession':
+            validateSessionCommandRoot(value);
+            requireExactKeys(input, EXPIRY_INPUT_KEYS, 'Client expiry input');
+            validateGenerationId(input.generationId);
+            requirePositiveSafeInteger(
+                input.generationVersion,
+                'Client expiry generationVersion',
+            );
+            requireTimestamp(
+                input.observedExpiresAtEpochMs,
+                'Client expiry observedExpiresAtEpochMs',
+            );
+            requireTimestamp(input.expiresAtEpochMs, 'Client expiry expiresAtEpochMs');
+            return;
+    }
+}
+
+export function validateClientMutationRequest(
+    operation: 'upsertPrincipal',
+    request: unknown,
+): asserts request is UpsertClientPrincipalRequest;
+export function validateClientMutationRequest(
+    operation: 'upsertInstance',
+    request: unknown,
+): asserts request is UpsertClientInstanceRequest;
+export function validateClientMutationRequest(
+    operation: 'connectSession',
+    request: unknown,
+): asserts request is ConnectClientSessionRequest;
+export function validateClientMutationRequest(
+    operation: 'heartbeatSession',
+    request: unknown,
+): asserts request is HeartbeatClientSessionRequest;
+export function validateClientMutationRequest(
+    operation: 'disconnectSession',
+    request: unknown,
+): asserts request is DisconnectClientSessionRequest;
+export function validateClientMutationRequest(
+    operation:
+        | 'upsertPrincipal'
+        | 'upsertInstance'
+        | 'connectSession'
+        | 'heartbeatSession'
+        | 'disconnectSession',
+    request: unknown,
+): void {
+    const value = requirePlainRecord(request, `Client ${operation} request`);
+    validateOptionalActorInput(value);
+    switch (operation) {
+        case 'upsertPrincipal':
+            requireAllowedKeys(
+                value,
+                ['username'],
+                RAW_PRINCIPAL_REQUEST_KEYS,
+                'Client upsertPrincipal request',
+            );
+            requireNonEmptyString(value.username, 'Client principal username');
+            requireOptionalString(value.displayName, 'Client principal displayName');
+            requireOptionalString(value.avatarUrl, 'Client principal avatarUrl');
+            requireOptionalEnum(
+                value.status,
+                CLIENT_PRINCIPAL_STATUSES,
+                'Client principal status',
+            );
+            requireOptionalString(value.authProvider, 'Client principal authProvider');
+            requireOptionalString(
+                value.externalSubjectId,
+                'Client principal externalSubjectId',
+            );
+            if (value.roles !== undefined) requireStringArray(value.roles, 'Client principal roles');
+            if (value.metadata !== undefined) {
+                requireJsonRecord(value.metadata, 'Client principal metadata');
+            }
+            requireOptionalTimestamp(
+                value.lastSeenAtEpochMs,
+                'Client principal lastSeenAtEpochMs',
+            );
+            return;
+        case 'upsertInstance':
+            requireAllowedKeys(
+                value,
+                [],
+                RAW_INSTANCE_REQUEST_KEYS,
+                'Client upsertInstance request',
+            );
+            requireOptionalEnum(
+                value.status,
+                CLIENT_INSTANCE_STATUSES,
+                'Client instance status',
+            );
+            requireOptionalEnum(
+                value.platform,
+                CLIENT_PLATFORMS,
+                'Client instance platform',
+            );
+            for (const field of ['deviceLabel', 'appVersion', 'userAgent'] as const) {
+                requireOptionalString(value[field], `Client instance ${field}`);
+            }
+            if (value.capabilities !== undefined) {
+                requireStringArray(value.capabilities, 'Client instance capabilities');
+            }
+            return;
+        case 'connectSession':
+            requireAllowedKeys(
+                value,
+                ['generationId'],
+                RAW_CONNECT_REQUEST_KEYS,
+                'Client connectSession request',
+            );
+            validateGenerationId(value.generationId);
+            requireOptionalEnum(
+                value.presenceState,
+                CLIENT_PRESENCE_STATES,
+                'Client connect presenceState',
+            );
+            requireOptionalEnum(
+                value.transport,
+                CLIENT_TRANSPORTS,
+                'Client connect transport',
+            );
+            requireOptionalNonEmptyString(value.connectionId, 'Client connect connectionId');
+            for (const field of CONNECT_TIMESTAMP_FIELDS) {
+                requireOptionalTimestamp(value[field], `Client connect ${field}`);
+            }
+            return;
+        case 'heartbeatSession':
+            requireAllowedKeys(
+                value,
+                ['generationId'],
+                RAW_HEARTBEAT_REQUEST_KEYS,
+                'Client heartbeatSession request',
+            );
+            validateGenerationId(value.generationId);
+            requireOptionalEnum(
+                value.presenceState,
+                CLIENT_PRESENCE_STATES,
+                'Client heartbeat presenceState',
+            );
+            requireOptionalTimestamp(
+                value.lastHeartbeatAtEpochMs,
+                'Client heartbeat lastHeartbeatAtEpochMs',
+            );
+            requireOptionalTimestamp(
+                value.expiresAtEpochMs,
+                'Client heartbeat expiresAtEpochMs',
+            );
+            return;
+        case 'disconnectSession':
+            requireAllowedKeys(
+                value,
+                ['generationId'],
+                RAW_DISCONNECT_REQUEST_KEYS,
+                'Client disconnectSession request',
+            );
+            validateGenerationId(value.generationId);
+            for (const field of DISCONNECT_TIMESTAMP_FIELDS) {
+                requireOptionalTimestamp(value[field], `Client disconnect ${field}`);
+            }
+            return;
     }
 }
 
@@ -209,6 +502,9 @@ export function computeClientMutation(input: Readonly<{
     facts: ClientMutationFacts;
 }>): ClientMutationComputed {
     const { command, read, facts } = input;
+    validateClientMutationCommand(command);
+    validateClientMutationFacts(facts);
+    validateClientMutationRead(command, read);
     if (read.idempotency) {
         return read.idempotency.value.commandHash === facts.commandHash
             ? { outcome: 'replay', receipt: read.idempotency.value.receipt }
@@ -244,6 +540,9 @@ export function validateClientMutation(input: Readonly<{
     facts: ClientMutationFacts;
 }>): void {
     const { command, read, computed, facts } = input;
+    validateClientMutationCommand(command);
+    validateClientMutationFacts(facts);
+    validateClientMutationComputed(computed);
     if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
         throw new ClientMutationRejectedError('Invalid canonical client command hash');
     }
@@ -333,6 +632,20 @@ function validateClientMutationRead(
     command: ClientMutationCommand,
     read: ClientMutationRead,
 ): void {
+    const root = requirePlainRecord(read, 'Client mutation read');
+    requireExactKeys(
+        root,
+        ['idempotency', 'principal', 'instance', 'session'],
+        'Client mutation read',
+    );
+    validateNullableEntryValue(read.principal, 'Client principal read', validatePrincipal);
+    validateNullableEntryValue(read.instance, 'Client instance read', validateInstance);
+    validateNullableEntryValue(read.session, 'Client session read', validateSession);
+    validateNullableEntryValue(
+        read.idempotency,
+        'Client idempotency read',
+        validateIdempotencyRecord,
+    );
     if (read.principal && !samePrincipalRef(read.principal.value, command.aggregateRef)) {
         throw new ClientMutationRejectedError('Client principal read is wrongly scoped');
     }
@@ -920,4 +1233,698 @@ function jsonEquals(left: unknown, right: unknown): boolean {
 
 function isJsonObject(value: unknown): value is Readonly<Record<string, unknown>> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const CLIENT_MUTATION_OPERATIONS = new Set([
+    'upsertPrincipal',
+    'upsertInstance',
+    'connectSession',
+    'connectAuthorisedWsSession',
+    'heartbeatSession',
+    'disconnectSession',
+    'disconnectAuthorisedWsSession',
+    'expireSession',
+]);
+const CLIENT_PRINCIPAL_STATUSES = new Set(['active', 'disabled', 'deleted']);
+const CLIENT_INSTANCE_STATUSES = new Set(['active', 'revoked', 'retired']);
+const CLIENT_SESSION_STATUSES = new Set(['active', 'disconnected', 'expired']);
+const CLIENT_PRESENCE_STATES = new Set(['online', 'offline', 'away', 'busy']);
+const CLIENT_PLATFORMS = new Set([
+    'web', 'ios', 'android', 'desktop', 'server', 'unknown',
+]);
+const CLIENT_TRANSPORTS = new Set(['ws', 'http', 'rtc', 'unknown']);
+const CLIENT_EVENT_TYPES = new Set([
+    'principal-created', 'principal-updated', 'principal-disabled', 'principal-deleted',
+    'instance-registered', 'instance-updated', 'instance-revoked',
+    'session-authenticated', 'session-connected', 'session-heartbeat',
+    'session-disconnected', 'session-expired',
+]);
+const ACTOR_INPUT_KEYS = [
+    'actorPrincipalId', 'actorSessionId', 'reason', 'traceId',
+] as const;
+const COMMAND_BASE_KEYS = [
+    'operation', 'aggregateRef', 'commandId', 'requestId', 'input',
+] as const;
+const INSTANCE_COMMAND_KEYS = [...COMMAND_BASE_KEYS, 'clientInstanceId'] as const;
+const SESSION_COMMAND_KEYS = [...INSTANCE_COMMAND_KEYS, 'sessionId'] as const;
+const PRINCIPAL_INPUT_KEYS = [
+    'username', 'displayName', 'avatarUrl', 'status', 'authProvider',
+    'externalSubjectId', 'roles', 'metadata', 'lastSeenAtEpochMs',
+    ...ACTOR_INPUT_KEYS,
+] as const;
+const INSTANCE_INPUT_KEYS = [
+    'status', 'platform', 'deviceLabel', 'appVersion', 'userAgent', 'capabilities',
+    ...ACTOR_INPUT_KEYS,
+] as const;
+const CONNECT_INPUT_KEYS = [
+    'generationId', 'presenceState', 'transport', 'connectionId',
+    'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
+    'expiresAtEpochMs', 'instancePlatform', 'instanceUserAgent',
+    'instanceCapabilities', ...ACTOR_INPUT_KEYS,
+] as const;
+const HEARTBEAT_INPUT_KEYS = [
+    'generationId', 'presenceState', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs',
+    ...ACTOR_INPUT_KEYS,
+] as const;
+const DISCONNECT_INPUT_KEYS = [
+    'generationId', 'disconnectedAtEpochMs', 'lastHeartbeatAtEpochMs',
+    'expiresAtEpochMs', ...ACTOR_INPUT_KEYS,
+] as const;
+const EXPIRY_INPUT_KEYS = [
+    'generationId', 'generationVersion', 'observedExpiresAtEpochMs',
+    'expiresAtEpochMs', ...ACTOR_INPUT_KEYS,
+] as const;
+const CONNECT_TIMESTAMP_FIELDS = [
+    'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
+    'expiresAtEpochMs',
+] as const;
+const DISCONNECT_TIMESTAMP_FIELDS = [
+    'disconnectedAtEpochMs', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs',
+] as const;
+const RAW_ACTOR_KEYS = [
+    'actorPrincipalId', 'actorSessionId', 'reason', 'traceId', 'requestId',
+] as const;
+const RAW_PRINCIPAL_REQUEST_KEYS = [
+    'username', 'displayName', 'avatarUrl', 'status', 'authProvider',
+    'externalSubjectId', 'roles', 'metadata', 'lastSeenAtEpochMs', ...RAW_ACTOR_KEYS,
+] as const;
+const RAW_INSTANCE_REQUEST_KEYS = [
+    'status', 'platform', 'deviceLabel', 'appVersion', 'userAgent', 'capabilities',
+    ...RAW_ACTOR_KEYS,
+] as const;
+const RAW_CONNECT_REQUEST_KEYS = [
+    'generationId', 'presenceState', 'transport', 'connectionId',
+    'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
+    'expiresAtEpochMs', ...RAW_ACTOR_KEYS,
+] as const;
+const RAW_HEARTBEAT_REQUEST_KEYS = [
+    'generationId', 'presenceState', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs',
+    ...RAW_ACTOR_KEYS,
+] as const;
+const RAW_DISCONNECT_REQUEST_KEYS = [
+    'generationId', 'disconnectedAtEpochMs', 'lastHeartbeatAtEpochMs',
+    'expiresAtEpochMs', ...RAW_ACTOR_KEYS,
+] as const;
+
+function reject(message: string): never {
+    throw new ClientMutationRejectedError(message);
+}
+
+function requirePlainRecord(
+    value: unknown,
+    label: string,
+): Readonly<Record<string, unknown>> {
+    if (!isJsonObject(value)) reject(`${label} must be a plain object`);
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+        reject(`${label} must be a plain object`);
+    }
+    return value;
+}
+
+function requireExactKeys(
+    value: Readonly<Record<string, unknown>>,
+    keys: readonly string[],
+    label: string,
+): void {
+    const expected = new Set(keys);
+    for (const key of keys) {
+        if (!Object.prototype.hasOwnProperty.call(value, key)) {
+            reject(`${label}.${key} is required`);
+        }
+    }
+    for (const key of Object.keys(value)) {
+        if (!expected.has(key)) reject(`${label}.${key} is not allowed`);
+    }
+}
+
+function requireAllowedKeys(
+    value: Readonly<Record<string, unknown>>,
+    required: readonly string[],
+    allowed: readonly string[],
+    label: string,
+): void {
+    const expected = new Set(allowed);
+    for (const key of required) {
+        if (!Object.prototype.hasOwnProperty.call(value, key)) {
+            reject(`${label}.${key} is required`);
+        }
+    }
+    for (const key of Object.keys(value)) {
+        if (!expected.has(key)) reject(`${label}.${key} is not allowed`);
+    }
+}
+
+function requireNonEmptyString(value: unknown, label: string): asserts value is string {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+        reject(`${label} must be a non-empty string`);
+    }
+}
+
+function requireString(value: unknown, label: string): asserts value is string {
+    if (typeof value !== 'string') reject(`${label} must be a string`);
+}
+
+function requireNullableString(value: unknown, label: string): void {
+    if (value !== null) requireString(value, label);
+}
+
+function requireNullableNonEmptyString(value: unknown, label: string): void {
+    if (value !== null) requireNonEmptyString(value, label);
+}
+
+function requireOptionalString(value: unknown, label: string): void {
+    if (value !== undefined) requireString(value, label);
+}
+
+function requireOptionalNonEmptyString(value: unknown, label: string): void {
+    if (value !== undefined) requireNonEmptyString(value, label);
+}
+
+function requireTimestamp(value: unknown, label: string): asserts value is number {
+    if (!Number.isSafeInteger(value) || (value as number) < 0 || Object.is(value, -0)) {
+        reject(`${label} must be a finite safe nonnegative integer`);
+    }
+}
+
+function requireNullableTimestamp(value: unknown, label: string): void {
+    if (value !== null) requireTimestamp(value, label);
+}
+
+function requireOptionalTimestamp(value: unknown, label: string): void {
+    if (value !== undefined) requireTimestamp(value, label);
+}
+
+function requirePositiveSafeInteger(value: unknown, label: string): void {
+    requireTimestamp(value, label);
+    if ((value as number) < 1) reject(`${label} must be at least 1`);
+}
+
+function requireEnum(value: unknown, allowed: ReadonlySet<string>, label: string): void {
+    if (typeof value !== 'string' || !allowed.has(value)) {
+        reject(`${label} has an invalid value`);
+    }
+}
+
+function requireNullableEnum(
+    value: unknown,
+    allowed: ReadonlySet<string>,
+    label: string,
+): void {
+    if (value !== null) requireEnum(value, allowed, label);
+}
+
+function requireOptionalEnum(
+    value: unknown,
+    allowed: ReadonlySet<string>,
+    label: string,
+): void {
+    if (value !== undefined) requireEnum(value, allowed, label);
+}
+
+function requireStringArray(value: unknown, label: string): void {
+    if (!Array.isArray(value)) reject(`${label} must be an array`);
+    value.forEach((item, index) =>
+        requireNonEmptyString(item, `${label}[${index}]`)
+    );
+}
+
+function requireNullableStringArray(value: unknown, label: string): void {
+    if (value !== null) requireStringArray(value, label);
+}
+
+function requireJsonValue(value: unknown, label: string): void {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value) || Object.is(value, -0)) {
+            reject(`${label} contains a non-JSON number`);
+        }
+        return;
+    }
+    if (Array.isArray(value)) {
+        value.forEach((item, index) => requireJsonValue(item, `${label}[${index}]`));
+        return;
+    }
+    const record = requirePlainRecord(value, label);
+    for (const [key, item] of Object.entries(record)) {
+        requireJsonValue(item, `${label}.${key}`);
+    }
+}
+
+function requireJsonRecord(value: unknown, label: string): void {
+    requirePlainRecord(value, label);
+    requireJsonValue(value, label);
+}
+
+function requireNullableJsonRecord(value: unknown, label: string): void {
+    if (value !== null) requireJsonRecord(value, label);
+}
+
+function validateGenerationId(value: unknown): void {
+    requireNonEmptyString(value, 'Client session generationId');
+}
+
+function validateActorInput(input: Readonly<Record<string, unknown>>): void {
+    requireNullableNonEmptyString(
+        input.actorPrincipalId,
+        'Client mutation actorPrincipalId',
+    );
+    requireNullableNonEmptyString(input.actorSessionId, 'Client mutation actorSessionId');
+    requireNullableString(input.reason, 'Client mutation reason');
+    requireNullableString(input.traceId, 'Client mutation traceId');
+}
+
+function validateOptionalActorInput(input: Readonly<Record<string, unknown>>): void {
+    requireOptionalNonEmptyString(
+        input.actorPrincipalId,
+        'Client request actorPrincipalId',
+    );
+    requireOptionalNonEmptyString(input.actorSessionId, 'Client request actorSessionId');
+    requireOptionalString(input.reason, 'Client request reason');
+    requireOptionalString(input.traceId, 'Client request traceId');
+    requireOptionalNonEmptyString(input.requestId, 'Client request requestId');
+}
+
+function validateSessionCommandRoot(value: Readonly<Record<string, unknown>>): void {
+    requireExactKeys(value, SESSION_COMMAND_KEYS, 'Client session command');
+    requireNonEmptyString(value.clientInstanceId, 'Client session clientInstanceId');
+    requireNonEmptyString(value.sessionId, 'Client session sessionId');
+}
+
+function validatePrincipalRef(value: unknown, label: string, exact = true): void {
+    const ref = requirePlainRecord(value, label);
+    if (exact) {
+        requireAllowedKeys(
+            ref,
+            ['applicationId', 'principalId'],
+            ['applicationId', 'workspaceId', 'principalId'],
+            label,
+        );
+    }
+    requireNonEmptyString(ref.applicationId, `${label}.applicationId`);
+    requireOptionalNonEmptyString(ref.workspaceId, `${label}.workspaceId`);
+    requireNonEmptyString(ref.principalId, `${label}.principalId`);
+}
+
+function validateAudit(value: unknown, label: string): void {
+    const audit = requirePlainRecord(value, label);
+    requireAllowedKeys(
+        audit,
+        ['atEpochMs'],
+        [
+            'atEpochMs', 'byPrincipalId', 'bySessionId', 'byServiceId',
+            'reason', 'traceId', 'requestId',
+        ],
+        label,
+    );
+    requireTimestamp(audit.atEpochMs, `${label}.atEpochMs`);
+    for (const field of ['byPrincipalId', 'bySessionId', 'byServiceId'] as const) {
+        requireOptionalNonEmptyString(audit[field], `${label}.${field}`);
+    }
+    for (const field of ['reason', 'traceId', 'requestId'] as const) {
+        requireOptionalString(audit[field], `${label}.${field}`);
+    }
+    if (
+        audit.byPrincipalId === undefined &&
+        audit.bySessionId === undefined &&
+        audit.byServiceId === undefined
+    ) {
+        reject(`${label} requires an actor identity`);
+    }
+}
+
+function validatePrincipal(value: unknown, label: string): void {
+    const principal = requirePlainRecord(value, label);
+    requireAllowedKeys(
+        principal,
+        [
+            'applicationId', 'principalId', 'username', 'status', 'roles', 'metadata',
+            'snapshotVersion', 'profileVersion', 'presenceVersion', 'created', 'updated',
+        ],
+        [
+            'applicationId', 'workspaceId', 'principalId', 'username', 'displayName',
+            'avatarUrl', 'status', 'authProvider', 'externalSubjectId', 'roles',
+            'metadata', 'snapshotVersion', 'profileVersion', 'presenceVersion',
+            'created', 'updated', 'disabled', 'deleted', 'lastSeenAtEpochMs',
+        ],
+        label,
+    );
+    validatePrincipalRef(principal, label, false);
+    requireNonEmptyString(principal.username, `${label}.username`);
+    for (
+        const field of [
+            'displayName', 'avatarUrl', 'authProvider', 'externalSubjectId',
+        ] as const
+    ) {
+        requireOptionalString(principal[field], `${label}.${field}`);
+    }
+    requireEnum(principal.status, CLIENT_PRINCIPAL_STATUSES, `${label}.status`);
+    requireStringArray(principal.roles, `${label}.roles`);
+    requireJsonRecord(principal.metadata, `${label}.metadata`);
+    for (const field of ['snapshotVersion', 'profileVersion', 'presenceVersion'] as const) {
+        requirePositiveSafeInteger(principal[field], `${label}.${field}`);
+    }
+    validateAudit(principal.created, `${label}.created`);
+    validateAudit(principal.updated, `${label}.updated`);
+    if (principal.disabled !== undefined) validateAudit(principal.disabled, `${label}.disabled`);
+    if (principal.deleted !== undefined) validateAudit(principal.deleted, `${label}.deleted`);
+    requireOptionalTimestamp(principal.lastSeenAtEpochMs, `${label}.lastSeenAtEpochMs`);
+}
+
+function validateInstance(value: unknown, label: string): void {
+    const instance = requirePlainRecord(value, label);
+    requireAllowedKeys(
+        instance,
+        [
+            'applicationId', 'principalId', 'clientInstanceId', 'status', 'platform',
+            'capabilities', 'registered', 'updated',
+        ],
+        [
+            'applicationId', 'workspaceId', 'principalId', 'clientInstanceId', 'status',
+            'platform', 'deviceLabel', 'appVersion', 'userAgent', 'capabilities',
+            'registered', 'updated', 'revoked',
+        ],
+        label,
+    );
+    validatePrincipalRef(instance, label, false);
+    requireNonEmptyString(instance.clientInstanceId, `${label}.clientInstanceId`);
+    requireEnum(instance.status, CLIENT_INSTANCE_STATUSES, `${label}.status`);
+    requireEnum(instance.platform, CLIENT_PLATFORMS, `${label}.platform`);
+    for (const field of ['deviceLabel', 'appVersion', 'userAgent'] as const) {
+        requireOptionalString(instance[field], `${label}.${field}`);
+    }
+    requireStringArray(instance.capabilities, `${label}.capabilities`);
+    validateAudit(instance.registered, `${label}.registered`);
+    validateAudit(instance.updated, `${label}.updated`);
+    if (instance.revoked !== undefined) validateAudit(instance.revoked, `${label}.revoked`);
+}
+
+function validateSession(value: unknown, label: string): void {
+    const session = requirePlainRecord(value, label);
+    requireAllowedKeys(
+        session,
+        [
+            'applicationId', 'principalId', 'clientInstanceId', 'sessionId',
+            'generationId', 'generationVersion', 'status', 'presenceState', 'transport',
+            'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
+            'expiresAtEpochMs',
+        ],
+        [
+            'applicationId', 'workspaceId', 'principalId', 'clientInstanceId',
+            'sessionId', 'generationId', 'generationVersion', 'status', 'presenceState',
+            'transport', 'connectionId', 'authenticatedAtEpochMs', 'connectedAtEpochMs',
+            'lastHeartbeatAtEpochMs', 'expiresAtEpochMs', 'disconnectedAtEpochMs',
+            'disconnectReason',
+        ],
+        label,
+    );
+    validatePrincipalRef(session, label, false);
+    requireNonEmptyString(session.clientInstanceId, `${label}.clientInstanceId`);
+    requireNonEmptyString(session.sessionId, `${label}.sessionId`);
+    validateGenerationId(session.generationId);
+    requirePositiveSafeInteger(session.generationVersion, `${label}.generationVersion`);
+    requireEnum(session.status, CLIENT_SESSION_STATUSES, `${label}.status`);
+    requireEnum(session.presenceState, CLIENT_PRESENCE_STATES, `${label}.presenceState`);
+    requireEnum(session.transport, CLIENT_TRANSPORTS, `${label}.transport`);
+    requireOptionalNonEmptyString(session.connectionId, `${label}.connectionId`);
+    for (
+        const field of [
+            'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
+            'expiresAtEpochMs',
+        ] as const
+    ) {
+        requireTimestamp(session[field], `${label}.${field}`);
+    }
+    requireOptionalTimestamp(session.disconnectedAtEpochMs, `${label}.disconnectedAtEpochMs`);
+    requireOptionalString(session.disconnectReason, `${label}.disconnectReason`);
+    if (session.status === 'active' && session.disconnectedAtEpochMs !== undefined) {
+        reject(`${label} active status cannot have disconnectedAtEpochMs`);
+    }
+    if (session.status !== 'active' && session.disconnectedAtEpochMs === undefined) {
+        reject(`${label} terminal status requires disconnectedAtEpochMs`);
+    }
+}
+
+function validateRuntimeEntry(value: unknown, label: string): void {
+    const entry = requirePlainRecord(value, label);
+    requireExactKeys(
+        entry,
+        ['key', 'value', 'expireAtTimestamp', 'updatedTimestamp', 'revision'],
+        label,
+    );
+    requireNonEmptyString(entry.key, `${label}.key`);
+    requireString(entry.value, `${label}.value`);
+    requireTimestamp(entry.expireAtTimestamp, `${label}.expireAtTimestamp`);
+    requireNonEmptyString(entry.updatedTimestamp, `${label}.updatedTimestamp`);
+    requireTimestamp(entry.revision, `${label}.revision`);
+}
+
+function validateNullableEntryValue(
+    value: unknown,
+    label: string,
+    validateValue: (value: unknown, label: string) => void,
+): void {
+    if (value === null) return;
+    const wrapped = requirePlainRecord(value, label);
+    requireExactKeys(wrapped, ['entry', 'value'], label);
+    validateRuntimeEntry(wrapped.entry, `${label}.entry`);
+    validateValue(wrapped.value, `${label}.value`);
+}
+
+function validateClientMutationFacts(facts: unknown): void {
+    const value = requirePlainRecord(facts, 'Client mutation facts');
+    requireExactKeys(
+        value,
+        ['nowEpochMs', 'serviceId', 'eventId', 'commandHash'],
+        'Client mutation facts',
+    );
+    requireTimestamp(value.nowEpochMs, 'Client mutation facts.nowEpochMs');
+    requireNonEmptyString(value.serviceId, 'Client mutation facts.serviceId');
+    requireNonEmptyString(value.eventId, 'Client mutation facts.eventId');
+    requireSha256(value.commandHash, 'Client mutation facts.commandHash');
+}
+
+function requireSha256(value: unknown, label: string): void {
+    if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
+        reject(`${label} must be a canonical SHA-256 digest`);
+    }
+}
+
+function validateReceipt(value: unknown, label: string): void {
+    const receipt = requirePlainRecord(value, label);
+    requireExactKeys(
+        receipt,
+        [
+            'commandId', 'commandHash', 'outcome', 'stateRevision',
+            'snapshotVersion', 'presenceVersion', 'event',
+        ],
+        label,
+    );
+    requireNonEmptyString(receipt.commandId, `${label}.commandId`);
+    requireSha256(receipt.commandHash, `${label}.commandHash`);
+    requireEnum(receipt.outcome, new Set(['applied', 'no-op']), `${label}.outcome`);
+    for (const field of ['stateRevision', 'snapshotVersion', 'presenceVersion'] as const) {
+        requirePositiveSafeInteger(receipt[field], `${label}.${field}`);
+    }
+    validateEventEnvelope(receipt.event, `${label}.event`);
+}
+
+function validateEventEnvelope(value: unknown, label: string): void {
+    const envelope = requirePlainRecord(value, label);
+    if (envelope.kind === 'none') {
+        requireExactKeys(envelope, ['kind'], label);
+        return;
+    }
+    if (envelope.kind !== 'client') reject(`${label}.kind is invalid`);
+    requireExactKeys(envelope, ['kind', 'event'], label);
+    validateClientEvent(envelope.event, `${label}.event`);
+}
+
+function validateClientEvent(value: unknown, label: string): void {
+    const event = requirePlainRecord(value, label);
+    requireAllowedKeys(
+        event,
+        [
+            'applicationId', 'principalId', 'eventId', 'eventType',
+            'snapshotVersion', 'occurredAtEpochMs', 'actor',
+        ],
+        [
+            'applicationId', 'workspaceId', 'principalId', 'eventId', 'eventType',
+            'snapshotVersion', 'clientInstanceId', 'sessionId', 'occurredAtEpochMs',
+            'actor', 'reason', 'traceId', 'requestId', 'payload',
+        ],
+        label,
+    );
+    validatePrincipalRef(event, label, false);
+    requireNonEmptyString(event.eventId, `${label}.eventId`);
+    requireEnum(event.eventType, CLIENT_EVENT_TYPES, `${label}.eventType`);
+    requirePositiveSafeInteger(event.snapshotVersion, `${label}.snapshotVersion`);
+    requireOptionalNonEmptyString(event.clientInstanceId, `${label}.clientInstanceId`);
+    requireOptionalNonEmptyString(event.sessionId, `${label}.sessionId`);
+    requireTimestamp(event.occurredAtEpochMs, `${label}.occurredAtEpochMs`);
+    const actor = requirePlainRecord(event.actor, `${label}.actor`);
+    requireAllowedKeys(
+        actor,
+        [],
+        ['principalId', 'sessionId', 'serviceId'],
+        `${label}.actor`,
+    );
+    for (const field of ['principalId', 'sessionId', 'serviceId'] as const) {
+        requireOptionalNonEmptyString(actor[field], `${label}.actor.${field}`);
+    }
+    if (
+        actor.principalId === undefined && actor.sessionId === undefined &&
+        actor.serviceId === undefined
+    ) {
+        reject(`${label}.actor requires an identity`);
+    }
+    for (const field of ['reason', 'traceId', 'requestId'] as const) {
+        requireOptionalString(event[field], `${label}.${field}`);
+    }
+    if (event.payload !== undefined) requireJsonRecord(event.payload, `${label}.payload`);
+}
+
+function validateIdempotencyRecord(value: unknown, label: string): void {
+    const record = requirePlainRecord(value, label);
+    requireExactKeys(record, ['requestId', 'commandHash', 'receipt'], label);
+    requireNonEmptyString(record.requestId, `${label}.requestId`);
+    requireSha256(record.commandHash, `${label}.commandHash`);
+    validateReceipt(record.receipt, `${label}.receipt`);
+    const receipt = record.receipt as ClientMutationReceipt;
+    if (receipt.commandHash !== record.commandHash) {
+        reject(`${label} receipt hash differs`);
+    }
+}
+
+function validateConditionalCandidate(
+    value: unknown,
+    label: string,
+    validateValue: (value: unknown, label: string) => void,
+): void {
+    const candidate = requirePlainRecord(value, label);
+    switch (candidate.operation) {
+        case 'none':
+            requireExactKeys(candidate, ['operation'], label);
+            return;
+        case 'insert':
+            requireExactKeys(candidate, ['operation', 'value'], label);
+            validateValue(candidate.value, `${label}.value`);
+            return;
+        case 'update':
+            requireExactKeys(
+                candidate,
+                ['operation', 'value', 'expectedRevision'],
+                label,
+            );
+            validateValue(candidate.value, `${label}.value`);
+            requireTimestamp(candidate.expectedRevision, `${label}.expectedRevision`);
+            return;
+        default:
+            reject(`${label}.operation is invalid`);
+    }
+}
+
+function validateOutboxCandidate(value: unknown, label: string): void {
+    const outbox = requirePlainRecord(value, label);
+    requireExactKeys(
+        outbox,
+        [
+            'kind', 'aggregateRef', 'commandId', 'commandHash', 'createdAtEpochMs',
+            'acceptedCausalRevision', 'effects', 'event',
+        ],
+        label,
+    );
+    if (outbox.kind !== 'client') reject(`${label}.kind must be client`);
+    validatePrincipalRef(outbox.aggregateRef, `${label}.aggregateRef`);
+    requireNonEmptyString(outbox.commandId, `${label}.commandId`);
+    requireSha256(outbox.commandHash, `${label}.commandHash`);
+    requireTimestamp(outbox.createdAtEpochMs, `${label}.createdAtEpochMs`);
+    const revision = requirePlainRecord(
+        outbox.acceptedCausalRevision,
+        `${label}.acceptedCausalRevision`,
+    );
+    requireExactKeys(
+        revision,
+        ['kind', 'stateRevision', 'snapshotVersion', 'presenceVersion'],
+        `${label}.acceptedCausalRevision`,
+    );
+    if (revision.kind !== 'client') {
+        reject(`${label}.acceptedCausalRevision.kind must be client`);
+    }
+    for (const field of ['stateRevision', 'snapshotVersion', 'presenceVersion'] as const) {
+        requirePositiveSafeInteger(
+            revision[field],
+            `${label}.acceptedCausalRevision.${field}`,
+        );
+    }
+    if (!Array.isArray(outbox.effects) || outbox.effects.length !== 1 ||
+        outbox.effects[0] !== 'client-state-sync') {
+        reject(`${label}.effects must contain only client-state-sync`);
+    }
+    validateEventEnvelope(outbox.event, `${label}.event`);
+}
+
+function validateClientMutationComputed(computed: unknown): void {
+    const value = requirePlainRecord(computed, 'Client mutation computed');
+    switch (value.outcome) {
+        case 'replay':
+        case 'no-op':
+            requireExactKeys(value, ['outcome', 'receipt'], 'Client mutation computed');
+            validateReceipt(value.receipt, 'Client mutation computed.receipt');
+            return;
+        case 'idempotency-conflict':
+            requireExactKeys(
+                value,
+                ['outcome', 'existingCommandHash', 'receivedCommandHash'],
+                'Client mutation computed',
+            );
+            requireSha256(
+                value.existingCommandHash,
+                'Client mutation computed.existingCommandHash',
+            );
+            requireSha256(
+                value.receivedCommandHash,
+                'Client mutation computed.receivedCommandHash',
+            );
+            return;
+        case 'write':
+            requireExactKeys(
+                value,
+                [
+                    'outcome', 'principal', 'instance', 'session', 'event', 'receipt',
+                    'idempotency', 'outbox',
+                ],
+                'Client mutation computed',
+            );
+            validateConditionalCandidate(
+                value.principal,
+                'Client mutation computed.principal',
+                validatePrincipal,
+            );
+            if ((value.principal as { operation?: unknown }).operation === 'none') {
+                reject('Client mutation computed principal guard is required');
+            }
+            validateConditionalCandidate(
+                value.instance,
+                'Client mutation computed.instance',
+                validateInstance,
+            );
+            validateConditionalCandidate(
+                value.session,
+                'Client mutation computed.session',
+                validateSession,
+            );
+            validateClientEvent(value.event, 'Client mutation computed.event');
+            validateReceipt(value.receipt, 'Client mutation computed.receipt');
+            if (value.idempotency !== null) {
+                validateIdempotencyRecord(
+                    value.idempotency,
+                    'Client mutation computed.idempotency',
+                );
+            }
+            validateOutboxCandidate(value.outbox, 'Client mutation computed.outbox');
+            return;
+        default:
+            reject('Client mutation computed outcome is invalid');
+    }
 }

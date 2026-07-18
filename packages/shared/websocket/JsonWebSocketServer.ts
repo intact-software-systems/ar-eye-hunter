@@ -21,7 +21,8 @@ export type EncodedJsonWebSocketMessage = Readonly<{
 export class ConnectionContext {
     constructor(
         public readonly id: string,
-        public readonly socket: WebSocket
+        public readonly socket: WebSocket,
+        public readonly generationId: string = crypto.randomUUID(),
     ) {
     }
 

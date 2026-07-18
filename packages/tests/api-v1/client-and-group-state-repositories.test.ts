@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type {
     ClientEvent,
@@ -25,6 +25,23 @@ import type {
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 describe('ClientStateRepository', () => {
+    it('exposes only conditional client-state mutation methods', () => {
+        expectTypeOf<ClientStateRepository>().not.toHaveProperty('putPrincipal');
+        expectTypeOf<ClientStateRepository>().not.toHaveProperty('removePrincipal');
+        expectTypeOf<ClientStateRepository>().not.toHaveProperty('putInstance');
+        expectTypeOf<ClientStateRepository>().not.toHaveProperty('removeInstance');
+        expectTypeOf<ClientStateRepository>().not.toHaveProperty('putSession');
+        expectTypeOf<ClientStateRepository>().not.toHaveProperty('removeSession');
+
+        const clientRepository = new ClientStateRepository(
+            new FakeRuntimeStateRepository(),
+        );
+        expect(Object.hasOwn(Object.getPrototypeOf(clientRepository), 'putPrincipal'))
+            .toBe(false);
+        expect(Object.hasOwn(Object.getPrototypeOf(clientRepository), 'removeSession'))
+            .toBe(false);
+    });
+
     it('stores durable client records, expires sessions, and assembles snapshots', async () => {
         const repository = new FakeRuntimeStateRepository();
         const eventStore = new InMemoryClientStateEventStore();
@@ -46,11 +63,11 @@ describe('ClientStateRepository', () => {
             lastHeartbeatAtEpochMs: now - 1_000,
         });
 
-        await clientRepository.putPrincipal(principal);
-        await clientRepository.putInstance(instanceA);
-        await clientRepository.putInstance(instanceB);
-        await clientRepository.putSession(activeSession);
-        await clientRepository.putSession(expiredSession);
+        await insertClientPrincipal(clientRepository, principal);
+        await insertClientInstance(clientRepository, instanceA);
+        await insertClientInstance(clientRepository, instanceB);
+        await insertClientSession(clientRepository, activeSession);
+        await insertClientSession(clientRepository, expiredSession);
         await clientRepository.appendEvent(createClientEvent('evt-2', now + 2_000));
         await clientRepository.appendEvent(createClientEvent('evt-1', now + 1_000));
 
@@ -125,11 +142,11 @@ describe('ClientStateRepository', () => {
         });
         const principal = createClientPrincipal();
 
-        await clientRepository.putPrincipal(principal);
-        await clientRepository.putPrincipal({
+        await insertClientPrincipal(clientRepository, principal);
+        await updateClientPrincipal(clientRepository, {
             ...principal,
             displayName: 'Updated principal',
-        });
+        }, 0);
 
         const ref = {
             applicationId: principal.applicationId,
@@ -144,19 +161,24 @@ describe('ClientStateRepository', () => {
         expect(listed[0]?.stateRevision).toBe(2);
     });
 
-    it('assigns distinct causal revisions to concurrent client writes with one domain version', async () => {
+    it('allows one of two concurrent client compare-and-set writes to win', async () => {
         const repository = new FakeRuntimeStateRepository();
         const clientRepository = new ClientStateRepository(repository, {
             events: new InMemoryClientStateEventStore(),
         });
         const principal = createClientPrincipal();
 
-        await Promise.all([
-            clientRepository.putPrincipal({ ...principal, displayName: 'A' }),
-            clientRepository.putPrincipal({ ...principal, displayName: 'B' }),
+        await insertClientPrincipal(clientRepository, principal);
+        const results = await Promise.all([
+            clientRepository.updatePrincipal({ ...principal, displayName: 'A' }, 0),
+            clientRepository.updatePrincipal({ ...principal, displayName: 'B' }, 0),
         ]);
 
         const snapshot = await clientRepository.readSnapshot(principal);
+        expect(results.map((result) => result.status).sort()).toEqual([
+            'applied',
+            'conflict',
+        ]);
         expect(snapshot?.stateRevision).toBe(2);
         expect(snapshot?.principal.snapshotVersion).toBe(principal.snapshotVersion);
     });
@@ -168,20 +190,23 @@ describe('ClientStateRepository', () => {
         });
         const principal = createClientPrincipal();
 
-        await clientRepository.putPrincipal(principal);
-        await clientRepository.putInstance(createClientInstance('instance-a'));
+        await insertClientPrincipal(clientRepository, principal);
+        await insertClientInstance(
+            clientRepository,
+            createClientInstance('instance-a'),
+        );
         repository.onFindEntriesByPrefix = async () => {
             if (repository.findEntriesByPrefixCalls !== 2) {
                 return;
             }
-            await clientRepository.putInstance({
+            await updateClientInstance(clientRepository, {
                 ...createClientInstance('instance-a'),
                 platform: 'native',
-            });
-            await clientRepository.putPrincipal({
+            }, 0);
+            await updateClientPrincipal(clientRepository, {
                 ...principal,
                 displayName: 'Current principal',
-            });
+            }, 0);
         };
 
         const snapshot = await clientRepository.readSnapshot(principal);
@@ -201,8 +226,11 @@ describe('ClientStateRepository', () => {
         const principal = createClientPrincipal();
         repository.onFindEntryAfterRead = async () => {
             repository.onFindEntryAfterRead = undefined;
-            await clientRepository.putPrincipal(principal);
-            await clientRepository.putInstance(createClientInstance('instance-a'));
+            await insertClientPrincipal(clientRepository, principal);
+            await insertClientInstance(
+                clientRepository,
+                createClientInstance('instance-a'),
+            );
         };
 
         await expect(clientRepository.readSnapshot(principal)).resolves.toBeUndefined();
@@ -221,11 +249,16 @@ describe('ClientStateRepository', () => {
             const instanceId = `instance-${String(index).padStart(4, '0')}`;
             const sessionId = `session-${String(index).padStart(4, '0')}`;
 
-            await clientRepository.putPrincipal(createClientPrincipal(principalId));
-            await clientRepository.putInstance(
+            await insertClientPrincipal(
+                clientRepository,
+                createClientPrincipal(principalId),
+            );
+            await insertClientInstance(
+                clientRepository,
                 createClientInstance(instanceId, principalId),
             );
-            await clientRepository.putSession(
+            await insertClientSession(
+                clientRepository,
                 createClientSession(instanceId, sessionId, {
                     principalId,
                     expiresAtEpochMs: now + 60_000,
@@ -254,8 +287,12 @@ describe('ClientStateRepository', () => {
             events: new InMemoryClientStateEventStore(),
         });
         for (const principalId of ['principal-0', 'principal-1', 'principal-2']) {
-            await clientRepository.putPrincipal(createClientPrincipal(principalId));
-            await clientRepository.putInstance(
+            await insertClientPrincipal(
+                clientRepository,
+                createClientPrincipal(principalId),
+            );
+            await insertClientInstance(
+                clientRepository,
                 createClientInstance(`instance-${principalId}`, principalId),
             );
         }
@@ -265,14 +302,19 @@ describe('ClientStateRepository', () => {
                 return;
             }
             repository.onFindEntriesByPrefix = undefined;
-            await clientRepository.putInstance(
+            await insertClientInstance(
+                clientRepository,
                 createClientInstance('instance-new', 'principal-0'),
             );
-            await clientRepository.putPrincipal({
+            await updateClientPrincipal(clientRepository, {
                 ...createClientPrincipal('principal-0'),
                 displayName: 'Changed',
-            });
-            await clientRepository.removePrincipal(createClientPrincipal('principal-1'));
+            }, 0);
+            await deleteClientPrincipal(
+                clientRepository,
+                createClientPrincipal('principal-1'),
+                0,
+            );
         };
 
         const snapshots = await clientRepository.listSnapshots({
@@ -383,6 +425,68 @@ describe('ClientStateRepository', () => {
         expect(secondPage.hasMore).toBe(false);
     });
 });
+
+async function insertClientPrincipal(
+    repository: ClientStateRepository,
+    principal: ClientPrincipal,
+): Promise<void> {
+    expect(await repository.insertPrincipal(principal)).toEqual({
+        status: 'applied',
+        revision: 0,
+    });
+}
+
+async function updateClientPrincipal(
+    repository: ClientStateRepository,
+    principal: ClientPrincipal,
+    expectedRevision: number,
+): Promise<void> {
+    expect(await repository.updatePrincipal(principal, expectedRevision)).toEqual({
+        status: 'applied',
+        revision: expectedRevision + 1,
+    });
+}
+
+async function deleteClientPrincipal(
+    repository: ClientStateRepository,
+    principal: ClientPrincipal,
+    expectedRevision: number,
+): Promise<void> {
+    expect(await repository.deletePrincipal(principal, expectedRevision)).toEqual({
+        status: 'applied',
+    });
+}
+
+async function insertClientInstance(
+    repository: ClientStateRepository,
+    instance: ClientInstance,
+): Promise<void> {
+    expect(await repository.insertInstance(instance)).toEqual({
+        status: 'applied',
+        revision: 0,
+    });
+}
+
+async function updateClientInstance(
+    repository: ClientStateRepository,
+    instance: ClientInstance,
+    expectedRevision: number,
+): Promise<void> {
+    expect(await repository.updateInstance(instance, expectedRevision)).toEqual({
+        status: 'applied',
+        revision: expectedRevision + 1,
+    });
+}
+
+async function insertClientSession(
+    repository: ClientStateRepository,
+    session: ClientSession,
+): Promise<void> {
+    expect(await repository.insertSession(session)).toEqual({
+        status: 'applied',
+        revision: 0,
+    });
+}
 
 describe('GroupStateRepository', () => {
     it('stores groups by scope, supports slug lookup, and assembles group snapshots', async () => {
@@ -1217,6 +1321,48 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
             updatedTimestamp: new Date().toISOString(),
             revision: current ? current.revision + 1 : 0,
         });
+    }
+
+    async insertIfAbsent(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<{ status: 'applied'; revision: number } | { status: 'conflict' }> {
+        const compositeKey = this.toKey(namespace, key);
+        if (this.data.has(compositeKey)) {
+            return { status: 'conflict' };
+        }
+        await this.upsert(namespace, key, value, expireAtTimestamp);
+        return { status: 'applied', revision: 0 };
+    }
+
+    async upsertIfRevision(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+        expectedRevision: number,
+    ): Promise<{ status: 'applied'; revision: number } | { status: 'conflict' }> {
+        const current = this.data.get(this.toKey(namespace, key));
+        if (!current || current.revision !== expectedRevision) {
+            return { status: 'conflict' };
+        }
+        await this.upsert(namespace, key, value, expireAtTimestamp);
+        return { status: 'applied', revision: expectedRevision + 1 };
+    }
+
+    async deleteIfRevision(
+        namespace: string,
+        key: string,
+        expectedRevision: number,
+    ): Promise<{ status: 'applied' } | { status: 'conflict' }> {
+        const current = this.data.get(this.toKey(namespace, key));
+        if (!current || current.revision !== expectedRevision) {
+            return { status: 'conflict' };
+        }
+        await this.deleteByKey(namespace, key);
+        return { status: 'applied' };
     }
 
     async deleteByKey(namespace: string, key: string): Promise<void> {

@@ -274,6 +274,50 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         expect(presets.has('graph-group')).toBe(false);
     });
 
+    it('threads one generation through client session lifecycle presets and collections', () => {
+        const variables = defaultRallarServerWorkbenchVariables({
+            generationId: 'generation-1',
+        });
+        const presets = new Map(
+            RALLAR_SERVER_ENDPOINT_PRESETS.map((preset) => [preset.presetId, preset]),
+        );
+
+        for (const presetId of [
+            'client-session-connect',
+            'client-session-heartbeat',
+            'client-session-disconnect',
+        ]) {
+            const draft = applyRallarServerEndpointPreset(presets.get(presetId)!, variables);
+            expect(JSON.parse(draft.bodyText)).toMatchObject({
+                generationId: 'generation-1',
+            });
+        }
+
+        const collection = createRallarServerRestCollectionTemplates(variables)
+            .find((entry) => entry.collectionId === 'client-presence-lifecycle');
+        const lifecycleSteps = collection!.steps.filter((step) =>
+            step.stepId.includes('client-session')
+        );
+
+        expect(lifecycleSteps.map((step) => step.stepId)).toEqual([
+            'connect-client-session',
+            'heartbeat-client-session',
+            'disconnect-client-session',
+        ]);
+        for (const step of lifecycleSteps) {
+            const input = buildRallarServerCollectionStepRequestInput({
+                step,
+                apiBaseUrl: 'http://localhost:8080',
+                variables: collection!.variables ?? {},
+                authSession,
+                defaultTimeoutMs: 5000,
+            });
+            expect(JSON.parse(input.bodyText)).toMatchObject({
+                generationId: 'generation-1',
+            });
+        }
+    });
+
     it('redacts authorization, query secrets, and body secrets in cURL output', () => {
         const curl = toRallarServerCurl({
             apiBaseUrl: 'http://localhost:8080',

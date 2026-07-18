@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { toAuthorisedWsClientInput } from '../src/routes/ws-routes.ts';
+import {
+  createAuthorisedWsConnectionContext,
+  toAuthorisedWsClientInput,
+} from '../src/routes/ws-routes.ts';
 
 Deno.test('websocket route forwards scoped state parameters to authorised connect', () => {
   const input = toAuthorisedWsClientInput(
@@ -14,4 +17,18 @@ Deno.test('websocket route forwards scoped state parameters to authorised connec
     workspaceId: 'default',
     userAgent: 'Browser',
   });
+});
+
+Deno.test('websocket connection generation is stable per context and fresh per upgrade', () => {
+  const socket = {} as WebSocket;
+  const first = createAuthorisedWsConnectionContext('session-1', socket);
+  const second = createAuthorisedWsConnectionContext('session-1', socket);
+
+  assert.equal(first.generationId, first.generationId);
+  assert.notEqual(first.generationId, second.generationId);
+  assert.equal(
+    createAuthorisedWsConnectionContext('session-1', socket, 'fixed-generation')
+      .generationId,
+    'fixed-generation',
+  );
 });

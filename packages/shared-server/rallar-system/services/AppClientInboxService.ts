@@ -78,11 +78,13 @@ export type ClientSessionDisconnectAppInboxPayload = Readonly<{
 
 export type ClientAuthorisedWsSessionConnectAppInboxPayload = Readonly<{
     authSession: Omit<AuthSession, 'accessToken'>;
+    generationId: string;
     input: RegisterAuthorisedWsClientInput;
 }>;
 
 export type ClientAuthorisedWsSessionDisconnectAppInboxPayload = Readonly<{
     sessionId: string;
+    generationId: string;
     reason: string;
 }>;
 
@@ -190,6 +192,7 @@ export class AppClientInboxService extends AppInboxService {
                             ...session.authSession,
                             accessToken: '',
                         },
+                        session.generationId,
                         session.input,
                     );
 
@@ -202,6 +205,7 @@ export class AppClientInboxService extends AppInboxService {
                 const clientStateWritten =
                     await this.clientStateService.disconnectAuthorisedWsClientSession(
                         session.sessionId,
+                        session.generationId,
                         session.reason,
                     );
 
@@ -223,6 +227,7 @@ export class AppClientInboxService extends AppInboxService {
 
     public async processAuthorisedWsClientConnect(
         authSession: AuthSession,
+        generationId: string,
         input?: RegisterAuthorisedWsClientInput,
     ) {
         const scope = toAuthorisedWsClientScope(input);
@@ -239,6 +244,7 @@ export class AppClientInboxService extends AppInboxService {
                 principalId,
                 clientInstanceId,
                 authSession.sessionId,
+                generationId,
             ),
             contextId: toClientAppInboxContextId(scope, principalId),
             senderId: authSession.clientId,
@@ -249,6 +255,7 @@ export class AppClientInboxService extends AppInboxService {
                     sessionId: authSession.sessionId,
                     expiresAtEpochMs: authSession.expiresAtEpochMs,
                 },
+                generationId,
                 input: input ?? {},
             },
         });
@@ -256,6 +263,7 @@ export class AppClientInboxService extends AppInboxService {
 
     public async processAuthorisedWsClientDisconnect(
         sessionId: string,
+        generationId: string,
         reason?: string,
     ) {
         const disconnectReason = reason ?? 'websocket-closed';
@@ -264,11 +272,12 @@ export class AppClientInboxService extends AppInboxService {
             ClientStateWritten
         >({
             type: AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
-            resourceId: `authorised-ws-disconnect-${sessionId}`,
+            resourceId: `authorised-ws-disconnect-${sessionId}-${generationId}`,
             contextId: sessionId,
             senderId: sessionId,
             data: {
                 sessionId,
+                generationId,
                 reason: disconnectReason,
             },
         });
@@ -321,6 +330,7 @@ function toAuthorisedWsClientConnectResourceId(
     principalId: string,
     clientInstanceId: string,
     sessionId: string,
+    generationId: string,
 ): string {
     return [
         'authorised-ws-connect',
@@ -329,6 +339,7 @@ function toAuthorisedWsClientConnectResourceId(
         principalId,
         clientInstanceId,
         sessionId,
+        generationId,
     ].map(encodeURIComponent).join(':');
 }
 

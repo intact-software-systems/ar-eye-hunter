@@ -18,13 +18,21 @@ import {
     type ClientMutationCommand,
     type ClientMutationFacts,
     type ClientMutationRead,
+    ClientMutationRejectedError,
+    validateClientMutationCommand,
     validateClientMutation,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import type {
+    RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import {
+    RuntimeStateRetryExhaustedError,
+    RuntimeStateWriteConflictError,
+} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 const SCOPE: StateScope = {
@@ -331,12 +339,311 @@ describe('convergent client state', () => {
         expect(read).toEqual(deepFreeze(structuredClone(read)));
     });
 
+    it('exhausts exactly three principal guards with delays 2 and 8 and no partial writes', async () => {
+        const runtime = new AlwaysConflictingPrincipalRepository();
+        const delays: number[] = [];
+        const timing: RallarTimingEvent[] = [];
+        const service = createClientStateService({
+            runtimeRepository: runtime,
+            syncPublisher: createPublisher(),
+            now: () => 1_000,
+            randomId: () => 'event-conflict',
+            sleep: (delayMs) => {
+                delays.push(delayMs);
+                return Promise.resolve();
+            },
+            serviceId: 'client-service',
+            timing: (event) => timing.push(event),
+        });
+
+        const error = await service.upsertInstance(SCOPE, 'alice', 'browser', {
+            platform: 'web',
+            requestId: 'three-conflicts',
+        }).catch((caught) => caught);
+
+        expect(error).toBeInstanceOf(RuntimeStateRetryExhaustedError);
+        expect(error.cause).toBeInstanceOf(RuntimeStateWriteConflictError);
+        expect(error.attempts).toBe(3);
+        expect(delays).toEqual([2, 8]);
+        expect(runtime.principalGuardCount).toBe(3);
+        expect(runtime.transactionBeginCount).toBe(3);
+        expect(runtime.data.size).toBe(0);
+        expect(timing.filter((event) => event.operation === 'mutation.conflict'))
+            .toMatchObject([
+                { details: { attempt: 0, backoffMs: 0, conflict: true } },
+                { details: { attempt: 1, backoffMs: 2, conflict: true } },
+                { details: { attempt: 2, backoffMs: 8, conflict: true } },
+            ]);
+    });
+
+    it('opens no transaction for replay or no-op and guards the principal first for a write', async () => {
+        const runtime = new StatementRecordingRepository();
+        const service = createClientStateService({
+            runtimeRepository: runtime,
+            syncPublisher: createPublisher(),
+            now: () => 1_000,
+            randomId: () => 'event-order',
+            sleep: () => Promise.resolve(),
+            serviceId: 'client-service',
+        });
+        await service.upsertPrincipal(SCOPE, 'alice', {
+            username: 'alice',
+            displayName: 'Alice',
+            requestId: 'guard-first',
+        });
+        expect(runtime.transactionStatements[0]).toBe(
+            'insertIfAbsent:client-state:principals',
+        );
+
+        runtime.resetInstrumentation();
+        await service.upsertPrincipal(SCOPE, 'alice', {
+            username: 'alice',
+            displayName: 'Alice',
+            requestId: 'guard-first',
+        });
+        expect(runtime.transactionBeginCount).toBe(0);
+        expect(runtime.transactionStatements).toEqual([]);
+
+        await service.upsertPrincipal(SCOPE, 'alice', {
+            username: 'alice',
+            displayName: 'Alice',
+            requestId: 'semantic-no-op',
+        });
+        expect(runtime.transactionBeginCount).toBe(0);
+        expect(runtime.transactionStatements).toEqual([]);
+    });
+
     it('requires generation identity and exposes no caller command hash', () => {
         expectTypeOf<ConnectClientSessionRequest>().toHaveProperty('generationId');
         expectTypeOf<ConnectClientSessionRequest>().not.toHaveProperty('commandHash');
         expectTypeOf<ClientSession>().toHaveProperty('generationVersion');
     });
+
+    it('rejects malformed authoritative command shapes for every client branch before compute or hash', () => {
+        const base = {
+            aggregateRef: principalRef('alice'),
+            commandId: 'command-1',
+            requestId: 'command-1',
+        } as const;
+        const actor = {
+            actorPrincipalId: null,
+            actorSessionId: null,
+            reason: null,
+            traceId: null,
+        } as const;
+        const invalidCommands: readonly unknown[] = [
+            [],
+            {
+                ...base,
+                operation: 'upsertPrincipal',
+                input: {
+                    ...actor,
+                    username: '',
+                    displayName: null,
+                    avatarUrl: null,
+                    status: 'impossible',
+                    authProvider: null,
+                    externalSubjectId: null,
+                    roles: [],
+                    metadata: {},
+                    lastSeenAtEpochMs: null,
+                },
+            },
+            {
+                ...base,
+                operation: 'upsertInstance',
+                clientInstanceId: '',
+                input: {
+                    ...actor,
+                    status: null,
+                    platform: 'browser',
+                    deviceLabel: null,
+                    appVersion: null,
+                    userAgent: null,
+                    capabilities: [],
+                },
+            },
+            invalidSessionCommand(base, actor, 'connectSession', {
+                generationId: { forged: true },
+            }),
+            invalidSessionCommand(base, actor, 'connectAuthorisedWsSession', {
+                transport: 'carrier-pigeon',
+            }),
+            invalidSessionCommand(base, actor, 'heartbeatSession', {
+                lastHeartbeatAtEpochMs: -1,
+            }),
+            invalidSessionCommand(base, actor, 'disconnectSession', {
+                actorPrincipalId: 42,
+            }),
+            invalidSessionCommand(base, actor, 'disconnectAuthorisedWsSession', {
+                reason: { nested: 'not-a-string' },
+            }),
+            invalidSessionCommand(base, actor, 'expireSession', {
+                generationVersion: 0,
+                observedExpiresAtEpochMs: Number.NaN,
+            }),
+        ];
+
+        for (const command of invalidCommands) {
+            expect(() => validateClientMutationCommand(command)).toThrow(
+                ClientMutationRejectedError,
+            );
+        }
+    });
+
+    it('rejects malformed read entries and computed authoritative candidates', () => {
+        const command = validPrincipalCommand();
+        const facts = validFacts();
+        expect(() => computeClientMutation({
+            command,
+            read: [] as unknown as ClientMutationRead,
+            facts,
+        })).toThrow(ClientMutationRejectedError);
+
+        const invalidRead = {
+            idempotency: null,
+            principal: {
+                entry: {
+                    key: 'principal',
+                    value: '{}',
+                    expireAtTimestamp: 1_000,
+                    updatedTimestamp: 'now',
+                    revision: -1,
+                },
+                value: {
+                    ...validPrincipalValue(),
+                    snapshotVersion: Number.POSITIVE_INFINITY,
+                },
+            },
+            instance: null,
+            session: null,
+        } as unknown as ClientMutationRead;
+        expect(() => computeClientMutation({ command, read: invalidRead, facts }))
+            .toThrow(ClientMutationRejectedError);
+
+        const read: ClientMutationRead = {
+            idempotency: null,
+            principal: null,
+            instance: null,
+            session: null,
+        };
+        const computed = computeClientMutation({ command, read, facts });
+        const invalidComputed = structuredClone(computed) as Record<string, unknown>;
+        (invalidComputed.receipt as Record<string, unknown>).snapshotVersion = -1;
+        expect(() => validateClientMutation({
+            command,
+            read,
+            facts,
+            computed: invalidComputed as unknown as typeof computed,
+        })).toThrow(ClientMutationRejectedError);
+    });
 });
+
+function invalidSessionCommand(
+    base: Readonly<Record<string, unknown>>,
+    actor: Readonly<Record<string, unknown>>,
+    operation: string,
+    override: Readonly<Record<string, unknown>>,
+): unknown {
+    const common = {
+        ...base,
+        operation,
+        clientInstanceId: 'browser',
+        sessionId: 'session-1',
+    };
+    const operationInput = operation === 'expireSession'
+        ? {
+            ...actor,
+            generationId: 'generation-1',
+            generationVersion: 1,
+            observedExpiresAtEpochMs: 2_000,
+            expiresAtEpochMs: 2_000,
+        }
+        : operation.includes('connect')
+        ? {
+            ...actor,
+            generationId: 'generation-1',
+            presenceState: 'online',
+            transport: 'ws',
+            connectionId: 'generation-1',
+            authenticatedAtEpochMs: 1_000,
+            connectedAtEpochMs: 1_000,
+            lastHeartbeatAtEpochMs: 1_000,
+            expiresAtEpochMs: 2_000,
+            instancePlatform: 'web',
+            instanceUserAgent: null,
+            instanceCapabilities: [],
+        }
+        : operation.includes('heartbeat')
+        ? {
+            ...actor,
+            generationId: 'generation-1',
+            presenceState: 'online',
+            lastHeartbeatAtEpochMs: 1_000,
+            expiresAtEpochMs: 2_000,
+        }
+        : {
+            ...actor,
+            generationId: 'generation-1',
+            disconnectedAtEpochMs: 1_000,
+            lastHeartbeatAtEpochMs: 1_000,
+            expiresAtEpochMs: 2_000,
+        };
+    return { ...common, input: { ...operationInput, ...override } };
+}
+
+function validPrincipalCommand(): ClientMutationCommand {
+    return {
+        operation: 'upsertPrincipal',
+        aggregateRef: principalRef('alice'),
+        commandId: 'valid-command',
+        requestId: 'valid-command',
+        input: {
+            username: 'alice',
+            displayName: 'Alice',
+            avatarUrl: null,
+            status: 'active',
+            authProvider: null,
+            externalSubjectId: null,
+            roles: [],
+            metadata: {},
+            lastSeenAtEpochMs: 1_000,
+            actorPrincipalId: null,
+            actorSessionId: null,
+            reason: null,
+            traceId: null,
+        },
+    };
+}
+
+function validFacts(): ClientMutationFacts {
+    return {
+        nowEpochMs: 1_000,
+        serviceId: 'client-service',
+        eventId: 'event-1',
+        commandHash: `sha256:${'a'.repeat(64)}`,
+    };
+}
+
+function validPrincipalValue() {
+    const audit = {
+        atEpochMs: 1_000,
+        byPrincipalId: 'alice',
+        byServiceId: 'client-service',
+    };
+    return {
+        ...principalRef('alice'),
+        username: 'alice',
+        status: 'active' as const,
+        roles: [],
+        metadata: {},
+        snapshotVersion: 1,
+        profileVersion: 1,
+        presenceVersion: 1,
+        created: audit,
+        updated: audit,
+    };
+}
 
 class AggregateBarrierRepository extends FakeRuntimeStateRepository {
     private principalReadsRemaining = 0;
@@ -382,6 +689,87 @@ class AggregateBarrierRepository extends FakeRuntimeStateRepository {
             return await super.begin(fn);
         } finally {
             release();
+        }
+    }
+}
+
+class AlwaysConflictingPrincipalRepository extends AggregateBarrierRepository {
+    principalGuardCount = 0;
+    transactionBeginCount = 0;
+
+    override async begin<T>(
+        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
+    ): Promise<T> {
+        this.transactionBeginCount += 1;
+        return await super.begin(fn);
+    }
+
+    override insertIfAbsent(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        if (namespace === 'client-state:principals') {
+            this.principalGuardCount += 1;
+            return Promise.resolve({ status: 'conflict' });
+        }
+        return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+    }
+}
+
+class StatementRecordingRepository extends AggregateBarrierRepository {
+    transactionBeginCount = 0;
+    readonly transactionStatements: string[] = [];
+    private transactionDepth = 0;
+
+    override async begin<T>(
+        fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>,
+    ): Promise<T> {
+        this.transactionBeginCount += 1;
+        this.transactionDepth += 1;
+        try {
+            return await super.begin(fn);
+        } finally {
+            this.transactionDepth -= 1;
+        }
+    }
+
+    override insertIfAbsent(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        this.record('insertIfAbsent', namespace);
+        return super.insertIfAbsent(namespace, key, value, expireAtTimestamp);
+    }
+
+    override upsertIfRevision(
+        namespace: string,
+        key: string,
+        value: string,
+        expireAtTimestamp: number,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        this.record('upsertIfRevision', namespace);
+        return super.upsertIfRevision(
+            namespace,
+            key,
+            value,
+            expireAtTimestamp,
+            expectedRevision,
+        );
+    }
+
+    resetInstrumentation(): void {
+        this.transactionBeginCount = 0;
+        this.transactionStatements.length = 0;
+    }
+
+    private record(operation: string, namespace: string): void {
+        if (this.transactionDepth > 0) {
+            this.transactionStatements.push(`${operation}:${namespace}`);
         }
     }
 }

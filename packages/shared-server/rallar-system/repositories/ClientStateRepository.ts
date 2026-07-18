@@ -13,7 +13,10 @@ import type {
 } from '@shared/api/client-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
-import type { RuntimeStateConditionalWriteResult } from '../../runtime-state/RuntimeStateRepository.ts';
+import type {
+    RuntimeStateConditionalDeleteResult,
+    RuntimeStateConditionalWriteResult,
+} from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     RuntimeStateJsonStore,
     type RuntimeStateEntryValue,
@@ -78,14 +81,6 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         return await this.getEntryValue<ClientMutationIdempotencyRecord>(
             IDEMPOTENT_NAMESPACE,
             this.idempotentClientKey(ref, requestId),
-        );
-    }
-
-    async putPrincipal(principal: ClientPrincipal): Promise<void> {
-        await this.putValue(
-            PRINCIPALS_NAMESPACE,
-            this.principalKey(principal),
-            principal,
         );
     }
 
@@ -197,15 +192,14 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         );
     }
 
-    async removePrincipal(ref: ClientPrincipalRef): Promise<void> {
-        await this.deleteValue(PRINCIPALS_NAMESPACE, this.principalKey(ref));
-    }
-
-    async putInstance(instance: ClientInstance): Promise<void> {
-        await this.putValue(
-            INSTANCES_NAMESPACE,
-            this.instanceKey(instance),
-            instance,
+    async deletePrincipal(
+        ref: ClientPrincipalRef,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        return await this.deleteValueIfRevision(
+            PRINCIPALS_NAMESPACE,
+            this.principalKey(ref),
+            expectedRevision,
         );
     }
 
@@ -259,12 +253,21 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         );
     }
 
-    async removeInstance(ref: ClientInstanceRef): Promise<void> {
-        await this.deleteValue(INSTANCES_NAMESPACE, this.instanceKey(ref));
+    async deleteInstance(
+        ref: ClientInstanceRef,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        return await this.deleteValueIfRevision(
+            INSTANCES_NAMESPACE,
+            this.instanceKey(ref),
+            expectedRevision,
+        );
     }
 
-    async putSession(session: ClientSession): Promise<void> {
-        await this.putValue(
+    async insertSession(
+        session: ClientSession,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        return await this.putValueIfAbsent(
             SESSIONS_NAMESPACE,
             this.sessionKey(session),
             session,
@@ -288,20 +291,6 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         return await this.getEntryValue<ClientSession>(
             SESSIONS_NAMESPACE,
             this.sessionKey(ref),
-        );
-    }
-
-    async insertSession(
-        session: ClientSession,
-    ): Promise<RuntimeStateConditionalWriteResult> {
-        return await this.putValueIfAbsent(
-            SESSIONS_NAMESPACE,
-            this.sessionKey(session),
-            session,
-            toSessionPurgeAfterEpochMs(
-                session.expiresAtEpochMs,
-                session.disconnectedAtEpochMs,
-            ),
         );
     }
 
@@ -343,8 +332,15 @@ export class ClientStateRepository extends RuntimeStateJsonStore {
         return await this.listValues<ClientSession>(SESSIONS_NAMESPACE);
     }
 
-    async removeSession(ref: ClientSessionRef): Promise<void> {
-        await this.deleteValue(SESSIONS_NAMESPACE, this.sessionKey(ref));
+    async deleteSession(
+        ref: ClientSessionRef,
+        expectedRevision: number,
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        return await this.deleteValueIfRevision(
+            SESSIONS_NAMESPACE,
+            this.sessionKey(ref),
+            expectedRevision,
+        );
     }
 
     async appendEvent(event: ClientEvent): Promise<void> {

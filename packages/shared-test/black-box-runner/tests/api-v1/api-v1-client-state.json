@@ -16,6 +16,10 @@
       "env": "RALLAR_BB_CLIENT_INSTANCE_ID",
       "default": "api-v1-bb-instance-{runId}"
     },
+    "clientGenerationId": {
+      "env": "RALLAR_BB_CLIENT_GENERATION_ID",
+      "default": "api-v1-bb-generation-{runId}"
+    },
     "aliceUsername": {
       "env": "RALLAR_ALICE_USERNAME",
       "default": "alice"
@@ -126,6 +130,62 @@
       }
     },
     {
+      "name": "replayEquivalentAlicePrincipal",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "roles": [
+            "black-box"
+          ],
+          "status": "active",
+          "displayName": "Alice API-v1 black-box {runId}",
+          "username": "{aliceUsername}",
+          "requestId": "upsert-principal-{aliceClientId}-{runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "principal": {
+            "principalId": "{aliceClientId}",
+            "displayName": "Alice API-v1 black-box {runId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "rejectConflictingAlicePrincipalReplay",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "upsert-principal-{aliceClientId}-{runId}",
+          "username": "{aliceUsername}",
+          "displayName": "Conflicting replay {runId}",
+          "status": "active",
+          "roles": [
+            "black-box"
+          ]
+        }
+      },
+      "expect": {
+        "status": 409
+      }
+    },
+    {
       "name": "upsertAliceInstance",
       "type": "http",
       "connection": "api",
@@ -177,6 +237,7 @@
         },
         "body": {
           "requestId": "connect-session-{aliceSessionId}-{runId}",
+          "generationId": "{clientGenerationId}",
           "presenceState": "online",
           "transport": "ws",
           "connectionId": "api-v1-bb-connection-{runId}"
@@ -212,6 +273,7 @@
         },
         "body": {
           "requestId": "heartbeat-session-{aliceSessionId}-{runId}",
+          "generationId": "{clientGenerationId}",
           "presenceState": "online"
         }
       },
@@ -328,7 +390,8 @@
           "x-client-id": "{aliceClientId}"
         },
         "body": {
-          "requestId": "disconnect-session-{aliceSessionId}-{runId}"
+          "requestId": "disconnect-session-{aliceSessionId}-{runId}",
+          "generationId": "{clientGenerationId}"
         }
       },
       "expect": {

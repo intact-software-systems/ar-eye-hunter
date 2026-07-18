@@ -9,8 +9,10 @@ describe('runtime-state hierarchical prefix isolation', () => {
         const clients = new ClientStateRepository(runtime);
         const groups = new GroupStateRepository(runtime);
 
-        await clients.putPrincipal(clientPrincipal('foo', 'alice'));
-        await clients.putPrincipal(clientPrincipal('foobar', 'bob'));
+        await expect(clients.insertPrincipal(clientPrincipal('foo', 'alice')))
+            .resolves.toMatchObject({ status: 'applied' });
+        await expect(clients.insertPrincipal(clientPrincipal('foobar', 'bob')))
+            .resolves.toMatchObject({ status: 'applied' });
         await groups.putGroup(group('foo', 'room'));
         await groups.putGroup(group('foobar', 'room'));
 
@@ -23,11 +25,16 @@ describe('runtime-state hierarchical prefix isolation', () => {
     it('keeps sibling principal and client-instance identifiers isolated', async () => {
         const repository = new ClientStateRepository(new FakeRuntimeStateRepository());
 
-        await repository.putInstance(clientInstance('alice', 'phone'));
-        await repository.putInstance(clientInstance('alice-2', 'tablet'));
-        await repository.putSession(clientSession('alice', 'phone', 'session'));
-        await repository.putSession(clientSession('alice', 'phone-2', 'session-2'));
-        await repository.putSession(clientSession('alice-2', 'phone', 'session-3'));
+        await expect(repository.insertInstance(clientInstance('alice', 'phone')))
+            .resolves.toMatchObject({ status: 'applied' });
+        await expect(repository.insertInstance(clientInstance('alice-2', 'tablet')))
+            .resolves.toMatchObject({ status: 'applied' });
+        await expect(repository.insertSession(clientSession('alice', 'phone', 'session')))
+            .resolves.toMatchObject({ status: 'applied' });
+        await expect(repository.insertSession(clientSession('alice', 'phone-2', 'session-2')))
+            .resolves.toMatchObject({ status: 'applied' });
+        await expect(repository.insertSession(clientSession('alice-2', 'phone', 'session-3')))
+            .resolves.toMatchObject({ status: 'applied' });
 
         expect((await repository.listInstances(principalRef('alice'))).map((item) => item.principalId)).toEqual(['alice']);
         expect((await repository.listSessionsForPrincipal(principalRef('alice'))).map((item) => item.principalId)).toEqual(['alice', 'alice']);

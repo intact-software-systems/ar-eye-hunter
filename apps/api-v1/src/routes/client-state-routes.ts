@@ -1,11 +1,7 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type {
-  ConnectClientSessionRequest,
-  DisconnectClientSessionRequest,
-  HeartbeatClientSessionRequest,
   StateScope,
   UpsertClientInstanceRequest,
-  UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
 import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import {
@@ -35,6 +31,10 @@ import {
   type StateSyncCacheHydrationResult,
 } from '@shared-server/rallar-system/state-sync-cache-hydration.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import {
+  ClientMutationRejectedError,
+  validateClientMutationRequest,
+} from '@shared-server/rallar-system/services/client-state-mutations.ts';
 
 export type ClientStateRouteService = Pick<
   ClientStateService,
@@ -61,6 +61,9 @@ export type ClientStateRouteDependencies = Readonly<{
   hydrateStateSyncSnapshotCaches?: (
     input: StateSyncCacheHydrationInput,
   ) => Promise<StateSyncCacheHydrationResult>;
+  processClientAppInbox?: <V>(
+    enqueue: AppInboxEnqueueInput<V>,
+  ) => Promise<ClientSnapshot>;
 }>;
 
 export function init(
@@ -193,11 +196,10 @@ export function init(
         const scope = toScope(c);
         const principalId = c.req.param('principalId');
         assertSelfPrincipal(authSession.clientId, principalId);
-        const request = withActor(
-          await readRequestWithRequestId<UpsertClientPrincipalRequest>(c),
-          authSession,
-        );
-        const snapshot = await processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>({
+        const requestBody = await readRequestWithRequestId(c);
+        validateClientMutationRequest('upsertPrincipal', requestBody);
+        const request = withActor(requestBody, authSession);
+        const snapshot = await deps.processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>({
           type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
           resourceId: request.requestId,
           contextId: toClientAppInboxContextId(scope, principalId),
@@ -224,11 +226,13 @@ export function init(
         const principalId = c.req.param('principalId');
         const clientInstanceId = c.req.param('clientInstanceId');
         assertSelfPrincipal(authSession.clientId, principalId);
+        const requestBody = await readRequestWithRequestId(c);
+        validateClientMutationRequest('upsertInstance', requestBody);
         const request = withActor(
-          await readRequestWithRequestId<UpsertClientInstanceRequest>(c),
+          requestBody as UpsertClientInstanceRequest & { requestId: string },
           authSession,
         );
-        const snapshot = await processClientAppInbox<ClientInstanceUpsertAppInboxPayload>({
+        const snapshot = await deps.processClientAppInbox<ClientInstanceUpsertAppInboxPayload>({
           type: AppInboxType.CLIENT_INSTANCE_UPSERT,
           resourceId: request.requestId,
           contextId: toClientAppInboxContextId(scope, principalId),
@@ -261,11 +265,10 @@ export function init(
           principalId,
           sessionId,
         );
-        const request = withActor(
-          await readRequestWithRequestId<ConnectClientSessionRequest>(c),
-          authSession,
-        );
-        const snapshot = await processClientAppInbox<ClientSessionConnectAppInboxPayload>({
+        const requestBody = await readRequestWithRequestId(c);
+        validateClientMutationRequest('connectSession', requestBody);
+        const request = withActor(requestBody, authSession);
+        const snapshot = await deps.processClientAppInbox<ClientSessionConnectAppInboxPayload>({
           type: AppInboxType.CLIENT_SESSION_CONNECT,
           resourceId: request.requestId,
           contextId: toClientAppInboxContextId(scope, principalId),
@@ -299,11 +302,10 @@ export function init(
           principalId,
           sessionId,
         );
-        const request = withActor(
-          await readRequestWithRequestId<HeartbeatClientSessionRequest>(c),
-          authSession,
-        );
-        const snapshot = await processClientAppInbox<ClientSessionHeartbeatAppInboxPayload>({
+        const requestBody = await readRequestWithRequestId(c);
+        validateClientMutationRequest('heartbeatSession', requestBody);
+        const request = withActor(requestBody, authSession);
+        const snapshot = await deps.processClientAppInbox<ClientSessionHeartbeatAppInboxPayload>({
           type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
           resourceId: request.requestId,
           contextId: toClientAppInboxContextId(scope, principalId),
@@ -337,11 +339,10 @@ export function init(
           principalId,
           sessionId,
         );
-        const request = withActor(
-          await readRequestWithRequestId<DisconnectClientSessionRequest>(c),
-          authSession,
-        );
-        const snapshot = await processClientAppInbox<ClientSessionDisconnectAppInboxPayload>({
+        const requestBody = await readRequestWithRequestId(c);
+        validateClientMutationRequest('disconnectSession', requestBody);
+        const request = withActor(requestBody, authSession);
+        const snapshot = await deps.processClientAppInbox<ClientSessionDisconnectAppInboxPayload>({
           type: AppInboxType.CLIENT_SESSION_DISCONNECT,
           resourceId: request.requestId,
           contextId: toClientAppInboxContextId(scope, principalId),
@@ -372,6 +373,8 @@ function toClientStateRouteDependencies(
       defaultRequireApiAuthSession,
     hydrateStateSyncSnapshotCaches: dependencies.hydrateStateSyncSnapshotCaches ??
       defaultHydrateStateSyncSnapshotCaches,
+    processClientAppInbox: dependencies.processClientAppInbox ??
+      processClientAppInbox,
   };
 }
 
@@ -467,20 +470,33 @@ function requireClientStateWrittenSnapshot(
   return mutation.snapshot;
 }
 
-async function readRequestWithRequestId<T extends { requestId?: string }>(c: {
+async function readRequestWithRequestId(c: {
   req: {
     json(): Promise<unknown>;
     header(name: string): string | undefined;
   };
-}): Promise<T & { requestId: string }> {
-  const requestBody = (await c.req.json()) as T;
-  const requestId = requestBody.requestId ??
+}): Promise<Record<string, unknown> & { requestId: string }> {
+  const requestBody = await c.req.json();
+  if (
+    typeof requestBody !== 'object' || requestBody === null ||
+    Array.isArray(requestBody)
+  ) {
+    throw new ClientMutationRejectedError('Client request must be a plain object');
+  }
+  const body = requestBody as Record<string, unknown>;
+  if (body.requestId !== undefined &&
+    (typeof body.requestId !== 'string' || body.requestId.trim().length === 0)) {
+    throw new ClientMutationRejectedError(
+      'Client request requestId must be a non-empty string',
+    );
+  }
+  const requestId = body.requestId ??
     c.req.header('Idempotency-Key') ??
     crypto.randomUUID();
 
   return {
-    ...requestBody,
-    requestId,
+    ...body,
+    requestId: String(requestId),
   };
 }
 
@@ -508,7 +524,10 @@ function toErrorResponse(
   error: unknown,
 ): Response {
   const message = error instanceof Error ? error.message : String(error);
-  const status = message.includes('not found')
+  const serialized = readSerializedRouteError(message);
+  const explicitStatus = readErrorStatus(error) ?? serialized?.status;
+  const responseMessage = serialized?.error ?? serialized?.message ?? message;
+  const status = explicitStatus ?? (message.includes('not found')
     ? 404
     : message.startsWith('Unauthorized:')
     ? 401
@@ -516,9 +535,50 @@ function toErrorResponse(
     ? 403
     : message.includes('already exists')
     ? 409
-    : 400;
+    : 400);
 
-  return c.json({ error: message }, status);
+  return c.json({
+    error: responseMessage,
+    ...(serialized?.code ? { code: serialized.code } : {}),
+  }, status);
+}
+
+function readErrorStatus(error: unknown): number | undefined {
+  if (
+    typeof error !== 'object' || error === null || !('status' in error) ||
+    !Number.isSafeInteger(error.status) ||
+    (error.status as number) < 400 || (error.status as number) > 599
+  ) {
+    return undefined;
+  }
+  return error.status as number;
+}
+
+function readSerializedRouteError(message: string): Readonly<{
+  error?: string;
+  message?: string;
+  code?: string;
+  status?: number;
+}> | undefined {
+  try {
+    const value = JSON.parse(message) as unknown;
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    const status = Number.isSafeInteger(record.status) &&
+        (record.status as number) >= 400 && (record.status as number) <= 599
+      ? record.status as number
+      : undefined;
+    return {
+      ...(typeof record.error === 'string' ? { error: record.error } : {}),
+      ...(typeof record.message === 'string' ? { message: record.message } : {}),
+      ...(typeof record.code === 'string' ? { code: record.code } : {}),
+      ...(status === undefined ? {} : { status }),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function withActor<

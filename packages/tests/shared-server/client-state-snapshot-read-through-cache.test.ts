@@ -171,9 +171,32 @@ async function putClientSnapshot(
     repository: ClientStateRepository,
     snapshot: ClientSnapshot,
 ): Promise<void> {
-    await repository.putPrincipal(snapshot.principal);
-    await Promise.all(snapshot.instances.map((instance) => repository.putInstance(instance)));
-    await Promise.all(snapshot.activeSessions.map((session) => repository.putSession(session)));
+    const principalEntry = await repository.findPrincipalEntry(snapshot.principal);
+    const principalResult = principalEntry
+        ? await repository.updatePrincipal(
+            snapshot.principal,
+            principalEntry.entry.revision,
+        )
+        : await repository.insertPrincipal(snapshot.principal);
+    expect(principalResult).toMatchObject({ status: 'applied' });
+    const instances = await Promise.all(
+        snapshot.instances.map(async (instance) => {
+            const entry = await repository.findInstanceEntry(instance);
+            return entry
+                ? await repository.updateInstance(instance, entry.entry.revision)
+                : await repository.insertInstance(instance);
+        }),
+    );
+    const sessions = await Promise.all(
+        snapshot.activeSessions.map(async (session) => {
+            const entry = await repository.findSessionEntry(session);
+            return entry
+                ? await repository.updateSession(session, entry.entry.revision)
+                : await repository.insertSession(session);
+        }),
+    );
+    expect(instances.every((result) => result.status === 'applied')).toBe(true);
+    expect(sessions.every((result) => result.status === 'applied')).toBe(true);
 }
 
 function createClientSnapshot(

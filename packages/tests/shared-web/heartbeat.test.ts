@@ -112,6 +112,10 @@ describe('browser heartbeat', () => {
             '/api/state/apps/ar-eye-hunter/workspaces/default/clients/principal-1/instances/principal-1/sessions/session-1/heartbeat',
             '/api/state/apps/ar-eye-hunter/workspaces/default/groups/stale-room/sessions/session-1/heartbeat',
         ]);
+        expect(handle.generationId).toBeTruthy();
+        expect(fetchCalls[0]?.body).toMatchObject({
+            generationId: handle.generationId,
+        });
         expect(
             groupStateSnapshotsRepository.findGroupStateSnapshotByRef(staleGroup.group),
         ).toBeUndefined();
@@ -151,6 +155,35 @@ describe('browser heartbeat', () => {
             fetchCalls.filter((call) => call.url.includes('/heartbeat')),
         ).toHaveLength(1);
         expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('uses one generation for an active heartbeat and allocates a new one after restart', async () => {
+        stubFetch(({ url, method }) => {
+            if (
+                method === 'POST' &&
+                url.includes('/clients/principal-1/') &&
+                url.endsWith('/sessions/session-1/heartbeat')
+            ) {
+                return jsonResponse(clientSnapshot('principal-1'));
+            }
+
+            return textResponse('unexpected', 500);
+        });
+
+        const first = await initHeartbeat(clientData, { authSession });
+        await vi.waitFor(() => expect(fetchCalls).toHaveLength(1));
+        expect(fetchCalls[0]?.body).toMatchObject({
+            generationId: first.generationId,
+        });
+
+        const second = await initHeartbeat(clientData, { authSession });
+        await vi.waitFor(() => expect(fetchCalls).toHaveLength(2));
+        second.stop();
+
+        expect(second.generationId).not.toBe(first.generationId);
+        expect(fetchCalls[1]?.body).toMatchObject({
+            generationId: second.generationId,
+        });
     });
 
     function stubFetch(

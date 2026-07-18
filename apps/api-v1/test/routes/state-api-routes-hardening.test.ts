@@ -40,6 +40,101 @@ Deno.test('non-strict state read routes preserve authenticated non-self client r
   });
 });
 
+Deno.test('malformed client REST mutations return terminal 400 before inbox enqueue', async () => {
+  const processCalls: unknown[] = [];
+  const deps = createClientRouteDeps({
+    session: createAuthSession('alice'),
+    clientService: {},
+    processClientAppInbox: (input) => {
+      processCalls.push(input);
+      return Promise.resolve(createClientSnapshot('alice'));
+    },
+  });
+  const app = createClientRouteApp(deps);
+  const base = '/api/state/apps/app-1/workspaces/workspace-1/clients/alice';
+  const cases = [
+    {
+      method: 'PUT',
+      path: `${base}/principal`,
+      body: { username: '', status: 'unknown' },
+    },
+    {
+      method: 'PUT',
+      path: `${base}/instances/browser`,
+      body: { capabilities: [42] },
+    },
+    {
+      method: 'PUT',
+      path: `${base}/instances/browser/sessions/alice-session`,
+      body: { generationId: { forged: true } },
+    },
+    {
+      method: 'POST',
+      path: `${base}/instances/browser/sessions/alice-session/heartbeat`,
+      body: { generationId: 'generation-1', lastHeartbeatAtEpochMs: -1 },
+    },
+    {
+      method: 'POST',
+      path: `${base}/instances/browser/sessions/alice-session/disconnect`,
+      body: {},
+    },
+  ] as const;
+
+  for (const testCase of cases) {
+    const response = await app.request(testCase.path, {
+      method: testCase.method,
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(testCase.body),
+    });
+    assert.equal(response.status, 400, testCase.path);
+    assert.match((await response.json()).error, /Client|client/);
+  }
+  assert.equal(processCalls.length, 0);
+});
+
+Deno.test('client REST mutation preserves explicit terminal idempotency 409', async () => {
+  const conflict = Object.assign(
+    new Error('Client mutation command differs for request same-request'),
+    {
+      code: 'client-mutation-idempotency-conflict',
+      status: 409,
+    },
+  );
+  let processCount = 0;
+  const deps = createClientRouteDeps({
+    session: createAuthSession('alice'),
+    clientService: {},
+    processClientAppInbox: () => {
+      processCount += 1;
+      return Promise.reject(conflict);
+    },
+  });
+  const response = await createClientRouteApp(deps).request(
+    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal',
+    {
+      method: 'PUT',
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        requestId: 'same-request',
+        username: 'alice',
+        metadata: { beta: 2, alpha: 1 },
+      }),
+    },
+  );
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    error: 'Client mutation command differs for request same-request',
+  });
+  assert.equal(processCount, 1);
+});
+
 Deno.test('strict state read routes reject non-self client snapshot and event reads', async () => {
   await withStrictReadAuth(true, async () => {
     const deps = createClientRouteDeps({
@@ -890,6 +985,9 @@ function createClientRouteDeps(
     hydrateStateSyncSnapshotCaches?: clientStateRoutes.ClientStateRouteDependencies[
       'hydrateStateSyncSnapshotCaches'
     ];
+    processClientAppInbox?: clientStateRoutes.ClientStateRouteDependencies[
+      'processClientAppInbox'
+    ];
   }>,
 ):
   & Required<clientStateRoutes.ClientStateRouteDependencies>
@@ -912,6 +1010,8 @@ function createClientRouteDeps(
     },
     hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
       (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
+    processClientAppInbox: input.processClientAppInbox ??
+      (() => Promise.resolve(createClientSnapshot(input.session.clientId))),
     authCallCount: () => authCalls,
   };
 }

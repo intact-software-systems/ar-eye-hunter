@@ -306,6 +306,45 @@ describe('black-box runner recipe matrix', () => {
         });
     });
 
+    it('covers client-state generation fencing and public idempotency conflicts', () => {
+        const recipe = readRecipe('tests/api-v1/api-v1-client-state.json');
+        const steps = recipe.steps as Array<{
+            name?: string;
+            request?: { body?: Record<string, unknown> };
+            expect?: { status?: number };
+        }>;
+        const step = (name: string) => steps.find((candidate) => candidate.name === name);
+
+        const first = step('upsertAlicePrincipal');
+        const equivalent = step('replayEquivalentAlicePrincipal');
+        const conflict = step('rejectConflictingAlicePrincipalReplay');
+        expect(steps.indexOf(first!)).toBeLessThan(steps.indexOf(equivalent!));
+        expect(steps.indexOf(equivalent!)).toBeLessThan(steps.indexOf(conflict!));
+        expect(equivalent?.request?.body?.requestId).toBe(
+            first?.request?.body?.requestId,
+        );
+        expect(Object.keys(equivalent?.request?.body ?? {})).not.toEqual(
+            Object.keys(first?.request?.body ?? {}),
+        );
+        expect(conflict?.request?.body?.requestId).toBe(
+            first?.request?.body?.requestId,
+        );
+        expect(conflict?.request?.body?.displayName).not.toBe(
+            first?.request?.body?.displayName,
+        );
+        expect(conflict?.expect?.status).toBe(409);
+
+        for (const name of [
+            'connectAliceClientSession',
+            'heartbeatAliceClientSession',
+            'disconnectAliceClientSession',
+        ]) {
+            expect(step(name)?.request?.body?.generationId).toBe(
+                '{clientGenerationId}',
+            );
+        }
+    });
+
     it('keeps API-v1 black-box recipes free of RTC connections', () => {
         const { entries } = readMatrix();
         const apiEntries = entries.filter(entry => entry.profiles.includes('api-v1-black-box'));

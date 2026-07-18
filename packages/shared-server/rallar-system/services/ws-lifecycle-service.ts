@@ -1,7 +1,10 @@
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 
 export type RallarWsLifecycleHandlers = Readonly<{
-    disconnectClientSession(sessionId: string): Promise<unknown>;
+    disconnectClientSession(
+        sessionId: string,
+        generationId: string,
+    ): Promise<unknown>;
     disconnectGroupSessionsBySessionId(
         sessionId: string,
         request: Readonly<{
@@ -22,7 +25,10 @@ export function initWsLifecycle(
                 console.log(`Websocket client disconnected: ${socket.id}`);
 
                 try {
-                    await handlers.disconnectClientSession(socket.id);
+                    await handlers.disconnectClientSession(
+                        socket.id,
+                        socket.generationId,
+                    );
                 } catch (error) {
                     console.warn(
                         'Failed to update client session state on disconnect:',

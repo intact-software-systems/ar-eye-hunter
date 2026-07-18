@@ -1223,6 +1223,7 @@ describe('state API workflows', () => {
             groupSnapshot('group-1'),
             groupSnapshot('group-2'),
         ], {
+            generationId: 'generation-1',
             policies: { command: { maxAttempts: 3 } },
         });
 
@@ -1279,6 +1280,7 @@ describe('state API workflows', () => {
             clientData,
             [groupSnapshot('group-1')],
             {
+                generationId: 'generation-1',
                 scope: {
                     applicationId: 'ar-eye-hunter',
                     workspaceId: 'default',
@@ -1299,6 +1301,7 @@ describe('state API workflows', () => {
         expect(fetchCalls[1]?.body).toMatchObject({
             actorPrincipalId: 'principal-1',
             actorSessionId: 'session-1',
+            generationId: 'generation-1',
             presenceState: 'online',
             transport: 'ws',
             lastHeartbeatAtEpochMs: 1000,
@@ -1472,6 +1475,7 @@ describe('state API workflows', () => {
         });
 
         await refreshStateHeartbeat(clientData, [groupSnapshot('group-1')], {
+            generationId: 'generation-1',
             policies: { command: { maxAttempts: 2 } },
         });
 
@@ -1518,6 +1522,7 @@ describe('state API workflows', () => {
         });
 
         await refreshStateHeartbeat(clientData, [], {
+            generationId: 'generation-1',
             authSession: {
                 clientId: 'principal-1',
                 username: 'alice',

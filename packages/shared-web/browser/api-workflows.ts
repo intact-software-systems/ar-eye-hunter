@@ -70,6 +70,7 @@ export type StateHeartbeatWorkflowValue =
     | undefined;
 
 export type RefreshStateHeartbeatOptions = Readonly<{
+    generationId: string;
     scope?: StateScope;
     authSession?: AuthSession;
     heartbeatAtEpochMs?: number;
@@ -800,7 +801,7 @@ export async function leaveStateGroup(
 export async function refreshStateHeartbeat(
     clientData: ClientInfo,
     joinedGroups: readonly GroupStateSnapshot[],
-    options: RefreshStateHeartbeatOptions = {},
+    options: RefreshStateHeartbeatOptions,
 ): Promise<RefreshStateHeartbeatResult> {
     const scope = options.scope ?? defaultStateScope();
     const heartbeatAtEpochMs = options.heartbeatAtEpochMs ?? Date.now();
@@ -823,6 +824,7 @@ export async function refreshStateHeartbeat(
                 heartbeatStateClientSessionWithPresenceRepair(
                     clientData,
                     {
+                        generationId: options.generationId,
                         actorPrincipalId: clientData.clientId,
                         actorSessionId: clientData.sessionId,
                         presenceState: 'online',
@@ -926,11 +928,12 @@ async function heartbeatStateClientSessionWithPresenceRepair(
         clientData.clientId,
         clientData.sessionId,
         {
+            generationId: request.generationId,
             actorPrincipalId: request.actorPrincipalId ?? clientData.clientId,
             actorSessionId: request.actorSessionId ?? clientData.sessionId,
             presenceState: request.presenceState ?? 'online',
             transport: 'ws',
-            connectionId: clientData.sessionId,
+            connectionId: request.generationId,
             connectedAtEpochMs: request.lastHeartbeatAtEpochMs,
             lastHeartbeatAtEpochMs: request.lastHeartbeatAtEpochMs,
             expiresAtEpochMs: request.expiresAtEpochMs,

@@ -3,6 +3,7 @@ import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { STATE_MUTATION_OUTBOX_NAMESPACE } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 import {
     ClientMutationIdempotencyConflictError,
     createClientStateService,
@@ -281,7 +282,7 @@ describe('ClientStateService command idempotency', () => {
         expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
 
-    it('replays authorised websocket registration with the same session id', async () => {
+    it('advances authorised websocket generations and makes an old close stale', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const publisher = createPublisher();
         const service = createClientStateService({
@@ -299,18 +300,49 @@ describe('ClientStateService command idempotency', () => {
         };
 
         const expiresAtEpochMs = Date.now() + 60_000;
-        const first = await service.registerAuthorisedWsClientSession(authSession, {
+        const register = service.registerAuthorisedWsClientSession as unknown as (
+            auth: AuthSession,
+            generationId: string,
+            input: Readonly<{
+                applicationId: string;
+                workspaceId: string;
+                expiresAtEpochMs: number;
+            }>,
+        ) => ReturnType<typeof service.registerAuthorisedWsClientSession>;
+        const disconnect = service.disconnectAuthorisedWsClientSession as unknown as (
+            sessionId: string,
+            generationId: string,
+            reason?: string,
+        ) => ReturnType<typeof service.disconnectAuthorisedWsClientSession>;
+
+        const first = await register(authSession, 'ws-generation-1', {
             applicationId: SCOPE.applicationId,
             workspaceId: SCOPE.workspaceId,
             expiresAtEpochMs,
         });
-        const second = await service.registerAuthorisedWsClientSession(
+        await disconnect(authSession.sessionId, 'ws-generation-1', 'first-close');
+        const second = await register(
             authSession,
+            'ws-generation-2',
             {
                 applicationId: SCOPE.applicationId,
                 workspaceId: SCOPE.workspaceId,
                 expiresAtEpochMs,
             },
+        );
+        const third = await register(
+            authSession,
+            'ws-generation-3',
+            {
+                applicationId: SCOPE.applicationId,
+                workspaceId: SCOPE.workspaceId,
+                expiresAtEpochMs,
+            },
+        );
+        const staleClose = await disconnect(
+            authSession.sessionId,
+            'ws-generation-2',
+            'delayed-second-close',
         );
 
         expect(second).toMatchObject({
@@ -320,21 +352,61 @@ describe('ClientStateService command idempotency', () => {
                     snapshot: {
                         principal: {
                             principalId: 'alice',
-                            snapshotVersion: 1,
+                            snapshotVersion: 3,
                         },
                     },
                 },
             },
         });
         expect(first.result.right?.event?.eventType).toBe('session-connected');
-        expect(second.result.right?.event).toEqual(first.result.right?.event);
+        expect(second.result.right?.event?.eventType).toBe('session-connected');
+        expect(third.result.right?.event?.eventType).toBe('session-connected');
+        expect(staleClose.result.right?.snapshot.activeSessions).toEqual([
+            expect.objectContaining({
+                sessionId: authSession.sessionId,
+                generationId: 'ws-generation-3',
+                generationVersion: 3,
+                status: 'active',
+            }),
+        ]);
 
         const repository = new ClientStateRepository(runtimeRepository);
+        expect(await repository.findSession({
+            ...toClientPrincipalRef('alice'),
+            clientInstanceId: 'alice',
+            sessionId: authSession.sessionId,
+        })).toMatchObject({
+            generationId: 'ws-generation-3',
+            generationVersion: 3,
+            status: 'active',
+        });
         expect(
             (await repository.listEvents(toClientPrincipalRef('alice'))).map(
                 (event) => event.eventType,
             ),
-        ).toEqual(['session-connected']);
+        ).toEqual([
+            'session-connected',
+            'session-disconnected',
+            'session-connected',
+            'session-connected',
+        ]);
+        const outbox = (await runtimeRepository.findAllEntries(
+            STATE_MUTATION_OUTBOX_NAMESPACE,
+        )).map((entry) => JSON.parse(entry.value));
+        expect(outbox).toHaveLength(4);
+        expect(outbox.map((record) => record.commandId).sort()).toEqual([
+            'authorised-ws:connect:ws-session-1:ws-generation-1',
+            'authorised-ws:connect:ws-session-1:ws-generation-2',
+            'authorised-ws:connect:ws-session-1:ws-generation-3',
+            'authorised-ws:disconnect:ws-session-1:ws-generation-1',
+        ].sort());
+        for (const record of outbox) {
+            const receipt = await repository.findIdempotentClientMutationReceipt(
+                toClientPrincipalRef('alice'),
+                record.commandId,
+            );
+            expect(receipt?.receipt.commandHash).toBe(record.commandHash);
+        }
     });
 
     it('expires stale sessions once and leaves publication to the app inbox', async () => {
