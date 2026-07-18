@@ -30,7 +30,9 @@ import {
     type ControlQuerySnapshot,
 } from './control-query.ts';
 import type { RecipeConsoleControlCredentialPolicy } from './control-credential-policy.ts';
+import { recipeConsoleDetailRunIds } from './control-detail-run-ids.ts';
 import type { RecipeConsoleControlExecutionApi } from './control-execution-api.ts';
+import { parseRecipeConsoleUrl } from '../routing/url-state-codec.ts';
 import {
     controlSelectionIndexCacheLastLookup,
     createControlSelectionIndexCache,
@@ -109,6 +111,13 @@ export function ControlConnectionProvider({
                     apiBaseUrl: bootstrap.apiBaseUrl,
                     authSession,
                     credentialPolicy: bootstrap.credentialPolicy,
+                    detailRunIds: snapshot => recipeConsoleDetailRunIds({
+                        snapshot,
+                        bootstrapRunId: bootstrap.bootstrapRunId,
+                        urlState: parseRecipeConsoleUrl(
+                            globalThis.location?.search ?? '',
+                        ).state,
+                    }),
                 }),
             };
         } catch (error) {
@@ -117,6 +126,7 @@ export function ControlConnectionProvider({
     }, [
         authSession,
         bootstrap.apiBaseUrl,
+        bootstrap.bootstrapRunId,
         bootstrap.controlUrl,
         bootstrap.credentialPolicy,
         bootstrap.manualToken,
@@ -166,6 +176,7 @@ export function ControlConnectionProvider({
                 snapshot: result.snapshot,
                 provenance: {
                     distributedRunsSource: result.distributedRunsSource,
+                    runEvidence: result.runEvidence,
                 },
                 authorization: partialQueryAuthorization(result.partialError),
             };
