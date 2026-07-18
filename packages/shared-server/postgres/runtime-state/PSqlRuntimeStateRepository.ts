@@ -18,19 +18,54 @@ type RuntimeStateRow = Readonly<{
     revision: number | string;
 }>;
 
+type RuntimeStateSavepointSql = PSqlTransactionSql & Readonly<{
+    savepoint<T>(
+        fn: (sql: PSqlTransactionSql) => Promise<T>,
+    ): Promise<T>;
+}>;
+
+type RuntimeStateSqlState =
+    | Readonly<{ kind: 'root'; sql: PSqlSql }>
+    | Readonly<{ kind: 'transaction'; sql: RuntimeStateSavepointSql }>;
+
 export class PSqlRuntimeStateRepository
     implements RuntimeStateOptimisticTransactionalRepositoryLike {
-    constructor(public readonly sql: PSqlSql) {}
+    private readonly sqlState: RuntimeStateSqlState;
+
+    constructor(
+        public readonly sql: PSqlSql,
+        sqlState?: RuntimeStateSqlState,
+    ) {
+        this.sqlState = sqlState ?? {
+            kind: 'root',
+            sql,
+        };
+    }
 
     async begin<T>(
         fn: (
             repository: RuntimeStateOptimisticTransactionalRepositoryLike,
         ) => Promise<T>,
     ): Promise<T> {
-        return (await this.sql.begin(
-            async (sql: PSqlTransactionSql) =>
-                await fn(new PSqlRuntimeStateRepository(sql)),
-        )) as T;
+        if (this.sqlState.kind === 'transaction') {
+            return await this.sqlState.sql.savepoint(async (sql) => {
+                const savepointSql = requireSavepointSql(sql);
+                return await fn(new PSqlRuntimeStateRepository(savepointSql, {
+                    kind: 'transaction',
+                    sql: savepointSql,
+                }));
+            });
+        }
+
+        return await this.sqlState.sql.begin(
+            async (sql: PSqlTransactionSql) => {
+                const transactionSql = requireSavepointSql(sql);
+                return await fn(new PSqlRuntimeStateRepository(transactionSql, {
+                    kind: 'transaction',
+                    sql: transactionSql,
+                }));
+            },
+        );
     }
 
     async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
@@ -208,7 +243,10 @@ export class PSqlRuntimeStateRepository
         `;
 
         return rows[0]
-            ? { status: 'applied', revision: Number(rows[0].revision) }
+            ? {
+                status: 'applied',
+                revision: parseRuntimeStateRevision(rows[0].revision),
+            }
             : { status: 'conflict' };
     }
 
@@ -232,7 +270,10 @@ export class PSqlRuntimeStateRepository
         `;
 
         return rows[0]
-            ? { status: 'applied', revision: Number(rows[0].revision) }
+            ? {
+                status: 'applied',
+                revision: parseRuntimeStateRevision(rows[0].revision),
+            }
             : { status: 'conflict' };
     }
 
@@ -323,8 +364,35 @@ function toEntry(row: RuntimeStateRow): RuntimeStateEntry {
         value: row.store_value,
         expireAtTimestamp,
         updatedTimestamp: row.updated_ts,
-        revision: Number(row.revision),
+        revision: parseRuntimeStateRevision(row.revision),
     };
+}
+
+function parseRuntimeStateRevision(value: number | string): number {
+    if (typeof value === 'string' && !/^(0|[1-9]\d*)$/u.test(value)) {
+        throw new Error(`Invalid runtime state revision: ${value}`);
+    }
+
+    const revision = typeof value === 'number' ? value : Number(value);
+    if (!Number.isSafeInteger(revision) || revision < 0) {
+        throw new Error(`Invalid runtime state revision: ${value}`);
+    }
+
+    return revision;
+}
+
+function requireSavepointSql(
+    sql: PSqlTransactionSql,
+): RuntimeStateSavepointSql {
+    const candidate = sql as PSqlTransactionSql &
+        Readonly<{ savepoint?: unknown }>;
+    if (typeof candidate.savepoint !== 'function') {
+        throw new Error(
+            'Runtime state transaction SQL client must provide savepoint().',
+        );
+    }
+
+    return candidate as RuntimeStateSavepointSql;
 }
 
 function toExclusivePrefixEnd(prefix: string): string {

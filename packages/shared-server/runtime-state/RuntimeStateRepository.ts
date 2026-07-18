@@ -95,9 +95,11 @@ export function isRuntimeStateTransactionalRepositoryLike(
 export function isRuntimeStateConditionalRepositoryLike(
     repository: RuntimeStateRepositoryLike,
 ): repository is RuntimeStateRepositoryLike & RuntimeStateConditionalRepositoryLike {
-    return 'insertIfAbsent' in repository &&
-        'upsertIfRevision' in repository &&
-        'deleteIfRevision' in repository;
+    const candidate = repository as RuntimeStateRepositoryLike &
+        Readonly<Record<string, unknown>>;
+    return typeof candidate.insertIfAbsent === 'function' &&
+        typeof candidate.upsertIfRevision === 'function' &&
+        typeof candidate.deleteIfRevision === 'function';
 }
 
 export function isRuntimeStatePrefixPageRepositoryLike(

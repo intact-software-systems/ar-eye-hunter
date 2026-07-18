@@ -7,13 +7,6 @@ type PostgresSql = PSqlSql & Readonly<{
     end(): Promise<void>;
 }>;
 
-type PostgresModule = Readonly<{
-    default: (
-        databaseUrl: string,
-        options: Readonly<{ max: number; idle_timeout: number }>,
-    ) => PostgresSql;
-}>;
-
 type GlobalEnv = Readonly<{
     Deno?: Readonly<{
         env: Readonly<{
@@ -41,6 +34,7 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
             const namespace = `runtime-state-concurrency-${crypto.randomUUID()}`;
             const key = 'shared-key';
             const updateValues = ['first-writer', 'second-writer'] as const;
+            let hasPrimaryFailure = false;
 
             try {
                 expect(firstSql).not.toBe(secondSql);
@@ -115,12 +109,80 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                     .toHaveLength(1);
                 await expect(secondRepository.findEntry(namespace, key)).resolves
                     .toBeUndefined();
+            } catch (error) {
+                hasPrimaryFailure = true;
+                throw error;
             } finally {
-                await firstSql`
-                    delete from runtime_state_store
-                    where store_namespace = ${namespace}
-                `;
-                await Promise.all([firstSql.end(), secondSql.end()]);
+                await cleanupRuntimeState(
+                    namespace,
+                    firstSql,
+                    [firstSql, secondSql],
+                    hasPrimaryFailure,
+                );
+            }
+        },
+        60_000,
+    );
+
+    postgresIt(
+        'uses savepoints for nested optimistic transactions',
+        async () => {
+            const sql = await createSql(requireDatabaseUrl());
+            const repository = new PSqlRuntimeStateRepository(sql);
+            const namespace = `runtime-state-savepoint-${crypto.randomUUID()}`;
+            let hasPrimaryFailure = false;
+
+            try {
+                await repository.begin(async (transactionRepository) => {
+                    await expect(
+                        transactionRepository.insertIfAbsent(
+                            namespace,
+                            'outer',
+                            'outer-value',
+                            NEVER_EXPIRE_AT_TIMESTAMP,
+                        ),
+                    ).resolves.toEqual({ status: 'applied', revision: 0 });
+
+                    await expect(
+                        transactionRepository.begin(async (nestedRepository) => {
+                            await nestedRepository.insertIfAbsent(
+                                namespace,
+                                'rolled-back',
+                                'nested-value',
+                                NEVER_EXPIRE_AT_TIMESTAMP,
+                            );
+                            throw new Error('rollback nested savepoint');
+                        }),
+                    ).rejects.toThrow('rollback nested savepoint');
+
+                    await expect(
+                        transactionRepository.begin(async (nestedRepository) =>
+                            await nestedRepository.insertIfAbsent(
+                                namespace,
+                                'committed',
+                                'nested-value',
+                                NEVER_EXPIRE_AT_TIMESTAMP,
+                            )
+                        ),
+                    ).resolves.toEqual({ status: 'applied', revision: 0 });
+                });
+
+                await expect(repository.findEntry(namespace, 'outer')).resolves
+                    .toMatchObject({ value: 'outer-value', revision: 0 });
+                await expect(repository.findEntry(namespace, 'committed')).resolves
+                    .toMatchObject({ value: 'nested-value', revision: 0 });
+                await expect(repository.findEntry(namespace, 'rolled-back')).resolves
+                    .toBeUndefined();
+            } catch (error) {
+                hasPrimaryFailure = true;
+                throw error;
+            } finally {
+                await cleanupRuntimeState(
+                    namespace,
+                    sql,
+                    [sql],
+                    hasPrimaryFailure,
+                );
             }
         },
         60_000,
@@ -128,8 +190,45 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
 });
 
 async function createSql(databaseUrl: string): Promise<PostgresSql> {
-    const postgres = await import('postgres') as PostgresModule;
-    return postgres.default(databaseUrl, { max: 1, idle_timeout: 1 });
+    const postgres = await import('postgres');
+    return postgres.default(
+        databaseUrl,
+        { max: 1, idle_timeout: 1 },
+    ) as unknown as PostgresSql;
+}
+
+async function cleanupRuntimeState(
+    namespace: string,
+    cleanupSql: PostgresSql,
+    clients: readonly PostgresSql[],
+    hasPrimaryFailure: boolean,
+): Promise<void> {
+    const failures: unknown[] = [];
+    const deleteResult = await Promise.allSettled([
+        cleanupSql`
+            delete from runtime_state_store
+            where store_namespace = ${namespace}
+        `,
+    ]);
+    if (deleteResult[0].status === 'rejected') {
+        failures.push(deleteResult[0].reason);
+    }
+
+    const closeResults = await Promise.allSettled(
+        clients.map(async (client) => await client.end()),
+    );
+    for (const closeResult of closeResults) {
+        if (closeResult.status === 'rejected') {
+            failures.push(closeResult.reason);
+        }
+    }
+
+    if (!hasPrimaryFailure && failures.length > 0) {
+        throw new AggregateError(
+            failures,
+            'Failed to clean up Postgres runtime-state integration resources.',
+        );
+    }
 }
 
 function requireDatabaseUrl(): string {
