@@ -14,6 +14,12 @@ const recipeConsoleWorkspacePath =
     'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleWorkspace.tsx';
 const recipeConsoleActiveWorkPath =
     'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleActiveWork.tsx';
+const recipeConsoleShellPath =
+    'apps/rallar-black-box/src/recipe-console/shell/RecipeConsoleShell.tsx';
+const recipeConsoleTopCommandBarPath =
+    'apps/rallar-black-box/src/recipe-console/shell/TopCommandBar.tsx';
+const recipeConsoleAccountSettingsPath =
+    'apps/rallar-black-box/src/recipe-console/shell/AccountSettingsPanel.tsx';
 const recipeConsoleRoot = 'apps/rallar-black-box/src/recipe-console';
 const rallarBlackBoxSourceRoot = 'apps/rallar-black-box/src';
 const controlConnectionProviderPath =
@@ -189,7 +195,7 @@ describe('Recipe Console experience boundary', () => {
             "import { ControlConnectionProvider } from '../control/ControlConnectionProvider.tsx';",
         );
         expect(recipeConsole).toMatch(
-            /<ControlConnectionProvider\b[\s\S]*<RecipeConsoleWorkspace\s*\/>[\s\S]*<\/ControlConnectionProvider>/,
+            /<ControlConnectionProvider\b[\s\S]*<RecipeConsoleWorkspace\b[\s\S]*\/>[\s\S]*<\/ControlConnectionProvider>/,
         );
         expect(recipeConsole).not.toMatch(/key=\{|\brevision\b|\buseState\b/);
         expect(recipeConsole).not.toMatch(
@@ -214,6 +220,40 @@ describe('Recipe Console experience boundary', () => {
         expect(workspace).not.toMatch(
             /createRecipeConsoleControlApi|createControlQueryService|\.start\(\)|\.stop\(\)/,
         );
+    });
+
+    test('carries account, personal defaults, and logout to the command bar', () => {
+        const app = source(recipeConsolePath);
+        const workspace = source(recipeConsoleWorkspacePath);
+        const shell = source(recipeConsoleShellPath);
+        const commandBar = source(recipeConsoleTopCommandBarPath);
+
+        expect(existsSync(resolve(repositoryRoot, recipeConsoleAccountSettingsPath)))
+            .toBe(true);
+        expect(app).toMatch(
+            /\{[\s\S]*authBusy,[\s\S]*authError,[\s\S]*onLogout,[\s\S]*\}: RecipeConsoleAppProps/,
+        );
+        expect(app).toContain('accountSettings={{');
+        expect(workspace).toContain('accountSettings');
+        expect(workspace).toContain('lastControlError');
+        expect(shell).toContain('accountSettings');
+        expect(commandBar).toMatch(/import\s*\{[\s\S]*AccountSettingsPanel/);
+        expect(commandBar).toContain('<AccountSettingsPanel');
+
+        if (!existsSync(resolve(repositoryRoot, recipeConsoleAccountSettingsPath))) {
+            return;
+        }
+        const panel = source(recipeConsoleAccountSettingsPath);
+        expect(panel).toContain('Open account and settings');
+        expect(panel).toContain('Save defaults');
+        expect(panel).toContain('Reset defaults');
+        expect(panel).toContain('Logout');
+        expect(panel).toContain('role="dialog"');
+        expect(panel).toContain('aria-modal="true"');
+        expect(panel).not.toMatch(
+            /(?:from\s+|import\()['"][^'"]*legacy\/[^'"]*['"]/,
+        );
+        expect(panel).not.toMatch(/accessToken|clientId|sessionId|password/);
     });
 
     test('keeps control authorization and execution behind bounded root-owned seams', () => {

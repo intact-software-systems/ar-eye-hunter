@@ -17,7 +17,10 @@ export type RecipeConsoleAppProps = Readonly<{
 
 export default function RecipeConsoleApp({
     authSession,
+    authBusy,
+    authError,
     controlBootstrap,
+    onLogout,
 }: RecipeConsoleAppProps) {
     return (
         <RecipeConsolePreferencesController
@@ -29,7 +32,15 @@ export default function RecipeConsoleApp({
                     bootstrap={preferences.state.effectiveBootstrap}
                     controlReadTimeoutMs={preferences.state.controlReadTimeoutMs}
                 >
-                    <RecipeConsoleWorkspace />
+                    <RecipeConsoleWorkspace
+                        accountSettings={{
+                            authBusy,
+                            authError,
+                            authSession,
+                            onLogout,
+                            preferences,
+                        }}
+                    />
                 </ControlConnectionProvider>
             )}
         </RecipeConsolePreferencesController>

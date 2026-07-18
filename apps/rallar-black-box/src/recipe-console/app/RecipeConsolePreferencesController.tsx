@@ -19,8 +19,8 @@ import {
 export type RecipeConsolePreferencesControllerValue = Readonly<{
     error?: string;
     preferences: RecipeConsolePreferences;
-    reset(): void;
-    save(preferences: RecipeConsolePreferences): void;
+    reset(): boolean;
+    save(preferences: RecipeConsolePreferences): boolean;
     state: RecipeConsolePreferenceState;
 }>;
 
@@ -52,8 +52,10 @@ export function RecipeConsolePreferencesController({
             );
             setPreferences(stored);
             setError(undefined);
+            return true;
         } catch (cause) {
             setError(errorMessage(cause));
+            return false;
         }
     }, []);
     const reset = useCallback(() => {
@@ -62,8 +64,10 @@ export function RecipeConsolePreferencesController({
             resetRecipeConsolePreferences(storage);
             setPreferences(readRecipeConsolePreferences(storage));
             setError(undefined);
+            return true;
         } catch (cause) {
             setError(errorMessage(cause));
+            return false;
         }
     }, []);
 

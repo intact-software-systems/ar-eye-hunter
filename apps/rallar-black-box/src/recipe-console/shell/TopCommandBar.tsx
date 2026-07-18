@@ -4,8 +4,13 @@ import { CommandBarItem } from '../ui/CommandBarItem.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
 import { StatusMark, type OperationalStatus } from '../ui/StatusMark.tsx';
 import styles from './TopCommandBar.module.css';
+import {
+    AccountSettingsPanel,
+    type AccountSettingsPanelProps,
+} from './AccountSettingsPanel.tsx';
 
 export function TopCommandBar({
+    accountSettings,
     height,
     context,
     issues,
@@ -14,6 +19,7 @@ export function TopCommandBar({
     status,
     statusLabel,
 }: Readonly<{
+    accountSettings: AccountSettingsPanelProps;
     height: 48 | 52;
     context: ReactNode;
     issues: readonly RecipeConsoleUrlIssue[];
@@ -45,6 +51,7 @@ export function TopCommandBar({
                 </div>
                 <IconButton aria-label="Refresh control data" icon="refresh" onClick={onRefresh} />
                 <IconButton aria-label="Copy canonical link" icon="copy" onClick={onCopyLink} />
+                <AccountSettingsPanel {...accountSettings} />
             </header>
             {issues.length > 0 ? (
                 <div
