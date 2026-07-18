@@ -12,10 +12,26 @@ import {
 } from './services/timing.ts';
 
 export type StateSyncPublisher = Readonly<{
-    publishClientSnapshot(snapshot: ClientSnapshot, senderId?: string): Promise<void>;
-    publishClientEvent(event: ClientEvent, senderId?: string): Promise<void>;
-    publishGroupSnapshot(snapshot: GroupSnapshot, senderId?: string): Promise<void>;
-    publishGroupEvent(event: GroupEvent, senderId?: string): Promise<void>;
+    publishClientSnapshot(
+        snapshot: ClientSnapshot,
+        senderId?: string,
+        deliveryId?: string,
+    ): Promise<void>;
+    publishClientEvent(
+        event: ClientEvent,
+        senderId?: string,
+        deliveryId?: string,
+    ): Promise<void>;
+    publishGroupSnapshot(
+        snapshot: GroupSnapshot,
+        senderId?: string,
+        deliveryId?: string,
+    ): Promise<void>;
+    publishGroupEvent(
+        event: GroupEvent,
+        senderId?: string,
+        deliveryId?: string,
+    ): Promise<void>;
 }>;
 
 export type CreateWsStateSyncPublisherOptions = Readonly<{
@@ -28,7 +44,7 @@ export function createWsStateSyncPublisher(
     options: CreateWsStateSyncPublisherOptions,
 ): StateSyncPublisher {
     return {
-        publishClientSnapshot: async (snapshot, senderId) => {
+        publishClientSnapshot: async (snapshot, senderId, deliveryId) => {
             await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? snapshot.principal.principalId,
@@ -39,10 +55,11 @@ export function createWsStateSyncPublisher(
                 {
                     requireLiveRoute: hasActiveClientSessions(snapshot),
                     timing: options.timing,
+                    deliveryId,
                 },
             );
         },
-        publishClientEvent: async (event, senderId) => {
+        publishClientEvent: async (event, senderId, deliveryId) => {
             const snapshot = clientStateSnapshotsRepository
                 .findClientStateSnapshotByPrincipalId(event.principalId);
             await enqueueBroadcast(
@@ -57,10 +74,11 @@ export function createWsStateSyncPublisher(
                         ? hasActiveClientSessions(snapshot)
                         : false,
                     timing: options.timing,
+                    deliveryId,
                 },
             );
         },
-        publishGroupSnapshot: async (snapshot, senderId) => {
+        publishGroupSnapshot: async (snapshot, senderId, deliveryId) => {
             await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? snapshot.group.groupId,
@@ -71,6 +89,7 @@ export function createWsStateSyncPublisher(
                 {
                     requireLiveRoute: hasActiveGroupSessions(snapshot),
                     timing: options.timing,
+                    deliveryId,
                 },
             );
             await enqueueBroadcast(
@@ -82,10 +101,11 @@ export function createWsStateSyncPublisher(
                 snapshot,
                 {
                     timing: options.timing,
+                    deliveryId,
                 },
             );
         },
-        publishGroupEvent: async (event, senderId) => {
+        publishGroupEvent: async (event, senderId, deliveryId) => {
             const snapshot = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(
                 {
                     applicationId: event.applicationId,
@@ -105,6 +125,7 @@ export function createWsStateSyncPublisher(
                         ? hasActiveGroupSessions(snapshot)
                         : false,
                     timing: options.timing,
+                    deliveryId,
                 },
             );
         },
@@ -121,16 +142,26 @@ async function enqueueBroadcast<T>(
     options: Readonly<{
         requireLiveRoute?: boolean;
         timing?: RallarTimingSink;
+        deliveryId?: string;
     }> = {},
 ): Promise<void> {
+    const message = newALBroadcastMessage<T>(
+        senderId,
+        newALEventRoute(topicId, contextId, resourceId),
+        'all',
+        topicId,
+        payload,
+    );
     const result = await wsQBoxServerService.enqueueOutboxIfAbsent(
-        newALBroadcastMessage<T>(
-            senderId,
-            newALEventRoute(topicId, contextId, resourceId),
-            'all',
-            topicId,
-            payload,
-        ),
+        options.deliveryId
+            ? {
+                ...message,
+                id: {
+                    ...message.id,
+                    msgId: toStateSyncMessageId(options.deliveryId, topicId),
+                },
+            }
+            : message,
     );
 
     assertStateSyncPublishResult(result, {
@@ -139,6 +170,13 @@ async function enqueueBroadcast<T>(
         requireLiveRoute: options.requireLiveRoute ?? false,
         timing: options.timing,
     });
+}
+
+export function toStateSyncMessageId(
+    deliveryId: string,
+    topicId: string,
+): string {
+    return `state-sync-${fnv1a64(`${deliveryId}\u0000${topicId}`)}`;
 }
 
 function assertStateSyncPublishResult(
@@ -207,4 +245,14 @@ function hasActiveClientSessions(snapshot: ClientSnapshot): boolean {
 function hasActiveGroupSessions(snapshot: GroupSnapshot): boolean {
     return snapshot.activeSessions.length > 0 ||
         snapshot.onlineMemberCount > 0;
+}
+
+function fnv1a64(value: string): string {
+    let hash = 0xcbf29ce484222325n;
+    const prime = 0x100000001b3n;
+    for (let index = 0; index < value.length; index += 1) {
+        hash ^= BigInt(value.charCodeAt(index));
+        hash = BigInt.asUintN(64, hash * prime);
+    }
+    return hash.toString(36);
 }

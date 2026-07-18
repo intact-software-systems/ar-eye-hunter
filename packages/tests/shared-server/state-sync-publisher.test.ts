@@ -63,6 +63,39 @@ describe('createWsStateSyncPublisher', () => {
         });
     });
 
+    it('reuses deterministic downstream message identity across publisher retries', async () => {
+        const storedMessages = new Map<string, ALMessage>();
+        const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => {
+            const status = storedMessages.has(message.id.msgId)
+                ? 'duplicate' as const
+                : 'enqueued' as const;
+            storedMessages.set(message.id.msgId, message);
+            return { status, message, entries: [] };
+        });
+        const publisher = createWsStateSyncPublisher(
+            { enqueueOutboxIfAbsent } as unknown as WsQueueBoxServerService,
+            { serverId: 'state-service' },
+        );
+        const snapshot = createClientSnapshot('alice', []);
+
+        await publisher.publishClientSnapshot(
+            snapshot,
+            'outbox-worker',
+            'state-mutation-1:client-state-sync:snapshot:1',
+        );
+        await publisher.publishClientSnapshot(
+            snapshot,
+            'outbox-worker',
+            'state-mutation-1:client-state-sync:snapshot:1',
+        );
+
+        const messageIds = enqueueOutboxIfAbsent.mock.calls.map(
+            ([message]) => message.id.msgId,
+        );
+        expect(messageIds[0]).toBe(messageIds[1]);
+        expect(storedMessages.size).toBe(1);
+    });
+
     it('allows no-route for a client snapshot with active sessions and logs a warning', async () => {
         const { publisher } = createPublisherReturning('no-route');
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);

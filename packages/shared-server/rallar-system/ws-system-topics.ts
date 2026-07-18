@@ -67,6 +67,10 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
     }>;
 }>;
 
+export type RallarSystemWsTopicsRuntime = Readonly<{
+    rtcTopologyWorkPublisher: RtcTopologyWorkPublisher | null;
+}>;
+
 type RtcTopologyFlushTimer = ReturnType<typeof setTimeout>;
 
 type RtcTopologyRuntimeState = Readonly<{
@@ -78,7 +82,7 @@ type RtcTopologyRuntimeState = Readonly<{
 export function initRallarSystemWsTopics(
     wsQBoxServerService: WsQueueBoxServerService,
     options: InitRallarSystemWsTopicsOptions = {},
-): void {
+): RallarSystemWsTopicsRuntime {
     const rtcTopologyService = options.rtcTopologyService ??
         new RallarRtcTopologyService(
             options.rtcTopologyOptions,
@@ -240,6 +244,9 @@ export function initRallarSystemWsTopics(
     if (options.initDynamicTopics ?? true) {
         initDynamicWsTopicRouter(wsQBoxServerService, options.dynamicTopicRouterOptions);
     }
+    return {
+        rtcTopologyWorkPublisher: rtcTopologyAppOutbox?.publisher ?? null,
+    };
 }
 
 function initStateBroadcastTopic(

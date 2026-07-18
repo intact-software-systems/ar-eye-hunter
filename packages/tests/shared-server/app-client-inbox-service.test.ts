@@ -180,6 +180,8 @@ describe('AppClientInboxService', () => {
             lastHeartbeatAtEpochMs: 3_000,
         });
         expect(requireRightSnapshot(disconnected).activeSessions).toHaveLength(0);
+        // TEMP(Task 3): remove this direct-publish characterization only after
+        // every client mutation writes a transaction-local outbox intent.
         expect(publisher.publishClientSnapshot).toHaveBeenCalledTimes(5);
         expect(publisher.publishClientEvent).toHaveBeenCalledTimes(5);
     });

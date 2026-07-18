@@ -129,6 +129,8 @@ describe('AppInboxService', () => {
         const result = await resultPromise;
         expect(result.right).toEqual(stateWritten);
         expect(groupStateService.createGroup).toHaveBeenCalledOnce();
+        // TEMP(Task 4): remove this direct-publish characterization only after
+        // every group mutation writes a transaction-local outbox intent.
         expect(publisher.publishGroupSnapshot).toHaveBeenCalledWith(
             written.snapshot,
             'server-12345678',
