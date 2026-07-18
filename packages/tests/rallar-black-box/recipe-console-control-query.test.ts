@@ -6,6 +6,9 @@ import {
     observeControlQueryFreshness,
     transitionControlQueryState,
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
+import {
+    CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS,
+} from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
 
 type TestSnapshot = Readonly<{
     runIds: readonly string[];
@@ -81,6 +84,9 @@ afterEach(() => {
 });
 
 describe('Recipe Console control query state', () => {
+    it('uses the production-safe default request timeout', () => {
+        expect(CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS).toBe(20_000);
+    });
     it('moves from connecting to live on a complete successful snapshot', () => {
         const initial = createInitialControlQueryState<TestSnapshot>();
 

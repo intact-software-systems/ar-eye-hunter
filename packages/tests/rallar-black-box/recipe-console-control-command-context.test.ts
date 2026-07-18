@@ -77,6 +77,32 @@ describe('Recipe Console control command context truth', () => {
         });
     });
 
+    it('shows the configured timeout duration instead of a generic offline label', () => {
+        expect(controlCommandStatus(query({
+            status: 'offline',
+            reachability: 'unreachable',
+            lastError: {
+                kind: 'timeout',
+                message: 'Control request timed out after 20000 ms.',
+            },
+        }))).toEqual({
+            status: 'failed',
+            label: 'Timed out after 20 s · unreachable',
+        });
+        expect(controlCommandStatus(query({
+            status: 'stale',
+            reachability: 'unreachable',
+            snapshot: { runs: [], distributedRuns: [] },
+            lastError: {
+                kind: 'timeout',
+                message: 'Control request timed out after 1250 ms.',
+            },
+        }))).toEqual({
+            status: 'stale',
+            label: 'Timed out after 1.25 s · last known',
+        });
+    });
+
     it('labels only nonterminal active-run context, never a selected terminal run', () => {
         expect(controlCommandActiveRunLabel({
             kind: 'sole',

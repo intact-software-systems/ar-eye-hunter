@@ -41,7 +41,7 @@ import {
 } from './control-selection-index-cache.ts';
 
 export const CONTROL_QUERY_POLL_INTERVAL_MS = 5_000;
-export const CONTROL_QUERY_REQUEST_TIMEOUT_MS = 4_000;
+export const CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
 
 export type RecipeConsoleControlBootstrap = Readonly<{
     controlUrl?: string;
@@ -97,10 +97,12 @@ export function ControlConnectionProvider({
     authSession,
     bootstrap,
     children,
+    controlReadTimeoutMs,
 }: Readonly<{
     authSession?: AuthSession;
     bootstrap: RecipeConsoleControlBootstrap;
     children: ReactNode;
+    controlReadTimeoutMs?: number;
 }>) {
     const apiSetup = useMemo<ControlApiSetup>(() => {
         try {
@@ -184,8 +186,9 @@ export function ControlConnectionProvider({
         now: Date.now,
         scheduler: browserScheduler,
         pollIntervalMs: CONTROL_QUERY_POLL_INTERVAL_MS,
-        requestTimeoutMs: CONTROL_QUERY_REQUEST_TIMEOUT_MS,
-    }), [apiSetup]);
+        requestTimeoutMs: controlReadTimeoutMs ??
+            CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS,
+    }), [apiSetup, controlReadTimeoutMs]);
     const query = useSyncExternalStore(
         service.subscribe,
         service.getSnapshot,
