@@ -34,8 +34,14 @@ type RuntimeStateConditionalResult =
 export function requireConditionalWrite<Result extends RuntimeStateConditionalResult>(
     result: Result,
 ): Extract<Result, Readonly<{ status: 'applied' }>> {
+    if (typeof result !== 'object' || result === null || !('status' in result)) {
+        throw new TypeError('Invalid runtime state conditional write result');
+    }
     if (result.status === 'conflict') {
         throw new RuntimeStateWriteConflictError();
+    }
+    if (result.status !== 'applied') {
+        throw new TypeError('Invalid runtime state conditional write result');
     }
 
     return result as Extract<Result, Readonly<{ status: 'applied' }>>;

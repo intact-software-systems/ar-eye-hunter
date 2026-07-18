@@ -42,6 +42,27 @@ describe('optimistic runtime-state writes', () => {
         );
     });
 
+    it('rejects invalid runtime results as invariant violations, not conflicts', () => {
+        const invalidResults: readonly unknown[] = [
+            { status: 'invalid' },
+            {},
+            null,
+            undefined,
+        ];
+
+        for (const result of invalidResults) {
+            let thrown: unknown;
+            try {
+                requireConditionalWrite(result as never);
+            } catch (error) {
+                thrown = error;
+            }
+
+            expect(thrown).toBeInstanceOf(TypeError);
+            expect(thrown).not.toBeInstanceOf(RuntimeStateWriteConflictError);
+        }
+    });
+
     it('reports retry exhaustion with the last conflict as its cause', () => {
         const lastConflict = new RuntimeStateWriteConflictError();
         const error = new RuntimeStateRetryExhaustedError(lastConflict);

@@ -14,6 +14,7 @@ import {
     DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
     RuntimeStateRetryExhaustedError,
     RuntimeStateWriteConflictError,
+    waitForRuntimeStateWriteRetry as waitForRuntimeStateWriteRetryWithDefaults,
 } from './optimistic-runtime-state-write.ts';
 
 type ScopedRef = Readonly<{
@@ -90,8 +91,7 @@ export class RuntimeStateJsonStore {
             return undefined;
         }
 
-        const value = await this.toLiveValue<T>(namespace, entry);
-        return value === undefined ? undefined : { entry, value };
+        return await this.toLiveEntryValue<T>(namespace, entry);
     }
 
     protected async listEntryValues<T>(
@@ -101,9 +101,9 @@ export class RuntimeStateJsonStore {
         const entries = await this.listEntries(namespace, keyPrefix);
         const values: RuntimeStateEntryValue<T>[] = [];
         for (const entry of entries) {
-            const value = await this.toLiveValue<T>(namespace, entry);
+            const value = await this.toLiveEntryValue<T>(namespace, entry);
             if (value !== undefined) {
-                values.push({ entry, value });
+                values.push(value);
             }
         }
         return values;
@@ -124,9 +124,9 @@ export class RuntimeStateJsonStore {
             )).filter((entry): entry is RuntimeStateEntry => entry !== undefined);
         const values: RuntimeStateEntryValue<T>[] = [];
         for (const entry of entries) {
-            const value = await this.toLiveValue<T>(namespace, entry);
+            const value = await this.toLiveEntryValue<T>(namespace, entry);
             if (value !== undefined) {
-                values.push({ entry, value });
+                values.push(value);
             }
         }
         return values;
@@ -237,6 +237,13 @@ export class RuntimeStateJsonStore {
         namespace: string,
         entry: RuntimeStateEntry,
     ): Promise<T | undefined> {
+        return (await this.toLiveEntryValue<T>(namespace, entry))?.value;
+    }
+
+    protected async toLiveEntryValue<T>(
+        namespace: string,
+        entry: RuntimeStateEntry,
+    ): Promise<RuntimeStateEntryValue<T> | undefined> {
         let observedEntry = entry;
         let lastConflict: RuntimeStateWriteConflictError | undefined;
 
@@ -246,11 +253,19 @@ export class RuntimeStateJsonStore {
             attempt += 1
         ) {
             if (observedEntry.expireAtTimestamp > Date.now()) {
-                return JSON.parse(observedEntry.value) as T;
+                return {
+                    entry: observedEntry,
+                    value: JSON.parse(observedEntry.value) as T,
+                };
             }
             if (!isRuntimeStateConditionalRepositoryLike(this.repository)) {
                 return undefined;
             }
+            await this.waitForRuntimeStateWriteRetry(
+                attempt as Parameters<
+                    typeof waitForRuntimeStateWriteRetryWithDefaults
+                >[0],
+            );
 
             const result = await this.deleteValueIfRevision(
                 namespace,
@@ -270,7 +285,10 @@ export class RuntimeStateJsonStore {
                 return undefined;
             }
             if (replacement.expireAtTimestamp > Date.now()) {
-                return JSON.parse(replacement.value) as T;
+                return {
+                    entry: replacement,
+                    value: JSON.parse(replacement.value) as T,
+                };
             }
             observedEntry = replacement;
         }
@@ -278,6 +296,12 @@ export class RuntimeStateJsonStore {
         throw new RuntimeStateRetryExhaustedError(
             lastConflict ?? new RuntimeStateWriteConflictError(),
         );
+    }
+
+    protected async waitForRuntimeStateWriteRetry(
+        attempt: Parameters<typeof waitForRuntimeStateWriteRetryWithDefaults>[0],
+    ): Promise<number> {
+        return await waitForRuntimeStateWriteRetryWithDefaults(attempt);
     }
 
     private conditionalRepository(): RuntimeStateRepositoryLike &
