@@ -31,7 +31,8 @@ describe('RTC topology APP_OUTBOX work', () => {
         const revision1 = createGroupSnapshot(1);
         const revision2 = createGroupSnapshot(2);
 
-        await runtime.publisher.enqueueForGroupSnapshot(revision1);
+        expect(await runtime.publisher.enqueueForGroupSnapshot(revision1))
+            .toBeUndefined();
         await runtime.publisher.enqueueForGroupSnapshot(revision2);
 
         const entries = await entriesIn(queue);
@@ -54,6 +55,37 @@ describe('RTC topology APP_OUTBOX work', () => {
                 requestedAtEpochMs: 100,
             }),
         ]));
+    });
+
+    it('returns the durable winner revision for a mutation-stable resource id', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+            senderId: 'server-a',
+            now: () => 100,
+        });
+        const revision1 = createGroupSnapshot(1);
+        const revision2 = createGroupSnapshot(2);
+        const deliveryId =
+            'state-mutation-1:rtc-topology-recompute:snapshot';
+
+        const first = await runtime.publisher.enqueueForStateMutation(
+            revision1,
+            deliveryId,
+        );
+        const duplicate = await runtime.publisher.enqueueForStateMutation(
+            revision2,
+            deliveryId,
+        );
+
+        const entries = await entriesIn(queue);
+        expect(entries).toHaveLength(1);
+        expect(readWork(entries[0]!)).toMatchObject({
+            sourceGroupStateRevision: 1,
+            groupSnapshot: revision1,
+        });
+        expect(first).toEqual({ effectiveSnapshotRevision: 1 });
+        expect(duplicate).toEqual({ effectiveSnapshotRevision: 1 });
     });
 
     it('processes a group revision from its exact snapshot without resolving latest state', async () => {

@@ -188,6 +188,7 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
         record: StateMutationOutboxRecord,
     ): Promise<PutStateMutationOutboxResult> {
         validateStateMutationOutboxRecord(record);
+        validateInitialStateMutationOutboxRecord(record);
         const key = toStateMutationOutboxKey(record.outboxId);
         const inserted = await this.putValueIfAbsent(
             STATE_MUTATION_OUTBOX_NAMESPACE,
@@ -312,6 +313,7 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
                 attempts: input.attempts,
                 delivery: input.delivery,
             } as StateMutationOutboxRecord;
+            validateStateMutationOutboxRecord(record);
             const written = await transactional.putValueIfRevision(
                 STATE_MUTATION_OUTBOX_NAMESPACE,
                 toStateMutationOutboxKey(input.outboxId),
@@ -339,6 +341,8 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
 export function createStateMutationOutboxRecord(
     input: CreateStateMutationOutboxRecordInput,
 ): StateMutationOutboxRecord {
+    validateStateMutationOutboxKind(input.kind);
+    validateStateMutationOutboxEffects(input.effects);
     const outboxId = toStateMutationOutboxId(input);
     const record = {
         ...input,
@@ -421,17 +425,13 @@ function toImmutableIntent(record: StateMutationOutboxRecord): unknown {
 function validateStateMutationOutboxRecord(
     record: StateMutationOutboxRecord,
 ): void {
+    validateStateMutationOutboxKind(record.kind);
     if (!record.commandId || !record.commandHash || !record.outboxId) {
         throw new TypeError('State mutation outbox identity fields are required');
     }
     assertSafeNonNegativeInteger(record.createdAtEpochMs, 'created time');
     assertSafeNonNegativeInteger(record.attempts.count, 'attempt count');
-    if (record.effects.length === 0) {
-        throw new TypeError('State mutation outbox effects are required');
-    }
-    if (new Set(record.effects).size !== record.effects.length) {
-        throw new TypeError('State mutation outbox effects must be unique');
-    }
+    validateStateMutationOutboxEffects(record.effects);
     const expectedId = toStateMutationOutboxId(record);
     if (record.outboxId !== expectedId) {
         throw new TypeError(`Invalid state mutation outbox id: ${record.outboxId}`);
@@ -446,15 +446,24 @@ function validateStateMutationOutboxRecord(
         }
         validateClientRef(record.aggregateRef);
         validateClientCausalRevision(record.acceptedCausalRevision);
-        if (record.event.kind === 'client') {
-            if (!record.effects.includes('client-state-sync')) {
+        switch (record.event.kind) {
+            case 'none':
+                break;
+            case 'client':
+                if (!record.effects.includes('client-state-sync')) {
+                    throw new TypeError(
+                        'Client outbox events require client-state-sync',
+                    );
+                }
+                validateClientRef(record.event.event);
+                validateClientEvent(record, record.event.event);
+                break;
+            default:
                 throw new TypeError(
-                    'Client outbox events require client-state-sync',
+                    'Invalid client state mutation outbox event kind',
                 );
-            }
-            validateClientRef(record.event.event);
         }
-    } else {
+    } else if (record.kind === 'group') {
         if (
             record.acceptedCausalRevision.kind !== 'group' ||
             record.effects.some((effect) => effect === 'client-state-sync')
@@ -463,28 +472,48 @@ function validateStateMutationOutboxRecord(
         }
         validateGroupRef(record.aggregateRef);
         validateGroupCausalRevision(record.acceptedCausalRevision);
-        if (record.event.kind === 'group') {
-            if (!record.effects.includes('group-state-sync')) {
+        switch (record.event.kind) {
+            case 'none':
+                break;
+            case 'group':
+                if (!record.effects.includes('group-state-sync')) {
+                    throw new TypeError(
+                        'Group outbox events require group-state-sync',
+                    );
+                }
+                validateGroupRef(record.event.event);
+                validateGroupEvent(record, record.event.event);
+                break;
+            default:
                 throw new TypeError(
-                    'Group outbox events require group-state-sync',
+                    'Invalid group state mutation outbox event kind',
                 );
-            }
-            validateGroupRef(record.event.event);
         }
     }
 
-    if (record.attempts.last.status === 'never-attempted') {
-        if (record.attempts.count !== 0) {
-            throw new TypeError('Never-attempted outbox metadata must have zero attempts');
-        }
-    } else {
-        assertSafeNonNegativeInteger(
-            record.attempts.last.attemptedAtEpochMs,
-            'last attempt time',
-        );
-        if (record.attempts.count === 0) {
-            throw new TypeError('Attempted outbox metadata must have a positive count');
-        }
+    switch (record.attempts.last.status) {
+        case 'never-attempted':
+            if (record.attempts.count !== 0) {
+                throw new TypeError(
+                    'Never-attempted outbox metadata must have zero attempts',
+                );
+            }
+            break;
+        case 'failed':
+            validateAttemptedStateMutationOutboxMetadata(record.attempts);
+            if (!record.attempts.last.error) {
+                throw new TypeError(
+                    'Failed state mutation outbox attempts require an error',
+                );
+            }
+            break;
+        case 'succeeded':
+            validateAttemptedStateMutationOutboxMetadata(record.attempts);
+            break;
+        default:
+            throw new TypeError(
+                `Unknown state mutation outbox attempt status: ${(record.attempts.last as { status?: unknown }).status}`,
+            );
     }
     switch (record.delivery.status) {
         case 'pending':
@@ -524,6 +553,24 @@ function validateStateMutationOutboxRecord(
                 );
             }
             break;
+        default:
+            throw new TypeError(
+                `Unknown state mutation outbox delivery status: ${(record.delivery as { status?: unknown }).status}`,
+            );
+    }
+}
+
+function validateInitialStateMutationOutboxRecord(
+    record: StateMutationOutboxRecord,
+): void {
+    if (
+        record.delivery.status !== 'pending' ||
+        record.attempts.count !== 0 ||
+        record.attempts.last.status !== 'never-attempted'
+    ) {
+        throw new TypeError(
+            'Initial state mutation outbox records must be pending and never attempted',
+        );
     }
 }
 
@@ -540,17 +587,107 @@ function validateDeliveryTransition(
     if (input.attempts.last.status === 'never-attempted') {
         throw new TypeError('State mutation outbox delivery writes require an attempt');
     }
-    if (
-        input.delivery.status === 'delivered' &&
-        input.attempts.last.status !== 'succeeded'
-    ) {
-        throw new TypeError('Delivered outbox state requires a successful attempt');
+    switch (input.delivery.status) {
+        case 'retryable':
+            if (input.attempts.last.status !== 'failed') {
+                throw new TypeError(
+                    'Retryable outbox state requires a failed attempt',
+                );
+            }
+            break;
+        case 'delivered':
+            if (input.attempts.last.status !== 'succeeded') {
+                throw new TypeError(
+                    'Delivered outbox state requires a successful attempt',
+                );
+            }
+            break;
+        case 'pending':
+            throw new TypeError(
+                'State mutation outbox delivery writes cannot transition to pending',
+            );
+        default:
+            throw new TypeError(
+                `Unknown state mutation outbox delivery status: ${(input.delivery as { status?: unknown }).status}`,
+            );
     }
+}
+
+function validateAttemptedStateMutationOutboxMetadata(
+    attempts: StateMutationOutboxAttempts,
+): void {
+    const last = attempts.last as Exclude<
+        StateMutationOutboxLastAttempt,
+        { status: 'never-attempted' }
+    >;
+    assertSafeNonNegativeInteger(last.attemptedAtEpochMs, 'last attempt time');
+    if (attempts.count === 0) {
+        throw new TypeError('Attempted outbox metadata must have a positive count');
+    }
+}
+
+function validateStateMutationOutboxKind(kind: unknown): asserts kind is
+    StateMutationOutboxRecord['kind'] {
+    if (kind !== 'client' && kind !== 'group') {
+        throw new TypeError(`Unknown state mutation outbox kind: ${kind}`);
+    }
+}
+
+function validateStateMutationOutboxEffects(
+    effects: readonly StateMutationOutboxEffect[],
+): void {
+    if (!Array.isArray(effects) || effects.length === 0) {
+        throw new TypeError('State mutation outbox effects are required');
+    }
+    for (const effect of effects) {
+        if (!STATE_MUTATION_OUTBOX_EFFECT_ORDER.includes(effect)) {
+            throw new TypeError(
+                `Unknown state mutation outbox effect: ${effect}`,
+            );
+        }
+    }
+    if (new Set(effects).size !== effects.length) {
+        throw new TypeError('State mutation outbox effects must be unique');
+    }
+}
+
+function validateClientEvent(
+    record: ClientStateMutationOutboxRecord,
+    event: ClientEvent,
+): void {
     if (
-        input.delivery.status === 'retryable' &&
-        input.attempts.last.status !== 'failed'
+        event.applicationId !== record.aggregateRef.applicationId ||
+        event.workspaceId !== record.aggregateRef.workspaceId ||
+        event.principalId !== record.aggregateRef.principalId
     ) {
-        throw new TypeError('Retryable outbox state requires a failed attempt');
+        throw new TypeError(
+            'Client outbox event does not match its aggregate ref',
+        );
+    }
+    if (event.snapshotVersion !== record.acceptedCausalRevision.snapshotVersion) {
+        throw new TypeError(
+            'Client outbox event does not match its accepted version',
+        );
+    }
+}
+
+function validateGroupEvent(
+    record: GroupStateMutationOutboxRecord,
+    event: GroupEvent,
+): void {
+    if (
+        event.applicationId !== record.aggregateRef.applicationId ||
+        event.workspaceId !== record.aggregateRef.workspaceId ||
+        event.groupId !== record.aggregateRef.groupId
+    ) {
+        throw new TypeError(
+            'Group outbox event does not match its aggregate ref',
+        );
+    }
+    if (event.snapshotVersion !== record.acceptedCausalRevision.snapshotVersion) {
+        throw new TypeError(
+            'Group outbox event does not match its accepted version',
+        );
     }
 }
 

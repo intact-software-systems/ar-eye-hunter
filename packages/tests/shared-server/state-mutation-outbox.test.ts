@@ -165,6 +165,71 @@ describe('StateMutationOutboxRepository', () => {
         })).rejects.toThrow('Delivered outbox state requires successful attempt metadata');
     });
 
+    it('rejects retryable or delivered records as initial insert candidates', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new StateMutationOutboxRepository(runtime);
+        const record = createClientRecord(createClientSnapshot(1));
+
+        await expect(repository.putOrLoad({
+            ...record,
+            attempts: {
+                count: 1,
+                last: {
+                    status: 'failed',
+                    attemptedAtEpochMs: 2_000,
+                    error: 'retry',
+                },
+            },
+            delivery: { status: 'retryable' },
+        })).rejects.toThrow(
+            'Initial state mutation outbox records must be pending and never attempted',
+        );
+        await expect(repository.putOrLoad({
+            ...record,
+            attempts: {
+                count: 1,
+                last: {
+                    status: 'succeeded',
+                    attemptedAtEpochMs: 2_000,
+                },
+            },
+            delivery: {
+                status: 'delivered',
+                deliveredAtEpochMs: 2_000,
+                deliveredSnapshotRevision: 1,
+            },
+        })).rejects.toThrow(
+            'Initial state mutation outbox records must be pending and never attempted',
+        );
+        expect(await runtime.findAllEntries(STATE_MUTATION_OUTBOX_NAMESPACE))
+            .toEqual([]);
+    });
+
+    it('loads a lifecycle-advanced persisted winner for an initial duplicate', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new StateMutationOutboxRepository(runtime);
+        const record = createClientRecord(createClientSnapshot(1));
+        const inserted = await repository.putOrLoad(record);
+        await repository.writeDelivery({
+            outboxId: record.outboxId,
+            expectedStorageRevision: inserted.storageRevision,
+            attempts: {
+                count: 1,
+                last: {
+                    status: 'failed',
+                    attemptedAtEpochMs: 2_000,
+                    error: 'retry',
+                },
+            },
+            delivery: { status: 'retryable' },
+        });
+
+        const loaded = await repository.putOrLoad(record);
+
+        expect(loaded.inserted).toBe(false);
+        expect(loaded.record.delivery).toEqual({ status: 'retryable' });
+    });
+
     it('canonicalizes effect order before immutable duplicate comparison', async () => {
         const repository = new StateMutationOutboxRepository(
             new FakeRuntimeStateRepository(),
@@ -190,6 +255,226 @@ describe('StateMutationOutboxRepository', () => {
             event: { kind: 'group', event: createGroupEvent(1) },
             effects: ['rtc-topology-recompute'],
         })).toThrow('Group outbox events require group-state-sync');
+    });
+
+    it('rejects unknown, duplicate, and aggregate-inapplicable builder effects', () => {
+        const group = createGroupSnapshot(1);
+        const client = createClientSnapshot(1);
+        const valid = createGroupRecord(group);
+        const {
+            outboxId: _outboxId,
+            attempts: _attempts,
+            delivery: _delivery,
+            ...validInput
+        } = valid;
+
+        expect(() => createStateMutationOutboxRecord({
+            ...validInput,
+            kind: 'future-kind',
+        } as never)).toThrow(
+            'Unknown state mutation outbox kind: future-kind',
+        );
+        expect(() => createGroupRecord(group, {
+            effects: ['future-effect' as never],
+        })).toThrow('Unknown state mutation outbox effect: future-effect');
+        expect(() => createGroupRecord(group, {
+            effects: ['group-state-sync', 'group-state-sync'],
+        })).toThrow('State mutation outbox effects must be unique');
+        expect(() => createClientRecord(client, {
+            effects: ['group-state-sync'],
+        })).toThrow('Invalid client state mutation outbox intent');
+    });
+
+    it('rejects malformed persisted intent discriminants and effects', async () => {
+        const cases: readonly Readonly<{
+            name: string;
+            mutate(record: ReturnType<typeof createGroupRecord>): unknown;
+            error: string;
+        }>[] = [
+            {
+                name: 'kind',
+                mutate: (record) => ({ ...record, kind: 'future-kind' }),
+                error: 'Unknown state mutation outbox kind: future-kind',
+            },
+            {
+                name: 'effect',
+                mutate: (record) => ({
+                    ...record,
+                    effects: ['future-effect'],
+                }),
+                error: 'Unknown state mutation outbox effect: future-effect',
+            },
+            {
+                name: 'duplicate effect',
+                mutate: (record) => ({
+                    ...record,
+                    effects: ['group-state-sync', 'group-state-sync'],
+                }),
+                error: 'State mutation outbox effects must be unique',
+            },
+            {
+                name: 'inapplicable effect',
+                mutate: (record) => ({
+                    ...record,
+                    effects: ['client-state-sync'],
+                }),
+                error: 'Invalid group state mutation outbox intent',
+            },
+            {
+                name: 'event kind',
+                mutate: (record) => ({
+                    ...record,
+                    event: { kind: 'future-event' },
+                }),
+                error: 'Invalid group state mutation outbox event kind',
+            },
+            {
+                name: 'delivery kind',
+                mutate: (record) => ({
+                    ...record,
+                    delivery: { status: 'future-delivery' },
+                }),
+                error: 'Unknown state mutation outbox delivery status: future-delivery',
+            },
+            {
+                name: 'attempt kind',
+                mutate: (record) => ({
+                    ...record,
+                    attempts: {
+                        count: 1,
+                        last: { status: 'future-attempt' },
+                    },
+                }),
+                error: 'Unknown state mutation outbox attempt status: future-attempt',
+            },
+        ];
+
+        for (const testCase of cases) {
+            const runtime = new FakeRuntimeStateRepository();
+            const valid = createGroupRecord(createGroupSnapshot(1), {
+                commandId: `malformed-${testCase.name}`,
+            });
+            await insertRawOutboxRecord(runtime, testCase.mutate(valid), valid.outboxId);
+
+            await expect(
+                new StateMutationOutboxRepository(runtime).find(valid.outboxId),
+            ).rejects.toThrow(testCase.error);
+        }
+    });
+
+    it('rejects exact events with a mismatched aggregate identity or version', async () => {
+        const cases: readonly Readonly<{
+            name: string;
+            event: GroupEvent;
+            error: string;
+        }>[] = [
+            {
+                name: 'identity',
+                event: {
+                    ...createGroupEvent(1),
+                    groupId: 'other-room',
+                },
+                error: 'Group outbox event does not match its aggregate ref',
+            },
+            {
+                name: 'version',
+                event: createGroupEvent(2),
+                error: 'Group outbox event does not match its accepted version',
+            },
+        ];
+
+        for (const testCase of cases) {
+            const runtime = new FakeRuntimeStateRepository();
+            const valid = createGroupRecord(createGroupSnapshot(1), {
+                commandId: `event-${testCase.name}`,
+            });
+            const malformed = {
+                ...valid,
+                event: { kind: 'group' as const, event: testCase.event },
+            };
+            await insertRawOutboxRecord(runtime, malformed, valid.outboxId);
+
+            await expect(
+                new StateMutationOutboxRepository(runtime).find(valid.outboxId),
+            ).rejects.toThrow(testCase.error);
+            expect(() => createGroupRecord(createGroupSnapshot(1), {
+                commandId: `builder-event-${testCase.name}`,
+                event: { kind: 'group', event: testCase.event },
+            })).toThrow(testCase.error);
+        }
+    });
+
+    it('rejects pending and internally inconsistent delivery transitions', async () => {
+        const cases: readonly Readonly<{
+            name: string;
+            attempts: Record<string, unknown>;
+            delivery: Record<string, unknown>;
+        }>[] = [
+            {
+                name: 'pending transition',
+                attempts: {
+                    count: 1,
+                    last: {
+                        status: 'failed',
+                        attemptedAtEpochMs: 2_000,
+                        error: 'retry',
+                    },
+                },
+                delivery: { status: 'pending' },
+            },
+            {
+                name: 'older delivered revision',
+                attempts: {
+                    count: 1,
+                    last: {
+                        status: 'succeeded',
+                        attemptedAtEpochMs: 2_000,
+                    },
+                },
+                delivery: {
+                    status: 'delivered',
+                    deliveredAtEpochMs: 2_000,
+                    deliveredSnapshotRevision: 0,
+                },
+            },
+            {
+                name: 'failed attempt without an error',
+                attempts: {
+                    count: 1,
+                    last: {
+                        status: 'failed',
+                        attemptedAtEpochMs: 2_000,
+                        error: '',
+                    },
+                },
+                delivery: { status: 'retryable' },
+            },
+        ];
+
+        for (const testCase of cases) {
+            const runtime = new FakeRuntimeStateRepository();
+            const repository = new StateMutationOutboxRepository(runtime);
+            const inserted = await repository.putOrLoad(
+                createClientRecord(createClientSnapshot(1), {
+                    commandId: `transition-${testCase.name}`,
+                }),
+            );
+
+            await expect(repository.writeDelivery({
+                outboxId: inserted.record.outboxId,
+                expectedStorageRevision: inserted.storageRevision,
+                attempts: testCase.attempts as never,
+                delivery: testCase.delivery as never,
+            })).rejects.toThrow();
+            expect((await repository.find(inserted.record.outboxId))?.record)
+                .toMatchObject({
+                    attempts: {
+                        count: 0,
+                        last: { status: 'never-attempted' },
+                    },
+                    delivery: { status: 'pending' },
+                });
+        }
     });
 
     it('pages only pending and retryable rows without locks', async () => {
@@ -262,7 +547,7 @@ describe('StateMutationOutboxWork', () => {
             snapshot,
             'state-mutation-outbox',
             expect.stringMatching(
-                /^state-mutation-.*:client-state-sync:snapshot:1$/,
+                /^state-mutation-.*:client-state-sync:snapshot$/,
             ),
         );
     });
@@ -311,6 +596,43 @@ describe('StateMutationOutboxWork', () => {
                 deliveredSnapshotRevision: 1,
             },
         });
+    });
+
+    it('continues through later pages when an earlier intent remains retryable', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new StateMutationOutboxRepository(runtime);
+        const first = createClientRecord(createClientSnapshot(1), {
+            commandId: 'fairness-command-1',
+        });
+        const second = createClientRecord(createClientSnapshot(2), {
+            commandId: 'fairness-command-2',
+        });
+        await repository.putOrLoad(first);
+        await repository.putOrLoad(second);
+        const publisher = createStateSyncPublisher();
+        publisher.publishClientSnapshot
+            .mockRejectedValueOnce(new Error('first intent remains retryable'))
+            .mockResolvedValue(undefined);
+        const work = new StateMutationOutboxWork({
+            repository,
+            readClientSnapshot: async () => createClientSnapshot(2),
+            readGroupSnapshot: async () => undefined,
+            stateSyncPublisher: publisher,
+            pageSize: 1,
+        });
+
+        expect(await work.drainPending()).toEqual({
+            scanned: 2,
+            delivered: 1,
+            retryable: 1,
+        });
+        expect(publisher.publishClientSnapshot).toHaveBeenCalledTimes(2);
+        const states = await Promise.all([
+            repository.find(first.outboxId),
+            repository.find(second.outboxId),
+        ]);
+        expect(states.map((stored) => stored?.record.delivery.status).sort())
+            .toEqual(['delivered', 'retryable']);
     });
 
     it('lets two drainers race without losing or corrupting delivery', async () => {
@@ -366,7 +688,7 @@ describe('StateMutationOutboxWork', () => {
             superseding,
             'state-mutation-outbox',
             expect.stringMatching(
-                /^state-mutation-.*:client-state-sync:snapshot:3$/,
+                /^state-mutation-.*:client-state-sync:snapshot$/,
             ),
         );
         expect(publisher.publishClientEvent).toHaveBeenCalledWith(
@@ -378,7 +700,7 @@ describe('StateMutationOutboxWork', () => {
         );
         expect((await findOnlyRecord(runtime)).record.delivery).toMatchObject({
             status: 'delivered',
-            deliveredSnapshotRevision: 3,
+            deliveredSnapshotRevision: 1,
         });
     });
 
@@ -442,8 +764,130 @@ describe('StateMutationOutboxWork', () => {
         expect(stateSyncPublisher.publishGroupSnapshot).not.toHaveBeenCalled();
         expect(presenceSummaryPublisher.enqueueForGroupSnapshot).toHaveBeenCalledWith(
             snapshot,
-            `${stored.record.outboxId}:group-presence-summary:snapshot:2`,
+            `${stored.record.outboxId}:group-presence-summary:snapshot`,
         );
+    });
+
+    it('keeps a requested effect retryable when its adapter is unavailable', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const snapshot = createGroupSnapshot(1);
+        await insertRecord(runtime, createGroupRecord(snapshot, {
+            effects: ['group-presence-summary'],
+        }));
+        const work = new StateMutationOutboxWork({
+            repository: new StateMutationOutboxRepository(runtime),
+            readClientSnapshot: async () => undefined,
+            readGroupSnapshot: async () => snapshot,
+            stateSyncPublisher: createStateSyncPublisher(),
+        });
+
+        expect(await work.drainPending()).toEqual({
+            scanned: 1,
+            delivered: 0,
+            retryable: 1,
+        });
+        expect((await findOnlyRecord(runtime)).record).toMatchObject({
+            attempts: {
+                last: {
+                    status: 'failed',
+                    error: expect.stringContaining(
+                        'Group presence summary outbox adapter is unavailable',
+                    ),
+                },
+            },
+            delivery: { status: 'retryable' },
+        });
+    });
+
+    it('keeps effect identities stable and records the oldest durable winner', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const accepted = createGroupSnapshot(1);
+        const revision2 = createGroupSnapshot(2);
+        const revision3 = createGroupSnapshot(3);
+        const stored = await insertRecord(runtime, createGroupRecord(accepted, {
+            effects: [
+                'group-state-sync',
+                'group-presence-summary',
+                'rtc-topology-recompute',
+            ],
+        }));
+        let latest = revision2;
+        const stateWinners = new Map<string, number>();
+        const presenceWinners = new Map<string, number>();
+        const topologyWinners = new Map<string, number>();
+        let presenceAttempts = 0;
+        const stateSyncPublisher = {
+            publishClientSnapshot: vi.fn(async () => undefined),
+            publishClientEvent: vi.fn(async () => undefined),
+            publishGroupSnapshot: vi.fn(async (
+                snapshot: GroupSnapshot,
+                _senderId?: string,
+                deliveryId?: string,
+            ) => {
+                expect(deliveryId).toBeDefined();
+                const winner = stateWinners.get(deliveryId!) ??
+                    snapshot.stateRevision;
+                stateWinners.set(deliveryId!, winner);
+                return { effectiveSnapshotRevision: winner };
+            }),
+            publishGroupEvent: vi.fn(async () => undefined),
+        };
+        const presencePublisher = {
+            enqueueForGroupSnapshot: vi.fn(async (
+                snapshot: GroupSnapshot,
+                deliveryId: string,
+            ) => {
+                const winner = presenceWinners.get(deliveryId) ??
+                    snapshot.stateRevision;
+                presenceWinners.set(deliveryId, winner);
+                presenceAttempts += 1;
+                if (presenceAttempts === 1) {
+                    throw new Error('failed after durable presence enqueue');
+                }
+                return { effectiveSnapshotRevision: winner };
+            }),
+        };
+        const topologyPublisher = {
+            enqueueForStateMutation: vi.fn(async (
+                snapshot: GroupSnapshot,
+                deliveryId: string,
+            ) => {
+                const winner = topologyWinners.get(deliveryId) ??
+                    snapshot.stateRevision;
+                topologyWinners.set(deliveryId, winner);
+                return { effectiveSnapshotRevision: winner };
+            }),
+        };
+        const work = new StateMutationOutboxWork({
+            repository: new StateMutationOutboxRepository(runtime),
+            readClientSnapshot: async () => undefined,
+            readGroupSnapshot: async () => latest,
+            stateSyncPublisher,
+            groupPresenceSummaryPublisher: presencePublisher,
+            rtcTopologyPublisher: topologyPublisher,
+        });
+
+        expect(await work.drainPending()).toMatchObject({ retryable: 1 });
+        latest = revision3;
+        expect(await work.drainPending()).toMatchObject({ delivered: 1 });
+
+        expect([...stateWinners.entries()]).toEqual([[
+            `${stored.record.outboxId}:group-state-sync:snapshot`,
+            2,
+        ]]);
+        expect([...presenceWinners.entries()]).toEqual([[
+            `${stored.record.outboxId}:group-presence-summary:snapshot`,
+            2,
+        ]]);
+        expect([...topologyWinners.entries()]).toEqual([[
+            `${stored.record.outboxId}:rtc-topology-recompute:snapshot`,
+            3,
+        ]]);
+        expect((await findOnlyRecord(runtime)).record.delivery).toEqual({
+            status: 'delivered',
+            deliveredAtEpochMs: expect.any(Number),
+            deliveredSnapshotRevision: 2,
+        });
     });
 
     it('uses deterministic WS and APP_OUTBOX keys across repeated drain attempts', async () => {
@@ -649,6 +1093,19 @@ async function insertRecord(
     record: ReturnType<typeof createStateMutationOutboxRecord>,
 ) {
     return await new StateMutationOutboxRepository(runtime).putOrLoad(record);
+}
+
+async function insertRawOutboxRecord(
+    runtime: FakeRuntimeStateRepository,
+    record: unknown,
+    outboxId: string,
+): Promise<void> {
+    requireConditionalWrite(await runtime.insertIfAbsent(
+        STATE_MUTATION_OUTBOX_NAMESPACE,
+        `intent:${outboxId}`,
+        JSON.stringify(record),
+        Number.MAX_SAFE_INTEGER,
+    ));
 }
 
 async function findOnlyRecord(runtime: FakeRuntimeStateRepository) {

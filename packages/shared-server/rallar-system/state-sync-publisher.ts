@@ -16,7 +16,7 @@ export type StateSyncPublisher = Readonly<{
         snapshot: ClientSnapshot,
         senderId?: string,
         deliveryId?: string,
-    ): Promise<void>;
+    ): Promise<void | StateSyncSnapshotPublishResult>;
     publishClientEvent(
         event: ClientEvent,
         senderId?: string,
@@ -26,12 +26,16 @@ export type StateSyncPublisher = Readonly<{
         snapshot: GroupSnapshot,
         senderId?: string,
         deliveryId?: string,
-    ): Promise<void>;
+    ): Promise<void | StateSyncSnapshotPublishResult>;
     publishGroupEvent(
         event: GroupEvent,
         senderId?: string,
         deliveryId?: string,
     ): Promise<void>;
+}>;
+
+export type StateSyncSnapshotPublishResult = Readonly<{
+    effectiveSnapshotRevision: number;
 }>;
 
 export type CreateWsStateSyncPublisherOptions = Readonly<{
@@ -45,7 +49,7 @@ export function createWsStateSyncPublisher(
 ): StateSyncPublisher {
     return {
         publishClientSnapshot: async (snapshot, senderId, deliveryId) => {
-            await enqueueBroadcast(
+            const result = await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? snapshot.principal.principalId,
                 AppTopics.clientStateSnapshot,
@@ -58,6 +62,7 @@ export function createWsStateSyncPublisher(
                     deliveryId,
                 },
             );
+            return readStateSyncSnapshotPublishResult(result);
         },
         publishClientEvent: async (event, senderId, deliveryId) => {
             const snapshot = clientStateSnapshotsRepository
@@ -79,7 +84,7 @@ export function createWsStateSyncPublisher(
             );
         },
         publishGroupSnapshot: async (snapshot, senderId, deliveryId) => {
-            await enqueueBroadcast(
+            const stateResult = await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? snapshot.group.groupId,
                 AppTopics.groupStateSnapshot,
@@ -92,7 +97,7 @@ export function createWsStateSyncPublisher(
                     deliveryId,
                 },
             );
-            await enqueueBroadcast(
+            const directoryResult = await enqueueBroadcast(
                 wsQBoxServerService,
                 senderId ?? snapshot.group.groupId,
                 AppTopics.groupDirectorySnapshot,
@@ -103,6 +108,10 @@ export function createWsStateSyncPublisher(
                     timing: options.timing,
                     deliveryId,
                 },
+            );
+            return combineStateSyncSnapshotPublishResults(
+                readStateSyncSnapshotPublishResult(stateResult),
+                readStateSyncSnapshotPublishResult(directoryResult),
             );
         },
         publishGroupEvent: async (event, senderId, deliveryId) => {
@@ -144,7 +153,7 @@ async function enqueueBroadcast<T>(
         timing?: RallarTimingSink;
         deliveryId?: string;
     }> = {},
-): Promise<void> {
+): Promise<ALOutboundEnqueueResult> {
     const message = newALBroadcastMessage<T>(
         senderId,
         newALEventRoute(topicId, contextId, resourceId),
@@ -170,6 +179,7 @@ async function enqueueBroadcast<T>(
         requireLiveRoute: options.requireLiveRoute ?? false,
         timing: options.timing,
     });
+    return result;
 }
 
 export function toStateSyncMessageId(
@@ -177,6 +187,57 @@ export function toStateSyncMessageId(
     topicId: string,
 ): string {
     return `state-sync-${fnv1a64(`${deliveryId}\u0000${topicId}`)}`;
+}
+
+function readStateSyncSnapshotPublishResult(
+    result: ALOutboundEnqueueResult,
+): StateSyncSnapshotPublishResult | undefined {
+    // The current AL duplicate result can reconstruct entry.resource from the
+    // retry candidate while retaining only the persisted winner's key. Until
+    // that boundary marks winner provenance explicitly, only a fresh enqueue
+    // proves that the returned resource is the effective durable payload.
+    if (result.status !== 'enqueued') {
+        return undefined;
+    }
+    const entries = result.entries.length > 0
+        ? result.entries
+        : result.entry
+        ? [result.entry]
+        : [];
+    if (entries.length === 0) {
+        return undefined;
+    }
+    const revisions = entries.map((entry) => {
+        const message = JSON.parse(entry.resource) as {
+            payload?: { resource?: string };
+        };
+        const snapshot = JSON.parse(message.payload?.resource ?? 'null') as {
+            stateRevision?: unknown;
+        } | null;
+        const revision = snapshot?.stateRevision;
+        if (!Number.isSafeInteger(revision) || (revision as number) < 0) {
+            throw new TypeError(
+                'State sync durable winner has an invalid snapshot revision',
+            );
+        }
+        return revision as number;
+    });
+    return {
+        effectiveSnapshotRevision: Math.min(...revisions),
+    };
+}
+
+function combineStateSyncSnapshotPublishResults(
+    ...results: readonly (StateSyncSnapshotPublishResult | undefined)[]
+): StateSyncSnapshotPublishResult | undefined {
+    if (results.some((result) => result === undefined)) {
+        return undefined;
+    }
+    return {
+        effectiveSnapshotRevision: Math.min(
+            ...results.map((result) => result!.effectiveSnapshotRevision),
+        ),
+    };
 }
 
 function assertStateSyncPublishResult(

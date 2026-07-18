@@ -6,7 +6,9 @@ import type {
 } from '../repositories/StateMutationOutboxRepository.ts';
 import { StateMutationOutboxRepository } from '../repositories/StateMutationOutboxRepository.ts';
 import type { StateSyncPublisher } from '../state-sync-publisher.ts';
-import type { RtcTopologyWorkPublisher } from './RtcTopologyOutboxWork.ts';
+import type {
+    RtcTopologyStateMutationPublisher,
+} from './RtcTopologyOutboxWork.ts';
 
 const DEFAULT_STATE_MUTATION_OUTBOX_PAGE_SIZE = 32;
 const MAX_DELIVERY_CAS_CONFLICT_RETRIES = 3;
@@ -52,7 +54,11 @@ export type GroupPresenceSummaryWorkPublisher = Readonly<{
     enqueueForGroupSnapshot(
         group: GroupSnapshot,
         deliveryId: string,
-    ): Promise<void>;
+    ): Promise<void | StateMutationEffectEnqueueResult>;
+}>;
+
+export type StateMutationEffectEnqueueResult = Readonly<{
+    effectiveSnapshotRevision: number;
 }>;
 
 export type StateMutationOutboxWorkOptions =
@@ -61,7 +67,7 @@ export type StateMutationOutboxWorkOptions =
         repository: StateMutationOutboxRepository;
         stateSyncPublisher: StateSyncPublisher;
         groupPresenceSummaryPublisher?: GroupPresenceSummaryWorkPublisher;
-        rtcTopologyPublisher?: RtcTopologyWorkPublisher;
+        rtcTopologyPublisher?: RtcTopologyStateMutationPublisher;
         now?: () => number;
         senderId?: string;
         pageSize?: number;
@@ -87,22 +93,38 @@ export class StateMutationOutboxWork implements StateMutationOutboxWorkLike {
     }
 
     async drainPending(): Promise<StateMutationOutboxDrainResult> {
-        const page = await this.options.repository.listPendingPage({
-            limit: this.pageSize,
-        });
+        const processedOutboxIds = new Set<string>();
         let delivered = 0;
         let retryable = 0;
+        let afterKey: string | undefined;
 
-        for (const stored of page.records) {
-            if (await this.deliver(stored, 0)) {
-                delivered += 1;
-            } else {
-                retryable += 1;
+        while (true) {
+            const page = await this.options.repository.listPendingPage({
+                afterKey,
+                limit: this.pageSize,
+            });
+            for (const stored of page.records) {
+                if (processedOutboxIds.has(stored.record.outboxId)) {
+                    continue;
+                }
+                processedOutboxIds.add(stored.record.outboxId);
+                if (await this.deliver(stored, 0)) {
+                    delivered += 1;
+                } else {
+                    retryable += 1;
+                }
             }
+            if (
+                page.nextAfterKey === null ||
+                page.nextAfterKey === afterKey
+            ) {
+                break;
+            }
+            afterKey = page.nextAfterKey;
         }
 
         return {
-            scanned: page.records.length,
+            scanned: processedOutboxIds.size,
             delivered,
             retryable,
         };
@@ -120,7 +142,8 @@ export class StateMutationOutboxWork implements StateMutationOutboxWorkLike {
             );
             const plan = computeStateMutationOutboxDelivery(read);
             validateStateMutationOutboxDelivery(plan);
-            await enqueueStateMutationOutboxDelivery(
+            const deliveredSnapshotRevision =
+                await enqueueStateMutationOutboxDelivery(
                 plan,
                 this.options.stateSyncPublisher,
                 this.options.groupPresenceSummaryPublisher,
@@ -134,8 +157,7 @@ export class StateMutationOutboxWork implements StateMutationOutboxWorkLike {
                     attemptedAtEpochMs,
                     outcome: {
                         status: 'delivered',
-                        deliveredSnapshotRevision:
-                            plan.deliveredSnapshotRevision,
+                        deliveredSnapshotRevision,
                     },
                 },
             );
@@ -316,22 +338,31 @@ async function enqueueStateMutationOutboxDelivery(
     plan: StateMutationOutboxDeliveryPlan,
     stateSyncPublisher: StateSyncPublisher,
     groupPresenceSummaryPublisher: GroupPresenceSummaryWorkPublisher | undefined,
-    rtcTopologyPublisher: RtcTopologyWorkPublisher | undefined,
+    rtcTopologyPublisher: RtcTopologyStateMutationPublisher | undefined,
     senderId: string,
-): Promise<void> {
+): Promise<number> {
     const record = plan.stored.record;
     const snapshot = plan.snapshot!;
+    const acceptedSnapshotRevision =
+        record.acceptedCausalRevision.stateRevision;
+    const effectiveSnapshotRevisions: number[] = [];
     if (record.kind === 'client') {
         if (record.effects.includes('client-state-sync')) {
             const clientSnapshot = snapshot as ClientSnapshot;
-            await stateSyncPublisher.publishClientSnapshot(
+            const result = await stateSyncPublisher.publishClientSnapshot(
                 clientSnapshot,
                 senderId,
                 toStateMutationDeliveryId(
                     record.outboxId,
                     'client-state-sync',
                     'snapshot',
-                    plan.deliveredSnapshotRevision,
+                ),
+            );
+            effectiveSnapshotRevisions.push(
+                readEffectiveSnapshotRevision(
+                    result,
+                    acceptedSnapshotRevision,
+                    record.outboxId,
                 ),
             );
             if (record.event.kind === 'client') {
@@ -347,19 +378,25 @@ async function enqueueStateMutationOutboxDelivery(
                 );
             }
         }
-        return;
+        return Math.min(...effectiveSnapshotRevisions);
     }
 
     const groupSnapshot = snapshot as GroupSnapshot;
     if (record.effects.includes('group-state-sync')) {
-        await stateSyncPublisher.publishGroupSnapshot(
+        const result = await stateSyncPublisher.publishGroupSnapshot(
             groupSnapshot,
             senderId,
             toStateMutationDeliveryId(
                 record.outboxId,
                 'group-state-sync',
                 'snapshot',
-                plan.deliveredSnapshotRevision,
+            ),
+        );
+        effectiveSnapshotRevisions.push(
+            readEffectiveSnapshotRevision(
+                result,
+                acceptedSnapshotRevision,
+                record.outboxId,
             ),
         );
         if (record.event.kind === 'group') {
@@ -381,13 +418,20 @@ async function enqueueStateMutationOutboxDelivery(
                 `Group presence summary outbox adapter is unavailable for ${record.outboxId}`,
             );
         }
-        await groupPresenceSummaryPublisher.enqueueForGroupSnapshot(
-            groupSnapshot,
-            toStateMutationDeliveryId(
+        const result = await groupPresenceSummaryPublisher
+            .enqueueForGroupSnapshot(
+                groupSnapshot,
+                toStateMutationDeliveryId(
+                    record.outboxId,
+                    'group-presence-summary',
+                    'snapshot',
+                ),
+            );
+        effectiveSnapshotRevisions.push(
+            readEffectiveSnapshotRevision(
+                result,
+                acceptedSnapshotRevision,
                 record.outboxId,
-                'group-presence-summary',
-                'snapshot',
-                plan.deliveredSnapshotRevision,
             ),
         );
     }
@@ -397,17 +441,54 @@ async function enqueueStateMutationOutboxDelivery(
                 `RTC topology outbox adapter is unavailable for ${record.outboxId}`,
             );
         }
-        await rtcTopologyPublisher.enqueueForGroupSnapshot(groupSnapshot);
+        const result = await rtcTopologyPublisher.enqueueForStateMutation(
+            groupSnapshot,
+            toStateMutationDeliveryId(
+                record.outboxId,
+                'rtc-topology-recompute',
+                'snapshot',
+            ),
+        );
+        effectiveSnapshotRevisions.push(
+            readEffectiveSnapshotRevision(
+                result,
+                acceptedSnapshotRevision,
+                record.outboxId,
+            ),
+        );
     }
+    return Math.min(...effectiveSnapshotRevisions);
 }
 
 function toStateMutationDeliveryId(
     outboxId: string,
     effect: StateMutationOutboxRecord['effects'][number],
     payloadKind: 'snapshot' | 'event',
-    payloadRevisionOrId: number | string,
+    payloadId?: string,
 ): string {
-    return `${outboxId}:${effect}:${payloadKind}:${payloadRevisionOrId}`;
+    return [outboxId, effect, payloadKind, payloadId]
+        .filter((part) => part !== undefined)
+        .join(':');
+}
+
+function readEffectiveSnapshotRevision(
+    result: void | StateMutationEffectEnqueueResult,
+    acceptedSnapshotRevision: number,
+    outboxId: string,
+): number {
+    // Legacy adapters return void. The immutable accepted revision is then the
+    // only rigorously guaranteed lower bound; never substitute a later reread.
+    const effectiveSnapshotRevision = result?.effectiveSnapshotRevision ??
+        acceptedSnapshotRevision;
+    if (
+        !Number.isSafeInteger(effectiveSnapshotRevision) ||
+        effectiveSnapshotRevision < acceptedSnapshotRevision
+    ) {
+        throw new TypeError(
+            `State mutation outbox adapter returned an invalid winner revision for ${outboxId}`,
+        );
+    }
+    return effectiveSnapshotRevision;
 }
 
 function assertClientSnapshotCompatible(

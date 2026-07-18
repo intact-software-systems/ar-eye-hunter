@@ -52,18 +52,31 @@ export type RtcTopologyRttRefreshWork = Readonly<{
     requestedAtEpochMs: number;
 }>;
 
-export type RtcTopologyWorkPublisher = Readonly<{
-    enqueueForGroupSnapshot(group: GroupSnapshot): Promise<void>;
-    enqueueForRtt(
+export type RtcTopologyStateMutationPublisher = Readonly<{
+    enqueueForStateMutation(
         group: GroupSnapshot,
-        rtt: RttMeasurementInfo,
-        debounceMs: number,
-    ): Promise<void>;
-    enqueueForRttGroups(
-        rtt: RttMeasurementInfo,
-        groups: readonly GroupSnapshot[],
-        debounceMs: number,
-    ): Promise<void>;
+        deliveryId: string,
+    ): Promise<RtcTopologyGroupEnqueueResult>;
+}>;
+
+export type RtcTopologyWorkPublisher =
+    & RtcTopologyStateMutationPublisher
+    & Readonly<{
+        enqueueForGroupSnapshot(group: GroupSnapshot): Promise<void>;
+        enqueueForRtt(
+            group: GroupSnapshot,
+            rtt: RttMeasurementInfo,
+            debounceMs: number,
+        ): Promise<void>;
+        enqueueForRttGroups(
+            rtt: RttMeasurementInfo,
+            groups: readonly GroupSnapshot[],
+            debounceMs: number,
+        ): Promise<void>;
+    }>;
+
+export type RtcTopologyGroupEnqueueResult = Readonly<{
+    effectiveSnapshotRevision: number;
 }>;
 
 export type RtcTopologyWorkRuntime = Readonly<{
@@ -244,39 +257,59 @@ function createRtcTopologyWorkRuntime(
         options.wake?.();
     };
 
+    const enqueueGroupSnapshot = async (
+        group: GroupSnapshot,
+        deliveryId?: string,
+    ): Promise<RtcTopologyGroupEnqueueResult> => {
+        const overlayId = toScopedOverlayId(group.group);
+        const sourceGroupStateRevision = readGroupStateRevision(group);
+        const requestedAtEpochMs = now();
+        const envelope: RtcTopologyWorkEnvelope<RtcTopologyGroupRevisionWork> = {
+            type: options.workType,
+            topicId: options.topicId,
+            resourceId: deliveryId ??
+                toRtcTopologyGroupRevisionResourceId(
+                    overlayId,
+                    sourceGroupStateRevision,
+                ),
+            contextId: toRtcTopologyQueueContextId(group.group),
+            senderId: options.senderId,
+            data: {
+                kind: 'group-revision',
+                overlayId,
+                groupSnapshot: group,
+                sourceGroupStateRevision,
+                requestedAtEpochMs,
+            },
+        };
+        const key = toAppQueueKey(envelope);
+        const winner = await options.outboxQueueReader.enqueueIfAbsent(
+            newALUntargetedMessage(
+                toAppQueueCreatedBy(options.senderId),
+                newALRoute(key.topicId, key.contextId, key.resourceId),
+                options.workType,
+                envelope,
+            ),
+        );
+        options.wake?.();
+        const winnerMessage = JSON.parse(winner.resource) as ALMessage;
+        const winnerEnvelope = readRtcTopologyWorkEnvelope(winnerMessage);
+        if (winnerEnvelope.data.kind !== 'group-revision') {
+            throw new TypeError(
+                'RTC topology group enqueue resolved non-group work',
+            );
+        }
+        return {
+            effectiveSnapshotRevision:
+                winnerEnvelope.data.sourceGroupStateRevision,
+        };
+    };
+
     const publisher: RtcTopologyWorkPublisher = {
         enqueueForGroupSnapshot: async (group) => {
-            const overlayId = toScopedOverlayId(group.group);
-            const sourceGroupStateRevision = readGroupStateRevision(group);
-            const requestedAtEpochMs = now();
-            const envelope: RtcTopologyWorkEnvelope<RtcTopologyGroupRevisionWork> = {
-                type: options.workType,
-                topicId: options.topicId,
-                resourceId: toRtcTopologyGroupRevisionResourceId(
-                    overlayId,
-                    sourceGroupStateRevision,
-                ),
-                contextId: toRtcTopologyQueueContextId(group.group),
-                senderId: options.senderId,
-                data: {
-                    kind: 'group-revision',
-                    overlayId,
-                    groupSnapshot: group,
-                    sourceGroupStateRevision,
-                    requestedAtEpochMs,
-                },
-            };
-            const key = toAppQueueKey(envelope);
-            await options.outboxQueueReader.enqueueIfAbsent(
-                newALUntargetedMessage(
-                    toAppQueueCreatedBy(options.senderId),
-                    newALRoute(key.topicId, key.contextId, key.resourceId),
-                    options.workType,
-                    envelope,
-                ),
-            );
-            options.wake?.();
+            await enqueueGroupSnapshot(group);
         },
+        enqueueForStateMutation: enqueueGroupSnapshot,
         enqueueForRtt: enqueueRtt,
         enqueueForRttGroups: async (rtt, groups, debounceMs) => {
             for (const group of groups) {

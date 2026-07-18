@@ -4,9 +4,10 @@ import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRunti
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { createWsStateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
@@ -63,30 +64,44 @@ describe('createWsStateSyncPublisher', () => {
         });
     });
 
-    it('reuses deterministic downstream message identity across publisher retries', async () => {
+    it('returns an exact first winner and distrusts reconstructed duplicate entries', async () => {
         const storedMessages = new Map<string, ALMessage>();
         const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => {
+            const winner = storedMessages.get(message.id.msgId) ?? message;
             const status = storedMessages.has(message.id.msgId)
                 ? 'duplicate' as const
                 : 'enqueued' as const;
-            storedMessages.set(message.id.msgId, message);
-            return { status, message, entries: [] };
+            storedMessages.set(message.id.msgId, winner);
+            const entry = QueueBoxUtilities.toResourceEntryFromMsg(
+                status === 'enqueued' ? winner : message,
+                WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
+            );
+            return { status, message, entry, entries: [entry] };
         });
         const publisher = createWsStateSyncPublisher(
             { enqueueOutboxIfAbsent } as unknown as WsQueueBoxServerService,
             { serverId: 'state-service' },
         );
-        const snapshot = createClientSnapshot('alice', []);
+        const revision1 = createClientSnapshot('alice', []);
+        const revision2: ClientSnapshot = {
+            ...revision1,
+            stateRevision: 2,
+            principal: {
+                ...revision1.principal,
+                snapshotVersion: 2,
+                profileVersion: 2,
+            },
+        };
 
-        await publisher.publishClientSnapshot(
-            snapshot,
+        const first = await publisher.publishClientSnapshot(
+            revision1,
             'outbox-worker',
-            'state-mutation-1:client-state-sync:snapshot:1',
+            'state-mutation-1:client-state-sync:snapshot',
         );
-        await publisher.publishClientSnapshot(
-            snapshot,
+        const duplicate = await publisher.publishClientSnapshot(
+            revision2,
             'outbox-worker',
-            'state-mutation-1:client-state-sync:snapshot:1',
+            'state-mutation-1:client-state-sync:snapshot',
         );
 
         const messageIds = enqueueOutboxIfAbsent.mock.calls.map(
@@ -94,6 +109,33 @@ describe('createWsStateSyncPublisher', () => {
         );
         expect(messageIds[0]).toBe(messageIds[1]);
         expect(storedMessages.size).toBe(1);
+        expect(first).toEqual({ effectiveSnapshotRevision: 1 });
+        expect(duplicate).toBeUndefined();
+    });
+
+    it('does not treat superseded candidate entries as persisted winners', async () => {
+        const enqueueOutboxIfAbsent = vi.fn(async (message: ALMessage) => {
+            const entry = QueueBoxUtilities.toResourceEntryFromMsg(
+                message,
+                WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
+            );
+            return {
+                status: 'superseded' as const,
+                message,
+                entry,
+                entries: [entry],
+            };
+        });
+        const publisher = createWsStateSyncPublisher(
+            { enqueueOutboxIfAbsent } as unknown as WsQueueBoxServerService,
+            { serverId: 'state-service' },
+        );
+
+        await expect(publisher.publishClientSnapshot(
+            createClientSnapshot('alice', []),
+            'outbox-worker',
+            'state-mutation-1:client-state-sync:snapshot',
+        )).resolves.toBeUndefined();
     });
 
     it('allows no-route for a client snapshot with active sessions and logs a warning', async () => {
@@ -209,6 +251,7 @@ function createClientSnapshot(
     sessionIds: readonly string[],
 ): ClientSnapshot {
     return {
+        stateRevision: 1,
         principal: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -249,6 +292,7 @@ function createGroupSnapshot(
     sessionIds: readonly string[],
 ): GroupSnapshot {
     return {
+        stateRevision: 1,
         group: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
