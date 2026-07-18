@@ -5617,6 +5617,9 @@
                         "degreeLimit": 6
                       },
                       "reconfigure": false
+                    },
+                    "outputs": {
+                      "finalGroupOneIdConfigVersion": "body.config.version"
                     }
                   },
                   "expect": {
@@ -5714,6 +5717,9 @@
                         "degreeLimit": 6
                       },
                       "reconfigure": false
+                    },
+                    "outputs": {
+                      "finalGroupTwoIdConfigVersion": "body.config.version"
                     }
                   },
                   "expect": {
@@ -5811,6 +5817,9 @@
                         "degreeLimit": 6
                       },
                       "reconfigure": false
+                    },
+                    "outputs": {
+                      "finalGroupThreeIdConfigVersion": "body.config.version"
                     }
                   },
                   "expect": {
@@ -5908,6 +5917,9 @@
                         "degreeLimit": 6
                       },
                       "reconfigure": false
+                    },
+                    "outputs": {
+                      "finalGroupFourIdConfigVersion": "body.config.version"
                     }
                   },
                   "expect": {
@@ -6005,6 +6017,9 @@
                         "degreeLimit": 6
                       },
                       "reconfigure": false
+                    },
+                    "outputs": {
+                      "finalGroupFiveIdConfigVersion": "body.config.version"
                     }
                   },
                   "expect": {
@@ -6038,33 +6053,2657 @@
       ]
     },
     {
-      "name": "readoneGroupThroughPrimary",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}",
-        "headers": {
-          "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
-        },
-        "outputs": {
-          "finalGroupOneIdCausalRevision": "body.groupStateCausalRevision"
-        }
+      "name": "delayBeforeConvergencePoll1",
+      "type": "set",
+      "output": "convergencePollDelay1",
+      "value": {
+        "attempt": 1,
+        "delayMs": 500
       },
-      "expect": {
-        "status": 200,
-        "body": {
-          "memberCount": 101,
-          "onlineMemberCount": 101,
-          "group": {
-            "groupId": "{groupOneId}"
-          }
-        }
+      "request": {
+        "delayMs": 500
       }
     },
     {
-      "name": "readoneGroupThroughSecondary",
+      "name": "pollConvergenceAttempt1",
+      "type": "parallel",
+      "maxConcurrency": 15,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "last-client-lane-1",
+          "steps": [
+            {
+              "name": "readLastClientLane1ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}",
+                "headers": {
+                  "Authorization": "{lane1AuthHeader}",
+                  "x-client-id": "{lane1ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane1ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane1InstanceId}",
+                      "sessionId": "{lane1SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-2",
+          "steps": [
+            {
+              "name": "readLastClientLane2ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}",
+                "headers": {
+                  "Authorization": "{lane2AuthHeader}",
+                  "x-client-id": "{lane2ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane2ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane2InstanceId}",
+                      "sessionId": "{lane2SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-3",
+          "steps": [
+            {
+              "name": "readLastClientLane3ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}",
+                "headers": {
+                  "Authorization": "{lane3AuthHeader}",
+                  "x-client-id": "{lane3ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane3ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane3InstanceId}",
+                      "sessionId": "{lane3SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-4",
+          "steps": [
+            {
+              "name": "readLastClientLane4ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}",
+                "headers": {
+                  "Authorization": "{lane4AuthHeader}",
+                  "x-client-id": "{lane4ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane4ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane4InstanceId}",
+                      "sessionId": "{lane4SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-5",
+          "steps": [
+            {
+              "name": "readLastClientLane5ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}",
+                "headers": {
+                  "Authorization": "{lane5AuthHeader}",
+                  "x-client-id": "{lane5ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane5ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane5InstanceId}",
+                      "sessionId": "{lane5SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-6",
+          "steps": [
+            {
+              "name": "readLastClientLane6ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}",
+                "headers": {
+                  "Authorization": "{lane6AuthHeader}",
+                  "x-client-id": "{lane6ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane6ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane6InstanceId}",
+                      "sessionId": "{lane6SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-7",
+          "steps": [
+            {
+              "name": "readLastClientLane7ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}",
+                "headers": {
+                  "Authorization": "{lane7AuthHeader}",
+                  "x-client-id": "{lane7ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane7ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane7InstanceId}",
+                      "sessionId": "{lane7SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-8",
+          "steps": [
+            {
+              "name": "readLastClientLane8ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}",
+                "headers": {
+                  "Authorization": "{lane8AuthHeader}",
+                  "x-client-id": "{lane8ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane8ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane8InstanceId}",
+                      "sessionId": "{lane8SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-9",
+          "steps": [
+            {
+              "name": "readLastClientLane9ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}",
+                "headers": {
+                  "Authorization": "{lane9AuthHeader}",
+                  "x-client-id": "{lane9ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane9ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane9InstanceId}",
+                      "sessionId": "{lane9SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-10",
+          "steps": [
+            {
+              "name": "readLastClientLane10ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}",
+                "headers": {
+                  "Authorization": "{lane10AuthHeader}",
+                  "x-client-id": "{lane10ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane10ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane10InstanceId}",
+                      "sessionId": "{lane10SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-one",
+          "steps": [
+            {
+              "name": "readoneGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupOneId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-two",
+          "steps": [
+            {
+              "name": "readtwoGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupTwoId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-three",
+          "steps": [
+            {
+              "name": "readthreeGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupThreeId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-four",
+          "steps": [
+            {
+              "name": "readfourGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupFourId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-five",
+          "steps": [
+            {
+              "name": "readfiveGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupFiveId}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delayBeforeConvergencePoll2",
+      "type": "set",
+      "output": "convergencePollDelay2",
+      "value": {
+        "attempt": 2,
+        "delayMs": 1000
+      },
+      "request": {
+        "delayMs": 1000
+      }
+    },
+    {
+      "name": "pollConvergenceAttempt2",
+      "type": "parallel",
+      "maxConcurrency": 15,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "last-client-lane-1",
+          "steps": [
+            {
+              "name": "readLastClientLane1ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}",
+                "headers": {
+                  "Authorization": "{lane1AuthHeader}",
+                  "x-client-id": "{lane1ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane1ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane1InstanceId}",
+                      "sessionId": "{lane1SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-2",
+          "steps": [
+            {
+              "name": "readLastClientLane2ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}",
+                "headers": {
+                  "Authorization": "{lane2AuthHeader}",
+                  "x-client-id": "{lane2ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane2ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane2InstanceId}",
+                      "sessionId": "{lane2SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-3",
+          "steps": [
+            {
+              "name": "readLastClientLane3ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}",
+                "headers": {
+                  "Authorization": "{lane3AuthHeader}",
+                  "x-client-id": "{lane3ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane3ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane3InstanceId}",
+                      "sessionId": "{lane3SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-4",
+          "steps": [
+            {
+              "name": "readLastClientLane4ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}",
+                "headers": {
+                  "Authorization": "{lane4AuthHeader}",
+                  "x-client-id": "{lane4ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane4ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane4InstanceId}",
+                      "sessionId": "{lane4SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-5",
+          "steps": [
+            {
+              "name": "readLastClientLane5ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}",
+                "headers": {
+                  "Authorization": "{lane5AuthHeader}",
+                  "x-client-id": "{lane5ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane5ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane5InstanceId}",
+                      "sessionId": "{lane5SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-6",
+          "steps": [
+            {
+              "name": "readLastClientLane6ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}",
+                "headers": {
+                  "Authorization": "{lane6AuthHeader}",
+                  "x-client-id": "{lane6ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane6ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane6InstanceId}",
+                      "sessionId": "{lane6SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-7",
+          "steps": [
+            {
+              "name": "readLastClientLane7ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}",
+                "headers": {
+                  "Authorization": "{lane7AuthHeader}",
+                  "x-client-id": "{lane7ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane7ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane7InstanceId}",
+                      "sessionId": "{lane7SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-8",
+          "steps": [
+            {
+              "name": "readLastClientLane8ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}",
+                "headers": {
+                  "Authorization": "{lane8AuthHeader}",
+                  "x-client-id": "{lane8ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane8ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane8InstanceId}",
+                      "sessionId": "{lane8SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-9",
+          "steps": [
+            {
+              "name": "readLastClientLane9ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}",
+                "headers": {
+                  "Authorization": "{lane9AuthHeader}",
+                  "x-client-id": "{lane9ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane9ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane9InstanceId}",
+                      "sessionId": "{lane9SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-10",
+          "steps": [
+            {
+              "name": "readLastClientLane10ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}",
+                "headers": {
+                  "Authorization": "{lane10AuthHeader}",
+                  "x-client-id": "{lane10ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane10ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane10InstanceId}",
+                      "sessionId": "{lane10SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-one",
+          "steps": [
+            {
+              "name": "readoneGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupOneId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-two",
+          "steps": [
+            {
+              "name": "readtwoGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupTwoId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-three",
+          "steps": [
+            {
+              "name": "readthreeGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupThreeId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-four",
+          "steps": [
+            {
+              "name": "readfourGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupFourId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-five",
+          "steps": [
+            {
+              "name": "readfiveGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupFiveId}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delayBeforeConvergencePoll3",
+      "type": "set",
+      "output": "convergencePollDelay3",
+      "value": {
+        "attempt": 3,
+        "delayMs": 2000
+      },
+      "request": {
+        "delayMs": 2000
+      }
+    },
+    {
+      "name": "pollConvergenceAttempt3",
+      "type": "parallel",
+      "maxConcurrency": 15,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "last-client-lane-1",
+          "steps": [
+            {
+              "name": "readLastClientLane1ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}",
+                "headers": {
+                  "Authorization": "{lane1AuthHeader}",
+                  "x-client-id": "{lane1ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane1ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane1InstanceId}",
+                      "sessionId": "{lane1SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-2",
+          "steps": [
+            {
+              "name": "readLastClientLane2ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}",
+                "headers": {
+                  "Authorization": "{lane2AuthHeader}",
+                  "x-client-id": "{lane2ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane2ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane2InstanceId}",
+                      "sessionId": "{lane2SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-3",
+          "steps": [
+            {
+              "name": "readLastClientLane3ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}",
+                "headers": {
+                  "Authorization": "{lane3AuthHeader}",
+                  "x-client-id": "{lane3ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane3ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane3InstanceId}",
+                      "sessionId": "{lane3SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-4",
+          "steps": [
+            {
+              "name": "readLastClientLane4ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}",
+                "headers": {
+                  "Authorization": "{lane4AuthHeader}",
+                  "x-client-id": "{lane4ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane4ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane4InstanceId}",
+                      "sessionId": "{lane4SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-5",
+          "steps": [
+            {
+              "name": "readLastClientLane5ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}",
+                "headers": {
+                  "Authorization": "{lane5AuthHeader}",
+                  "x-client-id": "{lane5ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane5ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane5InstanceId}",
+                      "sessionId": "{lane5SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-6",
+          "steps": [
+            {
+              "name": "readLastClientLane6ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}",
+                "headers": {
+                  "Authorization": "{lane6AuthHeader}",
+                  "x-client-id": "{lane6ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane6ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane6InstanceId}",
+                      "sessionId": "{lane6SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-7",
+          "steps": [
+            {
+              "name": "readLastClientLane7ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}",
+                "headers": {
+                  "Authorization": "{lane7AuthHeader}",
+                  "x-client-id": "{lane7ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane7ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane7InstanceId}",
+                      "sessionId": "{lane7SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-8",
+          "steps": [
+            {
+              "name": "readLastClientLane8ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}",
+                "headers": {
+                  "Authorization": "{lane8AuthHeader}",
+                  "x-client-id": "{lane8ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane8ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane8InstanceId}",
+                      "sessionId": "{lane8SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-9",
+          "steps": [
+            {
+              "name": "readLastClientLane9ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}",
+                "headers": {
+                  "Authorization": "{lane9AuthHeader}",
+                  "x-client-id": "{lane9ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane9ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane9InstanceId}",
+                      "sessionId": "{lane9SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-10",
+          "steps": [
+            {
+              "name": "readLastClientLane10ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}",
+                "headers": {
+                  "Authorization": "{lane10AuthHeader}",
+                  "x-client-id": "{lane10ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane10ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane10InstanceId}",
+                      "sessionId": "{lane10SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-one",
+          "steps": [
+            {
+              "name": "readoneGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupOneId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-two",
+          "steps": [
+            {
+              "name": "readtwoGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupTwoId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-three",
+          "steps": [
+            {
+              "name": "readthreeGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupThreeId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-four",
+          "steps": [
+            {
+              "name": "readfourGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupFourId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-five",
+          "steps": [
+            {
+              "name": "readfiveGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupFiveId}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delayBeforeConvergencePoll4",
+      "type": "set",
+      "output": "convergencePollDelay4",
+      "value": {
+        "attempt": 4,
+        "delayMs": 4000
+      },
+      "request": {
+        "delayMs": 4000
+      }
+    },
+    {
+      "name": "pollConvergenceAttempt4",
+      "type": "parallel",
+      "maxConcurrency": 15,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "last-client-lane-1",
+          "steps": [
+            {
+              "name": "readLastClientLane1ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}",
+                "headers": {
+                  "Authorization": "{lane1AuthHeader}",
+                  "x-client-id": "{lane1ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane1ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane1InstanceId}",
+                      "sessionId": "{lane1SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-2",
+          "steps": [
+            {
+              "name": "readLastClientLane2ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}",
+                "headers": {
+                  "Authorization": "{lane2AuthHeader}",
+                  "x-client-id": "{lane2ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane2ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane2InstanceId}",
+                      "sessionId": "{lane2SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-3",
+          "steps": [
+            {
+              "name": "readLastClientLane3ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}",
+                "headers": {
+                  "Authorization": "{lane3AuthHeader}",
+                  "x-client-id": "{lane3ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane3ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane3InstanceId}",
+                      "sessionId": "{lane3SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-4",
+          "steps": [
+            {
+              "name": "readLastClientLane4ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}",
+                "headers": {
+                  "Authorization": "{lane4AuthHeader}",
+                  "x-client-id": "{lane4ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane4ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane4InstanceId}",
+                      "sessionId": "{lane4SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-5",
+          "steps": [
+            {
+              "name": "readLastClientLane5ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}",
+                "headers": {
+                  "Authorization": "{lane5AuthHeader}",
+                  "x-client-id": "{lane5ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane5ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane5InstanceId}",
+                      "sessionId": "{lane5SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-6",
+          "steps": [
+            {
+              "name": "readLastClientLane6ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}",
+                "headers": {
+                  "Authorization": "{lane6AuthHeader}",
+                  "x-client-id": "{lane6ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane6ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane6InstanceId}",
+                      "sessionId": "{lane6SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-7",
+          "steps": [
+            {
+              "name": "readLastClientLane7ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}",
+                "headers": {
+                  "Authorization": "{lane7AuthHeader}",
+                  "x-client-id": "{lane7ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane7ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane7InstanceId}",
+                      "sessionId": "{lane7SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-8",
+          "steps": [
+            {
+              "name": "readLastClientLane8ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}",
+                "headers": {
+                  "Authorization": "{lane8AuthHeader}",
+                  "x-client-id": "{lane8ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane8ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane8InstanceId}",
+                      "sessionId": "{lane8SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-9",
+          "steps": [
+            {
+              "name": "readLastClientLane9ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}",
+                "headers": {
+                  "Authorization": "{lane9AuthHeader}",
+                  "x-client-id": "{lane9ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane9ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane9InstanceId}",
+                      "sessionId": "{lane9SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-10",
+          "steps": [
+            {
+              "name": "readLastClientLane10ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}",
+                "headers": {
+                  "Authorization": "{lane10AuthHeader}",
+                  "x-client-id": "{lane10ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane10ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane10InstanceId}",
+                      "sessionId": "{lane10SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-one",
+          "steps": [
+            {
+              "name": "readoneGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupOneId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-two",
+          "steps": [
+            {
+              "name": "readtwoGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupTwoId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-three",
+          "steps": [
+            {
+              "name": "readthreeGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupThreeId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-four",
+          "steps": [
+            {
+              "name": "readfourGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupFourId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-five",
+          "steps": [
+            {
+              "name": "readfiveGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupFiveId}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "delayBeforeConvergencePoll5",
+      "type": "set",
+      "output": "convergencePollDelay5",
+      "value": {
+        "attempt": 5,
+        "delayMs": 8000
+      },
+      "request": {
+        "delayMs": 8000
+      }
+    },
+    {
+      "name": "pollConvergenceAttempt5",
+      "type": "parallel",
+      "maxConcurrency": 15,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "last-client-lane-1",
+          "steps": [
+            {
+              "name": "readLastClientLane1ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane1ClientId}",
+                "headers": {
+                  "Authorization": "{lane1AuthHeader}",
+                  "x-client-id": "{lane1ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane1ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane1InstanceId}",
+                      "sessionId": "{lane1SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-2",
+          "steps": [
+            {
+              "name": "readLastClientLane2ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane2ClientId}",
+                "headers": {
+                  "Authorization": "{lane2AuthHeader}",
+                  "x-client-id": "{lane2ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane2ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane2InstanceId}",
+                      "sessionId": "{lane2SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-3",
+          "steps": [
+            {
+              "name": "readLastClientLane3ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane3ClientId}",
+                "headers": {
+                  "Authorization": "{lane3AuthHeader}",
+                  "x-client-id": "{lane3ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane3ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane3InstanceId}",
+                      "sessionId": "{lane3SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-4",
+          "steps": [
+            {
+              "name": "readLastClientLane4ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane4ClientId}",
+                "headers": {
+                  "Authorization": "{lane4AuthHeader}",
+                  "x-client-id": "{lane4ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane4ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane4InstanceId}",
+                      "sessionId": "{lane4SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-5",
+          "steps": [
+            {
+              "name": "readLastClientLane5ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane5ClientId}",
+                "headers": {
+                  "Authorization": "{lane5AuthHeader}",
+                  "x-client-id": "{lane5ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane5ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane5InstanceId}",
+                      "sessionId": "{lane5SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-6",
+          "steps": [
+            {
+              "name": "readLastClientLane6ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane6ClientId}",
+                "headers": {
+                  "Authorization": "{lane6AuthHeader}",
+                  "x-client-id": "{lane6ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane6ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane6InstanceId}",
+                      "sessionId": "{lane6SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-7",
+          "steps": [
+            {
+              "name": "readLastClientLane7ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane7ClientId}",
+                "headers": {
+                  "Authorization": "{lane7AuthHeader}",
+                  "x-client-id": "{lane7ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane7ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane7InstanceId}",
+                      "sessionId": "{lane7SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-8",
+          "steps": [
+            {
+              "name": "readLastClientLane8ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane8ClientId}",
+                "headers": {
+                  "Authorization": "{lane8AuthHeader}",
+                  "x-client-id": "{lane8ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane8ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane8InstanceId}",
+                      "sessionId": "{lane8SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-9",
+          "steps": [
+            {
+              "name": "readLastClientLane9ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane9ClientId}",
+                "headers": {
+                  "Authorization": "{lane9AuthHeader}",
+                  "x-client-id": "{lane9ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane9ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane9InstanceId}",
+                      "sessionId": "{lane9SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "last-client-lane-10",
+          "steps": [
+            {
+              "name": "readLastClientLane10ThroughOppositeServer",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{lane10ClientId}",
+                "headers": {
+                  "Authorization": "{lane10AuthHeader}",
+                  "x-client-id": "{lane10ClientId}"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "principal": {
+                    "principalId": "{lane10ClientId}",
+                    "status": "active"
+                  },
+                  "isOnline": true,
+                  "activeSessions": [
+                    {
+                      "clientInstanceId": "{lane10InstanceId}",
+                      "sessionId": "{lane10SessionId}",
+                      "presenceState": "online"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-one",
+          "steps": [
+            {
+              "name": "readoneGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupOneId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupOneId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-two",
+          "steps": [
+            {
+              "name": "readtwoGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupTwoId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-three",
+          "steps": [
+            {
+              "name": "readthreeGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupThreeId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-four",
+          "steps": [
+            {
+              "name": "readfourGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupFourId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "primary-group-five",
+          "steps": [
+            {
+              "name": "readfiveGroupThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "GET",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}",
+                "headers": {
+                  "Authorization": "{ownerAuthHeader}",
+                  "x-client-id": "{ownerClientId}"
+                },
+                "outputs": {
+                  "finalGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
+                  "finalGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "memberCount": 101,
+                  "onlineMemberCount": 101,
+                  "group": {
+                    "groupId": "{groupFiveId}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "verifyoneGroupThroughSecondary",
       "type": "http",
       "connection": "apiSecondary",
       "request": {
@@ -6073,6 +8712,10 @@
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
+        },
+        "outputs": {
+          "secondaryGroupOneIdStateCausalRevision": "body.groupStateCausalRevision",
+          "secondaryGroupOneIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
         }
       },
       "expect": {
@@ -6080,7 +8723,8 @@
         "body": {
           "memberCount": 101,
           "onlineMemberCount": 101,
-          "groupStateCausalRevision": "{finalGroupOneIdCausalRevision}",
+          "groupStateCausalRevision": "{finalGroupOneIdStateCausalRevision}",
+          "groupPresenceCausalRevision": "{finalGroupOneIdPresenceCausalRevision}",
           "group": {
             "groupId": "{groupOneId}"
           }
@@ -6101,13 +8745,18 @@
         "body": {
           "requestId": "final-reconfigure-{groupOneId}-{runId}",
           "publish": false
+        },
+        "outputs": {
+          "finalGroupOneIdTopologyOutboxId": "body.receipt.outboxId",
+          "finalGroupOneIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "snapshot": {
-            "sourceGroupStateCausalRevision": "{finalGroupOneIdCausalRevision}",
+            "sourceGroupStateCausalRevision": "{finalGroupOneIdStateCausalRevision}",
+            "sourceGroupPresenceCausalRevision": "{finalGroupOneIdPresenceCausalRevision}",
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
@@ -6115,13 +8764,13 @@
             }
           },
           "config": {
-            "version": "integer"
+            "version": "{finalGroupOneIdConfigVersion}"
           }
         }
       }
     },
     {
-      "name": "readtwoGroupThroughPrimary",
+      "name": "verifytwoGroupThroughSecondary",
       "type": "http",
       "connection": "apiSecondary",
       "request": {
@@ -6132,7 +8781,8 @@
           "x-client-id": "{ownerClientId}"
         },
         "outputs": {
-          "finalGroupTwoIdCausalRevision": "body.groupStateCausalRevision"
+          "secondaryGroupTwoIdStateCausalRevision": "body.groupStateCausalRevision",
+          "secondaryGroupTwoIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
         }
       },
       "expect": {
@@ -6140,30 +8790,8 @@
         "body": {
           "memberCount": 101,
           "onlineMemberCount": 101,
-          "group": {
-            "groupId": "{groupTwoId}"
-          }
-        }
-      }
-    },
-    {
-      "name": "readtwoGroupThroughSecondary",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}",
-        "headers": {
-          "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "memberCount": 101,
-          "onlineMemberCount": 101,
-          "groupStateCausalRevision": "{finalGroupTwoIdCausalRevision}",
+          "groupStateCausalRevision": "{finalGroupTwoIdStateCausalRevision}",
+          "groupPresenceCausalRevision": "{finalGroupTwoIdPresenceCausalRevision}",
           "group": {
             "groupId": "{groupTwoId}"
           }
@@ -6173,7 +8801,7 @@
     {
       "name": "finalReconfiguretwoTopology",
       "type": "http",
-      "connection": "apiPrimary",
+      "connection": "apiSecondary",
       "request": {
         "method": "POST",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupTwoId}/topology/reconfigure",
@@ -6184,13 +8812,18 @@
         "body": {
           "requestId": "final-reconfigure-{groupTwoId}-{runId}",
           "publish": false
+        },
+        "outputs": {
+          "finalGroupTwoIdTopologyOutboxId": "body.receipt.outboxId",
+          "finalGroupTwoIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "snapshot": {
-            "sourceGroupStateCausalRevision": "{finalGroupTwoIdCausalRevision}",
+            "sourceGroupStateCausalRevision": "{finalGroupTwoIdStateCausalRevision}",
+            "sourceGroupPresenceCausalRevision": "{finalGroupTwoIdPresenceCausalRevision}",
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
@@ -6198,39 +8831,13 @@
             }
           },
           "config": {
-            "version": "integer"
+            "version": "{finalGroupTwoIdConfigVersion}"
           }
         }
       }
     },
     {
-      "name": "readthreeGroupThroughPrimary",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupThreeId}",
-        "headers": {
-          "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
-        },
-        "outputs": {
-          "finalGroupThreeIdCausalRevision": "body.groupStateCausalRevision"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "memberCount": 101,
-          "onlineMemberCount": 101,
-          "group": {
-            "groupId": "{groupThreeId}"
-          }
-        }
-      }
-    },
-    {
-      "name": "readthreeGroupThroughSecondary",
+      "name": "verifythreeGroupThroughSecondary",
       "type": "http",
       "connection": "apiSecondary",
       "request": {
@@ -6239,6 +8846,10 @@
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
+        },
+        "outputs": {
+          "secondaryGroupThreeIdStateCausalRevision": "body.groupStateCausalRevision",
+          "secondaryGroupThreeIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
         }
       },
       "expect": {
@@ -6246,7 +8857,8 @@
         "body": {
           "memberCount": 101,
           "onlineMemberCount": 101,
-          "groupStateCausalRevision": "{finalGroupThreeIdCausalRevision}",
+          "groupStateCausalRevision": "{finalGroupThreeIdStateCausalRevision}",
+          "groupPresenceCausalRevision": "{finalGroupThreeIdPresenceCausalRevision}",
           "group": {
             "groupId": "{groupThreeId}"
           }
@@ -6267,13 +8879,18 @@
         "body": {
           "requestId": "final-reconfigure-{groupThreeId}-{runId}",
           "publish": false
+        },
+        "outputs": {
+          "finalGroupThreeIdTopologyOutboxId": "body.receipt.outboxId",
+          "finalGroupThreeIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "snapshot": {
-            "sourceGroupStateCausalRevision": "{finalGroupThreeIdCausalRevision}",
+            "sourceGroupStateCausalRevision": "{finalGroupThreeIdStateCausalRevision}",
+            "sourceGroupPresenceCausalRevision": "{finalGroupThreeIdPresenceCausalRevision}",
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
@@ -6281,13 +8898,13 @@
             }
           },
           "config": {
-            "version": "integer"
+            "version": "{finalGroupThreeIdConfigVersion}"
           }
         }
       }
     },
     {
-      "name": "readfourGroupThroughPrimary",
+      "name": "verifyfourGroupThroughSecondary",
       "type": "http",
       "connection": "apiSecondary",
       "request": {
@@ -6298,7 +8915,8 @@
           "x-client-id": "{ownerClientId}"
         },
         "outputs": {
-          "finalGroupFourIdCausalRevision": "body.groupStateCausalRevision"
+          "secondaryGroupFourIdStateCausalRevision": "body.groupStateCausalRevision",
+          "secondaryGroupFourIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
         }
       },
       "expect": {
@@ -6306,30 +8924,8 @@
         "body": {
           "memberCount": 101,
           "onlineMemberCount": 101,
-          "group": {
-            "groupId": "{groupFourId}"
-          }
-        }
-      }
-    },
-    {
-      "name": "readfourGroupThroughSecondary",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}",
-        "headers": {
-          "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "memberCount": 101,
-          "onlineMemberCount": 101,
-          "groupStateCausalRevision": "{finalGroupFourIdCausalRevision}",
+          "groupStateCausalRevision": "{finalGroupFourIdStateCausalRevision}",
+          "groupPresenceCausalRevision": "{finalGroupFourIdPresenceCausalRevision}",
           "group": {
             "groupId": "{groupFourId}"
           }
@@ -6339,7 +8935,7 @@
     {
       "name": "finalReconfigurefourTopology",
       "type": "http",
-      "connection": "apiPrimary",
+      "connection": "apiSecondary",
       "request": {
         "method": "POST",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFourId}/topology/reconfigure",
@@ -6350,13 +8946,18 @@
         "body": {
           "requestId": "final-reconfigure-{groupFourId}-{runId}",
           "publish": false
+        },
+        "outputs": {
+          "finalGroupFourIdTopologyOutboxId": "body.receipt.outboxId",
+          "finalGroupFourIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "snapshot": {
-            "sourceGroupStateCausalRevision": "{finalGroupFourIdCausalRevision}",
+            "sourceGroupStateCausalRevision": "{finalGroupFourIdStateCausalRevision}",
+            "sourceGroupPresenceCausalRevision": "{finalGroupFourIdPresenceCausalRevision}",
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
@@ -6364,39 +8965,13 @@
             }
           },
           "config": {
-            "version": "integer"
+            "version": "{finalGroupFourIdConfigVersion}"
           }
         }
       }
     },
     {
-      "name": "readfiveGroupThroughPrimary",
-      "type": "http",
-      "connection": "apiPrimary",
-      "request": {
-        "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupFiveId}",
-        "headers": {
-          "Authorization": "{ownerAuthHeader}",
-          "x-client-id": "{ownerClientId}"
-        },
-        "outputs": {
-          "finalGroupFiveIdCausalRevision": "body.groupStateCausalRevision"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "memberCount": 101,
-          "onlineMemberCount": 101,
-          "group": {
-            "groupId": "{groupFiveId}"
-          }
-        }
-      }
-    },
-    {
-      "name": "readfiveGroupThroughSecondary",
+      "name": "verifyfiveGroupThroughSecondary",
       "type": "http",
       "connection": "apiSecondary",
       "request": {
@@ -6405,6 +8980,10 @@
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
+        },
+        "outputs": {
+          "secondaryGroupFiveIdStateCausalRevision": "body.groupStateCausalRevision",
+          "secondaryGroupFiveIdPresenceCausalRevision": "body.groupPresenceCausalRevision"
         }
       },
       "expect": {
@@ -6412,7 +8991,8 @@
         "body": {
           "memberCount": 101,
           "onlineMemberCount": 101,
-          "groupStateCausalRevision": "{finalGroupFiveIdCausalRevision}",
+          "groupStateCausalRevision": "{finalGroupFiveIdStateCausalRevision}",
+          "groupPresenceCausalRevision": "{finalGroupFiveIdPresenceCausalRevision}",
           "group": {
             "groupId": "{groupFiveId}"
           }
@@ -6433,13 +9013,18 @@
         "body": {
           "requestId": "final-reconfigure-{groupFiveId}-{runId}",
           "publish": false
+        },
+        "outputs": {
+          "finalGroupFiveIdTopologyOutboxId": "body.receipt.outboxId",
+          "finalGroupFiveIdTopologySnapshotVersion": "body.snapshot.version"
         }
       },
       "expect": {
         "status": 200,
         "body": {
           "snapshot": {
-            "sourceGroupStateCausalRevision": "{finalGroupFiveIdCausalRevision}",
+            "sourceGroupStateCausalRevision": "{finalGroupFiveIdStateCausalRevision}",
+            "sourceGroupPresenceCausalRevision": "{finalGroupFiveIdPresenceCausalRevision}",
             "groupRef": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
@@ -6447,7 +9032,7 @@
             }
           },
           "config": {
-            "version": "integer"
+            "version": "{finalGroupFiveIdConfigVersion}"
           }
         }
       }
@@ -6455,12 +9040,143 @@
     {
       "name": "assertEffectfulReceiptsExposeOutboxIdsAndConverge",
       "type": "assert",
-      "expect": {
-        "allEffectfulReceipts": {
-          "outboxId": "string",
-          "observableEffect": "event-or-snapshot"
+      "actual": {
+        "receipts": {
+          "groupOneId": "{finalGroupOneIdTopologyOutboxId}",
+          "groupTwoId": "{finalGroupTwoIdTopologyOutboxId}",
+          "groupThreeId": "{finalGroupThreeIdTopologyOutboxId}",
+          "groupFourId": "{finalGroupFourIdTopologyOutboxId}",
+          "groupFiveId": "{finalGroupFiveIdTopologyOutboxId}"
         },
-        "monotonicCausalTuples": true
+        "observableEffects": {
+          "groupOneId": "{finalGroupOneIdTopologySnapshotVersion}",
+          "groupTwoId": "{finalGroupTwoIdTopologySnapshotVersion}",
+          "groupThreeId": "{finalGroupThreeIdTopologySnapshotVersion}",
+          "groupFourId": "{finalGroupFourIdTopologySnapshotVersion}",
+          "groupFiveId": "{finalGroupFiveIdTopologySnapshotVersion}"
+        },
+        "monotonicCausalTuples": {
+          "groupOneId": {
+            "primary": {
+              "state": "{finalGroupOneIdStateCausalRevision}",
+              "presence": "{finalGroupOneIdPresenceCausalRevision}"
+            },
+            "secondary": {
+              "state": "{secondaryGroupOneIdStateCausalRevision}",
+              "presence": "{secondaryGroupOneIdPresenceCausalRevision}"
+            }
+          },
+          "groupTwoId": {
+            "primary": {
+              "state": "{finalGroupTwoIdStateCausalRevision}",
+              "presence": "{finalGroupTwoIdPresenceCausalRevision}"
+            },
+            "secondary": {
+              "state": "{secondaryGroupTwoIdStateCausalRevision}",
+              "presence": "{secondaryGroupTwoIdPresenceCausalRevision}"
+            }
+          },
+          "groupThreeId": {
+            "primary": {
+              "state": "{finalGroupThreeIdStateCausalRevision}",
+              "presence": "{finalGroupThreeIdPresenceCausalRevision}"
+            },
+            "secondary": {
+              "state": "{secondaryGroupThreeIdStateCausalRevision}",
+              "presence": "{secondaryGroupThreeIdPresenceCausalRevision}"
+            }
+          },
+          "groupFourId": {
+            "primary": {
+              "state": "{finalGroupFourIdStateCausalRevision}",
+              "presence": "{finalGroupFourIdPresenceCausalRevision}"
+            },
+            "secondary": {
+              "state": "{secondaryGroupFourIdStateCausalRevision}",
+              "presence": "{secondaryGroupFourIdPresenceCausalRevision}"
+            }
+          },
+          "groupFiveId": {
+            "primary": {
+              "state": "{finalGroupFiveIdStateCausalRevision}",
+              "presence": "{finalGroupFiveIdPresenceCausalRevision}"
+            },
+            "secondary": {
+              "state": "{secondaryGroupFiveIdStateCausalRevision}",
+              "presence": "{secondaryGroupFiveIdPresenceCausalRevision}"
+            }
+          }
+        }
+      },
+      "expect": {
+        "body": {
+          "receipts": {
+            "groupOneId": "string",
+            "groupTwoId": "string",
+            "groupThreeId": "string",
+            "groupFourId": "string",
+            "groupFiveId": "string"
+          },
+          "observableEffects": {
+            "groupOneId": "integer",
+            "groupTwoId": "integer",
+            "groupThreeId": "integer",
+            "groupFourId": "integer",
+            "groupFiveId": "integer"
+          },
+          "monotonicCausalTuples": {
+            "groupOneId": {
+              "primary": {
+                "state": "{finalGroupOneIdStateCausalRevision}",
+                "presence": "{finalGroupOneIdPresenceCausalRevision}"
+              },
+              "secondary": {
+                "state": "{finalGroupOneIdStateCausalRevision}",
+                "presence": "{finalGroupOneIdPresenceCausalRevision}"
+              }
+            },
+            "groupTwoId": {
+              "primary": {
+                "state": "{finalGroupTwoIdStateCausalRevision}",
+                "presence": "{finalGroupTwoIdPresenceCausalRevision}"
+              },
+              "secondary": {
+                "state": "{finalGroupTwoIdStateCausalRevision}",
+                "presence": "{finalGroupTwoIdPresenceCausalRevision}"
+              }
+            },
+            "groupThreeId": {
+              "primary": {
+                "state": "{finalGroupThreeIdStateCausalRevision}",
+                "presence": "{finalGroupThreeIdPresenceCausalRevision}"
+              },
+              "secondary": {
+                "state": "{finalGroupThreeIdStateCausalRevision}",
+                "presence": "{finalGroupThreeIdPresenceCausalRevision}"
+              }
+            },
+            "groupFourId": {
+              "primary": {
+                "state": "{finalGroupFourIdStateCausalRevision}",
+                "presence": "{finalGroupFourIdPresenceCausalRevision}"
+              },
+              "secondary": {
+                "state": "{finalGroupFourIdStateCausalRevision}",
+                "presence": "{finalGroupFourIdPresenceCausalRevision}"
+              }
+            },
+            "groupFiveId": {
+              "primary": {
+                "state": "{finalGroupFiveIdStateCausalRevision}",
+                "presence": "{finalGroupFiveIdPresenceCausalRevision}"
+              },
+              "secondary": {
+                "state": "{finalGroupFiveIdStateCausalRevision}",
+                "presence": "{finalGroupFiveIdPresenceCausalRevision}"
+              }
+            }
+          }
+        }
       }
     }
   ]

@@ -451,7 +451,9 @@ describe('black-box runner recipe matrix', () => {
             expect(recipeText).toContain(`{${groupId}}/topology/config`);
             expect(recipeText).toContain(`{${groupId}}/topology/reconfigure`);
             expect(recipeText).toContain(`groups/{${groupId}}`);
-            expect(recipeText).toContain(`final${groupId[0].toUpperCase()}${groupId.slice(1)}CausalRevision`);
+            const causalPrefix = `final${groupId[0].toUpperCase()}${groupId.slice(1)}`;
+            expect(recipeText).toContain(`${causalPrefix}StateCausalRevision`);
+            expect(recipeText).toContain(`${causalPrefix}PresenceCausalRevision`);
         });
 
         clientLoops.forEach(loop => {
@@ -466,6 +468,108 @@ describe('black-box runner recipe matrix', () => {
             expect(flow).toContain('x-forwarded-for');
             expect(flow).toMatch(/10\.\d+\.\{loop\.iteration\}\.1/);
         });
+
+        const churnIndex = steps.findIndex(step => step.name === 'runMediumScaleStateChurn');
+        const afterChurn = steps.slice(churnIndex + 1);
+        const pollDelays = afterChurn.filter(step =>
+            String(step.name).startsWith('delayBeforeConvergencePoll')
+        );
+        expect(pollDelays.map(step => Number((step.request as { delayMs?: number })?.delayMs)))
+            .toEqual([500, 1000, 2000, 4000, 8000]);
+        expect(pollDelays.reduce((total, step) =>
+            total + Number((step.request as { delayMs?: number })?.delayMs), 0
+        )).toBeLessThanOrEqual(30_000);
+
+        const pollSteps = afterChurn.filter(step =>
+            String(step.name).startsWith('pollConvergenceAttempt')
+        );
+        expect(pollSteps).toHaveLength(5);
+        pollSteps.forEach(step => {
+            expect(step.type).toBe('parallel');
+            expect(step.maxConcurrency).toBe(15);
+            expect((step.groups as unknown[])).toHaveLength(15);
+        });
+
+        const firstPollGroups = pollSteps[0].groups as Array<{
+            name: string;
+            steps: Array<Record<string, unknown>>;
+        }>;
+        expect(firstPollGroups.filter(group => group.name.startsWith('last-client-lane-')))
+            .toHaveLength(10);
+        expect(firstPollGroups.filter(group => group.name.startsWith('primary-group-')))
+            .toHaveLength(5);
+        for (let lane = 1; lane <= 10; lane += 1) {
+            const read = firstPollGroups.find(group => group.name === `last-client-lane-${lane}`)
+                ?.steps[0];
+            expect(read?.connection).toBe(lane % 2 === 1 ? 'apiSecondary' : 'apiPrimary');
+            expect(String((read?.request as { path?: string })?.path)).toContain(
+                `/clients/{lane${lane}ClientId}`,
+            );
+            expect(read?.expect).toMatchObject({
+                body: { principal: { status: 'active' }, isOnline: true },
+            });
+        }
+
+        groupIds.forEach(groupId => {
+            const groupLabel = groupId.replace(/^group/, '').replace(/Id$/, '').toLowerCase();
+            const primary = firstPollGroups.find(group =>
+                group.name === `primary-group-${groupLabel}`
+            )?.steps[0];
+            expect(primary?.connection).toBe('apiPrimary');
+            expect(primary?.request).toMatchObject({
+                outputs: {
+                    [`final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision`]:
+                        'body.groupStateCausalRevision',
+                    [`final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision`]:
+                        'body.groupPresenceCausalRevision',
+                },
+            });
+
+            const secondary = afterChurn.find(step =>
+                step.name === `verify${groupLabel}GroupThroughSecondary`
+            );
+            expect(secondary).toMatchObject({ connection: 'apiSecondary' });
+            expect(secondary?.expect).toMatchObject({
+                body: {
+                    groupStateCausalRevision:
+                        `{final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision}`,
+                    groupPresenceCausalRevision:
+                        `{final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision}`,
+                },
+            });
+
+            const finalTopology = afterChurn.find(step =>
+                step.name === `finalReconfigure${groupLabel}Topology`
+            );
+            expect(finalTopology).toMatchObject({ connection: 'apiSecondary' });
+            expect(finalTopology?.expect).toMatchObject({
+                body: {
+                    snapshot: {
+                        sourceGroupStateCausalRevision:
+                            `{final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision}`,
+                        sourceGroupPresenceCausalRevision:
+                            `{final${groupId[0].toUpperCase()}${groupId.slice(1)}PresenceCausalRevision}`,
+                    },
+                    config: {
+                        version: `{final${groupId[0].toUpperCase()}${groupId.slice(1)}ConfigVersion}`,
+                    },
+                },
+            });
+            expect((finalTopology?.request as { outputs?: Record<string, unknown> })?.outputs)
+                .toHaveProperty(`final${groupId[0].toUpperCase()}${groupId.slice(1)}TopologyOutboxId`);
+        });
+
+        const receipts = afterChurn.find(step =>
+            step.name === 'assertEffectfulReceiptsExposeOutboxIdsAndConverge'
+        );
+        expect(receipts).toMatchObject({
+            type: 'assert',
+            actual: expect.any(Object),
+            expect: { body: expect.any(Object) },
+        });
+        expect((receipts?.actual as Record<string, unknown>).receipts).toEqual(expect.any(Object));
+        expect((receipts?.actual as Record<string, unknown>).monotonicCausalTuples)
+            .toEqual(expect.any(Object));
     });
 
     it('advertises the API-v1 profile in recipe-matrix CLI usage', () => {
