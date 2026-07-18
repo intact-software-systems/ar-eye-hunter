@@ -181,13 +181,18 @@ Validation and comparison are total over parsed JSON-like input: malformed
 nested samples, unsupported mutation kinds, missing evidence containers, or
 invalid derivation records produce path-oriented baseline/candidate errors
 instead of throwing from summary or durable-contract derivation.
+All contract arrays must be dense: workloads, samples, raw commands, attempt and
+latency records, stack counts, receipts, outbox intents, DBW findings, mutation
+mix/exclusions, and regression reasons reject JavaScript holes before any
+iteration, equality check, derivation, or baseline waiver.
 
 Resource-regression reasons contain exactly `workload`, `metric`, and `reason`.
 The workload must be uncontended, shared, or hot; the metric must be one of
 `sql.statements`, `sql.rowsRead`, `sql.serializedResultBytes`, or
 `postgres.transactionDurationMs`; and the explanation must be substantive
-(at least ten non-whitespace characters). Malformed entries cannot authorize a
-regression.
+(at least ten non-whitespace characters, not merely ten characters after edge
+trimming). Validation and resource-regression authorization share this exact
+predicate, so malformed entries cannot authorize a regression.
 
 Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
 runs 1–100, and concurrency 1–256. Task 0B further requires exactly one warmup,

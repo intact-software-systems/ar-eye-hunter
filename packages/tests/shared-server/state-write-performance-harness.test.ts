@@ -470,6 +470,82 @@ describe('API-v1 state-write performance artifact contract', () => {
       );
     }
   });
+
+  it('rejects sparse contract arrays before validation or derivation can skip their holes', () => {
+    const mutations: Array<[string, (artifact: any) => void]> = [
+      ['workload samples', (artifact) => {
+        delete artifact.workloads[0].samples[0];
+      }],
+      ['commands', (artifact) => {
+        delete artifact.workloads[0].samples[0].commands[0];
+      }],
+      ['attempt observations', (artifact) => {
+        delete artifact.workloads[0].samples[0].attemptObservations[0];
+      }],
+      ['latency samples', (artifact) => {
+        delete artifact.workloads[0].samples[0].latencySamplesMs[0];
+      }],
+      ['receipts', (artifact) => {
+        const sampleValue = artifact.workloads[0].samples[0];
+        delete sampleValue.durable.receiptCommandIds[0];
+        sampleValue.correctness.dbwFindings = ['DBW-SPARSE-RECEIPT'];
+        refreshSummary(artifact.workloads[0]);
+      }],
+      ['outbox intents', (artifact) => {
+        const sampleValue = artifact.workloads[0].samples[0];
+        delete sampleValue.durable.outboxIntents[0];
+        sampleValue.correctness.dbwFindings = ['DBW-SPARSE-OUTBOX'];
+        refreshSummary(artifact.workloads[0]);
+      }],
+    ];
+
+    for (const [label, mutate] of mutations) {
+      const malformed = validArtifact();
+      mutate(malformed);
+      expect(validateStateWriteArtifact(malformed), label).toEqual(
+        expect.arrayContaining([expect.stringContaining('dense array')]),
+      );
+      expect(() => compareStateWriteArtifacts(malformed, validArtifact({ candidate: true })), label)
+        .not.toThrow();
+      expect(compareStateWriteArtifacts(malformed, validArtifact({ candidate: true })), label)
+        .toEqual(expect.arrayContaining([expect.stringContaining('baseline:')]));
+      expect(compareStateWriteArtifacts(validArtifact(), malformed), label).toEqual(
+        expect.arrayContaining([expect.stringContaining('candidate:')]),
+      );
+    }
+  });
+
+  it('rejects sparse stack counts and whitespace-padded regression explanations', async () => {
+    const sparseStacks = validArtifact({ candidate: true });
+    delete sparseStacks.workloads[0].samples[0].stackCommandCounts[0];
+    expect(validateStateWriteArtifact(sparseStacks)).toEqual(expect.arrayContaining([
+      expect.stringContaining('stackCommandCounts must be a dense array'),
+    ]));
+    expect(compareStateWriteArtifacts(validArtifact(), sparseStacks)).toEqual(
+      expect.arrayContaining([expect.stringContaining('candidate:')]),
+    );
+
+    const comparator = await import('../../../scripts/perf/compare-api-v1-state-write-results.mjs');
+    expect(comparator.isSubstantiveRegressionReason).toBeTypeOf('function');
+    expect(comparator.isSubstantiveRegressionReason('a        b')).toBe(false);
+    expect(comparator.isSubstantiveRegressionReason('Measured query-plan change')).toBe(true);
+    const candidate = validArtifact({ candidate: true });
+    for (const sampleValue of candidate.workloads[1].samples) {
+      sampleValue.sql.statements += 1;
+    }
+    refreshSummary(candidate.workloads[1]);
+    candidate.regressionReasons = [{
+      workload: 'shared',
+      metric: 'sql.statements',
+      reason: 'a        b',
+    }];
+    expect(validateStateWriteArtifact(candidate)).toEqual(expect.arrayContaining([
+      expect.stringContaining('regressionReasons[0].reason'),
+    ]));
+    expect(compareStateWriteArtifacts(validArtifact(), candidate)).toEqual(
+      expect.arrayContaining([expect.stringContaining('candidate: regressionReasons[0].reason')]),
+    );
+  });
 });
 
 function validArtifact(options: { candidate?: boolean } = {}): any {

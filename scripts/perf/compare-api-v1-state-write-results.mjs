@@ -122,8 +122,8 @@ function validateStateWriteArtifactInternal(
   validateMeasurement(artifact.measurement, errors);
   validateFeatures(artifact.features, errors);
 
-  if (!Array.isArray(artifact.workloads)) {
-    errors.push('workloads must be an array');
+  if (!isDenseArray(artifact.workloads)) {
+    errors.push('workloads must be a dense array');
     return errors;
   }
   const names = artifact.workloads.map((workload) => workload?.name);
@@ -281,9 +281,9 @@ function appendCorrectnessGateErrors(errors, baseline, candidate) {
 }
 
 function hasDerivableWorkloads(artifact) {
-  return Array.isArray(artifact?.workloads) && artifact.workloads.length === WORKLOADS.size &&
+  return isDenseArray(artifact?.workloads, WORKLOADS.size) &&
     artifact.workloads.every((workload) =>
-      WORKLOADS.has(workload?.name) && Array.isArray(workload.samples) &&
+      WORKLOADS.has(workload?.name) && isDenseArray(workload.samples) &&
       workload.samples.length > 0 && workload.samples.every(canDeriveWorkloadSample)
     );
 }
@@ -306,12 +306,14 @@ function validateMeasurement(measurement, errors) {
     errors.push('measurement.tailSamplesDiscarded must be false');
   }
   if (
-    !Array.isArray(measurement.mutationTimingExcludes) ||
+    !isDenseArray(measurement.mutationTimingExcludes) ||
     !['setup', 'authentication', 'http'].every((value) =>
       measurement.mutationTimingExcludes.includes(value)
     )
   ) {
-    errors.push('measurement.mutationTimingExcludes must include setup, authentication, and http');
+    errors.push(
+      'measurement.mutationTimingExcludes must be a dense array including setup, authentication, and http',
+    );
   }
   for (const source of COUNTER_SOURCES) {
     if (
@@ -340,8 +342,8 @@ function validateFeatures(features, errors) {
 }
 
 function validateRegressionReasons(reasons, errors) {
-  if (!Array.isArray(reasons)) {
-    errors.push('regressionReasons must be an array');
+  if (!isDenseArray(reasons)) {
+    errors.push('regressionReasons must be a dense array');
     return;
   }
   const expectedFields = ['metric', 'reason', 'workload'];
@@ -361,10 +363,14 @@ function validateRegressionReasons(reasons, errors) {
     if (!REGRESSION_REASON_METRICS.has(entry.metric)) {
       errors.push(`${path}.metric is not a supported regression metric`);
     }
-    if (typeof entry.reason !== 'string' || entry.reason.trim().length < 10) {
-      errors.push(`${path}.reason must be a substantive non-empty explanation`);
+    if (!isSubstantiveRegressionReason(entry.reason)) {
+      errors.push(`${path}.reason must contain at least 10 non-whitespace characters`);
     }
   }
+}
+
+export function isSubstantiveRegressionReason(value) {
+  return typeof value === 'string' && value.replaceAll(/\s/g, '').length >= 10;
 }
 
 function validateCandidatePresenceSplit(candidate) {
@@ -404,8 +410,11 @@ function validateWorkload(
       }
     }
   }
-  if (JSON.stringify(workload.mutationMix) !== JSON.stringify(MUTATION_MIX)) {
-    errors.push(`${path}.mutationMix must contain the exact deterministic mutation mix`);
+  if (
+    !isDenseArray(workload.mutationMix) ||
+    !sameStringArray(workload.mutationMix, MUTATION_MIX)
+  ) {
+    errors.push(`${path}.mutationMix must be a dense exact deterministic mutation mix`);
   }
   if (workload.warmupRuns !== 1 || workload.warmupRuns !== measurement?.warmupRuns) {
     errors.push(`${path}.warmupRuns must equal measurement.warmupRuns and 1`);
@@ -413,8 +422,10 @@ function validateWorkload(
   if (workload.measuredRuns !== measurement?.measuredRuns) {
     errors.push(`${path}.measuredRuns must equal measurement.measuredRuns`);
   }
-  if (!Array.isArray(workload.samples) || workload.samples.length !== measurement?.measuredRuns) {
-    errors.push(`${path}.samples must contain exactly measurement.measuredRuns entries`);
+  if (!isDenseArray(workload.samples, measurement?.measuredRuns)) {
+    errors.push(
+      `${path}.samples must contain exactly measurement.measuredRuns entries as a dense array`,
+    );
   } else {
     for (const [index, sample] of workload.samples.entries()) {
       validateSample(
@@ -443,14 +454,13 @@ function validateSample(sample, path, runIndex, errors, allowDbwLinkedDurableDef
     errors.push(`${path}.runIndex must equal ${runIndex}`);
   }
   requireMetric(sample, 'durationMs', path, errors);
-  if (
-    !Array.isArray(sample.latencySamplesMs) ||
-    sample.latencySamplesMs.length !== STATE_WRITE_COMMANDS_PER_RUN
-  ) {
-    errors.push(`${path}.latencySamplesMs must contain exactly 700 command latencies`);
+  if (!isDenseArray(sample.latencySamplesMs, STATE_WRITE_COMMANDS_PER_RUN)) {
+    errors.push(
+      `${path}.latencySamplesMs must contain exactly 700 command latencies as a dense array`,
+    );
   }
-  if (!Array.isArray(sample.commands) || sample.commands.length !== STATE_WRITE_COMMANDS_PER_RUN) {
-    errors.push(`${path}.commands must contain exactly 700 raw command records`);
+  if (!isDenseArray(sample.commands, STATE_WRITE_COMMANDS_PER_RUN)) {
+    errors.push(`${path}.commands must be a dense array of exactly 700 raw command records`);
     return;
   }
 
@@ -499,7 +509,9 @@ function validateSample(sample, path, runIndex, errors, allowDbwLinkedDurableDef
   if (stackCounts.some((count) => count === 0)) {
     errors.push(`${path}: both independent service stacks must execute commands`);
   }
-  if (!sameNumericArray(sample.stackCommandCounts, stackCounts)) {
+  if (!isDenseArray(sample.stackCommandCounts, stackCounts.length)) {
+    errors.push(`${path}.stackCommandCounts must be a dense array of two finite numbers`);
+  } else if (!sameNumericArray(sample.stackCommandCounts, stackCounts)) {
     errors.push(`${path}.stackCommandCounts does not match raw commands`);
   }
 
@@ -606,8 +618,8 @@ function validateSample(sample, path, runIndex, errors, allowDbwLinkedDurableDef
 }
 
 function deriveAttempts(observations, commandsById, path, errors) {
-  if (!Array.isArray(observations)) {
-    errors.push(`${path}.attemptObservations must be an array`);
+  if (!isDenseArray(observations)) {
+    errors.push(`${path}.attemptObservations must be a dense array`);
     return { attempts: 0, conflicted: 0, exhausted: 0, accepted: 0 };
   }
   const histories = new Map();
@@ -728,11 +740,11 @@ function deriveDurableCorrectness(
   const intents = sample.durable?.outboxIntents;
   const receiptIds = Array.isArray(receipts) ? receipts : [];
   const intentRecords = Array.isArray(intents) ? intents : [];
-  if (!Array.isArray(receipts)) {
-    errors.push(`${path}.durable.receiptCommandIds must be an array`);
+  if (!isDenseArray(receipts)) {
+    errors.push(`${path}.durable.receiptCommandIds must be a dense array`);
   }
-  if (!Array.isArray(intents)) {
-    errors.push(`${path}.durable.outboxIntents must be an array`);
+  if (!isDenseArray(intents)) {
+    errors.push(`${path}.durable.outboxIntents must be a dense array`);
   }
   const canRetainBaselineDefect = allowDbwLinkedDurableDefects &&
     dbwFindings.length > 0 && dbwFindings.every(isValidDbwFinding);
@@ -826,8 +838,8 @@ function validateMetrics(metrics, path, errors) {
 }
 
 function validateDbwFindings(findings, path, errors) {
-  if (!Array.isArray(findings)) {
-    errors.push(`${path}.dbwFindings must be an array`);
+  if (!isDenseArray(findings)) {
+    errors.push(`${path}.dbwFindings must be a dense array`);
     return;
   }
   for (const [index, finding] of findings.entries()) {
@@ -844,14 +856,14 @@ function isValidDbwFinding(value) {
 function canDeriveWorkloadSample(sample) {
   return isObject(sample) &&
     isNonNegativeNumber(sample.durationMs) &&
-    Array.isArray(sample.commands) &&
+    isDenseArray(sample.commands) &&
     sample.commands.every((command) =>
       isObject(command) && MUTATION_MIX.includes(command.kind) &&
       typeof command.commandId === 'string' &&
       ['accepted', 'exhausted'].includes(command.status) &&
       isNonNegativeNumber(command.latencyMs)
     ) &&
-    Array.isArray(sample.attemptObservations) &&
+    isDenseArray(sample.attemptObservations) &&
     sample.attemptObservations.every((observation) =>
       isObject(observation) && typeof observation.commandId === 'string' &&
       typeof observation.operationId === 'string' &&
@@ -861,10 +873,10 @@ function canDeriveWorkloadSample(sample) {
       typeof observation.source === 'string'
     ) &&
     isObject(sample.durable) &&
-    Array.isArray(sample.durable.receiptCommandIds) &&
-    Array.isArray(sample.durable.outboxIntents) &&
+    isDenseArray(sample.durable.receiptCommandIds) &&
+    isDenseArray(sample.durable.outboxIntents) &&
     isObject(sample.correctness) &&
-    Array.isArray(sample.correctness.dbwFindings) &&
+    isDenseArray(sample.correctness.dbwFindings) &&
     isObject(sample.sql) &&
     isObject(sample.postgres) &&
     isObject(sample.timingsMs);
@@ -1059,7 +1071,7 @@ function compareMaximumRegression(errors, label, baseline, candidate, ratio) {
 function hasRecordedReason(candidate, workload, metric) {
   return candidate.regressionReasons.some((entry) =>
     entry && entry.workload === workload && entry.metric === metric &&
-    typeof entry.reason === 'string' && entry.reason.trim().length > 0
+    isSubstantiveRegressionReason(entry.reason)
   );
 }
 
@@ -1081,12 +1093,46 @@ function requireMetric(container, metric, path, errors) {
 }
 
 function sameNumericArray(left, right) {
-  return Array.isArray(left) && left.length === right.length &&
-    left.every((value, index) => value === right[index]);
+  if (!isDenseArray(left) || !isDenseArray(right) || left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (
+      typeof left[index] !== 'number' || !Number.isFinite(left[index]) ||
+      typeof right[index] !== 'number' || !Number.isFinite(right[index]) ||
+      left[index] !== right[index]
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function sameStringArray(left, right) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+  if (!isDenseArray(left) || !isDenseArray(right) || left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (typeof left[index] !== 'string' || left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isDenseArray(value, expectedLength) {
+  if (
+    !Array.isArray(value) ||
+    (expectedLength !== undefined && value.length !== expectedLength)
+  ) {
+    return false;
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function sum(values) {
