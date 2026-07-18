@@ -2359,6 +2359,71 @@ describe('scenario-black-box CLI', () => {
             .toEqual(['frame1', 'positionLoopDelay', 'frame2', 'positionLoopDelay', 'frame3']);
     });
 
+    it('preserves runtime placeholders while expanding inline loops in parallel groups', async () => {
+        const workingDirectory = await writeTempConfig({
+            variables: {
+                runId: {
+                    env: 'RALLAR_TEST_RUN_ID',
+                    default: 'local',
+                },
+                applicationId: {
+                    env: 'RALLAR_TEST_APPLICATION_ID',
+                    default: 'app-{runId}',
+                },
+            },
+            steps: [
+                {
+                    name: 'parallelLoop',
+                    type: 'parallel',
+                    groups: [
+                        {
+                            name: 'lane',
+                            steps: [
+                                {
+                                    name: 'runtimeLoop',
+                                    type: 'loop',
+                                    count: 1,
+                                    steps: [
+                                        {
+                                            name: 'captureToken{loop.iteration}',
+                                            type: 'set',
+                                            output: 'runtimeToken',
+                                            value: 'token',
+                                        },
+                                        {
+                                            name: 'captureResolvedValue{loop.iteration}',
+                                            type: 'set',
+                                            output: 'resolvedValue',
+                                            value: '{applicationId}:{runtimeToken}:{loop.iteration}',
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const result = await runScenarioCli([
+            '-w',
+            workingDirectory,
+            '-c',
+            'config.json',
+        ], {
+            RALLAR_TEST_RUN_ID: undefined,
+            RALLAR_TEST_APPLICATION_ID: undefined,
+        });
+
+        expect(result.stderr).toBe('');
+        expect(result.code).toBe(0);
+
+        const report = JSON.parse(result.stdout);
+
+        expect(report.summary.failure).toBe(0);
+        expect(report.outputs.resolvedValue).toBe('app-local:token:1');
+    });
+
     it('expands seeded traffic plans and replays the recorded plan', async () => {
         const workingDirectory = await writeTempConfig({
             execution: {

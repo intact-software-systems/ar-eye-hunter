@@ -2919,6 +2919,15 @@ function toRequest(request: any, context: any): any {
     return resolvePlaceholders(request, context);
 }
 
+function toParallelRequest(request: any, context: any): any {
+    const {groups, ...parentRequest} = request;
+
+    return {
+        ...resolvePlaceholders(parentRequest, context),
+        groups,
+    };
+}
+
 function toOutputKey(interactionData: any): string {
     return interactionData.scenarioExecutionNumber + '-' + interactionData.name + '-' + interactionData.interactionExecutionNumber;
 }
@@ -3233,7 +3242,9 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
         return Promise.resolve();
     }
 
-    interaction.request = toRequest(interaction.request, context);
+    interaction.request = interactionWithConfig.PARALLEL
+        ? toParallelRequest(interaction.request, context)
+        : toRequest(interaction.request, context);
     interaction.response = resolvePlaceholders(interaction.response || {}, context);
 
     const config = {
