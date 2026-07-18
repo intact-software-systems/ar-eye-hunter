@@ -1,10 +1,12 @@
 import type {
     ClientEvent,
+    ClientEventType,
     ClientPrincipalRef,
     ClientSnapshot,
 } from '@shared/api/client-types.ts';
 import type {
     GroupEvent,
+    GroupEventType,
     GroupRef,
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
@@ -23,6 +25,37 @@ const STATE_MUTATION_OUTBOX_EFFECT_ORDER: readonly StateMutationOutboxEffect[] =
     'group-presence-summary',
     'rtc-topology-recompute',
 ];
+const CLIENT_EVENT_TYPES: Readonly<Record<ClientEventType, true>> = {
+    'principal-created': true,
+    'principal-updated': true,
+    'principal-disabled': true,
+    'principal-deleted': true,
+    'instance-registered': true,
+    'instance-updated': true,
+    'instance-revoked': true,
+    'session-authenticated': true,
+    'session-connected': true,
+    'session-heartbeat': true,
+    'session-disconnected': true,
+    'session-expired': true,
+};
+const GROUP_EVENT_TYPES: Readonly<Record<GroupEventType, true>> = {
+    'group-created': true,
+    'group-updated': true,
+    'group-archived': true,
+    'group-deleted': true,
+    'member-invited': true,
+    'member-joined': true,
+    'member-left': true,
+    'member-removed': true,
+    'member-banned': true,
+    'member-unbanned': true,
+    'member-role-changed': true,
+    'ownership-transferred': true,
+    'session-connected': true,
+    'session-heartbeat': true,
+    'session-disconnected': true,
+};
 
 export type StateMutationOutboxEffect =
     | 'client-state-sync'
@@ -74,6 +107,10 @@ export type StateMutationOutboxDeliveryState =
     | Readonly<{
         status: 'delivered';
         deliveredAtEpochMs: number;
+        /**
+         * Guaranteed delivered lower bound. Duplicate or legacy void adapters
+         * may prove only the accepted revision even when their payload is newer.
+         */
         deliveredSnapshotRevision: number;
     }>;
 
@@ -455,7 +492,6 @@ function validateStateMutationOutboxRecord(
                         'Client outbox events require client-state-sync',
                     );
                 }
-                validateClientRef(record.event.event);
                 validateClientEvent(record, record.event.event);
                 break;
             default:
@@ -481,7 +517,6 @@ function validateStateMutationOutboxRecord(
                         'Group outbox events require group-state-sync',
                     );
                 }
-                validateGroupRef(record.event.event);
                 validateGroupEvent(record, record.event.event);
                 break;
             default:
@@ -653,8 +688,25 @@ function validateStateMutationOutboxEffects(
 
 function validateClientEvent(
     record: ClientStateMutationOutboxRecord,
-    event: ClientEvent,
+    event: unknown,
 ): void {
+    if (!isRecord(event)) {
+        throw new TypeError('Client outbox event is required');
+    }
+    if (typeof event.eventId !== 'string' || !event.eventId) {
+        throw new TypeError('Client outbox event eventId is required');
+    }
+    if (!isKnownClientEventType(event.eventType)) {
+        throw new TypeError(
+            `Unknown client outbox event type: ${String(event.eventType)}`,
+        );
+    }
+    validateEventTimestamp(event.occurredAtEpochMs, 'Client');
+    validateEventActor(event.actor, 'Client');
+    validateOptionalEventString(event.clientInstanceId, 'Client', 'clientInstanceId');
+    validateOptionalEventString(event.sessionId, 'Client', 'sessionId');
+    validateOptionalEventMetadata(event, 'Client');
+    validateClientRef(event as ClientEvent);
     if (
         event.applicationId !== record.aggregateRef.applicationId ||
         event.workspaceId !== record.aggregateRef.workspaceId ||
@@ -673,8 +725,23 @@ function validateClientEvent(
 
 function validateGroupEvent(
     record: GroupStateMutationOutboxRecord,
-    event: GroupEvent,
+    event: unknown,
 ): void {
+    if (!isRecord(event)) {
+        throw new TypeError('Group outbox event is required');
+    }
+    if (typeof event.eventId !== 'string' || !event.eventId) {
+        throw new TypeError('Group outbox event eventId is required');
+    }
+    if (!isKnownGroupEventType(event.eventType)) {
+        throw new TypeError(
+            `Unknown group outbox event type: ${String(event.eventType)}`,
+        );
+    }
+    validateEventTimestamp(event.occurredAtEpochMs, 'Group');
+    validateEventActor(event.actor, 'Group');
+    validateOptionalEventMetadata(event, 'Group');
+    validateGroupRef(event as GroupEvent);
     if (
         event.applicationId !== record.aggregateRef.applicationId ||
         event.workspaceId !== record.aggregateRef.workspaceId ||
@@ -689,6 +756,81 @@ function validateGroupEvent(
             'Group outbox event does not match its accepted version',
         );
     }
+}
+
+function isKnownClientEventType(value: unknown): value is ClientEventType {
+    return typeof value === 'string' &&
+        Object.prototype.hasOwnProperty.call(CLIENT_EVENT_TYPES, value);
+}
+
+function isKnownGroupEventType(value: unknown): value is GroupEventType {
+    return typeof value === 'string' &&
+        Object.prototype.hasOwnProperty.call(GROUP_EVENT_TYPES, value);
+}
+
+function validateEventTimestamp(
+    value: unknown,
+    kind: 'Client' | 'Group',
+): void {
+    if (
+        typeof value !== 'number' ||
+        !Number.isSafeInteger(value) ||
+        value < 0 ||
+        Object.is(value, -0)
+    ) {
+        throw new TypeError(`Invalid ${kind.toLowerCase()} outbox event occurred time`);
+    }
+}
+
+function validateEventActor(
+    actor: unknown,
+    kind: 'Client' | 'Group',
+): void {
+    if (!isRecord(actor)) {
+        throw new TypeError(`${kind} outbox event actor is required`);
+    }
+    const fields = ['principalId', 'sessionId', 'serviceId'] as const;
+    if (fields.every((field) => actor[field] === undefined)) {
+        throw new TypeError(`${kind} outbox event actor identity is required`);
+    }
+    for (const field of fields) {
+        const value = actor[field];
+        if (value !== undefined && (typeof value !== 'string' || !value)) {
+            throw new TypeError(
+                `Invalid ${kind.toLowerCase()} outbox event actor ${field}`,
+            );
+        }
+    }
+}
+
+function validateOptionalEventMetadata(
+    event: Readonly<Record<string, unknown>>,
+    kind: 'Client' | 'Group',
+): void {
+    for (const field of ['reason', 'traceId', 'requestId'] as const) {
+        validateOptionalEventString(event[field], kind, field);
+    }
+    if (event.payload !== undefined && !isRecord(event.payload)) {
+        throw new TypeError(
+            `Invalid ${kind.toLowerCase()} outbox event payload`,
+        );
+    }
+}
+
+function validateOptionalEventString(
+    value: unknown,
+    kind: 'Client' | 'Group',
+    field: string,
+): void {
+    if (value !== undefined && typeof value !== 'string') {
+        throw new TypeError(
+            `Invalid ${kind.toLowerCase()} outbox event ${field}`,
+        );
+    }
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function validateClientCausalRevision(
@@ -710,13 +852,21 @@ function validateGroupCausalRevision(
 }
 
 function validateClientRef(ref: ClientPrincipalRef): void {
-    if (!ref.applicationId || !ref.principalId) {
+    if (
+        typeof ref.applicationId !== 'string' || !ref.applicationId ||
+        (ref.workspaceId !== undefined && typeof ref.workspaceId !== 'string') ||
+        typeof ref.principalId !== 'string' || !ref.principalId
+    ) {
         throw new TypeError('Invalid client aggregate ref');
     }
 }
 
 function validateGroupRef(ref: GroupRef): void {
-    if (!ref.applicationId || !ref.groupId) {
+    if (
+        typeof ref.applicationId !== 'string' || !ref.applicationId ||
+        (ref.workspaceId !== undefined && typeof ref.workspaceId !== 'string') ||
+        typeof ref.groupId !== 'string' || !ref.groupId
+    ) {
         throw new TypeError('Invalid group aggregate ref');
     }
 }

@@ -188,6 +188,8 @@ export function createRallarMiddleware(
             rtcTopologyPublisher:
                 options.stateMutationOutbox.rtcTopologyPublisher,
             now: options.stateMutationOutbox.now,
+            sleep: options.stateMutationOutbox.sleep,
+            timing: options.stateMutationOutbox.timing,
             senderId: options.stateMutationOutbox.senderId,
             pageSize: options.stateMutationOutbox.pageSize,
         })

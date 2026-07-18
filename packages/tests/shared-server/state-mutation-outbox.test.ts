@@ -6,7 +6,11 @@ import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import {
+    RuntimeStateRetryExhaustedError,
+    RuntimeStateWriteConflictError,
+    requireConditionalWrite,
+} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import {
     type CreateStateMutationOutboxRecordInput,
     STATE_MUTATION_OUTBOX_NAMESPACE,
@@ -33,6 +37,7 @@ import type { ClientStateRepository } from '@shared-server/rallar-system/reposit
 import type { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
@@ -404,6 +409,209 @@ describe('StateMutationOutboxRepository', () => {
         }
     });
 
+    it('accepts every known exact client and group event variant', () => {
+        const clientEventTypes = [
+            'principal-created',
+            'principal-updated',
+            'principal-disabled',
+            'principal-deleted',
+            'instance-registered',
+            'instance-updated',
+            'instance-revoked',
+            'session-authenticated',
+            'session-connected',
+            'session-heartbeat',
+            'session-disconnected',
+            'session-expired',
+        ] as const;
+        const groupEventTypes = [
+            'group-created',
+            'group-updated',
+            'group-archived',
+            'group-deleted',
+            'member-invited',
+            'member-joined',
+            'member-left',
+            'member-removed',
+            'member-banned',
+            'member-unbanned',
+            'member-role-changed',
+            'ownership-transferred',
+            'session-connected',
+            'session-heartbeat',
+            'session-disconnected',
+        ] as const;
+
+        for (const eventType of clientEventTypes) {
+            expect(() => createClientRecord(createClientSnapshot(1), {
+                event: {
+                    kind: 'client',
+                    event: { ...createClientEvent(1), eventType },
+                },
+            })).not.toThrow();
+        }
+        for (const eventType of groupEventTypes) {
+            expect(() => createGroupRecord(createGroupSnapshot(1), {
+                event: {
+                    kind: 'group',
+                    event: { ...createGroupEvent(1), eventType },
+                },
+            })).not.toThrow();
+        }
+    });
+
+    it('rejects malformed required exact-event fields from builders and storage', async () => {
+        const cases: readonly Readonly<{
+            name: string;
+            kind: 'client' | 'group';
+            mutate(event: ClientEvent | GroupEvent): unknown;
+            error: string;
+        }>[] = [
+            {
+                name: 'client event object',
+                kind: 'client',
+                mutate: () => undefined,
+                error: 'Client outbox event is required',
+            },
+            {
+                name: 'client event id',
+                kind: 'client',
+                mutate: (event) => ({ ...event, eventId: '' }),
+                error: 'Client outbox event eventId is required',
+            },
+            {
+                name: 'client event type',
+                kind: 'client',
+                mutate: (event) => ({ ...event, eventType: 'future-client-event' }),
+                error: 'Unknown client outbox event type: future-client-event',
+            },
+            {
+                name: 'client occurred time',
+                kind: 'client',
+                mutate: (event) => ({ ...event, occurredAtEpochMs: Number.POSITIVE_INFINITY }),
+                error: 'Invalid client outbox event occurred time',
+            },
+            {
+                name: 'client actor',
+                kind: 'client',
+                mutate: (event) => ({ ...event, actor: undefined }),
+                error: 'Client outbox event actor is required',
+            },
+            {
+                name: 'client empty actor',
+                kind: 'client',
+                mutate: (event) => ({ ...event, actor: {} }),
+                error: 'Client outbox event actor identity is required',
+            },
+            {
+                name: 'group event object',
+                kind: 'group',
+                mutate: () => undefined,
+                error: 'Group outbox event is required',
+            },
+            {
+                name: 'group event id',
+                kind: 'group',
+                mutate: (event) => ({ ...event, eventId: '' }),
+                error: 'Group outbox event eventId is required',
+            },
+            {
+                name: 'group event type',
+                kind: 'group',
+                mutate: (event) => ({ ...event, eventType: 'future-group-event' }),
+                error: 'Unknown group outbox event type: future-group-event',
+            },
+            {
+                name: 'group occurred time',
+                kind: 'group',
+                mutate: (event) => ({ ...event, occurredAtEpochMs: -1 }),
+                error: 'Invalid group outbox event occurred time',
+            },
+            {
+                name: 'group actor field',
+                kind: 'group',
+                mutate: (event) => ({
+                    ...event,
+                    actor: { serviceId: '' },
+                }),
+                error: 'Invalid group outbox event actor serviceId',
+            },
+        ];
+
+        for (const testCase of cases) {
+            const runtime = new FakeRuntimeStateRepository();
+            const snapshot = testCase.kind === 'client'
+                ? createClientSnapshot(1)
+                : createGroupSnapshot(1);
+            const valid = testCase.kind === 'client'
+                ? createClientRecord(snapshot as ClientSnapshot, {
+                    commandId: `malformed-builder-${testCase.name}`,
+                })
+                : createGroupRecord(snapshot as GroupSnapshot, {
+                    commandId: `malformed-builder-${testCase.name}`,
+                });
+            const validEvent = testCase.kind === 'client'
+                ? createClientEvent(1)
+                : createGroupEvent(1);
+            const malformedEvent = testCase.mutate(validEvent);
+            const create = () => testCase.kind === 'client'
+                ? createClientRecord(snapshot as ClientSnapshot, {
+                    commandId: `malformed-builder-${testCase.name}`,
+                    event: { kind: 'client', event: malformedEvent as ClientEvent },
+                })
+                : createGroupRecord(snapshot as GroupSnapshot, {
+                    commandId: `malformed-builder-${testCase.name}`,
+                    event: { kind: 'group', event: malformedEvent as GroupEvent },
+                });
+
+            expect(create).toThrow(testCase.error);
+            await insertRawOutboxRecord(runtime, {
+                ...valid,
+                event: {
+                    kind: testCase.kind,
+                    event: malformedEvent,
+                },
+            }, valid.outboxId);
+            await expect(
+                new StateMutationOutboxRepository(runtime).find(valid.outboxId),
+            ).rejects.toThrow(testCase.error);
+        }
+    });
+
+    it('rejects non-string exact-event scope identities even when the aggregate matches', () => {
+        const client = createClientRecord(createClientSnapshot(1));
+        const group = createGroupRecord(createGroupSnapshot(1));
+
+        expect(() => createStateMutationOutboxRecord({
+            ...client,
+            aggregateRef: {
+                ...client.aggregateRef,
+                applicationId: 7,
+            },
+            event: {
+                kind: 'client',
+                event: {
+                    ...createClientEvent(1),
+                    applicationId: 7,
+                },
+            },
+        } as never)).toThrow('Invalid client aggregate ref');
+        expect(() => createStateMutationOutboxRecord({
+            ...group,
+            aggregateRef: {
+                ...group.aggregateRef,
+                workspaceId: 7,
+            },
+            event: {
+                kind: 'group',
+                event: {
+                    ...createGroupEvent(1),
+                    workspaceId: 7,
+                },
+            },
+        } as never)).toThrow('Invalid group aggregate ref');
+    });
+
     it('rejects pending and internally inconsistent delivery transitions', async () => {
         const cases: readonly Readonly<{
             name: string;
@@ -668,6 +876,164 @@ describe('StateMutationOutboxWork', () => {
         expect(runtime.locks).toEqual([]);
     });
 
+    it('reuses the shared retry policy and rereads/recomputes after delivery CAS conflicts', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new StateMutationOutboxRepository(runtime);
+        const accepted = createClientSnapshot(1);
+        const stored = await repository.putOrLoad(createClientRecord(accepted));
+        const snapshots = [
+            createClientSnapshot(1),
+            createClientSnapshot(2),
+            createClientSnapshot(3),
+        ];
+        const readRevisions: number[] = [];
+        const publishedRevisions: number[] = [];
+        const deliveryIds: string[] = [];
+        const sleeps: number[] = [];
+        const timingEvents: RallarTimingEvent[] = [];
+        let forcedConflicts = 0;
+        runtime.beforeConditionalWrite = async (operation, namespace, key) => {
+            if (
+                operation === 'upsertIfRevision' &&
+                namespace === STATE_MUTATION_OUTBOX_NAMESPACE &&
+                forcedConflicts < 2
+            ) {
+                forcedConflicts += 1;
+                await advanceOutboxAsCompetingRetry(runtime, namespace, key);
+            }
+        };
+        const publisher = createStateSyncPublisher();
+        publisher.publishClientSnapshot.mockImplementation(async (
+            snapshot,
+            _senderId,
+            deliveryId,
+        ) => {
+            publishedRevisions.push(snapshot.stateRevision);
+            deliveryIds.push(deliveryId!);
+        });
+        let reads = 0;
+        const work = new StateMutationOutboxWork({
+            repository,
+            readClientSnapshot: async () => {
+                const snapshot = snapshots[reads++]!;
+                readRevisions.push(snapshot.stateRevision);
+                return snapshot;
+            },
+            readGroupSnapshot: async () => undefined,
+            stateSyncPublisher: publisher,
+            sleep: async (delayMs) => {
+                sleeps.push(delayMs);
+            },
+            timing: (event) => timingEvents.push(event),
+        });
+
+        await expect(work.drainPending()).resolves.toEqual({
+            scanned: 1,
+            delivered: 1,
+            retryable: 0,
+        });
+
+        expect(readRevisions).toEqual([1, 2, 3]);
+        expect(publishedRevisions).toEqual([1, 2, 3]);
+        expect(new Set(deliveryIds)).toEqual(new Set([
+            `${stored.record.outboxId}:client-state-sync:snapshot`,
+        ]));
+        expect(sleeps).toEqual([2, 8]);
+        expect(timingEvents.map((event) => ({
+            component: event.component,
+            operation: event.operation,
+            status: event.status,
+            attempt: event.details?.attempt,
+            delayMs: event.details?.delayMs,
+            outcome: event.details?.outcome,
+            terminal: event.details?.terminal,
+        }))).toEqual([
+            {
+                component: 'state-mutation-outbox',
+                operation: 'delivery-cas-attempt',
+                status: 'ok',
+                attempt: 1,
+                delayMs: 0,
+                outcome: 'conflicted',
+                terminal: false,
+            },
+            {
+                component: 'state-mutation-outbox',
+                operation: 'delivery-cas-attempt',
+                status: 'ok',
+                attempt: 2,
+                delayMs: 2,
+                outcome: 'conflicted',
+                terminal: false,
+            },
+            {
+                component: 'state-mutation-outbox',
+                operation: 'delivery-cas-attempt',
+                status: 'ok',
+                attempt: 3,
+                delayMs: 8,
+                outcome: 'delivered',
+                terminal: true,
+            },
+        ]);
+    });
+
+    it('throws the shared retry-exhausted error after three delivery CAS conflicts', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new StateMutationOutboxRepository(runtime);
+        const snapshot = createClientSnapshot(1);
+        await repository.putOrLoad(createClientRecord(snapshot));
+        const sleeps: number[] = [];
+        const timingEvents: RallarTimingEvent[] = [];
+        let forcedConflicts = 0;
+        let reads = 0;
+        runtime.beforeConditionalWrite = async (operation, namespace, key) => {
+            if (
+                operation === 'upsertIfRevision' &&
+                namespace === STATE_MUTATION_OUTBOX_NAMESPACE
+            ) {
+                forcedConflicts += 1;
+                await advanceOutboxAsCompetingRetry(runtime, namespace, key);
+            }
+        };
+        const work = new StateMutationOutboxWork({
+            repository,
+            readClientSnapshot: async () => {
+                reads += 1;
+                return snapshot;
+            },
+            readGroupSnapshot: async () => undefined,
+            stateSyncPublisher: createStateSyncPublisher(),
+            sleep: async (delayMs) => {
+                sleeps.push(delayMs);
+            },
+            timing: (event) => timingEvents.push(event),
+        });
+
+        let thrown: unknown;
+        try {
+            await work.drainPending();
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(thrown).toBeInstanceOf(RuntimeStateRetryExhaustedError);
+        expect(thrown).toMatchObject({
+            status: 503,
+            code: 'runtime-state-write-conflict',
+            attempts: 3,
+            cause: expect.any(RuntimeStateWriteConflictError),
+        });
+        expect(forcedConflicts).toBe(3);
+        expect(reads).toBe(3);
+        expect(sleeps).toEqual([2, 8]);
+        expect(timingEvents.map((event) => event.details)).toMatchObject([
+            { attempt: 1, delayMs: 0, outcome: 'conflicted', terminal: false },
+            { attempt: 2, delayMs: 2, outcome: 'conflicted', terminal: false },
+            { attempt: 3, delayMs: 8, outcome: 'exhausted', terminal: true },
+        ]);
+    });
+
     it('publishes a superseding compatible snapshot and the exact event carried by the intent', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const accepted = createClientSnapshot(1);
@@ -792,6 +1158,37 @@ describe('StateMutationOutboxWork', () => {
                     status: 'failed',
                     error: expect.stringContaining(
                         'Group presence summary outbox adapter is unavailable',
+                    ),
+                },
+            },
+            delivery: { status: 'retryable' },
+        });
+    });
+
+    it('keeps a requested topology effect retryable when its adapter is unavailable', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const snapshot = createGroupSnapshot(1);
+        await insertRecord(runtime, createGroupRecord(snapshot, {
+            effects: ['rtc-topology-recompute'],
+        }));
+        const work = new StateMutationOutboxWork({
+            repository: new StateMutationOutboxRepository(runtime),
+            readClientSnapshot: async () => undefined,
+            readGroupSnapshot: async () => snapshot,
+            stateSyncPublisher: createStateSyncPublisher(),
+        });
+
+        expect(await work.drainPending()).toEqual({
+            scanned: 1,
+            delivered: 0,
+            retryable: 1,
+        });
+        expect((await findOnlyRecord(runtime)).record).toMatchObject({
+            attempts: {
+                last: {
+                    status: 'failed',
+                    error: expect.stringContaining(
+                        'RTC topology outbox adapter is unavailable',
                     ),
                 },
             },
@@ -992,6 +1389,55 @@ describe('state mutation outbox middleware work', () => {
         expect(hasPending).toHaveBeenCalled();
     });
 
+    it('forwards injected retry sleep and timing through middleware construction', async () => {
+        const backing = new FakeRuntimeStateRepository();
+        const repository = new StateMutationOutboxRepository(backing);
+        const snapshot = createClientSnapshot(1);
+        await repository.putOrLoad(createClientRecord(snapshot));
+        const sleeps: number[] = [];
+        const timingEvents: RallarTimingEvent[] = [];
+        let forcedConflict = false;
+        backing.beforeConditionalWrite = async (operation, namespace, key) => {
+            if (
+                operation === 'upsertIfRevision' &&
+                namespace === STATE_MUTATION_OUTBOX_NAMESPACE &&
+                !forcedConflict
+            ) {
+                forcedConflict = true;
+                await advanceOutboxAsCompetingRetry(backing, namespace, key);
+            }
+        };
+        const runtime = createRallarMiddleware({
+            inbox: new InMemoryQueueBox(),
+            createAppGroupInboxService: () => ({}) as AppGroupInboxService,
+            createAppClientInboxService: () => ({}) as AppClientInboxService,
+            resilience: {
+                inbox: createResilienceStub(),
+                appOutbox: createResilienceStub(),
+            },
+            clientsRepository: {} as ClientStateRepository,
+            groupsRepository: {} as GroupStateRepository,
+            stateMutationOutbox: {
+                repository,
+                readClientSnapshot: async () => snapshot,
+                readGroupSnapshot: async () => undefined,
+                stateSyncPublisher: createStateSyncPublisher(),
+                sleep: async (delayMs) => {
+                    sleeps.push(delayMs);
+                },
+                timing: (event) => timingEvents.push(event),
+            },
+        });
+
+        await runtime.stateMutationOutboxWork!.drainPending();
+
+        expect(sleeps).toEqual([2]);
+        expect(timingEvents.map((event) => event.details?.outcome)).toEqual([
+            'conflicted',
+            'delivered',
+        ]);
+    });
+
     it('leaves drainer activation to the Task 3/4 mutation producer wiring', () => {
         const runtime = createRallarMiddleware({
             inbox: new InMemoryQueueBox(),
@@ -1106,6 +1552,37 @@ async function insertRawOutboxRecord(
         JSON.stringify(record),
         Number.MAX_SAFE_INTEGER,
     ));
+}
+
+async function advanceOutboxAsCompetingRetry(
+    runtime: FakeRuntimeStateRepository,
+    namespace: string,
+    key: string,
+): Promise<void> {
+    const current = await runtime.findEntry(namespace, key);
+    if (!current) {
+        throw new Error(`Missing competing outbox row: ${key}`);
+    }
+    const record = JSON.parse(current.value) as ReturnType<
+        typeof createStateMutationOutboxRecord
+    >;
+    await runtime.upsert(
+        namespace,
+        key,
+        JSON.stringify({
+            ...record,
+            attempts: {
+                count: record.attempts.count + 1,
+                last: {
+                    status: 'failed',
+                    attemptedAtEpochMs: 9_000 + record.attempts.count,
+                    error: 'competing delivery retry',
+                },
+            },
+            delivery: { status: 'retryable' },
+        }),
+        current.expireAtTimestamp,
+    );
 }
 
 async function findOnlyRecord(runtime: FakeRuntimeStateRepository) {

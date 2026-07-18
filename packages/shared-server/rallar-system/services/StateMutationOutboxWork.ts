@@ -1,5 +1,11 @@
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import {
+    DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
+    RuntimeStateRetryExhaustedError,
+    RuntimeStateWriteConflictError,
+    waitForRuntimeStateWriteRetry,
+} from '../../runtime-state/optimistic-runtime-state-write.ts';
 import type {
     StateMutationOutboxRecord,
     StoredStateMutationOutboxRecord,
@@ -9,9 +15,13 @@ import type { StateSyncPublisher } from '../state-sync-publisher.ts';
 import type {
     RtcTopologyStateMutationPublisher,
 } from './RtcTopologyOutboxWork.ts';
+import {
+    nowMs,
+    recordRallarTiming,
+    type RallarTimingSink,
+} from './timing.ts';
 
 const DEFAULT_STATE_MUTATION_OUTBOX_PAGE_SIZE = 32;
-const MAX_DELIVERY_CAS_CONFLICT_RETRIES = 3;
 const STATE_MUTATION_OUTBOX_SENDER_ID = 'state-mutation-outbox';
 
 export type StateMutationOutboxSnapshotObservation =
@@ -58,6 +68,7 @@ export type GroupPresenceSummaryWorkPublisher = Readonly<{
 }>;
 
 export type StateMutationEffectEnqueueResult = Readonly<{
+    /** The snapshot revision proven to own the downstream durable identity. */
     effectiveSnapshotRevision: number;
 }>;
 
@@ -69,6 +80,8 @@ export type StateMutationOutboxWorkOptions =
         groupPresenceSummaryPublisher?: GroupPresenceSummaryWorkPublisher;
         rtcTopologyPublisher?: RtcTopologyStateMutationPublisher;
         now?: () => number;
+        sleep?: (delayMs: number) => Promise<void>;
+        timing?: RallarTimingSink;
         senderId?: string;
         pageSize?: number;
     }>;
@@ -108,7 +121,7 @@ export class StateMutationOutboxWork implements StateMutationOutboxWorkLike {
                     continue;
                 }
                 processedOutboxIds.add(stored.record.outboxId);
-                if (await this.deliver(stored, 0)) {
+                if (await this.deliver(stored)) {
                     delivered += 1;
                 } else {
                     retryable += 1;
@@ -131,10 +144,66 @@ export class StateMutationOutboxWork implements StateMutationOutboxWorkLike {
     }
 
     private async deliver(
-        stored: StoredStateMutationOutboxRecord,
-        conflictAttempt: number,
+        initial: StoredStateMutationOutboxRecord,
     ): Promise<boolean> {
+        let stored = initial;
+        let lastConflict: RuntimeStateWriteConflictError | undefined;
+        for (
+            let attempt = 0;
+            attempt < DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS;
+            attempt += 1
+        ) {
+            const retryAttempt = attempt as Parameters<
+                typeof waitForRuntimeStateWriteRetry
+            >[0];
+            const delayMs = await waitForRuntimeStateWriteRetry(
+                retryAttempt,
+                { sleep: this.options.sleep },
+            );
+            const startedAt = nowMs();
+            const write = await this.deliverAttempt(stored);
+            const exhausted = write.status === 'conflict' &&
+                attempt + 1 === DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS;
+            recordStateMutationOutboxAttemptTiming(
+                this.options.timing,
+                stored.record,
+                this.senderId,
+                {
+                    attempt: attempt + 1,
+                    delayMs,
+                    outcome: exhausted ? 'exhausted' : write.status,
+                    terminal: write.status !== 'conflict' || exhausted ||
+                        write.current === null,
+                },
+                nowMs() - startedAt,
+            );
+            if (write.status === 'delivered') {
+                return true;
+            }
+            if (write.status === 'retryable') {
+                return false;
+            }
+
+            lastConflict = new RuntimeStateWriteConflictError();
+            if (exhausted) {
+                throw new RuntimeStateRetryExhaustedError(lastConflict);
+            }
+            if (!write.current) {
+                return false;
+            }
+            stored = write.current;
+        }
+
+        throw new RuntimeStateRetryExhaustedError(
+            lastConflict ?? new RuntimeStateWriteConflictError(),
+        );
+    }
+
+    private async deliverAttempt(
+        stored: StoredStateMutationOutboxRecord,
+    ): Promise<WriteStateMutationOutboxDeliveryPhaseResult> {
         const attemptedAtEpochMs = this.now();
+        let outcome: WriteStateMutationOutboxDeliveryPhaseInput['outcome'];
         try {
             const read = await readStateMutationOutboxDelivery(
                 stored,
@@ -150,43 +219,66 @@ export class StateMutationOutboxWork implements StateMutationOutboxWorkLike {
                 this.options.rtcTopologyPublisher,
                 this.senderId,
             );
-            const write = await writeStateMutationOutboxDelivery(
-                this.options.repository,
-                {
-                    stored,
-                    attemptedAtEpochMs,
-                    outcome: {
-                        status: 'delivered',
-                        deliveredSnapshotRevision,
-                    },
-                },
-            );
-            if (write.status === 'delivered') {
-                return true;
-            }
-            if (
-                write.status === 'conflict' &&
-                write.current &&
-                conflictAttempt + 1 < MAX_DELIVERY_CAS_CONFLICT_RETRIES
-            ) {
-                return await this.deliver(write.current, conflictAttempt + 1);
-            }
-            return false;
+            outcome = {
+                status: 'delivered',
+                deliveredSnapshotRevision,
+            };
         } catch (error) {
-            const write = await writeStateMutationOutboxDelivery(
-                this.options.repository,
-                {
-                    stored,
-                    attemptedAtEpochMs,
-                    outcome: {
-                        status: 'retryable',
-                        error: toErrorMessage(error),
-                    },
-                },
-            );
-            return write.status === 'delivered';
+            outcome = {
+                status: 'retryable',
+                error: toErrorMessage(error),
+            };
         }
+        return await writeStateMutationOutboxDelivery(
+            this.options.repository,
+            { stored, attemptedAtEpochMs, outcome },
+        );
     }
+}
+
+function recordStateMutationOutboxAttemptTiming(
+    timing: RallarTimingSink | undefined,
+    record: StateMutationOutboxRecord,
+    serviceId: string,
+    attempt: Readonly<{
+        attempt: number;
+        delayMs: number;
+        outcome:
+            | WriteStateMutationOutboxDeliveryPhaseResult['status']
+            | 'exhausted';
+        terminal: boolean;
+    }>,
+    durationMs: number,
+): void {
+    const outcome = attempt.outcome === 'conflict'
+        ? 'conflicted'
+        : attempt.outcome;
+    recordRallarTiming(
+        timing,
+        {
+            component: 'state-mutation-outbox',
+            operation: 'delivery-cas-attempt',
+            serviceId,
+            requestId: record.commandId,
+            applicationId: record.aggregateRef.applicationId,
+            workspaceId: record.aggregateRef.workspaceId,
+            principalId: record.kind === 'client'
+                ? record.aggregateRef.principalId
+                : undefined,
+            groupId: record.kind === 'group'
+                ? record.aggregateRef.groupId
+                : undefined,
+            details: {
+                outboxId: record.outboxId,
+                attempt: attempt.attempt,
+                delayMs: attempt.delayMs,
+                outcome,
+                terminal: attempt.terminal,
+            },
+        },
+        'ok',
+        durationMs,
+    );
 }
 
 export async function readStateMutationOutboxDelivery(
