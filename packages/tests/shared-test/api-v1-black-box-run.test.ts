@@ -11,6 +11,7 @@ import {
     readBoundedLogTail,
     toApiV1BlackBoxEnvironment,
     toClusterRecipeMatrixCommand,
+    toRecipeMatrixCommands,
     toManagedApiServerPlans,
     toApiV1ServerCommand,
     waitForManagedApiReady,
@@ -200,6 +201,23 @@ describe('api-v1 black-box run helper', () => {
         });
     });
 
+    it('selects the opt-in medium-scale cluster profile without the ordinary profile', () => {
+        expect(parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--secondary-port=18081',
+            '--cluster-only',
+            '--cluster-profile=api-v1-black-box-medium-scale',
+        ])).toMatchObject({
+            backend: 'postgres',
+            secondaryPort: 18081,
+            clusterOnly: true,
+            clusterProfile: 'api-v1-black-box-medium-scale',
+        });
+
+        expect(() => parseApiV1BlackBoxArgs(['--cluster-only']))
+            .toThrow(/cluster-only.*secondary-port/i);
+    });
+
     it.each([
         ['same as the primary port', ['--port=18080', '--secondary-port=18080']],
         ['outside the port range', ['--secondary-port=65536']],
@@ -374,6 +392,41 @@ describe('api-v1 black-box run helper', () => {
             '--profile=api-v1-black-box-cluster',
             '--require-gates',
             '--artifact-dir=/tmp/api-v1-bb/cluster',
+        ]);
+    });
+
+    it('plans only the selected cluster profile under the cluster artifact directory', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--secondary-port=18081',
+            '--cluster-only',
+            '--cluster-profile=api-v1-black-box-medium-scale',
+        ]);
+
+        expect(toRecipeMatrixCommands(options, '/tmp/api-v1-bb')).toEqual([
+            [
+                'deno',
+                'run',
+                '-A',
+                'packages/shared-test/black-box-runner/recipe-matrix.mts',
+                '--profile=api-v1-black-box-medium-scale',
+                '--require-gates',
+                '--artifact-dir=/tmp/api-v1-bb/cluster',
+            ],
+        ]);
+    });
+
+    it('preserves the ordinary profile before the default two-server cluster profile', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--secondary-port=18081',
+        ]);
+
+        expect(toRecipeMatrixCommands(options, '/tmp/api-v1-bb').map(command =>
+            command.find(argument => argument.startsWith('--profile='))
+        )).toEqual([
+            '--profile=api-v1-black-box',
+            '--profile=api-v1-black-box-cluster',
         ]);
     });
 

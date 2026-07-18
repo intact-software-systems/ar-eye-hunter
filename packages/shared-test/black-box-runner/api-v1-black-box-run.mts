@@ -7,6 +7,8 @@ export type ApiV1BlackBoxOptions = Readonly<{
     port: number
     secondaryPort?: number
     profile: string
+    clusterProfile: string
+    clusterOnly: boolean
     artifactDir: string
     runId: string
     requireGates: boolean
@@ -113,6 +115,11 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
     if (recipesOnly && secondaryPort !== undefined) {
         throw new Error('--secondary-port is not available with --recipes-only.')
     }
+    const clusterOnly = values.get('--cluster-only') === true
+    const clusterProfile = String(values.get('--cluster-profile') ?? API_V1_CLUSTER_MATRIX_PROFILE)
+    if ((clusterOnly || values.has('--cluster-profile')) && secondaryPort === undefined) {
+        throw new Error('--cluster-only and --cluster-profile require --secondary-port.')
+    }
 
     return {
         backend,
@@ -121,6 +128,8 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
         profile: String(values.get('--profile') ?? (
             recipesOnly ? 'api-v1-black-box-recipes' : 'api-v1-black-box'
         )),
+        clusterProfile,
+        clusterOnly,
         artifactDir,
         runId,
         requireGates: values.get('--no-require-gates') !== true,
@@ -248,9 +257,21 @@ export function toClusterRecipeMatrixCommand(
         'run',
         '-A',
         'packages/shared-test/black-box-runner/recipe-matrix.mts',
-        `--profile=${API_V1_CLUSTER_MATRIX_PROFILE}`,
+        `--profile=${options.clusterProfile}`,
         ...(options.requireGates ? ['--require-gates'] : []),
         `--artifact-dir=${artifactDir.replace(/\/+$/, '')}/cluster`,
+    ]
+}
+
+export function toRecipeMatrixCommands(
+    options: ApiV1BlackBoxOptions,
+    artifactDir: string,
+): readonly (readonly string[])[] {
+    return [
+        ...(options.clusterOnly ? [] : [toRecipeMatrixCommand(options, artifactDir)]),
+        ...(options.secondaryPort === undefined
+            ? []
+            : [toClusterRecipeMatrixCommand(options, artifactDir)]),
     ]
 }
 
@@ -719,12 +740,8 @@ async function runRecipeMatrix(
     env: Record<string, string>,
     artifactDir: string,
 ): Promise<void> {
-    await runCommand(toRecipeMatrixCommand(options, artifactDir), env)
-    if (options.secondaryPort !== undefined) {
-        await runCommand(
-            toClusterRecipeMatrixCommand(options, artifactDir),
-            env,
-        )
+    for (const command of toRecipeMatrixCommands(options, artifactDir)) {
+        await runCommand(command, env)
     }
 }
 

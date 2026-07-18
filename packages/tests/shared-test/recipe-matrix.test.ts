@@ -401,6 +401,73 @@ describe('black-box runner recipe matrix', () => {
         expect(JSON.stringify(recipe)).toContain('topology/reconfigure');
     });
 
+    it('defines the isolated 100-client five-group medium-scale state churn gate', () => {
+        const { entries } = readMatrix();
+        const entry = entries.find(candidate =>
+            candidate.id === 'api-v1-state-medium-scale-churn'
+        );
+
+        expect(entry).toMatchObject({
+            id: 'api-v1-state-medium-scale-churn',
+            category: 'api-v1-black-box',
+            mode: 'run',
+            profiles: ['api-v1-black-box-medium-scale'],
+            expectedExitCode: 0,
+        });
+        expect(entry?.requires?.httpServices).toHaveLength(2);
+        expect(entry?.requires?.playwright).not.toBe(true);
+
+        const recipe = readRecipe(entry!.recipe);
+        const steps = recipe.steps as Array<Record<string, unknown>>;
+        const parallel = steps.find(step => step.name === 'runMediumScaleStateChurn') as {
+            type?: string;
+            maxConcurrency?: number;
+            groups?: Array<{ name?: string; steps?: Array<Record<string, unknown>> }>;
+        };
+        expect(parallel.type).toBe('parallel');
+        expect(parallel.maxConcurrency).toBe(15);
+        expect(parallel.groups).toHaveLength(15);
+
+        const clientGroups = parallel.groups!.filter(group =>
+            group.name?.startsWith('client-lane-')
+        );
+        expect(clientGroups).toHaveLength(10);
+        const clientLoops = clientGroups.map(group => group.steps?.find(step => step.type === 'loop'));
+        expect(clientLoops.map(loop => loop?.count)).toEqual(Array(10).fill(10));
+        expect(clientLoops.reduce((total, loop) => total + Number(loop?.count), 0)).toBe(100);
+
+        const controlGroups = parallel.groups!.filter(group =>
+            group.name?.startsWith('group-control-lane-')
+        );
+        expect(controlGroups).toHaveLength(5);
+        expect(controlGroups.map(group => group.steps?.find(step => step.type === 'loop')?.count))
+            .toEqual(Array(5).fill(10));
+
+        const recipeText = JSON.stringify(recipe);
+        const groupIds = ['groupOneId', 'groupTwoId', 'groupThreeId', 'groupFourId', 'groupFiveId'];
+        groupIds.forEach(groupId => {
+            expect(recipeText).toContain(`{${groupId}}/members/`);
+            expect(recipeText).toContain(`{${groupId}}/sessions/`);
+            expect(recipeText).toContain(`{${groupId}}/topology/config`);
+            expect(recipeText).toContain(`{${groupId}}/topology/reconfigure`);
+            expect(recipeText).toContain(`groups/{${groupId}}`);
+            expect(recipeText).toContain(`final${groupId[0].toUpperCase()}${groupId.slice(1)}CausalRevision`);
+        });
+
+        clientLoops.forEach(loop => {
+            const flow = JSON.stringify(loop);
+            expect(flow).toContain('/api/auth/register');
+            expect(flow).toContain('/api/auth/login');
+            expect(flow).toContain('/principal');
+            expect(flow).toContain('/instances/');
+            expect(flow).toContain('/sessions/');
+            expect(flow).toContain('/heartbeat');
+            expect(flow).toContain('/disconnect');
+            expect(flow).toContain('x-forwarded-for');
+            expect(flow).toMatch(/10\.\d+\.\{loop\.iteration\}\.1/);
+        });
+    });
+
     it('advertises the API-v1 profile in recipe-matrix CLI usage', () => {
         const source = readFileSync(path.join(runnerRoot, 'recipe-matrix.mts'), 'utf8');
 

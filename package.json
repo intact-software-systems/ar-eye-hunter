@@ -72,6 +72,7 @@
     "test:api-v1:black-box": "npm run test:api-v1:black-box:postgres",
     "test:api-v1:black-box:recipes": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:recipes",
     "test:api-v1:black-box:postgres": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres",
+    "test:api-v1:black-box:postgres:medium-scale": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:medium-scale",
     "test:api-v1:black-box:memory": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:memory",
     "test:shared-black-box:quick": "npm run test:shared-black-box:matrix:quick",
     "test:shared-black-box:browser:dry": "npm --workspace @ar-eye-hunter/shared-test run bb:browser:validate:dry",
