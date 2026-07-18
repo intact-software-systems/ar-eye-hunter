@@ -228,6 +228,11 @@ export class AppInboxService {
     ): Promise<Either<string, R>> {
         const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
         const key: Key = this.toKey(wireEnqueue);
+        const receivedCommandIdentity = enforceCommandIdentity
+            ? serializeCanonicalJsonWire(
+                toLogicalAppInboxCommand(wireEnqueue),
+            )
+            : undefined;
 
         return await timeRallarAsync(
             this.timing,
@@ -253,7 +258,14 @@ export class AppInboxService {
                     async () => await enqueuer(key, wireEnqueue),
                 );
                 if (entry && enforceCommandIdentity) {
-                    await assertMatchingAppInboxCommand(wireEnqueue, entry);
+                    if (!receivedCommandIdentity) {
+                        throw new Error('App inbox command identity was not captured');
+                    }
+                    await assertMatchingAppInboxCommand(
+                        entry,
+                        wireEnqueue,
+                        receivedCommandIdentity,
+                    );
                 }
 
                 if (!waitForCompletion) {
@@ -605,28 +617,34 @@ function toTerminalAppInboxError(error: unknown): unknown | undefined {
     return undefined;
 }
 
-async function assertMatchingAppInboxCommand<V>(
-    incoming: AppInboxEnqueueInput<V>,
+async function assertMatchingAppInboxCommand(
     entry: ResourceEntry,
+    incoming: AppInboxEnqueueInput<unknown>,
+    receivedCommandIdentity: string,
 ): Promise<void> {
-    const receivedCommandHash = await hashStateMutationCommand(
-        toLogicalAppInboxCommand(incoming),
-    );
     let existing: AppInboxEnqueueInput<unknown>;
     try {
         const message = JSON.parse(entry.resource) as ALMessage;
         existing = JSON.parse(message.payload.resource) as AppInboxEnqueueInput<unknown>;
     } catch {
+        const receivedCommandHash = await hashStateMutationCommand(
+            toLogicalAppInboxCommand(incoming),
+        );
         throw new AppInboxIdempotencyConflictError(
             entry.key.resourceId,
             'invalid-existing-command',
             receivedCommandHash,
         );
     }
-    const existingCommandHash = await hashStateMutationCommand(
-        toLogicalAppInboxCommand(existing),
+    const normalizedExisting = toJsonWireAppInboxEnqueue(existing);
+    const existingCommandIdentity = serializeCanonicalJsonWire(
+        toLogicalAppInboxCommand(normalizedExisting),
     );
-    if (existingCommandHash !== receivedCommandHash) {
+    if (existingCommandIdentity !== receivedCommandIdentity) {
+        const [existingCommandHash, receivedCommandHash] = await Promise.all([
+            hashStateMutationCommand(toLogicalAppInboxCommand(normalizedExisting)),
+            hashStateMutationCommand(toLogicalAppInboxCommand(incoming)),
+        ]);
         throw new AppInboxIdempotencyConflictError(
             entry.key.resourceId,
             existingCommandHash,
@@ -693,7 +711,7 @@ function toJsonWireValue(
         if (prototype !== Object.prototype && prototype !== null) {
             rejectJsonWire(path, 'must contain only plain JSON objects');
         }
-        const result: Record<string, unknown> = {};
+        const result = Object.create(null) as Record<string, unknown>;
         const descriptors = Object.getOwnPropertyDescriptors(value);
         for (const key of Reflect.ownKeys(descriptors)) {
             if (typeof key === 'symbol') rejectJsonWire(path, 'contains a symbol key');
@@ -703,11 +721,16 @@ function toJsonWireValue(
                 rejectJsonWire(`${path}.${key}`, 'contains an accessor');
             }
             if (descriptor.value === undefined) continue;
-            result[key] = toJsonWireValue(
-                descriptor.value,
-                `${path}.${key}`,
-                ancestors,
-            );
+            Object.defineProperty(result, key, {
+                value: toJsonWireValue(
+                    descriptor.value,
+                    `${path}.${key}`,
+                    ancestors,
+                ),
+                enumerable: true,
+                configurable: true,
+                writable: true,
+            });
         }
         return result;
     } finally {
@@ -727,6 +750,26 @@ function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>): Reado
         type: enqueue.type,
         data: enqueue.data,
     };
+}
+
+function serializeCanonicalJsonWire(value: unknown): string {
+    if (value === null || typeof value !== 'object') {
+        return JSON.stringify(value) as string;
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(serializeCanonicalJsonWire).join(',')}]`;
+    }
+    const entries = Object.keys(value)
+        .sort(compareJsonWireKeys)
+        .map((key) => {
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            return `${JSON.stringify(key)}:${serializeCanonicalJsonWire(descriptor?.value)}`;
+        });
+    return `{${entries.join(',')}}`;
+}
+
+function compareJsonWireKeys(left: string, right: string): number {
+    return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function isTerminalDomainError(error: unknown): error is Readonly<{

@@ -345,12 +345,7 @@ export function validateClientMutationCommand(
                 input.expiresAtEpochMs,
                 'Client heartbeat expiresAtEpochMs',
             );
-            const heartbeatAt = input.lastHeartbeatAtEpochMs as number | null;
-            const heartbeatExpiresAt = input.expiresAtEpochMs as number | null;
-            if (heartbeatAt !== null && heartbeatExpiresAt !== null &&
-                heartbeatExpiresAt < heartbeatAt) {
-                reject('Client heartbeat expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
-            }
+            validateHeartbeatTimestampOrder(input);
             return;
         }
         case 'disconnectSession':
@@ -361,17 +356,7 @@ export function validateClientMutationCommand(
             for (const field of DISCONNECT_TIMESTAMP_FIELDS) {
                 requireNullableTimestamp(input[field], `Client disconnect ${field}`);
             }
-            const disconnectedAt = input.disconnectedAtEpochMs as number | null;
-            const disconnectHeartbeatAt = input.lastHeartbeatAtEpochMs as number | null;
-            const disconnectExpiresAt = input.expiresAtEpochMs as number | null;
-            if (disconnectedAt !== null && disconnectHeartbeatAt !== null &&
-                disconnectedAt < disconnectHeartbeatAt) {
-                reject('Client disconnect disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs');
-            }
-            if (disconnectExpiresAt !== null && disconnectHeartbeatAt !== null &&
-                disconnectExpiresAt < disconnectHeartbeatAt) {
-                reject('Client disconnect expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
-            }
+            validateDisconnectTimestampOrder(input);
             return;
         }
         case 'expireSession':
@@ -501,6 +486,7 @@ export function validateClientMutationRequest(
             for (const field of CONNECT_TIMESTAMP_FIELDS) {
                 requireOptionalTimestamp(value[field], `Client connect ${field}`);
             }
+            validateConnectTimestampOrder(value);
             return;
         case 'heartbeatSession':
             requireAllowedKeys(
@@ -523,6 +509,7 @@ export function validateClientMutationRequest(
                 value.expiresAtEpochMs,
                 'Client heartbeat expiresAtEpochMs',
             );
+            validateHeartbeatTimestampOrder(value);
             return;
         case 'disconnectSession':
             requireAllowedKeys(
@@ -535,6 +522,7 @@ export function validateClientMutationRequest(
             for (const field of DISCONNECT_TIMESTAMP_FIELDS) {
                 requireOptionalTimestamp(value[field], `Client disconnect ${field}`);
             }
+            validateDisconnectTimestampOrder(value);
             return;
     }
 }
@@ -1420,20 +1408,50 @@ const RAW_DISCONNECT_REQUEST_KEYS = [
 function validateConnectTimestampOrder(
     input: Readonly<Record<string, unknown>>,
 ): void {
-    const authenticatedAt = input.authenticatedAtEpochMs as number | null;
-    const connectedAt = input.connectedAtEpochMs as number | null;
-    const heartbeatAt = input.lastHeartbeatAtEpochMs as number | null;
-    const expiresAt = input.expiresAtEpochMs as number | null;
-    if (authenticatedAt !== null && connectedAt !== null &&
+    const authenticatedAt = timestampValue(input.authenticatedAtEpochMs);
+    const connectedAt = timestampValue(input.connectedAtEpochMs);
+    const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
+    const expiresAt = timestampValue(input.expiresAtEpochMs);
+    if (authenticatedAt !== undefined && connectedAt !== undefined &&
         authenticatedAt > connectedAt) {
         reject('Client connect authenticatedAtEpochMs must not follow connectedAtEpochMs');
     }
-    if (connectedAt !== null && heartbeatAt !== null && connectedAt > heartbeatAt) {
+    if (connectedAt !== undefined && heartbeatAt !== undefined &&
+        connectedAt > heartbeatAt) {
         reject('Client connect lastHeartbeatAtEpochMs must not predate connectedAtEpochMs');
     }
-    if (heartbeatAt !== null && expiresAt !== null && heartbeatAt > expiresAt) {
+    if (heartbeatAt !== undefined && expiresAt !== undefined && heartbeatAt > expiresAt) {
         reject('Client connect expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
     }
+}
+
+function validateHeartbeatTimestampOrder(
+    input: Readonly<Record<string, unknown>>,
+): void {
+    const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
+    const expiresAt = timestampValue(input.expiresAtEpochMs);
+    if (heartbeatAt !== undefined && expiresAt !== undefined && expiresAt < heartbeatAt) {
+        reject('Client heartbeat expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
+    }
+}
+
+function validateDisconnectTimestampOrder(
+    input: Readonly<Record<string, unknown>>,
+): void {
+    const disconnectedAt = timestampValue(input.disconnectedAtEpochMs);
+    const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
+    const expiresAt = timestampValue(input.expiresAtEpochMs);
+    if (disconnectedAt !== undefined && heartbeatAt !== undefined &&
+        disconnectedAt < heartbeatAt) {
+        reject('Client disconnect disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs');
+    }
+    if (expiresAt !== undefined && heartbeatAt !== undefined && expiresAt < heartbeatAt) {
+        reject('Client disconnect expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
+    }
+}
+
+function timestampValue(value: unknown): number | undefined {
+    return typeof value === 'number' ? value : undefined;
 }
 
 function reject(message: string): never {

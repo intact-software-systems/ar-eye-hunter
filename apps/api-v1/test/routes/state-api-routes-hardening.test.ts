@@ -69,14 +69,41 @@ Deno.test('malformed client REST mutations return terminal 400 before inbox enqu
       body: { generationId: { forged: true } },
     },
     {
+      method: 'PUT',
+      path: `${base}/instances/browser/sessions/alice-session`,
+      body: {
+        generationId: 'generation-1',
+        connectedAtEpochMs: 2,
+        lastHeartbeatAtEpochMs: 1,
+      },
+    },
+    {
       method: 'POST',
       path: `${base}/instances/browser/sessions/alice-session/heartbeat`,
       body: { generationId: 'generation-1', lastHeartbeatAtEpochMs: -1 },
     },
     {
       method: 'POST',
+      path: `${base}/instances/browser/sessions/alice-session/heartbeat`,
+      body: {
+        generationId: 'generation-1',
+        lastHeartbeatAtEpochMs: 2,
+        expiresAtEpochMs: 1,
+      },
+    },
+    {
+      method: 'POST',
       path: `${base}/instances/browser/sessions/alice-session/disconnect`,
       body: {},
+    },
+    {
+      method: 'POST',
+      path: `${base}/instances/browser/sessions/alice-session/disconnect`,
+      body: {
+        generationId: 'generation-1',
+        disconnectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 2,
+      },
     },
   ] as const;
 
@@ -93,6 +120,65 @@ Deno.test('malformed client REST mutations return terminal 400 before inbox enqu
     assert.match((await response.json()).error, /Client|client/);
   }
   assert.equal(processCalls.length, 0);
+});
+
+Deno.test('client REST lifecycle accepts equal causal timestamp boundaries', async () => {
+  const processCalls: unknown[] = [];
+  const deps = createClientRouteDeps({
+    session: createAuthSession('alice'),
+    clientService: {},
+    processClientAppInbox: (input) => {
+      processCalls.push(input);
+      return Promise.resolve(createClientSnapshot('alice'));
+    },
+  });
+  const app = createClientRouteApp(deps);
+  const session = '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/instances/browser/sessions/alice-session';
+  const cases = [
+    {
+      method: 'PUT',
+      path: session,
+      body: {
+        generationId: 'generation-connect',
+        authenticatedAtEpochMs: 1,
+        connectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: 1,
+      },
+    },
+    {
+      method: 'POST',
+      path: `${session}/heartbeat`,
+      body: {
+        generationId: 'generation-heartbeat',
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: 1,
+      },
+    },
+    {
+      method: 'POST',
+      path: `${session}/disconnect`,
+      body: {
+        generationId: 'generation-disconnect',
+        disconnectedAtEpochMs: 1,
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: 1,
+      },
+    },
+  ] as const;
+
+  for (const testCase of cases) {
+    const response = await app.request(testCase.path, {
+      method: testCase.method,
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(testCase.body),
+    });
+    assert.equal(response.status, 200, testCase.path);
+  }
+  assert.equal(processCalls.length, 3);
 });
 
 Deno.test('client REST mutation preserves explicit terminal idempotency 409', async () => {

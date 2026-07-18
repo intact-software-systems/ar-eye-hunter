@@ -177,6 +177,124 @@ describe('AppInboxService', () => {
         expect(handler).toHaveBeenCalledOnce();
     });
 
+    it('preserves an own __proto__ JSON key across first write, reordered replay, and conflict identity', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const handler = vi.fn((data: Readonly<Record<string, unknown>>) =>
+            Promise.resolve({ accepted: data })
+        );
+        const service = new AppInboxService(
+            reader,
+            queue as never,
+            results as never,
+            'server-12345678',
+            SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            undefined,
+            {
+                waitMaxElapsedMsecs: 5_000,
+                waitRetryIntervalMsecs: 1,
+                waitMaxRetryIntervalMsecs: 1,
+                waitJitterRatio: 0,
+            },
+        );
+        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
+        const firstData = JSON.parse(
+            '{"principalId":"alice","request":{"requestId":"proto-command","metadata":{"alpha":1,"__proto__":{"flag":"first"}}}}',
+        ) as Readonly<Record<string, unknown>>;
+        const input = {
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            resourceId: 'proto-command',
+            contextId: 'app:workspace:alice',
+            senderId: 'alice',
+            data: firstData,
+        } as const;
+
+        const pending = service.processEntryUntilCompletion(input);
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        const first = await pending;
+        const reorderedData = JSON.parse(
+            '{"request":{"metadata":{"__proto__":{"flag":"first"},"alpha":1},"requestId":"proto-command"},"principalId":"alice"}',
+        ) as Readonly<Record<string, unknown>>;
+
+        await expect(service.processEntryUntilCompletion({
+            ...input,
+            data: reorderedData,
+        })).resolves.toEqual(first);
+        const changedData = JSON.parse(
+            '{"principalId":"alice","request":{"requestId":"proto-command","metadata":{"alpha":1,"__proto__":{"flag":"changed"}}}}',
+        ) as Readonly<Record<string, unknown>>;
+        await expect(service.processEntryUntilCompletion({
+            ...input,
+            data: changedData,
+        })).rejects.toMatchObject({ status: 409 });
+
+        expect(handler).toHaveBeenCalledOnce();
+        const handled = handler.mock.calls[0]?.[0] as {
+            request: { metadata: Record<string, unknown> };
+        };
+        const metadata = handled.request.metadata;
+        expect(Object.hasOwn(metadata, '__proto__')).toBe(true);
+        expect(metadata.__proto__).toEqual({ flag: 'first' });
+        expect([Object.prototype, null]).toContain(Object.getPrototypeOf(metadata));
+        expect(({} as Record<string, unknown>).flag).toBeUndefined();
+        const stored = readEnqueuedData<{
+            request: { metadata: Record<string, unknown> };
+        }>(readOnlyEntry(queue)!);
+        expect(Object.hasOwn(stored.request.metadata, '__proto__')).toBe(true);
+        expect(stored.request.metadata.__proto__).toEqual({ flag: 'first' });
+    });
+
+    it('rejects unsafe first-request JSON wire values before leaving any queue row', async () => {
+        const queue = new TestResourceInbox();
+        const reader = new InboxQueueReader(queue);
+        const results = new TestResourceInboxResults();
+        const handler = vi.fn(() => Promise.resolve({ accepted: true }));
+        const service = new AppInboxService(
+            reader,
+            queue as never,
+            results as never,
+            'server-12345678',
+            SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+        );
+        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
+        let getterCalls = 0;
+        const accessor: Record<string, unknown> = {};
+        Object.defineProperty(accessor, 'value', {
+            enumerable: true,
+            get: () => {
+                getterCalls += 1;
+                return 'unsafe';
+            },
+        });
+        const cycle: Record<string, unknown> = {};
+        cycle.self = cycle;
+        const unsafeValues = [
+            accessor,
+            cycle,
+            1n,
+            () => undefined,
+            Number.NaN,
+            [undefined],
+        ] as const;
+
+        for (const [index, unsafe] of unsafeValues.entries()) {
+            await expect(service.processEntryUntilCompletion({
+                type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                resourceId: `unsafe-first-${index}`,
+                contextId: 'app:workspace:alice',
+                senderId: 'alice',
+                data: { unsafe },
+            } as never)).rejects.toThrow(/JSON wire/u);
+            expect(await readEntries(queue)).toHaveLength(0);
+        }
+        expect(getterCalls).toBe(0);
+        expect(handler).not.toHaveBeenCalled();
+    });
+
     it('rejects different semantic content behind the same real queue id while replaying reordered equal content', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
