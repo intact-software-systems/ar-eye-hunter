@@ -106,6 +106,32 @@ describe('runtime-state conditional writes', () => {
         },
     );
 
+    it('rejects negative-zero conditional-write revisions while preserving zero', async () => {
+        const negativeZeroRepository = new PSqlRuntimeStateRepository(
+            createResultSql(-0),
+        );
+        const zeroRepository = new PSqlRuntimeStateRepository(
+            createResultSql(0),
+        );
+
+        await expect(
+            negativeZeroRepository.insertIfAbsent(
+                'state',
+                'key',
+                'value',
+                NEVER_EXPIRE_AT_TIMESTAMP,
+            ),
+        ).rejects.toThrow(/Invalid runtime state revision/u);
+        await expect(
+            zeroRepository.insertIfAbsent(
+                'state',
+                'key',
+                'value',
+                NEVER_EXPIRE_AT_TIMESTAMP,
+            ),
+        ).resolves.toEqual({ status: 'applied', revision: 0 });
+    });
+
     it('rejects an unsafe revision when loading a stored entry', async () => {
         const repository = new PSqlRuntimeStateRepository(
             createResultSql({
@@ -115,6 +141,23 @@ describe('runtime-state conditional writes', () => {
                 updated_ts: '2026-07-18T00:00:00.000Z',
                 expire_at_ts: '9999-12-31T23:59:59.999Z',
                 revision: '9007199254740992',
+            }),
+        );
+
+        await expect(repository.findEntry('state', 'key')).rejects.toThrow(
+            /Invalid runtime state revision/u,
+        );
+    });
+
+    it('rejects a negative-zero revision when loading a stored entry', async () => {
+        const repository = new PSqlRuntimeStateRepository(
+            createResultSql({
+                store_namespace: 'state',
+                store_key: 'key',
+                store_value: 'value',
+                updated_ts: '2026-07-18T00:00:00.000Z',
+                expire_at_ts: '9999-12-31T23:59:59.999Z',
+                revision: -0,
             }),
         );
 

@@ -57,6 +57,65 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
         expect(endCalls).toBe(1);
     });
 
+    it('closes acquired clients and preserves an acquisition failure when cleanup throws synchronously', async () => {
+        const setupFailure = new Error('second client failed');
+        const cleanupFailure = new Error('cleanup query threw synchronously');
+        let createCalls = 0;
+        let endCalls = 0;
+        const firstClient = createLifecycleSql(
+            () => {
+                throw cleanupFailure;
+            },
+            () => {
+                endCalls += 1;
+                return Promise.resolve();
+            },
+        );
+
+        await expect(
+            withPostgresClients(
+                'synchronous-cleanup-acquisition-failure',
+                2,
+                async () => {
+                    createCalls += 1;
+                    if (createCalls === 1) {
+                        return firstClient;
+                    }
+                    throw setupFailure;
+                },
+                async () => {},
+            ),
+        ).rejects.toBe(setupFailure);
+        expect(createCalls).toBe(2);
+        expect(endCalls).toBe(1);
+    });
+
+    it('aggregates a cleanup-only synchronous query failure after closing clients', async () => {
+        const cleanupFailure = new Error('cleanup query threw synchronously');
+        let endCalls = 0;
+        const client = createLifecycleSql(
+            () => {
+                throw cleanupFailure;
+            },
+            () => {
+                endCalls += 1;
+                return Promise.resolve();
+            },
+        );
+
+        await expect(
+            withPostgresClients(
+                'synchronous-cleanup-only-failure',
+                1,
+                async () => client,
+                async () => undefined,
+            ),
+        ).rejects.toMatchObject({
+            errors: [cleanupFailure],
+        });
+        expect(endCalls).toBe(1);
+    });
+
     postgresIt(
         'allows one independent writer to update and delete each revision',
         async () => {
@@ -356,10 +415,12 @@ async function cleanupRuntimeState(
     const failures: unknown[] = [];
     if (cleanupSql) {
         const deleteResult = await Promise.allSettled([
-            cleanupSql`
-                delete from runtime_state_store
-                where store_namespace = ${namespace}
-            `,
+            Promise.resolve().then(
+                () => cleanupSql`
+                    delete from runtime_state_store
+                    where store_namespace = ${namespace}
+                `,
+            ),
         ]);
         if (deleteResult[0].status === 'rejected') {
             failures.push(deleteResult[0].reason);

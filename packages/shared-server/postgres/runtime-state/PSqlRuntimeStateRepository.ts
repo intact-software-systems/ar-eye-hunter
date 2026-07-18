@@ -380,7 +380,11 @@ function parseRuntimeStateRevision(value: number | string): number {
     }
 
     const revision = typeof value === 'number' ? value : Number(value);
-    if (!Number.isSafeInteger(revision) || revision < 0) {
+    if (
+        !Number.isSafeInteger(revision) ||
+        revision < 0 ||
+        Object.is(revision, -0)
+    ) {
         throw new Error(`Invalid runtime state revision: ${value}`);
     }
 
