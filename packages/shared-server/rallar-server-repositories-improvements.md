@@ -1165,6 +1165,36 @@ Remaining risk:
 - The multi-process Postgres proof is intentionally opt-in because expiry reconciliation scans global runtime state. Run
   it against a migrated, disposable Postgres database rather than a shared development database.
 
+## 11. Convergent Write Review Supersedes Lock-Based Hardening
+
+The July 2026 api-v1 database-writing review supersedes the advisory-lock
+recommendation above as the target architecture. The implementation-status and
+verification bullets remain accurate history, but future work must not copy or
+extend those locks.
+
+Required direction:
+
+- add a required-for-authoritative-state conditional repository capability with
+  conditional insert, expected-revision compare-and-set, and expected-revision
+  conditional delete, implemented by Postgres and test repositories;
+- retry from fresh reads with a bounded budget and rerun authorization, policy,
+  capacity, lifecycle, and invariant checks on every attempt;
+- make client and group aggregate revisions the compare-and-set guard for
+  atomic multi-row mutations;
+- make session and presence lifecycle observations causal so stale heartbeat,
+  disconnect, and expiry work cannot overwrite or delete a newer generation;
+- replace topology, publication-index, and RTT advisory locks with conditional
+  acceptance and immutable insert-if-absent claims; and
+- replace tests that prove lock waiting with tests that prove conflict,
+  rebasing, retry exhaustion, stale-expiry safety, idempotency, and deterministic
+  final convergence across independent Postgres clients.
+
+Database row, table, and advisory locks are exceptions requiring explicit human
+approval, a documented invariant and measured need, a bounded critical section,
+and a review or removal condition. A transaction provides atomicity; it is not
+the concurrency guard unless the authoritative transition also checks the
+expected revision.
+
 ## Suggested First Proofs
 
 1. Multi-workspace isolation test: prove whether state snapshots from workspace A reach a browser connected to workspace

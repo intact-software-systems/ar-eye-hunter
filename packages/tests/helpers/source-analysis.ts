@@ -64,11 +64,17 @@ export function analyzeSource(source: string, filePath: string): SourceAnalysis 
     let body: readonly AstNode[];
 
     try {
+        const extension = path.extname(filePath).toLowerCase();
+        const plugins: string[] = ['typescript', 'importAttributes'];
+        if (extension === '.tsx' || extension === '.jsx') {
+            plugins.unshift('jsx');
+        }
+
         const parsed = parse(source, {
             sourceType: 'module',
             sourceFilename: filePath,
             createImportExpressions: true,
-            plugins: ['typescript', 'jsx', 'importAttributes'],
+            plugins,
         });
         body = parsed.program.body as unknown as readonly AstNode[];
     } catch (error) {

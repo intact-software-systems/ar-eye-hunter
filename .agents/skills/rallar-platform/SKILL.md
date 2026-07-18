@@ -40,9 +40,11 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 
 ## Contract Shape And Compatibility
 
-- Required fields are the default for public, persisted, queued, and replicated
-  contracts. Use an optional field only when absence is a meaningful domain
-  state that consumers are expected to handle.
+- Required fields are the default for every authoritative persisted, replicated, queued, event, snapshot, and response contract.
+  Use an optional field only when absence is a meaningful domain state that
+  consumers are expected to handle and test. Sparse request, query, patch,
+  builder, and migration input types are separate construction boundaries;
+  their optionality must not leak into authoritative values.
 - Do not weaken an authoritative output type merely because an intermediate
   builder or migration step is incomplete. Use a separate input type, a
   discriminated union, or an explicit migration adapter at the boundary.
@@ -54,6 +56,23 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
   import path, or fallback, explicitly ask the human to approve that scope
   before implementation. When approval already appears in the request, record
   the compatibility boundary and its retirement condition in the plan.
+
+## Convergent Persistence Defaults
+
+- Use optimistic compare-and-set writes with bounded retries for authoritative
+  shared state. Create with conditional insert, update with an expected storage
+  revision, and delete or expire with an expected revision.
+- Every retry must re-read current state and rerun authorization, policy,
+  capacity, lifecycle, and invariant checks before deriving a new candidate.
+  Never retry only the final write of a stale decision.
+- Treat stale observations as rebase-or-ignore outcomes, duplicates as no-ops,
+  and equal causal revisions with different content as invariant corruption.
+- Database row, table, and advisory locks are not the default. Do not extend an
+  existing lock-based implementation as precedent. A lock exception requires
+  explicit human approval plus a documented invariant, measured need, bounded
+  critical section, and migration or review condition.
+- Test overlapping writers, retry exhaustion, idempotency races, stale expiry,
+  and final convergence against the real Postgres conditional-write boundary.
 
 ## Validation
 

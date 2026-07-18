@@ -10,38 +10,21 @@
     "jsr:@std/path@^1.0.9": "1.1.4",
     "jsr:@std/yaml@*": "1.0.12",
     "jsr:@std/yaml@1.0.12": "1.0.12",
-    "npm:@babel/parser@^7.29.3": "7.29.7",
     "npm:@babylonjs/core@9.17.0": "9.17.0",
     "npm:@babylonjs/loaders@9.17.0": "9.17.0_@babylonjs+core@9.17.0_babylonjs-gltf2interface@9.17.0",
-    "npm:@electric-sql/pglite@0.4.1": "0.4.1",
     "npm:@js-temporal/polyfill@~0.5.1": "0.5.1",
     "npm:@mlc-ai/web-llm@~0.2.84": "0.2.84",
     "npm:@playwright/test@1.61.1": "1.61.1",
     "npm:@playwright/test@^1.61.1": "1.61.1",
-    "npm:@types/react-dom@19": "19.2.3_@types+react@19.2.15",
-    "npm:@types/react@19": "19.2.15",
-    "npm:@vitejs/plugin-react@5": "5.2.0_vite@8.0.14__esbuild@0.27.7__tsx@4.22.3_esbuild@0.27.7",
-    "npm:@vitest/ui@4.0.17": "4.0.17_vitest@4.1.10_esbuild@0.27.7_happy-dom@20.9.0_vite@8.0.14__esbuild@0.27.7__tsx@4.22.3",
     "npm:@vitest/ui@^4.0.17": "4.0.18_vitest@4.0.18_picomatch@4.0.4",
-    "npm:esbuild@~0.27.7": "0.27.7",
-    "npm:eslint@9.26.0": "9.26.0",
     "npm:fake-indexeddb@^6.2.5": "6.2.5",
     "npm:graphology@0.26": "0.26.0_graphology-types@0.24.8",
     "npm:graphology@0.26.0": "0.26.0_graphology-types@0.24.8",
-    "npm:happy-dom@^20.9.0": "20.9.0",
-    "npm:js-yaml@^4.1.1": "4.1.1",
     "npm:playwright@^1.61.1": "1.61.1",
     "npm:postgres@^3.4.9": "3.4.9",
-    "npm:prettier@^3.2.5": "3.8.1",
     "npm:prisma@^7.8.0": "7.8.0_typescript@7.0.2",
-    "npm:react-dom@19": "19.2.6_react@19.2.6",
-    "npm:react@19": "19.2.6",
     "npm:sigma@^3.0.3": "3.0.3_graphology-types@0.24.8",
-    "npm:tsx@^4.21.0": "4.22.3",
-    "npm:typescript@7.0.2": "7.0.2",
-    "npm:vite@^8.0.11": "8.0.14_esbuild@0.27.7_tsx@4.22.3",
-    "npm:vitest@4.0.17": "4.0.17_@vitest+ui@4.0.18__vitest@4.0.18__picomatch@4.0.4_happy-dom@20.9.0",
-    "npm:vitest@^4.1.6": "4.1.10_@vitest+ui@4.0.18__vitest@4.0.18__picomatch@4.0.4_happy-dom@20.9.0_vite@8.0.14__esbuild@0.27.7__tsx@4.22.3_esbuild@0.27.7"
+    "npm:typescript@7.0.2": "7.0.2"
   },
   "jsr": {
     "@hono/hono@4.11.9": {
@@ -3559,22 +3542,22 @@
     ],
     "packageJson": {
       "dependencies": [
-        "npm:@babel/parser@^7.29.3",
-        "npm:@electric-sql/pglite@0.4.1",
+        "npm:@babel/parser@^8.0.4",
+        "npm:@electric-sql/pglite@0.5.4",
         "npm:@playwright/test@1.61.1",
-        "npm:@vitest/ui@4.0.17",
-        "npm:esbuild@~0.27.7",
-        "npm:eslint@9.26.0",
+        "npm:@vitest/ui@4.1.10",
+        "npm:esbuild@~0.28.1",
+        "npm:eslint@10.7.0",
         "npm:fake-indexeddb@^6.2.5",
         "npm:graphology@0.26",
-        "npm:happy-dom@^20.9.0",
-        "npm:js-yaml@^4.1.1",
+        "npm:happy-dom@^20.10.6",
+        "npm:js-yaml@^5.2.1",
         "npm:postgres@^3.4.9",
-        "npm:prettier@^3.2.5",
-        "npm:tsx@^4.21.0",
+        "npm:prettier@^3.9.5",
+        "npm:tsx@^4.23.1",
         "npm:typescript@7.0.2",
-        "npm:vite@^8.0.11",
-        "npm:vitest@4.0.17"
+        "npm:vite@^8.1.5",
+        "npm:vitest@4.1.10"
       ]
     },
     "members": {
@@ -3584,14 +3567,14 @@
             "npm:@babylonjs/core@9.17.0",
             "npm:@js-temporal/polyfill@~0.5.1",
             "npm:@mlc-ai/web-llm@~0.2.84",
-            "npm:@types/react-dom@19",
-            "npm:@types/react@19",
-            "npm:@vitejs/plugin-react@5",
+            "npm:@types/react-dom@^19.2.3",
+            "npm:@types/react@^19.2.17",
+            "npm:@vitejs/plugin-react@^6.0.3",
             "npm:graphology@0.26",
-            "npm:react-dom@19",
-            "npm:react@19",
+            "npm:react-dom@^19.2.7",
+            "npm:react@^19.2.7",
             "npm:typescript@7.0.2",
-            "npm:vite@^8.0.11"
+            "npm:vite@^8.1.5"
           ]
         }
       },
@@ -3599,16 +3582,16 @@
         "packageJson": {
           "dependencies": [
             "npm:@js-temporal/polyfill@~0.5.1",
-            "npm:@types/react-dom@19",
-            "npm:@types/react@19",
-            "npm:@vitejs/plugin-react@5",
+            "npm:@types/react-dom@^19.2.3",
+            "npm:@types/react@^19.2.17",
+            "npm:@vitejs/plugin-react@^6.0.3",
             "npm:graphology@0.26",
             "npm:playwright@^1.61.1",
-            "npm:react-dom@19",
-            "npm:react@19",
+            "npm:react-dom@^19.2.7",
+            "npm:react@^19.2.7",
             "npm:sigma@^3.0.3",
             "npm:typescript@7.0.2",
-            "npm:vite@^8.0.11"
+            "npm:vite@^8.1.5"
           ]
         }
       },
@@ -3616,9 +3599,9 @@
         "packageJson": {
           "dependencies": [
             "npm:playwright@^1.61.1",
-            "npm:tsx@^4.21.0",
+            "npm:tsx@^4.23.1",
             "npm:typescript@7.0.2",
-            "npm:vite@^8.0.11"
+            "npm:vite@^8.1.5"
           ]
         }
       },
@@ -3628,15 +3611,15 @@
             "npm:@babylonjs/core@9.17.0",
             "npm:@babylonjs/loaders@9.17.0",
             "npm:@js-temporal/polyfill@~0.5.1",
-            "npm:@types/react-dom@19",
-            "npm:@types/react@19",
-            "npm:@vitejs/plugin-react@5",
+            "npm:@types/react-dom@^19.2.3",
+            "npm:@types/react@^19.2.17",
+            "npm:@vitejs/plugin-react@^6.0.3",
             "npm:graphology@0.26",
-            "npm:react-dom@19",
-            "npm:react@19",
+            "npm:react-dom@^19.2.7",
+            "npm:react@^19.2.7",
             "npm:typescript@7.0.2",
-            "npm:vite@^8.0.11",
-            "npm:vitest@^4.1.6"
+            "npm:vite@^8.1.5",
+            "npm:vitest@^4.1.10"
           ]
         }
       },

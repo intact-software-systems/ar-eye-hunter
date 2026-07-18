@@ -37,6 +37,20 @@ the repo-local Codex plugin under `.agents/skills/**`.
   match authority.
 - Use Rallar Motion for presentation smoothing, not simulation authority.
 - RallarAI output is proposal data until validated and accepted by domain code.
+- Optimistic compare-and-set writes with bounded retries are the default for
+  authoritative shared database state. Conditional insert owns creation;
+  expected-revision compare-and-set owns updates; expected-revision conditional
+  delete owns deletion and expiry.
+- Every optimistic retry must re-read and rerun authorization, policy, capacity,
+  lifecycle, and invariant checks. Never retry only a stale final write.
+- Database row, table, and advisory locks are exceptional. Do not copy an
+  existing lock as architecture precedent. Any exception needs explicit human
+  approval, a documented invariant and measured need, a bounded critical
+  section, and a review or removal condition.
+- Authoritative persisted, replicated, queued, event, snapshot, and response
+  contracts use mandatory fields by default. Optional fields require meaningful
+  domain absence and consumer tests; sparse request, query, patch, builder, and
+  migration inputs use separate types.
 
 ## Validation
 
@@ -50,6 +64,16 @@ the repo-local Codex plugin under `.agents/skills/**`.
 - For game/realtime changes, include the relevant app tests/builds and shared
   package tests.
 - Report commands that passed, failed, or were skipped.
+
+## AI Handoff Contract (applies to all agents)
+
+- End each AI task with a concise completion handoff:
+  - What changed (files + behavior).
+  - Why those changes were chosen (risk/compatibility rationale).
+  - Validation evidence (exact command outputs and results).
+  - Any follow-up needed.
+- Keep the handoff structured, not just an action list. If tradeoffs were made,
+  call them out explicitly.
 
 ## Performance analysis repo guidance
 

@@ -32,6 +32,18 @@ Constraints:
 - Do not bypass the facade unless there is no facade API.
 ```
 
+## Required AI Completion Contract
+
+Close task work with a teammate-style handoff containing:
+
+- What was done (changed files/behavior, one-sentence summary).
+- Why it was done (compatibility, scope, and tradeoff rationale).
+- Evidence (verification commands and exact results: pass/fail/skip).
+- What should happen next (optional follow-up or risk monitoring).
+
+Keep it concise and explicit, especially when decisions are risky (major
+version upgrades, compatibility workarounds, or temporary mitigations).
+
 ## Browser App Prompts
 
 ### App Startup

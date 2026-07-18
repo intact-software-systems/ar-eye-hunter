@@ -225,6 +225,10 @@ describe('Rallar repo skill and documentation integrity', () => {
     });
 
     it('routes composition and validation from the specialist skills', () => {
+        const agents = readRepo('AGENTS.md');
+        const convergenceArchitecture = readRepo(
+            'docs/rallar-convergent-state-and-rtc-topology.md',
+        );
         const platform = readRepo('.agents/skills/rallar-platform/SKILL.md');
         const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
         const packageCodeStyle = readRepo(
@@ -246,16 +250,41 @@ describe('Rallar repo skill and documentation integrity', () => {
         expect(platform).toContain('Required fields are the default');
         expect(platform).toMatch(/absence is a meaningful domain\s+state/);
         expect(platform).toMatch(/explicitly ask\s+the human/);
+        expectAll(platform, [
+            'optimistic compare-and-set writes with bounded retries',
+            'authoritative persisted, replicated, queued, event, snapshot, and response',
+            'Database row, table, and advisory locks are not the default',
+        ]);
         expect(codeWriting).toMatch(/required public and persisted fields/);
         expect(codeWriting).toMatch(/backwards-compatibility fallback/);
+        expectAll(codeWriting, [
+            'expected-revision compare-and-set',
+            'rerun authorization, policy, capacity, lifecycle, and invariant checks',
+        ]);
         expectAll(packageCodeStyle, [
             'Do not use optional fields as a compatibility shortcut',
             'discriminated union',
+            'Create with conditional insert, update with expected-revision compare-and-set',
+            'stale expiry read cannot delete a refreshed value',
         ]);
         expectAll(realtime, [
             'optimistic reconciliation',
             'Ignore stale observations',
-            'Keep graph planning and recomputation outside locks',
+            'compare-and-set writes with bounded retries',
+            'Database row, table, and advisory locks are not the default',
+            'Re-read and re-run authorization, policy, capacity, lifecycle, and invariants',
+        ]);
+        expectAll(agents, [
+            'Optimistic compare-and-set writes with bounded retries are the default',
+            'Database row, table, and advisory locks are exceptional',
+            'Authoritative persisted, replicated, queued, event, snapshot, and response',
+        ]);
+        expectAll(convergenceArchitecture, [
+            'Required Target For Database Writes',
+            'Current advisory-lock implementations are migration debt',
+            'conditional insert',
+            'expected-revision compare-and-set',
+            'expected-revision conditional delete',
         ]);
         expect(testing).toContain('rallar-skill-integrity.test.ts');
         expect(testCommands).toContain(

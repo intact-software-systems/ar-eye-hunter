@@ -11,7 +11,8 @@ Rallar facade, Rallar browser data stores, and Rallar server middleware.
 - [Rallar AI Skill Guide](./rallar-ai-skill.md) A skill-style operating guide
   for AI agents implementing or reviewing Rallar usage.
 - [Rallar AI Prompting Guide](./rallar-ai-prompting-guide.md) Prompt templates
-  and constraints for asking an AI to use Rallar, Rallar Data, or Rallar Server.
+  and constraints for asking an AI to use Rallar, Rallar Data, or Rallar Server,
+  including the required completion handoff format.
 - [RallarAI Recipes](./rallar-ai-recipes.md) Opt-in schema-guided JSON
   generation flows for browser, server, fallback, host approval, CRDT proposals,
   and local live-provider setup.
@@ -64,3 +65,9 @@ example: "Use the `rallar-realtime` and `rallar-testing` skills."
   `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`
 - Server facade wrappers: `packages/shared-server/rallar-facade/RallarServer.ts`
   and `packages/shared-server/rallar-facade/RallarServerApplication.ts`
+
+## Run Environment Notes
+
+- `npm run test:e2e` and `npm run test:full-stack` start local HTTP servers via Playwright (`127.0.0.1` + local ports).
+- In sandboxed environments that block loopback binds, these commands can fail with `listen EPERM` / `Operation not permitted` even when code is healthy.
+- In normal local or CI environments with loopback bind allowed, both suites pass.

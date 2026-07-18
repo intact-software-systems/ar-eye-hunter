@@ -28,14 +28,30 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 
 ## Contract Defaults
 
-- Prefer required public and persisted fields. Optional fields are appropriate
-  only when omission has domain meaning; convenience during construction is
-  not domain meaning.
+- Prefer required public and persisted fields. Authoritative persisted,
+  replicated, queued, event, snapshot, and response values should be fully
+  populated. Optional fields are appropriate only when omission has domain
+  meaning and a consumer test; convenience during construction is not domain
+  meaning.
 - Model incomplete construction with a separate input type or discriminated
   union, then produce a fully populated authoritative value at the boundary.
 - Do not add a backwards-compatibility fallback by default. Before a plan
   keeps a legacy field, message shape, import, or runtime path, explicitly ask
   the human to approve compatibility and document how long it remains.
+
+## Database Write Defaults
+
+- Do not implement authoritative state as read, derive, then unconditional
+  upsert. Create with conditional insert; update with expected-revision compare-and-set;
+  delete or expire with expected-revision conditional delete.
+- On a compare-and-set conflict, bound the retry count, re-read the whole
+  decision surface, and rerun authorization, policy, capacity, lifecycle, and invariant checks.
+  A retry of only the stale write is incorrect.
+- Make idempotency claims with insert-if-absent semantics. The losing writer
+  loads the winner; it must not overwrite the ledger.
+- Database row, table, and advisory locks are exceptions, not reusable
+  architecture. Require explicit human approval and document the protected
+  invariant, evidence, bounded critical section, and removal condition.
 
 ## Shape Decision
 
@@ -53,6 +69,9 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
 - No clever code where named helpers or explicit branches would be easier to review.
 - No parallel implementations of the same algorithm; bridges or adapters need a clear boundary, compatibility, or runtime reason.
 - No app-local duplicate of behavior that already belongs in `packages/**`.
+- No unconditional authoritative upsert after a read-derived decision.
+- No lock-based concurrency test where a conflict, rebase, retry exhaustion,
+  and final-convergence test is required.
 
 ## Validation
 

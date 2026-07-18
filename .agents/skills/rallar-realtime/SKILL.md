@@ -35,8 +35,16 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - Prefer optimistic reconciliation for replicated state. Accept monotonic newer
   observations. Ignore stale observations without failing the consumer, and
   treat equal-revision/different-content data as invariant corruption.
-- Keep graph planning and recomputation outside locks. Use short, fixed-order
-  compare-and-commit transactions, then retry when the predecessor moves.
+- Plan and recompute outside transactions, then use compare-and-set writes with bounded retries
+  at the durable boundary. Create with conditional insert, update with expected
+  revision, and delete or expire with an expected revision.
+- Re-read and re-run authorization, policy, capacity, lifecycle, and invariants
+  on every retry. Never reuse a decision derived from a predecessor that lost
+  its compare-and-set race.
+- Database row, table, and advisory locks are not the default. Existing lock-based
+  client-session, group-presence, topology, publication, or RTT code is
+  migration debt rather than precedent. A lock exception requires explicit
+  human approval and documented evidence, scope, and removal conditions.
 - Optimistic and permissive does not mean weak contracts. Require causal fields
   on snapshots and durable work; reserve hard rejection for malformed or
   wrongly scoped data, authorization failures, invariant corruption, resource
@@ -65,4 +73,4 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 
 ## Validation
 
-Run focused tests in `packages/tests/shared-web`, `packages/tests/shared-server`, `packages/tests/shared-graph`, and relevant game tests. For restart/cold-cache work, include server routing tests and at least one reconnect scenario.
+Run focused tests in `packages/tests/shared-web`, `packages/tests/shared-server`, `packages/tests/shared-graph`, and relevant game tests. For restart/cold-cache work, include server routing tests and at least one reconnect scenario. For shared database writes, prove overlapping conflicts, rebasing, retry exhaustion, idempotency, stale expiry safety, and deterministic final convergence; do not treat lock acquisition or waiting as the acceptance criterion.

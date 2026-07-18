@@ -6,6 +6,14 @@ This document maps the current Rallar Server data model, persistence repositorie
 
 Rallar Server is both REST HTTP and WebSocket based.
 
+This file inventories current behavior; it is not permission to copy every
+current concurrency mechanism. For authoritative shared state, the required
+architecture is conditional insert, expected-revision compare-and-set update,
+and expected-revision conditional delete with bounded retries from fresh reads.
+Database row, table, and advisory locks are exceptional and require explicit
+human approval. Current lock-based paths are migration candidates, not
+precedent.
+
 - REST HTTP owns auth, initial state reads, client state mutations, group/room mutations, ICE config, graph reads, and Swagger docs.
 - WebSocket owns live AL messages, RTC signaling, system state snapshot broadcasts, state event broadcasts, dynamic application topics, and server-to-client message fanout.
 - Persistent server state currently uses Postgres through nine physical tables: `runtime_state_store`, `client_state_events`, `group_state_events`, `resource_inbox`, `resource_inbox_results`, `app_data_store`, `crdt_documents`, `crdt_updates`, and `crdt_snapshots`.
@@ -91,7 +99,7 @@ The reusable facade is `packages/shared-server/rallar-facade/RallarServer.ts`.
 | --- | --- | --- | --- | --- |
 | Auth users | `AuthUserRepository` | `runtime_state_store` namespaces `auth-users:by-username` and `auth-users:by-client-id` | No dedicated repository cache | Stores password hash/salt/algorithm, roles, status, display name, client id, username. Rows normally do not expire. |
 | Auth sessions | `AuthSessionRepository` | `runtime_state_store` namespaces `auth-sessions:by-token` and `auth-sessions:by-session` | No dedicated repository cache | Session rows expire at `expiresAtEpochMs`. Logout deletes token and session index rows. |
-| WebSocket tickets | `AuthSessionRepository` | `runtime_state_store` namespace `auth-sessions:ws-tickets` | No dedicated repository cache | Short-lived ticket rows. Consumption uses advisory locking when transactional runtime state is available. |
+| WebSocket tickets | `AuthSessionRepository` | `runtime_state_store` namespace `auth-sessions:ws-tickets` | No dedicated repository cache | Short-lived ticket rows. Consumption currently uses advisory locking when transactional runtime state is available; this is descriptive migration debt, not the default for new code. |
 | Client principals | `ClientStateRepository` | `runtime_state_store` namespace `client-state:principals` | Client snapshot cache after publish/receive | Durable profile/presence identity for a principal inside app/workspace scope. |
 | Client instances | `ClientStateRepository` | `runtime_state_store` namespace `client-state:instances` | Client snapshot cache after publish/receive | Durable instance records under a principal. |
 | Client sessions | `ClientStateRepository` | `runtime_state_store` namespace `client-state:sessions` | Client snapshot cache after publish/receive | Active sessions expire by `expiresAtEpochMs`; lazy deletion also happens on reads. |

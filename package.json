@@ -135,21 +135,21 @@
     "test:integration:rallar:real:live": "npm run test:integration:rallar:live"
   },
   "devDependencies": {
-    "@babel/parser": "^7.29.3",
-    "@electric-sql/pglite": "0.4.1",
+    "@babel/parser": "^8.0.4",
+    "@electric-sql/pglite": "0.5.4",
     "@playwright/test": "1.61.1",
-    "@vitest/ui": "4.0.17",
-    "esbuild": "^0.27.7",
-    "eslint": "9.26.0",
+    "@vitest/ui": "4.1.10",
+    "esbuild": "^0.28.1",
+    "eslint": "10.7.0",
     "fake-indexeddb": "^6.2.5",
     "graphology": "^0.26.0",
-    "happy-dom": "^20.9.0",
-    "js-yaml": "^4.1.1",
+    "happy-dom": "^20.10.6",
+    "js-yaml": "^5.2.1",
     "postgres": "^3.4.9",
-    "prettier": "^3.2.5",
-    "tsx": "^4.21.0",
+    "prettier": "^3.9.5",
+    "tsx": "^4.23.1",
     "typescript": "7.0.2",
-    "vite": "^8.0.11",
-    "vitest": "4.0.17"
+    "vite": "^8.1.5",
+    "vitest": "4.1.10"
   }
 }

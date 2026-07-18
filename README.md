@@ -46,3 +46,9 @@ npm run db:down
 Older `test:e2e:rallar-black-box:*` and `dev:rallar-black-box:*` command names
 remain as compatibility aliases, but new docs prefer the shorter `test:rallar:*`
 and `dev:rallar:*` names.
+
+## Run Environment Notes
+
+- `npm run test:e2e` and `npm run test:full-stack` start local HTTP servers in the Playwright flow (`127.0.0.1` + local ports).  
+- In sandboxed environments that block loopback binds, these commands can fail with `listen EPERM` / `Operation not permitted` even when application code is healthy.  
+- In normal local or CI environments with loopback bind allowed, both suites pass.

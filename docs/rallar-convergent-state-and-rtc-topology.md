@@ -22,10 +22,11 @@ and durable topology publications make retries and reordered delivery safe.
 ## Architecture Decision Rules
 
 Rallar uses strong data contracts to enable permissive distributed execution.
-Authoritative, persisted, queued, or replicated records require their causal
-fields. Optional fields are appropriate only when absence has domain meaning;
-they are not a compatibility mechanism for authoritative state. Input drafts
-that genuinely lack fields use a separate input type or a discriminated union.
+Authoritative persisted, replicated, queued, event, snapshot, and response
+records require their causal and lifecycle fields. Optional fields are
+appropriate only when absence has domain meaning and consumers test that
+absence; they are not a compatibility mechanism for authoritative state.
+Sparse request, query, patch, builder, and migration inputs use separate types.
 
 Once input is well formed, convergence is optimistic:
 
@@ -44,6 +45,38 @@ Compatibility is a product decision rather than an implicit implementation
 default. A plan that retains a revisionless shape, legacy work envelope, or
 fallback authorization path must obtain explicit human approval and state its
 retirement conditions.
+
+## Required Target For Database Writes
+
+This is the mandatory target for new work and for the remediation of client,
+group, topology, publication, RTT, expiry, and idempotency writes:
+
+- create with conditional insert;
+- update with expected-revision compare-and-set;
+- delete or expire with expected-revision conditional delete;
+- retry from a fresh read with a bounded attempt budget;
+- rerun authorization, policy, capacity, lifecycle, and invariant checks on
+  every attempt; and
+- return a typed retry-exhausted outcome rather than falling back to an
+  unconditional write or an unbounded loop.
+
+A transaction supplies atomicity for a multi-row commit, but it does not by
+itself prevent lost updates. The transaction must condition the authoritative
+aggregate transition on the revision that the decision observed. An
+idempotency key is an immutable first-writer-wins claim: use conditional insert
+and make a losing writer load the winner.
+
+Database row, table, and advisory locks are not the default concurrency model.
+Current advisory-lock implementations are migration debt, including the
+client-session, group-presence, topology-snapshot, publication-index, and RTT
+paths described later in this document. Do not copy or extend them as
+precedent. A lock exception requires explicit human approval, a documented
+invariant and measured need, a bounded critical section, and a review or
+removal condition.
+
+Expiry is a causal delete, not cleanup after a trustworthy read. A reader that
+saw an expired revision may delete only that revision, so it cannot remove a
+replacement that another server refreshed after the read.
 
 ## Architecture Overview
 
@@ -225,9 +258,13 @@ validation, process observation, and durable observation.
 
 Every work item calculates from its embedded snapshot. It must not replace
 revision N with the current cache value N+1. Graph planning occurs outside the
-runtime-state transaction. The handler then validates the predecessor under
-fixed-order topology/work-index locks, retrying calculation at most three times
-when the predecessor moves.
+runtime-state transaction. The current handler validates the predecessor under
+fixed-order advisory topology/work-index locks, retrying calculation at most
+three times when the predecessor moves. That locking is transitional migration
+debt, not the target architecture. The target commit atomically applies
+expected-revision compare-and-set operations to the topology and deterministic
+publication/work-index claims; a conflict persists nothing and triggers a
+fresh read and replan.
 
 The durable latest-topology repository compares:
 
@@ -249,12 +286,13 @@ publication, so a rejected candidate is never fanned out.
 ### Example: two planners share one predecessor
 
 Workers A and B both read topology predecessor `(groupRevision=20,
-topologyVersion=7)` and plan outside the transaction. A commits first. B locks
-only the topology and work-index keys, observes the moved predecessor, releases
-the transaction, and replans against A's accepted snapshot. If B's embedded
-group snapshot is now causally older, B completes without publishing. If it is
-newer, B commits one exact publication for its work identity. At no point is a
-rejected candidate returned as authoritative or sent to browsers.
+topologyVersion=7)` and plan outside the transaction. A's conditional commit
+wins. B's compare-and-set observes a moved predecessor and persists no topology,
+publication, or work index. B rereads and replans against A's accepted snapshot.
+If B's embedded group snapshot is now causally older, B completes without
+publishing. If it is newer, B conditionally commits one exact publication for
+its work identity. At no point is a rejected candidate returned as
+authoritative or sent to browsers.
 
 ## Durable Publications
 
@@ -398,8 +436,10 @@ notifications only as wake-ups.
   and one exact-key aggregate validation batch.
 - Warm room authorization performs one durable aggregate revision probe; the
   stable snapshot reader runs only after revision movement.
-- Topology planning is outside transaction locks. Normal execution performs one
-  predecessor read and one locked validation read.
+- Topology planning is outside the transaction. Current execution performs one
+  predecessor read and one advisory-lock validation read; the required target
+  replaces lock waiting with one conditional commit and bounded conflict
+  retries.
 - Topology fanout performs one encoding and one indexed send per unique
   recipient, with zero connection-wide broadcast scans.
 

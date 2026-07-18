@@ -10,6 +10,10 @@
   constructed values type-check. Represent genuine alternatives with a
   discriminated union and use separate input/output types when construction is
   staged.
+- Treat persisted, replicated, queued, event, snapshot, and response contracts
+  as authoritative. Optional fields belong only to explicit semantic absence;
+  sparse request, query, patch, builder, and migration inputs are separate
+  types and do not weaken authoritative outputs.
 - Keep helpers close to their domain, then export through existing barrels only when the API is meant for consumers.
 - Preserve existing exports and import paths unless removal is explicitly requested.
 
@@ -27,6 +31,27 @@
 - Stateful code should isolate ownership: callers should know which state it owns, how to create it, and how to observe or dispose of it.
 - Prefer constructor or factory options for dependencies such as `now`, storage, repositories, loggers, sockets, providers, and retry policy.
 - Do not add ambient singleton state unless the package already exposes that repository/cache pattern.
+
+## Convergent Database Writes
+
+- Create with conditional insert, update with expected-revision compare-and-set,
+  and delete or expire with expected-revision conditional delete. Never use a
+  read-derived unconditional upsert for shared authoritative state.
+- On conflict, perform a bounded retry from a fresh read and rerun every
+  authorization, policy, capacity, lifecycle, and invariant decision. Return a
+  typed retry-exhausted result or error after the budget is spent.
+- Make expiry cleanup causal: a stale expiry read cannot delete a refreshed value.
+- Make idempotency ledgers immutable per request key with insert-if-absent; the
+  loser loads the existing result.
+- For a multi-row aggregate, use a transaction for atomicity and condition the
+  commit on an aggregate revision. A transaction alone does not prevent lost
+  updates.
+- Database row, table, and advisory locks are not the default. A lock requires
+  explicit human approval, a documented invariant and measured need, a bounded
+  critical section, and a review or removal condition.
+- Prove overlapping writers, stale input, retries, exhaustion, and deterministic
+  final convergence. A test that only proves another writer waited for a lock
+  is not concurrency correctness evidence for this architecture.
 
 ## Testability
 

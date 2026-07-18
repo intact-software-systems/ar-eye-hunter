@@ -842,8 +842,8 @@
           "npm:@js-temporal/polyfill@~0.5.1",
           "npm:@mlc-ai/web-llm@~0.2.84",
           "npm:graphology@0.26",
-          "npm:react-dom@19",
-          "npm:react@19"
+          "npm:react-dom@^19.2.7",
+          "npm:react@^19.2.7"
         ]
       },
       "npm:ar-platform-monorepo@0.1.0": {},
@@ -852,8 +852,8 @@
         "dependencies": [
           "npm:@js-temporal/polyfill@~0.5.1",
           "npm:graphology@0.26",
-          "npm:react-dom@19",
-          "npm:react@19",
+          "npm:react-dom@^19.2.7",
+          "npm:react@^19.2.7",
           "npm:sigma@^3.0.3"
         ]
       },
@@ -863,8 +863,8 @@
           "npm:@babylonjs/loaders@9.17.0",
           "npm:@js-temporal/polyfill@~0.5.1",
           "npm:graphology@0.26",
-          "npm:react-dom@19",
-          "npm:react@19"
+          "npm:react-dom@^19.2.7",
+          "npm:react@^19.2.7"
         ]
       }
     }
