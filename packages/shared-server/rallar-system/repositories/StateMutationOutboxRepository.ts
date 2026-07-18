@@ -11,7 +11,6 @@ import type {
     GroupSnapshot,
 } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { stableJsonStringify } from '@shared/repository/state-utils.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike,
@@ -25,6 +24,7 @@ const STATE_MUTATION_OUTBOX_EFFECT_ORDER: readonly StateMutationOutboxEffect[] =
     'group-presence-summary',
     'rtc-topology-recompute',
 ];
+const STATE_MUTATION_COMMAND_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const CLIENT_EVENT_TYPES: Readonly<Record<ClientEventType, true>> = {
     'principal-created': true,
     'principal-updated': true,
@@ -330,6 +330,7 @@ export class StateMutationOutboxRepository extends RuntimeStateJsonStore {
     async writeDelivery(
         input: WriteStateMutationOutboxDeliveryInput,
     ): Promise<WriteStateMutationOutboxDeliveryResult> {
+        validateStateMutationOutboxDeliveryInput(input);
         const repository = this.repository as
             RuntimeStateOptimisticTransactionalRepositoryLike;
         return await repository.begin(async (transaction) => {
@@ -401,7 +402,7 @@ export function toStateMutationOutboxId(
     >,
 ): string {
     validateStateMutationOutboxIdentity(input, 'identity input');
-    return `state-mutation-${fnv1a64(stableJsonStringify({
+    return `state-mutation-${fnv1a64(serializeCanonicalJson({
         commandId: input.commandId,
         kind: input.kind,
         aggregateRef: input.aggregateRef,
@@ -409,8 +410,19 @@ export function toStateMutationOutboxId(
     }))}`;
 }
 
-export function hashStateMutationCommand(command: unknown): string {
-    return `fnv1a64:${fnv1a64(stableJsonStringify(command))}`;
+export async function hashStateMutationCommand(
+    command: unknown,
+): Promise<string> {
+    assertJsonSafeValue(command, 'State mutation command');
+    const canonicalCommand = serializeCanonicalJson(command);
+    const digest = await globalThis.crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(canonicalCommand),
+    );
+    const hex = Array.from(new Uint8Array(digest))
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+    return `sha256:${hex}`;
 }
 
 export function toClientStateMutationCausalRevision(
@@ -441,8 +453,8 @@ function sameStateMutationOutboxIntent(
     left: StateMutationOutboxRecord,
     right: StateMutationOutboxRecord,
 ): boolean {
-    return stableJsonStringify(toImmutableIntent(left)) ===
-        stableJsonStringify(toImmutableIntent(right));
+    return serializeCanonicalJson(toImmutableIntent(left)) ===
+        serializeCanonicalJson(toImmutableIntent(right));
 }
 
 function toImmutableIntent(record: StateMutationOutboxRecord): unknown {
@@ -462,9 +474,10 @@ function toImmutableIntent(record: StateMutationOutboxRecord): unknown {
 function validateStateMutationOutboxInput(
     input: unknown,
 ): asserts input is CreateStateMutationOutboxRecordInput {
-    if (!isRecord(input)) {
+    if (!isObjectRecordValue(input)) {
         throw new TypeError('State mutation outbox input is required');
     }
+    assertJsonSafeValue(input, 'State mutation outbox input');
     validateStateMutationOutboxIntent(input);
 }
 
@@ -473,7 +486,7 @@ function validateStateMutationOutboxIntent(
 ): asserts input is Readonly<Record<string, unknown>> &
     CreateStateMutationOutboxRecordInput {
     validateStateMutationOutboxIdentity(input, 'intent');
-    assertNonEmptyString(input.commandHash, 'command hash');
+    assertStateMutationCommandHash(input.commandHash);
     assertSafeNonNegativeInteger(input.createdAtEpochMs, 'created time');
     validateStateMutationOutboxEffects(input.effects);
 
@@ -505,9 +518,10 @@ function validateStateMutationOutboxIdentity(
     rootLabel: string,
 ): asserts input is Readonly<Record<string, unknown>> &
     StateMutationOutboxIdentityInput {
-    if (!isRecord(input)) {
+    if (!isObjectRecordValue(input)) {
         throw new TypeError(`State mutation outbox ${rootLabel} is required`);
     }
+    assertJsonSafeValue(input, `State mutation outbox ${rootLabel}`);
     validateStateMutationOutboxKind(input.kind);
     assertNonEmptyString(input.commandId, 'command id');
 
@@ -588,9 +602,10 @@ function validateStateMutationOutboxEvent(
 }
 
 function validateStateMutationOutboxRecord(record: unknown): void {
-    if (!isRecord(record)) {
+    if (!isObjectRecordValue(record)) {
         throw new TypeError('State mutation outbox record is required');
     }
+    assertJsonSafeValue(record, 'State mutation outbox record');
     validateStateMutationOutboxIntent(record);
     assertNonEmptyString(record.outboxId, 'outbox id');
 
@@ -681,6 +696,18 @@ function validateStateMutationOutboxRecord(record: unknown): void {
                 `Unknown state mutation outbox delivery status: ${String(delivery.status)}`,
             );
     }
+}
+
+function validateStateMutationOutboxDeliveryInput(input: unknown): void {
+    if (!isObjectRecordValue(input)) {
+        throw new TypeError('State mutation outbox delivery input is required');
+    }
+    assertJsonSafeValue(input, 'State mutation outbox delivery input');
+    assertNonEmptyString(input.outboxId, 'delivery outbox id');
+    assertSafeNonNegativeInteger(
+        input.expectedStorageRevision,
+        'expected storage revision',
+    );
 }
 
 function validateInitialStateMutationOutboxRecord(
@@ -932,8 +959,22 @@ function validateOptionalEventString(
     }
 }
 
+function isObjectValue(value: unknown): value is object {
+    return typeof value === 'object' && value !== null;
+}
+
+function isObjectRecordValue(
+    value: unknown,
+): value is Readonly<Record<string, unknown>> {
+    return isObjectValue(value) && !Array.isArray(value);
+}
+
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
+    if (!isObjectRecordValue(value)) {
+        return false;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
 }
 
 function validateClientCausalRevision(
@@ -987,6 +1028,179 @@ function assertNonEmptyString(
     if (!isNonEmptyString(value)) {
         throw new TypeError(`Invalid state mutation outbox ${label}`);
     }
+}
+
+function assertStateMutationCommandHash(
+    value: unknown,
+): asserts value is string {
+    if (
+        !isNonEmptyString(value) ||
+        !STATE_MUTATION_COMMAND_HASH_PATTERN.test(value)
+    ) {
+        throw new TypeError('Invalid state mutation outbox command hash');
+    }
+}
+
+function assertJsonSafeValue(value: unknown, label: string): void {
+    let issue: string | undefined;
+    try {
+        issue = findJsonSafetyIssue(value, '$', new Set<object>());
+    } catch {
+        issue = 'value could not be inspected without executing custom behavior';
+    }
+    if (issue) {
+        throw new TypeError(`${label} must be JSON-safe: ${issue}`);
+    }
+}
+
+function findJsonSafetyIssue(
+    value: unknown,
+    path: string,
+    activeObjects: Set<object>,
+): string | undefined {
+    if (
+        value === null ||
+        typeof value === 'string' ||
+        typeof value === 'boolean'
+    ) {
+        return undefined;
+    }
+    if (typeof value === 'number') {
+        if (!Number.isFinite(value)) {
+            return `${path} contains a non-finite number`;
+        }
+        if (Object.is(value, -0)) {
+            return `${path} contains negative zero`;
+        }
+        return undefined;
+    }
+    if (!isObjectValue(value)) {
+        return `${path} contains unsupported ${typeof value}`;
+    }
+    if (activeObjects.has(value)) {
+        return `${path} contains a cycle`;
+    }
+
+    activeObjects.add(value);
+    const issue = Array.isArray(value)
+        ? findJsonArraySafetyIssue(value, path, activeObjects)
+        : findJsonObjectSafetyIssue(value, path, activeObjects);
+    activeObjects.delete(value);
+    return issue;
+}
+
+function findJsonArraySafetyIssue(
+    value: readonly unknown[],
+    path: string,
+    activeObjects: Set<object>,
+): string | undefined {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+        return `${path} uses a non-standard array prototype`;
+    }
+    const keys = Reflect.ownKeys(value);
+    const entryKeys: string[] = [];
+    for (const key of keys) {
+        if (key === 'length') {
+            continue;
+        }
+        if (typeof key === 'symbol') {
+            return `${path} contains a symbol key`;
+        }
+        if (!isCanonicalArrayIndex(key, value.length)) {
+            return `${path} contains non-index array property ${JSON.stringify(key)}`;
+        }
+        entryKeys.push(key);
+    }
+    if (entryKeys.length !== value.length) {
+        return `${path} contains a sparse array`;
+    }
+    for (const key of entryKeys) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor || !descriptor.enumerable) {
+            return `${path}[${key}] is not an enumerable data property`;
+        }
+        if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+            return `${path}[${key}] is an accessor property`;
+        }
+        const issue = findJsonSafetyIssue(
+            descriptor.value,
+            `${path}[${key}]`,
+            activeObjects,
+        );
+        if (issue) {
+            return issue;
+        }
+    }
+    return undefined;
+}
+
+function findJsonObjectSafetyIssue(
+    value: object,
+    path: string,
+    activeObjects: Set<object>,
+): string | undefined {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+        return `${path} uses a non-plain object`;
+    }
+    for (const key of Reflect.ownKeys(value)) {
+        if (typeof key === 'symbol') {
+            return `${path} contains a symbol key`;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        const propertyPath = `${path}.${key}`;
+        if (!descriptor || !descriptor.enumerable) {
+            return `${propertyPath} is not an enumerable data property`;
+        }
+        if (!Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+            return `${propertyPath} is an accessor property`;
+        }
+        const issue = findJsonSafetyIssue(
+            descriptor.value,
+            propertyPath,
+            activeObjects,
+        );
+        if (issue) {
+            return issue;
+        }
+    }
+    return undefined;
+}
+
+function isCanonicalArrayIndex(key: string, length: number): boolean {
+    if (!/^(0|[1-9]\d*)$/.test(key)) {
+        return false;
+    }
+    const index = Number(key);
+    return Number.isSafeInteger(index) && index >= 0 && index < length;
+}
+
+function serializeCanonicalJson(value: unknown): string {
+    if (value === null || typeof value !== 'object') {
+        return JSON.stringify(value) as string;
+    }
+    if (Array.isArray(value)) {
+        const entries: string[] = [];
+        for (let index = 0; index < value.length; index += 1) {
+            const descriptor = Object.getOwnPropertyDescriptor(
+                value,
+                String(index),
+            );
+            entries.push(serializeCanonicalJson(descriptor?.value));
+        }
+        return `[${entries.join(',')}]`;
+    }
+    const entries = Object.keys(value)
+        .sort(compareJsonKeys)
+        .map((key) => {
+            const descriptor = Object.getOwnPropertyDescriptor(value, key);
+            return `${JSON.stringify(key)}:${serializeCanonicalJson(descriptor?.value)}`;
+        });
+    return `{${entries.join(',')}}`;
+}
+
+function compareJsonKeys(left: string, right: string): number {
+    return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function assertSafeNonNegativeInteger(

@@ -730,6 +730,16 @@ git commit -m "feat: add optimistic runtime state write support"
   aggregate ref, accepted causal revision/tuple, exact event when present,
   required effect list, creation time, attempt metadata, and a required delivery
   state union.
+- Requires every builder, delivery, and stored-record value to be JSON-roundtrip
+  safe before property access, hashing, canonicalization, or persistence:
+  primitives are null/string/boolean/finite numbers other than negative zero, arrays
+  are dense, and objects are Object/null-prototype plain objects with enumerable
+  string-keyed data properties. Reject accessors, symbols, non-enumerable
+  properties, custom prototypes, cycles, and values JSON would erase or change.
+- Exposes an async complete-command helper that validates JSON-safe content,
+  orders object keys deterministically, and returns a lowercase
+  `sha256:<64 hex>` Web Crypto digest. Outbox records accept only that tagged
+  shape; finite FNV command identity is obsolete.
 - Effect kinds are explicit: `client-state-sync`, `group-state-sync`,
   `group-presence-summary`, and `rtc-topology-recompute`. Add another union
   member only when a mutation has a distinct durable downstream effect.
@@ -745,6 +755,11 @@ loading the winner; equal id with different content raising invariant corruption
 process failure after commit leaving a drainable intent; two drainers racing the
 same intent; downstream enqueue failure retaining retryable state; and repeated
 drain producing one deterministic WS/app outbox key.
+Also cover prototype-bearing wrappers, accessors without invocation, symbol and
+non-enumerable keys, Map/Set/Date, cycles, sparse arrays, bigint/function/
+undefined/non-finite/negative-zero values, accepted JSON roundtrips, canonical
+SHA-256 shape, reordered-key equality, semantic inequality, and equal outbox id
+with a different valid digest raising invariant corruption.
 
 - [ ] **Step 2: Confirm the outbox contract is missing**
 
@@ -763,6 +778,11 @@ aggregate ref, and accepted causal revision. Page pending rows by namespace.
 Workers may observe the same row; downstream `enqueueIfAbsent` and expected-
 revision delivery-state updates make duplicate processing harmless. Do not add
 `FOR UPDATE`, `SKIP LOCKED`, advisory locks, or a reservation framework here.
+
+Validate the complete plain JSON-safe graph before deriving `outboxId`,
+canonicalizing effects, comparing immutable intent, or writing storage. Derive
+command identity only from complete canonical command content through the async
+SHA-256 helper; never accept FNV or an untagged/malformed digest.
 
 Keep the record payload immutable across status transitions. The worker may
 publish the latest causally compatible snapshot by ref/revision and the exact
@@ -832,6 +852,11 @@ git commit -m "feat: add transactional state mutation outbox"
 - Produces required `ClientMutationCommand`, `ClientMutationRead`,
   `ClientMutationComputed`, `ClientMutationFacts`, and `ClientMutationReceipt`
   types. These are operation data, not a framework.
+- Before legacy direct publication can be removed, each producer must construct
+  and validate the complete command once, await its internally derived canonical
+  SHA-256 digest before the retry loop, and carry that exact digest into both
+  compact receipt and transaction-local outbox intent. No request or caller may
+  supply `commandHash`.
 
 - [ ] **Step 1: Write failing aggregate-conflict tests**
 
@@ -847,6 +872,10 @@ Assert no accepted field update disappears, `stateRevision` increases once per
 accepted aggregate transition, terminal lifecycle wins over delayed work from
 its generation, both idempotent callers return the same compact receipt, and
 every effectful winner writes exactly one state-sync outbox intent.
+Add a reordered-object-key replay that returns the same receipt/digest, and a
+same-`requestId`/different-semantic-command race that returns the explicit
+idempotency conflict. Assert receipt and outbox persist the identical lowercase
+`sha256:<64 hex>` digest and that public mutation inputs expose no `commandHash`.
 
 - [ ] **Step 2: Confirm the tests expose current behavior**
 
@@ -891,8 +920,10 @@ Both functions are synchronous and must pass tests that call them twice with a
 deep-frozen equal input and assert deep-equal output/no input mutation. Ban
 repository mocks, `Date.now`, `Temporal.Now`, `crypto.randomUUID`, `Math.random`,
 environment reads, and publisher calls from this module. Capture ids, timestamps,
-and the canonical command hash once as required facts before entering the retry
-loop.
+and the complete command once as required facts. Validate/canonicalize that
+command and await its internally derived SHA-256 digest before attempt zero.
+Never accept a digest from request data or another caller, and never re-hash
+inside a retry.
 
 - [ ] **Step 5: Make the client service read, compute, validate, then write**
 
@@ -929,6 +960,9 @@ After every effectful client branch writes its intent atomically, remove the
 direct `AppClientInboxService.publishClientStateWritten(...)` path so the outbox
 drainer is the single publication owner. Prove no dual publication and that a
 committed intent survives a simulated process stop before drain.
+The removal test must also prove receipt/outbox digest identity, reordered-key
+replay equality, same request id/different complete canonical content conflict,
+and absence of an externally supplied hash.
 
 - [ ] **Step 6: Make connection generations causal**
 
@@ -948,7 +982,9 @@ Store the required canonical command hash and `ClientMutationReceipt`, never a
 full `ClientSnapshot`. Insert the ledger after the aggregate guard and before
 commit. If insertion conflicts, throw the optimistic conflict so local writes
 roll back; the next `read` loads the winner. Equal request key with a different
-hash is an idempotency conflict. Preserve public methods that promise a snapshot
+SHA-256 digest is an idempotency conflict. Equality is over the internally
+canonicalized complete command: reordered keys compare equal while different
+semantic content cannot replay. Preserve public methods that promise a snapshot
 through an explicit post-commit `readClientSnapshot(...)` compatibility wrapper;
 the core mutation path returns the receipt and does not reread inside the
 transaction.
@@ -1002,6 +1038,11 @@ git commit -m "fix: make client state writes convergent"
 - Produces required `GroupMutationCommand`, `GroupMutationRead`,
   `GroupMutationComputed`, `GroupMutationFacts`, `GroupMutationReceipt`,
   `GroupPresenceSummary`, and `GroupStateCausalRevision` types.
+- Before legacy direct publication/topology enqueue can be removed, each
+  producer must validate/canonicalize the complete command once, await its
+  internally derived SHA-256 digest before retry, and persist that exact digest
+  in compact receipt and every outbox intent. No request or caller may supply
+  `commandHash`.
 
 - [ ] **Step 1: Write failing group conflict tests**
 
@@ -1012,6 +1053,9 @@ rotation, and identical request-id races. Assert all authorization/capacity
 decisions use the winning predecessor, routine heartbeats never update the group
 aggregate row, summaries eventually converge, receipts are compact, and every
 effectful winner has the required outbox intent.
+Add reordered-object-key replay equality, same-`requestId`/different-semantic-
+content conflict, exact receipt/outbox digest equality, lowercase SHA-256 shape,
+and a public-command assertion that no `commandHash` input is accepted.
 
 - [ ] **Step 2: Confirm current lost-update/idempotency behavior fails**
 
@@ -1042,7 +1086,9 @@ rotation, remove/ban/unban, role, ownership, member upsert, presence lifecycle,
 expiry, and presence-summary convergence. `computeGroupMutation(...)` and
 `validateGroupMutation(...)` are synchronous and deterministic. Test deep-frozen
 inputs twice for equal output and no mutation. Ban repository/time/random/id/
-publisher access; capture required facts and canonical command hash once.
+publisher access. Construct the complete command, validate/canonicalize it, and
+await its internal SHA-256 digest once before attempt zero. Facts carry that
+digest unchanged; no request/external caller supplies it and no retry re-hashes.
 
 - [ ] **Step 5: Make the group service read, compute, validate, then write**
 
@@ -1065,6 +1111,9 @@ After all group branches write intents, remove direct
 `AppGroupInboxService.publishGroupMutation(...)` publication and topology
 enqueue. The transaction-local outbox drainer becomes the single owner; tests
 must fail on duplicate direct-plus-drained delivery.
+The removal gate also proves identical internally derived receipt/outbox
+digests, reordered-key replay equality, same request id/different complete
+canonical content conflict, and absence of an externally supplied hash.
 
 - [ ] **Step 6: Make presence generations causal and independently writable**
 
@@ -1107,7 +1156,10 @@ for asynchronous presence summaries.
 - [ ] **Step 8: Make receipts compact and first-writer-wins**
 
 Store canonical command hash plus `GroupMutationReceipt`, never a full
-`GroupSnapshot`. Equal request id/different hash is an idempotency conflict.
+`GroupSnapshot`. Equal request id/different digest is an idempotency conflict.
+The digest is internally derived canonical SHA-256: reordered object keys match,
+different semantic content conflicts, and producer inputs expose no
+caller-controlled `commandHash`.
 Compatibility APIs needing a snapshot perform an explicit post-commit read.
 
 - [ ] **Step 9: Replace the group Postgres lock proof**

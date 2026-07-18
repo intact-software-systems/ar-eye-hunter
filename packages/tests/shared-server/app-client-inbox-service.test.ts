@@ -180,8 +180,10 @@ describe('AppClientInboxService', () => {
             lastHeartbeatAtEpochMs: 3_000,
         });
         expect(requireRightSnapshot(disconnected).activeSessions).toHaveLength(0);
-        // TEMP(Task 3): remove this direct-publish characterization only after
-        // every client mutation writes a transaction-local outbox intent.
+        // TEMP(Task 3): remove only after every client producer derives
+        // canonical SHA-256 internally before retry, persists the identical
+        // receipt/outbox digest, proves reordered replay and semantic conflict,
+        // accepts no caller hash, and writes the intent transactionally.
         expect(publisher.publishClientSnapshot).toHaveBeenCalledTimes(5);
         expect(publisher.publishClientEvent).toHaveBeenCalledTimes(5);
     });

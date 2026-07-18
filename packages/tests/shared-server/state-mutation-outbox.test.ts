@@ -42,8 +42,11 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/services/ti
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
+const TEST_COMMAND_HASH = `sha256:${'0'.repeat(64)}`;
+const ALTERNATE_TEST_COMMAND_HASH = `sha256:${'1'.repeat(64)}`;
+
 describe('StateMutationOutboxRepository', () => {
-    it('builds a mandatory immutable intent with deterministic command and causal identity', () => {
+    it('builds a mandatory immutable intent with canonical SHA-256 command identity', async () => {
         const snapshot = createClientSnapshot(4);
         const command = {
             requestId: 'command-1',
@@ -54,10 +57,10 @@ describe('StateMutationOutboxRepository', () => {
             requestId: 'command-1',
         };
         const first = createClientRecord(snapshot, {
-            commandHash: hashStateMutationCommand(command),
+            commandHash: await hashStateMutationCommand(command),
         });
         const duplicate = createClientRecord(snapshot, {
-            commandHash: hashStateMutationCommand(reorderedCommand),
+            commandHash: await hashStateMutationCommand(reorderedCommand),
         });
         const successor = createClientRecord(createClientSnapshot(5), {
             commandHash: first.commandHash,
@@ -66,7 +69,7 @@ describe('StateMutationOutboxRepository', () => {
         expect(first).toEqual({
             outboxId: expect.stringMatching(/^state-mutation-/),
             commandId: 'command-1',
-            commandHash: expect.stringMatching(/^fnv1a64:/),
+            commandHash: 'sha256:c1a4ee4548686248ec994158b790f39461535d94d63a7e7e31ac440c7049b26d',
             kind: 'client',
             aggregateRef: {
                 applicationId: 'app-1',
@@ -91,6 +94,96 @@ describe('StateMutationOutboxRepository', () => {
         expect(duplicate.commandHash).toBe(first.commandHash);
         expect(duplicate.outboxId).toBe(first.outboxId);
         expect(successor.outboxId).not.toBe(first.outboxId);
+    });
+
+    it('rejects command values whose meaning cannot survive canonical JSON', async () => {
+        class CommandClass {
+            readonly requestId = 'command-1';
+        }
+        const cyclic: Record<string, unknown> = {};
+        cyclic.self = cyclic;
+        const sparse = new Array(2);
+        sparse[1] = 'present';
+        const accessorRead = vi.fn(() => 'secret');
+        const accessor = Object.defineProperty({}, 'secret', {
+            enumerable: true,
+            get: accessorRead,
+        });
+        const symbolKey = { requestId: 'command-1' } as Record<
+            string | symbol,
+            unknown
+        >;
+        symbolKey[Symbol('hidden')] = 'lost';
+        const nonEnumerable = Object.defineProperty({}, 'hidden', {
+            enumerable: false,
+            value: 'lost',
+        });
+        const arrayWithProperty = ['item'] as unknown[] & { extra?: string };
+        arrayWithProperty.extra = 'lost';
+        class CommandArray extends Array<unknown> {}
+        const subclassArray = new CommandArray();
+        subclassArray.push('value');
+
+        const cases: readonly Readonly<{ name: string; value: unknown }>[] = [
+            { name: 'undefined', value: undefined },
+            { name: 'function', value: () => undefined },
+            { name: 'symbol', value: Symbol('command') },
+            { name: 'bigint', value: 1n },
+            { name: 'NaN', value: Number.NaN },
+            { name: 'positive infinity', value: Number.POSITIVE_INFINITY },
+            { name: 'negative infinity', value: Number.NEGATIVE_INFINITY },
+            { name: 'negative zero', value: -0 },
+            { name: 'date', value: new Date(0) },
+            { name: 'map', value: new Map([['key', 'value']]) },
+            { name: 'set', value: new Set(['value']) },
+            { name: 'class instance', value: new CommandClass() },
+            { name: 'prototype object', value: Object.create({ inherited: true }) },
+            { name: 'cycle', value: cyclic },
+            { name: 'sparse array', value: sparse },
+            { name: 'accessor', value: accessor },
+            { name: 'symbol key', value: symbolKey },
+            { name: 'non-enumerable key', value: nonEnumerable },
+            { name: 'array property', value: arrayWithProperty },
+            { name: 'array subclass', value: subclassArray },
+            {
+                name: 'nested undefined',
+                value: { payload: { lost: undefined } },
+            },
+            {
+                name: 'nested map',
+                value: { payload: [{ lost: new Map() }] },
+            },
+        ];
+
+        for (const testCase of cases) {
+            await expect(
+                hashStateMutationCommand(testCase.value),
+                testCase.name,
+            ).rejects.toThrow('State mutation command must be JSON-safe');
+        }
+        expect(accessorRead).not.toHaveBeenCalled();
+    });
+
+    it('accepts repeated JSON references and null-prototype command objects', async () => {
+        const repeated = { value: 7 };
+        const nullPrototype = Object.assign(Object.create(null), {
+            requestId: 'command-1',
+            left: repeated,
+            right: repeated,
+        });
+
+        const digest = await hashStateMutationCommand(nullPrototype);
+        const expandedDigest = await hashStateMutationCommand({
+            left: { value: 7 },
+            requestId: 'command-1',
+            right: { value: 7 },
+        });
+
+        expect(digest).toBe(expandedDigest);
+        expect(digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+        expect(await hashStateMutationCommand({ value: 1 })).not.toBe(
+            await hashStateMutationCommand({ value: 2 }),
+        );
     });
 
     it('rolls back the domain row when the transaction-local outbox insert fails', async () => {
@@ -159,7 +252,7 @@ describe('StateMutationOutboxRepository', () => {
 
         await expect(repository.putOrLoad({
             ...record,
-            commandHash: 'fnv1a64:corrupt',
+            commandHash: ALTERNATE_TEST_COMMAND_HASH,
         })).rejects.toBeInstanceOf(StateMutationOutboxInvariantCorruptionError);
         await expect(repository.putOrLoad({
             ...record,
@@ -467,12 +560,14 @@ describe('StateMutationOutboxRepository', () => {
             kind: 'client' | 'group';
             mutate(event: ClientEvent | GroupEvent): unknown;
             error: string;
+            builderError?: string;
         }>[] = [
             {
                 name: 'client event object',
                 kind: 'client',
                 mutate: () => undefined,
                 error: 'Client outbox event is required',
+                builderError: 'State mutation outbox input must be JSON-safe',
             },
             {
                 name: 'client event id',
@@ -491,12 +586,14 @@ describe('StateMutationOutboxRepository', () => {
                 kind: 'client',
                 mutate: (event) => ({ ...event, occurredAtEpochMs: Number.POSITIVE_INFINITY }),
                 error: 'Invalid client outbox event occurred time',
+                builderError: 'State mutation outbox input must be JSON-safe',
             },
             {
                 name: 'client actor',
                 kind: 'client',
                 mutate: (event) => ({ ...event, actor: undefined }),
                 error: 'Client outbox event actor is required',
+                builderError: 'State mutation outbox input must be JSON-safe',
             },
             {
                 name: 'client empty actor',
@@ -509,6 +606,7 @@ describe('StateMutationOutboxRepository', () => {
                 kind: 'group',
                 mutate: () => undefined,
                 error: 'Group outbox event is required',
+                builderError: 'State mutation outbox input must be JSON-safe',
             },
             {
                 name: 'group event id',
@@ -565,7 +663,7 @@ describe('StateMutationOutboxRepository', () => {
                     event: { kind: 'group', event: malformedEvent as GroupEvent },
                 });
 
-            expect(create).toThrow(testCase.error);
+            expect(create).toThrow(testCase.builderError ?? testCase.error);
             await insertRawOutboxRecord(runtime, {
                 ...valid,
                 event: {
@@ -669,6 +767,30 @@ describe('StateMutationOutboxRepository', () => {
             {
                 name: 'blank command hash',
                 mutate: (input) => ({ ...input, commandHash: '  ' }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'legacy command hash algorithm',
+                mutate: (input) => ({
+                    ...input,
+                    commandHash: 'fnv1a64:legacy',
+                }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'uppercase command hash',
+                mutate: (input) => ({
+                    ...input,
+                    commandHash: `sha256:${'A'.repeat(64)}`,
+                }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'short command hash',
+                mutate: (input) => ({
+                    ...input,
+                    commandHash: 'sha256:1234',
+                }),
                 error: 'Invalid state mutation outbox command hash',
             },
             {
@@ -961,6 +1083,14 @@ describe('StateMutationOutboxRepository', () => {
             {
                 name: 'blank command hash',
                 mutate: (record) => ({ ...record, commandHash: ' \t ' }),
+                error: 'Invalid state mutation outbox command hash',
+            },
+            {
+                name: 'legacy command hash algorithm',
+                mutate: (record) => ({
+                    ...record,
+                    commandHash: 'fnv1a64:legacy',
+                }),
                 error: 'Invalid state mutation outbox command hash',
             },
             {
@@ -1366,6 +1496,373 @@ describe('StateMutationOutboxRepository', () => {
                 testCase.name,
             ).rejects.toThrow(testCase.error);
         }
+    });
+
+    it('rejects prototype-bearing or lossy JSON values before building records', () => {
+        const valid = createClientRecord(createClientSnapshot(1), {
+            event: { kind: 'client', event: createClientEvent(1) },
+        });
+        const {
+            outboxId: _outboxId,
+            attempts: _attempts,
+            delivery: _delivery,
+            ...validInput
+        } = valid;
+        const cyclicPayload: Record<string, unknown> = {};
+        cyclicPayload.self = cyclicPayload;
+        const sparsePayload = new Array(2);
+        sparsePayload[1] = 'present';
+        const getterRead = vi.fn(() => 'client');
+        const getterRoot = Object.defineProperty(
+            { ...validInput, kind: undefined },
+            'kind',
+            { enumerable: true, get: getterRead },
+        );
+        const symbolPayload = { visible: true } as Record<
+            string | symbol,
+            unknown
+        >;
+        symbolPayload[Symbol('hidden')] = 'lost';
+        const accessorPayload = Object.defineProperty({}, 'hidden', {
+            enumerable: true,
+            get: () => 'lost',
+        });
+        class PayloadArray extends Array<unknown> {}
+        const subclassPayload = new PayloadArray();
+        subclassPayload.push('value');
+
+        const withPayload = (payload: unknown) => ({
+            ...validInput,
+            event: {
+                kind: 'client',
+                event: { ...createClientEvent(1), payload },
+            },
+        });
+        const cases: readonly Readonly<{ name: string; input: unknown }>[] = [
+            {
+                name: 'class-backed root',
+                input: Object.assign(new (class {})(), validInput),
+            },
+            {
+                name: 'prototype-bearing root',
+                input: Object.assign(Object.create({ inherited: true }), validInput),
+            },
+            { name: 'root getter', input: getterRoot },
+            {
+                name: 'prototype-bearing ref',
+                input: {
+                    ...validInput,
+                    aggregateRef: Object.assign(
+                        Object.create({ inherited: true }),
+                        validInput.aggregateRef,
+                    ),
+                },
+            },
+            {
+                name: 'class-backed causal revision',
+                input: {
+                    ...validInput,
+                    acceptedCausalRevision: Object.assign(
+                        new (class {})(),
+                        validInput.acceptedCausalRevision,
+                    ),
+                },
+            },
+            {
+                name: 'prototype-bearing event wrapper',
+                input: {
+                    ...validInput,
+                    event: Object.assign(
+                        Object.create({ inherited: true }),
+                        validInput.event,
+                    ),
+                },
+            },
+            {
+                name: 'class-backed exact event',
+                input: {
+                    ...validInput,
+                    event: {
+                        kind: 'client',
+                        event: Object.assign(
+                            new (class {})(),
+                            createClientEvent(1),
+                        ),
+                    },
+                },
+            },
+            {
+                name: 'class-backed actor',
+                input: {
+                    ...validInput,
+                    event: {
+                        kind: 'client',
+                        event: {
+                            ...createClientEvent(1),
+                            actor: Object.assign(new (class {})(), {
+                                serviceId: 'test',
+                            }),
+                        },
+                    },
+                },
+            },
+            { name: 'map payload', input: withPayload(new Map()) },
+            { name: 'set payload', input: withPayload(new Set()) },
+            { name: 'date payload', input: withPayload(new Date(0)) },
+            { name: 'cyclic payload', input: withPayload(cyclicPayload) },
+            { name: 'sparse payload array', input: withPayload(sparsePayload) },
+            { name: 'symbol payload key', input: withPayload(symbolPayload) },
+            { name: 'payload accessor', input: withPayload(accessorPayload) },
+            { name: 'payload array subclass', input: withPayload(subclassPayload) },
+            {
+                name: 'nested bigint',
+                input: withPayload({ nested: [{ value: 1n }] }),
+            },
+            {
+                name: 'nested function',
+                input: withPayload({ nested: { value: () => undefined } }),
+            },
+            {
+                name: 'nested undefined',
+                input: withPayload({ nested: { value: undefined } }),
+            },
+            {
+                name: 'nested non-finite number',
+                input: withPayload({ nested: [Number.NaN] }),
+            },
+        ];
+
+        for (const testCase of cases) {
+            expect(
+                () => createStateMutationOutboxRecord(testCase.input as never),
+                testCase.name,
+            ).toThrow('State mutation outbox input must be JSON-safe');
+        }
+        expect(getterRead).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-JSON-safe raw insert candidates before persistence', async () => {
+        const valid = createClientRecord(createClientSnapshot(1), {
+            event: { kind: 'client', event: createClientEvent(1) },
+        });
+        const cyclicPayload: Record<string, unknown> = {};
+        cyclicPayload.self = cyclicPayload;
+        const withPayload = (record: typeof valid, payload: unknown) => ({
+            ...record,
+            event: {
+                kind: 'client' as const,
+                event: { ...createClientEvent(1), payload },
+            },
+        });
+        const cases: readonly Readonly<{
+            name: string;
+            mutate(record: typeof valid): unknown;
+        }>[] = [
+            {
+                name: 'class-backed root',
+                mutate: (record) => Object.assign(new (class {})(), record),
+            },
+            {
+                name: 'prototype-bearing ref',
+                mutate: (record) => ({
+                    ...record,
+                    aggregateRef: Object.assign(
+                        Object.create({ inherited: true }),
+                        record.aggregateRef,
+                    ),
+                }),
+            },
+            {
+                name: 'class-backed causal revision',
+                mutate: (record) => ({
+                    ...record,
+                    acceptedCausalRevision: Object.assign(
+                        new (class {})(),
+                        record.acceptedCausalRevision,
+                    ),
+                }),
+            },
+            {
+                name: 'prototype-bearing event wrapper',
+                mutate: (record) => ({
+                    ...record,
+                    event: Object.assign(
+                        Object.create({ inherited: true }),
+                        record.event,
+                    ),
+                }),
+            },
+            { name: 'map', mutate: (record) => withPayload(record, new Map()) },
+            { name: 'set', mutate: (record) => withPayload(record, new Set()) },
+            { name: 'date', mutate: (record) => withPayload(record, new Date(0)) },
+            { name: 'cycle', mutate: (record) => withPayload(record, cyclicPayload) },
+            { name: 'bigint', mutate: (record) => withPayload(record, { value: 1n }) },
+            {
+                name: 'function',
+                mutate: (record) => withPayload(record, {
+                    value: () => undefined,
+                }),
+            },
+            {
+                name: 'undefined',
+                mutate: (record) => withPayload(record, { value: undefined }),
+            },
+            {
+                name: 'non-finite number',
+                mutate: (record) => withPayload(record, {
+                    value: Number.POSITIVE_INFINITY,
+                }),
+            },
+        ];
+
+        for (const testCase of cases) {
+            const runtime = new FakeRuntimeStateRepository();
+            const repository = new StateMutationOutboxRepository(runtime);
+            const candidate = testCase.mutate(valid);
+
+            await expect(
+                repository.putOrLoad(candidate as never),
+                testCase.name,
+            ).rejects.toThrow('State mutation outbox record must be JSON-safe');
+            expect(await runtime.findAllEntries(STATE_MUTATION_OUTBOX_NAMESPACE))
+                .toEqual([]);
+        }
+    });
+
+    it('rejects non-plain delivery candidates before reading accessors', async () => {
+        const retry = {
+            count: 1,
+            last: {
+                status: 'failed',
+                attemptedAtEpochMs: 2_000,
+                error: 'retry',
+            },
+        } as const;
+        const delivery = { status: 'retryable' } as const;
+        const getterRead = vi.fn(() => retry);
+
+        const cases: readonly Readonly<{
+            name: string;
+            createInput(
+                outboxId: string,
+                storageRevision: number,
+            ): unknown;
+        }>[] = [
+            {
+                name: 'class-backed root',
+                createInput: (outboxId, expectedStorageRevision) =>
+                    Object.assign(new (class {})(), {
+                        outboxId,
+                        expectedStorageRevision,
+                        attempts: retry,
+                        delivery,
+                    }),
+            },
+            {
+                name: 'prototype-bearing attempts',
+                createInput: (outboxId, expectedStorageRevision) => ({
+                    outboxId,
+                    expectedStorageRevision,
+                    attempts: Object.assign(
+                        Object.create({ inherited: true }),
+                        retry,
+                    ),
+                    delivery,
+                }),
+            },
+            {
+                name: 'class-backed last attempt',
+                createInput: (outboxId, expectedStorageRevision) => ({
+                    outboxId,
+                    expectedStorageRevision,
+                    attempts: {
+                        count: 1,
+                        last: Object.assign(new (class {})(), retry.last),
+                    },
+                    delivery,
+                }),
+            },
+            {
+                name: 'prototype-bearing delivery',
+                createInput: (outboxId, expectedStorageRevision) => ({
+                    outboxId,
+                    expectedStorageRevision,
+                    attempts: retry,
+                    delivery: Object.assign(
+                        Object.create({ inherited: true }),
+                        delivery,
+                    ),
+                }),
+            },
+            {
+                name: 'attempts getter',
+                createInput: (outboxId, expectedStorageRevision) =>
+                    Object.defineProperty({
+                        outboxId,
+                        expectedStorageRevision,
+                        delivery,
+                    }, 'attempts', {
+                        enumerable: true,
+                        get: getterRead,
+                    }),
+            },
+            {
+                name: 'cyclic extra value',
+                createInput: (outboxId, expectedStorageRevision) => {
+                    const input: Record<string, unknown> = {
+                        outboxId,
+                        expectedStorageRevision,
+                        attempts: retry,
+                        delivery,
+                    };
+                    input.extra = input;
+                    return input;
+                },
+            },
+        ];
+
+        for (const testCase of cases) {
+            const runtime = new FakeRuntimeStateRepository();
+            const repository = new StateMutationOutboxRepository(runtime);
+            const inserted = await repository.putOrLoad(
+                createClientRecord(createClientSnapshot(1)),
+            );
+
+            await expect(repository.writeDelivery(testCase.createInput(
+                inserted.record.outboxId,
+                inserted.storageRevision,
+            ) as never), testCase.name).rejects.toThrow(
+                'State mutation outbox delivery input must be JSON-safe',
+            );
+        }
+        expect(getterRead).not.toHaveBeenCalled();
+    });
+
+    it('roundtrips every accepted JSON value without changing the record', async () => {
+        const repeated = { finite: 1.25, enabled: true, missing: null };
+        const nullPrototype = Object.assign(Object.create(null), {
+            alpha: 'value',
+            nested: [false, 0, repeated],
+        });
+        const event = {
+            ...createClientEvent(1),
+            payload: {
+                repeatedLeft: repeated,
+                repeatedRight: repeated,
+                nullPrototype,
+            },
+        };
+        const record = createClientRecord(createClientSnapshot(1), {
+            event: { kind: 'client', event },
+        });
+        const jsonRoundtrip = JSON.parse(JSON.stringify(record));
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new StateMutationOutboxRepository(runtime);
+
+        expect(jsonRoundtrip).toEqual(record);
+        const inserted = await repository.putOrLoad(record);
+        expect(inserted.record).toEqual(record);
+        expect((await repository.find(record.outboxId))?.record).toEqual(record);
     });
 
     it('rejects pending and internally inconsistent delivery transitions', async () => {
@@ -2255,7 +2752,7 @@ function createClientRecord(
 ) {
     return createStateMutationOutboxRecord({
         commandId: 'command-1',
-        commandHash: hashStateMutationCommand({ requestId: 'command-1' }),
+        commandHash: TEST_COMMAND_HASH,
         kind: 'client',
         aggregateRef: {
             applicationId: snapshot.principal.applicationId,
@@ -2279,7 +2776,7 @@ function createGroupRecord(
 ) {
     return createStateMutationOutboxRecord({
         commandId: 'group-command-1',
-        commandHash: hashStateMutationCommand({ requestId: 'group-command-1' }),
+        commandHash: TEST_COMMAND_HASH,
         kind: 'group',
         aggregateRef: snapshot.group,
         acceptedCausalRevision: toGroupStateMutationCausalRevision(snapshot),
