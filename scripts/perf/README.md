@@ -47,6 +47,8 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 | --- | --- |
 | `runtime-validation-bench.ts` | Deno benchmark harness for event parsing, runtime prefix reads, cache retention, rate limiter cleanup, state-sync recipient resolution, WebSocket serialization, and cache churn. |
 | `summarize-runtime-results.mjs` | Node helper that summarizes harness JSON into per-case duration and memory deltas. |
+| `api-v1-state-write-concurrency-bench.ts` | Direct PostgreSQL API-v1 state-write benchmark for uncontended, shared-group, and hot-group concurrency. |
+| `compare-api-v1-state-write-results.mjs` | Validates state-write artifacts and enforces the relative performance and correctness gate. |
 | `seed-perf-db.sql` | Synthetic Postgres fixture for runtime state, app data, state events, queue rows, and CRDT rows. |
 | `explain-perf-db.sql` | EXPLAIN ANALYZE script for the seeded Postgres fixture. |
 | `seed-perf-db-sparse-queue.sql` | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection. |
@@ -92,6 +94,53 @@ mkdir -p tmp/perf/results tmp/perf/profiles tmp/perf/logs tmp/perf/artifacts
 
 The Deno harness uses `apps/api-v1/deno.json` for import aliases such as
 `@shared/` and `@shared-server/`.
+
+## API-v1 State-write Concurrency Baseline
+
+Start PostgreSQL and apply the API-v1 migrations before running the state-write
+benchmark. `DATABASE_URL` defaults to the local compose database
+`postgres://app:app@localhost:5432/appdb` when it is not set.
+
+```sh
+npm run db:up
+DATABASE_URL=postgres://app:app@localhost:5432/appdb npm run db:migrate
+npm run perf:api-v1:state-write -- \
+  --backend=postgres \
+  --warmup=1 \
+  --runs=3 \
+  --out=tmp/perf/api-v1-state-write-baseline.json
+```
+
+The harness constructs two independent PostgreSQL service/repository stacks
+against one database. It seeds complete client and group state before every
+warmup and measured phase, then resets measurement state. Setup, authentication,
+and HTTP routing are not included in mutation latency. Every workload uses 100
+clients, concurrency 10, and the same deterministic mix: profile/instance,
+membership, presence connect/heartbeat/disconnect, group config, and topology
+source config. Workload group counts are 100 (`uncontended`), five (`shared`),
+and one (`hot`).
+
+Artifacts use schema `rallar.api-v1.state-write.v1` and retain every measured
+run and command-latency sample. They include latency percentiles, throughput,
+outcomes and attempts, SQL/row/serialized-byte metrics, transaction and phase
+timings, PostgreSQL lock/buffer/WAL counters, process CPU time, and receipt/outbox
+correctness counters. PostgreSQL buffer and WAL counters are captured immediately
+before and after each measured phase; lock waits are sampled from
+`pg_stat_activity` while the phase runs.
+
+Compare a candidate with its unmodified baseline:
+
+```sh
+node scripts/perf/compare-api-v1-state-write-results.mjs \
+  tmp/perf/api-v1-state-write-baseline.json \
+  tmp/perf/api-v1-state-write-candidate.json
+```
+
+The comparison rejects invalid artifacts, uncontended p95/p99 regressions above
+5%, shared or hot throughput regressions, unreasoned median SQL/row/byte/
+transaction increases, disallowed retry exhaustion, and any candidate receipt or
+outbox cardinality failure. A baseline correctness failure remains a failure
+sample and must link to a DBW finding; it never weakens candidate expectations.
 
 ## Focused Runtime Harness
 
@@ -382,4 +431,3 @@ When using these scripts to validate an optimization, record:
 - input size and mode;
 - number of runs;
 - before and after artifacts under `tmp/perf/`.
-
