@@ -35,6 +35,8 @@ const session = {
     sessionId: 'alice-session',
     expiresAtEpochMs: Date.now() + SESSION_TTL_MS,
 };
+let clientStateRevision = 0;
+let groupStateRevision = 0;
 const SCENE_BASELINE_DIR = 'apps/relic-hunters-v1/baseline/screenshots/scene-upgrades';
 const WRITE_SCENE_BASELINES = process.env.RELIC_SCENE_BASELINE_WRITE === '1' ||
     process.env.RELIC_SCENE_BASELINE_WRITE === 'true';
@@ -1385,6 +1387,7 @@ async function sceneCanvasMetrics(page: Page): Promise<Readonly<{
 function clientSnapshot(): MockClientSnapshot {
     const now = Date.now();
     return {
+        stateRevision: ++clientStateRevision,
         principal: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
@@ -1439,6 +1442,7 @@ function groupSnapshot(
 ): MockGroupSnapshot {
     const now = Date.now();
     return {
+        stateRevision: ++groupStateRevision,
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
