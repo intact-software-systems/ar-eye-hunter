@@ -1,4 +1,5 @@
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     RtcTopologyPublication,
     RtcTopologyPublicationRepository,
@@ -6,12 +7,24 @@ import type {
 
 export const RTC_TOPOLOGY_PUBLICATION_CHANNEL = 'rallar_rtc_topology_publication';
 
-export type RtcTopologyPublicationNotification = Readonly<{
+export type RtcTopologyPublicationNotificationV1 = Readonly<{
     v: 1;
     publisherId: string;
     publicationId: string;
     sourceGroupStateRevision: number;
 }>;
+
+export type RtcTopologyPublicationNotificationV2 = Readonly<{
+    v: 2;
+    publisherId: string;
+    groupRef: GroupRef;
+    publicationId: string;
+    sourceGroupStateRevision: number;
+}>;
+
+export type RtcTopologyPublicationNotification =
+    | RtcTopologyPublicationNotificationV1
+    | RtcTopologyPublicationNotificationV2;
 
 export type RtcTopologyClusterTransport = Readonly<{
     publish(
@@ -102,9 +115,15 @@ export function createRtcTopologyPublicationFanout(options: Readonly<{
                 notification.publisherId === options.publisherId) {
                 return;
             }
-            const publication = await options.repository.findPublication(
-                notification.publicationId,
-            );
+            // v1 predates scoped publication keys. Its validated global lookup is
+            // retained only for rolling-deployment compatibility; v2 is the
+            // canonical scoped protocol emitted by current writers.
+            const publication = notification.v === 1
+                ? await options.repository.findPublication(notification.publicationId)
+                : await options.repository.findPublication(
+                    notification.groupRef,
+                    notification.publicationId,
+                );
             if (!publication || publication.sourceGroupStateRevision !==
                 notification.sourceGroupStateRevision) {
                 return;
@@ -119,8 +138,9 @@ export function createRtcTopologyPublicationFanout(options: Readonly<{
         publish: async (publication) => {
             const localRecipientCount = deliverLocal(publication);
             await options.transport.publish(channel, {
-                v: 1,
+                v: 2,
                 publisherId: options.publisherId,
+                groupRef: canonicalGroupRef(publication.groupRef),
                 publicationId: publication.publicationId,
                 sourceGroupStateRevision: publication.sourceGroupStateRevision,
             });
@@ -135,9 +155,62 @@ export function isRtcTopologyPublicationNotification(
     if (!value || typeof value !== 'object') {
         return false;
     }
-    const notification = value as Partial<RtcTopologyPublicationNotification>;
-    return notification.v === 1 &&
+    const notification = value as Readonly<{
+        v?: unknown;
+        publisherId?: unknown;
+        groupRef?: unknown;
+        publicationId?: unknown;
+        sourceGroupStateRevision?: unknown;
+    }>;
+    const commonFieldsAreValid =
         typeof notification.publisherId === 'string' &&
+        notification.publisherId.length > 0 &&
         typeof notification.publicationId === 'string' &&
-        typeof notification.sourceGroupStateRevision === 'number';
+        notification.publicationId.length > 0 &&
+        typeof notification.sourceGroupStateRevision === 'number' &&
+        Number.isSafeInteger(notification.sourceGroupStateRevision) &&
+        notification.sourceGroupStateRevision >= 0;
+    if (!commonFieldsAreValid) return false;
+    if (notification.v === 1) {
+        return hasExactKeys(notification, [
+            'v', 'publisherId', 'publicationId', 'sourceGroupStateRevision',
+        ]);
+    }
+    return notification.v === 2 &&
+        hasExactKeys(notification, [
+            'v', 'publisherId', 'groupRef', 'publicationId',
+            'sourceGroupStateRevision',
+        ]) &&
+        isCanonicalGroupRef(notification.groupRef);
+}
+
+function hasExactKeys(
+    value: object,
+    expectedKeys: readonly string[],
+): boolean {
+    return JSON.stringify(Object.keys(value).sort()) ===
+        JSON.stringify([...expectedKeys].sort());
+}
+
+function canonicalGroupRef(ref: GroupRef): GroupRef {
+    return ref.workspaceId === undefined
+        ? { applicationId: ref.applicationId, groupId: ref.groupId }
+        : {
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            groupId: ref.groupId,
+        };
+}
+
+function isCanonicalGroupRef(value: unknown): value is GroupRef {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const ref = value as Partial<GroupRef>;
+    const expectedKeys = ref.workspaceId === undefined
+        ? ['applicationId', 'groupId']
+        : ['applicationId', 'workspaceId', 'groupId'];
+    return JSON.stringify(Object.keys(ref).sort()) ===
+            JSON.stringify(expectedKeys.sort()) &&
+        typeof ref.applicationId === 'string' && ref.applicationId.length > 0 &&
+        typeof ref.groupId === 'string' && ref.groupId.length > 0 &&
+        (ref.workspaceId === undefined || typeof ref.workspaceId === 'string');
 }

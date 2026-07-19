@@ -1,7 +1,7 @@
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-management-types.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     compareOverlayTopologyCausalTuple,
     type RallarOverlayTopologySnapshot,
@@ -108,7 +108,7 @@ export function planRallarRtcTopologySnapshot(input: Readonly<{
         sourceGroupStateRevision: readGroupStateRevision(input.group),
         state: 'active',
         overlayId: toScopedOverlayId(input.group.group),
-        groupRef: input.group.group,
+        groupRef: canonicalGroupRef(input.group.group),
         name,
         topology: input.topology,
         activeSessionIds,
@@ -129,6 +129,16 @@ export function planRallarRtcTopologySnapshot(input: Readonly<{
         ? input.previous
         : candidate;
     return { snapshot, changed, previous: input.previous };
+}
+
+function canonicalGroupRef(ref: GroupRef): GroupRef {
+    return ref.workspaceId === undefined
+        ? { applicationId: ref.applicationId, groupId: ref.groupId }
+        : {
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            groupId: ref.groupId,
+        };
 }
 
 export type RallarRtcTopologyRttQueueResult = Readonly<{
@@ -260,6 +270,20 @@ export class RallarRtcTopologyService {
         rttMeasurements: readonly RttMeasurementInfo[] = [],
         options: RallarRtcTopologyUpdateOptions = {},
     ): RallarRtcTopologyUpdateResult {
+        return this.planGroupTopologyAt(
+            group,
+            rttMeasurements,
+            options,
+            this.now(),
+        );
+    }
+
+    planGroupTopologyAt(
+        group: GroupSnapshot,
+        rttMeasurements: readonly RttMeasurementInfo[],
+        options: RallarRtcTopologyUpdateOptions,
+        nowEpochMs: number,
+    ): RallarRtcTopologyUpdateResult {
         this.metrics.topologyUpdateCount += 1;
         const activeSessionIds = readGroupMemberSessionIds(group);
         const relevantRttMeasurements = filterRttMeasurementsForActiveSessions(
@@ -324,7 +348,7 @@ export class RallarRtcTopologyService {
             topology,
             nextHopsBySessionId,
             degreeLimit,
-            nowEpochMs: this.now(),
+            nowEpochMs,
         });
         if (result.changed) {
             this.metrics.topologyChangedCount += 1;
@@ -398,19 +422,24 @@ export class RallarRtcTopologyService {
         rttMeasurements: readonly RttMeasurementInfo[] = [],
         options: RallarRtcTopologyUpdateOptions = {},
     ): RallarRtcTopologyUpdateResult | undefined {
+        if (!this.claimDueRttTopologyUpdate(group.group)) return undefined;
+        return this.updateGroupTopology(group, rttMeasurements, options);
+    }
+
+    claimDueRttTopologyUpdate(groupRef: GroupRef): boolean {
         this.metrics.rttFlushAttemptCount += 1;
-        const overlayId = toScopedOverlayId(group.group);
+        const overlayId = toScopedOverlayId(groupRef);
         const dueAtEpochMs = this.pendingRttUpdateDueAtByOverlayId.get(
             overlayId,
         );
         if (dueAtEpochMs === undefined || dueAtEpochMs > this.now()) {
             this.metrics.rttFlushSkippedCount += 1;
-            return undefined;
+            return false;
         }
 
         this.pendingRttUpdateDueAtByOverlayId.delete(overlayId);
         this.metrics.rttFlushExecutedCount += 1;
-        return this.updateGroupTopology(group, rttMeasurements, options);
+        return true;
     }
 
     readRttTopologyUpdateDelayMs(group: GroupSnapshot): number | undefined {
@@ -426,6 +455,10 @@ export class RallarRtcTopologyService {
 
     readRttRebuildDebounceMs(): number {
         return this.rttRebuildDebounceMs();
+    }
+
+    readNowEpochMs(): number {
+        return this.now();
     }
 
     readRttReportingDegreeLimit(

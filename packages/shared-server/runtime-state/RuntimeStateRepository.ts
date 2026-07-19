@@ -102,6 +102,13 @@ export function isRuntimeStateConditionalRepositoryLike(
         typeof candidate.deleteIfRevision === 'function';
 }
 
+export function isRuntimeStateOptimisticTransactionalRepositoryLike(
+    repository: RuntimeStateRepositoryLike,
+): repository is RuntimeStateOptimisticTransactionalRepositoryLike {
+    return isRuntimeStateConditionalRepositoryLike(repository) &&
+        isRuntimeStateTransactionalRepositoryLike(repository);
+}
+
 export function assertRuntimeStateExpectedRevision(
     expectedRevision: number,
 ): void {

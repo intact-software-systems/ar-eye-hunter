@@ -18,6 +18,10 @@ import { GroupTopologyManagementService as ConcreteGroupTopologyManagementServic
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import {
+    RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+    RtcTopologyPublicationRepository,
+} from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('RTC topology APP_OUTBOX work', () => {
@@ -88,7 +92,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(duplicate).toEqual({ effectiveSnapshotRevision: 1 });
     });
 
-    it('processes a group revision from its exact snapshot without resolving latest state', async () => {
+    it('processes a group revision after resolving current authority', async () => {
         const queue = new InMemoryQueueBox();
         const runtime = createRtcTopologyOutboxPublisher({
             outboxQueueReader: new OutboxQueueReader(queue),
@@ -99,11 +103,9 @@ describe('RTC topology APP_OUTBOX work', () => {
         const message = JSON.parse(entry.resource) as ALMessage;
         const runtimeRepository = new FakeRuntimeStateRepository();
         const topologyService = new RallarRtcTopologyService({ now: () => 10 });
-        const planGroupTopology = vi.spyOn(topologyService, 'planGroupTopology');
+        const planGroupTopology = vi.spyOn(topologyService, 'planGroupTopologyAt');
         const topologyManagement = new ConcreteGroupTopologyManagementService({
-            findGroupSnapshotByRef: () => {
-                throw new Error('group-revision work must not resolve latest state');
-            },
+            findGroupSnapshotByRef: () => exact,
             topologyService,
             topologySnapshotRepository: new RtcTopologySnapshotRepository(
                 runtimeRepository,
@@ -130,6 +132,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             exact,
             [],
             expect.any(Object),
+            10,
         );
         expect(publish).toHaveBeenCalledOnce();
     });
@@ -222,7 +225,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         const [entry] = await entriesIn(queue);
         const runtimeRepository = new FakeRuntimeStateRepository();
         const topologyService = new RallarRtcTopologyService({ now: () => 10 });
-        const planGroupTopology = vi.spyOn(topologyService, 'planGroupTopology');
+        const planGroupTopology = vi.spyOn(topologyService, 'planGroupTopologyAt');
         const topologyManagement = new ConcreteGroupTopologyManagementService({
             findGroupSnapshotByRef: () => group,
             topologyService,
@@ -258,6 +261,66 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(publish).toHaveBeenCalledTimes(2);
         expect(publish.mock.calls[1][0]).toEqual(publish.mock.calls[0][0]);
         expect(publish.mock.calls[0][0].createdAtEpochMs).toBe(100);
+    });
+
+    it('fails closed without fanout when a durable replay publication is corrupt', async () => {
+        const queue = new InMemoryQueueBox();
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+            now: () => 100,
+        });
+        const group = createGroupSnapshot(3);
+        await runtime.publisher.enqueueForGroupSnapshot(group);
+        const [entry] = await entriesIn(queue);
+        const message = JSON.parse(entry.resource) as ALMessage;
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const topologyManagement = new ConcreteGroupTopologyManagementService({
+            findGroupSnapshotByRef: () => group,
+            topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+            topologySnapshotRepository: new RtcTopologySnapshotRepository(
+                runtimeRepository,
+            ),
+            processRttReader: () => [],
+        });
+        const executionRepository = new RtcTopologyExecutionRepository(
+            runtimeRepository,
+        );
+        const publish = vi.fn().mockResolvedValue(0);
+        const handler = createRtcTopologyWorkHandler({
+            runtime,
+            topologyManagement,
+            executionRepository,
+            publicationFanout: {
+                readiness: Promise.resolve(), publish, deliverLocal: () => 0,
+            },
+        });
+        await handler.onMessage(message, entry, new JsonWebSocketServer());
+        const publication = publish.mock.calls[0][0];
+        const publications = new RtcTopologyPublicationRepository(runtimeRepository);
+        const publicationKey = publications.publicationKey(
+            publication.groupRef,
+            publication.publicationId,
+        );
+        const stored = await runtimeRepository.findEntry(
+            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+            publicationKey,
+        );
+        await runtimeRepository.upsert(
+            RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE,
+            publicationKey,
+            JSON.stringify({
+                ...publication,
+                recipientSessionIds: ['unexpected-session'],
+            }),
+            stored!.expireAtTimestamp,
+        );
+        publish.mockClear();
+
+        await expect(handler.onMessage(message, entry, new JsonWebSocketServer()))
+            .rejects.toMatchObject({
+                code: 'rtc-topology-repository-invariant-corruption',
+            });
+        expect(publish).not.toHaveBeenCalled();
     });
 
     it('retries inactive fanout with a byte-equivalent durable tombstone', async () => {
@@ -343,33 +406,37 @@ describe('RTC topology APP_OUTBOX work', () => {
             sourceGroupStateRevision: 2,
         };
         const order: string[] = [];
-        const originalPlan = topologyManagement.planGroupTopology.bind(
+        const originalPlan = topologyManagement.planTopologyFromAuthority.bind(
             topologyManagement,
         );
-        vi.spyOn(topologyManagement, 'planGroupTopology')
-            .mockImplementation(async (snapshot, previous) => {
+        vi.spyOn(topologyManagement, 'planTopologyFromAuthority')
+            .mockImplementation((authority, previous) => {
                 order.push(`plan:${previous?.sourceGroupStateRevision ?? 0}`);
-                return await originalPlan(snapshot, previous);
+                return originalPlan(authority, previous);
             });
         let commitCount = 0;
         const executionRepository = {
-            findPublicationForWork: () => Promise.resolve(undefined),
-            findSnapshot: () => Promise.resolve(undefined),
-            commit: async (input: {
-                candidate: RallarOverlayTopologySnapshot;
-                publication: Parameters<
-                    RtcTopologyExecutionRepository['commit']
-                >[0]['publication'];
+            readTopologyMutation: async () => ({
+                snapshot: commitCount === 0
+                    ? null
+                    : {
+                        entry: {
+                            key: 'snapshot', value: JSON.stringify(predecessor),
+                            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                            updatedTimestamp: 'now', revision: 1,
+                        },
+                        value: predecessor,
+                    },
+                publicationClaim: null,
+            }),
+            writeTopologyMutation: async (computed: {
+                snapshotGuard: { candidate: RallarOverlayTopologySnapshot };
             }) => {
                 commitCount += 1;
-                order.push(`commit:${input.candidate.sourceGroupStateRevision}`);
+                order.push(`commit:${computed.snapshotGuard.candidate.sourceGroupStateRevision}`);
                 return commitCount === 1
-                    ? { status: 'retry' as const, current: predecessor }
-                    : {
-                        status: 'committed' as const,
-                        snapshot: input.candidate,
-                        publication: input.publication,
-                    };
+                    ? 'conflict' as const
+                    : 'committed' as const;
             },
         } as unknown as RtcTopologyExecutionRepository;
         const publish = vi.fn().mockResolvedValue(0);
@@ -419,12 +486,10 @@ describe('RTC topology APP_OUTBOX work', () => {
         const topologyService = new RallarRtcTopologyService({ now: () => 10 });
         const planGroupTopology = vi.spyOn(
             topologyService,
-            'planGroupTopology',
+            'planGroupTopologyAt',
         );
         const topologyManagement = new ConcreteGroupTopologyManagementService({
-            findGroupSnapshotByRef: () => {
-                throw new Error('immutable group work must provide its snapshot');
-            },
+            findGroupSnapshotByRef: () => revision2,
             topologyService,
             topologySnapshotRepository: topologyRepository,
             processRttReader: () => [],
@@ -461,7 +526,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(publish.mock.calls.map(([publication]) =>
             publication.sourceGroupStateRevision
         )).toEqual([2]);
-        expect(planGroupTopology).toHaveBeenCalledTimes(2);
+        expect(planGroupTopology).toHaveBeenCalledTimes(1);
     });
 
     it('publishes RTT work from its exact coalesced snapshot and retries from durable publication', async () => {
@@ -485,12 +550,10 @@ describe('RTC topology APP_OUTBOX work', () => {
         const topologyService = new RallarRtcTopologyService({ now: () => 10 });
         const planGroupTopology = vi.spyOn(
             topologyService,
-            'planGroupTopology',
+            'planGroupTopologyAt',
         );
         const topologyManagement = new ConcreteGroupTopologyManagementService({
-            findGroupSnapshotByRef: () => {
-                throw new Error('RTT work must retain its exact group snapshot');
-            },
+            findGroupSnapshotByRef: () => requestedGroup,
             topologyService,
             topologySnapshotRepository: topologyRepository,
             processRttReader: () => [],

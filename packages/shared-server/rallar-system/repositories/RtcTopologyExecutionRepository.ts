@@ -1,16 +1,23 @@
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { RuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
+import type {
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+} from '../../runtime-state/RuntimeStateRepository.ts';
+import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import {
     DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-    RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
     type RtcTopologyPublication,
     RtcTopologyPublicationRepository,
 } from './RtcTopologyPublicationRepository.ts';
 import {
-    decideTopologySnapshot,
-    RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     RtcTopologySnapshotRepository,
 } from './RtcTopologySnapshotRepository.ts';
+import {
+    computeTopologyMutation,
+    type RtcTopologyMutationComputed,
+    type RtcTopologyMutationRead,
+    validateTopologyMutation,
+} from '../services/rtc-topology-mutations.ts';
 
 export type RtcTopologyExecutionCommitResult =
     | Readonly<{
@@ -29,24 +36,85 @@ export type RtcTopologyExecutionCommitResult =
 
 export class RtcTopologyExecutionRepository {
     constructor(
-        private readonly repository: RuntimeStateTransactionalRepositoryLike,
+        readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
         private readonly publicationRetentionMs: number =
             DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
         private readonly now: () => number = () => Date.now(),
     ) {}
 
     async findPublicationForWork(
+        groupRef: GroupRef,
         workId: string,
+    ): Promise<RtcTopologyPublication | undefined>;
+    async findPublicationForWork(
+        workId: string,
+    ): Promise<RtcTopologyPublication | undefined>;
+    async findPublicationForWork(
+        groupRefOrWorkId: GroupRef | string,
+        maybeWorkId?: string,
     ): Promise<RtcTopologyPublication | undefined> {
-        return await this.publications(this.repository)
-            .findPublicationForWork(workId);
+        return typeof groupRefOrWorkId === 'string'
+            ? await this.publications(this.runtimeRepository)
+                .findPublicationForWork(groupRefOrWorkId)
+            : await this.publications(this.runtimeRepository)
+                .findPublicationForWork(groupRefOrWorkId, maybeWorkId!);
     }
 
     async findSnapshot(
-        groupRef: RtcTopologyPublication['groupRef'],
+        groupRef: GroupRef,
     ): Promise<RallarOverlayTopologySnapshot | undefined> {
-        return await new RtcTopologySnapshotRepository(this.repository)
+        return await new RtcTopologySnapshotRepository(this.runtimeRepository)
             .findSnapshot(groupRef);
+    }
+
+    async readTopologyMutation(
+        groupRef: GroupRef,
+        workId: string,
+    ): Promise<RtcTopologyMutationRead> {
+        const snapshots = new RtcTopologySnapshotRepository(this.runtimeRepository);
+        const publications = this.publications(this.runtimeRepository);
+        const [snapshot, publication] = await Promise.all([
+            snapshots.findSnapshotEntry(groupRef),
+            publications.findPublicationForWork(groupRef, workId),
+        ]);
+        return {
+            snapshot: snapshot ?? null,
+            publicationClaim: publication ? { publication } : null,
+        };
+    }
+
+    async writeTopologyMutation(
+        computed: Extract<RtcTopologyMutationComputed, { outcome: 'write' }>,
+    ): Promise<'committed' | 'conflict'> {
+        try {
+            await this.runtimeRepository.begin(async (transaction) => {
+                const snapshots = new RtcTopologySnapshotRepository(transaction);
+                const guard = await snapshots.commitSnapshotGuard(
+                    computed.snapshotGuard.candidate,
+                    computed.snapshotGuard.expectedRevision,
+                );
+                if (guard.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+                if (computed.publication) {
+                    const publications = this.publications(transaction);
+                    const expiresAt = publications.retentionExpireAtTimestamp();
+                    const claimed = await publications.insertWorkClaim(
+                        computed.publication,
+                        expiresAt,
+                    );
+                    if (!claimed) throw new RuntimeStateWriteConflictError();
+                    await publications.insertPublication(
+                        computed.publication,
+                        expiresAt,
+                    );
+                }
+            });
+            return 'committed';
+        } catch (error) {
+            if (error instanceof RuntimeStateWriteConflictError) return 'conflict';
+            throw error;
+        }
     }
 
     async commit(input: Readonly<{
@@ -54,64 +122,53 @@ export class RtcTopologyExecutionRepository {
         candidate: RallarOverlayTopologySnapshot;
         publication: RtcTopologyPublication;
     }>): Promise<RtcTopologyExecutionCommitResult> {
-        return await this.repository.begin(async (repository) => {
-            const snapshots = new RtcTopologySnapshotRepository(repository);
-            const publications = this.publications(repository);
-            const lockKeys = [{
-                namespace: RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-                key: snapshots.snapshotKey(input.candidate.groupRef),
-            }, {
-                namespace: RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE,
-                key: input.publication.workId,
-            }].sort((left, right) =>
-                `${left.namespace}:${left.key}`.localeCompare(
-                    `${right.namespace}:${right.key}`,
-                )
-            );
-            for (const lock of lockKeys) {
-                await repository.lockKey(lock.namespace, lock.key);
-            }
-
-            const existing = await publications.findPublicationForWork(
-                input.publication.workId,
-            );
-            const current = await snapshots.findSnapshot(
-                input.candidate.groupRef,
-            );
-            if (existing) {
-                return {
-                    status: 'loaded',
-                    snapshot: current ?? input.candidate,
-                    publication: existing,
-                };
-            }
-            if (!sameSnapshot(current, input.expected)) {
-                return { status: 'retry', current };
-            }
-
-            const observation = decideTopologySnapshot(
-                current,
-                input.candidate,
-            );
-            if (observation === 'stale') {
-                return { status: 'superseded', current: current! };
-            }
-            if (observation === 'inserted' || observation === 'advanced') {
-                await snapshots.putSnapshot(input.candidate);
-            }
-            const persisted = await publications.putOrLoadWithinTransaction(
-                input.publication,
-            );
-            return {
-                status: persisted.inserted ? 'committed' : 'loaded',
-                snapshot: input.candidate,
-                publication: persisted.publication,
-            };
+        const read = await this.readTopologyMutation(
+            input.candidate.groupRef,
+            input.publication.workId,
+        );
+        if (
+            !read.publicationClaim &&
+            !sameSnapshot(read.snapshot?.value, input.expected)
+        ) {
+            return { status: 'retry', current: read.snapshot?.value };
+        }
+        const computed = computeTopologyMutation({
+            read,
+            candidate: input.candidate,
+            publication: input.publication,
         });
+        validateTopologyMutation({
+            read,
+            candidate: input.candidate,
+            publication: input.publication,
+            computed,
+        });
+        if (computed.outcome === 'loaded') {
+            return {
+                status: 'loaded',
+                snapshot: computed.snapshot,
+                publication: computed.publication,
+            };
+        }
+        if (computed.outcome === 'superseded') {
+            return { status: 'superseded', current: computed.current };
+        }
+        const written = await this.writeTopologyMutation(computed);
+        if (written === 'conflict') {
+            return {
+                status: 'retry',
+                current: await this.findSnapshot(input.candidate.groupRef),
+            };
+        }
+        return {
+            status: 'committed',
+            snapshot: computed.snapshotGuard.candidate,
+            publication: input.publication,
+        };
     }
 
     private publications(
-        repository: RuntimeStateTransactionalRepositoryLike,
+        repository: RuntimeStateOptimisticTransactionalRepositoryLike,
     ): RtcTopologyPublicationRepository {
         return new RtcTopologyPublicationRepository(
             repository,

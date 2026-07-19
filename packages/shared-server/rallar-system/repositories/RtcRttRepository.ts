@@ -1,209 +1,800 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import { pairKey } from '@shared/repository/rtt-repository.ts';
-import type {
-    RuntimeStateRepositoryLike,
-    RuntimeStateTransactionalRepositoryLike,
-} from '../../runtime-state/RuntimeStateRepository.ts';
-import { isRuntimeStateTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import { RuntimeStateJsonStore } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type {
+    RuntimeStateEntry,
+    RuntimeStateEntryPageOptions,
+    RuntimeStateRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+} from '../../runtime-state/RuntimeStateRepository.ts';
+import {
+    isRuntimeStateConditionalRepositoryLike,
+    isRuntimeStateOptimisticTransactionalRepositoryLike,
+    isRuntimeStateTransactionalRepositoryLike,
+} from '../../runtime-state/RuntimeStateRepository.ts';
+import {
+    RuntimeStateRetryExhaustedError,
+    RuntimeStateWriteConflictError,
+    waitForRuntimeStateWriteRetry,
+} from '../../runtime-state/optimistic-runtime-state-write.ts';
+import type {
+    RtcRttEndpointAdmission,
+    RtcRttMutationReceipt,
+    RtcRttRecomputeIntent,
+} from '../services/rtc-topology-mutations.ts';
+import { RtcTopologyRepositoryInvariantCorruptionError } from './RtcTopologySnapshotRepository.ts';
 
 export const RTC_RTT_LATEST_NAMESPACE = 'rtc-rtt:latest';
+export const RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE = 'rtc-rtt:endpoint-admission';
+export const RTC_RTT_RECEIPTS_NAMESPACE = 'rtc-rtt:receipts';
+export const RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE = 'rtc-rtt:recompute-outbox';
+export const DEFAULT_RTC_RTT_MUTATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
+
+export function toRtcRttMutationReceiptId(
+    rtt: Pick<RttMeasurementInfo, 'sessionIdFrom' | 'sessionIdTo' | 'version'>,
+): string {
+    return `pair=${encodeURIComponent(JSON.stringify([
+        ...sortedPair(rtt.sessionIdFrom, rtt.sessionIdTo),
+    ]))}:version=${rtt.version}`;
+}
+
+export function toRtcRttRecomputeOutboxId(
+    receiptId: string,
+    groupRef: GroupRef,
+): string {
+    return `${receiptId}:group=${encodeURIComponent(JSON.stringify([
+        groupRef.applicationId,
+        groupRef.workspaceId === undefined
+            ? ['absent']
+            : ['present', groupRef.workspaceId],
+        groupRef.groupId,
+    ]))}`;
+}
 
 const DEFAULT_RTC_RTT_TTL_MS = 60_000;
-
-export type RtcRttRepositoryAcceptance<Result> = Readonly<{
-    result: Result;
-    updated: boolean;
-}>;
 
 export type RtcRttRepositoryOptions = Readonly<{
     ttlMs?: number;
     now?: () => number;
+    sleep?: (delayMs: number) => Promise<void>;
 }>;
+
+export type RtcRttConditionalWriteResult =
+    | Readonly<{ status: 'accepted'; storageRevision: number }>
+    | Readonly<{ status: 'conflict' }>;
 
 export class RtcRttRepository extends RuntimeStateJsonStore {
     constructor(
-        repository: RuntimeStateRepositoryLike,
+        readonly runtimeRepository: RuntimeStateRepositoryLike,
         private readonly options: RtcRttRepositoryOptions = {},
     ) {
-        super(repository);
+        super(runtimeRepository);
     }
 
-    async putMeasurementIfNewer(
-        measurement: RttMeasurementInfo,
-        purgeAfterEpochMs: number = this.defaultPurgeAfterEpochMs(),
-    ): Promise<boolean> {
-        return await this.withMeasurementLock(measurement, async (repository) => {
-            return await repository.putMeasurementIfNewerWithoutLock(
-                measurement,
-                purgeAfterEpochMs,
-            );
-        });
-    }
-
-    async putMeasurementIfNewerWithEndpointLocks<
-        Result extends Readonly<{ accepted: boolean }>,
-    >(
-        measurement: RttMeasurementInfo,
-        evaluate: (existingMeasurements: readonly RttMeasurementInfo[]) => Result,
-        purgeAfterEpochMs: number = this.defaultPurgeAfterEpochMs(),
-    ): Promise<RtcRttRepositoryAcceptance<Result>> {
-        return await this.withEndpointPairLock(measurement, async (repository) => {
-            const result = evaluate(await repository.listMeasurements());
-            if (!result.accepted) {
-                return { result, updated: false };
-            }
-
-            return {
-                result,
-                updated: await repository.putMeasurementIfNewerWithoutLock(
-                    measurement,
-                    purgeAfterEpochMs,
-                ),
-            };
-        });
+    async findMeasurementEntry(
+        sessionIdA: string,
+        sessionIdB: string,
+    ): Promise<RuntimeStateEntryValue<RttMeasurementInfo> | undefined> {
+        const key = this.measurementKey(sessionIdA, sessionIdB);
+        const entry = await this.runtimeRepository.findEntry(
+            RTC_RTT_LATEST_NAMESPACE,
+            key,
+        );
+        return entry
+            ? await this.toLiveMeasurementEntry(entry, sessionIdA, sessionIdB)
+            : undefined;
     }
 
     async findMeasurement(
         sessionIdA: string,
         sessionIdB: string,
     ): Promise<RttMeasurementInfo | undefined> {
-        return await this.getValue<RttMeasurementInfo>(
+        return (await this.findMeasurementEntry(sessionIdA, sessionIdB))?.value;
+    }
+
+    async listMeasurementEntries(): Promise<
+        readonly RuntimeStateEntryValue<RttMeasurementInfo>[]
+    > {
+        const entries = await this.runtimeRepository.findAllEntries(
             RTC_RTT_LATEST_NAMESPACE,
-            this.measurementKey(sessionIdA, sessionIdB),
         );
+        return compact(await Promise.all(entries.map((entry) =>
+            this.toLiveMeasurementEntry(entry)
+        )));
+    }
+
+    async listMeasurementEntriesPage(
+        options: RuntimeStateEntryPageOptions,
+    ): Promise<readonly RuntimeStateEntryValue<RttMeasurementInfo>[]> {
+        const entries = await this.listEntriesPage(
+            RTC_RTT_LATEST_NAMESPACE,
+            '',
+            options,
+        );
+        return compact(await Promise.all(entries.map((entry) =>
+            this.toLiveMeasurementEntry(entry)
+        )));
     }
 
     async listMeasurements(): Promise<readonly RttMeasurementInfo[]> {
-        return await this.listValues<RttMeasurementInfo>(
-            RTC_RTT_LATEST_NAMESPACE,
-        );
+        return (await this.listMeasurementEntries()).map(({ value }) => value);
     }
 
     async listMeasurementsForSessionIds(
         sessionIds: readonly string[],
     ): Promise<readonly RttMeasurementInfo[]> {
         const sessionSet = new Set(sessionIds);
-        const measurements = await this.listMeasurements();
-        return measurements.filter(
-            (measurement) =>
-                sessionSet.has(measurement.sessionIdFrom) &&
-                sessionSet.has(measurement.sessionIdTo),
+        return (await this.listMeasurements()).filter((measurement) =>
+            sessionSet.has(measurement.sessionIdFrom) &&
+            sessionSet.has(measurement.sessionIdTo)
         );
+    }
+
+    async findEndpointAdmissionEntry(
+        endpointId: string,
+    ): Promise<RuntimeStateEntryValue<RtcRttEndpointAdmission> | undefined> {
+        const entry = await this.runtimeRepository.findEntry(
+            RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+            this.endpointAdmissionKey(endpointId),
+        );
+        return entry
+            ? await this.toLiveEndpointAdmissionEntry(entry, endpointId)
+            : undefined;
+    }
+
+    async listEndpointAdmissionEntries(): Promise<
+        readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[]
+    > {
+        const entries = await this.runtimeRepository.findAllEntries(
+            RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+        );
+        return compact(await Promise.all(entries.map((entry) =>
+            this.toLiveEndpointAdmissionEntry(entry)
+        )));
+    }
+
+    async listEndpointAdmissionEntriesPage(
+        options: RuntimeStateEntryPageOptions,
+    ): Promise<readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[]> {
+        const entries = await this.listEntriesPage(
+            RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+            '',
+            options,
+        );
+        return compact(await Promise.all(entries.map((entry) =>
+            this.toLiveEndpointAdmissionEntry(entry)
+        )));
+    }
+
+    async commitMeasurement(
+        measurement: RttMeasurementInfo,
+        expectedRevision: number | null,
+        purgeAfterEpochMs: number,
+    ): Promise<RtcRttConditionalWriteResult> {
+        validateMeasurement(measurement);
+        const result = expectedRevision === null
+            ? await this.putValueIfAbsent(
+                RTC_RTT_LATEST_NAMESPACE,
+                this.measurementKey(
+                    measurement.sessionIdFrom,
+                    measurement.sessionIdTo,
+                ),
+                measurement,
+                purgeAfterEpochMs,
+            )
+            : await this.putValueIfRevision(
+                RTC_RTT_LATEST_NAMESPACE,
+                this.measurementKey(
+                    measurement.sessionIdFrom,
+                    measurement.sessionIdTo,
+                ),
+                measurement,
+                purgeAfterEpochMs,
+                expectedRevision,
+            );
+        return result.status === 'applied'
+            ? { status: 'accepted', storageRevision: result.revision }
+            : { status: 'conflict' };
+    }
+
+    async commitEndpointAdmission(
+        admission: RtcRttEndpointAdmission,
+        expectedRevision: number | null,
+        expireAtTimestamp: number,
+    ): Promise<RtcRttConditionalWriteResult> {
+        validateEndpointAdmission(admission, admission.endpointId, expireAtTimestamp);
+        const result = expectedRevision === null
+            ? await this.putValueIfAbsent(
+                RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+                this.endpointAdmissionKey(admission.endpointId),
+                admission,
+                expireAtTimestamp,
+            )
+            : await this.putValueIfRevision(
+                RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+                this.endpointAdmissionKey(admission.endpointId),
+                admission,
+                expireAtTimestamp,
+                expectedRevision,
+            );
+        return result.status === 'applied'
+            ? { status: 'accepted', storageRevision: result.revision }
+            : { status: 'conflict' };
+    }
+
+    async insertMutationReceipt(
+        receipt: RtcRttMutationReceipt,
+        expireAtTimestamp: number,
+    ): Promise<RtcRttConditionalWriteResult> {
+        validateMutationReceipt(receipt);
+        const result = await this.putValueIfAbsent(
+            RTC_RTT_RECEIPTS_NAMESPACE,
+            receipt.receiptId,
+            receipt,
+            expireAtTimestamp,
+        );
+        return result.status === 'applied'
+            ? { status: 'accepted', storageRevision: result.revision }
+            : { status: 'conflict' };
+    }
+
+    async insertRecomputeIntent(
+        intent: RtcRttRecomputeIntent,
+        expireAtTimestamp: number,
+    ): Promise<RtcRttConditionalWriteResult> {
+        validateRecomputeIntent(intent);
+        const result = await this.putValueIfAbsent(
+            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+            intent.outboxId,
+            intent,
+            expireAtTimestamp,
+        );
+        return result.status === 'applied'
+            ? { status: 'accepted', storageRevision: result.revision }
+            : { status: 'conflict' };
+    }
+
+    async findMutationReceipt(
+        receiptId: string,
+    ): Promise<RtcRttMutationReceipt | undefined> {
+        const entry = await this.runtimeRepository.findEntry(
+            RTC_RTT_RECEIPTS_NAMESPACE,
+            receiptId,
+        );
+        if (!entry) return undefined;
+        try {
+            return (await this.toLiveReceiptEntry(entry, receiptId))?.value;
+        } catch (error) {
+            throw rttCorruption(entry.key, error instanceof Error ? error.message : 'Invalid RTT receipt');
+        }
+    }
+
+    async listRecomputeIntents(): Promise<readonly RtcRttRecomputeIntent[]> {
+        const entries = await this.runtimeRepository.findAllEntries(
+            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+        );
+        return compact(await Promise.all(entries.map(async (entry) => {
+            try {
+                return (await this.toLiveRecomputeIntentEntry(entry))?.value;
+            } catch (error) {
+                throw rttCorruption(entry.key, error instanceof Error ? error.message : 'Invalid RTT recompute intent');
+            }
+        })));
+    }
+
+    async removeRecomputeIntent(
+        outboxId: string,
+        expectedRevision: number,
+    ): Promise<Readonly<{ status: 'accepted' | 'conflict' }>> {
+        const conditional = requireConditionalRuntime(this.runtimeRepository);
+        const deleted = await conditional.deleteIfRevision(
+            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+            outboxId,
+            expectedRevision,
+        );
+        return deleted.status === 'applied'
+            ? { status: 'accepted' }
+            : { status: 'conflict' };
+    }
+
+    async listRecomputeIntentEntries(): Promise<
+        readonly RuntimeStateEntryValue<RtcRttRecomputeIntent>[]
+    > {
+        const entries = await this.runtimeRepository.findAllEntries(
+            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+        );
+        return compact(await Promise.all(entries.map(async (entry) => {
+            return await this.toLiveRecomputeIntentEntry(entry);
+        })));
+    }
+
+    async putMeasurementIfNewer(
+        measurement: RttMeasurementInfo,
+        purgeAfterEpochMs: number = this.defaultPurgeAfterEpochMs(),
+    ): Promise<boolean> {
+        const current = await this.findMeasurementEntry(
+            measurement.sessionIdFrom,
+            measurement.sessionIdTo,
+        );
+        if (current && current.value.version >= measurement.version) return false;
+        const result = await this.commitMeasurement(
+            measurement,
+            current?.entry.revision ?? null,
+            purgeAfterEpochMs,
+        );
+        return result.status === 'accepted';
     }
 
     async removeMeasurement(
         sessionIdA: string,
         sessionIdB: string,
     ): Promise<void> {
-        await this.deleteValue(
+        const current = await this.findMeasurementEntry(sessionIdA, sessionIdB);
+        if (!current) return;
+        await this.deleteValueIfRevision(
             RTC_RTT_LATEST_NAMESPACE,
             this.measurementKey(sessionIdA, sessionIdB),
+            current.entry.revision,
         );
     }
 
     measurementKey(sessionIdA: string, sessionIdB: string): string {
-        return this.idKey('pair', pairKey(sessionIdA, sessionIdB));
+        const [from, to] = sortedPair(sessionIdA, sessionIdB);
+        return `from=${encodeURIComponent(from)}:to=${encodeURIComponent(to)}`;
     }
 
-    private async putMeasurement(
-        measurement: RttMeasurementInfo,
-        purgeAfterEpochMs: number,
-    ): Promise<void> {
-        await this.putValue(
-            RTC_RTT_LATEST_NAMESPACE,
-            this.measurementKey(
-                measurement.sessionIdFrom,
-                measurement.sessionIdTo,
-            ),
-            measurement,
-            purgeAfterEpochMs,
-        );
+    endpointAdmissionKey(endpointId: string): string {
+        return `endpoint=${encodeURIComponent(endpointId)}`;
     }
 
-    private async putMeasurementIfNewerWithoutLock(
-        measurement: RttMeasurementInfo,
-        purgeAfterEpochMs: number,
-    ): Promise<boolean> {
-        const current = await this.findMeasurement(
-            measurement.sessionIdFrom,
-            measurement.sessionIdTo,
-        );
-
-        if (current !== undefined && current.version >= measurement.version) {
-            return false;
-        }
-
-        await this.putMeasurement(measurement, purgeAfterEpochMs);
-        return true;
+    defaultPurgeAfterEpochMs(): number {
+        return this.nowEpochMs() + (this.options.ttlMs ?? DEFAULT_RTC_RTT_TTL_MS);
     }
 
-    private async withMeasurementLock<T>(
-        measurement: RttMeasurementInfo,
-        fn: (repository: RtcRttRepository) => Promise<T>,
-    ): Promise<T> {
-        if (!isRuntimeStateTransactionalRepositoryLike(this.repository)) {
-            return await fn(this);
-        }
-
-        return await this.repository.begin(async (repository) => {
-            await repository.lockKey(
-                RTC_RTT_LATEST_NAMESPACE,
-                this.measurementKey(
-                    measurement.sessionIdFrom,
-                    measurement.sessionIdTo,
-                ),
-            );
-            return await fn(this.withRepository(repository));
-        });
-    }
-
-    private async withEndpointPairLock<T>(
-        measurement: RttMeasurementInfo,
-        fn: (repository: RtcRttRepository) => Promise<T>,
-    ): Promise<T> {
-        if (!isRuntimeStateTransactionalRepositoryLike(this.repository)) {
-            return await fn(this);
-        }
-
-        return await this.repository.begin(async (repository) => {
-            for (
-                const sessionId of [...new Set([
-                    measurement.sessionIdFrom,
-                    measurement.sessionIdTo,
-                ])].sort()
-            ) {
-                await repository.lockKey(
-                    RTC_RTT_LATEST_NAMESPACE,
-                    this.endpointLockKey(sessionId),
-                );
-            }
-            await repository.lockKey(
-                RTC_RTT_LATEST_NAMESPACE,
-                this.measurementKey(
-                    measurement.sessionIdFrom,
-                    measurement.sessionIdTo,
-                ),
-            );
-            return await fn(this.withRepository(repository));
-        });
-    }
-
-    private withRepository(
-        repository: RuntimeStateTransactionalRepositoryLike,
-    ): RtcRttRepository {
-        return new RtcRttRepository(repository, this.options);
-    }
-
-    private endpointLockKey(sessionId: string): string {
-        return this.idKey('endpoint', sessionId);
-    }
-
-    private defaultPurgeAfterEpochMs(): number {
-        return this.now() + (this.options.ttlMs ?? DEFAULT_RTC_RTT_TTL_MS);
-    }
-
-    private now(): number {
+    nowEpochMs(): number {
         return this.options.now?.() ?? Date.now();
     }
+
+    private async toLiveMeasurementEntry(
+        entry: RuntimeStateEntry,
+        trustedSessionIdA?: string,
+        trustedSessionIdB?: string,
+        expiryAttempt = 0,
+    ): Promise<RuntimeStateEntryValue<RttMeasurementInfo> | undefined> {
+        const decoded = decodeMeasurementKey(entry.key);
+        if (trustedSessionIdA !== undefined && trustedSessionIdB !== undefined) {
+            const trusted = sortedPair(trustedSessionIdA, trustedSessionIdB);
+            if (decoded[0] !== trusted[0] || decoded[1] !== trusted[1]) {
+                throw rttCorruption(entry.key, 'RTC RTT key differs from requested pair');
+            }
+        }
+        const value = parseValue(entry) as RttMeasurementInfo;
+        try {
+            validateMeasurement(value);
+        } catch (error) {
+            throw rttCorruption(
+                entry.key,
+                error instanceof Error ? error.message : 'RTC RTT value is invalid',
+            );
+        }
+        const storedPair = sortedPair(value.sessionIdFrom, value.sessionIdTo);
+        if (storedPair[0] !== decoded[0] || storedPair[1] !== decoded[1]) {
+            throw rttCorruption(entry.key, 'RTC RTT value differs from physical pair');
+        }
+        return await this.toLiveVerifiedEntry(
+            RTC_RTT_LATEST_NAMESPACE,
+            entry,
+            value,
+            (replacement, nextAttempt) => this.toLiveMeasurementEntry(
+                replacement,
+                trustedSessionIdA,
+                trustedSessionIdB,
+                nextAttempt,
+            ),
+            expiryAttempt,
+        );
+    }
+
+    private async toLiveEndpointAdmissionEntry(
+        entry: RuntimeStateEntry,
+        trustedEndpointId?: string,
+        expiryAttempt = 0,
+    ): Promise<RuntimeStateEntryValue<RtcRttEndpointAdmission> | undefined> {
+        const endpointId = decodeEndpointKey(entry.key);
+        if (trustedEndpointId !== undefined && endpointId !== trustedEndpointId) {
+            throw rttCorruption(entry.key, 'RTC RTT endpoint differs from requested slot');
+        }
+        const value = parseValue(entry) as RtcRttEndpointAdmission;
+        try {
+            validateEndpointAdmission(value, endpointId, entry.expireAtTimestamp);
+        } catch (error) {
+            throw rttCorruption(
+                entry.key,
+                error instanceof Error ? error.message : 'RTC RTT admission is invalid',
+            );
+        }
+        return await this.toLiveVerifiedEntry(
+            RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
+            entry,
+            value,
+            (replacement, nextAttempt) => this.toLiveEndpointAdmissionEntry(
+                replacement,
+                trustedEndpointId,
+                nextAttempt,
+            ),
+            expiryAttempt,
+        );
+    }
+
+    private async toLiveVerifiedEntry<T>(
+        namespace: string,
+        entry: RuntimeStateEntry,
+        value: T,
+        decodeReplacement: (
+            replacement: RuntimeStateEntry,
+            nextAttempt: number,
+        ) => Promise<RuntimeStateEntryValue<T> | undefined>,
+        expiryAttempt = 0,
+    ): Promise<RuntimeStateEntryValue<T> | undefined> {
+        if (entry.expireAtTimestamp > this.nowEpochMs()) return { entry, value };
+        if (isRuntimeStateConditionalRepositoryLike(this.runtimeRepository)) {
+            await waitForRuntimeStateWriteRetry(expiryAttempt as 0 | 1 | 2, {
+                sleep: this.options.sleep,
+            });
+            const deleted = await this.runtimeRepository.deleteIfRevision(
+                namespace,
+                entry.key,
+                entry.revision,
+            );
+            if (deleted.status === 'conflict') {
+                const conflict = new RuntimeStateWriteConflictError();
+                if (expiryAttempt >= 2) {
+                    throw new RuntimeStateRetryExhaustedError(conflict);
+                }
+                const replacement = await this.runtimeRepository.findEntry(
+                    namespace,
+                    entry.key,
+                );
+                return replacement
+                    ? await decodeReplacement(replacement, expiryAttempt + 1)
+                    : undefined;
+            }
+        }
+        return undefined;
+    }
+
+    private async toLiveReceiptEntry(
+        entry: RuntimeStateEntry,
+        trustedReceiptId?: string,
+        expiryAttempt = 0,
+    ): Promise<RuntimeStateEntryValue<RtcRttMutationReceipt> | undefined> {
+        if (trustedReceiptId !== undefined && entry.key !== trustedReceiptId) {
+            throw rttCorruption(entry.key, 'RTC RTT receipt differs from trusted slot');
+        }
+        const value = parseValue(entry) as RtcRttMutationReceipt;
+        validateMutationReceipt(value);
+        if (value.receiptId !== entry.key) {
+            throw rttCorruption(entry.key, 'RTC RTT receipt differs from physical key');
+        }
+        return await this.toLiveVerifiedEntry(
+            RTC_RTT_RECEIPTS_NAMESPACE,
+            entry,
+            value,
+            (replacement, nextAttempt) => this.toLiveReceiptEntry(
+                replacement,
+                trustedReceiptId,
+                nextAttempt,
+            ),
+            expiryAttempt,
+        );
+    }
+
+    private async toLiveRecomputeIntentEntry(
+        entry: RuntimeStateEntry,
+        expiryAttempt = 0,
+    ): Promise<RuntimeStateEntryValue<RtcRttRecomputeIntent> | undefined> {
+        const value = parseValue(entry) as RtcRttRecomputeIntent;
+        validateRecomputeIntent(value);
+        if (value.outboxId !== entry.key) {
+            throw rttCorruption(entry.key, 'RTC RTT recompute intent differs from physical key');
+        }
+        return await this.toLiveVerifiedEntry(
+            RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
+            entry,
+            value,
+            (replacement, nextAttempt) => this.toLiveRecomputeIntentEntry(
+                replacement,
+                nextAttempt,
+            ),
+            expiryAttempt,
+        );
+    }
+}
+
+export async function migrateLegacyRtcRttMeasurementKeys(
+    repository: RtcRttRepository,
+    options: Readonly<{ oldWritersStopped: true }>,
+): Promise<void> {
+    if (options.oldWritersStopped !== true) {
+        throw new Error('RTC RTT migration requires old writers stopped');
+    }
+    const runtime = requireOptimisticRuntime(repository.runtimeRepository);
+    const entries = await runtime.findAllEntries(RTC_RTT_LATEST_NAMESPACE);
+    for (const source of entries) {
+        const value = parseValue(source) as RttMeasurementInfo;
+        validateMeasurement(value);
+        const destinationKey = repository.measurementKey(
+            value.sessionIdFrom,
+            value.sessionIdTo,
+        );
+        if (source.key === destinationKey) continue;
+        const [from, to] = sortedPair(value.sessionIdFrom, value.sessionIdTo);
+        const legacyKey = `pair=${encodeURIComponent(`${from}::${to}`)}`;
+        if (source.key !== legacyKey) {
+            throw rttCorruption(source.key, 'Legacy RTC RTT key differs from value');
+        }
+        await runtime.begin(async (transaction) => {
+            const migrated = new RtcRttRepository(transaction, { now: () => 0 });
+            const destination = await migrated.findMeasurement(
+                value.sessionIdFrom,
+                value.sessionIdTo,
+            );
+            if (destination) {
+                if (JSON.stringify(destination) !== JSON.stringify(value)) {
+                    throw rttCorruption(
+                        destinationKey,
+                        'Canonical RTC RTT value differs from legacy source',
+                    );
+                }
+            } else {
+                const inserted = await transaction.insertIfAbsent(
+                    RTC_RTT_LATEST_NAMESPACE,
+                    destinationKey,
+                    JSON.stringify(value),
+                    source.expireAtTimestamp,
+                );
+                if (inserted.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            }
+            const deleted = await transaction.deleteIfRevision(
+                RTC_RTT_LATEST_NAMESPACE,
+                source.key,
+                source.revision,
+            );
+            if (deleted.status === 'conflict') throw new RuntimeStateWriteConflictError();
+        });
+    }
+}
+
+export function validateMeasurement(value: unknown): asserts value is RttMeasurementInfo {
+    if (!isRecord(value)) throw new TypeError('RTC RTT measurement is invalid');
+    assertExactKeys(value, [
+        'sessionIdFrom',
+        'sessionIdTo',
+        'rttMs',
+        'createdAtEpochMs',
+        'version',
+    ]);
+    if (
+        typeof value.sessionIdFrom !== 'string' || value.sessionIdFrom.length === 0 ||
+        typeof value.sessionIdTo !== 'string' || value.sessionIdTo.length === 0 ||
+        value.sessionIdFrom === value.sessionIdTo ||
+        typeof value.rttMs !== 'number' || !Number.isFinite(value.rttMs) ||
+        value.rttMs <= 0 ||
+        typeof value.createdAtEpochMs !== 'number' ||
+        !Number.isSafeInteger(value.createdAtEpochMs) || value.createdAtEpochMs < 0 ||
+        typeof value.version !== 'number' ||
+        !Number.isSafeInteger(value.version) || value.version < 1
+    ) {
+        throw new TypeError('RTC RTT measurement fields are invalid');
+    }
+}
+
+export function validateEndpointAdmission(
+    value: unknown,
+    expectedEndpointId: string,
+    physicalExpiry: number,
+): asserts value is RtcRttEndpointAdmission {
+    if (!isRecord(value)) throw new TypeError('RTC RTT endpoint admission is invalid');
+    assertExactKeys(value, ['endpointId', 'peers', 'version', 'updatedAtEpochMs']);
+    if (
+        value.endpointId !== expectedEndpointId ||
+        typeof value.version !== 'number' ||
+        !Number.isSafeInteger(value.version) || value.version < 1 ||
+        typeof value.updatedAtEpochMs !== 'number' ||
+        !Number.isSafeInteger(value.updatedAtEpochMs) || value.updatedAtEpochMs < 0 ||
+        !Array.isArray(value.peers) || value.peers.length === 0
+    ) {
+        throw new TypeError('RTC RTT endpoint admission fields are invalid');
+    }
+    let previous = '';
+    let latestExpiry = 0;
+    for (const peer of value.peers) {
+        if (!isRecord(peer)) throw new TypeError('RTC RTT endpoint peer is invalid');
+        assertExactKeys(peer, ['peerSessionId', 'expiresAtEpochMs']);
+        if (
+            typeof peer.peerSessionId !== 'string' || peer.peerSessionId.length === 0 ||
+            peer.peerSessionId === expectedEndpointId ||
+            peer.peerSessionId.localeCompare(previous) <= 0 ||
+            typeof peer.expiresAtEpochMs !== 'number' ||
+            !Number.isSafeInteger(peer.expiresAtEpochMs) ||
+            peer.expiresAtEpochMs <= value.updatedAtEpochMs
+        ) {
+            throw new TypeError('RTC RTT endpoint peer fields are invalid');
+        }
+        previous = peer.peerSessionId;
+        latestExpiry = Math.max(latestExpiry, peer.expiresAtEpochMs as number);
+    }
+    if (physicalExpiry !== latestExpiry) {
+        throw new TypeError('RTC RTT endpoint physical expiry differs from leases');
+    }
+}
+
+function validateMutationReceipt(
+    value: unknown,
+): asserts value is RtcRttMutationReceipt {
+    if (!isRecord(value)) throw new TypeError('RTC RTT receipt is invalid');
+    assertExactKeys(value, [
+        'receiptId', 'sessionIdFrom', 'sessionIdTo', 'measurementVersion',
+        'affectedGroupRefs', 'acceptedAtEpochMs', 'outcome',
+    ]);
+    if (
+        typeof value.receiptId !== 'string' || value.receiptId.length === 0 ||
+        typeof value.sessionIdFrom !== 'string' || value.sessionIdFrom.length === 0 ||
+        typeof value.sessionIdTo !== 'string' || value.sessionIdTo.length === 0 ||
+        typeof value.measurementVersion !== 'number' ||
+        !Number.isSafeInteger(value.measurementVersion) || value.measurementVersion < 1 ||
+        typeof value.acceptedAtEpochMs !== 'number' ||
+        !Number.isSafeInteger(value.acceptedAtEpochMs) || value.acceptedAtEpochMs < 0 ||
+        value.outcome !== 'accepted' || !Array.isArray(value.affectedGroupRefs)
+    ) {
+        throw new TypeError('RTC RTT receipt fields are invalid');
+    }
+    if (value.receiptId !== toRtcRttMutationReceiptId({
+        sessionIdFrom: value.sessionIdFrom as string,
+        sessionIdTo: value.sessionIdTo as string,
+        version: value.measurementVersion as number,
+    })) {
+        throw new TypeError('RTC RTT receipt identity is invalid');
+    }
+    for (const ref of value.affectedGroupRefs) validateCanonicalGroupRef(ref);
+}
+
+function validateRecomputeIntent(
+    value: unknown,
+): asserts value is RtcRttRecomputeIntent {
+    if (!isRecord(value)) throw new TypeError('RTC RTT recompute intent is invalid');
+    assertExactKeys(value, [
+        'outboxId', 'receiptId', 'groupSnapshot', 'rtt', 'createdAtEpochMs',
+    ]);
+    if (
+        typeof value.outboxId !== 'string' || value.outboxId.length === 0 ||
+        typeof value.receiptId !== 'string' || value.receiptId.length === 0 ||
+        !isRecord(value.groupSnapshot) || !isRecord(value.groupSnapshot.group) ||
+        typeof value.createdAtEpochMs !== 'number' ||
+        !Number.isSafeInteger(value.createdAtEpochMs) || value.createdAtEpochMs < 0
+    ) {
+        throw new TypeError('RTC RTT recompute intent fields are invalid');
+    }
+    validateMeasurement(value.rtt);
+    const groupRef = value.groupSnapshot.group as GroupRef;
+    const expectedReceiptId = toRtcRttMutationReceiptId(value.rtt);
+    if (
+        value.receiptId !== expectedReceiptId ||
+        value.outboxId !== toRtcRttRecomputeOutboxId(expectedReceiptId, groupRef)
+    ) {
+        throw new TypeError('RTC RTT recompute intent identity is invalid');
+    }
+}
+
+function validateCanonicalGroupRef(value: unknown): void {
+    if (!isRecord(value)) throw new TypeError('RTC RTT receipt groupRef is invalid');
+    const keys = value.workspaceId === undefined
+        ? ['applicationId', 'groupId']
+        : ['applicationId', 'workspaceId', 'groupId'];
+    assertExactKeys(value, keys);
+    if (
+        typeof value.applicationId !== 'string' || value.applicationId.length === 0 ||
+        typeof value.groupId !== 'string' || value.groupId.length === 0 ||
+        (value.workspaceId !== undefined && typeof value.workspaceId !== 'string')
+    ) throw new TypeError('RTC RTT receipt groupRef fields are invalid');
+}
+
+function decodeMeasurementKey(storageKey: string): readonly [string, string] {
+    const parts = storageKey.split(':');
+    if (parts.length !== 2 || !parts[0]!.startsWith('from=') ||
+        !parts[1]!.startsWith('to=')) {
+        throw rttCorruption(storageKey, 'RTC RTT measurement key has invalid shape');
+    }
+    let from: string;
+    let to: string;
+    try {
+        from = decodeURIComponent(parts[0]!.slice('from='.length));
+        to = decodeURIComponent(parts[1]!.slice('to='.length));
+    } catch {
+        throw rttCorruption(storageKey, 'RTC RTT measurement key encoding is invalid');
+    }
+    if (from.length === 0 || to.length === 0 || from.localeCompare(to) >= 0) {
+        throw rttCorruption(storageKey, 'RTC RTT measurement key is not canonical');
+    }
+    const canonical = `from=${encodeURIComponent(from)}:to=${encodeURIComponent(to)}`;
+    if (canonical !== storageKey) {
+        throw rttCorruption(storageKey, 'RTC RTT measurement key is not canonical');
+    }
+    return [from, to];
+}
+
+function decodeEndpointKey(storageKey: string): string {
+    if (!storageKey.startsWith('endpoint=')) {
+        throw rttCorruption(storageKey, 'RTC RTT endpoint key has invalid shape');
+    }
+    let endpointId: string;
+    try {
+        endpointId = decodeURIComponent(storageKey.slice('endpoint='.length));
+    } catch {
+        throw rttCorruption(storageKey, 'RTC RTT endpoint key encoding is invalid');
+    }
+    if (
+        endpointId.length === 0 ||
+        `endpoint=${encodeURIComponent(endpointId)}` !== storageKey
+    ) {
+        throw rttCorruption(storageKey, 'RTC RTT endpoint key is not canonical');
+    }
+    return endpointId;
+}
+
+function sortedPair(left: string, right: string): readonly [string, string] {
+    return left.localeCompare(right) <= 0 ? [left, right] : [right, left];
+}
+
+function parseValue(entry: RuntimeStateEntry): unknown {
+    try {
+        return JSON.parse(entry.value);
+    } catch (error) {
+        throw rttCorruption(
+            entry.key,
+            error instanceof Error ? error.message : 'RTC RTT JSON is invalid',
+        );
+    }
+}
+
+function assertExactKeys(value: Record<string, unknown>, keys: readonly string[]): void {
+    if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...keys].sort())) {
+        throw new TypeError('RTC RTT persisted value has invalid keys');
+    }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function rttCorruption(
+    storageKey: string,
+    message: string,
+): RtcTopologyRepositoryInvariantCorruptionError {
+    return new RtcTopologyRepositoryInvariantCorruptionError(storageKey, message);
+}
+
+function compact<T>(values: readonly (T | undefined)[]): readonly T[] {
+    return values.filter((value): value is T => value !== undefined);
+}
+
+function requireConditionalRuntime(
+    runtime: RuntimeStateRepositoryLike,
+) {
+    if (!isRuntimeStateConditionalRepositoryLike(runtime)) {
+        throw new Error('RTC RTT repository requires conditional writes');
+    }
+    return runtime;
+}
+
+function requireOptimisticRuntime(
+    runtime: RuntimeStateRepositoryLike,
+): RuntimeStateOptimisticTransactionalRepositoryLike {
+    if (!isRuntimeStateOptimisticTransactionalRepositoryLike(runtime)) {
+        throw new Error('RTC RTT migration requires optimistic transactions');
+    }
+    return runtime;
 }

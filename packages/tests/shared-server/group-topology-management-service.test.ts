@@ -1541,6 +1541,29 @@ describe('GroupTopologyManagementService', () => {
         expect(topologyService.readSnapshot(group)).toBeUndefined();
     });
 
+    it('plans twice from frozen read facts without accessing the clock during compute', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        let clockReads = 0;
+        const topologyService = new RallarRtcTopologyService({
+            now: () => {
+                clockReads += 1;
+                if (clockReads > 1) throw new Error('clock accessed during compute');
+                return 123;
+            },
+        });
+        const service = createService({ runtimeRepository, group, topologyService });
+        const authority = freezeDeep(await service.readTopologyPlanningAuthority(
+            group.group,
+        ));
+
+        const first = service.planTopologyFromAuthority(authority, undefined);
+        const second = service.planTopologyFromAuthority(authority, undefined);
+
+        expect(second).toEqual(first);
+        expect(clockReads).toBe(1);
+    });
+
     it('uses the immutable group update time for a planned removal tombstone', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const active = createGroupSnapshot(createGroupRef('workspace-1'));
@@ -1594,7 +1617,7 @@ describe('GroupTopologyManagementService', () => {
         });
     });
 
-    it('resolves effective config, reads durable RTTs, locks snapshots, persists, and publishes changed topology', async () => {
+    it('resolves effective config, reads durable RTTs, commits without locks, and publishes changed topology', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
         const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
@@ -1618,10 +1641,13 @@ describe('GroupTopologyManagementService', () => {
             createdAtEpochMs: 1,
             version: 1,
         }, Date.now() + 60_000);
+        vi.spyOn(runtimeRepository, 'lockKey').mockRejectedValue(
+            new Error('topology locks are forbidden'),
+        );
         const topologyService = new RallarRtcTopologyService({
             now: () => 2_000,
         });
-        const planGroupTopology = vi.spyOn(topologyService, 'planGroupTopology');
+        const planGroupTopology = vi.spyOn(topologyService, 'planGroupTopologyAt');
         const publisher = vi.fn();
         const service = createService({
             runtimeRepository,
@@ -1669,13 +1695,11 @@ describe('GroupTopologyManagementService', () => {
                 previous: undefined,
                 topologyOptions: result.config.effective,
             }),
+            2_000,
         );
         expect(await new RtcTopologySnapshotRepository(runtimeRepository)
             .findSnapshot(group.group)).toEqual(result.snapshot);
-        expect(runtimeRepository.locks).toContainEqual({
-            namespace: RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-            key: new RtcTopologySnapshotRepository(runtimeRepository).snapshotKey(group.group),
-        });
+        expect(runtimeRepository.locks).toEqual([]);
         expect(publisher).toHaveBeenCalledTimes(1);
         expect(publisher.mock.calls[0][0].payload.typeId).toBe(AppTopics.overlayTopology);
     });
@@ -1715,6 +1739,32 @@ describe('GroupTopologyManagementService', () => {
         expect(publisher).not.toHaveBeenCalled();
     });
 
+    it('does not let a stale removal delete a newer active topology', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const base = createGroupSnapshot(createGroupRef('workspace-1'));
+        const staleRemoval = {
+            ...base,
+            group: { ...base.group, status: 'deleted' as const },
+        };
+        const currentGroup = { ...base, stateRevision: 2 };
+        const current = {
+            ...createTopologySnapshot(currentGroup.group, {
+                'session-a': ['session-b'],
+                'session-b': ['session-a'],
+            }),
+            sourceGroupStateRevision: 2,
+            version: 2,
+        };
+        const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
+        await snapshots.putSnapshot(current);
+        const service = createService({ runtimeRepository, group: currentGroup });
+
+        await service.removeGroupTopology(staleRemoval);
+
+        expect(await snapshots.findSnapshot(currentGroup.group)).toEqual(current);
+        expect(runtimeRepository.locks).toEqual([]);
+    });
+
     it('replans outside the transaction when the durable predecessor moves', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const baseGroup = createGroupSnapshot(createGroupRef('workspace-1'));
@@ -1733,27 +1783,31 @@ describe('GroupTopologyManagementService', () => {
             runtimeRepository,
         );
         await topologySnapshotRepository.putSnapshot(previous);
-        const originalCommit = topologySnapshotRepository.commitSnapshot
+        const originalCommit = topologySnapshotRepository.commitSnapshotGuard
             .bind(topologySnapshotRepository);
         const commitSnapshot = vi.spyOn(
             topologySnapshotRepository,
-            'commitSnapshot',
+            'commitSnapshotGuard',
         ).mockImplementationOnce(async () => {
             await topologySnapshotRepository.putSnapshot(moved);
-            return { status: 'retry', current: moved };
+            return { status: 'conflict' };
         }).mockImplementation(originalCommit);
         const topologyService = new RallarRtcTopologyService({ now: () => 4 });
         const planGroupTopology = vi.spyOn(
             topologyService,
-            'planGroupTopology',
+            'planGroupTopologyAt',
         );
         const publisher = vi.fn();
+        const sleep = vi.fn(async () => {});
+        const timingEvents: RallarTimingEvent[] = [];
         const service = createService({
             runtimeRepository,
             group,
             topologyService,
             topologySnapshotRepository,
             publisher,
+            sleep,
+            timing: (event) => timingEvents.push(event),
         });
 
         const result = await service.reconfigureGroupTopology({
@@ -1767,6 +1821,31 @@ describe('GroupTopologyManagementService', () => {
         expect(result.published).toBe(true);
         expect(publisher).toHaveBeenCalledTimes(1);
         expect(publisher.mock.calls[0][1]).toEqual(result.snapshot);
+        expect(sleep).toHaveBeenCalledTimes(1);
+        expect(sleep).toHaveBeenCalledWith(2);
+        expect(timingEvents).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                operation: 'topology.read',
+                details: expect.objectContaining({ attempt: 0, backoffMs: 0 }),
+            }),
+            expect.objectContaining({
+                operation: 'topology.compute',
+                details: expect.objectContaining({ attempt: 1, backoffMs: 2 }),
+            }),
+            expect.objectContaining({
+                operation: 'topology.validate',
+            }),
+            expect.objectContaining({
+                operation: 'topology.transaction',
+            }),
+            expect.objectContaining({
+                operation: 'topology.write',
+            }),
+            expect.objectContaining({
+                operation: 'topology.conflict',
+                details: expect.objectContaining({ attempt: 0, conflict: true }),
+            }),
+        ]));
     });
 
     it('filters stored RTTs that are not reporting edges for the recomputed group', async () => {
@@ -1796,7 +1875,7 @@ describe('GroupTopologyManagementService', () => {
         const topologyService = new RallarRtcTopologyService({
             now: () => 2_000,
         });
-        const planGroupTopology = vi.spyOn(topologyService, 'planGroupTopology');
+        const planGroupTopology = vi.spyOn(topologyService, 'planGroupTopologyAt');
         const service = createService({
             runtimeRepository,
             group,
@@ -1821,6 +1900,7 @@ describe('GroupTopologyManagementService', () => {
                     degreeLimit: 5,
                 }),
             }),
+            expect.any(Number),
         );
     });
 
@@ -1858,12 +1938,17 @@ describe('GroupTopologyManagementService', () => {
             'session-b': ['session-a'],
         });
         const topologyService = {
+            planGroupTopologyAt: vi.fn(() => ({
+                snapshot: invalidSnapshot,
+                changed: true,
+            })),
             planGroupTopology: vi.fn(() => ({
                 snapshot: invalidSnapshot,
                 changed: true,
             })),
             readSnapshot: vi.fn(),
             recordTopologyPublishResult: vi.fn(),
+            readNowEpochMs: vi.fn(() => 1),
         } as unknown as RallarRtcTopologyService;
         const publisher = vi.fn();
         const service = createService({
@@ -2004,7 +2089,7 @@ describe('GroupTopologyManagementService', () => {
         const topologyService = new RallarRtcTopologyService({
             now: () => 1_000,
         });
-        const updateGroupTopology = vi.spyOn(topologyService, 'updateGroupTopology');
+        const planGroupTopology = vi.spyOn(topologyService, 'planGroupTopologyAt');
         topologyService.queueRttTopologyUpdate(group);
         const service = createService({
             runtimeRepository,
@@ -2026,13 +2111,48 @@ describe('GroupTopologyManagementService', () => {
             meshMinSize: 16,
             meshParamK: 2,
         });
-        expect(updateGroupTopology).toHaveBeenCalledWith(
+        expect(planGroupTopology).toHaveBeenCalledWith(
             group,
             [],
             expect.objectContaining({
                 topologyOptions: result?.config.effective,
             }),
+            1_000,
         );
+        expect(topologyService.readSnapshot(group)).toEqual(result?.snapshot);
+    });
+
+    it('does not expose a phantom process snapshot when every due-flush CAS fails', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const topologyService = new RallarRtcTopologyService({ now: () => 1_000 });
+        const topologySnapshotRepository = new RtcTopologySnapshotRepository(
+            runtimeRepository,
+        );
+        const commitSnapshotGuard = vi.spyOn(
+            topologySnapshotRepository,
+            'commitSnapshotGuard',
+        ).mockResolvedValue({ status: 'conflict' });
+        topologyService.queueRttTopologyUpdate(group);
+        const service = createService({
+            runtimeRepository,
+            group,
+            topologyService,
+            topologySnapshotRepository,
+            sleep: () => Promise.resolve(),
+        });
+
+        await expect(service.flushDueGroupTopology({
+            groupRef: group.group,
+            publish: false,
+        })).rejects.toMatchObject({ code: 'group-topology-commit-conflict' });
+
+        expect(commitSnapshotGuard).toHaveBeenCalledTimes(3);
+        expect(topologyService.readSnapshot(group)).toBeUndefined();
+        expect(topologyService.readMetrics()).toMatchObject({
+            topologySnapshotCount: 0,
+            pendingRttUpdateCount: 0,
+        });
     });
 
     it('writes and deletes config and overrides without synchronous reconfigure', async () => {
@@ -2193,7 +2313,16 @@ function topologyConfig(
     requestId: string,
 ) {
     return {
-        groupRef,
+        groupRef: groupRef.workspaceId === undefined
+            ? {
+                applicationId: groupRef.applicationId,
+                groupId: groupRef.groupId,
+            }
+            : {
+                applicationId: groupRef.applicationId,
+                workspaceId: groupRef.workspaceId,
+                groupId: groupRef.groupId,
+            },
         config: { topologyKind },
         version,
         createdAtEpochMs: 1,
@@ -2355,7 +2484,16 @@ function createTopologySnapshot(
             groupRef.workspaceId ?? '',
             groupRef.groupId,
         ]),
-        groupRef,
+        groupRef: groupRef.workspaceId === undefined
+            ? {
+                applicationId: groupRef.applicationId,
+                groupId: groupRef.groupId,
+            }
+            : {
+                applicationId: groupRef.applicationId,
+                workspaceId: groupRef.workspaceId,
+                groupId: groupRef.groupId,
+            },
         name: groupRef.groupId,
         topology: 'tree',
         activeSessionIds: ['session-a', 'session-b', 'session-c', 'session-d', 'session-e'],
@@ -2375,11 +2513,28 @@ function createInvalidTopologyService(groupRef: GroupRef): RallarRtcTopologyServ
     });
 
     return {
+        planGroupTopologyAt: vi.fn(() => ({
+            snapshot: invalidSnapshot,
+            changed: true,
+        })),
         planGroupTopology: vi.fn(() => ({
             snapshot: invalidSnapshot,
             changed: true,
         })),
         readSnapshot: vi.fn(),
         recordTopologyPublishResult: vi.fn(),
+        readNowEpochMs: vi.fn(() => 1),
     } as unknown as RallarRtcTopologyService;
+}
+
+function freezeDeep<T>(value: T): T {
+    if (!value || typeof value !== 'object') return value;
+    if (value instanceof Map) {
+        for (const [key, child] of value) {
+            freezeDeep(key);
+            freezeDeep(child);
+        }
+    }
+    for (const child of Object.values(value)) freezeDeep(child);
+    return Object.freeze(value);
 }

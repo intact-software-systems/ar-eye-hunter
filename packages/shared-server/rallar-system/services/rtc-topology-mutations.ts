@@ -1,0 +1,620 @@
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type {
+    RuntimeStateOptimisticTransactionalRepositoryLike,
+} from '../../runtime-state/RuntimeStateRepository.ts';
+import {
+    RuntimeStateRetryExhaustedError,
+    RuntimeStateWriteConflictError,
+    waitForRuntimeStateWriteRetry,
+} from '../../runtime-state/optimistic-runtime-state-write.ts';
+import {
+    RtcRttRepository,
+    DEFAULT_RTC_RTT_MUTATION_RETENTION_MS,
+    toRtcRttMutationReceiptId,
+    toRtcRttRecomputeOutboxId,
+} from '../repositories/RtcRttRepository.ts';
+import type { RtcTopologyPublication } from '../repositories/RtcTopologyPublicationRepository.ts';
+import {
+    decideTopologySnapshot,
+    validateTopologySnapshot,
+} from '../repositories/RtcTopologySnapshotRepository.ts';
+import {
+    evaluateRtcRttMeasurement,
+    type RtcRttAcceptanceReason,
+} from './rtc-rtt-measurement-policy.ts';
+import { recordRallarTiming, type RallarTimingSink } from './timing.ts';
+
+export type RtcTopologyPublicationClaim = Readonly<{
+    publication: RtcTopologyPublication;
+}>;
+
+export type RtcTopologyMutationRead = Readonly<{
+    snapshot: RuntimeStateEntryValue<RallarOverlayTopologySnapshot> | null;
+    publicationClaim: RtcTopologyPublicationClaim | null;
+}>;
+
+export type RtcTopologyMutationInput = Readonly<{
+    read: RtcTopologyMutationRead;
+    candidate: RallarOverlayTopologySnapshot;
+    publication: RtcTopologyPublication | null;
+}>;
+
+export type RtcTopologyMutationComputed =
+    | Readonly<{
+        outcome: 'loaded';
+        snapshot: RallarOverlayTopologySnapshot;
+        publication: RtcTopologyPublication;
+    }>
+    | Readonly<{
+        outcome: 'superseded';
+        current: RallarOverlayTopologySnapshot;
+    }>
+    | Readonly<{
+        outcome: 'write';
+        observation: 'inserted' | 'advanced' | 'duplicate';
+        snapshotGuard: Readonly<{
+            expectedRevision: number | null;
+            candidate: RallarOverlayTopologySnapshot;
+        }>;
+        publication: RtcTopologyPublication | null;
+    }>;
+
+export function computeTopologyMutation(
+    input: RtcTopologyMutationInput,
+): RtcTopologyMutationComputed {
+    if (input.read.publicationClaim) {
+        if (!input.read.snapshot) {
+            throw new TypeError(
+                'RTC topology publication claim has no durable snapshot',
+            );
+        }
+        const storedPublication = input.read.publicationClaim.publication;
+        const storedSnapshot = input.read.snapshot.value;
+        assertPublicationSelfConsistent(storedPublication);
+        return {
+            outcome: 'loaded',
+            snapshot: storedSnapshot,
+            publication: storedPublication,
+        };
+    }
+
+    const current = input.read.snapshot?.value;
+    const observation = decideTopologySnapshot(current, input.candidate);
+    if (observation === 'stale') {
+        return { outcome: 'superseded', current: current! };
+    }
+    return {
+        outcome: 'write',
+        observation,
+        snapshotGuard: {
+            expectedRevision: input.read.snapshot?.entry.revision ?? null,
+            candidate: input.candidate,
+        },
+        publication: input.publication,
+    };
+}
+
+function assertPublicationSelfConsistent(
+    publication: RtcTopologyPublication,
+): RallarOverlayTopologySnapshot {
+    let payload: unknown;
+    try {
+        payload = JSON.parse(publication.message.payload.resource);
+    } catch {
+        throw new TypeError('RTC topology publication payload snapshot is invalid');
+    }
+    validateTopologySnapshot(payload, publication.groupRef);
+    const snapshot = payload;
+    if (
+        !snapshot.groupRef ||
+        !sameGroupRef(publication.groupRef, snapshot.groupRef) ||
+        publication.sourceGroupStateRevision !== snapshot.sourceGroupStateRevision ||
+        publication.overlayVersion !== snapshot.version ||
+        !jsonEquals(publication.recipientSessionIds, snapshot.activeSessionIds)
+    ) {
+        throw new TypeError('RTC topology publication winner is internally inconsistent');
+    }
+    return snapshot;
+}
+
+export function validateTopologyMutation(
+    input: RtcTopologyMutationInput & Readonly<{
+        computed: RtcTopologyMutationComputed;
+    }>,
+): void {
+    const recomputed = computeTopologyMutation(input);
+    if (!jsonEquals(recomputed, input.computed)) {
+        throw new TypeError('RTC topology mutation differs from canonical computation');
+    }
+    if (
+        input.publication &&
+        (!sameGroupRef(input.publication.groupRef, input.candidate.groupRef) ||
+            input.publication.sourceGroupStateRevision !==
+                input.candidate.sourceGroupStateRevision ||
+            input.publication.overlayVersion !== input.candidate.version)
+    ) {
+        throw new TypeError('RTC topology publication differs from candidate identity');
+    }
+    if (input.publication && input.computed.outcome === 'write') {
+        const publicationSnapshot = assertPublicationSelfConsistent(input.publication);
+        if (!jsonEquals(publicationSnapshot, input.candidate)) {
+            throw new TypeError('RTC topology publication payload differs from candidate');
+        }
+    }
+}
+
+export type RtcRttEndpointAdmission = Readonly<{
+    endpointId: string;
+    peers: readonly Readonly<{
+        peerSessionId: string;
+        expiresAtEpochMs: number;
+    }>[];
+    version: number;
+    updatedAtEpochMs: number;
+}>;
+
+export type RtcRttMutationCommand = Readonly<{
+    rtt: RttMeasurementInfo;
+    alSenderId: string;
+    candidateGroups: readonly GroupSnapshot[];
+    overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
+    degreeLimit: number;
+}>;
+
+export type RtcRttMutationRead = Readonly<{
+    measurement: RuntimeStateEntryValue<RttMeasurementInfo> | null;
+    endpointAdmissions: readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[];
+    measurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[];
+}>;
+
+export type RtcRttMutationFacts = Readonly<{
+    purgeAfterEpochMs: number;
+    requestedAtEpochMs: number;
+}>;
+
+export type RtcRttEndpointGuard = Readonly<{
+    endpointId: string;
+    expectedRevision: number | null;
+    expireAtTimestamp: number;
+    value: RtcRttEndpointAdmission;
+}>;
+
+export type RtcRttMutationComputed =
+    | Readonly<{
+        outcome: 'rejected';
+        reason: RtcRttAcceptanceReason | 'stale';
+        affectedGroups: readonly GroupSnapshot[];
+    }>
+    | Readonly<{
+        outcome: 'write';
+        reason: 'accepted';
+        affectedGroups: readonly GroupSnapshot[];
+        endpointGuards: readonly RtcRttEndpointGuard[];
+        measurementGuard: Readonly<{
+            expectedRevision: number | null;
+            value: RttMeasurementInfo;
+            purgeAfterEpochMs: number;
+        }>;
+        receipt: RtcRttMutationReceipt;
+        recomputeIntents: readonly RtcRttRecomputeIntent[];
+    }>;
+
+export type RtcRttMutationReceipt = Readonly<{
+    receiptId: string;
+    sessionIdFrom: string;
+    sessionIdTo: string;
+    measurementVersion: number;
+    affectedGroupRefs: readonly GroupRef[];
+    acceptedAtEpochMs: number;
+    outcome: 'accepted';
+}>;
+
+export type RtcRttRecomputeIntent = Readonly<{
+    outboxId: string;
+    receiptId: string;
+    groupSnapshot: GroupSnapshot;
+    rtt: RttMeasurementInfo;
+    createdAtEpochMs: number;
+}>;
+
+export function computeRttMutation(input: Readonly<{
+    command: RtcRttMutationCommand;
+    read: RtcRttMutationRead;
+    facts: RtcRttMutationFacts;
+}>): RtcRttMutationComputed {
+    if (
+        input.read.measurement &&
+        input.read.measurement.value.version >= input.command.rtt.version
+    ) {
+        return {
+            outcome: 'rejected',
+            reason: 'stale',
+            affectedGroups: [],
+        };
+    }
+
+    const acceptance = evaluateRtcRttMeasurement({
+        ...input.command,
+        existingMeasurements: input.read.measurements.map(({ value }) => value),
+    });
+    if (!acceptance.accepted) {
+        return {
+            outcome: 'rejected',
+            reason: acceptance.reason,
+            affectedGroups: acceptance.affectedGroups,
+        };
+    }
+
+    const admissionByEndpoint = new Map(
+        input.read.endpointAdmissions.map((stored) => [stored.value.endpointId, stored]),
+    );
+    if (exceedsEndpointAdmissionDegree(
+        input.command.rtt,
+        admissionByEndpoint,
+        input.command.degreeLimit,
+        input.facts.requestedAtEpochMs,
+    )) {
+        return {
+            outcome: 'rejected',
+            reason: 'over-degree',
+            affectedGroups: acceptance.affectedGroups,
+        };
+    }
+
+    const endpoints = [...new Set([
+        input.command.rtt.sessionIdFrom,
+        input.command.rtt.sessionIdTo,
+    ])].sort();
+    const endpointGuards = endpoints.map((endpointId) => {
+        const stored = admissionByEndpoint.get(endpointId);
+        const peerExpiry = new Map<string, number>();
+        for (const peer of stored?.value.peers ?? []) {
+            if (peer.expiresAtEpochMs > input.facts.requestedAtEpochMs) {
+                peerExpiry.set(peer.peerSessionId, peer.expiresAtEpochMs);
+            }
+        }
+        for (const peer of peersForEndpoint(endpointId, input.read.measurements)) {
+            peerExpiry.set(
+                peer.peerSessionId,
+                Math.max(peerExpiry.get(peer.peerSessionId) ?? 0, peer.expiresAtEpochMs),
+            );
+        }
+        const incomingPeer = endpointId === input.command.rtt.sessionIdFrom
+            ? input.command.rtt.sessionIdTo
+            : input.command.rtt.sessionIdFrom;
+        peerExpiry.set(
+            incomingPeer,
+            Math.max(
+                peerExpiry.get(incomingPeer) ?? 0,
+                input.facts.purgeAfterEpochMs,
+            ),
+        );
+        const peers = [...peerExpiry].map(([peerSessionId, expiresAtEpochMs]) => ({
+            peerSessionId,
+            expiresAtEpochMs,
+        })).sort((left, right) =>
+            left.peerSessionId.localeCompare(right.peerSessionId)
+        );
+        return {
+            endpointId,
+            expectedRevision: stored?.entry.revision ?? null,
+            expireAtTimestamp: Math.max(...peers.map((peer) => peer.expiresAtEpochMs)),
+            value: {
+                endpointId,
+                peers,
+                version: (stored?.value.version ?? 0) + 1,
+                updatedAtEpochMs: input.facts.requestedAtEpochMs,
+            },
+        };
+    });
+    const receiptId = toRtcRttMutationReceiptId(input.command.rtt);
+    const affectedGroupRefs = acceptance.affectedGroups.map((group) =>
+        canonicalGroupRef(group.group)
+    );
+    return {
+        outcome: 'write',
+        reason: 'accepted',
+        affectedGroups: acceptance.affectedGroups,
+        endpointGuards,
+        measurementGuard: {
+            expectedRevision: input.read.measurement?.entry.revision ?? null,
+            value: input.command.rtt,
+            purgeAfterEpochMs: input.facts.purgeAfterEpochMs,
+        },
+        receipt: {
+            receiptId,
+            sessionIdFrom: input.command.rtt.sessionIdFrom,
+            sessionIdTo: input.command.rtt.sessionIdTo,
+            measurementVersion: input.command.rtt.version,
+            affectedGroupRefs,
+            acceptedAtEpochMs: input.facts.requestedAtEpochMs,
+            outcome: 'accepted',
+        },
+        recomputeIntents: acceptance.affectedGroups.map((group) => ({
+            outboxId: toRtcRttRecomputeOutboxId(receiptId, group.group),
+            receiptId,
+            groupSnapshot: group,
+            rtt: input.command.rtt,
+            createdAtEpochMs: input.facts.requestedAtEpochMs,
+        })),
+    };
+}
+
+function exceedsEndpointAdmissionDegree(
+    rtt: RttMeasurementInfo,
+    admissions: ReadonlyMap<
+        string,
+        RuntimeStateEntryValue<RtcRttEndpointAdmission>
+    >,
+    degreeLimit: number,
+    requestedAtEpochMs: number,
+): boolean {
+    for (const [endpointId, incomingPeerId] of [
+        [rtt.sessionIdFrom, rtt.sessionIdTo],
+        [rtt.sessionIdTo, rtt.sessionIdFrom],
+    ] as const) {
+        const peers = new Set(
+            (admissions.get(endpointId)?.value.peers ?? [])
+                .filter((peer) => peer.expiresAtEpochMs > requestedAtEpochMs)
+                .map((peer) => peer.peerSessionId),
+        );
+        if (!peers.has(incomingPeerId) && peers.size >= degreeLimit) return true;
+    }
+    return false;
+}
+
+export function validateRttMutation(input: Readonly<{
+    command: RtcRttMutationCommand;
+    read: RtcRttMutationRead;
+    facts: RtcRttMutationFacts;
+    computed: RtcRttMutationComputed;
+}>): void {
+    const recomputed = computeRttMutation(input);
+    if (!jsonEquals(recomputed, input.computed)) {
+        throw new TypeError('RTC RTT mutation differs from canonical computation');
+    }
+    if (input.computed.outcome === 'write') {
+        const endpointIds = input.computed.endpointGuards.map((guard) => guard.endpointId);
+        if (JSON.stringify(endpointIds) !== JSON.stringify([...endpointIds].sort())) {
+            throw new TypeError('RTC RTT endpoint guards are not in lexical order');
+        }
+    }
+}
+
+export async function readRttMutation(
+    repository: RtcRttRepository,
+    command: RtcRttMutationCommand,
+): Promise<RtcRttMutationRead> {
+    const [measurement, ...endpointAdmissions] = await Promise.all([
+        repository.findMeasurementEntry(
+            command.rtt.sessionIdFrom,
+            command.rtt.sessionIdTo,
+        ),
+        ...[...new Set([
+            command.rtt.sessionIdFrom,
+            command.rtt.sessionIdTo,
+        ])].sort().map((endpointId) =>
+            repository.findEndpointAdmissionEntry(endpointId)
+        ),
+    ]);
+    const measurements = await repository.listMeasurementEntries();
+    return {
+        measurement: measurement ?? null,
+        endpointAdmissions: endpointAdmissions.filter((entry): entry is
+            NonNullable<typeof entry> => entry !== undefined),
+        measurements,
+    };
+}
+
+export async function writeRttMutation(
+    runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
+    options: ConstructorParameters<typeof RtcRttRepository>[1],
+    computed: Extract<RtcRttMutationComputed, { outcome: 'write' }>,
+): Promise<'accepted' | 'conflict'> {
+    try {
+        const accepted = await runtime.begin(async (transaction) => {
+            const repository = new RtcRttRepository(transaction, options);
+            for (let index = 0; index < computed.endpointGuards.length; index += 1) {
+                const guard = computed.endpointGuards[index]!;
+                const written = await repository.commitEndpointAdmission(
+                    guard.value,
+                    guard.expectedRevision,
+                    guard.expireAtTimestamp,
+                );
+                if (written.status === 'conflict') {
+                    if (index === 0) return false;
+                    throw new RuntimeStateWriteConflictError();
+                }
+            }
+            const measurement = await repository.commitMeasurement(
+                computed.measurementGuard.value,
+                computed.measurementGuard.expectedRevision,
+                computed.measurementGuard.purgeAfterEpochMs,
+            );
+            if (measurement.status === 'conflict') {
+                throw new RuntimeStateWriteConflictError();
+            }
+            const mutationExpireAtTimestamp = computed.receipt.acceptedAtEpochMs +
+                DEFAULT_RTC_RTT_MUTATION_RETENTION_MS;
+            const receipt = await repository.insertMutationReceipt(
+                computed.receipt,
+                mutationExpireAtTimestamp,
+            );
+            if (receipt.status === 'conflict') {
+                throw new RuntimeStateWriteConflictError();
+            }
+            for (const intent of computed.recomputeIntents) {
+                const inserted = await repository.insertRecomputeIntent(
+                    intent,
+                    mutationExpireAtTimestamp,
+                );
+                if (inserted.status === 'conflict') {
+                    throw new RuntimeStateWriteConflictError();
+                }
+            }
+            return true;
+        });
+        return accepted ? 'accepted' : 'conflict';
+    } catch (error) {
+        if (error instanceof RuntimeStateWriteConflictError) return 'conflict';
+        throw error;
+    }
+}
+
+function canonicalGroupRef(ref: GroupRef): GroupRef {
+    return ref.workspaceId === undefined
+        ? { applicationId: ref.applicationId, groupId: ref.groupId }
+        : {
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            groupId: ref.groupId,
+        };
+}
+
+export type ExecuteRttMutationResult = Readonly<{
+    computed: RtcRttMutationComputed;
+    updated: boolean;
+}>;
+
+export async function executeRttMutation(input: Readonly<{
+    repository: RtcRttRepository;
+    runtime: RuntimeStateOptimisticTransactionalRepositoryLike;
+    command: RtcRttMutationCommand;
+    readCommand?: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
+    facts: RtcRttMutationFacts;
+    sleep?: (delayMs: number) => Promise<void>;
+    timing?: RallarTimingSink;
+    serviceId?: string;
+}>): Promise<ExecuteRttMutationResult> {
+    let lastConflict: RuntimeStateWriteConflictError | undefined;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        const backoffMs = await waitForRuntimeStateWriteRetry(attempt as 0 | 1 | 2, {
+            sleep: input.sleep,
+        });
+        const readStarted = performance.now();
+        const command = await input.readCommand?.() ?? input.command;
+        if (!sameRttRequest(command, input.command)) {
+            throw new TypeError('RTC RTT retry changed the stable request payload');
+        }
+        const read = await readRttMutation(input.repository, command);
+        recordRttPhase(input, 'read', readStarted, attempt, backoffMs);
+
+        const computeStarted = performance.now();
+        const computed = computeRttMutation({
+            command,
+            read,
+            facts: input.facts,
+        });
+        recordRttPhase(input, 'compute', computeStarted, attempt, backoffMs);
+
+        const validateStarted = performance.now();
+        validateRttMutation({
+            command,
+            read,
+            facts: input.facts,
+            computed,
+        });
+        recordRttPhase(input, 'validate', validateStarted, attempt, backoffMs);
+        if (computed.outcome === 'rejected') {
+            return { computed, updated: false };
+        }
+
+        const writeStarted = performance.now();
+        const transactionStarted = performance.now();
+        const written = await writeRttMutation(
+            input.runtime,
+            {
+                ttlMs: input.facts.purgeAfterEpochMs - input.facts.requestedAtEpochMs,
+                now: () => input.facts.requestedAtEpochMs,
+            },
+            computed,
+        );
+        recordRttPhase(
+            input,
+            'transaction',
+            transactionStarted,
+            attempt,
+            backoffMs,
+        );
+        recordRttPhase(input, 'write', writeStarted, attempt, backoffMs);
+        if (written === 'accepted') return { computed, updated: true };
+
+        lastConflict = new RuntimeStateWriteConflictError();
+        recordRallarTiming(input.timing, {
+            component: 'rtc-rtt-service',
+            operation: 'mutation.conflict',
+            serviceId: input.serviceId,
+            requestId: `${input.command.rtt.sessionIdFrom}:${input.command.rtt.sessionIdTo}:${input.command.rtt.version}`,
+            details: { attempt, backoffMs, conflict: true },
+        }, 'error', 0, lastConflict);
+    }
+    throw new RuntimeStateRetryExhaustedError(
+        lastConflict ?? new RuntimeStateWriteConflictError(),
+    );
+}
+
+function sameRttRequest(
+    left: RtcRttMutationCommand,
+    right: RtcRttMutationCommand,
+): boolean {
+    return jsonEquals(left.rtt, right.rtt) && left.alSenderId === right.alSenderId;
+}
+
+function recordRttPhase(
+    input: Pick<Parameters<typeof executeRttMutation>[0], 'timing' | 'serviceId' | 'command'>,
+    phase: 'read' | 'compute' | 'validate' | 'transaction' | 'write',
+    started: number,
+    attempt: number,
+    backoffMs: number,
+): void {
+    recordRallarTiming(input.timing, {
+        component: 'rtc-rtt-service',
+        operation: `mutation.${phase}`,
+        serviceId: input.serviceId,
+        requestId: `${input.command.rtt.sessionIdFrom}:${input.command.rtt.sessionIdTo}:${input.command.rtt.version}`,
+        details: { attempt, backoffMs },
+    }, 'ok', performance.now() - started);
+}
+
+function peersForEndpoint(
+    endpointId: string,
+    measurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[],
+): readonly Readonly<{ peerSessionId: string; expiresAtEpochMs: number }>[] {
+    const peers = new Map<string, number>();
+    for (const measurement of measurements) {
+        const peerSessionId = measurement.value.sessionIdFrom === endpointId
+            ? measurement.value.sessionIdTo
+            : measurement.value.sessionIdTo === endpointId
+            ? measurement.value.sessionIdFrom
+            : undefined;
+        if (peerSessionId) {
+            peers.set(
+                peerSessionId,
+                Math.max(
+                    peers.get(peerSessionId) ?? 0,
+                    measurement.entry.expireAtTimestamp,
+                ),
+            );
+        }
+    }
+    return [...peers].map(([peerSessionId, expiresAtEpochMs]) => ({
+        peerSessionId,
+        expiresAtEpochMs,
+    })).sort((left, right) => left.peerSessionId.localeCompare(right.peerSessionId));
+}
+
+function sameGroupRef(
+    left: RtcTopologyPublication['groupRef'],
+    right: RtcTopologyPublication['groupRef'],
+): boolean {
+    return left.applicationId === right.applicationId &&
+        left.workspaceId === right.workspaceId &&
+        left.groupId === right.groupId;
+}
+
+function jsonEquals(left: unknown, right: unknown): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}

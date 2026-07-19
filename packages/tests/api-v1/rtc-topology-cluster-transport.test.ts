@@ -16,9 +16,14 @@ describe('API-v1 RTC topology PostgreSQL cluster transport', () => {
             },
         );
         const notification = {
-            v: 1 as const,
+            v: 2 as const,
             publisherId: 'publisher-a',
-            publicationId: 'publication-1',
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
+            publicationId: 'work-1:4:2',
             sourceGroupStateRevision: 4,
         };
         const receive = vi.fn();
@@ -30,9 +35,22 @@ describe('API-v1 RTC topology PostgreSQL cluster transport', () => {
             ...notification,
             publisherId: 'publisher-b',
         }));
+        await databaseListener?.(JSON.stringify({
+            v: 1,
+            publisherId: 'publisher-b',
+            publicationId: 'legacy-work:4:2',
+            sourceGroupStateRevision: 4,
+        }));
+        await databaseListener?.(JSON.stringify({
+            v: 1,
+            publisherId: 'publisher-b',
+            groupRef: notification.groupRef,
+            publicationId: 'legacy-work:4:2',
+            sourceGroupStateRevision: 4,
+        }));
         await databaseListener?.('{not-json');
         await databaseListener?.(JSON.stringify({
-            v: 2,
+            v: 3,
             publisherId: 'publisher-b',
             publicationId: 'publication-2',
             sourceGroupStateRevision: 5,
@@ -42,10 +60,16 @@ describe('API-v1 RTC topology PostgreSQL cluster transport', () => {
             'topology-channel',
             notification,
         );
-        expect(receive).toHaveBeenCalledTimes(1);
-        expect(receive).toHaveBeenCalledWith({
+        expect(receive).toHaveBeenCalledTimes(2);
+        expect(receive).toHaveBeenNthCalledWith(1, {
             ...notification,
             publisherId: 'publisher-b',
+        });
+        expect(receive).toHaveBeenNthCalledWith(2, {
+            v: 1,
+            publisherId: 'publisher-b',
+            publicationId: 'legacy-work:4:2',
+            sourceGroupStateRevision: 4,
         });
     });
 });

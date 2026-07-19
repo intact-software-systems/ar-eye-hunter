@@ -566,9 +566,12 @@ describe('Rallar system websocket topics RTC topology', () => {
             .toBeUndefined();
     });
 
-    it('locks RTT endpoints before accepting runtime-state measurements', async () => {
+    it('accepts runtime-state measurements without locking RTT endpoints', async () => {
         configureTestCacheRepositories();
         const runtimeRepository = new FakeRuntimeStateRepository();
+        vi.spyOn(runtimeRepository, 'lockKey').mockRejectedValue(
+            new Error('RTT endpoint locks are forbidden'),
+        );
         const { sockets } = createRttHarness(['session-a', 'session-b'], {
             runtimeRepository,
         });
@@ -583,18 +586,9 @@ describe('Rallar system websocket topics RTC topology', () => {
             version: 1,
         }, group);
 
-        expect(runtimeRepository.locks).toEqual(
-            expect.arrayContaining([
-                {
-                    namespace: 'rtc-rtt:latest',
-                    key: 'endpoint=session-a',
-                },
-                {
-                    namespace: 'rtc-rtt:latest',
-                    key: 'endpoint=session-b',
-                },
-            ]),
-        );
+        expect(await new RtcRttRepository(runtimeRepository)
+            .findMeasurement('session-a', 'session-b')).toBeDefined();
+        expect(runtimeRepository.locks).toEqual([]);
     });
 
     it('debounces and coalesces RTT-triggered overlay topology broadcasts', async () => {

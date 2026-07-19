@@ -22,6 +22,7 @@ import { sendStateSyncMessage } from './state-sync-routing.ts';
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
+    drainRtcRttRecomputeOutbox,
     type RtcTopologyWorkPublisher,
 } from './services/RtcTopologyOutboxWork.ts';
 import {
@@ -36,11 +37,17 @@ import {
     evaluateRtcRttMeasurement,
     type RtcRttAcceptanceResult,
 } from './services/rtc-rtt-measurement-policy.ts';
+import { executeRttMutation } from './services/rtc-topology-mutations.ts';
 import { GroupTopologyConfigRepository } from './repositories/GroupTopologyConfigRepository.ts';
 import { GroupStateRepository } from './repositories/GroupStateRepository.ts';
 import { RtcRttRepository, type RtcRttRepositoryOptions, } from './repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from './repositories/RtcTopologySnapshotRepository.ts';
-import type { RuntimeStateRepositoryLike } from '../runtime-state/RuntimeStateRepository.ts';
+import {
+    isRuntimeStateConditionalRepositoryLike,
+    isRuntimeStateOptimisticTransactionalRepositoryLike,
+    isRuntimeStateTransactionalRepositoryLike,
+    type RuntimeStateRepositoryLike,
+} from '../runtime-state/RuntimeStateRepository.ts';
 import type { RtcTopologyPublicationFanout } from './pubsub/RtcTopologyClusterTransport.ts';
 import type { RtcTopologyExecutionRepository } from './repositories/RtcTopologyExecutionRepository.ts';
 
@@ -171,6 +178,15 @@ export function initRallarSystemWsTopics(
                     ),
             }),
         );
+        if (rtcTopologyRuntimeState) {
+            void drainRtcRttRecomputeOutbox({
+                repository: rtcTopologyRuntimeState.rtts,
+                publisher: rtcTopologyAppOutbox.publisher,
+                debounceMs: rtcTopologyService.readRttRebuildDebounceMs(),
+            }).catch((error) => {
+                console.warn('RTC RTT recompute outbox startup drain failed', error);
+            });
+        }
     }
 
     initStateBroadcastTopic(AppTopics.clientStateSnapshot, wsQBoxServerService, (rawData) => {
@@ -538,22 +554,28 @@ function initRttTopic(
 
             console.log(`Received RTT message: ${data.payload.resource}`);
 
-            const candidateGroups = await findGroupsAffectedByRtt(
-                rtt,
-                data,
-                findGroupSnapshotByRef,
-            );
-            const overlaySnapshotsByGroupKey = await readOverlaySnapshotsForGroups(
-                candidateGroups,
-                rtcTopologyService,
-                runtimeState,
-            );
+            const readPolicyInputs = async () => {
+                const candidateGroups = await findGroupsAffectedByRtt(
+                    rtt,
+                    data,
+                    findGroupSnapshotByRef,
+                );
+                return {
+                    candidateGroups,
+                    overlaySnapshotsByGroupKey: await readOverlaySnapshotsForGroups(
+                        candidateGroups,
+                        rtcTopologyService,
+                        runtimeState,
+                    ),
+                    degreeLimit: rtcTopologyService.readRttReportingDegreeLimit(),
+                };
+            };
+            const policyInputs = await readPolicyInputs();
             const acceptance = await acceptRtcRttMeasurementWithPolicy({
                 rtt,
                 alSenderId: data.id.senderId,
-                candidateGroups,
-                overlaySnapshotsByGroupKey,
-                degreeLimit: rtcTopologyService.readRttReportingDegreeLimit(),
+                ...policyInputs,
+                readPolicyInputs,
                 runtimeState,
             });
             if (!acceptance.accepted) {
@@ -567,11 +589,19 @@ function initRttTopic(
             vivaldiService.observeRtt(rtt);
             scheduleGlobalGraphRttRecompute();
             if (rtcTopologyWorkPublisher) {
-                await rtcTopologyWorkPublisher.enqueueForRttGroups(
-                    rtt,
-                    acceptance.affectedGroups,
-                    rtcTopologyService.readRttRebuildDebounceMs(),
-                );
+                if (runtimeState) {
+                    await drainRtcRttRecomputeOutbox({
+                        repository: runtimeState.rtts,
+                        publisher: rtcTopologyWorkPublisher,
+                        debounceMs: rtcTopologyService.readRttRebuildDebounceMs(),
+                    });
+                } else {
+                    await rtcTopologyWorkPublisher.enqueueForRttGroups(
+                        rtt,
+                        acceptance.affectedGroups,
+                        rtcTopologyService.readRttRebuildDebounceMs(),
+                    );
+                }
             } else {
                 scheduleRtcOverlayTopologyFlushesForRtt(
                     acceptance.affectedGroups,
@@ -595,6 +625,11 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
     readonly candidateGroups: readonly GroupSnapshot[];
     readonly overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
     readonly degreeLimit: number;
+    readonly readPolicyInputs: () => Promise<Readonly<{
+        candidateGroups: readonly GroupSnapshot[];
+        overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
+        degreeLimit: number;
+    }>>;
     readonly runtimeState?: RtcTopologyRuntimeState;
 }): Promise<StoredRtcRttAcceptanceResult> {
     const evaluate = (
@@ -617,15 +652,67 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
         };
     }
 
-    const stored = await input.runtimeState.rtts
-        .putMeasurementIfNewerWithEndpointLocks(input.rtt, evaluate);
-    if (stored.updated) {
+    const runtime = input.runtimeState.rtts.runtimeRepository;
+    if (!isRuntimeStateOptimisticTransactionalRepositoryLike(runtime)) {
+        throw new TypeError(
+            'RTC RTT persistence requires conditional transactional runtime state',
+        );
+    }
+    let firstRead = true;
+    const requestedAtEpochMs = input.runtimeState.rtts.nowEpochMs();
+    const executed = await executeRttMutation({
+        repository: input.runtimeState.rtts,
+        runtime,
+        command: {
+            rtt: input.rtt,
+            alSenderId: input.alSenderId,
+            candidateGroups: input.candidateGroups,
+            overlaySnapshotsByGroupKey: input.overlaySnapshotsByGroupKey,
+            degreeLimit: input.degreeLimit,
+        },
+        readCommand: async () => {
+            const policyInputs = firstRead
+                ? {
+                    candidateGroups: input.candidateGroups,
+                    overlaySnapshotsByGroupKey: input.overlaySnapshotsByGroupKey,
+                    degreeLimit: input.degreeLimit,
+                }
+                : await input.readPolicyInputs();
+            firstRead = false;
+            return {
+                rtt: input.rtt,
+                alSenderId: input.alSenderId,
+                ...policyInputs,
+            };
+        },
+        facts: {
+            requestedAtEpochMs,
+            purgeAfterEpochMs: input.runtimeState.rtts.defaultPurgeAfterEpochMs(),
+        },
+    });
+    if (executed.updated) {
         rttRepository.setRtt(input.rtt);
     }
-
+    if (executed.computed.outcome === 'rejected') {
+        return executed.computed.reason === 'stale'
+            ? {
+                accepted: true,
+                reason: 'accepted',
+                affectedGroups: [],
+                updated: false,
+            }
+            : {
+                accepted: false,
+                reason: executed.computed.reason,
+                affectedGroups: executed.computed.affectedGroups,
+                updated: false,
+            };
+    }
     return {
-        ...stored.result,
-        updated: stored.updated,
+        accepted: true,
+        reason: executed.computed.reason,
+        affectedGroups: executed.computed.affectedGroups,
+        updated: executed.updated,
     };
 }
 

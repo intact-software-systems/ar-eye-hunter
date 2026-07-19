@@ -1748,6 +1748,16 @@ an atomic outbox insert. Manually inspect that `begin(...)` occurs only inside
 named `writeX` functions, the conditional guard precedes dependent inserts, and
 no retry delay occurs in the transaction.
 
+Task 6 intentionally treats graph planning as attempt-local read preparation:
+each attempt first loads all authoritative group, config, RTT, predecessor, and
+publication facts and captures time, then derives the graph candidate from only
+those frozen facts before recording the read phase. The named database mutation
+`computeTopologyMutation` and `validateTopologyMutation` phases remain pure and
+synchronous. Future work must not move repository, clock, cache-observation, or
+other ambient access into those compute/validate phases. Extracting graph
+planner metrics into a separately pure planner is a possible later refactor,
+not permission to weaken this boundary.
+
 - [ ] **Step 5: Run focused and package suites**
 
 ```bash

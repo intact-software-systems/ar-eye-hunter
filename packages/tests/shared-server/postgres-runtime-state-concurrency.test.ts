@@ -12,6 +12,23 @@ import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repo
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import {
+    RtcTopologyExecutionRepository,
+} from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import {
+    RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
+    RtcTopologySnapshotRepository,
+} from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+import {
+    RtcTopologyPublicationRepository,
+} from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+import {
+    RTC_RTT_LATEST_NAMESPACE,
+    RtcRttRepository,
+} from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+import { executeRttMutation } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
+import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 type PostgresSql = PSqlSql & Readonly<{
     end(): Promise<void>;
@@ -412,6 +429,115 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
     );
 
     postgresIt(
+        'converges true-overlap topology executions across independent clients',
+        async () => {
+            const databaseUrl = requireDatabaseUrl();
+            const applicationId = `topology-execution-${crypto.randomUUID()}`;
+            const groupRef = { applicationId, workspaceId: 'concurrency', groupId: 'room' };
+            const clients = [await createSql(databaseUrl), await createSql(databaseUrl)];
+            try {
+                const barrier = createReadBarrier(2);
+                const firstRuntime = new BarrierRuntimeStateRepository(
+                    clients[0]!, RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE, barrier,
+                );
+                const secondRuntime = new BarrierRuntimeStateRepository(
+                    clients[1]!, RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE, barrier,
+                );
+                const first = topologyExecutionFixture(groupRef, 'first');
+                const second = topologyExecutionFixture(groupRef, 'second');
+                const repositories = [
+                    new RtcTopologyExecutionRepository(firstRuntime),
+                    new RtcTopologyExecutionRepository(secondRuntime),
+                ] as const;
+                const initial = await Promise.all([
+                    repositories[0].commit({ expected: undefined, ...first }),
+                    repositories[1].commit({ expected: undefined, ...second }),
+                ]);
+                const settled = await Promise.all(initial.map(async (result, index) =>
+                    result.status === 'retry'
+                        ? await repositories[index as 0 | 1].commit({
+                            expected: result.current,
+                            ...(index === 0 ? first : second),
+                        })
+                        : result
+                ));
+
+                expect(settled.filter(({ status }) => status === 'committed'))
+                    .toHaveLength(1);
+                expect(settled.filter(({ status }) => status === 'loaded'))
+                    .toHaveLength(1);
+                const storedSnapshot = await new RtcTopologySnapshotRepository(firstRuntime)
+                    .findSnapshot(groupRef);
+                const storedPublication = await new RtcTopologyPublicationRepository(firstRuntime)
+                    .findPublicationForWork(groupRef, `${applicationId}-work`);
+                expect(storedSnapshot).toBeDefined();
+                expect(storedPublication).toBeDefined();
+                expect(storedPublication?.overlayVersion).toBe(storedSnapshot?.version);
+            } finally {
+                await cleanupApplicationRows(clients, applicationId);
+            }
+        },
+        60_000,
+    );
+
+    postgresIt(
+        'converges true-overlap RTT endpoint admission across independent clients',
+        async () => {
+            const databaseUrl = requireDatabaseUrl();
+            const applicationId = `rtt-execution-${crypto.randomUUID()}`;
+            const a = `${applicationId}-a`;
+            const b = `${applicationId}-b`;
+            const c = `${applicationId}-c`;
+            const clients = [await createSql(databaseUrl), await createSql(databaseUrl)];
+            try {
+                const barrier = createReadBarrier(2);
+                const firstRuntime = new BarrierRuntimeStateRepository(
+                    clients[0]!, RTC_RTT_LATEST_NAMESPACE, barrier,
+                );
+                const secondRuntime = new BarrierRuntimeStateRepository(
+                    clients[1]!, RTC_RTT_LATEST_NAMESPACE, barrier,
+                );
+                const groups = [
+                    rttGroupSnapshot({ applicationId, workspaceId: 'concurrency', groupId: 'ab' }, [a, b]),
+                    rttGroupSnapshot({ applicationId, workspaceId: 'concurrency', groupId: 'ac' }, [a, c]),
+                ] as const;
+                const result = await Promise.all([
+                    executeRttMutation({
+                        repository: new RtcRttRepository(firstRuntime, { now: () => 1 }),
+                        runtime: firstRuntime,
+                        command: {
+                            rtt: { sessionIdFrom: a, sessionIdTo: b, rttMs: 1, createdAtEpochMs: 1, version: 1 },
+                            alSenderId: a, candidateGroups: [groups[0]],
+                            overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
+                        },
+                        facts: { requestedAtEpochMs: 1, purgeAfterEpochMs: 60_001 },
+                        sleep: async () => {},
+                    }),
+                    executeRttMutation({
+                        repository: new RtcRttRepository(secondRuntime, { now: () => 1 }),
+                        runtime: secondRuntime,
+                        command: {
+                            rtt: { sessionIdFrom: a, sessionIdTo: c, rttMs: 2, createdAtEpochMs: 1, version: 1 },
+                            alSenderId: a, candidateGroups: [groups[1]],
+                            overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
+                        },
+                        facts: { requestedAtEpochMs: 1, purgeAfterEpochMs: 60_001 },
+                        sleep: async () => {},
+                    }),
+                ]);
+
+                expect(result.filter(({ updated }) => updated)).toHaveLength(1);
+                const stored = new RtcRttRepository(firstRuntime, { now: () => 2 });
+                expect(await stored.listMeasurements()).toHaveLength(1);
+                expect(await stored.listRecomputeIntents()).toHaveLength(1);
+            } finally {
+                await cleanupApplicationRows(clients, applicationId);
+            }
+        },
+        60_000,
+    );
+
+    postgresIt(
         'rejects a true-overlap archive after stable authority read and before the fence CAS',
         async () => {
             const databaseUrl = requireDatabaseUrl();
@@ -718,6 +844,96 @@ function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
         memberCount: 1,
         onlineMemberCount: 0,
     };
+}
+
+function topologyExecutionFixture(
+    groupRef: GroupRef,
+    name: string,
+): Readonly<{
+    candidate: RallarOverlayTopologySnapshot;
+    publication: ReturnType<typeof topologyPublication>;
+}> {
+    const candidate: RallarOverlayTopologySnapshot = {
+        sourceGroupStateRevision: 1,
+        state: 'active',
+        overlayId: JSON.stringify([groupRef.applicationId, groupRef.workspaceId ?? '', groupRef.groupId]),
+        groupRef,
+        name,
+        topology: 'tree',
+        activeSessionIds: [`${groupRef.applicationId}-a`, `${groupRef.applicationId}-b`],
+        nextHopsBySessionId: {
+            [`${groupRef.applicationId}-a`]: [`${groupRef.applicationId}-b`],
+            [`${groupRef.applicationId}-b`]: [`${groupRef.applicationId}-a`],
+        },
+        degreeLimit: 1,
+        version: 1,
+        createdByClientId: 'owner',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: 1,
+    };
+    return { candidate, publication: topologyPublication(candidate, `${groupRef.applicationId}-work`) };
+}
+
+function topologyPublication(
+    snapshot: RallarOverlayTopologySnapshot,
+    workId: string,
+) {
+    return {
+        publicationId: `${workId}:${snapshot.sourceGroupStateRevision}:${snapshot.version}`,
+        workId,
+        groupRef: snapshot.groupRef,
+        sourceGroupStateRevision: snapshot.sourceGroupStateRevision,
+        overlayVersion: snapshot.version,
+        recipientSessionIds: snapshot.activeSessionIds,
+        message: {
+            id: `${workId}-message`,
+            payload: { resource: JSON.stringify(snapshot) },
+        } as unknown as ALMessage,
+        createdAtEpochMs: 1,
+    };
+}
+
+function rttGroupSnapshot(
+    groupRef: GroupRef,
+    sessionIds: readonly string[],
+): GroupSnapshot {
+    const base = topologyGroupSnapshot(groupRef);
+    return {
+        ...base,
+        members: sessionIds.map((sessionId) => ({
+            ...groupRef,
+            principalId: sessionId,
+            role: 'member' as const,
+            status: 'active' as const,
+            joined: { atEpochMs: 1, byPrincipalId: 'owner' },
+            updated: { atEpochMs: 1, byPrincipalId: 'owner' },
+        })),
+        activeSessions: sessionIds.map((sessionId) => ({
+            ...groupRef,
+            sessionId,
+            principalId: sessionId,
+            generationId: `${sessionId}-generation`,
+            generationVersion: 1,
+            connectedAtEpochMs: 1,
+            lastHeartbeatAtEpochMs: 1,
+            expiresAtEpochMs: 60_001,
+        })),
+        memberCount: sessionIds.length,
+        onlineMemberCount: sessionIds.length,
+    };
+}
+
+async function cleanupApplicationRows(
+    clients: readonly PostgresSql[],
+    applicationId: string,
+): Promise<void> {
+    await Promise.allSettled(clients.map(async (client) => {
+        await client`
+            delete from runtime_state_store
+            where store_value like ${`%${applicationId}%`}
+        `;
+    }));
+    await Promise.allSettled(clients.map(async (client) => await client.end()));
 }
 
 function createLifecycleSql(

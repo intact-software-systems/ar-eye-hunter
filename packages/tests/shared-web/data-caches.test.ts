@@ -706,6 +706,10 @@ function createGroupSnapshot(
 ): GroupSnapshot {
     return {
         stateRevision: snapshotVersion,
+        causalRevision: {
+            groupRevision: snapshotVersion,
+            presenceRevision: snapshotVersion,
+        },
         group: {
             applicationId,
             workspaceId,
