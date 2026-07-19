@@ -300,11 +300,50 @@ npx vitest run \
 npm run typecheck --workspace @ar-eye-hunter/shared-server
 ```
 
-- [ ] **Step 5: Push and collect iteration 5**
+- [x] **Step 5: Push and collect iteration 5**
 
 Push the correction to PR #40, rerun the unchanged 15-agent manifest, and
 compare topology churn, RTC reschedules, sender-queue wait, frame latency, and
 the recipe conclusion against iteration 4.
+
+### Task 5: Honor durable-effect retry boundaries
+
+**Files:**
+
+- Modify: `packages/shared/alm/ALOutboundMessageRuntime.ts`
+- Test: `packages/tests/shared/al-outbound-message-runtime.test.ts`
+
+**Interfaces:**
+
+- Consumes: `ALOutboundPreparedSendResult.status === 'not-ready'` and its
+  `retryAfterMs` boundary.
+- Produces: one drain batch per retry cycle when any claimed effect is
+  rescheduled; the scheduled next drain owns the retry.
+
+- [x] **Step 1: Reproduce same-drain retry amplification**
+
+Use fake timers and a prepared sender that returns `not-ready` once with a
+zero-delay retry. Verify RED because the current drain immediately reclaims the
+effect and invokes the sender twice before the first enqueue resolves.
+
+- [x] **Step 2: Yield after a rescheduled batch**
+
+Track whether any effect in the claimed batch is rescheduled, including error
+reschedules. Finish the current drain after the batch so
+`scheduleEffectDrainAt(...)` controls the next claim.
+
+- [x] **Step 3: Verify retry timing and focused regressions**
+
+The enqueue must observe one attempt; advancing the scheduled timer must
+observe the second attempt. Run the outbound runtime, RTC overlay, multicast
+policy, operation-options, browser-runtime, and middleware regressions plus
+the shared/shared-web/shared-server/shared-test checks.
+
+- [ ] **Step 4: Push and collect iteration 6**
+
+Rerun the unchanged 15-agent manifest and require a material reduction in the
+claimed-to-completed amplification and effect-drain/sender-queue tails before
+accepting the correction.
 
 ## Self-review
 

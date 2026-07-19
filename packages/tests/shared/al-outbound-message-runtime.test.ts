@@ -180,6 +180,40 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
+    it('yields the current drain after a transport-not-ready reschedule', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            const sendPreparedMessage = vi.fn(async () =>
+                sendPreparedMessage.mock.calls.length === 1
+                    ? {
+                        status: 'not-ready' as const,
+                        reason: 'RTC lane warming',
+                        retryAfterMs: 0,
+                    }
+                    : { status: 'sent' as const }
+            );
+            const runtime = createOutboundRuntime({
+                nowMs: () => 1_000,
+                sendPreparedMessage,
+                planOutgoingMessage: () => ({
+                    persist: false,
+                    preparedMessages: [{ kind: 'send' }],
+                }),
+            });
+
+            await runtime.enqueueIfAbsent(
+                createOutboundMessage('msg-not-ready-yield'),
+            );
+
+            expect(sendPreparedMessage).toHaveBeenCalledOnce();
+            await vi.runOnlyPendingTimersAsync();
+            expect(sendPreparedMessage).toHaveBeenCalledTimes(2);
+            runtime.dispose();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('completes durable send-prepared effects when there are no RTC targets', async () => {
         const admissionStore = createMemoryOutboundAdmissionStore();
         const rescheduleEffect = vi.fn(async (

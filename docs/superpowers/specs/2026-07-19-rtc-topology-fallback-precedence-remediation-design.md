@@ -161,6 +161,39 @@ reserved, a bounded generational chain preserves the update without restoring
 per-heartbeat fanout. The workload, topology policy, RTT cadence, debounce,
 stream rate, and thresholds remain unchanged.
 
+## Iteration 5 outcome and durable-effect retry amplification
+
+Run `29684785718` at commit `c217df7dd2a7494154f3b2097f0e2c004a0c1ba8`
+falsified reserved-successor fanout as the dominant cause. All 15 agents again
+reached readiness and started the stream, but peer churn increased to 452
+creations and 431 deletions. Stream starts were spread across 18.1 seconds, and
+peer create/delete bursts continued at roughly the 5-second RTT cadence.
+
+Fourteen stream results exported 2,085 attempts, 1,941 completions, 159 failed
+frames, and 15 in-flight drops. The reduced drop count and two additional
+stream results were improvements, but send latency remained far outside the
+unchanged gate: p50 1,109 ms, p95 8,182 ms, p99 12,801 ms, and max 15,665 ms.
+The correction is valid queue hardening, but it does not reduce normal
+post-terminal RTT recomputes and therefore does not address the measured
+runtime bottleneck.
+
+The outbound evidence instead exposed retry amplification inside one browser
+drain. RTC effects were claimed 39,023 times, completed 4,029 times, and
+rescheduled 34,957 times. Sender-queue wait was p95 2,442 ms and p99 6,490 ms;
+effect-drain duration was p95 595 ms, p99 2,289 ms, and max 14,488 ms. The drain
+loop processes batches until no effect is currently ready. When a missing RTC
+lane reschedules effects for 50 ms, processing the rest of the batch can consume
+that delay; the same drain then reclaims the same effects instead of yielding to
+the retry timer. Under concurrent 5 Hz sends, this turns topology churn into a
+continuous local retry loop and holds many send promises behind a shared drain.
+
+Iteration 6 preserves durable retry and immediate-send behavior but restores
+the retry boundary: if any effect in a claimed batch is rescheduled, the drain
+finishes after processing that batch. `peekNextEffectReadyAt(...)` and the
+existing timer schedule the next attempt. Fully successful drains can still
+continue through additional batches, so ready-path throughput and restart
+recovery remain unchanged.
+
 ## Contract change
 
 Add mandatory `provenance` to the browser-local `OverlayInfo` contract:

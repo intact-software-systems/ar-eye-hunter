@@ -738,6 +738,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     break;
                 }
                 claimedCount += claimed.length;
+                let rescheduledInBatch = false;
 
                 for (const effect of claimed) {
                     if (this.disposed) {
@@ -768,6 +769,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                                 runResult.reason,
                             );
                             rescheduledCount += 1;
+                            rescheduledInBatch = true;
                             continue;
                         }
 
@@ -785,7 +787,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
                             ALOutboundMessageRuntime.toErrorMessage(error),
                         );
                         rescheduledCount += 1;
+                        rescheduledInBatch = true;
                     }
+                }
+
+                if (rescheduledInBatch) {
+                    break;
                 }
             }
 
