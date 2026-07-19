@@ -55,6 +55,29 @@ the last authoritative topology until a newer authoritative snapshot arrives.
 This may temporarily omit a newly joined peer, but avoids replacing a bounded
 tree with a full mesh during rapid membership convergence.
 
+## Iteration 2 evidence and inbound admission follow-up
+
+Run `29681377695` reduced signaling end-to-end p95 from 33.1 seconds to 19.5
+seconds. Six agents reached RTC readiness and began traffic, compared with zero
+in iteration 1. The run still recorded 431 peer creations, 377 deletions, and
+60 establishment timeouts while consuming authoritative revisions 17 through
+30 during the join burst.
+
+The sharpest remaining loop was not a repeated `connect()` call on one peer.
+Controller-04 created and deleted its controller-01 peer nine times within 700
+milliseconds and emitted a fresh offer each time. Delayed signaling from a peer
+removed by a newer topology was admitted as `tentative` because the browser
+policy cannot distinguish missing group state from a converged authoritative
+topology that excludes the sender. Each delayed message resurrected the stale
+peer; the next reconciliation removed it again.
+
+Iteration 3 makes that distinction explicit. A peer remains tentatively
+admissible while any active group lacks authoritative topology, preserving
+eventual-consistency startup. Once all active groups have authoritative
+topology, inbound signaling from a peer owned by no group is denied. Desired
+peers remain allowed, and topology reconciliation creates a peer normally if a
+later authoritative snapshot adds it back.
+
 ## Contract change
 
 Add mandatory `provenance` to the browser-local `OverlayInfo` contract:

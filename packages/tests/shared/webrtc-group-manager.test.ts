@@ -559,6 +559,33 @@ describe('WebRtcGroupManager', () => {
         expect(manager.ownerGroupsOfPeer('peer-a')).toEqual([]);
         expect(manager.ownerGroupsOfPeer('peer-b')).toEqual(['group-1']);
     });
+
+    it('reports authority only after every managed group has a topology snapshot', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const overlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            overlayCache,
+        );
+        const group = createGroupSnapshot('group-1', 1, ['self', 'peer-a']);
+        const overlayId = toScopedOverlayId(group.group);
+
+        await manager.acceptGroupUpdate(group);
+        expect(manager.hasAuthoritativeTopologyForAllGroups()).toBe(false);
+
+        overlayCache.set(overlayId, {
+            ...createOverlayInfo(group, ['peer-a']),
+            provenance: 'group-fallback',
+        });
+        expect(manager.hasAuthoritativeTopologyForAllGroups()).toBe(false);
+
+        overlayCache.set(overlayId, createOverlayInfo(group, ['peer-a']));
+        expect(manager.hasAuthoritativeTopologyForAllGroups()).toBe(true);
+    });
 });
 
 function createRtcQBoxHarness(

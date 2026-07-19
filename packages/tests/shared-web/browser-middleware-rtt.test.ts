@@ -24,12 +24,19 @@ describe('browser middleware RTT heartbeat messages', () => {
 
 describe('browser middleware RTC inbound peer admission', () => {
     it('treats unknown group ownership as tentative instead of denied', () => {
-        expect(toBrowserRtcInboundPeerCreationDecision(false)).toEqual({
+        expect(toBrowserRtcInboundPeerCreationDecision(false, false)).toEqual({
             decision: 'tentative',
             reason: 'group-state-eventually-consistent',
         });
-        expect(toBrowserRtcInboundPeerCreationDecision(true)).toEqual({
+        expect(toBrowserRtcInboundPeerCreationDecision(true, true)).toEqual({
             decision: 'allow',
+        });
+    });
+
+    it('denies a peer excluded by converged authoritative topology', () => {
+        expect(toBrowserRtcInboundPeerCreationDecision(false, true)).toEqual({
+            decision: 'deny',
+            reason: 'authoritative-topology-excludes-peer',
         });
     });
 });

@@ -126,13 +126,21 @@ export function toBrowserRttHeartbeatMessage(
 
 export function toBrowserRtcInboundPeerCreationDecision(
     isPeerOwnedByAnyGroup: boolean,
+    hasAuthoritativeTopologyForAllGroups: boolean,
 ): WebRtcInboundPeerCreationDecision {
-    return isPeerOwnedByAnyGroup
-        ? { decision: 'allow' }
-        : {
-            decision: 'tentative',
-            reason: 'group-state-eventually-consistent',
+    if (isPeerOwnedByAnyGroup) {
+        return { decision: 'allow' };
+    }
+    if (hasAuthoritativeTopologyForAllGroups) {
+        return {
+            decision: 'deny',
+            reason: 'authoritative-topology-excludes-peer',
         };
+    }
+    return {
+        decision: 'tentative',
+        reason: 'group-state-eventually-consistent',
+    };
 }
 
 export async function initialiseMiddleware(
@@ -282,6 +290,7 @@ export async function initialiseMiddleware(
     webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
         toBrowserRtcInboundPeerCreationDecision(
             webRtcGroupManager.isPeerOwnedByAnyGroup(peerId),
+            webRtcGroupManager.hasAuthoritativeTopologyForAllGroups(),
         )
     );
 

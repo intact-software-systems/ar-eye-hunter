@@ -194,6 +194,14 @@ export class WebRtcGroupManager {
         return this.readPeerOwnersCache().has(peerId);
     }
 
+    hasAuthoritativeTopologyForAllGroups(): boolean {
+        const groups = this.groups();
+        return groups.length > 0 && groups.every((group) =>
+            this.readOverlayForGroup(group.groupRef)?.provenance ===
+                'topology-snapshot'
+        );
+    }
+
     state(): WebRtcGroupManagerState {
         const peerOwners = this.peerOwners();
         const desiredPeerIds = Array.from(peerOwners.keys());
