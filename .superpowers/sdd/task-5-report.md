@@ -4,7 +4,7 @@
 
 - Base: `e78881ef71b8cc0ab051b75405ef63458b6a7b05`.
 - Current clean implementation commit:
-  `cdccde896fad754adf52c44509aea5b34e63e565`.
+  `8a5863ef8a56d6537ca2040ab6ca8b3687f52fdb`.
 - Durable config and temporary override writes now use entry-aware conditional
   insert/CAS/delete APIs. No topology config mutation uses locks,
   unconditional overwrite, compensating restore, synchronous recompute, or
@@ -48,17 +48,27 @@
 - `group-topology-management-service.ts` owns the visible three-attempt
   `[0, 2, 8]` retry loop. `readTopologyConfigMutation` reads outside a
   transaction; pure compute/validate receive explicit facts; only
-  `writeTopologyConfigMutation` opens the short transaction and orders the
-  conditional state guard, shared invariant-generation CAS, per-target
-  generation CAS, optional first-writer request record, then the sole
-  insert-only `rtc-topology-recompute` outbox record.
-- Every retry uses the distinct authoritative group snapshot reader and reruns
-  lifecycle, role, configuration, expiry, and invariant validation. API-v1
-  wires that reader to `readCurrentSnapshot`, while ordinary reads and explicit
-  reconfigure retain their cache-aware behavior. The authoritative reader is
-  mandatory and never falls back to the ordinary reader. Matching replay and
-  conflicting request reuse recheck fresh durable status and actor/admin role,
-  but do not materialize clock-dependent mutation-admission facts.
+  `writeTopologyConfigMutation` opens the short transaction and orders the group
+  authority fence first, followed by the conditional topology state guard,
+  shared invariant-generation CAS, per-target generation CAS, optional
+  first-writer request record, then the sole insert-only
+  `rtc-topology-recompute` outbox record.
+- Every retry uses `GroupStateRepository.readSnapshotWithAuthorityGuard`, which
+  brackets the aggregate and child reads with the same stable-snapshot check and
+  returns the exact raw persisted group entry as an authority guard. The
+  mutation service requires this production repository seam and never falls
+  back to a cache; ordinary read-only topology service construction remains
+  compatible without it. Each retry reruns lifecycle, role, configuration,
+  expiry, and invariant validation. Matching replay and conflicting request
+  reuse recheck fresh durable status and actor/admin role, but do not
+  materialize clock-dependent mutation-admission facts.
+- The authority fence is the first transactional database statement. It CASes
+  the exact observed group row, preserving its raw JSON bytes and physical
+  expiry while advancing only its storage/causal revision. A concurrent archive,
+  owner transfer, or membership/role change therefore conflicts before any
+  topology, request-ledger, or outbox write and forces the full authorization
+  path to rerun. The applied outbox and receipt use the predicted post-fence
+  causal revision; a no-op still fences before its idempotency-only receipt.
 - Mutation facts separate stable request data from attempt-local policy time.
   The first non-replay attempt fixes stored creation/update time, relative
   override expiry, command hash, and delete target. Every later non-replay CAS
@@ -79,7 +89,11 @@
   reconstruction branch. Record validation also binds scoped key/request ID,
   command ID/hash, operation/target, outcome/effect, version, storage revision,
   timestamps, and expiry. PUT receipts must be `applied`; only DELETE receipts
-  may represent either an applied delete or a legitimate no-op.
+  may represent either an applied delete or a legitimate no-op. The compact
+  receipt additionally carries a required nullable exact five-field
+  `acceptedCausalRevision`; it is non-null only for applied mutations and null
+  for no-ops. Replay recomputes the receipt-addressed outbox ID from the verified
+  command, scope, and accepted causal identity instead of trusting a stored ID.
 - The repository boundary decodes exactly the legacy config/override key set
   that omitted `requestId`, normalizing it to mandatory `null` in memory. New
   writes and public types remain mandatory, malformed extra fields still fail,
@@ -137,6 +151,14 @@ The first GREEN passed all 97 focused tests while retaining the clock-free repla
 assertion and proving the failed retry committed no state, request record, or
 outbox intent.
 
+The v7 correction began with tests only. The focused RED command exited 1 with
+exactly 5 failures and 53 passes: archive and owner-demotion operations that
+overlapped the gap between a stable authority read and the transaction still
+allowed the topology mutation to commit, while a receipt with only its outbox ID
+tampered passed the pure validator, repository decoder, and service replay.
+After the production authority fence and causal receipt binding were added, the
+six focused server/performance files passed all 151 tests.
+
 Later adversarial RED tests independently proved and then fixed:
 
 - replay pairing an old receipt with a newer current row;
@@ -156,6 +178,12 @@ Later adversarial RED tests independently proved and then fixed:
 - a missing authoritative reader silently falling back to the ordinary reader;
 - replay/conflicting reuse invoking an injected throwing clock before the
   immutable request ledger was probed;
+- archive, owner transfer, and membership/role changes committing after the
+  mutation's stable authority read but before its first topology write;
+- a structurally valid compact receipt whose stored outbox ID did not match the
+  accepted group causal identity;
+- an authority fence that could have normalized semantically valid legacy group
+  JSON instead of preserving the exact observed raw bytes and expiry;
 - topology timing omitting the transaction phase;
 - shared-web DELETE calls omitting `Idempotency-Key` and OpenAPI omitting the
   header contract;
@@ -200,8 +228,14 @@ Later adversarial RED tests independently proved and then fixed:
 - Absent DELETE is a no-op; with a request ID it still records the immutable
   first-writer result without creating an outbox effect.
 - Receipt collision or outbox insertion failure rolls the entire state/record/
-  outbox transaction back. Winner reread happens only after the conflicted
-  transaction has closed.
+  outbox transaction back, including the group authority-fence revision. Winner
+  reread happens only after the conflicted transaction has closed.
+- A stale group authority guard cannot cross the first transactional statement.
+  PGlite and independent-client PostgreSQL races pause immediately after the
+  stable authority read, archive the group through another repository/client,
+  and prove the resumed mutation returns 403 with no topology config,
+  idempotency record, or outbox intent. Equivalent deterministic races cover
+  owner transfer/demotion and administrative lifecycle changes.
 - Stored update time is monotonic under clock skew. Stored write time and
   override expiry are resolved once from request-stable facts, while every
   non-replay retry supplies fresh lifecycle policy time; stale expiry cleanup
@@ -259,20 +293,38 @@ v6 RED: 3 files failed; 8 tests failed; 89 tests passed (97 total)
 npm run test:unit -- packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/group-topology-management-service.test.ts
 v6 first GREEN: 3 files passed; 97 tests passed
 
+npm run test:unit -- --run packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/group-topology-management-service.test.ts
+v7 RED: 2 files failed; exactly 5 tests failed; 53 tests passed
+
+npm run test:unit -- --run packages/tests/shared-server/group-state-authority-fence.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/state-write-performance-harness.test.ts packages/tests/shared-server/group-list-fanout-performance-harness.test.ts
+v7 GREEN: 6 files passed; 151 tests passed
+
 npx vitest run packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/state-mutation-outbox.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-server/state-write-performance-harness.test.ts
 6 files passed; 221 tests passed
 
-deno test -A --filter "PGlite topology config mutations" apps/api-v1/test/db/pglite-sql-adapter.test.ts
-1 passed; 0 failed; 18 filtered
+cd apps/api-v1 && deno test -A test/db/pglite-sql-adapter.test.ts
+20 passed; 0 failed, including the authority-overlap archive race
 
-RALLAR_POSTGRES_INTEGRATION=1 ... -t "topology config transactions|config and override"
-2 passed; 0 failed; 6 unrelated skipped/filtered (independent PostgreSQL clients)
+RALLAR_POSTGRES_INTEGRATION=1 DATABASE_URL=postgres://app:app@localhost:5432/appdb npx vitest run packages/tests/shared-server/postgres-runtime-state-concurrency.test.ts
+9 passed; 0 failed (independent PostgreSQL clients)
 
-cd apps/api-v1 && deno test --allow-env --allow-read test/services/runtime-state-expiry-startup.test.ts test/swagger-routes.test.ts
-14 passed; 0 failed
+cd apps/api-v1 && deno test --allow-env --allow-read test/services/runtime-state-expiry-startup.test.ts
+6 passed; 0 failed
+
+cd apps/api-v1 && deno test --allow-env --allow-read test/swagger-routes.test.ts
+12 passed; 0 failed
 
 cd apps/api-v1 && deno task test
-209 passed; 0 failed
+210 passed; 0 failed
+
+npm --workspace @ar-eye-hunter/shared-test run check
+TypeScript and Deno checks passed
+
+cd apps/api-v1 && deno task check
+passed
+
+npm run test:unit -- --run packages/tests/shared-web/api-workflows.test.ts
+1 file passed; 34 tests passed
 
 npm run typecheck
 all root/workspace TypeScript checks passed
@@ -302,24 +354,33 @@ durable and no topology publisher runs in the mutation call.
 ### Production performance evidence
 
 The full PostgreSQL producer was rerun from the clean Task 5 implementation
-commit `cdccde896fad754adf52c44509aea5b34e63e565`:
+commit `8a5863ef8a56d6537ca2040ab6ca8b3687f52fdb`:
 
 ```text
-npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --concurrency=10 --out=tmp/perf/api-v1-state-write-task5.json
+DATABASE_URL=postgres://app:app@localhost:5432/appdb npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --concurrency=10 --out=tmp/perf/api-v1-state-write-task5.json
 ```
 
 The resulting canonical artifact remains ignored and uncommitted at
 `tmp/perf/api-v1-state-write-task5.json`. Its embedded `gitCommit` is exactly
-`cdccde896fad754adf52c44509aea5b34e63e565` and its SHA-256 is
-`db9bc06f6acaccd833cf07c0f736904d42e949be11a2fb5881f2d06c0ef73b42`.
+`8a5863ef8a56d6537ca2040ab6ca8b3687f52fdb` and its SHA-256 is
+`a9c647b2df93d942ccc540bbbcb6b5bb87d263097923b907ed889cefdfe0b49a`.
 
 ```text
 validateStateWriteArtifact(finalArtifact)
 []
 
 uncontended: 2100 accepted/receipts; 3900 required/actual intents; DBW []
-shared:      1965 accepted/receipts; 3682 required/actual intents; DBW []
-hot:         1018 accepted/receipts; 1935 required/actual intents; DBW []
+shared:      1924 accepted/receipts; 3603 required/actual intents; DBW []
+hot:         1014 accepted/receipts; 1925 required/actual intents; DBW []
+```
+
+The run used `warmup=1`, `runs=3`, and `concurrency=10`. Its measured summaries
+were:
+
+```text
+uncontended: p50=11.400959ms p95=13.809291ms p99=15.103875ms throughput=857.045755/s conflicts=0 exhausted=0
+shared:      p50=12.873750ms p95=34.645500ms p99=39.118960ms throughput=611.299283/s conflicts=576 exhausted=176
+hot:         p50=13.796166ms p95=42.541000ms p99=49.045292ms throughput=286.860519/s conflicts=1368 exhausted=1086
 ```
 
 The immutable baseline remains byte-identical at SHA-256
@@ -339,21 +400,21 @@ audit every gate without mutating either artifact, the implementer cloned the
 candidate in memory and changed only the clone's governed feature label and
 evidence. The clone validated to `[]`; the canonical Task 5 artifact remained
 byte-identical at
-`db9bc06f6acaccd833cf07c0f736904d42e949be11a2fb5881f2d06c0ef73b42`
+`a9c647b2df93d942ccc540bbbcb6b5bb87d263097923b907ed889cefdfe0b49a`
 before and after the comparison and was never relabeled. The fresh clean-commit
 audit reported exactly these ten interim failures:
 
 ```text
-shared throughput regressed: baseline=752.2423201768095, candidate=595.6668645907487
-hot throughput regressed: baseline=295.1851420383843, candidate=291.5636224235517
+shared throughput regressed: baseline=752.2423201768095, candidate=611.299282628854
+hot throughput regressed: baseline=295.1851420383843, candidate=286.8605186747277
 shared throughput must improve after presence is split from the group aggregate
-uncontended median sql.statements increased without a recorded reason: baseline=11200, candidate=12900
+uncontended median sql.statements increased without a recorded reason: baseline=11200, candidate=13000
 uncontended median sql.rowsRead increased without a recorded reason: baseline=5400, candidate=7900
-shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13940
-shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=27861
-hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12324
-shared retry exhaustion must remain zero; received 135
-hot retry exhaustion exceeded baseline: baseline=0, candidate=1082
+shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13948
+shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=27500
+hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12379
+shared retry exhaustion must remain zero; received 176
+hot retry exhaustion exceeded baseline: baseline=0, candidate=1086
 ```
 
 The audit did not report an uncontended p95/p99 latency regression,
@@ -381,17 +442,27 @@ acceptance.
   skipped its recipe at preflight because group-create permission returned HTTP
   400; the matrix therefore exited 1 before executing topology steps. This is
   recorded as skipped evidence, not a passing black-box claim.
-- The broad `npm run test:unit` owner run produced 4106 passes and 8 unrelated
-  pre-existing failures in `rallar-workflow-options-compat.test.ts` (seven
-  argument-shape expectations) and `data-caches.test.ts` (one fixture missing a
-  causal revision). No failing file is touched by Task 5.
+- The broad `npm run test:unit` owner run completed 447 files (443 passed and 2
+  skipped) and 4192 tests (4174 passed, 10 skipped, and 8 failed). Rerunning the
+  two failing files reproduced the same unrelated baseline failures in
+  `rallar-workflow-options-compat.test.ts` (seven mock argument-shape
+  expectations) and `data-caches.test.ts` (one legacy fixture missing a causal
+  revision). Task 5 touches neither failing file; its only shared-web test edit,
+  `api-workflows.test.ts`, passes all 34 tests.
 
 ## Follow-up and tradeoffs
 
 - The immutable request record intentionally stores only command identity and
-  the compact receipt. Three mandatory nullable replay scalars add a small
-  fixed receipt cost while preserving the full accepted PUT response without
-  rereading mutable current state or retaining the full accepted payload.
+  the compact receipt. Mandatory nullable replay scalars plus the exact
+  five-field accepted causal revision add a small fixed receipt cost while
+  preserving the full accepted response and binding replay to its outbox intent
+  without rereading mutable current state or retaining the full accepted
+  payload.
+- Authority fencing intentionally advances the persisted group storage/causal
+  revision for both applied and idempotency-only no-op topology commands. The
+  domain group JSON, group versions, and expiry remain byte-for-byte unchanged;
+  min-revision cache reads refresh rather than treating a stale cached revision
+  as mutation authority.
 - API startup delays generic runtime-state eviction until strict all-scope
   generation backfill succeeds. A pending ambiguous legacy key or corrupt
   topology row therefore keeps eviction fail-closed. Operators must stop old
