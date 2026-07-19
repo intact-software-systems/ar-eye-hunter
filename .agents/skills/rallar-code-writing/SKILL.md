@@ -49,6 +49,14 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   A retry of only the stale write is incorrect.
 - Make idempotency claims with insert-if-absent semantics. The losing writer
   loads the winner; it must not overwrite the ledger.
+- Hash caller semantics before server random/time defaults: keep omission as a
+  mandatory nullable command field, capture each volatile candidate once in
+  immutable mandatory facts, read idempotency before applying it, and reuse the
+  same facts for the full retry loop. Never hash generated defaults or
+  regenerate them after a compare-and-set conflict.
+- Maintenance request IDs cover every variable semantic field that changes the
+  command hash, including observed cleanup/expiry timestamps and generation
+  fences. Do not rely on the hash to repair an aliased idempotency key.
 - Database row, table, and advisory locks are exceptions, not reusable
   architecture. Require explicit human approval and document the protected
   invariant, evidence, bounded critical section, and removal condition.
@@ -57,6 +65,9 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   Derive expected principals, sessions, targets, and request IDs from the
   trusted command, never from the row being validated. Bind guards, dependent
   candidates, events, receipts, and outbox intents to those same identities.
+- Recompute the complete canonical operation projection from the validated
+  command, read set, and immutable facts and require exact equality before the
+  first write. Common shape and identity checks are necessary but insufficient.
 
 ## Shape Decision
 

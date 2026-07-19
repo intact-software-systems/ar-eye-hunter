@@ -521,6 +521,7 @@ describe("GroupStateService command idempotency", () => {
       "generation-session-1",
       2_000,
       expiresAtEpochMs,
+      now,
     ].join(":");
     expect(
       await repository.findIdempotentGroupMutationReceipt(

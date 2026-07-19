@@ -43,6 +43,13 @@ the repo-local Codex plugin under `.agents/skills/**`.
   delete owns deletion and expiry.
 - Every optimistic retry must re-read and rerun authorization, policy, capacity,
   lifecycle, and invariant checks. Never retry only a stale final write.
+- Preserve caller omission as explicit `null` in the semantic command and hash
+  that intent before applying server clock or random defaults. Capture any
+  volatile candidate once in mandatory immutable facts, consult idempotency
+  before using it, and never regenerate it during compare-and-set retries.
+- Internal maintenance command/request identity must include every variable
+  semantic observation, including cleanup and expiry timestamps. A payload hash
+  does not make an incomplete idempotency key safe.
 - Authoritative user-write authentication dependencies are mandatory and fail
   closed; do not add optional authority repositories, missing-authority
   fallbacks, or production overloads shaped only for tests.
@@ -61,6 +68,9 @@ the repo-local Codex plugin under `.agents/skills/**`.
   command-slot relationships before every authoritative compare-and-set.
   Never derive the expected actor, target, principal, session, or request
   identity from the candidate row being validated.
+- Validate the complete operation-specific candidate by canonical deterministic
+  recomputation and exact comparison, including guards, dependent rows, events,
+  receipts, and outbox intents. Shared shape checks alone are insufficient.
 
 ## Validation
 

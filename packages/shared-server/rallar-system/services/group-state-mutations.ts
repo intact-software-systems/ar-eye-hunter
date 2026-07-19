@@ -51,6 +51,7 @@ import {
 
 const DEFAULT_GROUP_SESSION_TTL_MS = 24 * 60 * 60 * 1_000;
 const DEFAULT_GROUP_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
+const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 const RALLAR_GROUP_JOIN_CODE_METADATA_KEY = 'rallarJoinCode';
 const RALLAR_GROUP_JOIN_CODE_VERSION = 1;
 
@@ -149,8 +150,8 @@ export type GroupMutationCommand =
     | (GroupMutationCommandBase & Readonly<{
         operation: 'rotateGroupJoinCode';
         input: NullableActorInput & Readonly<{
-            joinCode: string;
-            expiresAtEpochMs: number;
+            joinCode: string | null;
+            expiresAtEpochMs: number | null;
         }>;
     }>)
     | (GroupMutationCommandBase & Readonly<{
@@ -233,6 +234,7 @@ export type GroupMutationFacts = Readonly<{
     serviceId: string;
     eventId: string;
     commandHash: string;
+    resolvedJoinCode: string | null;
     joinCodeVerifier: string | null;
     internalAuthority: 'none' | 'expiry' | 'session-cleanup';
     authenticatedAuthority: Readonly<{
@@ -661,6 +663,16 @@ export function validateGroupMutation(input: Readonly<{
         input.facts,
         input.computed,
     );
+    const canonical = computeGroupMutation({
+        command: input.command,
+        read: input.read,
+        facts: input.facts,
+    });
+    if (!jsonEquals(input.computed, canonical)) {
+        throw new TypeError(
+            `Group ${input.command.operation} mutation differs from its canonical deterministic projection`,
+        );
+    }
     if (input.computed.outcome === 'idempotency-conflict') return;
     const receipt = input.computed.receipt;
     if (receipt.commandHash !== input.facts.commandHash) {
@@ -2029,6 +2041,7 @@ function computeRotateJoinCode(
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     assertGovernance(command, read, facts, 'invite');
+    const materialized = materializedRotateJoinCode(command, facts);
     if (!facts.joinCodeVerifier) {
         throw new GroupMutationRejectedError('Join code verifier is required');
     }
@@ -2038,7 +2051,7 @@ function computeRotateJoinCode(
         metadata: mergeJoinCode(stored.value.metadata, {
             version: RALLAR_GROUP_JOIN_CODE_VERSION,
             verifier: facts.joinCodeVerifier,
-            expiresAtEpochMs: command.input.expiresAtEpochMs,
+            expiresAtEpochMs: materialized.expiresAtEpochMs,
             rotatedAtEpochMs: facts.nowEpochMs,
         }),
         snapshotVersion: stored.value.snapshotVersion + 1,
@@ -2046,6 +2059,21 @@ function computeRotateJoinCode(
         updated: audit,
     };
     return groupWrite(command, read, facts, next, 'group-updated');
+}
+
+function materializedRotateJoinCode(
+    command: Extract<GroupMutationCommand, { operation: 'rotateGroupJoinCode' }>,
+    facts: GroupMutationFacts,
+): Readonly<{ joinCode: string; expiresAtEpochMs: number }> {
+    const joinCode = command.input.joinCode ?? facts.resolvedJoinCode;
+    const expiresAtEpochMs = command.input.expiresAtEpochMs ??
+        facts.nowEpochMs + DEFAULT_GROUP_JOIN_CODE_TTL_MS;
+    if (!joinCode || !Number.isSafeInteger(expiresAtEpochMs) || expiresAtEpochMs <= 0) {
+        throw new GroupMutationRejectedError(
+            'Join code defaults could not be materialized safely',
+        );
+    }
+    return { joinCode, expiresAtEpochMs };
 }
 
 function computeGovernedMember(
@@ -2620,6 +2648,9 @@ function receiptFor(
         rejection: string | null;
     }>,
 ): GroupMutationReceipt {
+    const joinCode = command.operation === 'rotateGroupJoinCode'
+        ? materializedRotateJoinCode(command, facts)
+        : null;
     return {
         commandId: command.commandId,
         commandHash: facts.commandHash,
@@ -2631,12 +2662,8 @@ function receiptFor(
         snapshotVersion: input.snapshotVersion,
         causalRevision: input.causalRevision,
         event: input.event,
-        joinCode: command.operation === 'rotateGroupJoinCode'
-            ? command.input.joinCode
-            : null,
-        joinCodeExpiresAtEpochMs: command.operation === 'rotateGroupJoinCode'
-            ? command.input.expiresAtEpochMs
-            : null,
+        joinCode: joinCode?.joinCode ?? null,
+        joinCodeExpiresAtEpochMs: joinCode?.expiresAtEpochMs ?? null,
         rejection: input.rejection,
     };
 }
@@ -3157,7 +3184,7 @@ export function compareGroupCausalRevision(
 function validateFacts(facts: GroupMutationFacts): void {
     requireJsonSafe(facts, 'Group mutation facts');
     assertExactKeys(facts as unknown as Record<string, unknown>, [
-        'nowEpochMs', 'serviceId', 'eventId', 'commandHash',
+        'nowEpochMs', 'serviceId', 'eventId', 'commandHash', 'resolvedJoinCode',
         'joinCodeVerifier', 'internalAuthority', 'authenticatedAuthority',
     ], 'Group mutation facts');
     if (!Number.isSafeInteger(facts.nowEpochMs) || facts.nowEpochMs < 0) {
@@ -3187,6 +3214,13 @@ function validateFacts(facts: GroupMutationFacts): void {
         requireNonEmptyString(facts.joinCodeVerifier,
             'Group mutation joinCodeVerifier');
     }
+    if (facts.resolvedJoinCode !== null) {
+        requireNonEmptyString(facts.resolvedJoinCode,
+            'Group mutation resolvedJoinCode');
+    }
+    if ((facts.resolvedJoinCode === null) !== (facts.joinCodeVerifier === null)) {
+        throw new TypeError('Group mutation resolved join code and verifier differ');
+    }
     if (facts.internalAuthority !== 'none' && facts.authenticatedAuthority !== null) {
         throw new TypeError('Internal group authority cannot also be authenticated authority');
     }
@@ -3196,6 +3230,7 @@ function validateTrustedAuthorityMode(
     command: GroupMutationCommand,
     facts: GroupMutationFacts,
 ): void {
+    validateResolvedJoinCodeFacts(command, facts);
     const authority = facts.authenticatedAuthority;
     if (facts.internalAuthority === 'none' && authority === null) {
         throw new TypeError(
@@ -3234,6 +3269,33 @@ function validateTrustedAuthorityMode(
     if (command.input.actorPrincipalId !== authority.principalId ||
         command.input.actorSessionId !== authority.sessionId) {
         throw new TypeError('Group mutation actor differs from authenticated authority');
+    }
+}
+
+function validateResolvedJoinCodeFacts(
+    command: GroupMutationCommand,
+    facts: GroupMutationFacts,
+): void {
+    if (command.operation === 'rotateGroupJoinCode') {
+        if (facts.resolvedJoinCode === null || facts.joinCodeVerifier === null) {
+            throw new TypeError('Group rotate mutation is missing its generated join code facts');
+        }
+        if (command.input.joinCode !== null &&
+            facts.resolvedJoinCode !== command.input.joinCode) {
+            throw new TypeError(
+                'Group rotate resolved join code differs from explicit command intent',
+            );
+        }
+        return;
+    }
+    if (command.operation === 'joinGroup' || command.operation === 'acceptGroupInvite') {
+        if (facts.resolvedJoinCode !== command.input.joinCode) {
+            throw new TypeError('Group resolved join code differs from join command intent');
+        }
+        return;
+    }
+    if (facts.resolvedJoinCode !== null || facts.joinCodeVerifier !== null) {
+        throw new TypeError('Unrelated group operation contains resolved join code facts');
     }
 }
 
@@ -3469,8 +3531,8 @@ function validateOperationInput(
             nullableInteger('invitationExpiresAtEpochMs', true);
             return;
         case 'rotateGroupJoinCode':
-            requireNonEmptyString(input.joinCode, 'Group joinCode');
-            requirePositiveSafeInteger(input.expiresAtEpochMs, 'Group expiresAtEpochMs');
+            nullableString('joinCode');
+            nullableInteger('expiresAtEpochMs', true);
             return;
         case 'connectPresence':
             requireNonEmptyString(input.principalId, 'Group presence principalId');

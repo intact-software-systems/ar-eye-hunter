@@ -1164,6 +1164,41 @@ and a review or removal condition. A transaction provides atomicity; it is not
 the concurrency guard unless the authoritative transition also checks the
 expected revision.
 
+## 12. Idempotent Defaults And Maintenance Identity Audit
+
+The group mutation audit found one public volatile semantic default being
+materialized before command hashing: omitted join-code rotation values. The
+semantic command now preserves `joinCode` and `expiresAtEpochMs` as mandatory
+nullable fields. Its hash therefore distinguishes caller intent (omitted versus
+explicit) without including generated values. A generated code is captured once
+in immutable mutation facts; default expiry is derived from the immutable clock
+fact only after the idempotency read. The same code, verifier, expiry, receipt,
+metadata, and outbox digest are reused across compare-and-set retries, while an
+identical replay returns the stored winner.
+
+The remaining public group defaults were audited:
+
+- group-creation `joinMode` and director heartbeat TTL are deterministic
+  constants, not volatile defaults;
+- invitation expiry and presence connect/heartbeat/disconnect timestamps are
+  derived in pure computation after the idempotency branch from immutable facts;
+- a generated request ID is invocation identity only when the caller did not
+  request stable idempotency, so it is not semantic payload defaulting; and
+- no other public group mutation materializes a random or clock-derived semantic
+  value into the command before hashing.
+
+Expiry and socket-cleanup maintenance IDs now include their variable observation
+timestamps in addition to scope, session, generation, and predecessor fences.
+Different observations therefore conflict/rebase/no-op as distinct work instead
+of producing an idempotency-hash conflict; exact duplicate work still replays
+one terminal event and outbox intent.
+
+Finally, the mutation validation barrier now recomputes the entire canonical
+operation result from the validated command, persisted read set, and immutable
+facts and requires exact equality before the first write. Shape-valid but
+operation-invalid guards, dependent rows, events, receipts, or outbox intents
+cannot pass merely because their common identities agree.
+
 ## Suggested First Proofs
 
 1. Multi-workspace isolation test: prove whether state snapshots from workspace A reach a browser connected to workspace

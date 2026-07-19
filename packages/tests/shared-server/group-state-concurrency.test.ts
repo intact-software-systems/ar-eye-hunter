@@ -91,6 +91,18 @@ describe('convergent group and presence state', () => {
                 unexpected: true,
             },
         } as never))).toThrow(/unexpected|key/i);
+
+        expect(() => validateGroupMutationCommand(createMutationCommand({
+            operation: 'rotateGroupJoinCode',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                joinCode: null,
+                expiresAtEpochMs: null,
+            },
+        } as Partial<GroupMutationCommand>))).not.toThrow();
     });
 
     it('encodes canonical group storage keys including workspace absence and reserved IDs', () => {
@@ -195,6 +207,51 @@ describe('convergent group and presence state', () => {
         expect(first).toEqual(second);
         expect(command).toEqual(createMutationCommand());
         expect(read).toEqual(createMutationRead());
+    });
+
+    it('binds resolved join-code facts to the command operation and explicit intent', () => {
+        const read = createMutationRead();
+        const update = createMutationCommand();
+        const explicitRotate = createMutationCommand({
+            operation: 'rotateGroupJoinCode',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                joinCode: 'EXPLICIT',
+                expiresAtEpochMs: null,
+            },
+        } as Partial<GroupMutationCommand>);
+        const omittedRotate = createMutationCommand({
+            operation: 'rotateGroupJoinCode',
+            input: {
+                actorPrincipalId: 'alice',
+                actorSessionId: 'alice-session',
+                reason: null,
+                traceId: null,
+                joinCode: null,
+                expiresAtEpochMs: null,
+            },
+        } as Partial<GroupMutationCommand>);
+        const codeFacts: GroupMutationFacts = {
+            ...createMutationFacts(),
+            resolvedJoinCode: 'OTHER',
+            joinCodeVerifier: 'verifier',
+        };
+
+        expect(() => computeGroupMutation({ command: update, read, facts: codeFacts }))
+            .toThrow(/resolved.*join code|operation|unrelated/i);
+        expect(() => computeGroupMutation({
+            command: explicitRotate,
+            read,
+            facts: codeFacts,
+        })).toThrow(/resolved.*join code|explicit|command/i);
+        expect(() => computeGroupMutation({
+            command: omittedRotate,
+            read,
+            facts: createMutationFacts(),
+        })).toThrow(/resolved.*join code|generated|missing/i);
     });
 
     it('rejects a wrong-scope owner member before it can authorize a mutation', () => {
@@ -770,6 +827,69 @@ describe('convergent group and presence state', () => {
         }
     });
 
+    it('rejects every non-canonical operation projection before write', () => {
+        const command = createMutationCommand();
+        const read = createMutationRead();
+        const facts = createMutationFacts();
+        const computed = computeGroupMutation({ command, read, facts });
+        if (computed.outcome !== 'write' || computed.guard.kind !== 'group') {
+            throw new Error('Expected group write computation');
+        }
+        const sessionEvent = {
+            ...computed.event,
+            eventType: 'session-connected' as const,
+        };
+        const consistentlyWrongEvent = {
+            ...computed,
+            event: sessionEvent,
+            receipt: {
+                ...computed.receipt,
+                event: { kind: 'group' as const, event: sessionEvent },
+            },
+            idempotency: computed.idempotency && {
+                ...computed.idempotency,
+                receipt: {
+                    ...computed.receipt,
+                    event: { kind: 'group' as const, event: sessionEvent },
+                },
+            },
+            outbox: {
+                ...computed.outbox,
+                event: { kind: 'group' as const, event: sessionEvent },
+            },
+        };
+        const injectedSummary: GroupPresenceSummary = {
+            ...groupRef('pure-room'),
+            causalRevision: { groupRevision: 2, presenceRevision: 0 },
+            activePrincipalIds: [],
+            activeSessionIds: [],
+            activeSessions: [],
+            activePrincipalCount: 0,
+            activeSessionCount: 0,
+            computedAtEpochMs: facts.nowEpochMs,
+        };
+        const wrongDependent = {
+            ...computed,
+            presenceAdmission: {
+                operation: 'insert' as const,
+                value: admissionFor('alice', []),
+            },
+        };
+
+        for (const [label, malformed] of [
+            ['operation event', consistentlyWrongEvent],
+            ['initial summary', { ...computed, initialPresenceSummary: injectedSummary }],
+            ['dependent admission', wrongDependent],
+        ] as const) {
+            expect.soft(() => validateGroupMutation({
+                command,
+                read,
+                facts,
+                computed: malformed as never,
+            }), label).toThrow(/canonical|deterministic|projection|operation/i);
+        }
+    });
+
     it('rejects equal-content corruption and non-dominating presence summary writes', () => {
         const group = createMutationRead().group!;
         const base: GroupPresenceSummary = {
@@ -1121,6 +1241,277 @@ describe('convergent group and presence state', () => {
         expect(JSON.stringify(snapshot.group)).not.toContain('fjord-code');
         expect(await outboxFor(runtime, 'update-metadata-race')).toHaveLength(1);
         expect(await outboxFor(runtime, 'rotate-code-race')).toHaveLength(1);
+    });
+
+    it('replays omitted join-code defaults by semantic caller intent', async () => {
+        const cases = [
+            {
+                label: 'omit both',
+                request: {},
+                generatedCode: true,
+            },
+            {
+                label: 'omit code only',
+                request: { expiresAtEpochMs: BASE_EPOCH_MS + 90_000 },
+                generatedCode: true,
+            },
+            {
+                label: 'omit expiry only',
+                request: { joinCode: 'fixed-code' },
+                generatedCode: false,
+            },
+        ] as const;
+
+        for (const [index, testCase] of cases.entries()) {
+            const runtime = new GroupBarrierRepository();
+            const groupId = `default-code-room-${index}`;
+            await seedOpenGroup(runtime, groupId);
+            let nowEpochMs = BASE_EPOCH_MS + 2_000;
+            let randomCalls = 0;
+            const requestId = `default-code-${index}`;
+            const service = createService(
+                runtime,
+                () => nowEpochMs,
+                undefined,
+                undefined,
+                () => `generated-${index}-${++randomCalls}`,
+            );
+            const request = {
+                ...testCase.request,
+                actorPrincipalId: 'alice',
+                requestId,
+            };
+
+            const first = requireJoinCodeResult(await service.rotateGroupJoinCode(
+                SCOPE,
+                groupId,
+                request,
+            ));
+            nowEpochMs = BASE_EPOCH_MS + 8_000;
+            const replay = requireJoinCodeResult(await service.rotateGroupJoinCode(
+                SCOPE,
+                groupId,
+                request,
+            ));
+
+            expect(replay, testCase.label).toEqual(first);
+            expect(randomCalls, testCase.label).toBe(testCase.generatedCode ? 4 : 2);
+            const repository = new GroupStateRepository(runtime);
+            const idempotency = await repository.findIdempotentGroupMutationReceipt(
+                groupRef(groupId),
+                requestId,
+            );
+            const outbox = await outboxFor(runtime, requestId);
+            expect(idempotency?.receipt.joinCode).toBe(first.joinCode);
+            expect(idempotency?.receipt.joinCodeExpiresAtEpochMs)
+                .toBe(first.expiresAtEpochMs);
+            expect(outbox).toHaveLength(1);
+            expect(outbox[0]).toMatchObject({
+                commandHash: idempotency?.commandHash,
+                event: idempotency?.receipt.event,
+            });
+        }
+    });
+
+    it('treats explicit and omitted join-code intent as different semantics', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'semantic-code-room');
+        const service = createService(runtime, BASE_EPOCH_MS + 2_000);
+        const requestId = 'semantic-code-request';
+        const winner = requireJoinCodeResult(await service.rotateGroupJoinCode(
+            SCOPE,
+            'semantic-code-room',
+            { actorPrincipalId: 'alice', requestId },
+        ));
+
+        await expect(service.rotateGroupJoinCode(
+            SCOPE,
+            'semantic-code-room',
+            {
+                joinCode: winner.joinCode,
+                expiresAtEpochMs: winner.expiresAtEpochMs,
+                actorPrincipalId: 'alice',
+                requestId,
+            },
+        )).rejects.toBeInstanceOf(GroupMutationIdempotencyConflictError);
+        await expect(service.rotateGroupJoinCode(
+            SCOPE,
+            'semantic-code-room',
+            {
+                joinCode: 'different-code',
+                actorPrincipalId: 'alice',
+                requestId,
+            },
+        )).rejects.toBeInstanceOf(GroupMutationIdempotencyConflictError);
+    });
+
+    it('converges concurrent omitted join-code rotations on the winning receipt', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'concurrent-default-code-room');
+        runtime.armGroupReadBarrier(2);
+
+        const results = await Promise.all([
+            createService(runtime, BASE_EPOCH_MS + 2_000).rotateGroupJoinCode(
+                SCOPE,
+                'concurrent-default-code-room',
+                { actorPrincipalId: 'alice', requestId: 'concurrent-default-code' },
+            ),
+            createService(runtime, BASE_EPOCH_MS + 3_000).rotateGroupJoinCode(
+                SCOPE,
+                'concurrent-default-code-room',
+                { actorPrincipalId: 'alice', requestId: 'concurrent-default-code' },
+            ),
+        ]);
+        const [first, second] = results.map(requireJoinCodeResult);
+
+        expect(second).toEqual(first);
+        expect(await outboxFor(runtime, 'concurrent-default-code')).toHaveLength(1);
+        expect((await new GroupStateRepository(runtime).listEvents(
+            groupRef('concurrent-default-code-room'),
+        )).filter((event) => event.requestId === 'concurrent-default-code'))
+            .toHaveLength(1);
+    });
+
+    it('materializes an omitted join code once and keeps its digest across CAS retry', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'retry-default-code-room');
+        runtime.failNextGroupCas(1);
+        let randomCalls = 0;
+        const service = createService(
+            runtime,
+            BASE_EPOCH_MS + 2_000,
+            undefined,
+            undefined,
+            () => `retry-default-${++randomCalls}`,
+        );
+        const result = requireJoinCodeResult(await service.rotateGroupJoinCode(
+            SCOPE,
+            'retry-default-code-room',
+            { actorPrincipalId: 'alice', requestId: 'retry-default-code' },
+        ));
+        const idempotency = await new GroupStateRepository(runtime)
+            .findIdempotentGroupMutationReceipt(
+                groupRef('retry-default-code-room'),
+                'retry-default-code',
+            );
+        const outbox = await outboxFor(runtime, 'retry-default-code');
+
+        expect(result.joinCode).toBe('RETRYDEFAULT');
+        expect(randomCalls).toBe(2);
+        expect(outbox).toHaveLength(1);
+        expect(outbox[0]?.commandHash).toBe(idempotency?.commandHash);
+        expect(idempotency?.receipt.joinCode).toBe(result.joinCode);
+        expect(idempotency?.receipt.joinCodeExpiresAtEpochMs)
+            .toBe(result.expiresAtEpochMs);
+    });
+
+    it('rebases expiry observations at different times without idempotency conflict', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'different-expiry-observations');
+        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
+            SCOPE,
+            'different-expiry-observations',
+            'expiry-session',
+            {
+                principalId: 'alice',
+                generationId: 'expiry-generation',
+                connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
+                requestId: 'connect-expiry-observation',
+            },
+        );
+        runtime.armPresenceReadBarrier(2);
+
+        const results = await Promise.all([
+            createMaintenance(runtime, BASE_EPOCH_MS + 3_000)
+                .expireExpiredPresenceSessions(BASE_EPOCH_MS + 3_000),
+            createMaintenance(runtime, BASE_EPOCH_MS + 4_000)
+                .expireExpiredPresenceSessions(BASE_EPOCH_MS + 4_000),
+        ]);
+        const events = (await new GroupStateRepository(runtime).listEvents(
+            groupRef('different-expiry-observations'),
+        )).filter((event) => event.eventType === 'session-disconnected');
+
+        expect(results.flat()).toHaveLength(1);
+        expect(events).toHaveLength(1);
+        expect(events[0]?.reason).toBe('expired');
+        expect(await outboxFor(runtime, 'expire-group-presence')).toHaveLength(1);
+        expect(runtime.locks).toEqual([]);
+    });
+
+    it('rebases socket cleanup observations at different times without idempotency conflict', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'different-cleanup-observations');
+        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
+            SCOPE,
+            'different-cleanup-observations',
+            'cleanup-session',
+            {
+                principalId: 'alice',
+                generationId: 'cleanup-generation',
+                connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                expiresAtEpochMs: BASE_EPOCH_MS + 20_000,
+                requestId: 'connect-cleanup-observation',
+            },
+        );
+        runtime.armPresenceReadBarrier(2);
+
+        const results = await Promise.all([
+            createMaintenance(runtime, BASE_EPOCH_MS + 3_000)
+                .disconnectPresenceSessionsBySessionIdWritten(
+                    'cleanup-session',
+                    BASE_EPOCH_MS + 3_000,
+                ),
+            createMaintenance(runtime, BASE_EPOCH_MS + 4_000)
+                .disconnectPresenceSessionsBySessionIdWritten(
+                    'cleanup-session',
+                    BASE_EPOCH_MS + 4_000,
+                ),
+        ]);
+        const events = (await new GroupStateRepository(runtime).listEvents(
+            groupRef('different-cleanup-observations'),
+        )).filter((event) => event.eventType === 'session-disconnected');
+
+        expect(results).toHaveLength(2);
+        expect(events).toHaveLength(1);
+        expect(await outboxFor(runtime, 'cleanup-group-presence-session'))
+            .toHaveLength(1);
+        expect(runtime.locks).toEqual([]);
+    });
+
+    it('replays exact duplicate expiry work with one terminal effect', async () => {
+        const runtime = new GroupBarrierRepository();
+        await seedOpenGroup(runtime, 'duplicate-expiry-work');
+        await createService(runtime, BASE_EPOCH_MS + 2_000).connectPresenceSession(
+            SCOPE,
+            'duplicate-expiry-work',
+            'duplicate-expiry-session',
+            {
+                principalId: 'alice',
+                generationId: 'duplicate-expiry-generation',
+                connectedAtEpochMs: BASE_EPOCH_MS + 2_000,
+                lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+                expiresAtEpochMs: BASE_EPOCH_MS + 2_500,
+                requestId: 'connect-duplicate-expiry',
+            },
+        );
+        runtime.armPresenceReadBarrier(2);
+        const atEpochMs = BASE_EPOCH_MS + 3_000;
+
+        const results = await Promise.all([
+            createMaintenance(runtime, atEpochMs).expireExpiredPresenceSessions(atEpochMs),
+            createMaintenance(runtime, atEpochMs).expireExpiredPresenceSessions(atEpochMs),
+        ]);
+        const events = (await new GroupStateRepository(runtime).listEvents(
+            groupRef('duplicate-expiry-work'),
+        )).filter((event) => event.eventType === 'session-disconnected');
+
+        expect(results.flat()).toHaveLength(1);
+        expect(events).toHaveLength(1);
+        expect(await outboxFor(runtime, 'expire-group-presence')).toHaveLength(1);
+        expect(runtime.locks).toEqual([]);
     });
 
     it('fences heartbeat/disconnect and stale expiry across presence generations without a group write', async () => {
@@ -1932,6 +2323,7 @@ function createMutationFacts(): GroupMutationFacts {
         serviceId: 'group-service',
         eventId: 'event-1',
         commandHash: `sha256:${'a'.repeat(64)}`,
+        resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
         authenticatedAuthority: {
@@ -2162,17 +2554,21 @@ async function corruptFirstEntry(
 
 function createService(
     runtimeRepository: GroupBarrierRepository,
-    nowEpochMs: number,
+    nowEpochMs: number | (() => number),
     wakeStateMutationOutbox?: () => void,
     sleep: (delayMs: number) => Promise<void> = () => Promise.resolve(),
+    injectedRandomId?: () => string,
 ) {
     let id = 0;
     const issued = new Map<string, IssuedAuthSession>();
+    const currentNow = () => typeof nowEpochMs === 'function'
+        ? nowEpochMs()
+        : nowEpochMs;
     const durable = createGroupStateService({
         runtimeRepository,
         syncPublisher: createPublisher(),
-        now: () => nowEpochMs,
-        randomId: () => `id-${nowEpochMs}-${++id}`,
+        now: currentNow,
+        randomId: injectedRandomId ?? (() => `id-${currentNow()}-${++id}`),
         sleep,
         serviceId: 'group-service',
         wakeStateMutationOutbox,
@@ -2202,14 +2598,23 @@ function createService(
                     sessionId,
                     accessToken: `test-token:${principalId}:${sessionId}`,
                     username: principalId,
-                    issuedAtEpochMs: Math.max(0, nowEpochMs - 1_000),
-                    expiresAtEpochMs: nowEpochMs + 600_000,
+                    issuedAtEpochMs: Math.max(0, currentNow() - 1_000),
+                    expiresAtEpochMs: currentNow() + 600_000,
                 };
                 issued.set(sessionId, authority);
                 return Reflect.apply(value, target, [...args, authority]);
             };
         },
     }) as TestAuthenticatedGroupStateService;
+}
+
+function requireJoinCodeResult(
+    written: Awaited<ReturnType<TestAuthenticatedGroupStateService['rotateGroupJoinCode']>>,
+) {
+    if (!written.result.right) {
+        throw new Error(written.result.left ?? 'Expected join-code rotation result');
+    }
+    return written.result.right;
 }
 
 type TestAuthenticatedGroupStateService = {

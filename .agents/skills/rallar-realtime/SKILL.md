@@ -41,6 +41,11 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - Re-read and re-run authorization, policy, capacity, lifecycle, and invariants
   on every retry. Never reuse a decision derived from a predecessor that lost
   its compare-and-set race.
+- Preserve omitted public random/time inputs as mandatory `null` command fields
+  when hashing idempotent intent. Materialize volatile candidates once in
+  immutable facts, check the ledger before applying defaults, and keep the
+  winning code, expiry, verifier, receipt, and metadata unchanged across retry
+  and replay.
 - Group user mutations fail closed: the durable service requires a real issued
   auth session or exact command-bound proof. Never add an optional authority
   repository, missing-authority fallback, legacy payload bypass, or test-shaped
@@ -49,6 +54,9 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   expiry or socket-cleanup methods to `GroupStateService`, middleware runtime,
   or `AppGroupInboxService`; do not accept caller-supplied maintenance actor,
   reason, or bypass flags. Derive cleanup identity from the persisted session.
+  Include every variable observation timestamp in the maintenance command and
+  request identity so different scans rebase/no-op instead of colliding under
+  one incomplete idempotency key.
 - Presence summaries are optimistic materialized views, not authority. Compute
   them from entry-aware group/member/admission/session reads, validate their
   exact persisted shapes, CAS the exact summary predecessor, and exclude
@@ -60,6 +68,9 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   must fail validation before the first authoritative write. Expected slot
   identity comes only from the trusted command and aggregate metadata, never
   from the candidate row itself.
+- Shape-valid effects can still describe the wrong operation. Canonically
+  recompute and exactly compare operation-specific guards, dependent rows,
+  events, receipts, and outbox intents before the first authoritative write.
 - Database row, table, and advisory locks are not the default. Existing lock-based
   client-session, group-presence, topology, publication, or RTT code is
   migration debt rather than precedent. A lock exception requires explicit

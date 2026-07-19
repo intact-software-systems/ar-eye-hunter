@@ -76,8 +76,6 @@ import {
     timeRallarAsync,
 } from './timing.ts';
 
-const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
-
 export type GroupWritten = Readonly<{
     snapshot: GroupSnapshot;
     event: GroupEvent;
@@ -409,12 +407,14 @@ export function createGroupStateRuntime(
         reverifyAuthority?: () => Promise<void>,
     ): Promise<GroupMutationExecution> => {
         validateGroupMutationCommand(command);
+        const resolvedJoinCode = resolveCommandJoinCode(command, randomId);
         const facts: GroupMutationFacts = {
             nowEpochMs: mutationAtEpochMs,
             serviceId: dependencies.serviceId,
             eventId: randomId(),
             commandHash: await hashStateMutationCommand(command),
-            joinCodeVerifier: await commandJoinCodeVerifier(command),
+            resolvedJoinCode,
+            joinCodeVerifier: await joinCodeVerifier(resolvedJoinCode),
             internalAuthority,
             authenticatedAuthority,
         };
@@ -538,7 +538,6 @@ export function createGroupStateRuntime(
             const command = toDescriptorCommand(
                 verified.descriptor,
                 randomId,
-                now(),
             );
             const read = await readGroupMutation(repositoryFor(runtime), command);
             const authorityProof = await createGroupMutationAuthorityProof(
@@ -579,7 +578,7 @@ export function createGroupStateRuntime(
             authority,
             now(),
         );
-        const command = toDescriptorCommand(verified.descriptor, randomId, now());
+        const command = toDescriptorCommand(verified.descriptor, randomId);
         const reverify = async () => {
             const current = await verifyGroupMutationAuthority(
                 dependencies.authSessionRepository,
@@ -623,7 +622,7 @@ export function createGroupStateRuntime(
             authority,
             now(),
         );
-        const command = toDescriptorCommand(verified.descriptor, randomId, now());
+        const command = toDescriptorCommand(verified.descriptor, randomId);
         const reverify = async () => {
             const current = await verifyGroupMutationAuthority(
                 dependencies.authSessionRepository,
@@ -1068,7 +1067,6 @@ function requireGroupMutationRequestId(descriptor: GroupMutationDescriptor): voi
 function toDescriptorCommand(
     descriptor: GroupMutationDescriptor,
     randomId: () => string,
-    nowEpochMs: number,
 ): GroupMutationCommand {
     switch (descriptor.operation) {
         case 'createGroup': {
@@ -1155,7 +1153,6 @@ function toDescriptorCommand(
                 descriptor.groupId,
                 descriptor.request as RotateGroupJoinCodeRequest,
                 randomId,
-                nowEpochMs,
             );
         case 'connectPresence':
             return toConnectPresenceCommand(
@@ -1681,16 +1678,16 @@ function toRotateCommand(
     groupId: string,
     request: RotateGroupJoinCodeRequest,
     randomId: () => string,
-    nowEpochMs: number,
 ): GroupMutationCommand {
     return {
         operation: 'rotateGroupJoinCode',
         aggregateRef: { ...scope, groupId },
         ...identity(request.requestId, randomId),
         input: {
-            joinCode: normalizeJoinCode(request.joinCode ?? randomId()),
-            expiresAtEpochMs: request.expiresAtEpochMs ??
-                nowEpochMs + DEFAULT_GROUP_JOIN_CODE_TTL_MS,
+            joinCode: request.joinCode === undefined
+                ? null
+                : normalizeJoinCode(request.joinCode),
+            expiresAtEpochMs: request.expiresAtEpochMs ?? null,
             ...actorInput(request),
         },
     };
@@ -1783,6 +1780,7 @@ function toExpiryCommand(
         session.generationId,
         session.generationVersion,
         session.expiresAtEpochMs,
+        atEpochMs,
     ].join(':');
     return {
         operation: 'disconnectPresence',
@@ -1822,6 +1820,7 @@ function toSessionCleanupCommand(
         session.sessionId,
         session.generationId,
         session.generationVersion,
+        disconnectedAtEpochMs,
     ].join(':');
     return {
         operation: 'disconnectPresence',
@@ -1884,14 +1883,18 @@ function normalizeJoinCode(value: string): string {
     return normalized;
 }
 
-async function commandJoinCodeVerifier(
+function resolveCommandJoinCode(
     command: GroupMutationCommand,
-): Promise<string | null> {
-    const joinCode = command.operation === 'rotateGroupJoinCode'
-        ? command.input.joinCode
+    randomId: () => string,
+): string | null {
+    return command.operation === 'rotateGroupJoinCode'
+        ? command.input.joinCode ?? normalizeJoinCode(randomId())
         : command.operation === 'joinGroup' || command.operation === 'acceptGroupInvite'
         ? command.input.joinCode
         : null;
+}
+
+async function joinCodeVerifier(joinCode: string | null): Promise<string | null> {
     if (!joinCode) return null;
     const digest = await crypto.subtle.digest(
         'SHA-256',
