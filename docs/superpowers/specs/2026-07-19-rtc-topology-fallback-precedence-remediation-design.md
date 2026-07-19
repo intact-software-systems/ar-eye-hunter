@@ -194,6 +194,45 @@ existing timer schedule the next attempt. Fully successful drains can still
 continue through additional batches, so ready-path throughput and restart
 recovery remain unchanged.
 
+## Iteration 6 outcome and fresh-effect starvation
+
+Run `29685221701` at commit
+`f0181a187c16f45bbf4895e2d935c1d156667e65` materially reduced retry
+amplification and removed drops. All 15 agent jobs succeeded and all 15 agents
+reached readiness and started the unchanged stream. Fourteen exported stream
+results attempted all 2,100 planned frames, completed 2,083, reported 17 send
+failures, and recorded no scheduler or in-flight drops. Aggregate send latency
+improved from iteration 5's p50 1,109 ms / p95 8,182 ms / p99 12,801 ms to p50
+468 ms / p95 3,394 ms / p99 5,400 ms, with a 7,001 ms maximum. The operator
+still failed because individual streams exceeded the unchanged 4,000 ms p99
+gate; controller-04, for example, completed all 150 frames with p99 4,340 ms.
+
+Durable drains became shorter: p50 54 ms, p95 205 ms, p99 393 ms, and max
+2,584 ms. They claimed 29,968 effects, completed 4,483, and rescheduled 25,409.
+The claimed-to-completed amplification therefore fell from iteration 5, and the
+correction is accepted, but missing RTC lanes still leave a large retry
+backlog.
+
+Per-message correlation refuted the aggregate sender-queue statistic as the
+remaining dominant boundary. Across 2,205 correlated completed stream
+messages, frame duration was p95 3,162 ms while the message's own sender-queue
+wait was only p95 283 ms and browser-lock wait plus hold was p95 148 ms.
+Duration correlated with overlapping effect-drain time at 0.997, compared with
+-0.030 for sender-queue wait. Every stream message appeared in a drain, but its
+first matching drain began p95 2,668 ms after message creation. Of those 2,205
+messages, 1,865 were subsequently observed in rescheduling drains; one message
+appeared in as many as 318 drains.
+
+The admission store orders all ready effects by `retryAtMs` and effect ID.
+After a retry backlog forms, ready old effects fill the 16-effect claim before
+newly committed messages receive their first attempt. Iteration 6 correctly
+yields at each rescheduled batch, but that makes the retry-ordered batches the
+unit of starvation. Iteration 7 retains retry progress while reserving bounded
+claim capacity for fresh effects: when both classes are ready, three quarters
+of the batch is selected from unattempted effects and one quarter from retries,
+with unused capacity filled by the other class. No wire, topology, retry-delay,
+or recipe contract changes.
+
 ## Contract change
 
 Add mandatory `provenance` to the browser-local `OverlayInfo` contract:

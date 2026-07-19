@@ -339,11 +339,50 @@ observe the second attempt. Run the outbound runtime, RTC overlay, multicast
 policy, operation-options, browser-runtime, and middleware regressions plus
 the shared/shared-web/shared-server/shared-test checks.
 
-- [ ] **Step 4: Push and collect iteration 6**
+- [x] **Step 4: Push and collect iteration 6**
 
 Rerun the unchanged 15-agent manifest and require a material reduction in the
 claimed-to-completed amplification and effect-drain/sender-queue tails before
 accepting the correction.
+
+### Task 6: Preserve fresh-effect progress under retry backlog
+
+**Files:**
+
+- Modify: `packages/shared/alm/ALOutboundAdmissionStore.ts`
+- Test: `packages/tests/shared/al-outbound-message-runtime.test.ts`
+
+**Interfaces:**
+
+- Consumes: ready durable effects split by `attempts === 0` and
+  `attempts > 0`.
+- Produces: a 16-effect claim with up to 12 fresh effects and at least 4 ready
+  retries when both classes are backlogged; unused capacity is filled by the
+  other class.
+
+- [x] **Step 1: Reproduce first-attempt starvation**
+
+Persist and reschedule 16 retry effects, then persist 16 fresh effects at the
+same ready time. Verify RED because retry-time/effect-ID ordering fills the next
+claim entirely with retries.
+
+- [x] **Step 2: Reserve bounded capacity for both classes**
+
+Select ready effects with three quarters of a mixed claim reserved for fresh
+first attempts and one quarter reserved for retries. Preserve retry-time and
+effect-ID ordering within each class and fill any unused quota from the other
+class.
+
+- [x] **Step 3: Verify focused regressions and typechecks**
+
+Run the outbound runtime/store tests, RTC overlay and multicast regressions,
+and the shared/shared-web/shared-server/shared-test checks.
+
+- [ ] **Step 4: Push and collect iteration 7**
+
+Rerun the unchanged 15-agent manifest. Acceptance requires a material reduction
+in stream-message first-drain delay and p95/p99 frame latency without restoring
+same-drain retry amplification or causing drops.
 
 ## Self-review
 

@@ -621,19 +621,12 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         return await this.backend.write(async tx => {
             await tx.lock?.(this.toEffectClaimKey());
             const claimed: ALPersistedOutboundEffect<TPrepared>[] = [];
-            const effects = [...await tx.list<ALPersistedOutboundEffect<TPrepared>>(this.toEffectPrefix())]
+            const readyEffects = [...await tx.list<ALPersistedOutboundEffect<TPrepared>>(this.toEffectPrefix())]
                 .map(entry => entry.value)
-                .sort((left, right) => left.retryAtMs - right.retryAtMs || left.effectId.localeCompare(right.effectId));
+                .filter(effect => this.isEffectReady(effect, nowMs));
+            const effects = this.selectFairReadyEffects(readyEffects, maxCount);
 
             for (const effect of effects) {
-                if (claimed.length >= maxCount) {
-                    break;
-                }
-
-                if (!this.isEffectReady(effect, nowMs)) {
-                    continue;
-                }
-
                 const nextEffect: ALPersistedOutboundEffect<TPrepared> = {
                     ...effect,
                     status: 'running',
@@ -648,6 +641,42 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
             return claimed;
         });
+    }
+
+    private selectFairReadyEffects<TPrepared>(
+        effects: readonly ALPersistedOutboundEffect<TPrepared>[],
+        maxCount: number,
+    ): readonly ALPersistedOutboundEffect<TPrepared>[] {
+        const byReadyTime = (
+            left: ALPersistedOutboundEffect<TPrepared>,
+            right: ALPersistedOutboundEffect<TPrepared>,
+        ) => left.retryAtMs - right.retryAtMs || left.effectId.localeCompare(right.effectId);
+        const fresh = effects.filter(effect => effect.attempts === 0).sort(byReadyTime);
+        const retries = effects.filter(effect => effect.attempts > 0).sort(byReadyTime);
+        if (fresh.length === 0 || retries.length === 0 || maxCount < 2) {
+            return [...effects].sort(byReadyTime).slice(0, maxCount);
+        }
+
+        const retryQuota = Math.min(
+            retries.length,
+            Math.max(1, Math.floor(maxCount / 4)),
+        );
+        const selected = [
+            ...fresh.slice(0, maxCount - retryQuota),
+            ...retries.slice(0, retryQuota),
+        ];
+        if (selected.length >= maxCount) {
+            return selected;
+        }
+
+        const selectedIds = new Set(selected.map(effect => effect.effectId));
+        return [
+            ...selected,
+            ...[...fresh, ...retries]
+                .filter(effect => !selectedIds.has(effect.effectId))
+                .sort(byReadyTime)
+                .slice(0, maxCount - selected.length),
+        ];
     }
 
     async completeEffect(

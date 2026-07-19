@@ -214,6 +214,67 @@ describe('ALOutboundMessageRuntime', () => {
         }
     });
 
+    it('reserves fresh-effect capacity without starving ready retries', async () => {
+        const admissionStore = createMemoryOutboundAdmissionStore();
+        const nowMs = Date.now();
+        const expireAtTimestamp = nowMs + 60_000;
+        const retryEffects = Array.from({ length: 16 }, (_, index) => ({
+            effectId: `a-retry-${index.toString().padStart(2, '0')}`,
+            retryAtMs: nowMs,
+            expireAtTimestamp,
+            payload: {
+                kind: 'ack-timeout' as const,
+                msgId: `retry-${index}`,
+            },
+        }));
+
+        await expect(admissionStore.commitBundle({
+            senderId: 'retry-sender',
+            mutations: [],
+            durableEffects: retryEffects,
+        })).resolves.toBe('committed');
+        const firstClaim = await admissionStore.claimReadyEffects(
+            'first-worker',
+            16,
+            10_000,
+            nowMs,
+        );
+        expect(firstClaim).toHaveLength(16);
+        for (const effect of firstClaim) {
+            await admissionStore.rescheduleEffect(
+                effect.effectId,
+                'first-worker',
+                nowMs,
+                'transport not ready',
+            );
+        }
+
+        const freshEffects = Array.from({ length: 16 }, (_, index) => ({
+            effectId: `z-fresh-${index.toString().padStart(2, '0')}`,
+            retryAtMs: nowMs,
+            expireAtTimestamp,
+            payload: {
+                kind: 'ack-timeout' as const,
+                msgId: `fresh-${index}`,
+            },
+        }));
+        await expect(admissionStore.commitBundle({
+            senderId: 'fresh-sender',
+            mutations: [],
+            durableEffects: freshEffects,
+        })).resolves.toBe('committed');
+
+        const fairClaim = await admissionStore.claimReadyEffects(
+            'fair-worker',
+            16,
+            10_000,
+            nowMs,
+        );
+
+        expect(fairClaim.filter(effect => effect.attempts === 1)).toHaveLength(12);
+        expect(fairClaim.filter(effect => effect.attempts === 2)).toHaveLength(4);
+    });
+
     it('completes durable send-prepared effects when there are no RTC targets', async () => {
         const admissionStore = createMemoryOutboundAdmissionStore();
         const rescheduleEffect = vi.fn(async (
