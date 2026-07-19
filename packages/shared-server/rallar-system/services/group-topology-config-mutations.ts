@@ -1003,7 +1003,7 @@ export function normalizeGroupTopologyConfigPatch(
 function copyGroupRef(ref: GroupRef): GroupRef {
     return {
         applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId,
+        ...(ref.workspaceId === undefined ? {} : { workspaceId: ref.workspaceId }),
         groupId: ref.groupId,
     };
 }
@@ -1011,7 +1011,9 @@ function copyGroupRef(ref: GroupRef): GroupRef {
 function validateGroupRef(value: unknown, label: string): void {
     if (!isRecord(value)) throw new TypeError(`${label} is invalid`);
     requireString(value.applicationId, `${label} applicationId`);
-    requireString(value.workspaceId, `${label} workspaceId`);
+    if (value.workspaceId !== undefined) {
+        requireString(value.workspaceId, `${label} workspaceId`);
+    }
     requireString(value.groupId, `${label} groupId`);
 }
 

@@ -1,19 +1,146 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
+    groupStateGroupStorageKey,
+    groupStateIdempotencyStorageKey,
+} from '@shared-server/rallar-system/group-state-storage-keys.ts';
+import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+    GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
     GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
     GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
     GroupTopologyConfigRepository,
+    GroupTopologyConfigRepositoryInvariantCorruptionError,
 } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import {
     backfillAllGroupTopologyConfigGenerations,
     backfillGroupTopologyConfigGenerationsForRef,
+    migrateLegacyGroupTopologyConfigKeys,
 } from '@shared-server/rallar-system/services/group-topology-config-generation-backfill.ts';
+import {
+    RuntimeStateRetryExhaustedError,
+} from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import type {
+    RuntimeStateEntry,
+} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('group topology config repository', () => {
+    it('uses canonical optional-workspace keys across every topology namespace', () => {
+        const repository = new GroupTopologyConfigRepository(
+            new FakeRuntimeStateRepository(),
+        );
+        const refs: readonly GroupRef[] = [
+            { applicationId: 'app:key', groupId: 'room:key' },
+            { applicationId: 'app:key', workspaceId: '_', groupId: 'room:key' },
+            { applicationId: 'app:key', workspaceId: 'a:b', groupId: 'room:key' },
+            { applicationId: 'app:key', workspaceId: 'a%3Ab', groupId: 'room:key' },
+            { applicationId: 'app:key', workspaceId: '%5F', groupId: 'room:key' },
+            { applicationId: 'app:key', workspaceId: '＿', groupId: 'room:key' },
+        ];
+
+        for (const ref of refs) {
+            const groupKey = groupStateGroupStorageKey(ref);
+            expect(repository.configKey(ref)).toBe(groupKey);
+            expect(repository.overrideKey(ref)).toBe(groupKey);
+            expect(repository.mutationKey(ref, 'request:key')).toBe(
+                groupStateIdempotencyStorageKey(ref, 'request:key'),
+            );
+            expect(repository.generationKey(ref, 'config')).toBe(
+                `${groupKey}:target=config`,
+            );
+            expect(repository.invariantGenerationKey(ref)).toBe(
+                `${groupKey}:invariant=effective-config`,
+            );
+        }
+        expect(new Set(refs.map((ref) => repository.configKey(ref))).size)
+            .toBe(refs.length);
+    });
+
+    it('accepts an absent workspace and canonically omits it from stored values', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const groupRef: GroupRef = {
+            applicationId: 'app-1',
+            groupId: 'room-1',
+        };
+        const config = {
+            groupRef,
+            config: { topologyKind: 'tree' as const },
+            version: 1,
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 1,
+            updatedByPrincipalId: 'owner',
+            requestId: 'absent-workspace',
+        };
+
+        await expect(repository.commitConfig(config, null)).resolves.toEqual({
+            status: 'accepted',
+            storageRevision: 0,
+        });
+        await expect(repository.findConfig(groupRef)).resolves.toEqual(config);
+        const entry = await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            groupStateGroupStorageKey(groupRef),
+        );
+        expect(JSON.parse(entry!.value).groupRef).toEqual({
+            applicationId: 'app-1',
+            groupId: 'room-1',
+        });
+    });
+
+    it('decodes canonical optional-workspace sources consistently for list and page boundaries', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const refs: readonly GroupRef[] = [
+            { applicationId: 'app-1', groupId: 'room-1' },
+            { applicationId: 'app-1', workspaceId: '_', groupId: 'room-1' },
+            { applicationId: 'app-1', workspaceId: 'a:b', groupId: 'room-1' },
+            { applicationId: 'app-1', workspaceId: 'a%3Ab', groupId: 'room-1' },
+            { applicationId: 'app-1', workspaceId: '＿', groupId: 'room-1' },
+        ];
+        for (const [index, groupRef] of refs.entries()) {
+            await runtimeRepository.insertIfAbsent(
+                GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                groupStateGroupStorageKey(groupRef),
+                JSON.stringify({
+                    groupRef,
+                    config: { topologyKind: 'tree' },
+                    version: index + 1,
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 1,
+                    updatedByPrincipalId: 'owner',
+                    requestId: null,
+                }),
+                Number.MAX_SAFE_INTEGER,
+            );
+        }
+
+        await expect(repository.listGenerationSources('config')).resolves.toEqual(
+            refs.map((groupRef, index) => ({
+                groupRef,
+                target: 'config',
+                version: index + 1,
+            })).sort((left, right) =>
+                groupStateGroupStorageKey(left.groupRef).localeCompare(
+                    groupStateGroupStorageKey(right.groupRef),
+                )
+            ),
+        );
+        const first = await repository.listGenerationSourcesPage('config', {
+            limit: 2,
+        });
+        const second = await repository.listGenerationSourcesPage('config', {
+            afterKey: first.at(-1)!.entry.key,
+            limit: 3,
+        });
+        expect([...first, ...second].map(({ source }) => source.groupRef))
+            .toEqual((await repository.listGenerationSources('config')).map((source) =>
+                source.groupRef
+            ));
+    });
+
     it.each([
         {
             label: 'durable config',
@@ -86,9 +213,10 @@ describe('group topology config repository', () => {
     it('rejects a generation backfill source with a missing group ref safely', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const groupRef = createGroupRef('workspace-1');
         await runtimeRepository.insertIfAbsent(
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
-            'malformed-generation-source',
+            repository.configKey(groupRef),
             JSON.stringify({ version: 7 }),
             Number.MAX_SAFE_INTEGER,
         );
@@ -96,6 +224,268 @@ describe('group topology config repository', () => {
         await expect(repository.listGenerationSources('config')).rejects.toThrow(
             'Stored topology config generation source groupRef is invalid',
         );
+    });
+
+    it('fails closed before lazy expiry can delete a wrong-scope override', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(2_000);
+        try {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const repository = new GroupTopologyConfigRepository(runtimeRepository);
+            const requested = createGroupRef('workspace-1');
+            const wrongScope = createGroupRef('workspace-2');
+            const key = repository.overrideKey(requested);
+            await runtimeRepository.insertIfAbsent(
+                GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                key,
+                JSON.stringify({
+                    groupRef: wrongScope,
+                    config: { topologyKind: 'tree' },
+                    version: 7,
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 1,
+                    updatedByPrincipalId: 'legacy-owner',
+                    requestId: null,
+                    expiresAtEpochMs: 1_000,
+                }),
+                1_000,
+            );
+
+            await expect(repository.findOverride(requested)).rejects.toThrow(
+                'identity differs from the generation-source value',
+            );
+            expect(await runtimeRepository.findEntry(
+                GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                key,
+            )).toBeDefined();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('rejects noncanonical physical keys at list and page boundaries', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const groupRef: GroupRef = {
+            applicationId: 'app-1',
+            workspaceId: '_',
+            groupId: 'room-1',
+        };
+        const noncanonicalKey = groupStateGroupStorageKey(groupRef).replace('%5F', '%5f');
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            noncanonicalKey,
+            JSON.stringify({
+                groupRef,
+                config: { topologyKind: 'tree' },
+                version: 1,
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 1,
+                updatedByPrincipalId: 'owner',
+                requestId: null,
+            }),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        await expect(repository.listGenerationSources('config')).rejects.toThrow(
+            'not canonical',
+        );
+        await expect(repository.listGenerationSourcesPage('config', { limit: 1 }))
+            .rejects.toThrow('not canonical');
+    });
+
+    it('rejects a noncanonical physical key at every direct repository boundary', async () => {
+        const groupRef = createGroupRef('workspace-1');
+        const commandHash = `sha256:${'d'.repeat(64)}`;
+        const boundaries = [
+            {
+                label: 'config',
+                namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                seed: (repository: GroupTopologyConfigRepository) =>
+                    repository.commitConfig({
+                        groupRef,
+                        config: { topologyKind: 'tree' },
+                        version: 1,
+                        createdAtEpochMs: 1,
+                        updatedAtEpochMs: 1,
+                        updatedByPrincipalId: 'owner',
+                        requestId: 'config-boundary',
+                    }, null),
+                read: (repository: GroupTopologyConfigRepository) =>
+                    repository.findConfig(groupRef),
+            },
+            {
+                label: 'override',
+                namespace: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                seed: (repository: GroupTopologyConfigRepository) =>
+                    repository.commitOverride({
+                        groupRef,
+                        config: { topologyKind: 'tree' },
+                        version: 1,
+                        createdAtEpochMs: 1,
+                        updatedAtEpochMs: 1,
+                        updatedByPrincipalId: 'owner',
+                        requestId: 'override-boundary',
+                        expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+                    }, null),
+                read: (repository: GroupTopologyConfigRepository) =>
+                    repository.findOverride(groupRef),
+            },
+            {
+                label: 'mutation record',
+                namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                seed: (repository: GroupTopologyConfigRepository) =>
+                    repository.insertMutationRecord({
+                        groupRef,
+                        requestId: 'mutation-boundary',
+                        commandHash,
+                        receipt: {
+                            commandId: 'mutation-boundary',
+                            commandHash,
+                            operation: 'deleteConfig',
+                            outcome: 'no-op',
+                            groupRef,
+                            target: 'config',
+                            acceptedVersion: 0,
+                            acceptedStorageRevision: null,
+                            acceptedCreatedAtEpochMs: null,
+                            acceptedUpdatedAtEpochMs: null,
+                            acceptedExpiresAtEpochMs: null,
+                            outboxId: null,
+                        },
+                    }),
+                read: (repository: GroupTopologyConfigRepository) =>
+                    repository.findMutationRecord(groupRef, 'mutation-boundary'),
+            },
+            {
+                label: 'target generation',
+                namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+                seed: (repository: GroupTopologyConfigRepository) =>
+                    repository.commitGeneration({
+                        groupRef,
+                        target: 'config',
+                        version: 1,
+                    }, null),
+                read: (repository: GroupTopologyConfigRepository) =>
+                    repository.findGenerationEntry(groupRef, 'config'),
+            },
+            {
+                label: 'invariant generation',
+                namespace: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+                seed: (repository: GroupTopologyConfigRepository) =>
+                    repository.commitInvariantGeneration({
+                        groupRef,
+                        version: 1,
+                    }, null),
+                read: (repository: GroupTopologyConfigRepository) =>
+                    repository.findInvariantGenerationEntry(groupRef),
+            },
+        ] as const;
+
+        for (const boundary of boundaries) {
+            const runtimeRepository = new PhysicalKeyAliasingRuntimeStateRepository();
+            const repository = new GroupTopologyConfigRepository(runtimeRepository);
+            await boundary.seed(repository);
+            runtimeRepository.aliasedNamespace = boundary.namespace;
+
+            await expect(boundary.read(repository), boundary.label).rejects
+                .toBeInstanceOf(
+                    GroupTopologyConfigRepositoryInvariantCorruptionError,
+                );
+        }
+    });
+
+    it('rejects wrong stored scope or child identity at every direct boundary', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const groupRef = createGroupRef('workspace-1');
+        const wrongRef = createGroupRef('workspace-2');
+        const commandHash = `sha256:${'e'.repeat(64)}`;
+        const boundaries = [
+            {
+                label: 'config scope',
+                namespace: GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                key: repository.configKey(groupRef),
+                value: {
+                    groupRef: wrongRef,
+                    config: { topologyKind: 'tree' },
+                    version: 1,
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 1,
+                    updatedByPrincipalId: 'owner',
+                    requestId: 'wrong-config-scope',
+                },
+                read: () => repository.findConfig(groupRef),
+            },
+            {
+                label: 'override scope',
+                namespace: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+                key: repository.overrideKey(groupRef),
+                value: {
+                    groupRef: wrongRef,
+                    config: { topologyKind: 'tree' },
+                    version: 1,
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 1,
+                    updatedByPrincipalId: 'owner',
+                    requestId: 'wrong-override-scope',
+                    expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+                },
+                read: () => repository.findOverride(groupRef),
+            },
+            {
+                label: 'mutation request child',
+                namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                key: repository.mutationKey(groupRef, 'expected-request'),
+                value: {
+                    groupRef,
+                    requestId: 'different-request',
+                    commandHash,
+                    receipt: {
+                        commandId: 'different-request',
+                        commandHash,
+                        operation: 'deleteConfig',
+                        outcome: 'no-op',
+                        groupRef,
+                        target: 'config',
+                        acceptedVersion: 0,
+                        acceptedStorageRevision: null,
+                        acceptedCreatedAtEpochMs: null,
+                        acceptedUpdatedAtEpochMs: null,
+                        acceptedExpiresAtEpochMs: null,
+                        outboxId: null,
+                    },
+                },
+                read: () =>
+                    repository.findMutationRecord(groupRef, 'expected-request'),
+            },
+            {
+                label: 'generation target child',
+                namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+                key: repository.generationKey(groupRef, 'config'),
+                value: { groupRef, target: 'override', version: 1 },
+                read: () => repository.findGenerationEntry(groupRef, 'config'),
+            },
+            {
+                label: 'invariant scope',
+                namespace: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+                key: repository.invariantGenerationKey(groupRef),
+                value: { groupRef: wrongRef, version: 1 },
+                read: () => repository.findInvariantGenerationEntry(groupRef),
+            },
+        ] as const;
+
+        for (const boundary of boundaries) {
+            await runtimeRepository.insertIfAbsent(
+                boundary.namespace,
+                boundary.key,
+                JSON.stringify(boundary.value),
+                Number.MAX_SAFE_INTEGER,
+            );
+            await expect(boundary.read(), boundary.label).rejects.toBeInstanceOf(
+                GroupTopologyConfigRepositoryInvariantCorruptionError,
+            );
+        }
     });
 
     it('commits config and overrides only against the observed storage revision', async () => {
@@ -384,6 +774,346 @@ describe('group topology config repository', () => {
         }
     });
 
+    it('migrates a value-verified explicit-sentinel legacy source before generation backfill', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const groupRef: GroupRef = {
+            applicationId: 'app-1',
+            workspaceId: '_',
+            groupId: 'room-1',
+        };
+        const legacyKey = 'app=app-1:ws=_:group=room-1';
+        const canonicalKey = groupStateGroupStorageKey(groupRef);
+        const legacy = {
+            groupRef,
+            config: { topologyKind: 'tree' as const },
+            version: 7,
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 1,
+            updatedByPrincipalId: 'legacy-owner',
+        };
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            legacyKey,
+            JSON.stringify(legacy),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        await expect(migrateLegacyGroupTopologyConfigKeys(
+            repository,
+            { oldWritersStopped: true, sleep: () => Promise.resolve() },
+        )).resolves.toBeUndefined();
+        await expect(backfillAllGroupTopologyConfigGenerations(repository, {
+            sleep: () => Promise.resolve(),
+        })).resolves.toEqual({ scanned: 1, advanced: 1 });
+        expect(await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            legacyKey,
+        )).toBeUndefined();
+        expect(await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            canonicalKey,
+        )).toMatchObject({ value: JSON.stringify(legacy) });
+        await expect(repository.findGenerationEntry(groupRef, 'config'))
+            .resolves.toMatchObject({ value: { version: 7 } });
+        expect(runtimeRepository.locks).toEqual([]);
+    });
+
+    it('keeps ordinary per-ref readiness fail-closed without moving a legacy key', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const groupRef: GroupRef = {
+            applicationId: 'app-1',
+            workspaceId: '_',
+            groupId: 'room-1',
+        };
+        const legacyKey = 'app=app-1:ws=_:group=room-1';
+        const canonicalKey = groupStateGroupStorageKey(groupRef);
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            legacyKey,
+            JSON.stringify({
+                groupRef,
+                config: { topologyKind: 'tree' },
+                version: 7,
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 1,
+                updatedByPrincipalId: 'legacy-owner',
+            }),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        await expect(backfillGroupTopologyConfigGenerationsForRef(
+            repository,
+            groupRef,
+            { sleep: () => Promise.resolve() },
+        )).rejects.toMatchObject({
+            code: 'group-topology-config-legacy-key-migration-required',
+        });
+        await expect(backfillAllGroupTopologyConfigGenerations(repository, {
+            sleep: () => Promise.resolve(),
+        })).rejects.toMatchObject({
+            code: 'group-topology-config-repository-invariant-corruption',
+        });
+        expect(await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            legacyKey,
+        )).toBeDefined();
+        expect(await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            canonicalKey,
+        )).toBeUndefined();
+        expect(runtimeRepository.locks).toEqual([]);
+    });
+
+    it('does not claim an absent-workspace legacy source for the explicit sentinel', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const absentRef: GroupRef = {
+            applicationId: 'app-1',
+            groupId: 'room-1',
+        };
+        const sentinelRef: GroupRef = { ...absentRef, workspaceId: '_' };
+        const source = {
+            groupRef: absentRef,
+            config: { topologyKind: 'tree' as const },
+            version: 7,
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 1,
+            updatedByPrincipalId: 'legacy-owner',
+        };
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            groupStateGroupStorageKey(absentRef),
+            JSON.stringify(source),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        await expect(backfillGroupTopologyConfigGenerationsForRef(
+            repository,
+            sentinelRef,
+            { sleep: () => Promise.resolve() },
+        )).resolves.toEqual({ scanned: 0, advanced: 0 });
+        expect(await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            groupStateGroupStorageKey(absentRef),
+        )).toBeDefined();
+    });
+
+    it('fails closed without deleting a different-content canonical migration winner', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const groupRef: GroupRef = {
+            applicationId: 'app-1',
+            workspaceId: '_',
+            groupId: 'room-1',
+        };
+        const legacyKey = 'app=app-1:ws=_:group=room-1';
+        const source = {
+            groupRef,
+            config: { topologyKind: 'tree' as const },
+            version: 7,
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 1,
+            updatedByPrincipalId: 'legacy-owner',
+        };
+        const winner = {
+            ...source,
+            config: { topologyKind: 'mesh' as const },
+            version: 8,
+            updatedAtEpochMs: 2,
+        };
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            legacyKey,
+            JSON.stringify(source),
+            Number.MAX_SAFE_INTEGER,
+        );
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            groupStateGroupStorageKey(groupRef),
+            JSON.stringify(winner),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        await expect(migrateLegacyGroupTopologyConfigKeys(
+            repository,
+            { oldWritersStopped: true, sleep: () => Promise.resolve() },
+        )).rejects.toThrow('legacy key migration destination differs');
+        expect(await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            legacyKey,
+        )).toBeDefined();
+        expect(await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            groupStateGroupStorageKey(groupRef),
+        )).toMatchObject({ value: JSON.stringify(winner) });
+    });
+
+    it('removes a semantically identical normalized migration duplicate', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const groupRef: GroupRef = {
+            applicationId: 'app-1',
+            workspaceId: '_',
+            groupId: 'room-1',
+        };
+        const legacyKey = 'app=app-1:ws=_:group=room-1';
+        const source = {
+            groupRef,
+            config: { topologyKind: 'tree' as const, degreeLimit: 4 },
+            version: 7,
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 1,
+            updatedByPrincipalId: 'legacy-owner',
+        };
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            legacyKey,
+            JSON.stringify(source),
+            Number.MAX_SAFE_INTEGER,
+        );
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            groupStateGroupStorageKey(groupRef),
+            JSON.stringify({
+                requestId: null,
+                updatedByPrincipalId: source.updatedByPrincipalId,
+                updatedAtEpochMs: source.updatedAtEpochMs,
+                createdAtEpochMs: source.createdAtEpochMs,
+                version: source.version,
+                config: { degreeLimit: 4, topologyKind: 'tree' },
+                groupRef: {
+                    groupId: groupRef.groupId,
+                    workspaceId: groupRef.workspaceId,
+                    applicationId: groupRef.applicationId,
+                },
+            }),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        await expect(migrateLegacyGroupTopologyConfigKeys(
+            repository,
+            { oldWritersStopped: true, sleep: () => Promise.resolve() },
+        )).resolves.toBeUndefined();
+        await expect(backfillAllGroupTopologyConfigGenerations(repository, {
+            sleep: () => Promise.resolve(),
+        })).resolves.toEqual({ scanned: 1, advanced: 1 });
+        expect(await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            legacyKey,
+        )).toBeUndefined();
+        await expect(repository.findConfig(groupRef)).resolves.toEqual({
+            ...source,
+            requestId: null,
+        });
+    });
+
+    it('rolls back a migration destination when the observed source revision changes', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const groupRef: GroupRef = {
+            applicationId: 'app-1',
+            workspaceId: '_',
+            groupId: 'room-1',
+        };
+        const legacyKey = 'app=app-1:ws=_:group=room-1';
+        const canonicalKey = groupStateGroupStorageKey(groupRef);
+        const source = {
+            groupRef,
+            config: { topologyKind: 'tree' as const },
+            version: 7,
+            createdAtEpochMs: 1,
+            updatedAtEpochMs: 1,
+            updatedByPrincipalId: 'legacy-owner',
+        };
+        await runtimeRepository.insertIfAbsent(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            legacyKey,
+            JSON.stringify(source),
+            Number.MAX_SAFE_INTEGER,
+        );
+        const conflict = async (
+            operation: 'insertIfAbsent' | 'upsertIfRevision' | 'deleteIfRevision',
+            namespace: string,
+            key: string,
+        ) => {
+            if (
+                operation !== 'deleteIfRevision' ||
+                namespace !== GROUP_TOPOLOGY_CONFIG_NAMESPACE ||
+                key !== legacyKey
+            ) return;
+            runtimeRepository.beforeConditionalWrite = undefined;
+            await runtimeRepository.upsertIfRevision(
+                namespace,
+                key,
+                JSON.stringify(source),
+                Number.MAX_SAFE_INTEGER,
+                0,
+            );
+            runtimeRepository.beforeConditionalWrite = conflict;
+        };
+        runtimeRepository.beforeConditionalWrite = conflict;
+
+        await expect(migrateLegacyGroupTopologyConfigKeys(
+            repository,
+            { oldWritersStopped: true, sleep: () => Promise.resolve() },
+        )).rejects.toBeInstanceOf(RuntimeStateRetryExhaustedError);
+        expect(await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            canonicalKey,
+        )).toBeUndefined();
+        expect(await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+            legacyKey,
+        )).toMatchObject({ revision: 0 });
+        expect(runtimeRepository.locks).toEqual([]);
+    });
+
+    it('pages all legacy migration candidates before generation backfill', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new GroupTopologyConfigRepository(runtimeRepository);
+        const refs = Array.from({ length: 101 }, (_, index): GroupRef => ({
+            applicationId: 'app-1',
+            workspaceId: '_',
+            groupId: `room-${String(index).padStart(3, '0')}`,
+        }));
+        for (const [index, groupRef] of refs.entries()) {
+            await runtimeRepository.insertIfAbsent(
+                GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                `app=app-1:ws=_:group=${groupRef.groupId}`,
+                JSON.stringify({
+                    groupRef,
+                    config: { topologyKind: 'tree' },
+                    version: index + 1,
+                    createdAtEpochMs: 1,
+                    updatedAtEpochMs: 1,
+                    updatedByPrincipalId: 'legacy-owner',
+                }),
+                Number.MAX_SAFE_INTEGER,
+            );
+        }
+
+        await expect(migrateLegacyGroupTopologyConfigKeys(
+            repository,
+            { oldWritersStopped: true, sleep: () => Promise.resolve() },
+        )).resolves.toBeUndefined();
+        await expect(backfillAllGroupTopologyConfigGenerations(repository, {
+            sleep: () => Promise.resolve(),
+        })).resolves.toEqual({ scanned: 101, advanced: 101 });
+        for (const groupRef of refs) {
+            expect(await runtimeRepository.findEntry(
+                GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                `app=app-1:ws=_:group=${groupRef.groupId}`,
+            )).toBeUndefined();
+            expect(await runtimeRepository.findEntry(
+                GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+                groupStateGroupStorageKey(groupRef),
+            )).toBeDefined();
+        }
+        expect(runtimeRepository.locks).toEqual([]);
+    });
+
     it('does not downgrade a generation that wins a backfill conflict', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
@@ -592,4 +1322,18 @@ function createGroupRef(workspaceId: string): GroupRef {
         workspaceId,
         groupId: 'room-1',
     };
+}
+
+class PhysicalKeyAliasingRuntimeStateRepository
+    extends FakeRuntimeStateRepository {
+    aliasedNamespace?: string;
+
+    override async findEntry(
+        namespace: string,
+        key: string,
+    ): Promise<RuntimeStateEntry | undefined> {
+        const entry = await super.findEntry(namespace, key);
+        if (!entry || namespace !== this.aliasedNamespace) return entry;
+        return { ...entry, key: `${entry.key}:alias=x` };
+    }
 }

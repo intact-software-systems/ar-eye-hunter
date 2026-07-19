@@ -174,10 +174,15 @@ includes a receipt. A retained config/override generation record keeps receipt
 versions monotonic across physical deletion and override TTL expiry. A retained
 group invariant generation serializes config and override decisions before
 either can expose an invalid effective combination. Startup and first-access
-backfill preserve legacy config/override version floors before expiry cleanup,
-while effective reads bracket the pair with the invariant generation. The
-idempotency row stores only command identity plus the compact receipt; mandatory
-nullable receipt timestamps reconstruct accepted PUT responses on replay.
+backfill preserve config/override version floors before expiry cleanup, while
+effective reads bracket the pair with the invariant generation. All topology
+records use the canonical optional-workspace group-state key codec. Legacy
+ambiguous topology source keys require the explicit offline
+`migrateLegacyGroupTopologyConfigKeys` operation with old writers stopped;
+ordinary startup and first access fail closed without moving them, and expiry
+eviction stays disabled until startup backfill succeeds. The idempotency row
+stores only command identity plus the compact receipt; mandatory nullable
+receipt timestamps reconstruct accepted PUT responses on replay.
 DELETE uses
 `Idempotency-Key` on REST (or `requestId` in the shared browser options) for
 stable replay. They return after commit; outbox work performs recompute and

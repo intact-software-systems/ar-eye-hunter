@@ -1144,9 +1144,17 @@ state scope used by clients and groups:
   accepted versions monotonic across DELETE, recreation, and override TTL
   expiry. A separate retained group invariant generation serializes config and
   override decisions, forcing cross-target conflicts through a full reread and
-  revalidation. Legacy generation floors are optimistically backfilled before
-  first access and before periodic expiry cleanup, including already-expired
-  override rows. Effective reads bracket durable config and override with the
+  revalidation. Generation floors are optimistically backfilled before first
+  access and before periodic expiry cleanup, including already-expired override
+  rows. Topology config, override, mutation, generation, and invariant records
+  use the canonical optional-workspace group-state key codec, so an absent
+  workspace remains distinct from a literal `_` workspace and encoded
+  delimiter/lookalike values. Deployments with the older ambiguous topology
+  source keys must stop old writers and run
+  `migrateLegacyGroupTopologyConfigKeys` as an explicit offline/operator step.
+  Normal startup and first-access readiness never move those keys: they fail
+  closed, and startup does not enable expiry eviction until the migration has
+  completed. Effective reads bracket durable config and override with the
   invariant generation so they cannot combine states that never coexisted.
   Every response includes a compact receipt whose mandatory nullable replay
   timestamps let the service reconstruct a PUT replay without storing the full
