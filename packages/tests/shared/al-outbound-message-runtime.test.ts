@@ -357,6 +357,7 @@ describe('ALOutboundMessageRuntime', () => {
     it('emits diagnostics for sender queue, browser lock, and effect drains', async () => {
         const diagnostics = vi.fn();
         let nowMs = 0;
+        const message = createOutboundMessage('msg-diagnostics');
         const runtime = createOutboundRuntime({
             diagnostics,
             nowMs: () => {
@@ -370,7 +371,7 @@ describe('ALOutboundMessageRuntime', () => {
             }),
         });
 
-        await runtime.enqueueIfAbsent(createOutboundMessage('msg-diagnostics'));
+        await runtime.enqueueIfAbsent(message);
 
         const eventKinds = diagnostics.mock.calls.map(([event]) => event.kind);
         expect(eventKinds).toEqual(expect.arrayContaining([
@@ -381,9 +382,37 @@ describe('ALOutboundMessageRuntime', () => {
         ]));
         expect(diagnostics.mock.calls).toContainEqual([
             expect.objectContaining({
+                kind: 'sender-queue-wait',
+                runtime: 'test-outbound',
+                message: {
+                    msgId: message.id.msgId,
+                    senderId: 'self',
+                    resourceId: 'msg-diagnostics',
+                },
+            }),
+        ]);
+        expect(diagnostics.mock.calls).toContainEqual([
+            expect.objectContaining({
+                kind: 'browser-lock-hold',
+                runtime: 'test-outbound',
+                message: {
+                    msgId: message.id.msgId,
+                    senderId: 'self',
+                    resourceId: 'msg-diagnostics',
+                },
+            }),
+        ]);
+        expect(diagnostics.mock.calls).toContainEqual([
+            expect.objectContaining({
                 kind: 'effect-drain',
+                runtime: 'test-outbound',
                 claimedCount: 1,
                 completedCount: 1,
+                messages: [{
+                    msgId: message.id.msgId,
+                    senderId: 'self',
+                    resourceId: 'msg-diagnostics',
+                }],
             }),
         ]);
         runtime.dispose();
@@ -1518,6 +1547,7 @@ function createOutboundRuntime(options: {
     const outbox = options.outbox ?? new InMemoryQueueBox(new Map());
 
     return new ALOutboundMessageRuntime<Record<string, unknown>>({
+        diagnosticsRuntime: 'test-outbound',
         outbox,
         stores: options.stores,
         ...(options.diagnostics ? { diagnostics: options.diagnostics } : {}),

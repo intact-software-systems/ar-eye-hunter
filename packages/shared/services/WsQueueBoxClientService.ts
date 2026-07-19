@@ -137,6 +137,7 @@ export class WsQueueBoxClientService {
     ) {
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
             {
+                diagnosticsRuntime: 'ws-client',
                 stores: this.options.outboundStores,
                 diagnostics: this.options.outboundDiagnostics,
                 outbox: this.outbox,

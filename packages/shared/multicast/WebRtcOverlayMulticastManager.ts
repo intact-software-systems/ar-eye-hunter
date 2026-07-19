@@ -80,6 +80,7 @@ export class WebRtcOverlayMulticastManager {
         this.qosProvider = options.qosProvider;
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
             {
+                diagnosticsRuntime: 'rtc-overlay',
                 stores: options.outboundStores,
                 outbox: this.outbox,
                 toOutboxEntry: (msg) =>

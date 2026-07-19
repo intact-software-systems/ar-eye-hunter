@@ -89,6 +89,7 @@ export type ALOutboundDispatchPlan<TPrepared> = Readonly<{
 }>;
 
 export type ALOutboundMessageRuntimeInput<TPrepared> = Readonly<{
+    diagnosticsRuntime: string;
     outbox: QueueBoxResourceEntryRepository;
     toOutboxEntry: (msg: ALMessage) => ResourceEntry;
     readMessageFromEntry: (entry: ResourceEntry) => ALMessage;
@@ -113,16 +114,30 @@ export type ALOutboundRuntimeStores = Readonly<{
     stateStore?: ALOutboundRuntimeStateStore;
 }>;
 
+export type ALOutboundRuntimeMessageDiagnostics = Readonly<{
+    msgId: string;
+    senderId?: string;
+    resourceId?: string;
+}>;
+
+type ALOutboundRuntimeDiagnosticsContext = Readonly<{
+    runtime: string;
+}>;
+
 export type ALOutboundRuntimeDiagnosticsEvent =
-    | Readonly<{
+    & ALOutboundRuntimeDiagnosticsContext
+    & (
+        | Readonly<{
     kind: 'sender-queue-wait';
     senderId: string;
+    message: ALOutboundRuntimeMessageDiagnostics;
     queued: boolean;
     durationMs: number;
 }>
     | Readonly<{
     kind: 'browser-lock-wait';
     senderId: string;
+    message: ALOutboundRuntimeMessageDiagnostics;
     lockName: string;
     available: boolean;
     durationMs: number;
@@ -130,6 +145,7 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     | Readonly<{
     kind: 'browser-lock-hold';
     senderId: string;
+    message: ALOutboundRuntimeMessageDiagnostics;
     lockName: string;
     available: boolean;
     durationMs: number;
@@ -142,7 +158,16 @@ export type ALOutboundRuntimeDiagnosticsEvent =
     completedCount: number;
     rescheduledCount: number;
     skippedExpiredCount: number;
-}>;
+    messages: readonly ALOutboundRuntimeMessageDiagnostics[];
+}>
+    );
+
+type ALOutboundRuntimeDiagnosticsEventInput =
+    ALOutboundRuntimeDiagnosticsEvent extends infer TEvent
+        ? TEvent extends ALOutboundRuntimeDiagnosticsEvent
+            ? Omit<TEvent, 'runtime'>
+        : never
+        : never;
 
 export type ALOutboundRuntimeDiagnosticsSink = (
     event: ALOutboundRuntimeDiagnosticsEvent,
@@ -353,7 +378,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
         options: CommitDispatchOptions<TPrepared> = {},
     ): Promise<ALOutboundComputedDto<TPrepared>> {
         const result = await this.withSenderCommitQueue(
-            msg.id.senderId,
+            msg,
             async () => await this.commitDispatchPlanWithRetryNow(
                 msg,
                 planner,
@@ -693,6 +718,10 @@ export class ALOutboundMessageRuntime<TPrepared> {
         let completedCount = 0;
         let rescheduledCount = 0;
         let skippedExpiredCount = 0;
+        const messagesById = new Map<
+            string,
+            ALOutboundRuntimeMessageDiagnostics
+        >();
         try {
             while (true) {
                 if (this.disposed) {
@@ -713,6 +742,17 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 for (const effect of claimed) {
                     if (this.disposed) {
                         break;
+                    }
+
+                    if (this.input.diagnostics) {
+                        const message = this.toEffectMessageDiagnostics(effect);
+                        const existing = messagesById.get(message.msgId);
+                        messagesById.set(
+                            message.msgId,
+                            existing
+                                ? { ...message, ...existing }
+                                : message,
+                        );
                     }
 
                     try {
@@ -767,6 +807,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 completedCount,
                 rescheduledCount,
                 skippedExpiredCount,
+                messages: [...messagesById.values()],
             });
         }
     }
@@ -1158,9 +1199,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private async withSenderCommitQueue<T>(
-        senderId: string,
+        message: ALMessage,
         task: () => Promise<T>,
     ): Promise<T> {
+        const senderId = message.id.senderId;
+        const messageDiagnostics = this.toMessageDiagnostics(message);
         const existing = this.commitQueuesBySenderId.get(senderId);
         const previous = existing ?? Promise.resolve();
         const waitStartedAtMs = this.readNowMs();
@@ -1175,12 +1218,17 @@ export class ALOutboundMessageRuntime<TPrepared> {
         this.emitDiagnostics({
             kind: 'sender-queue-wait',
             senderId,
+            message: messageDiagnostics,
             queued: existing !== undefined,
             durationMs: this.elapsedSince(waitStartedAtMs),
         });
 
         try {
-            return await this.withCrossContextCommitLock(senderId, task);
+            return await this.withCrossContextCommitLock(
+                senderId,
+                messageDiagnostics,
+                task,
+            );
         } finally {
             release?.();
             if (this.commitQueuesBySenderId.get(senderId) === tail) {
@@ -1191,6 +1239,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
 
     private async withCrossContextCommitLock<T>(
         senderId: string,
+        message: ALOutboundRuntimeMessageDiagnostics,
         task: () => Promise<T>,
     ): Promise<T> {
         const lockName = `rallar:al-outbound-commit:${senderId}`;
@@ -1199,6 +1248,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
             this.emitDiagnostics({
                 kind: 'browser-lock-wait',
                 senderId,
+                message,
                 lockName,
                 available: false,
                 durationMs: 0,
@@ -1210,6 +1260,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 this.emitDiagnostics({
                     kind: 'browser-lock-hold',
                     senderId,
+                    message,
                     lockName,
                     available: false,
                     durationMs: this.elapsedSince(holdStartedAtMs),
@@ -1225,6 +1276,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                 this.emitDiagnostics({
                     kind: 'browser-lock-wait',
                     senderId,
+                    message,
                     lockName,
                     available: true,
                     durationMs: this.elapsedSince(waitStartedAtMs),
@@ -1236,6 +1288,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
                     this.emitDiagnostics({
                         kind: 'browser-lock-hold',
                         senderId,
+                        message,
                         lockName,
                         available: true,
                         durationMs: this.elapsedSince(holdStartedAtMs),
@@ -1253,12 +1306,33 @@ export class ALOutboundMessageRuntime<TPrepared> {
         return Math.max(0, this.readNowMs() - startedAtMs);
     }
 
-    private emitDiagnostics(event: ALOutboundRuntimeDiagnosticsEvent): void {
+    private emitDiagnostics(event: ALOutboundRuntimeDiagnosticsEventInput): void {
         try {
-            this.input.diagnostics?.(event);
+            this.input.diagnostics?.({
+                ...event,
+                runtime: this.input.diagnosticsRuntime,
+            } as ALOutboundRuntimeDiagnosticsEvent);
         } catch (error) {
             console.error('AL outbound runtime diagnostics sink failed', error);
         }
+    }
+
+    private toMessageDiagnostics(
+        message: ALMessage,
+    ): ALOutboundRuntimeMessageDiagnostics {
+        return {
+            msgId: message.id.msgId,
+            senderId: message.id.senderId,
+            resourceId: message.route.resourceId,
+        };
+    }
+
+    private toEffectMessageDiagnostics(
+        effect: ALPersistedOutboundEffect<TPrepared>,
+    ): ALOutboundRuntimeMessageDiagnostics {
+        return 'msg' in effect.payload
+            ? this.toMessageDiagnostics(effect.payload.msg)
+            : { msgId: effect.payload.msgId };
     }
 
     private readBrowserLockManager(): BrowserLockManager | undefined {

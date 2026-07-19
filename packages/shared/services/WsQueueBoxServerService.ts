@@ -146,6 +146,7 @@ export class WsQueueBoxServerService {
             WsServerPreparedMessage
         >(
             {
+                diagnosticsRuntime: 'ws-server',
                 stores: options.outboundStores,
                 diagnostics: options.outboundDiagnostics,
                 outbox: this.outbox,
