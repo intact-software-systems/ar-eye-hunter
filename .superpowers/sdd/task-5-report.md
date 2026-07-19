@@ -189,23 +189,81 @@ durable and no topology publisher runs in the mutation call.
 
 ### Production performance evidence
 
-Final artifact: `tmp/perf/api-v1-state-write-task5.json` (ignored, not committed),
-SHA-256 `61bd75f0ac9eb8a807eb7358198bac4e4a6cf07669a63e516a1084681fee8c8d`.
+The full PostgreSQL producer was rerun from the clean Task 5 implementation
+commit `af006598f7b7bbbc5bf40bf71a57213bdb4d3ee8`:
+
+```text
+npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --concurrency=10 --out=tmp/perf/api-v1-state-write-task5.json
+```
+
+The resulting canonical artifact remains ignored and uncommitted at
+`tmp/perf/api-v1-state-write-task5.json`. Its embedded `gitCommit` is exactly
+`af006598f7b7bbbc5bf40bf71a57213bdb4d3ee8` and its SHA-256 is
+`79812d41fac0a21d384353a1fdc2a131e5f9547bf21d968c6127ae1c682548d0`.
 
 ```text
 validateStateWriteArtifact(finalArtifact)
 []
 
 uncontended: 2100 accepted/receipts; 3900 required/actual intents; DBW []
-shared:      1947 accepted/receipts; 3646 required/actual intents; DBW []
-hot:         1003 accepted/receipts; 1906 required/actual intents; DBW []
+shared:      1951 accepted/receipts; 3651 required/actual intents; DBW []
+hot:          950 accepted/receipts; 1800 required/actual intents; DBW []
 ```
 
 The immutable baseline remains byte-identical at SHA-256
 `ba502493d88d08272a14c66f8ac81575c273cba8c8c654800dad8a9ddfdb81a7`.
-Baseline-to-Task-5 comparison exits 1 only with the expected later-governance
-message: the artifact is not labeled `task10-post-remediation-candidate`.
-Standalone Task 5 schema/correctness validation passes.
+Standalone Task 5 schema/correctness validation passes. Normal comparison of
+the unchanged canonical artifact returns this governance error before the
+performance gates execute:
+
+```text
+candidate must declare presenceSplitFromGroupAggregate=true with task10-post-remediation-candidate governance and evidence
+```
+
+That early return is not evidence that governance is the only failing gate. To
+audit the gated comparison without mutating either artifact, the reviewer and
+implementer each cloned the candidate in memory and changed only the clone's
+governed feature label/evidence. The canonical Task 5 artifact was never
+relabeled. The historical reviewer audit of the pre-regeneration artifact
+(SHA-256 `61bd75f0ac9eb8a807eb7358198bac4e4a6cf07669a63e516a1084681fee8c8d`)
+reported exactly these ten interim failures:
+
+```text
+shared throughput regressed: baseline=752.2423201768095, candidate=617.8315971922207
+hot throughput regressed: baseline=295.1851420383843, candidate=286.74079341379974
+shared throughput must improve after presence is split from the group aggregate
+uncontended median sql.statements increased without a recorded reason: baseline=11200, candidate=12600
+uncontended median sql.rowsRead increased without a recorded reason: baseline=5400, candidate=7700
+shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13869
+shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=27890
+hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12304
+shared retry exhaustion must remain zero; received 153
+hot retry exhaustion exceeded baseline: baseline=0, candidate=1097
+```
+
+The fresh read-only audit of the clean-commit artifact also validated the clone
+to `[]` and reported exactly these ten interim failures:
+
+```text
+shared throughput regressed: baseline=752.2423201768095, candidate=619.6153677802577
+hot throughput regressed: baseline=295.1851420383843, candidate=290.80459048821035
+shared throughput must improve after presence is split from the group aggregate
+uncontended median sql.statements increased without a recorded reason: baseline=11200, candidate=12600
+uncontended median sql.rowsRead increased without a recorded reason: baseline=5400, candidate=7700
+shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13777
+shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=27446
+hot median sql.statements increased without a recorded reason: baseline=11536, candidate=11943
+shared retry exhaustion must remain zero; received 149
+hot retry exhaustion exceeded baseline: baseline=0, candidate=1150
+```
+
+Neither audit reported an uncontended p95/p99 latency regression, a serialized
+result-byte regression, or a transaction-duration regression. The lists above
+are the complete comparator outputs, including every reported throughput, SQL,
+latency, and retry gate. Task 5 therefore claims correctness evidence only, not
+performance acceptance. Later remediation tasks must address the measured
+contention/resource regressions, and Task 10 owns the governed final candidate
+and comparator acceptance.
 
 ## Encountered non-product failures
 
@@ -233,5 +291,9 @@ Standalone Task 5 schema/correctness validation passes.
   full PUT response on replay without rereading mutable current state.
 - Requests without `requestId` return a receipt but do not persist an immutable
   request record; effectful writes always persist the RTC recompute outbox.
+- The Task 5 performance artifact is an interim correctness/evidence sample.
+  Its disclosed throughput, SQL, and retry regressions are not waived or
+  accepted; final remediation and performance acceptance remain with later
+  plan tasks and the governed Task 10 comparison.
 - The medium-scale black-box environment needs its group-create permission
   preflight corrected before it can provide a Task 5 live recipe result.
