@@ -116,26 +116,6 @@ export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
         return entries.map((entry) => decodeSnapshotEntry(entry));
     }
 
-    async putSnapshot(
-        snapshot: RallarOverlayTopologySnapshot,
-        purgeAfterEpochMs: number = this.neverExpireAtTimestamp(),
-    ): Promise<void> {
-        const storedSnapshot = canonicalSnapshot(snapshot);
-        validateTopologySnapshot(storedSnapshot, storedSnapshot.groupRef);
-        if (purgeAfterEpochMs !== NEVER_EXPIRE_AT_TIMESTAMP) {
-            throw topologyCorruption(
-                this.snapshotKey(snapshot.groupRef),
-                'RTC topology snapshots must not expire',
-            );
-        }
-        await this.putValue(
-            RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
-            this.snapshotKey(storedSnapshot.groupRef),
-            storedSnapshot,
-            purgeAfterEpochMs,
-        );
-    }
-
     async commitSnapshotGuard(
         snapshot: RallarOverlayTopologySnapshot,
         expectedRevision: number | null,

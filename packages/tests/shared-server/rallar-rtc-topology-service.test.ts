@@ -100,6 +100,51 @@ describe('RallarRtcTopologyService', () => {
         expect(graph.getEdgeAttribute(edge!, 'weight')).toBe(7);
     });
 
+    it('orders equal-weight Unicode RTT edges by exact code units', () => {
+        const decomposed = 'e\u0301';
+        const composed = '\u00e9';
+        const group = createGroupSnapshot('room-1', [
+            composed,
+            decomposed,
+            'z',
+        ]);
+        const service = new RallarRtcTopologyService({
+            now: () => 100,
+            degreeLimit: 3,
+            rttReportingDegreeLimit: 3,
+        });
+
+        const graph = service.createRoomGraph(group, [
+            {
+                sessionIdFrom: decomposed,
+                sessionIdTo: composed,
+                rttMs: 5,
+                createdAtEpochMs: 1,
+                version: 1,
+            },
+            {
+                sessionIdFrom: decomposed,
+                sessionIdTo: 'z',
+                rttMs: 5,
+                createdAtEpochMs: 2,
+                version: 2,
+            },
+            {
+                sessionIdFrom: 'z',
+                sessionIdTo: composed,
+                rttMs: 5,
+                createdAtEpochMs: 3,
+                version: 3,
+            },
+        ]);
+
+        expect(graph.edges().map((edge) => graph.extremities(edge))).toEqual([
+            [decomposed, 'z'],
+            [decomposed, composed],
+            ['z', composed],
+        ]);
+    });
+
     it('documents complete weighted room graph materialization with partial RTT input', () => {
         const memberSessionIds = createMemberIds(8);
         const group = createGroupSnapshot('room-1', memberSessionIds);

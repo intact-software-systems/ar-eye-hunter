@@ -36,6 +36,7 @@ import {
     GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
 } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 
 describe('GroupTopologyManagementService', () => {
     it.each([
@@ -1529,7 +1530,7 @@ describe('GroupTopologyManagementService', () => {
             'session-b': ['session-a'],
         });
         const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
-        await snapshots.putSnapshot(previous);
+        await seedTopologySnapshot(snapshots, previous);
         const topologyService = new RallarRtcTopologyService();
         const service = createService({ runtimeRepository, group, topologyService });
 
@@ -1717,7 +1718,7 @@ describe('GroupTopologyManagementService', () => {
         const topologySnapshotRepository = new RtcTopologySnapshotRepository(
             runtimeRepository,
         );
-        await topologySnapshotRepository.putSnapshot(current);
+        await seedTopologySnapshot(topologySnapshotRepository, current);
         const publisher = vi.fn();
         const service = createService({
             runtimeRepository,
@@ -1739,6 +1740,51 @@ describe('GroupTopologyManagementService', () => {
         expect(publisher).not.toHaveBeenCalled();
     });
 
+    it('uses an actual named write transaction for direct topology reconfigure', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const begin = vi.spyOn(runtimeRepository, 'begin');
+        const timingEvents: RallarTimingEvent[] = [];
+        const service = createService({
+            runtimeRepository,
+            group,
+            timing: (event) => timingEvents.push(event),
+        });
+
+        await service.reconfigureGroupTopology({
+            groupRef: group.group,
+            publish: false,
+        });
+
+        expect(begin).toHaveBeenCalledTimes(1);
+        expect(timingEvents.filter(({ operation }) =>
+            operation === 'topology.transaction'
+        )).toHaveLength(1);
+    });
+
+    it('uses the same named write transaction seam for topology removal', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const active = createGroupSnapshot(createGroupRef('workspace-1'));
+        const removed: GroupSnapshot = {
+            ...active,
+            stateRevision: 2,
+            group: {
+                ...active.group,
+                status: 'deleted',
+                snapshotVersion: 2,
+                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+            },
+        };
+        const begin = vi.spyOn(runtimeRepository, 'begin');
+        const service = createService({ runtimeRepository, group: removed });
+
+        await service.removeGroupTopology(removed);
+
+        expect(begin).toHaveBeenCalledTimes(1);
+        expect(await new RtcTopologySnapshotRepository(runtimeRepository)
+            .findSnapshot(removed.group)).toMatchObject({ state: 'removed' });
+    });
+
     it('does not let a stale removal delete a newer active topology', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const base = createGroupSnapshot(createGroupRef('workspace-1'));
@@ -1756,7 +1802,7 @@ describe('GroupTopologyManagementService', () => {
             version: 2,
         };
         const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
-        await snapshots.putSnapshot(current);
+        await seedTopologySnapshot(snapshots, current);
         const service = createService({ runtimeRepository, group: currentGroup });
 
         await service.removeGroupTopology(staleRemoval);
@@ -1782,16 +1828,20 @@ describe('GroupTopologyManagementService', () => {
         const topologySnapshotRepository = new RtcTopologySnapshotRepository(
             runtimeRepository,
         );
-        await topologySnapshotRepository.putSnapshot(previous);
-        const originalCommit = topologySnapshotRepository.commitSnapshotGuard
-            .bind(topologySnapshotRepository);
-        const commitSnapshot = vi.spyOn(
-            topologySnapshotRepository,
-            'commitSnapshotGuard',
-        ).mockImplementationOnce(async () => {
-            await topologySnapshotRepository.putSnapshot(moved);
-            return { status: 'conflict' };
-        }).mockImplementation(originalCommit);
+        await seedTopologySnapshot(topologySnapshotRepository, previous);
+        const originalBegin = runtimeRepository.begin.bind(runtimeRepository);
+        const begin = vi.spyOn(runtimeRepository, 'begin')
+            .mockImplementationOnce(async () => {
+                const current = await topologySnapshotRepository.findSnapshotEntry(
+                    group.group,
+                );
+                await expect(topologySnapshotRepository.commitSnapshotGuard(
+                    moved,
+                    current!.entry.revision,
+                )).resolves.toMatchObject({ status: 'accepted' });
+                throw new RuntimeStateWriteConflictError();
+            })
+            .mockImplementation(originalBegin);
         const topologyService = new RallarRtcTopologyService({ now: () => 4 });
         const planGroupTopology = vi.spyOn(
             topologyService,
@@ -1814,7 +1864,7 @@ describe('GroupTopologyManagementService', () => {
             groupRef: group.group,
         });
 
-        expect(commitSnapshot).toHaveBeenCalledTimes(2);
+        expect(begin).toHaveBeenCalledTimes(2);
         expect(planGroupTopology).toHaveBeenCalledTimes(2);
         expect(result.snapshot.sourceGroupStateRevision).toBe(3);
         expect(result.previous).toEqual(moved);
@@ -1851,7 +1901,8 @@ describe('GroupTopologyManagementService', () => {
     it('filters stored RTTs that are not reporting edges for the recomputed group', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
-        await new RtcTopologySnapshotRepository(runtimeRepository).putSnapshot(
+        await seedTopologySnapshot(
+            new RtcTopologySnapshotRepository(runtimeRepository),
             createTopologySnapshot(
                 group.group,
                 {
@@ -2129,10 +2180,10 @@ describe('GroupTopologyManagementService', () => {
         const topologySnapshotRepository = new RtcTopologySnapshotRepository(
             runtimeRepository,
         );
-        const commitSnapshotGuard = vi.spyOn(
-            topologySnapshotRepository,
-            'commitSnapshotGuard',
-        ).mockResolvedValue({ status: 'conflict' });
+        const begin = vi.spyOn(runtimeRepository, 'begin')
+            .mockImplementation(async () => {
+                throw new RuntimeStateWriteConflictError();
+            });
         topologyService.queueRttTopologyUpdate(group);
         const service = createService({
             runtimeRepository,
@@ -2147,7 +2198,7 @@ describe('GroupTopologyManagementService', () => {
             publish: false,
         })).rejects.toMatchObject({ code: 'group-topology-commit-conflict' });
 
-        expect(commitSnapshotGuard).toHaveBeenCalledTimes(3);
+        expect(begin).toHaveBeenCalledTimes(3);
         expect(topologyService.readSnapshot(group)).toBeUndefined();
         expect(topologyService.readMetrics()).toMatchObject({
             topologySnapshotCount: 0,
@@ -2525,6 +2576,20 @@ function createInvalidTopologyService(groupRef: GroupRef): RallarRtcTopologyServ
         recordTopologyPublishResult: vi.fn(),
         readNowEpochMs: vi.fn(() => 1),
     } as unknown as RallarRtcTopologyService;
+}
+
+async function seedTopologySnapshot(
+    repository: RtcTopologySnapshotRepository,
+    snapshot: RallarOverlayTopologySnapshot,
+): Promise<void> {
+    const current = await repository.findSnapshotEntry(snapshot.groupRef);
+    const result = await repository.commitSnapshotGuard(
+        snapshot,
+        current?.entry.revision ?? null,
+    );
+    if (result.status !== 'accepted') {
+        throw new Error('Expected topology snapshot seed to be accepted');
+    }
 }
 
 function freezeDeep<T>(value: T): T {

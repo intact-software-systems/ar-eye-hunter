@@ -20,6 +20,7 @@ import {
 } from '../repositories/RtcTopologyPublicationRepository.ts';
 import type { RtcTopologyExecutionRepository } from '../repositories/RtcTopologyExecutionRepository.ts';
 import type { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
+import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
 import {
     computeTopologyMutation,
     validateTopologyMutation,
@@ -170,11 +171,18 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                 ]);
                 const group = authority.group;
                 if (
+                    !read.publicationClaim &&
                     work.kind === 'group-revision' &&
                     work.sourceGroupStateRevision < readGroupStateRevision(group)
                 ) {
                     return;
                 }
+                const facts = {
+                    publicationExpireAtTimestamp: read.publicationClaim
+                        ? null
+                        : options.executionRepository
+                            .publicationExpireAtTimestamp(),
+                } as const;
                 const planned = read.publicationClaim && read.snapshot
                     ? {
                         snapshot: read.snapshot.value,
@@ -204,6 +212,7 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                     read,
                     candidate: planned.snapshot,
                     publication,
+                    facts,
                 });
                 recordTopologyExecutionPhase(
                     options, workId, group.group, 'compute', computeStarted,
@@ -214,6 +223,7 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                     read,
                     candidate: planned.snapshot,
                     publication,
+                    facts,
                     computed,
                 });
                 recordTopologyExecutionPhase(
@@ -226,6 +236,22 @@ export function createRtcTopologyWorkHandler(options: Readonly<{
                         computed.current,
                     );
                     return;
+                }
+                if (computed.outcome === 'retry') {
+                    recordRallarTiming(options.timing, {
+                        component: 'rtc-topology-execution-service',
+                        operation: 'mutation.conflict',
+                        serviceId: options.serviceId,
+                        requestId: workId,
+                        ...canonicalGroupRef(group.group),
+                        details: {
+                            attempt,
+                            backoffMs,
+                            conflict: true,
+                            reason: computed.reason,
+                        },
+                    }, 'ok', 0);
+                    continue;
                 }
                 if (computed.outcome === 'loaded') {
                     await options.publicationFanout.publish(computed.publication);
@@ -519,7 +545,9 @@ function toRtcTopologyRttSuccessorResourceId(
     stateRevision: number,
     rtt: RttMeasurementInfo,
 ): string {
-    const pair = [rtt.sessionIdFrom, rtt.sessionIdTo].sort().join(':');
+    const pair = [rtt.sessionIdFrom, rtt.sessionIdTo]
+        .sort(compareRtcTopologyIdentifiers)
+        .join(':');
     return `${overlayId}:rtt:${stateRevision}:${pair}:${rtt.version}`;
 }
 

@@ -8,6 +8,7 @@ import {
     type RallarRtcTopologyKind,
 } from '@shared/api/overlay-topology.ts';
 import { normalizeRttReportingDegreeLimit } from '@shared/rtc/rtt-reporting-policy.ts';
+import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
 import {
     readGroupCreatedAtEpochMs,
     readGroupCreatedByPrincipalId,
@@ -940,8 +941,8 @@ function createSortedRttEdges(
 
     return [...edgeByPair.values()].sort((left, right) =>
         left.weight - right.weight ||
-        left.from.localeCompare(right.from) ||
-        left.to.localeCompare(right.to)
+        compareRtcTopologyIdentifiers(left.from, right.from) ||
+        compareRtcTopologyIdentifiers(left.to, right.to)
     );
 }
 
@@ -1133,7 +1134,10 @@ function pickNoRttTreeSource(activeSessionIds: readonly string[]): string {
         const sessionId = activeSessionIds[i];
         if (
             score < selectedScore ||
-            (score === selectedScore && sessionId.localeCompare(selected) < 0)
+            (
+                score === selectedScore &&
+                compareRtcTopologyIdentifiers(sessionId, selected) < 0
+            )
         ) {
             selected = sessionId;
             selectedScore = score;

@@ -27,6 +27,9 @@ import {
     RtcTopologySnapshotRepository,
 } from '../repositories/RtcTopologySnapshotRepository.ts';
 import {
+    RtcTopologyExecutionRepository,
+} from '../repositories/RtcTopologyExecutionRepository.ts';
+import {
     readGroupStateRevision,
     readGroupMemberSessionIds,
 } from '@shared/api/group-client-views.ts';
@@ -818,30 +821,54 @@ export class GroupTopologyManagementService {
             return;
         }
         const repository = this.options.topologySnapshotRepository;
+        const executionRepository = new RtcTopologyExecutionRepository(
+            requireOptimisticTopologyRuntime(repository.runtimeRepository),
+        );
         let lastConflict: RuntimeStateWriteConflictError | undefined;
         for (let attempt = 0; attempt < 3; attempt += 1) {
-            await waitForRuntimeStateWriteRetry(attempt as 0 | 1 | 2, {
-                sleep: this.options.sleep,
-            });
-            const [authority, current] = await Promise.all([
+            const backoffMs = await waitForRuntimeStateWriteRetry(
+                attempt as 0 | 1 | 2,
+                { sleep: this.options.sleep },
+            );
+            const readStarted = performance.now();
+            const [authority, read] = await Promise.all([
                 this.readTopologyPlanningAuthority(group.group),
-                repository.findSnapshotEntry(group.group),
+                executionRepository.readTopologyMutation(group.group, null),
             ]);
             const freshGroup = authority.group;
+            this.recordTopologyMutationPhase(
+                group.group, 'read', readStarted, attempt, backoffMs,
+            );
             if (
                 freshGroup.group.status === 'active' ||
                 readGroupStateRevision(freshGroup) > readGroupStateRevision(group)
             ) {
                 return;
             }
-            const planned = this.planTopologyFromAuthority(authority, current?.value);
+            const planned = this.planTopologyFromAuthority(
+                authority,
+                read.snapshot?.value,
+            );
+            const computeStarted = performance.now();
             const mutationInput = {
-                read: { snapshot: current ?? null, publicationClaim: null },
+                read,
                 candidate: planned.snapshot,
                 publication: null,
+                facts: { publicationExpireAtTimestamp: null },
             } as const;
             const computed = computeTopologyMutation(mutationInput);
+            this.recordTopologyMutationPhase(
+                group.group, 'compute', computeStarted, attempt, backoffMs,
+            );
+            const validateStarted = performance.now();
             validateTopologyMutation({ ...mutationInput, computed });
+            this.recordTopologyMutationPhase(
+                group.group, 'validate', validateStarted, attempt, backoffMs,
+            );
+            if (computed.outcome === 'retry') {
+                lastConflict = new RuntimeStateWriteConflictError();
+                continue;
+            }
             if (computed.outcome === 'superseded') return;
             if (computed.outcome === 'loaded') {
                 throw new TypeError('Topology removal cannot load a publication claim');
@@ -850,15 +877,29 @@ export class GroupTopologyManagementService {
                 this.observeCommittedTopology(freshGroup, planned.snapshot);
                 return;
             }
-            const written = await repository.commitSnapshotGuard(
-                computed.snapshotGuard.candidate,
-                computed.snapshotGuard.expectedRevision,
+            const writeStarted = performance.now();
+            const transactionStarted = performance.now();
+            const written = await executionRepository.writeTopologyMutation(
+                computed,
             );
-            if (written.status === 'accepted') {
+            this.recordTopologyMutationPhase(
+                group.group, 'transaction', transactionStarted, attempt, backoffMs,
+            );
+            this.recordTopologyMutationPhase(
+                group.group, 'write', writeStarted, attempt, backoffMs,
+            );
+            if (written === 'committed') {
                 this.observeCommittedTopology(freshGroup, planned.snapshot);
                 return;
             }
             lastConflict = new RuntimeStateWriteConflictError();
+            recordRallarTiming(this.options.timing, {
+                component: 'group-topology-service',
+                operation: 'topology.conflict',
+                serviceId: this.options.serviceId,
+                ...canonicalGroupRef(group.group),
+                details: { attempt, backoffMs, conflict: true },
+            }, 'ok', 0);
         }
         throw new RuntimeStateRetryExhaustedError(
             lastConflict ?? new RuntimeStateWriteConflictError(),
@@ -879,29 +920,33 @@ export class GroupTopologyManagementService {
         group: GroupSnapshot;
     }>> {
         const repository = this.options.topologySnapshotRepository!;
+        const executionRepository = new RtcTopologyExecutionRepository(
+            requireOptimisticTopologyRuntime(repository.runtimeRepository),
+        );
         for (let attempt = 0; attempt < 3; attempt += 1) {
             const backoffMs = await waitForRuntimeStateWriteRetry(
                 attempt as 0 | 1 | 2,
                 { sleep: this.options.sleep },
             );
             const readStarted = performance.now();
-            const [authority, entry] = await Promise.all([
+            const [authority, read] = await Promise.all([
                 readAuthority(),
-                repository.findSnapshotEntry(groupRef),
+                executionRepository.readTopologyMutation(groupRef, null),
             ]);
             const freshGroup = authority.group;
-            const result = plan(authority, entry?.value, attempt);
+            const result = plan(authority, read.snapshot?.value, attempt);
             this.recordTopologyMutationPhase(
                 groupRef, 'read', readStarted, attempt, backoffMs,
             );
             const computeStarted = performance.now();
             const mutationInput = {
                 read: {
-                    snapshot: entry ?? null,
-                    publicationClaim: null,
+                    snapshot: read.snapshot,
+                    publicationClaim: read.publicationClaim,
                 },
                 candidate: result.snapshot,
                 publication: null,
+                facts: { publicationExpireAtTimestamp: null },
             } as const;
             const computed = computeTopologyMutation(mutationInput);
             this.recordTopologyMutationPhase(
@@ -925,23 +970,38 @@ export class GroupTopologyManagementService {
                     group: freshGroup,
                 };
             }
+            if (computed.outcome === 'retry') {
+                recordRallarTiming(this.options.timing, {
+                    component: 'group-topology-service',
+                    operation: 'topology.conflict',
+                    serviceId: this.options.serviceId,
+                    ...canonicalGroupRef(groupRef),
+                    details: {
+                        attempt,
+                        backoffMs,
+                        conflict: true,
+                        reason: computed.reason,
+                    },
+                }, 'ok', 0);
+                continue;
+            }
             if (computed.outcome === 'loaded') {
                 throw new TypeError('Topology management cannot load a publication claim');
             }
             if (computed.observation !== 'duplicate') {
                 const writeStarted = performance.now();
                 const transactionStarted = performance.now();
-                const committed = await repository.commitSnapshotGuard(
-                    computed.snapshotGuard.candidate,
-                    computed.snapshotGuard.expectedRevision,
-                );
+                const committed = await executionRepository
+                    .writeTopologyMutation(
+                        computed,
+                    );
                 this.recordTopologyMutationPhase(
                     groupRef, 'transaction', transactionStarted, attempt, backoffMs,
                 );
                 this.recordTopologyMutationPhase(
                     groupRef, 'write', writeStarted, attempt, backoffMs,
                 );
-                if (committed.status === 'conflict') {
+                if (committed === 'conflict') {
                     recordRallarTiming(this.options.timing, {
                         component: 'group-topology-service',
                         operation: 'topology.conflict',

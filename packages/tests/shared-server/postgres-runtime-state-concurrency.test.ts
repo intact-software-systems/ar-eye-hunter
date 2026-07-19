@@ -510,7 +510,10 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                             alSenderId: a, candidateGroups: [groups[0]],
                             overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
                         },
-                        facts: { requestedAtEpochMs: 1, purgeAfterEpochMs: 60_001 },
+                        readFacts: () => ({
+                            requestedAtEpochMs: 1,
+                            purgeAfterEpochMs: 60_001,
+                        }),
                         sleep: async () => {},
                     }),
                     executeRttMutation({
@@ -521,7 +524,10 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                             alSenderId: a, candidateGroups: [groups[1]],
                             overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
                         },
-                        facts: { requestedAtEpochMs: 1, purgeAfterEpochMs: 60_001 },
+                        readFacts: () => ({
+                            requestedAtEpochMs: 1,
+                            purgeAfterEpochMs: 60_001,
+                        }),
                         sleep: async () => {},
                     }),
                 ]);

@@ -7,13 +7,11 @@ import type {
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
     RuntimeStateRepositoryLike,
-    RuntimeStateTransactionalRepositoryLike,
     RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
     isRuntimeStateOptimisticTransactionalRepositoryLike,
-    isRuntimeStateTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import {
@@ -334,8 +332,10 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     async putOrLoad(
         publication: RtcTopologyPublication,
     ): Promise<PutRtcTopologyPublicationResult> {
+        // Compatibility seam with explicit optimistic first-writer semantics.
+        // It never overwrites either immutable row and never retries a conflict.
         validatePublication(publication, publication.groupRef);
-        const runtime = requireTransactionalRuntime(this.runtimeRepository);
+        const runtime = requireOptimisticRuntime(this.runtimeRepository);
         const expireAtTimestamp = this.now() + this.retentionMs;
         const inserted = await runtime.begin(async (transaction) => {
             const repository = this.withRepository(transaction);
@@ -465,7 +465,7 @@ export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
     }
 
     private withRepository(
-        repository: RuntimeStateTransactionalRepositoryLike,
+        repository: RuntimeStateOptimisticTransactionalRepositoryLike,
     ): RtcTopologyPublicationRepository {
         return new RtcTopologyPublicationRepository(
             repository,
@@ -635,15 +635,6 @@ function parseValue(entry: RuntimeStateEntry): unknown {
             error instanceof Error ? error.message : 'RTC topology JSON is invalid',
         );
     }
-}
-
-function requireTransactionalRuntime(
-    runtime: RuntimeStateRepositoryLike,
-): RuntimeStateTransactionalRepositoryLike {
-    if (!isRuntimeStateTransactionalRepositoryLike(runtime)) {
-        throw new Error('RTC topology publications require a transactional repository');
-    }
-    return runtime;
 }
 
 function requireOptimisticRuntime(

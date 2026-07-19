@@ -652,16 +652,16 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
         };
     }
 
-    const runtime = input.runtimeState.rtts.runtimeRepository;
+    const runtimeRtts = input.runtimeState.rtts;
+    const runtime = runtimeRtts.runtimeRepository;
     if (!isRuntimeStateOptimisticTransactionalRepositoryLike(runtime)) {
         throw new TypeError(
             'RTC RTT persistence requires conditional transactional runtime state',
         );
     }
     let firstRead = true;
-    const requestedAtEpochMs = input.runtimeState.rtts.nowEpochMs();
     const executed = await executeRttMutation({
-        repository: input.runtimeState.rtts,
+        repository: runtimeRtts,
         runtime,
         command: {
             rtt: input.rtt,
@@ -685,10 +685,7 @@ async function acceptRtcRttMeasurementWithPolicy(input: {
                 ...policyInputs,
             };
         },
-        facts: {
-            requestedAtEpochMs,
-            purgeAfterEpochMs: input.runtimeState.rtts.defaultPurgeAfterEpochMs(),
-        },
+        readFacts: () => runtimeRtts.readMutationFacts(),
     });
     if (executed.updated) {
         rttRepository.setRtt(input.rtt);

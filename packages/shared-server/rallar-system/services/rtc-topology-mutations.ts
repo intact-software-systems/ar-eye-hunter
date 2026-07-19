@@ -16,9 +16,12 @@ import {
     toRtcRttMutationReceiptId,
     toRtcRttRecomputeOutboxId,
 } from '../repositories/RtcRttRepository.ts';
+import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from '../repositories/RtcTopologyPublicationRepository.ts';
 import {
+    compareTopologyTuple,
     decideTopologySnapshot,
+    RtcTopologyRepositoryInvariantCorruptionError,
     validateTopologySnapshot,
 } from '../repositories/RtcTopologySnapshotRepository.ts';
 import {
@@ -40,6 +43,11 @@ export type RtcTopologyMutationInput = Readonly<{
     read: RtcTopologyMutationRead;
     candidate: RallarOverlayTopologySnapshot;
     publication: RtcTopologyPublication | null;
+    facts: RtcTopologyMutationFacts;
+}>;
+
+export type RtcTopologyMutationFacts = Readonly<{
+    publicationExpireAtTimestamp: number | null;
 }>;
 
 export type RtcTopologyMutationComputed =
@@ -49,18 +57,32 @@ export type RtcTopologyMutationComputed =
         publication: RtcTopologyPublication;
     }>
     | Readonly<{
+        outcome: 'retry';
+        reason: 'publication-ahead-of-snapshot';
+    }>
+    | Readonly<{
         outcome: 'superseded';
         current: RallarOverlayTopologySnapshot;
     }>
-    | Readonly<{
-        outcome: 'write';
-        observation: 'inserted' | 'advanced' | 'duplicate';
-        snapshotGuard: Readonly<{
-            expectedRevision: number | null;
-            candidate: RallarOverlayTopologySnapshot;
-        }>;
-        publication: RtcTopologyPublication | null;
-    }>;
+    | (
+        Readonly<{
+            outcome: 'write';
+            observation: 'inserted' | 'advanced' | 'duplicate';
+            snapshotGuard: Readonly<{
+                expectedRevision: number | null;
+                candidate: RallarOverlayTopologySnapshot;
+            }>;
+        }> & (
+            | Readonly<{
+                publication: RtcTopologyPublication;
+                publicationExpireAtTimestamp: number;
+            }>
+            | Readonly<{
+                publication: null;
+                publicationExpireAtTimestamp: null;
+            }>
+        )
+    );
 
 export function computeTopologyMutation(
     input: RtcTopologyMutationInput,
@@ -73,7 +95,23 @@ export function computeTopologyMutation(
         }
         const storedPublication = input.read.publicationClaim.publication;
         const storedSnapshot = input.read.snapshot.value;
-        assertPublicationSelfConsistent(storedPublication);
+        const publicationSnapshot = assertPublicationSelfConsistent(storedPublication);
+        const relation = compareTopologyTuple(publicationSnapshot, storedSnapshot);
+        if (relation > 0) {
+            return {
+                outcome: 'retry',
+                reason: 'publication-ahead-of-snapshot',
+            };
+        }
+        if (
+            relation === 0 &&
+            !canonicalDeepEqual(publicationSnapshot, storedSnapshot)
+        ) {
+            throw new RtcTopologyRepositoryInvariantCorruptionError(
+                storedPublication.publicationId,
+                'RTC topology publication equal causal tuple differs from durable snapshot',
+            );
+        }
         return {
             outcome: 'loaded',
             snapshot: storedSnapshot,
@@ -86,14 +124,31 @@ export function computeTopologyMutation(
     if (observation === 'stale') {
         return { outcome: 'superseded', current: current! };
     }
-    return {
+    validatePublicationExpiryFact(input.publication, input.facts);
+    const write = {
         outcome: 'write',
         observation,
         snapshotGuard: {
             expectedRevision: input.read.snapshot?.entry.revision ?? null,
             candidate: input.candidate,
         },
+    } as const;
+    if (input.publication === null) {
+        return {
+            ...write,
+            publication: null,
+            publicationExpireAtTimestamp: null,
+        };
+    }
+    const publicationExpireAtTimestamp =
+        input.facts.publicationExpireAtTimestamp;
+    if (publicationExpireAtTimestamp === null) {
+        throw new TypeError('RTC topology publication expiry fact is invalid');
+    }
+    return {
+        ...write,
         publication: input.publication,
+        publicationExpireAtTimestamp,
     };
 }
 
@@ -140,7 +195,7 @@ export function validateTopologyMutation(
     }
     if (input.publication && input.computed.outcome === 'write') {
         const publicationSnapshot = assertPublicationSelfConsistent(input.publication);
-        if (!jsonEquals(publicationSnapshot, input.candidate)) {
+        if (!canonicalDeepEqual(publicationSnapshot, input.candidate)) {
             throw new TypeError('RTC topology publication payload differs from candidate');
         }
     }
@@ -225,10 +280,27 @@ export function computeRttMutation(input: Readonly<{
     read: RtcRttMutationRead;
     facts: RtcRttMutationFacts;
 }>): RtcRttMutationComputed {
+    validateRttMutationFacts(input.facts);
     if (
         input.read.measurement &&
-        input.read.measurement.value.version >= input.command.rtt.version
+        input.read.measurement.value.version > input.command.rtt.version
     ) {
+        return {
+            outcome: 'rejected',
+            reason: 'stale',
+            affectedGroups: [],
+        };
+    }
+    if (
+        input.read.measurement &&
+        input.read.measurement.value.version === input.command.rtt.version
+    ) {
+        if (!sameMeasurement(input.read.measurement.value, input.command.rtt)) {
+            throw new RtcTopologyRepositoryInvariantCorruptionError(
+                input.read.measurement.entry.key,
+                'RTC RTT equal version differs from durable measurement',
+            );
+        }
         return {
             outcome: 'rejected',
             reason: 'stale',
@@ -267,7 +339,7 @@ export function computeRttMutation(input: Readonly<{
     const endpoints = [...new Set([
         input.command.rtt.sessionIdFrom,
         input.command.rtt.sessionIdTo,
-    ])].sort();
+    ])].sort(compareRtcTopologyIdentifiers);
     const endpointGuards = endpoints.map((endpointId) => {
         const stored = admissionByEndpoint.get(endpointId);
         const peerExpiry = new Map<string, number>();
@@ -296,7 +368,7 @@ export function computeRttMutation(input: Readonly<{
             peerSessionId,
             expiresAtEpochMs,
         })).sort((left, right) =>
-            left.peerSessionId.localeCompare(right.peerSessionId)
+            compareRtcTopologyIdentifiers(left.peerSessionId, right.peerSessionId)
         );
         return {
             endpointId,
@@ -378,9 +450,27 @@ export function validateRttMutation(input: Readonly<{
     }
     if (input.computed.outcome === 'write') {
         const endpointIds = input.computed.endpointGuards.map((guard) => guard.endpointId);
-        if (JSON.stringify(endpointIds) !== JSON.stringify([...endpointIds].sort())) {
+        if (
+            JSON.stringify(endpointIds) !==
+                JSON.stringify([...endpointIds].sort(compareRtcTopologyIdentifiers))
+        ) {
             throw new TypeError('RTC RTT endpoint guards are not in lexical order');
         }
+    }
+}
+
+export function validateRttMutationFacts(facts: RtcRttMutationFacts): void {
+    if (
+        !Number.isSafeInteger(facts.requestedAtEpochMs) ||
+        facts.requestedAtEpochMs < 0
+    ) {
+        throw new TypeError('RTC RTT requested-at lifecycle fact is invalid');
+    }
+    if (
+        !Number.isSafeInteger(facts.purgeAfterEpochMs) ||
+        facts.purgeAfterEpochMs <= facts.requestedAtEpochMs
+    ) {
+        throw new TypeError('RTC RTT purge-after lifecycle fact is invalid');
     }
 }
 
@@ -396,7 +486,7 @@ export async function readRttMutation(
         ...[...new Set([
             command.rtt.sessionIdFrom,
             command.rtt.sessionIdTo,
-        ])].sort().map((endpointId) =>
+        ])].sort(compareRtcTopologyIdentifiers).map((endpointId) =>
             repository.findEndpointAdmissionEntry(endpointId)
         ),
     ]);
@@ -484,7 +574,7 @@ export async function executeRttMutation(input: Readonly<{
     runtime: RuntimeStateOptimisticTransactionalRepositoryLike;
     command: RtcRttMutationCommand;
     readCommand?: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;
-    facts: RtcRttMutationFacts;
+    readFacts: () => RtcRttMutationFacts | Promise<RtcRttMutationFacts>;
     sleep?: (delayMs: number) => Promise<void>;
     timing?: RallarTimingSink;
     serviceId?: string;
@@ -495,6 +585,8 @@ export async function executeRttMutation(input: Readonly<{
             sleep: input.sleep,
         });
         const readStarted = performance.now();
+        const facts = await input.readFacts();
+        validateRttMutationFacts(facts);
         const command = await input.readCommand?.() ?? input.command;
         if (!sameRttRequest(command, input.command)) {
             throw new TypeError('RTC RTT retry changed the stable request payload');
@@ -506,7 +598,7 @@ export async function executeRttMutation(input: Readonly<{
         const computed = computeRttMutation({
             command,
             read,
-            facts: input.facts,
+            facts,
         });
         recordRttPhase(input, 'compute', computeStarted, attempt, backoffMs);
 
@@ -514,7 +606,7 @@ export async function executeRttMutation(input: Readonly<{
         validateRttMutation({
             command,
             read,
-            facts: input.facts,
+            facts,
             computed,
         });
         recordRttPhase(input, 'validate', validateStarted, attempt, backoffMs);
@@ -527,8 +619,8 @@ export async function executeRttMutation(input: Readonly<{
         const written = await writeRttMutation(
             input.runtime,
             {
-                ttlMs: input.facts.purgeAfterEpochMs - input.facts.requestedAtEpochMs,
-                now: () => input.facts.requestedAtEpochMs,
+                ttlMs: facts.purgeAfterEpochMs - facts.requestedAtEpochMs,
+                now: () => facts.requestedAtEpochMs,
             },
             computed,
         );
@@ -603,7 +695,9 @@ function peersForEndpoint(
     return [...peers].map(([peerSessionId, expiresAtEpochMs]) => ({
         peerSessionId,
         expiresAtEpochMs,
-    })).sort((left, right) => left.peerSessionId.localeCompare(right.peerSessionId));
+    })).sort((left, right) =>
+        compareRtcTopologyIdentifiers(left.peerSessionId, right.peerSessionId)
+    );
 }
 
 function sameGroupRef(
@@ -617,4 +711,60 @@ function sameGroupRef(
 
 function jsonEquals(left: unknown, right: unknown): boolean {
     return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function canonicalDeepEqual(left: unknown, right: unknown): boolean {
+    if (Object.is(left, right)) return true;
+    if (Array.isArray(left) || Array.isArray(right)) {
+        return Array.isArray(left) && Array.isArray(right) &&
+            left.length === right.length &&
+            left.every((value, index) => canonicalDeepEqual(value, right[index]));
+    }
+    if (isPlainRecord(left) || isPlainRecord(right)) {
+        if (!isPlainRecord(left) || !isPlainRecord(right)) return false;
+        const leftKeys = Object.keys(left).sort(compareRtcTopologyIdentifiers);
+        const rightKeys = Object.keys(right).sort(compareRtcTopologyIdentifiers);
+        return leftKeys.length === rightKeys.length &&
+            leftKeys.every((key, index) =>
+                key === rightKeys[index] &&
+                canonicalDeepEqual(left[key], right[key])
+            );
+    }
+    return false;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function sameMeasurement(
+    left: RttMeasurementInfo,
+    right: RttMeasurementInfo,
+): boolean {
+    return left.sessionIdFrom === right.sessionIdFrom &&
+        left.sessionIdTo === right.sessionIdTo &&
+        left.rttMs === right.rttMs &&
+        left.createdAtEpochMs === right.createdAtEpochMs &&
+        left.version === right.version;
+}
+
+function validatePublicationExpiryFact(
+    publication: RtcTopologyPublication | null,
+    facts: RtcTopologyMutationFacts,
+): void {
+    const expiresAt = facts.publicationExpireAtTimestamp;
+    if (publication === null) {
+        if (expiresAt !== null) {
+            throw new TypeError(
+                'RTC topology publication expiry must be null without publication',
+            );
+        }
+        return;
+    }
+    if (
+        expiresAt === null || !Number.isSafeInteger(expiresAt) ||
+        expiresAt <= publication.createdAtEpochMs
+    ) {
+        throw new TypeError('RTC topology publication expiry fact is invalid');
+    }
 }

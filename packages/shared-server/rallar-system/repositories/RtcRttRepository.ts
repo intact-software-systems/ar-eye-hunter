@@ -20,9 +20,11 @@ import {
 } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RtcRttEndpointAdmission,
+    RtcRttMutationFacts,
     RtcRttMutationReceipt,
     RtcRttRecomputeIntent,
 } from '../services/rtc-topology-mutations.ts';
+import { compareRtcTopologyIdentifiers } from '../rtc-topology-identifiers.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from './RtcTopologySnapshotRepository.ts';
 
 export const RTC_RTT_LATEST_NAMESPACE = 'rtc-rtt:latest';
@@ -313,17 +315,32 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
         measurement: RttMeasurementInfo,
         purgeAfterEpochMs: number = this.defaultPurgeAfterEpochMs(),
     ): Promise<boolean> {
+        // Compatibility seam with explicit single-attempt optimistic semantics:
+        // accepted=true, exact duplicate/strictly stale=false, CAS race=typed
+        // conflict, and equal-version divergent content=fail-closed corruption.
         const current = await this.findMeasurementEntry(
             measurement.sessionIdFrom,
             measurement.sessionIdTo,
         );
-        if (current && current.value.version >= measurement.version) return false;
+        if (current && current.value.version === measurement.version) {
+            if (!sameMeasurement(current.value, measurement)) {
+                throw rttCorruption(
+                    current.entry.key,
+                    'RTC RTT equal version differs from durable measurement',
+                );
+            }
+            return false;
+        }
+        if (current && current.value.version > measurement.version) return false;
         const result = await this.commitMeasurement(
             measurement,
             current?.entry.revision ?? null,
             purgeAfterEpochMs,
         );
-        return result.status === 'accepted';
+        if (result.status === 'conflict') {
+            throw new RuntimeStateWriteConflictError();
+        }
+        return true;
     }
 
     async removeMeasurement(
@@ -350,6 +367,15 @@ export class RtcRttRepository extends RuntimeStateJsonStore {
 
     defaultPurgeAfterEpochMs(): number {
         return this.nowEpochMs() + (this.options.ttlMs ?? DEFAULT_RTC_RTT_TTL_MS);
+    }
+
+    readMutationFacts(): RtcRttMutationFacts {
+        const requestedAtEpochMs = this.nowEpochMs();
+        return {
+            requestedAtEpochMs,
+            purgeAfterEpochMs: requestedAtEpochMs +
+                (this.options.ttlMs ?? DEFAULT_RTC_RTT_TTL_MS),
+        };
     }
 
     nowEpochMs(): number {
@@ -617,7 +643,7 @@ export function validateEndpointAdmission(
         if (
             typeof peer.peerSessionId !== 'string' || peer.peerSessionId.length === 0 ||
             peer.peerSessionId === expectedEndpointId ||
-            peer.peerSessionId.localeCompare(previous) <= 0 ||
+            compareRtcTopologyIdentifiers(peer.peerSessionId, previous) <= 0 ||
             typeof peer.expiresAtEpochMs !== 'number' ||
             !Number.isSafeInteger(peer.expiresAtEpochMs) ||
             peer.expiresAtEpochMs <= value.updatedAtEpochMs
@@ -716,7 +742,10 @@ function decodeMeasurementKey(storageKey: string): readonly [string, string] {
     } catch {
         throw rttCorruption(storageKey, 'RTC RTT measurement key encoding is invalid');
     }
-    if (from.length === 0 || to.length === 0 || from.localeCompare(to) >= 0) {
+    if (
+        from.length === 0 || to.length === 0 ||
+        compareRtcTopologyIdentifiers(from, to) >= 0
+    ) {
         throw rttCorruption(storageKey, 'RTC RTT measurement key is not canonical');
     }
     const canonical = `from=${encodeURIComponent(from)}:to=${encodeURIComponent(to)}`;
@@ -746,7 +775,20 @@ function decodeEndpointKey(storageKey: string): string {
 }
 
 function sortedPair(left: string, right: string): readonly [string, string] {
-    return left.localeCompare(right) <= 0 ? [left, right] : [right, left];
+    return compareRtcTopologyIdentifiers(left, right) <= 0
+        ? [left, right]
+        : [right, left];
+}
+
+function sameMeasurement(
+    left: RttMeasurementInfo,
+    right: RttMeasurementInfo,
+): boolean {
+    return left.sessionIdFrom === right.sessionIdFrom &&
+        left.sessionIdTo === right.sessionIdTo &&
+        left.rttMs === right.rttMs &&
+        left.createdAtEpochMs === right.createdAtEpochMs &&
+        left.version === right.version;
 }
 
 function parseValue(entry: RuntimeStateEntry): unknown {

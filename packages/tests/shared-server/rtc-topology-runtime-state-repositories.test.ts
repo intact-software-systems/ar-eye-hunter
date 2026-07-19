@@ -26,8 +26,10 @@ import {
     RtcTopologyExecutionRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import {
+    computeTopologyMutation,
     executeRttMutation,
 } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import {
     drainRtcRttRecomputeOutbox,
     type RtcTopologyWorkPublisher,
@@ -36,6 +38,14 @@ import type { ALMessage } from '@shared/mod.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('RTC topology runtime-state repositories', () => {
+    it('does not expose an unconditional topology snapshot overwrite helper', () => {
+        const repository = new RtcTopologySnapshotRepository(
+            new FakeRuntimeStateRepository(),
+        );
+
+        expect('putSnapshot' in repository).toBe(false);
+    });
+
     it('stores topology snapshots without invoking application locks', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         vi.spyOn(runtimeRepository, 'lockKey').mockRejectedValue(
@@ -296,11 +306,68 @@ describe('RTC topology runtime-state repositories', () => {
         expect(runtimeRepository.locks).toEqual([]);
     });
 
+    it('materializes publication expiry before entering the topology transaction', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const originalBegin = runtimeRepository.begin.bind(runtimeRepository);
+        let insideTransaction = false;
+        vi.spyOn(runtimeRepository, 'begin').mockImplementation(async (fn) =>
+            await originalBegin(async (transaction) => {
+                insideTransaction = true;
+                try {
+                    return await fn(transaction);
+                } finally {
+                    insideTransaction = false;
+                }
+            })
+        );
+        const repository = new RtcTopologyExecutionRepository(
+            runtimeRepository,
+            100,
+            () => {
+                if (insideTransaction) {
+                    throw new Error('publication clock accessed in transaction');
+                }
+                return 10;
+            },
+        );
+        const snapshot = createTopologySnapshot(createGroupRef(), 1);
+        const publication = createPublication(snapshot, 'work-expiry-clock');
+
+        await expect(repository.commit({
+            expected: undefined,
+            candidate: snapshot,
+            publication,
+        })).resolves.toMatchObject({ status: 'committed' });
+    });
+
+    it('rejects a malformed publication expiry before opening a transaction', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const begin = vi.spyOn(runtimeRepository, 'begin');
+        const repository = new RtcTopologyExecutionRepository(runtimeRepository);
+        const snapshot = createTopologySnapshot(createGroupRef(), 1);
+        const publication = createPublication(snapshot, 'work-invalid-expiry');
+        const computed = computeTopologyMutation({
+            read: { snapshot: null, publicationClaim: null },
+            candidate: snapshot,
+            publication,
+            facts: { publicationExpireAtTimestamp: 100 },
+        });
+        if (computed.outcome !== 'write') throw new Error('Expected write');
+
+        await expect(repository.writeTopologyMutation({
+            ...computed,
+            publicationExpireAtTimestamp: null,
+        } as unknown as Parameters<typeof repository.writeTopologyMutation>[0]))
+            .rejects.toThrow('publication expiry');
+        expect(begin).not.toHaveBeenCalled();
+    });
+
     it('requests recomputation when the topology predecessor moves before commit', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const snapshots = new RtcTopologySnapshotRepository(runtimeRepository);
         const current = createTopologySnapshot(createGroupRef(), 4);
-        await snapshots.putSnapshot(current);
+        await expect(snapshots.commitSnapshotGuard(current, null))
+            .resolves.toMatchObject({ status: 'accepted' });
         const repository = new RtcTopologyExecutionRepository(runtimeRepository);
         const candidate = createTopologySnapshot(createGroupRef(), 3);
 
@@ -638,6 +705,91 @@ describe('RTC topology runtime-state repositories', () => {
         expect(runtimeRepository.locks).toEqual([]);
     });
 
+    it('fails closed when the compatibility RTT helper sees equal-version divergence', async () => {
+        const repository = new RtcRttRepository(
+            new FakeRuntimeStateRepository(),
+            { now: () => 1 },
+        );
+        const measurement = {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 1,
+            createdAtEpochMs: 1,
+            version: 1,
+        };
+
+        await expect(repository.putMeasurementIfNewer(measurement))
+            .resolves.toBe(true);
+        await expect(repository.putMeasurementIfNewer({ ...measurement }))
+            .resolves.toBe(false);
+        await expect(repository.putMeasurementIfNewer({
+            ...measurement,
+            rttMs: 2,
+        })).rejects.toMatchObject({
+            code: 'rtc-topology-repository-invariant-corruption',
+        });
+    });
+
+    it('surfaces a compatibility RTT CAS race as a typed conflict', async () => {
+        const repository = new RtcRttRepository(
+            new FakeRuntimeStateRepository(),
+            { now: () => 1 },
+        );
+        const commit = vi.spyOn(repository, 'commitMeasurement')
+            .mockResolvedValue({ status: 'conflict' });
+
+        await expect(repository.putMeasurementIfNewer({
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 1,
+            createdAtEpochMs: 1,
+            version: 1,
+        })).rejects.toBeInstanceOf(RuntimeStateWriteConflictError);
+        expect(commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses stable code-unit ordering for Unicode RTT pairs and endpoint peers', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcRttRepository(runtimeRepository, { now: () => 1 });
+        const composed = '\u00e9';
+        const decomposed = 'e\u0301';
+        const measurement = {
+            sessionIdFrom: composed,
+            sessionIdTo: decomposed,
+            rttMs: 1,
+            createdAtEpochMs: 1,
+            version: 1,
+        };
+
+        expect(repository.measurementKey(composed, decomposed))
+            .toBe(repository.measurementKey(decomposed, composed));
+        await expect(repository.commitMeasurement(measurement, null, 100))
+            .resolves.toMatchObject({ status: 'accepted' });
+        await expect(repository.findMeasurement(decomposed, composed))
+            .resolves.toEqual(measurement);
+        await expect(repository.listMeasurements()).resolves.toEqual([measurement]);
+        await expect(repository.listMeasurementEntriesPage({ limit: 10 }))
+            .resolves.toMatchObject([{ value: measurement }]);
+
+        const admission = {
+            endpointId: 'endpoint',
+            peers: [
+                { peerSessionId: decomposed, expiresAtEpochMs: 100 },
+                { peerSessionId: composed, expiresAtEpochMs: 101 },
+            ],
+            version: 1,
+            updatedAtEpochMs: 1,
+        };
+        await expect(repository.commitEndpointAdmission(admission, null, 101))
+            .resolves.toMatchObject({ status: 'accepted' });
+        await expect(repository.findEndpointAdmissionEntry('endpoint'))
+            .resolves.toMatchObject({ value: admission });
+        await expect(repository.listEndpointAdmissionEntries())
+            .resolves.toMatchObject([{ value: admission }]);
+        await expect(repository.listEndpointAdmissionEntriesPage({ limit: 10 }))
+            .resolves.toMatchObject([{ value: admission }]);
+    });
+
     it('optimistically admits only one of two endpoint-cap races', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         vi.spyOn(runtimeRepository, 'lockKey').mockResolvedValue();
@@ -675,7 +827,10 @@ describe('RTC topology runtime-state repositories', () => {
                     overlaySnapshotsByGroupKey: new Map(),
                     degreeLimit: 1,
                 },
-                facts: { purgeAfterEpochMs: 60_001, requestedAtEpochMs: 1 },
+                readFacts: () => ({
+                    purgeAfterEpochMs: 60_001,
+                    requestedAtEpochMs: 1,
+                }),
                 sleep: async () => {},
             }),
             executeRttMutation({
@@ -694,7 +849,10 @@ describe('RTC topology runtime-state repositories', () => {
                     overlaySnapshotsByGroupKey: new Map(),
                     degreeLimit: 1,
                 },
-                facts: { purgeAfterEpochMs: 60_001, requestedAtEpochMs: 1 },
+                readFacts: () => ({
+                    purgeAfterEpochMs: 60_001,
+                    requestedAtEpochMs: 1,
+                }),
                 sleep: async () => {},
             }),
         ]);
@@ -722,7 +880,10 @@ describe('RTC topology runtime-state repositories', () => {
                 overlaySnapshotsByGroupKey: new Map(),
                 degreeLimit: 1,
             },
-            facts: { requestedAtEpochMs: 1, purgeAfterEpochMs: 60_001 },
+            readFacts: () => ({
+                requestedAtEpochMs: 1,
+                purgeAfterEpochMs: 60_001,
+            }),
             sleep: async () => {},
         });
         if (result.computed.outcome !== 'write') throw new Error('Expected RTT write');
@@ -731,6 +892,83 @@ describe('RTC topology runtime-state repositories', () => {
             .toEqual(result.computed.receipt);
         expect(await repository.listRecomputeIntents())
             .toEqual(result.computed.recomputeIntents);
+    });
+
+    it('refreshes lifecycle facts after an RTT conflict crosses peer expiry', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const repository = new RtcRttRepository(runtimeRepository, { now: () => 0 });
+        const originalBegin = runtimeRepository.begin.bind(runtimeRepository);
+        vi.spyOn(runtimeRepository, 'begin')
+            .mockImplementationOnce(async () => {
+                await repository.commitEndpointAdmission({
+                    endpointId: 'session-a',
+                    peers: [{
+                        peerSessionId: 'session-c',
+                        expiresAtEpochMs: 5,
+                    }],
+                    version: 1,
+                    updatedAtEpochMs: 0,
+                }, null, 5);
+                throw new RuntimeStateWriteConflictError();
+            })
+            .mockImplementation(originalBegin);
+        const requestedAtEpochMs = [1, 6];
+        const readFacts = vi.fn(() => {
+            const requestedAt = requestedAtEpochMs.shift();
+            if (requestedAt === undefined) throw new Error('facts exhausted');
+            return {
+                requestedAtEpochMs: requestedAt,
+                purgeAfterEpochMs: requestedAt + 100,
+            };
+        });
+        const group = createRttGroupSnapshot(
+            'room-ab',
+            ['session-a', 'session-b'],
+        );
+
+        const result = await executeRttMutation({
+            repository,
+            runtime: runtimeRepository,
+            command: {
+                rtt: {
+                    sessionIdFrom: 'session-a',
+                    sessionIdTo: 'session-b',
+                    rttMs: 1,
+                    createdAtEpochMs: 1,
+                    version: 1,
+                },
+                alSenderId: 'session-a',
+                candidateGroups: [group],
+                overlaySnapshotsByGroupKey: new Map(),
+                degreeLimit: 1,
+            },
+            readFacts,
+            sleep: async () => {},
+        });
+
+        expect(result).toMatchObject({
+            updated: true,
+            computed: {
+                outcome: 'write',
+                measurementGuard: { purgeAfterEpochMs: 106 },
+                receipt: { acceptedAtEpochMs: 6 },
+            },
+        });
+        if (result.computed.outcome !== 'write') throw new Error('Expected write');
+        expect(result.computed.endpointGuards[0]).toMatchObject({
+            endpointId: 'session-a',
+            value: {
+                peers: [{
+                    peerSessionId: 'session-b',
+                    expiresAtEpochMs: 106,
+                }],
+                updatedAtEpochMs: 6,
+            },
+        });
+        expect(readFacts).toHaveBeenCalledTimes(2);
+        expect(requestedAtEpochMs).toEqual([]);
+        await expect(repository.findMeasurementEntry('session-a', 'session-b'))
+            .resolves.toMatchObject({ entry: { expireAtTimestamp: 106 } });
     });
 
     it('rolls back RTT capacity, measurement, and receipt when intent persistence fails', async () => {
@@ -754,7 +992,10 @@ describe('RTC topology runtime-state repositories', () => {
                 alSenderId: 'session-a', candidateGroups: [group],
                 overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
             },
-            facts: { requestedAtEpochMs: 1, purgeAfterEpochMs: 60_001 },
+            readFacts: () => ({
+                requestedAtEpochMs: 1,
+                purgeAfterEpochMs: 60_001,
+            }),
             sleep: async () => {},
         })).rejects.toThrow('recompute intent write failed');
 
@@ -780,7 +1021,10 @@ describe('RTC topology runtime-state repositories', () => {
                 alSenderId: 'session-a', candidateGroups: [group],
                 overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
             },
-            facts: { requestedAtEpochMs: 1, purgeAfterEpochMs: 60_001 },
+            readFacts: () => ({
+                requestedAtEpochMs: 1,
+                purgeAfterEpochMs: 60_001,
+            }),
             sleep: async () => {},
         });
         const restarted = new RtcRttRepository(runtimeRepository, { now: () => 2 });
@@ -807,7 +1051,10 @@ describe('RTC topology runtime-state repositories', () => {
                 alSenderId: 'session-a', candidateGroups: [group],
                 overlaySnapshotsByGroupKey: new Map(), degreeLimit: 1,
             },
-            facts: { requestedAtEpochMs: 1, purgeAfterEpochMs: 60_001 },
+            readFacts: () => ({
+                requestedAtEpochMs: 1,
+                purgeAfterEpochMs: 60_001,
+            }),
             sleep: async () => {},
         });
         let waiting = 0;

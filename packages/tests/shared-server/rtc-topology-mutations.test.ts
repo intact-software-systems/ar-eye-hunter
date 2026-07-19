@@ -24,6 +24,7 @@ describe('RTC topology mutation phases', () => {
             },
             candidate,
             publication: null,
+            facts: { publicationExpireAtTimestamp: null },
         });
 
         const first = computeAndValidateTopologyTwice(input);
@@ -118,6 +119,7 @@ describe('RTC topology mutation phases', () => {
             read: { snapshot: { entry, value: snapshot }, publicationClaim: { publication } },
             candidate: { ...snapshot, name: 'losing retry' },
             publication: { ...publication, publicationId: 'loser' },
+            facts: { publicationExpireAtTimestamp: null },
         });
         expect(computeAndValidateTopologyTwice(loadedInput))
             .toEqual({ outcome: 'loaded', snapshot, publication });
@@ -125,6 +127,7 @@ describe('RTC topology mutation phases', () => {
             read: { snapshot: null, publicationClaim: { publication } },
             candidate: snapshot,
             publication,
+            facts: { publicationExpireAtTimestamp: null },
         });
         expect(() => computeTopologyMutation(missingSnapshot)).toThrow('has no durable snapshot');
         expect(() => computeTopologyMutation(missingSnapshot)).toThrow('has no durable snapshot');
@@ -141,6 +144,133 @@ describe('RTC topology mutation phases', () => {
         expect(() => computeTopologyMutation(inconsistent)).toThrow('internally inconsistent');
     });
 
+    it('relates a claimed publication payload to the independently read snapshot', () => {
+        const groupRef = { applicationId: 'app-1', groupId: 'room-1' };
+        const publicationSnapshot = topologySnapshot(groupRef, 2);
+        const publication = {
+            publicationId: 'work-causal:2:2',
+            workId: 'work-causal',
+            groupRef,
+            sourceGroupStateRevision: 2,
+            overlayVersion: 2,
+            recipientSessionIds: publicationSnapshot.activeSessionIds,
+            message: {
+                payload: { resource: JSON.stringify(publicationSnapshot) },
+            } as never,
+            createdAtEpochMs: 2,
+        };
+        const toRead = (snapshot: RallarOverlayTopologySnapshot) => ({
+            snapshot: {
+                entry: {
+                    key: 'snapshot',
+                    value: JSON.stringify(snapshot),
+                    expireAtTimestamp: 1_000,
+                    updatedTimestamp: 'now',
+                    revision: 3,
+                },
+                value: snapshot,
+            },
+            publicationClaim: { publication },
+        });
+        const exactInput = deepFreeze({
+            read: toRead(publicationSnapshot),
+            candidate: publicationSnapshot,
+            publication: null,
+            facts: { publicationExpireAtTimestamp: null },
+        });
+        expect(computeAndValidateTopologyTwice(exactInput)).toEqual({
+            outcome: 'loaded',
+            snapshot: publicationSnapshot,
+            publication,
+        });
+
+        const reorderedEquivalent = {
+            ...publicationSnapshot,
+            groupRef: {
+                groupId: groupRef.groupId,
+                applicationId: groupRef.applicationId,
+            },
+            nextHopsBySessionId: {
+                'session-b': ['session-a'],
+                'session-a': ['session-b'],
+            },
+        };
+        const reorderedInput = deepFreeze({
+            read: toRead(reorderedEquivalent),
+            candidate: reorderedEquivalent,
+            publication: null,
+            facts: { publicationExpireAtTimestamp: null },
+        });
+        expect(computeAndValidateTopologyTwice(reorderedInput)).toEqual({
+            outcome: 'loaded',
+            snapshot: reorderedEquivalent,
+            publication,
+        });
+
+        const newerDurable = topologySnapshot(groupRef, 3);
+        const newerInput = deepFreeze({
+            read: toRead(newerDurable),
+            candidate: newerDurable,
+            publication: null,
+            facts: { publicationExpireAtTimestamp: null },
+        });
+        expect(computeAndValidateTopologyTwice(newerInput)).toEqual({
+            outcome: 'loaded',
+            snapshot: newerDurable,
+            publication,
+        });
+
+        const olderDurable = topologySnapshot(groupRef, 1);
+        const tornInput = deepFreeze({
+            read: toRead(olderDurable),
+            candidate: olderDurable,
+            publication: null,
+            facts: { publicationExpireAtTimestamp: null },
+        });
+        expect(computeAndValidateTopologyTwice(tornInput)).toEqual({
+            outcome: 'retry',
+            reason: 'publication-ahead-of-snapshot',
+        });
+
+        const equalTupleDifferentSnapshot = {
+            ...publicationSnapshot,
+            name: 'different durable payload',
+        };
+        const corruptInput = deepFreeze({
+            read: toRead(equalTupleDifferentSnapshot),
+            candidate: equalTupleDifferentSnapshot,
+            publication: null,
+            facts: { publicationExpireAtTimestamp: null },
+        });
+        expect(() => computeTopologyMutation(corruptInput))
+            .toThrow('equal causal tuple differs from durable snapshot');
+        expect(() => computeTopologyMutation(corruptInput))
+            .toThrow('equal causal tuple differs from durable snapshot');
+    });
+
+    it('materializes publication expiry in canonical computed topology output', () => {
+        const groupRef = { applicationId: 'app-1', groupId: 'room-1' };
+        const candidate = topologySnapshot(groupRef, 1);
+        const publication = {
+            publicationId: 'work-expiry:1:1', workId: 'work-expiry', groupRef,
+            sourceGroupStateRevision: 1, overlayVersion: 1,
+            recipientSessionIds: candidate.activeSessionIds,
+            message: { payload: { resource: JSON.stringify(candidate) } } as never,
+            createdAtEpochMs: 1,
+        };
+        const input = deepFreeze({
+            read: { snapshot: null, publicationClaim: null },
+            candidate,
+            publication,
+            facts: { publicationExpireAtTimestamp: 86_400_123 },
+        });
+
+        expect(computeAndValidateTopologyTwice(input)).toMatchObject({
+            outcome: 'write',
+            publicationExpireAtTimestamp: 86_400_123,
+        });
+    });
+
     it('computes duplicate, advanced, and superseded topology outcomes', () => {
         const groupRef = { applicationId: 'app-1', groupId: 'room-1' };
         const current = topologySnapshot(groupRef, 2);
@@ -152,21 +282,25 @@ describe('RTC topology mutation phases', () => {
             read: { snapshot: { entry, value: current }, publicationClaim: null },
             candidate: current,
             publication: null,
+            facts: { publicationExpireAtTimestamp: null },
         }))).toMatchObject({ outcome: 'write', observation: 'duplicate' });
         expect(computeAndValidateTopologyTwice(deepFreeze({
             read: { snapshot: { entry, value: current }, publicationClaim: null },
             candidate: topologySnapshot(groupRef, 3),
             publication: null,
+            facts: { publicationExpireAtTimestamp: null },
         }))).toMatchObject({ outcome: 'write', observation: 'advanced' });
         expect(computeAndValidateTopologyTwice(deepFreeze({
             read: { snapshot: { entry, value: current }, publicationClaim: null },
             candidate: topologySnapshot(groupRef, 1),
             publication: null,
+            facts: { publicationExpireAtTimestamp: null },
         }))).toEqual({ outcome: 'superseded', current });
         const corrupt = deepFreeze({
             read: { snapshot: { entry, value: current }, publicationClaim: null },
             candidate: { ...current, name: 'different tuple payload' },
             publication: null,
+            facts: { publicationExpireAtTimestamp: null },
         });
         expect(() => computeTopologyMutation(corrupt)).toThrow('revision conflict');
         expect(() => computeTopologyMutation(corrupt)).toThrow('revision conflict');
@@ -278,6 +412,50 @@ describe('RTC topology mutation phases', () => {
             expect(computeAndValidateRttTwice(input))
                 .toMatchObject({ outcome: 'rejected', reason: testCase.reason });
         }
+    });
+
+    it('accepts equal RTT version only when the canonical measurement is exact', () => {
+        const incoming = {
+            sessionIdFrom: 'session-a', sessionIdTo: 'session-b',
+            rttMs: 5, createdAtEpochMs: 2, version: 2,
+        };
+        const readFor = (value: typeof incoming) => ({
+            measurement: {
+                entry: {
+                    key: 'from=session-a:to=session-b',
+                    value: JSON.stringify(value),
+                    expireAtTimestamp: 10_000,
+                    updatedTimestamp: 'now',
+                    revision: 4,
+                },
+                value,
+            },
+            endpointAdmissions: [],
+            measurements: [],
+        });
+        const command = {
+            rtt: incoming,
+            alSenderId: 'session-a',
+            candidateGroups: [],
+            overlaySnapshotsByGroupKey: new Map(),
+            degreeLimit: 1,
+        };
+        const facts = { purgeAfterEpochMs: 10_000, requestedAtEpochMs: 2 };
+        expect(computeAndValidateRttTwice(deepFreeze({
+            command,
+            read: readFor(incoming),
+            facts,
+        }))).toMatchObject({ outcome: 'rejected', reason: 'stale' });
+
+        const conflicting = deepFreeze({
+            command,
+            read: readFor({ ...incoming, rttMs: 99 }),
+            facts,
+        });
+        expect(() => computeRttMutation(conflicting))
+            .toThrow('equal version differs from durable measurement');
+        expect(() => computeRttMutation(conflicting))
+            .toThrow('equal version differs from durable measurement');
     });
 });
 

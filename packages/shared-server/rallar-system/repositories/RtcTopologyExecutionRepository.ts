@@ -69,13 +69,15 @@ export class RtcTopologyExecutionRepository {
 
     async readTopologyMutation(
         groupRef: GroupRef,
-        workId: string,
+        workId: string | null,
     ): Promise<RtcTopologyMutationRead> {
         const snapshots = new RtcTopologySnapshotRepository(this.runtimeRepository);
         const publications = this.publications(this.runtimeRepository);
         const [snapshot, publication] = await Promise.all([
             snapshots.findSnapshotEntry(groupRef),
-            publications.findPublicationForWork(groupRef, workId),
+            workId === null
+                ? Promise.resolve(undefined)
+                : publications.findPublicationForWork(groupRef, workId),
         ]);
         return {
             snapshot: snapshot ?? null,
@@ -86,6 +88,7 @@ export class RtcTopologyExecutionRepository {
     async writeTopologyMutation(
         computed: Extract<RtcTopologyMutationComputed, { outcome: 'write' }>,
     ): Promise<'committed' | 'conflict'> {
+        const publicationWrite = requirePublicationWrite(computed);
         try {
             await this.runtimeRepository.begin(async (transaction) => {
                 const snapshots = new RtcTopologySnapshotRepository(transaction);
@@ -96,17 +99,16 @@ export class RtcTopologyExecutionRepository {
                 if (guard.status === 'conflict') {
                     throw new RuntimeStateWriteConflictError();
                 }
-                if (computed.publication) {
+                if (publicationWrite) {
                     const publications = this.publications(transaction);
-                    const expiresAt = publications.retentionExpireAtTimestamp();
                     const claimed = await publications.insertWorkClaim(
-                        computed.publication,
-                        expiresAt,
+                        publicationWrite.publication,
+                        publicationWrite.expireAtTimestamp,
                     );
                     if (!claimed) throw new RuntimeStateWriteConflictError();
                     await publications.insertPublication(
-                        computed.publication,
-                        expiresAt,
+                        publicationWrite.publication,
+                        publicationWrite.expireAtTimestamp,
                     );
                 }
             });
@@ -135,14 +137,27 @@ export class RtcTopologyExecutionRepository {
         const computed = computeTopologyMutation({
             read,
             candidate: input.candidate,
-            publication: input.publication,
+            publication: read.publicationClaim ? null : input.publication,
+            facts: {
+                publicationExpireAtTimestamp: read.publicationClaim
+                    ? null
+                    : this.publicationExpireAtTimestamp(),
+            },
         });
         validateTopologyMutation({
             read,
             candidate: input.candidate,
-            publication: input.publication,
+            publication: read.publicationClaim ? null : input.publication,
+            facts: {
+                publicationExpireAtTimestamp: computed.outcome === 'write'
+                    ? computed.publicationExpireAtTimestamp
+                    : null,
+            },
             computed,
         });
+        if (computed.outcome === 'retry') {
+            return { status: 'retry', current: read.snapshot?.value };
+        }
         if (computed.outcome === 'loaded') {
             return {
                 status: 'loaded',
@@ -167,6 +182,10 @@ export class RtcTopologyExecutionRepository {
         };
     }
 
+    publicationExpireAtTimestamp(): number {
+        return this.now() + this.publicationRetentionMs;
+    }
+
     private publications(
         repository: RuntimeStateOptimisticTransactionalRepositoryLike,
     ): RtcTopologyPublicationRepository {
@@ -176,6 +195,30 @@ export class RtcTopologyExecutionRepository {
             this.now,
         );
     }
+}
+
+function requirePublicationWrite(
+    computed: Extract<RtcTopologyMutationComputed, { outcome: 'write' }>,
+): Readonly<{
+    publication: RtcTopologyPublication;
+    expireAtTimestamp: number;
+}> | null {
+    if (computed.publication === null) {
+        if (computed.publicationExpireAtTimestamp !== null) {
+            throw new TypeError(
+                'RTC topology publication expiry must be null without publication',
+            );
+        }
+        return null;
+    }
+    const expireAtTimestamp = computed.publicationExpireAtTimestamp;
+    if (
+        !Number.isSafeInteger(expireAtTimestamp) ||
+        expireAtTimestamp <= computed.publication.createdAtEpochMs
+    ) {
+        throw new TypeError('RTC topology publication expiry is invalid');
+    }
+    return { publication: computed.publication, expireAtTimestamp };
 }
 
 function sameSnapshot(
