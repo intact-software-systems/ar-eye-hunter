@@ -15,6 +15,13 @@ import type {
   AdminPruneExpiredOptions,
 } from '../../rallar-system/admin-operations/AdminOperationsService.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
+import {
+  decodeGroupStateGroupStorageKey,
+  decodeGroupStateMemberStorageKey,
+  decodeGroupStatePresenceSessionStorageKey,
+  groupStateScopeStorageKey,
+} from '../../rallar-system/group-state-storage-keys.ts';
+import { groupEventWorkspaceKey } from '../rallar-system/group-event-workspace-key.ts';
 
 const DEFAULT_RECENT_EVENT_WINDOW_MS = 15 * 60 * 1_000;
 
@@ -25,6 +32,15 @@ export type PSqlAdminOperationsStatsReaderOptions = Readonly<{
   sqlBackend?: string;
   dbPubSub?: string;
 }>;
+
+export class AdminOperationsStateInvariantCorruptionError extends Error {
+  readonly code = 'admin-operations-state-invariant-corruption';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'AdminOperationsStateInvariantCorruptionError';
+  }
+}
 
 type CountRow = Readonly<{
   count: number | string | bigint;
@@ -115,6 +131,9 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       this.countRecentClientEvents(scope),
       this.countRecentGroupEvents(scope),
     ]);
+    validateScopedGroupRuntimeRows('group-state:groups', groupRows, scope);
+    validateScopedGroupRuntimeRows('group-state:members', memberRows, scope);
+    validateScopedGroupRuntimeRows('group-state:sessions', groupSessionRows, scope);
     const nowEpochMs = this.options.now();
     const activeClientSessions = clientSessionRows.filter((row) =>
       isActiveClientSessionRow(row, nowEpochMs)
@@ -354,10 +373,11 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     namespace: string,
     scope: StateScope | undefined,
   ): Promise<readonly RuntimeStateRow[]> {
-    const prefix = scope ? scopePrefix(scope) : undefined;
+    const prefix = scope ? runtimeStateScopePrefix(namespace, scope) : undefined;
+    let rows: readonly RuntimeStateRow[];
     if (prefix) {
       const prefixEnd = toExclusivePrefixEnd(prefix);
-      return await this.sql<RuntimeStateRow[]>`
+      rows = await this.sql<RuntimeStateRow[]>`
                 select store_key, store_value
                 from runtime_state_store
                 where store_namespace = ${namespace}
@@ -366,15 +386,16 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                   and expire_at_ts > now()
                 order by store_key collate "C"
             `;
-    }
-
-    return await this.sql<RuntimeStateRow[]>`
+    } else {
+      rows = await this.sql<RuntimeStateRow[]>`
             select store_key, store_value
             from runtime_state_store
             where store_namespace = ${namespace}
               and expire_at_ts > now()
             order by store_key
         `;
+    }
+    return rows;
   }
 
   private async countLiveRuntimeRows(namespace: string): Promise<number> {
@@ -525,7 +546,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                 select count(*) as count
                 from group_state_events
                 where application_id = ${scope.applicationId}
-                  and workspace_key = ${scope.workspaceId}
+                  and workspace_key = ${groupEventWorkspaceKey(scope.workspaceId)}
             `)[0]?.count,
       );
     }
@@ -568,7 +589,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                 select count(*) as count
                 from group_state_events
                 where application_id = ${scope.applicationId}
-                  and workspace_key = ${scope.workspaceId}
+                  and workspace_key = ${groupEventWorkspaceKey(scope.workspaceId)}
                   and occurred_at_epoch_ms >= ${recentSinceEpochMs}
             `)[0]?.count,
       );
@@ -798,6 +819,56 @@ function scopePrefix(scope: StateScope): string {
     toRuntimeStateKeyPart('ws', scope.workspaceId),
     '',
   ].join(':');
+}
+
+function runtimeStateScopePrefix(namespace: string, scope: StateScope): string {
+  return namespace.startsWith('group-state:')
+    ? `${groupStateScopeStorageKey(scope)}:`
+    : scopePrefix(scope);
+}
+
+function validateScopedGroupRuntimeRows(
+  namespace: string,
+  rows: readonly RuntimeStateRow[],
+  scope: StateScope,
+): void {
+  for (const row of rows) {
+    let decoded: Readonly<Record<string, string | undefined>>;
+    let value: Readonly<Record<string, unknown>>;
+    try {
+      decoded = namespace === 'group-state:groups'
+        ? decodeGroupStateGroupStorageKey(row.store_key)
+        : namespace === 'group-state:members'
+        ? decodeGroupStateMemberStorageKey(row.store_key)
+        : namespace === 'group-state:sessions'
+        ? decodeGroupStatePresenceSessionStorageKey(row.store_key)
+        : (() => {
+          throw new TypeError(`Unsupported scoped group namespace: ${namespace}`);
+        })();
+      const parsed = JSON.parse(row.store_value);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new TypeError('Stored group runtime value is not an object');
+      }
+      value = parsed as Readonly<Record<string, unknown>>;
+    } catch (error) {
+      throw new AdminOperationsStateInvariantCorruptionError(
+        error instanceof Error ? error.message : 'Stored group runtime row is invalid',
+      );
+    }
+    if (
+      decoded.applicationId !== scope.applicationId ||
+      decoded.workspaceId !== scope.workspaceId ||
+      value.applicationId !== decoded.applicationId ||
+      value.workspaceId !== decoded.workspaceId ||
+      value.groupId !== decoded.groupId ||
+      ('principalId' in decoded && value.principalId !== decoded.principalId) ||
+      ('sessionId' in decoded && value.sessionId !== decoded.sessionId)
+    ) {
+      throw new AdminOperationsStateInvariantCorruptionError(
+        `Stored group runtime identity differs from its scoped slot: ${row.store_key}`,
+      );
+    }
+  }
 }
 
 function toExclusivePrefixEnd(prefix: string): string {

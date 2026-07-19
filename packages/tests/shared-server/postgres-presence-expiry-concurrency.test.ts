@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import type { ClientSessionRef } from "@shared/api/client-types.ts";
-import type { Group, GroupRef } from "@shared/api/group-types.ts";
+import type { Group, GroupEvent, GroupRef } from "@shared/api/group-types.ts";
 import type { StateScope } from "@shared/api/state-types.ts";
 import type { PSqlSql } from "@shared-server/postgres/PostgresSqlClient.ts";
 import type { RuntimeStateEntry } from "@shared-server/runtime-state/RuntimeStateRepository.ts";
@@ -193,7 +193,7 @@ describe("Postgres presence expiry concurrency", () => {
   );
 
   postgresIt(
-    "isolates absent and explicit sentinel workspaces at the live group repository boundary",
+    "isolates absent and explicit sentinel workspaces at the live group repository and event boundaries",
     async () => {
       const sql = await createSql(requireDatabaseUrl());
       const applicationId = uniqueScope("group-scope-key-isolation")
@@ -224,6 +224,47 @@ describe("Postgres presence expiry concurrency", () => {
           applicationId,
           workspaceId: "_",
         })).toEqual([explicitSentinelGroup]);
+
+        const eventStore = createGroupStateEventRepository(sql);
+        const eventFor = (
+          ref: GroupRef,
+          reason: string,
+          snapshotVersion: number,
+        ): GroupEvent => ({
+          ...ref,
+          eventId: "shared-event",
+          eventType: "group-updated",
+          snapshotVersion,
+          occurredAtEpochMs: Date.now() + snapshotVersion,
+          actor: { serviceId: "postgres-group-event-key-test" },
+          reason,
+        });
+        const absentEvent = eventFor(absentGroup, "absent", 1);
+        const explicitSentinelEvent = eventFor(
+          explicitSentinelGroup,
+          "explicit-sentinel",
+          2,
+        );
+        await eventStore.appendGroupEvent(absentEvent);
+        await eventStore.appendGroupEvent(explicitSentinelEvent);
+        expect(await eventStore.listGroupEvents(absentGroup)).toEqual([
+          absentEvent,
+        ]);
+        expect(await eventStore.listRecentGroupEvents?.(absentGroup, {}))
+          .toEqual([absentEvent]);
+        expect((await eventStore.listGroupEventPage(absentGroup, {
+          limit: 10,
+        })).events).toEqual([absentEvent]);
+        expect(await eventStore.listGroupEvents(explicitSentinelGroup)).toEqual([
+          explicitSentinelEvent,
+        ]);
+        expect(await eventStore.listRecentGroupEvents?.(
+          explicitSentinelGroup,
+          {},
+        )).toEqual([explicitSentinelEvent]);
+        expect((await eventStore.listGroupEventPage(explicitSentinelGroup, {
+          limit: 10,
+        })).events).toEqual([explicitSentinelEvent]);
       } finally {
         await cleanupRuntimeState(sql, applicationId);
         await sql.end();

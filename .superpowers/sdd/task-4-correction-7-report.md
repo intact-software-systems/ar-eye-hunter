@@ -1,5 +1,14 @@
 # Task 4 seventh fresh-review correction report
 
+> **SUPERSEDED SAFETY CLAIMS:** Task 4 correction 8 proved that this report's
+> repository-boundary isolation and "no follow-up" conclusions were incomplete.
+> Legacy `ws=_` rows could still cross an absent-scope read because decoded
+> group/child/receipt identity was not validated; group events still aliased
+> absent workspace and explicit `_`; and admin group scope reads still used the
+> old mappings. Use `.superpowers/sdd/task-4-correction-8-report.md` for the
+> corrected safety and migration boundary. The join-code contract evidence here
+> remains valid.
+
 ## Scope
 
 This correction closes the final fresh-review findings for Task 4 only:

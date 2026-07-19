@@ -29,6 +29,7 @@ import {
     computeGroupPresenceSummary,
     type GroupMutationCommand,
     type GroupMutationFacts,
+    type GroupMutationIdempotencyRecord,
     type GroupMutationRead,
     validateGroupMutation,
     validateGroupMutationCommand,
@@ -241,6 +242,300 @@ describe('convergent group and presence state', () => {
             applicationId: 'boundary-app',
             workspaceId: '_',
         })).toEqual([explicitSentinelGroup]);
+    });
+
+    it('fails closed when an absent-scope direct read decodes a legacy explicit-sentinel group', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new GroupStateRepository(runtime);
+        const absentRef = {
+            applicationId: 'legacy-boundary-app',
+            groupId: 'legacy-boundary-group',
+        };
+        const explicitSentinelGroup: Group = {
+            ...createMutationRead().group!.value,
+            ...absentRef,
+            workspaceId: '_',
+            activeMemberCount: 0,
+        };
+
+        await runtime.upsert(
+            'group-state:groups',
+            groupStateGroupStorageKey(absentRef),
+            JSON.stringify(explicitSentinelGroup),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        await expect(repository.findGroup(absentRef)).rejects.toMatchObject({
+            code: 'group-state-repository-invariant-corruption',
+        });
+        await expect(repository.readSnapshot(absentRef)).rejects.toMatchObject({
+            code: 'group-state-repository-invariant-corruption',
+        });
+    });
+
+    it('fails closed when a direct repository result carries a noncanonical physical key', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const ref = {
+            applicationId: 'physical-key-app',
+            groupId: 'physical-key-group',
+        };
+        const group: Group = {
+            ...createMutationRead().group!.value,
+            ...ref,
+            workspaceId: undefined,
+        };
+        vi.spyOn(runtime, 'findEntry').mockResolvedValue({
+            key: 'app=other:ws=_:group=other',
+            value: JSON.stringify(group),
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+            updatedTimestamp: new Date().toISOString(),
+            revision: 0,
+        });
+
+        await expect(new GroupStateRepository(runtime).findGroup(ref))
+            .rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+            });
+    });
+
+    it('fails closed instead of filtering a wrong-scope group from list and page reads', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new GroupStateRepository(runtime);
+        const absentScope = { applicationId: 'legacy-list-app' };
+        const explicitSentinelGroup: Group = {
+            ...createMutationRead().group!.value,
+            ...absentScope,
+            workspaceId: '_',
+            groupId: 'legacy-list-group',
+            activeMemberCount: 0,
+        };
+
+        await runtime.upsert(
+            'group-state:groups',
+            groupStateGroupStorageKey({
+                ...absentScope,
+                groupId: explicitSentinelGroup.groupId,
+            }),
+            JSON.stringify(explicitSentinelGroup),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        for (const read of [
+            () => repository.listGroups(absentScope),
+            () => repository.listSnapshots(absentScope),
+            () => repository.listSnapshotsPage(absentScope, { limit: 10 }),
+        ]) {
+            await expect(read()).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+            });
+        }
+    });
+
+    it('fails closed on wrong member, session, admission, and summary read slots', async () => {
+        const ref = {
+            applicationId: 'corrupt-child-app',
+            groupId: 'corrupt-child-group',
+        };
+        const cases = [
+            {
+                namespace: 'group-state:members',
+                key: groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
+                value: {
+                    ...createMutationRead().actorMember!,
+                    ...ref,
+                    principalId: 'mallory',
+                } satisfies GroupMember,
+                reads: (repository: GroupStateRepository) => [
+                    () => repository.findMember({ ...ref, principalId: 'alice' }),
+                    () => repository.findMemberEntry({ ...ref, principalId: 'alice' }),
+                    () => repository.listMembers(ref),
+                    () => repository.listMemberEntries(ref),
+                ],
+            },
+            {
+                namespace: 'group-state:sessions',
+                key: groupStatePresenceSessionStorageKey({ ...ref, sessionId: 'session-1' }),
+                value: {
+                    ...ref,
+                    sessionId: 'session-2',
+                    principalId: 'alice',
+                    generationId: 'generation-1',
+                    generationVersion: 1,
+                    connectedAtEpochMs: 1_000,
+                    lastHeartbeatAtEpochMs: 1_000,
+                    expiresAtEpochMs: 10_000,
+                } satisfies GroupPresenceSession,
+                reads: (repository: GroupStateRepository) => [
+                    () => repository.findPresenceSession({ ...ref, sessionId: 'session-1' }),
+                    () => repository.findPresenceEntry({ ...ref, sessionId: 'session-1' }),
+                    () => repository.listPresenceSessions(ref),
+                    () => repository.listPresenceSessionEntries(ref),
+                    () => repository.listAllPresenceSessions(),
+                ],
+            },
+            {
+                namespace: 'group-state:presence-admissions',
+                key: groupStatePresenceAdmissionStorageKey({ ...ref, principalId: 'alice' }),
+                value: {
+                    ...ref,
+                    principalId: 'mallory',
+                    admittedSessions: [],
+                    updatedAtEpochMs: 1_000,
+                } satisfies GroupPresenceAdmission,
+                reads: (repository: GroupStateRepository) => [
+                    () => repository.findPresenceAdmissionEntry({
+                        ...ref,
+                        principalId: 'alice',
+                    }),
+                    () => repository.listPresenceAdmissions(ref),
+                    () => repository.listPresenceAdmissionEntries(ref),
+                ],
+            },
+            {
+                namespace: 'group-state:presence-summaries',
+                key: groupStatePresenceSummaryStorageKey(ref),
+                value: {
+                    ...ref,
+                    workspaceId: '_',
+                    causalRevision: { groupRevision: 1, presenceRevision: 1 },
+                    activePrincipalIds: [],
+                    activeSessionIds: [],
+                    activeSessions: [],
+                    activePrincipalCount: 0,
+                    activeSessionCount: 0,
+                    computedAtEpochMs: 1_000,
+                } satisfies GroupPresenceSummary,
+                reads: (repository: GroupStateRepository) => [
+                    () => repository.findPresenceSummaryEntry(ref),
+                ],
+            },
+        ];
+
+        for (const testCase of cases) {
+            const runtime = new FakeRuntimeStateRepository();
+            await runtime.upsert(
+                testCase.namespace,
+                testCase.key,
+                JSON.stringify(testCase.value),
+                Number.MAX_SAFE_INTEGER,
+            );
+            const repository = new GroupStateRepository(runtime);
+            for (const read of testCase.reads(repository)) {
+                await expect(read()).rejects.toMatchObject({
+                    code: 'group-state-repository-invariant-corruption',
+                });
+            }
+        }
+    });
+
+    it('validates child entry identity before assembling scope snapshot lists', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new GroupStateRepository(runtime);
+        const ref = {
+            applicationId: 'snapshot-child-app',
+            groupId: 'snapshot-child-group',
+        };
+        const group: Group = {
+            ...createMutationRead().group!.value,
+            ...ref,
+            workspaceId: undefined,
+        };
+        const wrongScopeMember: GroupMember = {
+            ...createMutationRead().actorMember!,
+            ...ref,
+            workspaceId: '_',
+        };
+        await runtime.upsert(
+            'group-state:groups',
+            groupStateGroupStorageKey(ref),
+            JSON.stringify(group),
+            Number.MAX_SAFE_INTEGER,
+        );
+        await runtime.upsert(
+            'group-state:members',
+            groupStateMemberStorageKey({ ...ref, principalId: 'alice' }),
+            JSON.stringify(wrongScopeMember),
+            Number.MAX_SAFE_INTEGER,
+        );
+
+        await expect(repository.listSnapshots({
+            applicationId: ref.applicationId,
+        })).rejects.toMatchObject({
+            code: 'group-state-repository-invariant-corruption',
+        });
+    });
+
+    it('requires authoritative identity on compact idempotency reads', async () => {
+        expectTypeOf<GroupMutationIdempotencyRecord>()
+            .toHaveProperty('aggregateRef').toEqualTypeOf<GroupRef>();
+        const ref = {
+            applicationId: 'legacy-receipt-app',
+            groupId: 'legacy-receipt-group',
+        };
+        const requestId = 'legacy-request';
+        const receipt = {
+            commandId: requestId,
+            commandHash: `sha256:${'1'.repeat(64)}`,
+            outcome: 'no-op',
+            stateRevision: 1,
+            snapshotVersion: 1,
+            causalRevision: { groupRevision: 1, presenceRevision: 0 },
+            event: { kind: 'none' },
+            joinCode: null,
+            joinCodeExpiresAtEpochMs: null,
+            rejection: null,
+        } as const;
+        const legacyRecord = {
+            requestId,
+            commandHash: receipt.commandHash,
+            receipt,
+        };
+
+        for (const read of ['value', 'entry'] as const) {
+            const runtime = new FakeRuntimeStateRepository();
+            await runtime.upsert(
+                'group-state:idempotent',
+                groupStateIdempotencyStorageKey(ref, requestId),
+                JSON.stringify(legacyRecord),
+                Number.MAX_SAFE_INTEGER,
+            );
+            const repository = new GroupStateRepository(runtime);
+            const result = read === 'value'
+                ? repository.findIdempotentGroupMutationReceipt(ref, requestId)
+                : repository.findIdempotentGroupMutationReceiptEntry(ref, requestId);
+            await expect(result).rejects.toMatchObject({
+                code: 'group-state-repository-invariant-corruption',
+            });
+        }
+    });
+
+    it('rejects a compact idempotency write whose identity differs from its slot', async () => {
+        const runtime = new FakeRuntimeStateRepository();
+        const repository = new GroupStateRepository(runtime);
+        const command = createMutationCommand({
+            commandId: 'receipt-write-command',
+            requestId: 'receipt-write-command',
+        });
+        const ref = command.aggregateRef;
+        const computed = computeGroupMutation({
+            command,
+            read: createMutationRead(),
+            facts: createMutationFacts(),
+        });
+        if (computed.outcome !== 'write' || computed.idempotency === null) {
+            throw new Error('Expected an idempotent group write candidate');
+        }
+
+        await expect(repository.insertIdempotentGroupMutationReceipt(
+            ref,
+            command.requestId!,
+            {
+                ...computed.idempotency,
+                aggregateRef: { ...ref, groupId: 'wrong-group' },
+            },
+        )).rejects.toMatchObject({
+            code: 'group-state-repository-invariant-corruption',
+        });
     });
 
     it('builds collision-safe maintenance identities from the complete semantic command', async () => {
@@ -627,6 +922,7 @@ describe('convergent group and presence state', () => {
             ),
         };
         const idempotency = {
+            aggregateRef: targetCommand.aggregateRef,
             requestId: targetCommand.requestId!,
             commandHash: facts.commandHash,
             receipt: {

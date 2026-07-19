@@ -1268,6 +1268,33 @@ though every successful rotation validates and returns it. The field is now
 mandatory in shared TypeScript and the OpenAPI required array, while the sparse
 rotation request remains optional because omission requests a server default.
 
+## 15. Fail-Closed Group Reads And Injective Group-Event Scope
+
+A subsequent boundary review proved that injective runtime keys alone were not
+sufficient. Historical explicit-`_` JSON could remain under legacy `ws=_`, and
+direct, prefix-list, snapshot-list, and page reads trusted the selected key
+without binding the decoded value to the requested slot. Group-state repository
+reads now decode canonical keys and validate application/workspace/group plus
+member/session/admission/request identity before returning anything. Compact
+idempotency records carry mandatory `aggregateRef`, so identity-free historical
+no-event receipts fail closed. A mismatch raises typed invariant corruption for
+the entire read; it is never hidden as a miss or filtered partial page.
+
+PostgreSQL group events had a separate collision: absent workspace and explicit
+`_` both used `workspace_key='_'`, so reads leaked and equal event IDs collapsed
+under the primary key. The group-event-only helper keeps historical absent `_`,
+maps explicit `_` to `%5F`, and encodes percent/delimiter/lookalikes distinctly.
+Every append/list/recent/page/admin group-event path uses it, and returned JSON
+is validated against trusted group identity and the physical event ID. Client
+event encoding is intentionally unchanged.
+
+Migration remains offline and value-verified. Stop old writers; derive one
+destination only from authoritative stored identity; conditionally claim it;
+then delete the exact source revision/row. Abort and report ambiguity or a
+different destination value. Do not fan out or install a permanent dual read.
+An event already dropped by the historical primary-key collision is impossible
+to reconstruct without a separate authoritative event source.
+
 ## Suggested First Proofs
 
 1. Multi-workspace isolation test: prove whether state snapshots from workspace A reach a browser connected to workspace

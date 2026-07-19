@@ -8,12 +8,14 @@ import type {
 import type { StateEventListQuery } from '@shared-server/rallar-system/state-event-listing.ts';
 import { DEFAULT_STATE_EVENT_LIST_LIMIT } from '@shared-server/rallar-system/state-event-listing.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
+import { groupEventWorkspaceKey } from './group-event-workspace-key.ts';
 
 type ClientStateEventRow = Readonly<{
     event_json: string;
 }>;
 
 type GroupStateEventRow = Readonly<{
+    event_id: string;
     event_json: string;
 }>;
 
@@ -210,7 +212,7 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
                                             occurred_at_epoch_ms,
                                             event_json)
             values (${event.applicationId},
-                    ${toWorkspaceKey(event.workspaceId)},
+                    ${groupEventWorkspaceKey(event.workspaceId)},
                     ${event.groupId},
                     ${event.eventId},
                     ${event.eventType},
@@ -224,15 +226,15 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
 
     async listGroupEvents(ref: GroupRef): Promise<readonly GroupEvent[]> {
         const rows = await this.sql<GroupStateEventRow[]>`
-            select event_json
+            select event_id, event_json
             from group_state_events
             where application_id = ${ref.applicationId}
-              and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+              and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
               and group_id = ${ref.groupId}
             order by snapshot_version, occurred_at_epoch_ms, event_id
         `;
 
-        return rows.map(toGroupEvent);
+        return rows.map((row) => toValidatedGroupEvent(row, ref));
     }
 
     async listRecentGroupEvents(
@@ -242,7 +244,7 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
         const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
         const rows = await this.queryRecentGroupRows(ref, query, limit);
 
-        return rows.map(toGroupEvent);
+        return rows.map((row) => toValidatedGroupEvent(row, ref));
     }
 
     async listGroupEventPage(
@@ -251,7 +253,7 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
     ): Promise<StateEventPage<GroupEvent>> {
         const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
         const rows = await this.queryGroupPageRows(ref, query, limit + 1);
-        const eventsPlusOne = rows.map(toGroupEvent);
+        const eventsPlusOne = rows.map((row) => toValidatedGroupEvent(row, ref));
         const events = eventsPlusOne.slice(0, limit);
         const lastEvent = events.at(-1);
 
@@ -274,10 +276,10 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
 
         if (eventTypes && after) {
             return await this.sql<GroupStateEventRow[]>`
-                select event_json
+                select event_id, event_json
                 from group_state_events
                 where application_id = ${ref.applicationId}
-                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
                   and group_id = ${ref.groupId}
                   and event_type in ${this.sql(eventTypes)}
                   and (snapshot_version, occurred_at_epoch_ms, event_id) >
@@ -289,10 +291,10 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
 
         if (eventTypes) {
             return await this.sql<GroupStateEventRow[]>`
-                select event_json
+                select event_id, event_json
                 from group_state_events
                 where application_id = ${ref.applicationId}
-                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
                   and group_id = ${ref.groupId}
                   and event_type in ${this.sql(eventTypes)}
                 order by snapshot_version, occurred_at_epoch_ms, event_id
@@ -302,10 +304,10 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
 
         if (after) {
             return await this.sql<GroupStateEventRow[]>`
-                select event_json
+                select event_id, event_json
                 from group_state_events
                 where application_id = ${ref.applicationId}
-                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
                   and group_id = ${ref.groupId}
                   and (snapshot_version, occurred_at_epoch_ms, event_id) >
                       (${after.snapshotVersion}, ${after.occurredAtEpochMs}, ${after.eventId})
@@ -315,10 +317,10 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
         }
 
         return await this.sql<GroupStateEventRow[]>`
-            select event_json
+            select event_id, event_json
             from group_state_events
             where application_id = ${ref.applicationId}
-              and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+              and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
               and group_id = ${ref.groupId}
             order by snapshot_version, occurred_at_epoch_ms, event_id
             limit ${limit}
@@ -336,12 +338,12 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
 
         if (eventTypes) {
             return await this.sql<GroupStateEventRow[]>`
-                select event_json
+                select event_id, event_json
                 from (
                     select event_json, snapshot_version, occurred_at_epoch_ms, event_id
                     from group_state_events
                     where application_id = ${ref.applicationId}
-                      and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                      and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
                       and group_id = ${ref.groupId}
                       and event_type in ${this.sql(eventTypes)}
                     order by snapshot_version desc, occurred_at_epoch_ms desc, event_id desc
@@ -352,12 +354,12 @@ export class PSqlGroupStateEventRepository implements GroupStateEventStore {
         }
 
         return await this.sql<GroupStateEventRow[]>`
-            select event_json
+            select event_id, event_json
             from (
                 select event_json, snapshot_version, occurred_at_epoch_ms, event_id
                 from group_state_events
                 where application_id = ${ref.applicationId}
-                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
                   and group_id = ${ref.groupId}
                 order by snapshot_version desc, occurred_at_epoch_ms desc, event_id desc
                 limit ${limit}
@@ -377,6 +379,40 @@ function toClientEvent(row: ClientStateEventRow): ClientEvent {
 
 function toGroupEvent(row: GroupStateEventRow): GroupEvent {
     return JSON.parse(row.event_json) as GroupEvent;
+}
+
+export class GroupStateEventRepositoryInvariantCorruptionError extends Error {
+    readonly code = 'group-state-event-repository-invariant-corruption';
+
+    constructor(message: string) {
+        super(message);
+        this.name = 'GroupStateEventRepositoryInvariantCorruptionError';
+    }
+}
+
+function toValidatedGroupEvent(
+    row: GroupStateEventRow,
+    expected: GroupRef,
+): GroupEvent {
+    let event: GroupEvent;
+    try {
+        event = toGroupEvent(row);
+    } catch {
+        throw new GroupStateEventRepositoryInvariantCorruptionError(
+            'Stored group event JSON is invalid',
+        );
+    }
+    if (
+        event.applicationId !== expected.applicationId ||
+        event.workspaceId !== expected.workspaceId ||
+        event.groupId !== expected.groupId ||
+        event.eventId !== row.event_id
+    ) {
+        throw new GroupStateEventRepositoryInvariantCorruptionError(
+            'Stored group event identity differs from the requested group',
+        );
+    }
+    return event;
 }
 
 function toCursor(event: {

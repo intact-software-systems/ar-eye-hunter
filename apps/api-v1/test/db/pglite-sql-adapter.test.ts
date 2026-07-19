@@ -16,6 +16,7 @@ import {
   PSqlClientStateEventRepository,
   PSqlGroupStateEventRepository,
 } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
+import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import {
@@ -37,6 +38,15 @@ const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
 const FUTURE_INSTANT = Temporal.Instant.from('9999-12-31T23:59:59.999Z');
 const PAST_INSTANT = Temporal.Instant.from('2000-01-01T00:00:00.000Z');
 const CREATED_TS = Temporal.PlainDateTime.from('2026-06-01T12:00:00');
+
+Deno.test('group event workspace keys preserve ordinary values and isolate sentinels and lookalikes', () => {
+  const workspaces = [undefined, '_', '%5F', 'main', 'a:b', 'a%3Ab', '＿'];
+  const keys = workspaces.map(groupEventWorkspaceKey);
+  assert.equal(groupEventWorkspaceKey(undefined), '_');
+  assert.equal(groupEventWorkspaceKey('_'), '%5F');
+  assert.equal(groupEventWorkspaceKey('main'), 'main');
+  assert.equal(new Set(keys).size, workspaces.length);
+});
 
 Deno.test('PGlite SQL adapter supports tagged templates, array interpolation, and transactions', async () => {
   await withPGliteSql(async (sql) => {
@@ -251,6 +261,64 @@ Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async 
   });
 });
 
+Deno.test('PGlite group-state reads fail closed on a directly seeded legacy wrong-scope row', async () => {
+  await withPGliteSql(async (sql) => {
+    const ref = {
+      applicationId: 'pglite-legacy-scope-app',
+      groupId: 'pglite-legacy-scope-group',
+    };
+    const storedGroup = {
+      ...ref,
+      workspaceId: '_',
+      displayName: 'Legacy explicit sentinel',
+      kind: 'room',
+      status: 'active',
+      joinMode: 'open',
+      metadata: {},
+      activeMemberCount: 0,
+      ownerPrincipalId: 'owner',
+      snapshotVersion: 1,
+      metadataVersion: 1,
+      rosterVersion: 1,
+      presenceVersion: 0,
+      created: { atEpochMs: 1_000 },
+      updated: { atEpochMs: 1_000 },
+    };
+    await sql`
+      insert into runtime_state_store (
+        store_namespace, store_key, store_value, expire_at_ts
+      ) values (
+        'group-state:groups',
+        'app=pglite-legacy-scope-app:ws=_:group=pglite-legacy-scope-group',
+        ${JSON.stringify(storedGroup)},
+        ${new Date(FUTURE_MS)}
+      )
+    `;
+    const repository = new GroupStateRepository(
+      new PSqlRuntimeStateRepository(sql),
+    );
+
+    for (
+      const read of [
+        () => repository.findGroup(ref),
+        () => repository.readSnapshot(ref),
+        () => repository.listGroups({ applicationId: ref.applicationId }),
+        () => repository.listSnapshots({ applicationId: ref.applicationId }),
+        () =>
+          repository.listSnapshotsPage(
+            { applicationId: ref.applicationId },
+            { limit: 10 },
+          ),
+      ]
+    ) {
+      await assert.rejects(read, (error) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'group-state-repository-invariant-corruption');
+    }
+  });
+});
+
 Deno.test('PSql state event repositories page by snapshot cursor order', async () => {
   await withPGliteSql(async (sql) => {
     const clientEvents = new PSqlClientStateEventRepository(sql);
@@ -398,6 +466,128 @@ Deno.test('PSql state event repositories page by snapshot cursor order', async (
     assert.deepEqual(
       recentGroupEvents.map((event) => event.eventId),
       ['group-late-snapshot', 'group-duplicate'],
+    );
+  });
+});
+
+Deno.test('PSql group events isolate absent and explicit sentinel workspaces without event-id loss', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new PSqlGroupStateEventRepository(sql);
+    const absentRef = {
+      applicationId: 'group-event-scope-app',
+      groupId: 'shared-group',
+    };
+    const explicitSentinelRef = { ...absentRef, workspaceId: '_' };
+    const absentEvent = createGroupStateEvent('shared-event', 1_000, 1, 'group-updated', {
+      ...absentRef,
+      workspaceId: undefined,
+      reason: 'absent',
+    });
+    const explicitSentinelEvent = createGroupStateEvent(
+      'shared-event',
+      2_000,
+      2,
+      'group-updated',
+      {
+        ...explicitSentinelRef,
+        reason: 'explicit-sentinel',
+      },
+    );
+
+    await repository.appendGroupEvent(absentEvent);
+    await repository.appendGroupEvent(explicitSentinelEvent);
+
+    for (
+      const [ref, expected] of [
+        [absentRef, JSON.parse(JSON.stringify(absentEvent)) as GroupEvent],
+        [explicitSentinelRef, explicitSentinelEvent],
+      ] as const
+    ) {
+      assert.deepEqual(await repository.listGroupEvents(ref), [expected]);
+      assert.deepEqual(await repository.listRecentGroupEvents(ref), [expected]);
+      assert.deepEqual(
+        (await repository.listGroupEventPage(ref, { limit: 1 })).events,
+        [expected],
+      );
+    }
+
+    const rows = await sql<{ workspace_key: string }[]>`
+      select workspace_key
+      from group_state_events
+      where application_id = ${absentRef.applicationId}
+        and group_id = ${absentRef.groupId}
+        and event_id = ${absentEvent.eventId}
+      order by workspace_key
+    `;
+    assert.equal(rows.length, 2);
+    assert.notEqual(rows[0]?.workspace_key, rows[1]?.workspace_key);
+  });
+});
+
+Deno.test('PSql group event reads fail closed on a legacy wrong-scope payload', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new PSqlGroupStateEventRepository(sql);
+    const absentRef = {
+      applicationId: 'legacy-group-event-app',
+      groupId: 'legacy-group-event-group',
+    };
+    const corruptEvent = createGroupStateEvent('legacy-event', 1_000, 1, 'group-updated', {
+      ...absentRef,
+      workspaceId: '_',
+    });
+    await sql`
+      insert into group_state_events (
+        application_id, workspace_key, group_id, event_id, event_type,
+        snapshot_version, occurred_at_epoch_ms, event_json
+      ) values (
+        ${absentRef.applicationId}, '_', ${absentRef.groupId},
+        ${corruptEvent.eventId}, ${corruptEvent.eventType},
+        ${corruptEvent.snapshotVersion}, ${corruptEvent.occurredAtEpochMs},
+        ${JSON.stringify(corruptEvent)}
+      )
+    `;
+
+    for (
+      const read of [
+        () => repository.listGroupEvents(absentRef),
+        () => repository.listRecentGroupEvents(absentRef),
+        () => repository.listGroupEventPage(absentRef, { limit: 10 }),
+      ]
+    ) {
+      await assert.rejects(read, (error) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'group-state-event-repository-invariant-corruption');
+    }
+  });
+});
+
+Deno.test('PSql group event reads validate the decoded event-id slot', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new PSqlGroupStateEventRepository(sql);
+    const ref = {
+      applicationId: 'group-event-slot-app',
+      workspaceId: 'main',
+      groupId: 'group-event-slot-group',
+    };
+    const event = createGroupStateEvent('payload-event-id', 1_000, 1, 'group-updated', ref);
+    await sql`
+      insert into group_state_events (
+        application_id, workspace_key, group_id, event_id, event_type,
+        snapshot_version, occurred_at_epoch_ms, event_json
+      ) values (
+        ${ref.applicationId}, ${ref.workspaceId}, ${ref.groupId},
+        'physical-event-id', ${event.eventType}, ${event.snapshotVersion},
+        ${event.occurredAtEpochMs}, ${JSON.stringify(event)}
+      )
+    `;
+
+    await assert.rejects(
+      () => repository.listGroupEvents(ref),
+      (error) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'group-state-event-repository-invariant-corruption',
     );
   });
 });

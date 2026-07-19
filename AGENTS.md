@@ -76,6 +76,11 @@ the repo-local Codex plugin under `.agents/skills/**`.
   command-slot relationships before every authoritative compare-and-set.
   Never derive the expected actor, target, principal, session, or request
   identity from the candidate row being validated.
+- Validate decoded identity on every authoritative direct, prefix-list, page,
+  event, and compact-receipt read. Derive the expected scope and slot from the
+  trusted request or decoded canonical key, never from the stored value. A
+  mismatch is typed invariant corruption: fail the whole read rather than
+  treating it as a miss, filtering it, rewriting it, or guessing its scope.
 - Scoped storage keys must be injective over field name, value type/presence,
   and value. URI escaping strings is not absence encoding: an absent scope may
   never alias any valid explicit identifier. Test delimiter, percent, sentinel,

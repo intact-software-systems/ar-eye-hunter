@@ -4,6 +4,11 @@ import {
   PSqlAdminOperationsStatsReader,
 } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import {
+  decodeGroupStateGroupStorageKey,
+  decodeGroupStateMemberStorageKey,
+  decodeGroupStatePresenceSessionStorageKey,
+} from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
@@ -307,6 +312,107 @@ Deno.test('PSqlAdminOperationsStatsReader uses encoded runtime-state scope keys'
   });
 });
 
+Deno.test('PSqlAdminOperationsStatsReader isolates explicit sentinel group state and events', async () => {
+  await withPGliteSql(async (sql) => {
+    const applicationId = 'ops-sentinel-app';
+    for (const index of [1, 2]) {
+      await insertRuntimeState(sql, {
+        namespace: 'group-state:groups',
+        key: `app=${applicationId}:ws=_:group=absent-${index}`,
+        value: {
+          applicationId,
+          groupId: `absent-${index}`,
+          status: 'active',
+        },
+      });
+      await sql`
+        insert into group_state_events (
+          application_id, workspace_key, group_id, event_id, event_type,
+          snapshot_version, occurred_at_epoch_ms, event_json
+        ) values (
+          ${applicationId}, '_', ${`absent-${index}`}, ${`absent-event-${index}`},
+          'group-updated', ${index}, ${1_700_000_000_000 + index},
+          ${
+        JSON.stringify({
+          applicationId,
+          groupId: `absent-${index}`,
+          eventId: `absent-event-${index}`,
+        })
+      }
+        )
+      `;
+    }
+    await insertRuntimeState(sql, {
+      namespace: 'group-state:groups',
+      key: `app=${applicationId}:ws=%5F:group=explicit-sentinel`,
+      value: {
+        applicationId,
+        workspaceId: '_',
+        groupId: 'explicit-sentinel',
+        status: 'active',
+      },
+    });
+    await sql`
+      insert into group_state_events (
+        application_id, workspace_key, group_id, event_id, event_type,
+        snapshot_version, occurred_at_epoch_ms, event_json
+      ) values (
+        ${applicationId}, '%5F', 'explicit-sentinel', 'explicit-event',
+        'group-updated', 1, 1700000000001,
+        ${
+      JSON.stringify({
+        applicationId,
+        workspaceId: '_',
+        groupId: 'explicit-sentinel',
+        eventId: 'explicit-event',
+      })
+    }
+      )
+    `;
+
+    const reader = new PSqlAdminOperationsStatsReader(sql, {
+      now: () => 1_700_000_000_100,
+    });
+    const state = await reader.readState({
+      adminSession: createAdminSession(),
+      scope: { applicationId, workspaceId: '_' },
+    });
+
+    assert.equal(state.groups.activeGroups, 1);
+    assert.equal(state.events.recentGroupEvents, 1);
+  });
+});
+
+Deno.test('PSqlAdminOperationsStatsReader fails closed on wrong-scope group runtime values', async () => {
+  await withPGliteSql(async (sql) => {
+    const scope = {
+      applicationId: 'ops-corrupt-scope-app',
+      workspaceId: '_',
+    };
+    await insertRuntimeState(sql, {
+      namespace: 'group-state:groups',
+      key: `app=${scope.applicationId}:ws=%5F:group=corrupt-group`,
+      value: {
+        applicationId: scope.applicationId,
+        workspaceId: 'wrong-workspace',
+        groupId: 'corrupt-group',
+        status: 'active',
+      },
+    });
+    const reader = new PSqlAdminOperationsStatsReader(sql, {
+      now: () => 1_700_000_000_100,
+    });
+
+    await assert.rejects(
+      () => reader.readState({ adminSession: createAdminSession(), scope }),
+      (error) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'admin-operations-state-invariant-corruption',
+    );
+  });
+});
+
 Deno.test('PSqlAdminOperationsStatsReader treats encoded scope prefixes literally', async () => {
   await withPGliteSql(async (sql) => {
     const applicationId = 'ops/app';
@@ -426,7 +532,7 @@ Deno.test('PSqlAdminOperationsStatsReader excludes inactive domain state from ac
         },
         {
           namespace: 'group-state:members',
-          key: `${keyPrefix}:group=room-1:principal=alice`,
+          key: `${keyPrefix}:group=room-1:member=alice`,
           value: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -437,7 +543,7 @@ Deno.test('PSqlAdminOperationsStatsReader excludes inactive domain state from ac
         },
         {
           namespace: 'group-state:members',
-          key: `${keyPrefix}:group=room-1:principal=bob`,
+          key: `${keyPrefix}:group=room-1:member=bob`,
           value: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -518,7 +624,7 @@ Deno.test('PSqlAdminOperationsStatsReader excludes expired retained sessions fro
         },
         {
           namespace: 'group-state:members',
-          key: `${keyPrefix}:group=room-1:principal=alice`,
+          key: `${keyPrefix}:group=room-1:member=alice`,
           value: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -529,7 +635,7 @@ Deno.test('PSqlAdminOperationsStatsReader excludes expired retained sessions fro
         },
         {
           namespace: 'group-state:members',
-          key: `${keyPrefix}:group=room-1:principal=bob`,
+          key: `${keyPrefix}:group=room-1:member=bob`,
           value: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -608,7 +714,7 @@ Deno.test('PSqlAdminOperationsStatsReader keeps online identity scoped globally'
         },
         {
           namespace: 'group-state:members',
-          key: 'app=app-1:ws=workspace-1:group=room-1:principal=sam',
+          key: 'app=app-1:ws=workspace-1:group=room-1:member=sam',
           value: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -619,7 +725,7 @@ Deno.test('PSqlAdminOperationsStatsReader keeps online identity scoped globally'
         },
         {
           namespace: 'group-state:members',
-          key: 'app=app-1:ws=workspace-1:group=room-2:principal=sam',
+          key: 'app=app-1:ws=workspace-1:group=room-2:member=sam',
           value: {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -825,7 +931,7 @@ async function seedAdminOperationsRows(sql: PGliteSql): Promise<void> {
       ],
       [
         'group-state:members',
-        'app=app-1:ws=workspace-1:group=room-1:principal=alice',
+        'app=app-1:ws=workspace-1:group=room-1:member=alice',
         {
           applicationId: 'app-1',
           workspaceId: 'workspace-1',
@@ -961,15 +1067,38 @@ async function insertRuntimeState(
     expireAt?: string;
   }>,
 ): Promise<void> {
+  const value = withCanonicalGroupRuntimeIdentity(
+    input.namespace,
+    input.key,
+    input.value,
+  );
   await sql`
     insert into runtime_state_store (store_namespace, store_key, store_value, expire_at_ts)
     values (
       ${input.namespace},
       ${input.key},
-      ${JSON.stringify(input.value)},
+      ${JSON.stringify(value)},
       ${new Date(input.expireAt ?? '9999-12-31T23:59:59Z')}
     )
   `;
+}
+
+function withCanonicalGroupRuntimeIdentity(
+  namespace: string,
+  key: string,
+  value: unknown,
+): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const identity = namespace === 'group-state:groups'
+    ? decodeGroupStateGroupStorageKey(key)
+    : namespace === 'group-state:members'
+    ? decodeGroupStateMemberStorageKey(key)
+    : namespace === 'group-state:sessions'
+    ? decodeGroupStatePresenceSessionStorageKey(key)
+    : null;
+  return identity === null ? value : { ...identity, ...value };
 }
 
 function createRuntimeJsonScanGuard(

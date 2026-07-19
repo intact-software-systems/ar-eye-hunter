@@ -72,6 +72,11 @@ rg --files packages/tests packages/shared packages/shared-web packages/shared-se
   Derive expected principals, sessions, targets, and request IDs from the
   trusted command, never from the row being validated. Bind guards, dependent
   candidates, events, receipts, and outbox intents to those same identities.
+- Apply that identity rule to reads as well as writes. Direct, prefix-list,
+  page, event, and compact-receipt reads decode the canonical key and validate
+  the complete trusted scope and slot before returning data. A mismatch throws
+  a typed invariant-corruption error for the whole read; it is not a miss to
+  hide, a list row to filter, or data to rewrite or guess.
 - Key builders are pure injective encoders over field name, type/presence, and
   value. `encodeURIComponent`-style escaping alone cannot distinguish an
   absent value from a valid sentinel string. Test exact canonical keys,

@@ -154,6 +154,15 @@ workspace. Because `_` is also a valid explicit workspace identifier and
 workspace keys remain unchanged. Group, member, session, admission, presence
 summary, idempotency, and scope-list prefixes all delegate to the same helper.
 
+Every group-state direct, prefix-list, snapshot-list, and page read decodes the
+canonical key before trusting JSON. It compares decoded application, workspace,
+group, and child principal/session/request identity first with the trusted
+request and then with the stored value. Compact idempotency records carry a
+mandatory `aggregateRef`, including no-event receipts. A missing or mismatched
+identity raises typed invariant corruption for the whole read; the repository
+does not return a miss, filter a corrupt list row, rewrite on read, or infer a
+scope from the value.
+
 The old `ws=_` namespace is intrinsically ambiguous for data written before
 this distinction: it may mean absent workspace or explicit `_`, and an earlier
 collision may already have overwritten one value. Runtime code does not dual
@@ -173,16 +182,29 @@ state table. The Postgres adapters are `PSqlClientStateEventRepository` and
 Important mapped fields:
 
 - `application_id`, `workspace_key`, and `principal_id` or `group_id` scope the
-  event stream. `workspace_key` stores `_` when the event has no workspace id.
-  If `_` needs to be a valid workspace id, a future migration should split this
-  into nullable workspace identity plus an index-safe generated key.
+  event stream. Client-event mapping is unchanged. Group events preserve `_`
+  for absent workspace, encode an explicit `_` as `%5F`, and URI-encode other
+  present workspace identifiers through the group-event-only canonical helper.
+  Append, full-list, recent-list, page, and admin group-event counts all use the
+  same helper.
 - `event_id`, `event_type`, `snapshot_version`, and `occurred_at_epoch_ms`
   mirror the public event payload.
 - `event_json` stores the full event response body returned by REST and replay
-  APIs.
+  APIs. Group-event reads also select the physical `event_id` and validate JSON
+  application/workspace/group/event identity against the trusted requested row
+  slot. Any mismatch raises typed invariant corruption for the whole read.
 - Page indexes order by `snapshot_version`, `occurred_at_epoch_ms`, and
   `event_id`, matching `StateEventCursor` and avoiding full-history scans for
   `/events/page`.
+
+Historical group-event `workspace_key='_'` rows may represent absent workspace
+or explicit `_`, and a prior primary-key collision may already have dropped one
+accepted event. The runtime never dual reads or guesses. An offline migration
+must stop old writers, validate `event_json` against every physical identity
+column, derive exactly one canonical destination, claim it conditionally, and
+delete only the verified source row. Destination mismatch/collision aborts and
+is reported; an event previously lost to `ON CONFLICT DO NOTHING` cannot be
+recovered without an independent authoritative source.
 
 ### `resource_inbox`
 

@@ -87,6 +87,12 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
   and repository-boundary isolation. For an ambiguous legacy namespace,
   conditionally migrate only rows whose stored value proves the target scope;
   never fan out, guess, or retain an unbounded dual-read fallback.
+- At every authoritative direct, prefix-list, page, event, and compact-receipt
+  read boundary, decode the canonical storage identity and compare it with the
+  trusted requested scope and slot before returning data. Do not derive the
+  expected identity from the stored value. Wrong-slot or wrong-scope data is
+  typed invariant corruption for the whole read, not a miss to hide, a row to
+  filter, or data to rewrite or guess.
 - Treat stale observations as rebase-or-ignore outcomes, duplicates as no-ops,
   and equal causal revisions with different content as invariant corruption.
 - Database row, table, and advisory locks are not the default. Do not extend an

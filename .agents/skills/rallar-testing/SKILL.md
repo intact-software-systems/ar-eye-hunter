@@ -16,6 +16,11 @@ Read `references/test-commands.md` when choosing commands. Prefer targeted check
   non-collision for absence, valid sentinels, delimiters, percent/lookalikes,
   every derived child key, prefix/list behavior, and repository isolation;
   include live Postgres when the keys guard authoritative shared state.
+- Authoritative scoped-read changes: seed wrong-scope or wrong-slot values
+  directly and prove direct, prefix-list, page, event, and compact-receipt reads
+  fail as typed invariant corruption rather than returning misses, filtering,
+  rewriting, or guessing. Cover every decoded application/workspace/group and
+  principal/session/request slot at memory and live database boundaries.
 - Browser facade changes: include `packages/tests/shared-web` and app builds if game apps consume the surface.
 - Server/middleware changes: include `packages/tests/shared-server`, Deno checks for API apps, and focused restart/routing tests when relevant.
 - REST API additions or behavior changes: add or update Rallar black-box recipes/tests in `packages/shared-test/black-box-runner` alongside the API change, then run the focused black-box command when its required services are available.

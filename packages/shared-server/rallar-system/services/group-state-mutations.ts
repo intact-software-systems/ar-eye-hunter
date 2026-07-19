@@ -204,6 +204,7 @@ export type GroupMutationReceipt = Readonly<{
 }>;
 
 export type GroupMutationIdempotencyRecord = Readonly<{
+    aggregateRef: GroupRef;
     requestId: string;
     commandHash: string;
     receipt: GroupMutationReceipt;
@@ -1175,10 +1176,16 @@ function validateIdempotencyRecord(
     ref: GroupRef,
 ): void {
     const value = requireRecord(record, 'Stored group idempotency value');
-    assertExactKeys(value, ['requestId', 'commandHash', 'receipt'],
+    assertExactKeys(value, ['aggregateRef', 'requestId', 'commandHash', 'receipt'],
         'Stored group idempotency value');
-    assertRequiredKeys(value, ['requestId', 'commandHash', 'receipt'],
+    assertRequiredKeys(value, ['aggregateRef', 'requestId', 'commandHash', 'receipt'],
         'Stored group idempotency value');
+    validateGroupRef(value.aggregateRef);
+    validateScopedValue(
+        value.aggregateRef as GroupRef,
+        ref,
+        'Stored group idempotency aggregateRef',
+    );
     requireNonEmptyString(value.requestId, 'Stored group idempotency requestId');
     validateCommandHash(value.commandHash, 'Stored group idempotency commandHash');
     validateMutationReceipt(value.receipt, ref, 'Stored group idempotency receipt');
@@ -2593,6 +2600,7 @@ function writeResult(
         rejection: null,
     });
     const idempotency = command.requestId === null ? null : {
+        aggregateRef: command.aggregateRef,
         requestId: command.requestId,
         commandHash: facts.commandHash,
         receipt,

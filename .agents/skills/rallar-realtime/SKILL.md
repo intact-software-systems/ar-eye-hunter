@@ -82,6 +82,12 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   percent, prefix/list, and real repository isolation. Preserve a legacy
   namespace only when value identity proves its scope; use conditional
   migration and fail closed on ambiguity or destination conflict.
+- Group-state direct, prefix-list, page, event, and compact-receipt reads must
+  decode canonical storage identity and validate the complete requested scope
+  and entity/request slot. The trusted request or decoded key supplies expected
+  identity, never the stored value. Any mismatch fails the entire read with a
+  typed invariant-corruption error; do not return a miss, filter the row,
+  rewrite it, or guess.
 - Shape-valid effects can still describe the wrong operation. Canonically
   recompute and exactly compare operation-specific guards, dependent rows,
   events, receipts, and outbox intents before the first authoritative write.
