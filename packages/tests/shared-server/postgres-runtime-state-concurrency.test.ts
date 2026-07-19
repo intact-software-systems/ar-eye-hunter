@@ -3,12 +3,13 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GroupTopologyConfigRepository,
 } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { StateMutationOutboxRepository } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 
@@ -249,10 +250,16 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
                     barrier,
                 );
+                const groupStateRepository = new GroupStateRepository(firstRuntime);
+                expect(await groupStateRepository.insertGroup(snapshot.group))
+                    .toMatchObject({ status: 'applied' });
+                for (const member of snapshot.members) {
+                    await groupStateRepository.putMember(member);
+                }
                 const service = (runtime: PSqlRuntimeStateRepository) =>
                     new GroupTopologyManagementService({
                         findGroupSnapshotByRef: () => snapshot,
-                        findAuthoritativeGroupSnapshotByRef: () => snapshot,
+                        groupStateRepository: new GroupStateRepository(runtime),
                         configRepository: new GroupTopologyConfigRepository(runtime),
                         topologyService: new RallarRtcTopologyService(),
                         sleep: () => Promise.resolve(),
@@ -337,10 +344,16 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
                     barrier,
                 );
+                const groupStateRepository = new GroupStateRepository(firstRuntime);
+                expect(await groupStateRepository.insertGroup(snapshot.group))
+                    .toMatchObject({ status: 'applied' });
+                for (const member of snapshot.members) {
+                    await groupStateRepository.putMember(member);
+                }
                 const service = (runtime: PSqlRuntimeStateRepository) =>
                     new GroupTopologyManagementService({
                         findGroupSnapshotByRef: () => snapshot,
-                        findAuthoritativeGroupSnapshotByRef: () => snapshot,
+                        groupStateRepository: new GroupStateRepository(runtime),
                         configRepository: new GroupTopologyConfigRepository(runtime),
                         topologyService: new RallarRtcTopologyService(),
                         sleep: () => Promise.resolve(),
@@ -385,6 +398,106 @@ describe('Postgres runtime-state conditional-write concurrency', () => {
                             revision: 0,
                         },
                     });
+            } finally {
+                await Promise.allSettled(clients.map(async (client) => {
+                    await client`
+                        delete from runtime_state_store
+                        where store_value like ${`%${applicationId}%`}
+                    `;
+                }));
+                await Promise.allSettled(clients.map(async (client) => await client.end()));
+            }
+        },
+        60_000,
+    );
+
+    postgresIt(
+        'rejects a true-overlap archive after stable authority read and before the fence CAS',
+        async () => {
+            const databaseUrl = requireDatabaseUrl();
+            const applicationId = `topology-authority-${crypto.randomUUID()}`;
+            const groupRef = {
+                applicationId,
+                workspaceId: 'concurrency',
+                groupId: 'room',
+            };
+            const snapshot = topologyGroupSnapshot(groupRef);
+            const clients = [await createSql(databaseUrl), await createSql(databaseUrl)];
+            try {
+                const mutationRuntime = new PSqlRuntimeStateRepository(clients[0]!);
+                const concurrentRuntime = new PSqlRuntimeStateRepository(clients[1]!);
+                const seed = new GroupStateRepository(mutationRuntime);
+                expect(await seed.insertGroup(snapshot.group))
+                    .toMatchObject({ status: 'applied' });
+                for (const member of snapshot.members) await seed.putMember(member);
+                let releaseRead!: () => void;
+                let markObserved!: () => void;
+                const observed = new Promise<void>((resolve) => {
+                    markObserved = resolve;
+                });
+                const release = new Promise<void>((resolve) => {
+                    releaseRead = resolve;
+                });
+                let pauseFirstRead = true;
+                class PausingGroupStateRepository extends GroupStateRepository {
+                    override async readSnapshotWithAuthorityGuard(ref: GroupRef) {
+                        const observation = await super
+                            .readSnapshotWithAuthorityGuard(ref);
+                        if (pauseFirstRead) {
+                            pauseFirstRead = false;
+                            markObserved();
+                            await release;
+                        }
+                        return observation;
+                    }
+                }
+                const topology = new GroupTopologyConfigRepository(mutationRuntime);
+                const service = new GroupTopologyManagementService({
+                    findGroupSnapshotByRef: () => snapshot,
+                    groupStateRepository: new PausingGroupStateRepository(
+                        mutationRuntime,
+                    ),
+                    configRepository: topology,
+                    topologyService: new RallarRtcTopologyService(),
+                    sleep: () => Promise.resolve(),
+                });
+
+                const mutation = service.putConfig({
+                    groupRef,
+                    config: { topologyKind: 'tree' },
+                    updatedByPrincipalId: 'owner',
+                    requestId: `${applicationId}-mutation`,
+                });
+                await observed;
+                const concurrentGroups = new GroupStateRepository(concurrentRuntime);
+                const current = await concurrentGroups.findGroupEntry(groupRef);
+                expect(current).toBeDefined();
+                const archived: Group = {
+                    ...current!.value,
+                    status: 'archived',
+                    snapshotVersion: current!.value.snapshotVersion + 1,
+                    updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                    archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+                };
+                expect(await concurrentGroups.updateGroup(
+                    archived,
+                    current!.entry.revision,
+                )).toMatchObject({ status: 'applied' });
+                releaseRead();
+
+                await expect(mutation).rejects.toMatchObject({ status: 403 });
+                expect(await topology.findConfig(groupRef)).toBeUndefined();
+                expect(await topology.findMutationRecord(
+                    groupRef,
+                    `${applicationId}-mutation`,
+                )).toBeUndefined();
+                expect((await concurrentGroups.findGroup(groupRef))?.status)
+                    .toBe('archived');
+                const pending = await new StateMutationOutboxRepository(mutationRuntime)
+                    .listPendingPage({ limit: 100 });
+                expect(pending.records.filter(({ record }) =>
+                    record.aggregateRef.applicationId === applicationId
+                )).toHaveLength(0);
             } finally {
                 await Promise.allSettled(clients.map(async (client) => {
                     await client`
@@ -585,7 +698,7 @@ function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
             joinMode: 'open',
             metadata: {},
             snapshotVersion: 1,
-            metadataVersion: 0,
+            metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 0,
             activeMemberCount: 1,

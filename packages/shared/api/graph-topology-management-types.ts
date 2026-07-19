@@ -84,6 +84,14 @@ export type GroupTopologyConfigMutationOperation =
     | 'putOverride'
     | 'deleteOverride';
 
+export type GroupTopologyConfigAcceptedCausalRevision = Readonly<{
+    stateRevision: number;
+    snapshotVersion: number;
+    metadataVersion: number;
+    rosterVersion: number;
+    presenceVersion: number;
+}>;
+
 export type GroupTopologyConfigMutationReceipt = Readonly<{
     commandId: string;
     commandHash: string;
@@ -96,6 +104,7 @@ export type GroupTopologyConfigMutationReceipt = Readonly<{
     acceptedCreatedAtEpochMs: number | null;
     acceptedUpdatedAtEpochMs: number | null;
     acceptedExpiresAtEpochMs: number | null;
+    acceptedCausalRevision: GroupTopologyConfigAcceptedCausalRevision | null;
     outboxId: string | null;
 }>;
 

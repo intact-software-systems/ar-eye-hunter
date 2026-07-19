@@ -47,8 +47,12 @@ describe('group topology config service', () => {
             read: {
                 config: null,
                 override: null,
+                configGeneration: null,
+                overrideGeneration: null,
+                invariantGeneration: null,
                 idempotency: null,
                 groupSnapshot: createGroupSnapshot(),
+                groupAuthorityGuard: createGroupAuthorityGuard(),
             },
             facts: {
                 requestedAtEpochMs: 1_000,
@@ -83,6 +87,22 @@ describe('group topology config service', () => {
                 computed: laterPolicy,
             })
         ).not.toThrow();
+
+        if (first.outcome !== 'write') {
+            throw new Error('Expected an applied topology config mutation');
+        }
+        expect(() => validateGroupTopologyConfigMutationRecord({
+            groupRef: input.command.aggregateRef,
+            requestId: input.command.requestId,
+            commandHash: input.facts.commandHash,
+            receipt: {
+                ...first.receipt,
+                outboxId: 'state-mutation-attacker-selected',
+            },
+        }, {
+            groupRef: input.command.aggregateRef,
+            requestId: input.command.requestId,
+        })).toThrow('Topology config receipt outbox identity is invalid');
     });
 
     it.each(['putConfig', 'putOverride'] as const)(
@@ -110,6 +130,7 @@ describe('group topology config service', () => {
                         acceptedExpiresAtEpochMs: operation === 'putOverride'
                             ? 6_000
                             : null,
+                        acceptedCausalRevision: null,
                         outboxId: null,
                     },
                 }, { groupRef, requestId })
@@ -139,6 +160,7 @@ describe('group topology config service', () => {
                 invariantGeneration: null,
                 idempotency: null,
                 groupSnapshot: createGroupSnapshot(),
+                groupAuthorityGuard: createGroupAuthorityGuard(),
             },
             facts: {
                 requestedAtEpochMs: 1_000,
@@ -374,6 +396,21 @@ function createGroupSnapshot() {
         activeSessions: [],
         memberCount: 1,
         onlineMemberCount: 0,
+    };
+}
+
+function createGroupAuthorityGuard() {
+    const group = createGroupSnapshot().group;
+    return {
+        groupRef: createGroupRef(),
+        causalGroupRevision: 1,
+        entry: {
+            key: 'group-authority',
+            value: JSON.stringify(group),
+            expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+            updatedTimestamp: new Date(0).toISOString(),
+            revision: 0,
+        },
     };
 }
 

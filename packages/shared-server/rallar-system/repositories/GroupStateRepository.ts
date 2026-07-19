@@ -11,13 +11,12 @@ import type {
 } from '@shared/api/group-types.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import type {
-    RuntimeStateEntry,
-    RuntimeStateRepositoryLike,
-} from '../../runtime-state/RuntimeStateRepository.ts';
-import type {
+import {
+    isRuntimeStateConditionalRepositoryLike,
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
+    RuntimeStateEntry,
+    RuntimeStateRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import {
     RuntimeStateJsonStore,
@@ -61,6 +60,17 @@ const IDEMPOTENT_NAMESPACE = 'group-state:idempotent';
 
 export type GroupStateRepositoryOptions = Readonly<{
     events?: GroupStateEventStore;
+}>;
+
+export type GroupStateAuthorityGuard = Readonly<{
+    groupRef: GroupRef;
+    entry: RuntimeStateEntry;
+    causalGroupRevision: number;
+}>;
+
+export type GroupStateAuthoritativeSnapshot = Readonly<{
+    snapshot: GroupSnapshot;
+    authorityGuard: GroupStateAuthorityGuard;
 }>;
 
 export class GroupStateRepositoryInvariantCorruptionError extends Error {
@@ -166,6 +176,30 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
             group,
             group.purgeAfterEpochMs ?? this.neverExpireAtTimestamp(),
             expectedRevision,
+        );
+    }
+
+    /**
+     * Advances the aggregate storage revision without changing any domain
+     * field. This is an authority fence: callers must use the exact raw entry
+     * returned by readSnapshotWithAuthorityGuard in the same optimistic write
+     * attempt. The raw JSON and physical expiry are deliberately preserved.
+     */
+    async advanceAuthorityFence(
+        guard: GroupStateAuthorityGuard,
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        const stored = assertGroupStateAuthorityGuard(guard);
+        if (!isRuntimeStateConditionalRepositoryLike(this.repository)) {
+            throw new TypeError(
+                'Group authority fences require a conditional runtime-state repository',
+            );
+        }
+        return await this.repository.upsertIfRevision(
+            GROUPS_NAMESPACE,
+            stored.entry.key,
+            stored.entry.value,
+            stored.entry.expireAtTimestamp,
+            stored.entry.revision,
         );
     }
 
@@ -683,6 +717,12 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
     }
 
     async readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined> {
+        return (await this.readSnapshotWithAuthorityGuard(ref))?.snapshot;
+    }
+
+    async readSnapshotWithAuthorityGuard(
+        ref: GroupRef,
+    ): Promise<GroupStateAuthoritativeSnapshot | undefined> {
         const observedAtEpochMs = Date.now();
         const groupKey = this.groupKey(ref);
         return await readStableStateSnapshot({
@@ -696,8 +736,8 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                 ]);
                 return [members, { summary: summary?.value, sessions }] as const;
             },
-            assemble: (stored, members, presence) =>
-                this.toSnapshot(
+            assemble: (stored, members, presence) => ({
+                snapshot: this.toSnapshot(
                     stored.value,
                     members,
                     presence.summary,
@@ -705,6 +745,8 @@ export class GroupStateRepository extends RuntimeStateJsonStore {
                     stored.entry.revision + 1,
                     observedAtEpochMs,
                 ),
+                authorityGuard: toGroupStateAuthorityGuard(ref, stored),
+            }),
         });
     }
 
@@ -887,6 +929,68 @@ function assertStoredGroup(
         'Stored group value is invalid',
     );
     assertGroupRefIdentity(stored.value, decoded, stored.entry.key);
+}
+
+function toGroupStateAuthorityGuard(
+    ref: GroupRef,
+    stored: RuntimeStateEntryValue<Group>,
+): GroupStateAuthorityGuard {
+    assertStoredGroup(stored, ref);
+    assertAuthorityFencePhysicalExpiry(stored);
+    return {
+        groupRef: { ...ref },
+        entry: { ...stored.entry },
+        causalGroupRevision: stored.entry.revision + 1,
+    };
+}
+
+function assertGroupStateAuthorityGuard(
+    guard: GroupStateAuthorityGuard,
+): RuntimeStateEntryValue<Group> {
+    if (!guard || typeof guard !== 'object') {
+        throw new TypeError('Group authority guard is invalid');
+    }
+    const entry = guard.entry;
+    if (
+        !entry ||
+        typeof entry.key !== 'string' ||
+        typeof entry.value !== 'string' ||
+        !Number.isSafeInteger(entry.expireAtTimestamp) ||
+        !Number.isSafeInteger(entry.revision) ||
+        entry.revision < 0 ||
+        !Number.isSafeInteger(guard.causalGroupRevision) ||
+        guard.causalGroupRevision !== entry.revision + 1
+    ) {
+        throw new TypeError('Group authority guard entry is invalid');
+    }
+    let value: Group;
+    try {
+        value = JSON.parse(entry.value) as Group;
+    } catch (error) {
+        throw new GroupStateRepositoryInvariantCorruptionError(
+            entry.key,
+            error instanceof Error
+                ? `Stored authority-fence group JSON is invalid: ${error.message}`
+                : 'Stored authority-fence group JSON is invalid',
+        );
+    }
+    const stored = { entry, value };
+    assertStoredGroup(stored, guard.groupRef);
+    assertAuthorityFencePhysicalExpiry(stored);
+    return stored;
+}
+
+function assertAuthorityFencePhysicalExpiry(
+    stored: RuntimeStateEntryValue<Group>,
+): void {
+    const expectedExpiry = stored.value.purgeAfterEpochMs ??
+        NEVER_EXPIRE_AT_TIMESTAMP;
+    if (stored.entry.expireAtTimestamp !== expectedExpiry) {
+        throw new GroupStateRepositoryInvariantCorruptionError(
+            stored.entry.key,
+            'Stored group physical expiry differs from its domain purge boundary',
+        );
+    }
 }
 
 function assertStoredMember(

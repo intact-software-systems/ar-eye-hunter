@@ -174,9 +174,14 @@ Deno.test('PGlite topology config mutations converge concurrent CAS transactions
       groupId: 'room',
     };
     const snapshot = topologyGroupSnapshot(groupRef);
+    const groupStateRepository = new GroupStateRepository(runtime);
+    assert.equal((await groupStateRepository.insertGroup(snapshot.group)).status, 'applied');
+    for (const member of snapshot.members) {
+      await groupStateRepository.putMember(member);
+    }
     const service = () => new GroupTopologyManagementService({
       findGroupSnapshotByRef: () => snapshot,
-      findAuthoritativeGroupSnapshotByRef: () => snapshot,
+      groupStateRepository,
       configRepository: repository,
       topologyService: new RallarRtcTopologyService(),
       sleep: () => Promise.resolve(),
@@ -226,6 +231,83 @@ Deno.test('PGlite topology config mutations converge concurrent CAS transactions
     assert.deepEqual(
       exactRecords.map((stored) => stored?.record.commandId).sort(),
       ['pglite-topology-a', 'pglite-topology-b'],
+    );
+  });
+});
+
+Deno.test('PGlite topology authority fence rejects an archive overlapping the stable authorization read', async () => {
+  await withPGliteSql(async (sql) => {
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const topology = new GroupTopologyConfigRepository(runtime);
+    const groupState = new GroupStateRepository(runtime);
+    const groupRef = {
+      applicationId: 'pglite-topology-authority',
+      workspaceId: 'overlap',
+      groupId: 'room',
+    };
+    const snapshot = topologyGroupSnapshot(groupRef);
+    assert.equal((await groupState.insertGroup(snapshot.group)).status, 'applied');
+    for (const member of snapshot.members) await groupState.putMember(member);
+    const observed = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let pauseFirstRead = true;
+    class PausingGroupStateRepository extends GroupStateRepository {
+      override async readSnapshotWithAuthorityGuard(ref: GroupRef) {
+        const observation = await super.readSnapshotWithAuthorityGuard(ref);
+        if (pauseFirstRead) {
+          pauseFirstRead = false;
+          observed.resolve();
+          await release.promise;
+        }
+        return observation;
+      }
+    }
+    const service = new GroupTopologyManagementService({
+      findGroupSnapshotByRef: () => snapshot,
+      groupStateRepository: new PausingGroupStateRepository(runtime),
+      configRepository: topology,
+      topologyService: new RallarRtcTopologyService(),
+      sleep: () => Promise.resolve(),
+    });
+
+    const mutation = service.putConfig({
+      groupRef,
+      config: { topologyKind: 'tree' },
+      updatedByPrincipalId: 'owner',
+      requestId: 'pglite-overlapping-archive',
+    });
+    await observed.promise;
+    const current = await groupState.findGroupEntry(groupRef);
+    assert.ok(current);
+    const archived: Group = {
+      ...current.value,
+      status: 'archived',
+      snapshotVersion: current.value.snapshotVersion + 1,
+      updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+      archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+    };
+    assert.equal(
+      (await groupState.updateGroup(archived, current.entry.revision)).status,
+      'applied',
+    );
+    release.resolve();
+
+    await assert.rejects(
+      mutation,
+      (error: unknown) =>
+        typeof error === 'object' && error !== null &&
+        'status' in error && error.status === 403,
+    );
+    assert.equal(await topology.findConfig(groupRef), undefined);
+    assert.equal(
+      await topology.findMutationRecord(groupRef, 'pglite-overlapping-archive'),
+      undefined,
+    );
+    assert.equal((await groupState.findGroup(groupRef))?.status, 'archived');
+    assert.equal(
+      (await new StateMutationOutboxRepository(runtime).listPendingPage({ limit: 10 }))
+        .records.length,
+      0,
     );
   });
 });

@@ -4820,6 +4820,32 @@ components:
               type: integer
               format: int64
 
+    GroupTopologyConfigAcceptedCausalRevision:
+      type: object
+      required: [stateRevision, snapshotVersion, metadataVersion, rosterVersion, presenceVersion]
+      additionalProperties: false
+      properties:
+        stateRevision:
+          type: integer
+          format: int64
+          minimum: 0
+        snapshotVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        metadataVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        rosterVersion:
+          type: integer
+          format: int64
+          minimum: 0
+        presenceVersion:
+          type: integer
+          format: int64
+          minimum: 0
+
     GroupTopologyConfigMutationReceipt:
       type: object
       required: [
@@ -4834,6 +4860,7 @@ components:
         acceptedCreatedAtEpochMs,
         acceptedUpdatedAtEpochMs,
         acceptedExpiresAtEpochMs,
+        acceptedCausalRevision,
         outboxId,
       ]
       properties:
@@ -4872,6 +4899,10 @@ components:
           type: integer
           nullable: true
           format: int64
+        acceptedCausalRevision:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/GroupTopologyConfigAcceptedCausalRevision'
         outboxId:
           type: string
           nullable: true

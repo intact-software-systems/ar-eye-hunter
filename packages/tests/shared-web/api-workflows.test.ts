@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupTopologyConfigAcceptedCausalRevision,
+} from '@shared/api/graph-topology-management-types.ts';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import {
     consumeAgentSessionTicketAt,
@@ -334,6 +337,11 @@ describe('state API workflows', () => {
     });
 
     it('mutates topology config and overrides with auth-capable methods', async () => {
+        type ConfigReceipt = Awaited<
+            ReturnType<typeof putStateGroupTopologyConfig>
+        >['receipt'];
+        expectTypeOf<ConfigReceipt['acceptedCausalRevision']>()
+            .toEqualTypeOf<GroupTopologyConfigAcceptedCausalRevision | null>();
         const scope = {
             applicationId: 'app 1',
             workspaceId: 'workspace/1',

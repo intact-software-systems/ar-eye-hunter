@@ -10,7 +10,9 @@ export type {
     GroupTopologyConfigMutationReceipt,
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type { GroupStateAuthorityGuard } from '../repositories/GroupStateRepository.ts';
 import {
     canMutateActiveGroup,
     canUpdateGroupSnapshot,
@@ -75,6 +77,7 @@ export type GroupTopologyConfigMutationRead = Readonly<{
     invariantGeneration: RuntimeStateEntryValue<GroupTopologyConfigInvariantGeneration> | null;
     idempotency: RuntimeStateEntryValue<GroupTopologyConfigMutationRecord> | null;
     groupSnapshot: GroupSnapshot;
+    groupAuthorityGuard: GroupStateAuthorityGuard;
 }>;
 
 export type GroupTopologyConfigDeleteTarget = Readonly<{
@@ -142,6 +145,7 @@ type TopologyConfigInvariantGenerationGuard = Readonly<{
 export type GroupTopologyConfigMutationComputed =
     | Readonly<{
         outcome: 'write';
+        groupAuthorityGuard: GroupStateAuthorityGuard;
         guard: TopologyConfigWriteGuard;
         invariantGenerationGuard: TopologyConfigInvariantGenerationGuard;
         generationGuard: TopologyConfigGenerationGuard;
@@ -152,6 +156,7 @@ export type GroupTopologyConfigMutationComputed =
     }>
     | Readonly<{
         outcome: 'claim';
+        groupAuthorityGuard: GroupStateAuthorityGuard;
         receipt: GroupTopologyConfigMutationReceipt;
         idempotency: GroupTopologyConfigMutationRecord;
         result: GroupTopologyConfigMutationAcceptedResult;
@@ -432,6 +437,7 @@ function computeDelete(
             acceptedCreatedAtEpochMs: null,
             acceptedUpdatedAtEpochMs: null,
             acceptedExpiresAtEpochMs: null,
+            acceptedCausalRevision: null,
             outboxId: null,
         });
         const result = { kind: 'delete', deleted: false } as const;
@@ -440,6 +446,7 @@ function computeDelete(
         }
         return {
             outcome: 'claim',
+            groupAuthorityGuard: input.read.groupAuthorityGuard,
             receipt,
             result,
             idempotency: recordFor(input.command, input.facts, receipt)!,
@@ -473,6 +480,16 @@ function writeResult(
     acceptedStorageRevision: number,
 ): Extract<GroupTopologyConfigMutationComputed, { outcome: 'write' }> {
     const accepted = input.read.groupSnapshot;
+    const acceptedCausalRevision = {
+        stateRevision: toGroupSnapshotStateRevision(
+            accepted.causalRevision.groupRevision + 1,
+            accepted.causalRevision.presenceRevision,
+        ),
+        snapshotVersion: accepted.group.snapshotVersion,
+        metadataVersion: accepted.group.metadataVersion,
+        rosterVersion: accepted.group.rosterVersion,
+        presenceVersion: accepted.group.presenceVersion,
+    };
     const outbox: GroupTopologyConfigOutboxInput = {
         kind: 'group',
         aggregateRef: copyGroupRef(input.command.aggregateRef),
@@ -481,11 +498,7 @@ function writeResult(
         createdAtEpochMs: input.facts.requestedAtEpochMs,
         acceptedCausalRevision: {
             kind: 'group',
-            stateRevision: accepted.stateRevision,
-            snapshotVersion: accepted.group.snapshotVersion,
-            metadataVersion: accepted.group.metadataVersion,
-            rosterVersion: accepted.group.rosterVersion,
-            presenceVersion: accepted.group.presenceVersion,
+            ...acceptedCausalRevision,
         },
         effects: ['rtc-topology-recompute'],
         event: { kind: 'none' },
@@ -502,6 +515,7 @@ function writeResult(
                 guard.target === 'override'
             ? guard.value.expiresAtEpochMs
             : null,
+        acceptedCausalRevision,
         outboxId: toStateMutationOutboxId(outbox),
     });
     const result: GroupTopologyConfigMutationAcceptedResult =
@@ -512,6 +526,7 @@ function writeResult(
             : { kind: 'override', override: guard.value };
     return {
         outcome: 'write',
+        groupAuthorityGuard: input.read.groupAuthorityGuard,
         guard,
         invariantGenerationGuard: {
             expectedRevision: input.read.invariantGeneration?.entry.revision ?? null,
@@ -554,6 +569,7 @@ function receiptFor(
         | 'acceptedCreatedAtEpochMs'
         | 'acceptedUpdatedAtEpochMs'
         | 'acceptedExpiresAtEpochMs'
+        | 'acceptedCausalRevision'
         | 'outboxId'
     >,
 ): GroupTopologyConfigMutationReceipt {
@@ -569,6 +585,7 @@ function receiptFor(
         acceptedCreatedAtEpochMs: input.acceptedCreatedAtEpochMs,
         acceptedUpdatedAtEpochMs: input.acceptedUpdatedAtEpochMs,
         acceptedExpiresAtEpochMs: input.acceptedExpiresAtEpochMs,
+        acceptedCausalRevision: input.acceptedCausalRevision,
         outboxId: input.outboxId,
     };
 }
@@ -678,6 +695,18 @@ function validateTopologyConfigRead(
 ): void {
     if (!sameGroupRef(read.groupSnapshot.group, command.aggregateRef)) {
         throw new TypeError('Topology config group snapshot has the wrong scope');
+    }
+    if (
+        !read.groupAuthorityGuard ||
+        !sameGroupRef(read.groupAuthorityGuard.groupRef, command.aggregateRef) ||
+        read.groupAuthorityGuard.causalGroupRevision !==
+            read.groupSnapshot.causalRevision.groupRevision ||
+        read.groupAuthorityGuard.entry.revision + 1 !==
+            read.groupAuthorityGuard.causalGroupRevision
+    ) {
+        throw new TypeError(
+            'Topology config group authority guard differs from its snapshot',
+        );
     }
     if (read.config) {
         validateStoredGroupTopologyConfig(read.config.value, command.aggregateRef);
@@ -911,6 +940,7 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
         'acceptedCreatedAtEpochMs',
         'acceptedUpdatedAtEpochMs',
         'acceptedExpiresAtEpochMs',
+        'acceptedCausalRevision',
         'outboxId',
     ], 'Topology config receipt');
     requireString(value.commandId, 'Topology config receipt commandId');
@@ -955,18 +985,63 @@ function validateTopologyConfigReceipt(value: unknown, expectedRef: GroupRef): v
         if (value[field] !== null) validateStorageRevision(value[field], label);
     }
     if (value.outboxId !== null) requireString(value.outboxId, 'Topology config outboxId');
-    if ((value.outcome === 'applied') !== (value.outboxId !== null)) {
-        throw new TypeError('Topology config receipt effect does not match outboxId');
-    }
     if (
         value.outcome === 'applied' &&
         (
             Number(value.acceptedVersion) <= 0 ||
             value.acceptedStorageRevision === null ||
+            value.acceptedCausalRevision === null ||
             value.outboxId === null
         )
     ) {
         throw new TypeError('Topology config applied receipt is incomplete');
+    }
+    if (
+        (value.outcome === 'applied') !== (value.outboxId !== null) ||
+        (value.outcome === 'applied') !==
+            (value.acceptedCausalRevision !== null)
+    ) {
+        throw new TypeError('Topology config receipt effect does not match outboxId');
+    }
+    if (value.acceptedCausalRevision !== null) {
+        if (!isRecord(value.acceptedCausalRevision)) {
+            throw new TypeError('Topology config accepted causal revision is invalid');
+        }
+        validateExactKeys(value.acceptedCausalRevision, [
+            'stateRevision',
+            'snapshotVersion',
+            'metadataVersion',
+            'rosterVersion',
+            'presenceVersion',
+        ], 'Topology config accepted causal revision');
+        for (const field of [
+            'stateRevision',
+            'snapshotVersion',
+            'metadataVersion',
+            'rosterVersion',
+            'presenceVersion',
+        ] as const) {
+            validateStorageRevision(
+                value.acceptedCausalRevision[field],
+                `Topology config accepted causal revision ${field}`,
+            );
+        }
+        const expectedOutboxId = toStateMutationOutboxId({
+            commandId: String(value.commandId),
+            kind: 'group',
+            aggregateRef: value.groupRef as GroupRef,
+            acceptedCausalRevision: {
+                kind: 'group',
+                stateRevision: Number(value.acceptedCausalRevision.stateRevision),
+                snapshotVersion: Number(value.acceptedCausalRevision.snapshotVersion),
+                metadataVersion: Number(value.acceptedCausalRevision.metadataVersion),
+                rosterVersion: Number(value.acceptedCausalRevision.rosterVersion),
+                presenceVersion: Number(value.acceptedCausalRevision.presenceVersion),
+            },
+        });
+        if (value.outboxId !== expectedOutboxId) {
+            throw new TypeError('Topology config receipt outbox identity is invalid');
+        }
     }
     if (
         value.outcome === 'no-op' &&

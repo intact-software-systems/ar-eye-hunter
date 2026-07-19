@@ -210,8 +210,19 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
     'acceptedCreatedAtEpochMs',
     'acceptedUpdatedAtEpochMs',
     'acceptedExpiresAtEpochMs',
+    'acceptedCausalRevision',
     'outboxId',
   ]);
+  assert.deepEqual(
+    json.components.schemas.GroupTopologyConfigAcceptedCausalRevision.required,
+    [
+      'stateRevision',
+      'snapshotVersion',
+      'metadataVersion',
+      'rosterVersion',
+      'presenceVersion',
+    ],
+  );
   assert.ok(
     json.components.schemas.ReconfigureGroupTopologyResponse.properties?.changed,
   );

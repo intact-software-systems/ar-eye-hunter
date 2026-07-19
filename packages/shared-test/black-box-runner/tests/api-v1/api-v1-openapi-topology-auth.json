@@ -184,6 +184,37 @@
                 }
               }
             }
+          },
+          "components": {
+            "schemas": {
+              "GroupTopologyConfigMutationReceipt": {
+                "required": [
+                  "commandId",
+                  "commandHash",
+                  "operation",
+                  "outcome",
+                  "groupRef",
+                  "target",
+                  "acceptedVersion",
+                  "acceptedStorageRevision",
+                  "acceptedCreatedAtEpochMs",
+                  "acceptedUpdatedAtEpochMs",
+                  "acceptedExpiresAtEpochMs",
+                  "acceptedCausalRevision",
+                  "outboxId"
+                ]
+              },
+              "GroupTopologyConfigAcceptedCausalRevision": {
+                "required": [
+                  "stateRevision",
+                  "snapshotVersion",
+                  "metadataVersion",
+                  "rosterVersion",
+                  "presenceVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
           }
         }
       }

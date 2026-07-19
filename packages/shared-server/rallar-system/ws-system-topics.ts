@@ -37,6 +37,7 @@ import {
     type RtcRttAcceptanceResult,
 } from './services/rtc-rtt-measurement-policy.ts';
 import { GroupTopologyConfigRepository } from './repositories/GroupTopologyConfigRepository.ts';
+import { GroupStateRepository } from './repositories/GroupStateRepository.ts';
 import { RtcRttRepository, type RtcRttRepositoryOptions, } from './repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from './repositories/RtcTopologySnapshotRepository.ts';
 import type { RuntimeStateRepositoryLike } from '../runtime-state/RuntimeStateRepository.ts';
@@ -75,6 +76,7 @@ type RtcTopologyFlushTimer = ReturnType<typeof setTimeout>;
 
 type RtcTopologyRuntimeState = Readonly<{
     topologyConfig: GroupTopologyConfigRepository;
+    groupState?: GroupStateRepository;
     topologySnapshots: RtcTopologySnapshotRepository;
     rtts: RtcRttRepository;
 }>;
@@ -130,7 +132,7 @@ export function initRallarSystemWsTopics(
     const rtcTopologyManagement = options.rtcTopologyManagement ??
         new GroupTopologyManagementService({
         findGroupSnapshotByRef,
-        findAuthoritativeGroupSnapshotByRef: findGroupSnapshotByRef,
+        groupStateRepository: rtcTopologyRuntimeState?.groupState,
         configRepository: rtcTopologyRuntimeState?.topologyConfig,
         topologyService: rtcTopologyService,
         topologySnapshotRepository: rtcTopologyRuntimeState?.topologySnapshots,
@@ -354,6 +356,7 @@ function createRtcTopologyRuntimeState(
 ): RtcTopologyRuntimeState {
     return {
         topologyConfig: new GroupTopologyConfigRepository(repository),
+        groupState: new GroupStateRepository(repository),
         topologySnapshots: new RtcTopologySnapshotRepository(repository),
         rtts: new RtcRttRepository(repository, rttOptions),
     };

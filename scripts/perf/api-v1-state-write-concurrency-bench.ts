@@ -636,7 +636,7 @@ function createServiceRuntime(
     group,
     topology: new GroupTopologyManagementService({
       findGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
-      findAuthoritativeGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
+      groupStateRepository: new GroupStateRepository(runtimeRepository),
       configRepository: new GroupTopologyConfigRepository(runtimeRepository),
       topologyService: new RallarRtcTopologyService(),
       timing,
@@ -1030,7 +1030,7 @@ async function seedCompleteState(
   });
   const topology = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
-    findAuthoritativeGroupSnapshotByRef: (ref) => group.readSnapshot(ref),
+    groupStateRepository: new GroupStateRepository(runtimeRepository),
     configRepository: new GroupTopologyConfigRepository(runtimeRepository),
     topologyService: new RallarRtcTopologyService(),
   });

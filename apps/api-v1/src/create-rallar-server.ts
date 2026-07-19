@@ -22,6 +22,7 @@ import {
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/AdminOperationsService.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
@@ -106,6 +107,7 @@ export function createRallarServer(
   const topologyConfigRepository = new GroupTopologyConfigRepository(
     runtimeStateRepository,
   );
+  const groupStateRepository = new GroupStateRepository(runtimeStateRepository);
   const topologySnapshotRepository = new RtcTopologySnapshotRepository(
     runtimeStateRepository,
   );
@@ -116,8 +118,7 @@ export function createRallarServer(
   const topologyManagement = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref, cacheOptions) =>
       middleware.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
-    findAuthoritativeGroupSnapshotByRef: (ref) =>
-      middleware.groupStateService.readCurrentSnapshot(ref),
+    groupStateRepository,
     configRepository: topologyConfigRepository,
     topologyService: rtcTopologyService,
     topologySnapshotRepository,

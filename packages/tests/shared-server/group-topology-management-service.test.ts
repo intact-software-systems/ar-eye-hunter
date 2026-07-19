@@ -5,6 +5,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import {
     GroupTopologyConfigRepository,
+    GroupTopologyConfigRepositoryInvariantCorruptionError,
     RtcRttRepository,
     RtcTopologySnapshotRepository,
 } from '@shared-server/mod.ts';
@@ -22,6 +23,11 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/
 import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
 } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import {
+    groupStateGroupStorageKey,
+    groupStateMemberStorageKey,
+} from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
@@ -32,6 +38,145 @@ import {
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('GroupTopologyManagementService', () => {
+    it.each([
+        {
+            label: 'archives the group',
+            updatedByPrincipalId: 'owner',
+            isPlatformAdmin: false,
+            mutate: (snapshot: GroupSnapshot): GroupSnapshot => ({
+                ...snapshot,
+                stateRevision: snapshot.stateRevision + 1,
+                causalRevision: {
+                    ...snapshot.causalRevision,
+                    groupRevision: snapshot.causalRevision.groupRevision + 1,
+                },
+                group: {
+                    ...snapshot.group,
+                    status: 'archived',
+                    snapshotVersion: snapshot.group.snapshotVersion + 1,
+                    updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                    archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+                },
+            }),
+        },
+        {
+            label: 'demotes the owner',
+            updatedByPrincipalId: 'owner',
+            isPlatformAdmin: false,
+            mutate: (snapshot: GroupSnapshot): GroupSnapshot => ({
+                ...snapshot,
+                stateRevision: snapshot.stateRevision + 1,
+                causalRevision: {
+                    ...snapshot.causalRevision,
+                    groupRevision: snapshot.causalRevision.groupRevision + 1,
+                },
+                group: {
+                    ...snapshot.group,
+                    ownerPrincipalId: 'session-b',
+                    snapshotVersion: snapshot.group.snapshotVersion + 1,
+                    rosterVersion: snapshot.group.rosterVersion + 1,
+                    updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                },
+                members: snapshot.members.map((member) =>
+                    member.principalId === 'owner'
+                        ? {
+                            ...member,
+                            role: 'member' as const,
+                            updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                        }
+                        : member.principalId === 'session-b'
+                        ? {
+                            ...member,
+                            role: 'owner' as const,
+                            updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                        }
+                        : member
+                ),
+            }),
+        },
+        {
+            label: 'archives the group for a platform admin',
+            updatedByPrincipalId: 'platform-admin',
+            isPlatformAdmin: true,
+            mutate: (snapshot: GroupSnapshot): GroupSnapshot => ({
+                ...snapshot,
+                stateRevision: snapshot.stateRevision + 1,
+                causalRevision: {
+                    ...snapshot.causalRevision,
+                    groupRevision: snapshot.causalRevision.groupRevision + 1,
+                },
+                group: {
+                    ...snapshot.group,
+                    status: 'archived',
+                    snapshotVersion: snapshot.group.snapshotVersion + 1,
+                    updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                    archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+                },
+            }),
+        },
+    ])('rejects when a concurrent mutation $label immediately before the authority CAS', async ({ label, mutate, updatedByPrincipalId, isPlatformAdmin }) => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-authority-race'));
+        seedGroupAuthorityState(runtimeRepository, group);
+        const changed = mutate(group);
+        let injected = false;
+        let reapplied = false;
+        const applyConcurrentMutation = async (): Promise<void> => {
+            await runtimeRepository.upsert(
+                'group-state:groups',
+                groupStateGroupStorageKey(group.group),
+                JSON.stringify(changed.group),
+                NEVER_EXPIRE_AT_TIMESTAMP,
+            );
+            for (const member of changed.members) {
+                const original = group.members.find((candidate) =>
+                    candidate.principalId === member.principalId
+                );
+                if (JSON.stringify(original) === JSON.stringify(member)) continue;
+                await runtimeRepository.upsert(
+                    'group-state:members',
+                    groupStateMemberStorageKey(member),
+                    JSON.stringify(member),
+                    NEVER_EXPIRE_AT_TIMESTAMP,
+                );
+            }
+        };
+        runtimeRepository.beforeConditionalWrite = async () => {
+            if (!injected) {
+                injected = true;
+                await applyConcurrentMutation();
+            }
+        };
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            adminPrincipalIds: isPlatformAdmin
+                ? new Set([updatedByPrincipalId])
+                : undefined,
+            sleep: async () => {
+                if (injected && !reapplied) {
+                    reapplied = true;
+                    await applyConcurrentMutation();
+                }
+            },
+        });
+        const requestId = `authority-race-${label.replaceAll(' ', '-')}`;
+
+        await expect(service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId,
+            requestId,
+        })).rejects.toMatchObject({ status: 403 });
+        expect(await configRepository.findConfig(group.group)).toBeUndefined();
+        expect(await configRepository.findMutationRecord(
+            group.group,
+            requestId,
+        )).toBeUndefined();
+    });
+
     it('rebases simultaneous puts to distinct versions with receipts, outboxes, and zero-based timing', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         runtimeRepository.serializeTransactions = true;
@@ -94,7 +239,7 @@ describe('GroupTopologyManagementService', () => {
         expect(timingEvents).toEqual(expect.arrayContaining([
             expect.objectContaining({
                 component: 'group-topology-config-service',
-                operation: 'mutation.transaction',
+                operation: 'mutation.read',
                 status: 'error',
                 details: expect.objectContaining({ attempt: 0, backoffMs: 0 }),
             }),
@@ -599,17 +744,21 @@ describe('GroupTopologyManagementService', () => {
             topologyConfig(group.group, 1, 'tree', 'winner'),
             null,
         );
-        let currentGroup = group;
         const authorizationService = createService({
             runtimeRepository: authorizationRuntime,
             group,
-            authoritativeReadGroup: () => currentGroup,
             configRepository: authorizationRepository,
             sleep: async () => {
-                currentGroup = {
+                await persistGroupAuthorityMutation(authorizationRuntime, {
                     ...group,
-                    group: { ...group.group, status: 'archived' },
-                };
+                    group: {
+                        ...group.group,
+                        status: 'archived',
+                        snapshotVersion: group.group.snapshotVersion + 1,
+                        updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                        archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+                    },
+                });
             },
         });
         await authorizationService.readConfig(group.group);
@@ -997,6 +1146,81 @@ describe('GroupTopologyManagementService', () => {
         );
     });
 
+    it('rejects an attacker-selected compact receipt outboxId at the repository boundary', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({ runtimeRepository, group, configRepository });
+        const request = {
+            groupRef: group.group,
+            config: { topologyKind: 'tree' as const },
+            updatedByPrincipalId: 'owner',
+            requestId: 'tampered-repository-outbox-id',
+        };
+        const accepted = await service.putConfig(request);
+        const key = configRepository.mutationKey(group.group, request.requestId);
+        const entry = await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+            key,
+        );
+        const record = JSON.parse(entry!.value) as Record<string, unknown>;
+        await runtimeRepository.upsert(
+            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+            key,
+            JSON.stringify({
+                ...record,
+                receipt: {
+                    ...accepted.receipt,
+                    outboxId: 'state-mutation-attacker-selected',
+                },
+            }),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+
+        await expect(configRepository.findMutationRecord(
+            group.group,
+            request.requestId,
+        )).rejects.toBeInstanceOf(
+            GroupTopologyConfigRepositoryInvariantCorruptionError,
+        );
+    });
+
+    it('rejects an attacker-selected compact receipt outboxId at service replay', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const group = createGroupSnapshot(createGroupRef('workspace-1'));
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const service = createService({ runtimeRepository, group, configRepository });
+        const request = {
+            groupRef: group.group,
+            config: { topologyKind: 'tree' as const },
+            updatedByPrincipalId: 'owner',
+            requestId: 'tampered-service-outbox-id',
+        };
+        const accepted = await service.putConfig(request);
+        const key = configRepository.mutationKey(group.group, request.requestId);
+        const entry = await runtimeRepository.findEntry(
+            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+            key,
+        );
+        const record = JSON.parse(entry!.value) as Record<string, unknown>;
+        await runtimeRepository.upsert(
+            GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+            key,
+            JSON.stringify({
+                ...record,
+                receipt: {
+                    ...accepted.receipt,
+                    outboxId: 'state-mutation-attacker-selected',
+                },
+            }),
+            NEVER_EXPIRE_AT_TIMESTAMP,
+        );
+
+        await expect(service.putConfig(request)).rejects.toBeInstanceOf(
+            GroupTopologyConfigRepositoryInvariantCorruptionError,
+        );
+    });
+
     it.each(['putConfig', 'putOverride'] as const)(
         'rejects an impossible persisted %s no-op instead of reconstructing replay state',
         async (operation) => {
@@ -1094,11 +1318,9 @@ describe('GroupTopologyManagementService', () => {
     it('revalidates lifecycle and actor authority before replaying a winner', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
-        let authoritative = group;
         const service = createService({
             runtimeRepository,
             group,
-            authoritativeReadGroup: () => authoritative,
         });
         const request = {
             groupRef: group.group,
@@ -1108,24 +1330,47 @@ describe('GroupTopologyManagementService', () => {
         };
         await service.putConfig(request);
 
-        authoritative = {
+        await persistGroupAuthorityMutation(runtimeRepository, {
             ...group,
-            group: { ...group.group, status: 'archived' },
-        };
+            group: {
+                ...group.group,
+                status: 'archived',
+                snapshotVersion: group.group.snapshotVersion + 1,
+                updated: { atEpochMs: 2, byPrincipalId: 'owner' },
+                archived: { atEpochMs: 2, byPrincipalId: 'owner' },
+            },
+        });
         await expect(service.putConfig(request)).rejects.toMatchObject({ status: 403 });
 
-        authoritative = {
+        await persistGroupAuthorityMutation(runtimeRepository, {
             ...group,
+            group: {
+                ...group.group,
+                ownerPrincipalId: 'session-b',
+                snapshotVersion: group.group.snapshotVersion + 2,
+                rosterVersion: group.group.rosterVersion + 1,
+                updated: { atEpochMs: 3, byPrincipalId: 'owner' },
+            },
             members: group.members.map((member) =>
                 member.principalId === 'owner'
-                    ? { ...member, role: 'member' as const }
+                    ? {
+                        ...member,
+                        role: 'member' as const,
+                        updated: { atEpochMs: 3, byPrincipalId: 'owner' },
+                    }
+                    : member.principalId === 'session-b'
+                    ? {
+                        ...member,
+                        role: 'owner' as const,
+                        updated: { atEpochMs: 3, byPrincipalId: 'owner' },
+                    }
                     : member
             ),
-        };
+        });
         await expect(service.putConfig(request)).rejects.toMatchObject({ status: 403 });
     });
 
-    it('fails closed when an authoritative group reader is missing at runtime', async () => {
+    it('fails closed when the authoritative group-state repository is missing at runtime', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
         const ordinaryReader = vi.fn(() => group);
@@ -1139,7 +1384,7 @@ describe('GroupTopologyManagementService', () => {
             groupRef: group.group,
             config: { topologyKind: 'tree' },
             updatedByPrincipalId: 'owner',
-            requestId: 'missing-authoritative-reader',
+            requestId: 'missing-authoritative-repository',
         })).rejects.toBeInstanceOf(TypeError);
         expect(ordinaryReader).not.toHaveBeenCalled();
     });
@@ -1183,6 +1428,8 @@ describe('GroupTopologyManagementService', () => {
             }
         };
         const service = createService({ runtimeRepository, group, configRepository });
+        const groups = new GroupStateRepository(runtimeRepository);
+        const groupBefore = await groups.findGroupEntry(group.group);
 
         await expect(service.putConfig({
             groupRef: group.group,
@@ -1193,6 +1440,7 @@ describe('GroupTopologyManagementService', () => {
         expect(await configRepository.findConfig(group.group)).toBeUndefined();
         expect(await configRepository.findMutationRecord(group.group, 'atomic-outbox'))
             .toBeUndefined();
+        expect(await groups.findGroupEntry(group.group)).toEqual(groupBefore);
     });
 
     it('commits config without synchronous recomputation, publication, or compensation', async () => {
@@ -1862,6 +2110,7 @@ function createService(options: {
     readonly wakeStateMutationOutbox?: () => void;
     readonly adminPrincipalIds?: ReadonlySet<string>;
 }): GroupTopologyManagementService {
+    seedGroupAuthorityState(options.runtimeRepository, options.group);
     return new GroupTopologyManagementService({
         findGroupSnapshotByRef: async (ref) =>
             ref.applicationId === options.group.group.applicationId &&
@@ -1869,13 +2118,7 @@ function createService(options: {
                 ref.groupId === options.group.group.groupId
                 ? options.readGroup?.() ?? options.group
                 : undefined,
-        findAuthoritativeGroupSnapshotByRef: async (ref) =>
-            ref.applicationId === options.group.group.applicationId &&
-                ref.workspaceId === options.group.group.workspaceId &&
-                ref.groupId === options.group.group.groupId
-                ? options.authoritativeReadGroup?.() ?? options.readGroup?.() ??
-                    options.group
-                : undefined,
+        groupStateRepository: new GroupStateRepository(options.runtimeRepository),
         configRepository: options.configRepository ??
             new GroupTopologyConfigRepository(options.runtimeRepository),
         topologyService: options.topologyService ?? new RallarRtcTopologyService({
@@ -1893,6 +2136,54 @@ function createService(options: {
         wakeStateMutationOutbox: options.wakeStateMutationOutbox,
         adminPrincipalIds: options.adminPrincipalIds,
     });
+}
+
+function seedGroupAuthorityState(
+    runtime: FakeRuntimeStateRepository,
+    snapshot: GroupSnapshot,
+): void {
+    const putIfMissing = (namespace: string, key: string, value: unknown): void => {
+        const compositeKey = `${namespace}::${key}`;
+        if (runtime.data.has(compositeKey)) return;
+        runtime.data.set(compositeKey, {
+            key,
+            value: JSON.stringify(value),
+            expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
+            updatedTimestamp: new Date(0).toISOString(),
+            revision: 0,
+        });
+    };
+    putIfMissing(
+        'group-state:groups',
+        groupStateGroupStorageKey(snapshot.group),
+        snapshot.group,
+    );
+    for (const member of snapshot.members) {
+        putIfMissing(
+            'group-state:members',
+            groupStateMemberStorageKey(member),
+            member,
+        );
+    }
+}
+
+async function persistGroupAuthorityMutation(
+    runtime: FakeRuntimeStateRepository,
+    snapshot: GroupSnapshot,
+): Promise<void> {
+    const repository = new GroupStateRepository(runtime);
+    const current = await repository.findGroupEntry(snapshot.group);
+    if (!current) throw new Error('Expected seeded group authority row');
+    const written = await repository.updateGroup(
+        snapshot.group,
+        current.entry.revision,
+    );
+    if (written.status !== 'applied') {
+        throw new Error('Expected group authority mutation to apply');
+    }
+    for (const member of snapshot.members) {
+        await repository.putMember(member);
+    }
 }
 
 function topologyConfig(
@@ -2008,7 +2299,7 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
             joinMode: 'open',
             metadata: {},
             snapshotVersion: 1,
-            metadataVersion: 0,
+            metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 0,
             activeMemberCount: sessionIds.length,

@@ -191,7 +191,18 @@ after that expiry is rejected instead of extending or committing it. The
 idempotency row stores only command identity plus the compact receipt. PUT
 receipts must be applied, while DELETE can retain a legitimate no-op receipt;
 mandatory nullable receipt timestamps reconstruct accepted PUT responses on
-replay.
+replay. Applied receipts also carry the mandatory five-field
+`acceptedCausalRevision`; replay recomputes the deterministic
+`rtc-topology-recompute` outbox identity from it and rejects a changed
+`outboxId`. The topology transaction first CAS-touches the exact raw group row
+used for lifecycle and actor authorization. That authority fence preserves all
+group domain fields and its physical expiry, while advancing the causal group
+revision used by the accepted outbox. A fence conflict rolls back topology,
+idempotency, and outbox writes and reruns the full read/policy path. A no-op
+receipt uses `acceptedCausalRevision: null` and queues no topology effect.
+A request-id-bearing no-op still applies the fence before its idempotency claim;
+the cached group domain view remains semantically unchanged, and a
+minimum-revision read refreshes the causal-only advance when required.
 DELETE uses
 `Idempotency-Key` on REST (or `requestId` in the shared browser options) for
 stable replay. They return after commit; outbox work performs recompute and

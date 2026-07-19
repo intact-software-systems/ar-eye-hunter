@@ -16,6 +16,7 @@ import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-co
 import * as rttRepository from '@shared/repository/rtt-repository.ts';
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { GroupTopologyConfigRepository } from '../repositories/GroupTopologyConfigRepository.ts';
+import { GroupStateRepository } from '../repositories/GroupStateRepository.ts';
 import {
     createStateMutationOutboxRecord,
     hashStateMutationCommand,
@@ -120,7 +121,7 @@ export type GroupTopologyGroupSnapshotReader = (
 
 export type GroupTopologyManagementServiceOptions = Readonly<{
     findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
-    findAuthoritativeGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
+    groupStateRepository?: GroupStateRepository;
     configRepository?: GroupTopologyConfigRepository;
     topologyService: RallarRtcTopologyService;
     topologySnapshotRepository?: RtcTopologySnapshotRepository;
@@ -339,7 +340,7 @@ export class GroupTopologyManagementService {
             try {
                 const read = await readTopologyConfigMutation(
                     repository,
-                    this.options.findAuthoritativeGroupSnapshotByRef,
+                    this.requireGroupStateRepository(),
                     command,
                 );
                 this.recordConfigMutationPhase(command, 'read', phaseStarted, attempt, backoffMs);
@@ -1026,6 +1027,15 @@ export class GroupTopologyManagementService {
         return this.options.now?.() ?? Date.now();
     }
 
+    private requireGroupStateRepository(): GroupStateRepository {
+        if (!this.options.groupStateRepository) {
+            throw new TypeError(
+                'Topology config mutations require a production group-state repository',
+            );
+        }
+        return this.options.groupStateRepository;
+    }
+
     private randomId(): string {
         return this.options.randomId?.() ?? crypto.randomUUID();
     }
@@ -1033,7 +1043,7 @@ export class GroupTopologyManagementService {
 
 async function readTopologyConfigMutation(
     repository: GroupTopologyConfigRepository,
-    findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader,
+    groupStateRepository: GroupStateRepository,
     command: GroupTopologyConfigMutationCommand,
 ): Promise<GroupTopologyConfigMutationRead> {
     const invariantBefore = await repository.findInvariantGenerationEntry(
@@ -1045,7 +1055,7 @@ async function readTopologyConfigMutation(
         configGeneration,
         overrideGeneration,
         idempotency,
-        groupSnapshot,
+        groupObservation,
     ] = await Promise.all([
         repository.findConfigEntry(command.aggregateRef),
         repository.findOverrideEntry(command.aggregateRef),
@@ -1057,12 +1067,12 @@ async function readTopologyConfigMutation(
                 command.aggregateRef,
                 command.requestId,
             ),
-        findGroupSnapshotByRef(command.aggregateRef),
+        groupStateRepository.readSnapshotWithAuthorityGuard(command.aggregateRef),
     ]);
     const invariantAfter = await repository.findInvariantGenerationEntry(
         command.aggregateRef,
     );
-    if (!groupSnapshot) {
+    if (!groupObservation) {
         throw new Error(`Group snapshot not found: ${command.aggregateRef.groupId}`);
     }
     if (!sameTopologyInvariantGeneration(invariantBefore, invariantAfter)) {
@@ -1075,7 +1085,8 @@ async function readTopologyConfigMutation(
         overrideGeneration: overrideGeneration ?? null,
         invariantGeneration: invariantAfter ?? null,
         idempotency: idempotency ?? null,
-        groupSnapshot,
+        groupSnapshot: groupObservation.snapshot,
+        groupAuthorityGuard: groupObservation.authorityGuard,
     };
 }
 
@@ -1150,6 +1161,15 @@ async function writeTopologyConfigMutation(
     try {
         return await runtime.begin(async (transaction) => {
             const repository = new GroupTopologyConfigRepository(transaction);
+            const authorityFence = await new GroupStateRepository(transaction)
+                .advanceAuthorityFence(computed.groupAuthorityGuard);
+            if (
+                authorityFence.status === 'conflict' ||
+                authorityFence.revision !==
+                    computed.groupAuthorityGuard.entry.revision + 1
+            ) {
+                throw new RuntimeStateWriteConflictError();
+            }
             if (computed.outcome === 'write') {
                 const guard = computed.guard;
                 const state = guard.operation === 'delete'

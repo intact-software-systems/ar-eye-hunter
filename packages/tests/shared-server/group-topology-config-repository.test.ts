@@ -26,6 +26,7 @@ import type {
     RuntimeStateEntry,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { toStateMutationOutboxId } from '@shared-server/rallar-system/repositories/StateMutationOutboxRepository.ts';
 
 describe('group topology config repository', () => {
     it('uses canonical optional-workspace keys across every topology namespace', () => {
@@ -299,6 +300,7 @@ describe('group topology config repository', () => {
                                 acceptedCreatedAtEpochMs: null,
                                 acceptedUpdatedAtEpochMs: null,
                                 acceptedExpiresAtEpochMs: null,
+                                acceptedCausalRevision: null,
                                 outboxId: null,
                             },
                         },
@@ -371,6 +373,7 @@ describe('group topology config repository', () => {
                             acceptedCreatedAtEpochMs: null,
                             acceptedUpdatedAtEpochMs: null,
                             acceptedExpiresAtEpochMs: null,
+                            acceptedCausalRevision: null,
                             outboxId: null,
                         },
                     },
@@ -538,6 +541,7 @@ describe('group topology config repository', () => {
                             acceptedCreatedAtEpochMs: null,
                             acceptedUpdatedAtEpochMs: null,
                             acceptedExpiresAtEpochMs: null,
+                            acceptedCausalRevision: null,
                             outboxId: null,
                         },
                     }),
@@ -640,6 +644,7 @@ describe('group topology config repository', () => {
                         acceptedCreatedAtEpochMs: null,
                         acceptedUpdatedAtEpochMs: null,
                         acceptedExpiresAtEpochMs: null,
+                        acceptedCausalRevision: null,
                         outboxId: null,
                     },
                 },
@@ -756,6 +761,7 @@ describe('group topology config repository', () => {
                     acceptedCreatedAtEpochMs: null,
                     acceptedUpdatedAtEpochMs: null,
                     acceptedExpiresAtEpochMs: null,
+                    acceptedCausalRevision: null,
                     outboxId: null,
                 },
             }),
@@ -817,6 +823,7 @@ describe('group topology config repository', () => {
                     acceptedCreatedAtEpochMs: null,
                     acceptedUpdatedAtEpochMs: null,
                     acceptedExpiresAtEpochMs: null,
+                    acceptedCausalRevision: null,
                     outboxId: null,
                     ...receipt,
                 },
@@ -857,6 +864,7 @@ describe('group topology config repository', () => {
                         acceptedExpiresAtEpochMs: operation === 'putOverride'
                             ? 6_000
                             : null,
+                        acceptedCausalRevision: null,
                         outboxId: null,
                     },
                 }),
@@ -890,6 +898,13 @@ describe('group topology config repository', () => {
         const groupRef = createGroupRef('workspace-1');
         const requestId = 'expected-request';
         const commandHash = `sha256:${'c'.repeat(64)}`;
+        const acceptedCausalRevision = {
+            stateRevision: 2,
+            snapshotVersion: 1,
+            metadataVersion: 1,
+            rosterVersion: 1,
+            presenceVersion: 0,
+        };
         await runtimeRepository.insertIfAbsent(
             GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
             repository.mutationKey(groupRef, requestId),
@@ -909,7 +924,16 @@ describe('group topology config repository', () => {
                     acceptedCreatedAtEpochMs: 1,
                     acceptedUpdatedAtEpochMs: 1,
                     acceptedExpiresAtEpochMs: null,
-                    outboxId: 'state-mutation-valid-shape',
+                    acceptedCausalRevision,
+                    outboxId: toStateMutationOutboxId({
+                        commandId: requestId,
+                        kind: 'group',
+                        aggregateRef: groupRef,
+                        acceptedCausalRevision: {
+                            kind: 'group',
+                            ...acceptedCausalRevision,
+                        },
+                    }),
                     ...receipt,
                 },
             }),

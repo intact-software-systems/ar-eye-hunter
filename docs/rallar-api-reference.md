@@ -1163,7 +1163,23 @@ state scope used by clients and groups:
   states that never coexisted.
   Every response includes a compact receipt whose mandatory nullable replay
   timestamps let the service reconstruct a PUT replay without storing the full
-  accepted config in the idempotency ledger. PUT receipts are always
+  accepted config in the idempotency ledger. Its mandatory nullable
+  `acceptedCausalRevision` is non-null exactly for an applied write and carries
+  the five scalar group snapshot revision fields used to derive the fixed
+  `rtc-topology-recompute` outbox identity. Replays recompute that identity and
+  reject a receipt whose `outboxId` was altered. Before any topology or
+  idempotency row is written, the transaction also advances an expected-revision
+  authority fence on the exact raw group row observed with the authorization
+  snapshot. The fence intentionally changes only the group storage/causal
+  revision: it preserves the raw domain JSON and physical expiry byte-for-byte.
+  A conflict rolls the whole transaction back and restarts snapshot reading,
+  lifecycle/actor authorization, policy, and invariant checks. Effectful
+  outboxes therefore carry the post-fence causal group revision; no-op receipts
+  carry `acceptedCausalRevision: null` and do not enqueue an effect. A
+  request-id-bearing no-op still fences before claiming its ledger row. Since
+  that touch changes no group domain field, an existing cache remains
+  semantically valid; a caller requiring the newer causal revision uses the
+  normal minimum-revision read-through path to refresh it. PUT receipts are always
   `applied`; only DELETE may record either an applied deletion or a legitimate
   no-op. The route returns without waiting for recompute or publish. Browser
   DELETE callers can supply `requestId`; REST callers send the same stable value
