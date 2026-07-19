@@ -10,8 +10,7 @@
   "scripts": {
     "dev": "npm run dev --workspaces",
     "build": "npm run build --workspaces",
-    "lint": "npm run lint:eslint && npm run lint --workspaces --if-present",
-    "lint:eslint": "eslint .",
+    "lint": "npm run lint --workspaces",
     "typecheck": "tsc -p packages/shared/tsconfig.json --noEmit && npm run typecheck --workspaces --if-present",
     "test": "npm run test:unit",
     "test:unit": "vitest run",
@@ -136,12 +135,7 @@
     "test:integration:rallar:real:live": "npm run test:integration:rallar:live"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.0",
-    "@babel/core": "^8.0.0",
-    "@babel/eslint-parser": "^8.0.1",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "@babel/plugin-transform-react-jsx": "^8.0.1",
-    "@babel/plugin-transform-typescript": "^8.0.1",
+    "@babel/parser": "^8.0.4",
     "@electric-sql/pglite": "0.5.4",
     "@playwright/test": "1.61.1",
     "@vitest/ui": "4.1.10",
@@ -150,7 +144,6 @@
     "fake-indexeddb": "^6.2.5",
     "graphology": "^0.26.0",
     "happy-dom": "^20.10.6",
-    "globals": "^16.3.0",
     "js-yaml": "^5.2.1",
     "postgres": "^3.4.9",
     "prettier": "^3.9.5",
