@@ -50,7 +50,7 @@ shared-test packages, GitHub Actions, Hetzner distributed black-box runner.
 - Produces: `ALOutboundFinalizationMode` and an
   `outbound-finalization` diagnostic event.
 
-- [ ] **Step 1: Write failing finalization assertions**
+- [x] **Step 1: Write failing finalization assertions**
 
 Extend the immediate-send diagnostics test:
 
@@ -90,7 +90,7 @@ In the existing persistent enqueue test require `awaited-new-drain`. In
 `persists repair dispatches when the repair planner requests outbox durability`
 install the sink and require `intent: 'repair'` and `mode: 'deferred'`.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```sh
 npx vitest run packages/tests/shared/al-outbound-message-runtime.test.ts
@@ -98,7 +98,7 @@ npx vitest run packages/tests/shared/al-outbound-message-runtime.test.ts
 
 Expected: FAIL because `outbound-finalization` does not exist.
 
-- [ ] **Step 3: Add the event contract and preserve behavior**
+- [x] **Step 3: Add the event contract and preserve behavior**
 
 Export:
 
@@ -158,7 +158,7 @@ if (result.committed) {
 Do not change `finalizeCommittedOutbound()`, `requestEffectDrain()`, or the
 returned result.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 ```sh
 npx vitest run packages/tests/shared/al-outbound-message-runtime.test.ts
@@ -187,7 +187,7 @@ remain proven.
 - Produces: `ALOutboundEffectDrainComposition` plus create/record/snapshot
   helpers.
 
-- [ ] **Step 1: Write the failing retry-composition test**
+- [x] **Step 1: Write the failing retry-composition test**
 
 ```ts
 it('reports effect kind, attempt, outcome, and ready lateness', async () => {
@@ -237,7 +237,7 @@ it('reports effect kind, attempt, outcome, and ready lateness', async () => {
 });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```sh
 npx vitest run packages/tests/shared/al-outbound-message-runtime.test.ts
@@ -245,7 +245,7 @@ npx vitest run packages/tests/shared/al-outbound-message-runtime.test.ts
 
 Expected: FAIL because composition fields are absent.
 
-- [ ] **Step 3: Create the bounded accumulator**
+- [x] **Step 3: Create the bounded accumulator**
 
 Create `ALOutboundRuntimeDiagnostics.ts` with:
 
@@ -351,7 +351,7 @@ export function snapshotOutboundEffectDrainComposition(
 }
 ```
 
-- [ ] **Step 4: Wire it into the existing drain**
+- [x] **Step 4: Wire it into the existing drain**
 
 Add all seven composition fields to the `effect-drain` event. Create the
 accumulator only when `this.input.diagnostics` exists. Capture
@@ -372,7 +372,7 @@ In `finally`, emit only when the accumulator exists and spread
 `snapshotOutboundEffectDrainComposition(effectComposition)` into the current
 event.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```sh
 npx vitest run packages/tests/shared/al-outbound-message-runtime.test.ts \
@@ -403,7 +403,7 @@ Expected: both test files and the shared typecheck pass.
   fleet/per-agent enqueue coverage, per-mode timings, drain totals, and
   evidence errors.
 
-- [ ] **Step 1: Write a failing synthetic analyzer test**
+- [x] **Step 1: Write a failing synthetic analyzer test**
 
 Use two completed stream messages, one matching enqueue finalization, one later
 dequeue finalization with the same message ID, one missing enqueue match, and
@@ -426,7 +426,7 @@ expect(analysis.evidenceErrors[0])
   .toContain('missing enqueue finalization');
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```sh
 npx vitest run packages/tests/scripts/analyze-rtc-outbound-runtime.test.ts
@@ -434,7 +434,7 @@ npx vitest run packages/tests/scripts/analyze-rtc-outbound-runtime.test.ts
 
 Expected: FAIL because the module is absent.
 
-- [ ] **Step 3: Implement the pure analyzer**
+- [x] **Step 3: Implement the pure analyzer**
 
 The module must:
 
@@ -640,7 +640,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 Use nearest-rank percentiles (`Math.ceil(count * quantile) - 1`). Missing
 diagnostics in iteration 10 must produce exit 2 rather than throw.
 
-- [ ] **Step 4: Document, verify, and commit**
+- [x] **Step 4: Document, verify, and commit**
 
 Add the command and exit-code contract to `scripts/perf/README.md`:
 
@@ -672,7 +672,7 @@ error, not a parse crash.
 
 - Modify: `docs/superpowers/plans/2026-07-19-rtc-outbound-scheduler-direction-diagnostics.md`
 
-- [ ] **Step 1: Run the full focused surface**
+- [x] **Step 1: Run the full focused surface**
 
 ```sh
 npx vitest run \
@@ -692,7 +692,18 @@ npm --workspace @ar-eye-hunter/shared-test run check
 
 Expected: every selected test and typecheck exits 0.
 
-- [ ] **Step 2: Record exact evidence and commit**
+#### Verification evidence
+
+- Focused Vitest surface: 8 files passed, 137 tests passed, 0 failed.
+- `npx tsc -p packages/shared/tsconfig.json --noEmit`: exit 0.
+- `npx tsc -p packages/shared-web/tsconfig.json --noEmit`: exit 0.
+- `npx tsc -p packages/shared-server/tsconfig.json --noEmit`: exit 0.
+- `npm --workspace @ar-eye-hunter/shared-test run check`: exit 0; TypeScript
+  and all seven Deno entry-point checks passed.
+- Legacy iteration-10 artifact: analyzer found 2,057 completed stream messages,
+  reported 2,057 missing finalization diagnostics, and exited 2 as required.
+
+- [x] **Step 2: Record exact evidence and commit**
 
 Add a `Verification evidence` section with test count and each command outcome,
 mark Tasks 1-3 complete, then:
