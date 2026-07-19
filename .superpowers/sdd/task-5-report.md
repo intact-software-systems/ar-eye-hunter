@@ -4,7 +4,7 @@
 
 - Base: `e78881ef71b8cc0ab051b75405ef63458b6a7b05`.
 - Current clean implementation commit:
-  `4ea4588f5fee8da861b038143f5efb67873d6d8c`.
+  `22d13895a4b0c939ee5776fd242046306d3e9f98`.
 - Durable config and temporary override writes now use entry-aware conditional
   insert/CAS/delete APIs. No topology config mutation uses locks,
   unconditional overwrite, compensating restore, synchronous recompute, or
@@ -27,6 +27,13 @@
   and trusted requested slot; corruption raises the typed repository invariant
   error. Wrong-scope expired overrides are rejected before lazy expiry can
   delete them.
+- The same fail-closed ordering now covers the retained mutation, target
+  generation, and invariant generation rows. Raw JSON, stored scope/child, and
+  the mandatory non-expiring physical TTL are validated before generic lazy
+  expiry can delete anything. Durable config also requires the exact
+  non-expiring TTL, while override physical TTL must exactly match the stored
+  `expiresAtEpochMs`; direct, source, list, page, and legacy-migration decoders
+  share that contract.
 - Older ambiguous config/override source keys are moved only by the explicit
   offline `migrateLegacyGroupTopologyConfigKeys` operation after old writers
   are stopped. It re-reads in an optimistic transaction, value-verifies any
@@ -52,6 +59,14 @@
   mandatory and never falls back to the ordinary reader. Matching replay and
   conflicting request reuse recheck fresh durable status and actor/admin role,
   but do not materialize clock-dependent mutation-admission facts.
+- Mutation facts separate stable request data from attempt-local policy time.
+  The first non-replay attempt fixes stored creation/update time, relative
+  override expiry, command hash, and delete target. Every later non-replay CAS
+  attempt obtains a fresh policy clock for active/unexpired lifecycle checks,
+  so retries cannot authorize against stale time or extend TTL. Replay and
+  conflicting request reuse still probe the immutable ledger before invoking
+  the clock. Platform admins bypass membership/role only; the shared active and
+  unexpired group lifecycle policy applies to every actor.
 - Request IDs are immutable first-writer claims. The canonical command is
   normalized before its SHA-256 digest is computed once. Records contain
   exactly `{groupRef, requestId, commandHash, receipt}`. Mandatory nullable
@@ -96,6 +111,18 @@ Those failures showed literal `_` aliasing absent workspace, absent-workspace
 validation rejection, inconsistent direct/list/page decoding, missing legacy
 source movement, an absent source being claimed for `_`, unchecked destination
 conflict/duplicate handling, and missing transactional rollback proof.
+
+The final correction RED ran the repository and management suites before any
+production edit. It exited 1 with exactly 13 failures and 68 passes across 81
+tests: three expired retained-row wrong scope/child cases resolved `undefined`
+and were deleted instead of raising typed corruption; three structurally valid
+mutation/generation rows accepted a finite physical TTL; config and override
+accepted inconsistent physical expiry at both direct and generation-source
+boundaries; an active-but-expired group was accepted for a platform admin; an
+owner retry reused first-attempt lifecycle time after a forced generation CAS
+conflict; and a relative-TTL retry invoked the clock only once. The first GREEN
+added the pure fact split and passed all 89 tests across repository, management,
+and topology config service suites.
 
 Later adversarial RED tests independently proved and then fixed:
 
@@ -162,8 +189,14 @@ Later adversarial RED tests independently proved and then fixed:
 - Receipt collision or outbox insertion failure rolls the entire state/record/
   outbox transaction back. Winner reread happens only after the conflicted
   transaction has closed.
-- Stored update time is monotonic under clock skew. Override expiry is resolved
-  once from stable facts and stale expiry cleanup remains revision guarded.
+- Stored update time is monotonic under clock skew. Stored write time and
+  override expiry are resolved once from request-stable facts, while every
+  non-replay retry supplies fresh lifecycle policy time; stale expiry cleanup
+  remains revision guarded.
+- Corrupt retained rows cannot disappear through lazy expiry: canonical key,
+  raw JSON, stored scope/child, and exact physical retention are checked first.
+  Config and retained ledger rows are physically non-expiring, while temporary
+  overrides use the same expiry in their stored value and physical row.
 - Explicit offline migration safely canonicalizes value-verified ambiguous
   source keys, while ordinary generation backfill only accepts canonical
   sources. Backfill preserves config and expired-override version floors,
@@ -197,14 +230,14 @@ Later adversarial RED tests independently proved and then fixed:
 ### Focused and public surfaces
 
 ```text
+npm run test:unit -- packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-management-service.test.ts
+RED: 2 files failed; 13 tests failed; 68 tests passed (81 total)
+
+npm run test:unit -- packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/group-topology-management-service.test.ts
+first GREEN: 3 files passed; 89 tests passed
+
 npx vitest run packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/state-mutation-outbox.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-server/state-write-performance-harness.test.ts
-6 files passed; 200 tests passed
-
-npx vitest run packages/tests/shared-server/group-topology-config-repository.test.ts
-1 file passed; 31 tests passed
-
-npx vitest run packages/tests/shared-server/group-topology-management-service.test.ts -t "rejects a compact replay receipt whose operation differs"
-1 passed; 36 skipped
+6 files passed; 213 tests passed
 
 deno test -A --filter "PGlite topology config mutations" apps/api-v1/test/db/pglite-sql-adapter.test.ts
 1 passed; 0 failed; 18 filtered
@@ -246,7 +279,7 @@ durable and no topology publisher runs in the mutation call.
 ### Production performance evidence
 
 The full PostgreSQL producer was rerun from the clean Task 5 implementation
-commit `4ea4588f5fee8da861b038143f5efb67873d6d8c`:
+commit `22d13895a4b0c939ee5776fd242046306d3e9f98`:
 
 ```text
 npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --concurrency=10 --out=tmp/perf/api-v1-state-write-task5.json
@@ -254,16 +287,16 @@ npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --conc
 
 The resulting canonical artifact remains ignored and uncommitted at
 `tmp/perf/api-v1-state-write-task5.json`. Its embedded `gitCommit` is exactly
-`4ea4588f5fee8da861b038143f5efb67873d6d8c` and its SHA-256 is
-`4ec05ba7f9b2bea5765092aca3dcb64da525cddeeb2052e45904160fa8f16c58`.
+`22d13895a4b0c939ee5776fd242046306d3e9f98` and its SHA-256 is
+`5a7211be1c876e3b31c3ae3293ded52c8b063351c7dc6f4c611dffafee2de9b0`.
 
 ```text
 validateStateWriteArtifact(finalArtifact)
 []
 
 uncontended: 2100 accepted/receipts; 3900 required/actual intents; DBW []
-shared:      1964 accepted/receipts; 3678 required/actual intents; DBW []
-hot:          997 accepted/receipts; 1894 required/actual intents; DBW []
+shared:      1958 accepted/receipts; 3667 required/actual intents; DBW []
+hot:          983 accepted/receipts; 1867 required/actual intents; DBW []
 ```
 
 The immutable baseline remains byte-identical at SHA-256
@@ -275,7 +308,7 @@ governance error before the performance gates execute:
 ```text
 node scripts/perf/compare-api-v1-state-write-results.mjs tmp/perf/api-v1-state-write-baseline.json tmp/perf/api-v1-state-write-task5.json
 exit 1
-candidate must declare presenceSplitFromGroupAggregate=true with task10-post-remediation-candidate governance and evidence
+- candidate must declare presenceSplitFromGroupAggregate=true with task10-post-remediation-candidate governance and evidence
 ```
 
 That early return is not evidence that governance is the only failing gate. To
@@ -283,21 +316,21 @@ audit every gate without mutating either artifact, the implementer cloned the
 candidate in memory and changed only the clone's governed feature label and
 evidence. The clone validated to `[]`; the canonical Task 5 artifact remained
 byte-identical at
-`4ec05ba7f9b2bea5765092aca3dcb64da525cddeeb2052e45904160fa8f16c58`
+`5a7211be1c876e3b31c3ae3293ded52c8b063351c7dc6f4c611dffafee2de9b0`
 before and after the comparison and was never relabeled. The fresh clean-commit
 audit reported exactly these ten interim failures:
 
 ```text
-shared throughput regressed: baseline=752.2423201768095, candidate=629.5829957636627
-hot throughput regressed: baseline=295.1851420383843, candidate=294.6852212442774
+shared throughput regressed: baseline=752.2423201768095, candidate=628.16159436996
+hot throughput regressed: baseline=295.1851420383843, candidate=291.9452224907553
 shared throughput must improve after presence is split from the group aggregate
 uncontended median sql.statements increased without a recorded reason: baseline=11200, candidate=12900
 uncontended median sql.rowsRead increased without a recorded reason: baseline=5400, candidate=7900
-shared median sql.statements increased without a recorded reason: baseline=11352, candidate=14061
-shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=28365
-hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12175
-shared retry exhaustion must remain zero; received 136
-hot retry exhaustion exceeded baseline: baseline=0, candidate=1103
+shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13871
+shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=27860
+hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12194
+shared retry exhaustion must remain zero; received 142
+hot retry exhaustion exceeded baseline: baseline=0, candidate=1117
 ```
 
 The audit did not report an uncontended p95/p99 latency regression,
