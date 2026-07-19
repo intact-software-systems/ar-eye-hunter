@@ -144,6 +144,111 @@ describe('RTC topology APP_OUTBOX work', () => {
         )).toBe(true);
     });
 
+    it('coalesces RTT updates behind the same reserved generation', async () => {
+        const queue = new InMemoryQueueBox();
+        let now = 1_000;
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+            now: () => now,
+        });
+        const group = createGroupSnapshot(3);
+        const rtt = {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 10,
+            createdAtEpochMs: now,
+            version: 1,
+        };
+        await runtime.publisher.enqueueForRtt(group, rtt, 0);
+        await queue.reserveEntries(
+            OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+            new Set([EntityStatus.NEW]),
+            1,
+        );
+
+        now = 1_001;
+        await runtime.publisher.enqueueForRtt(
+            group,
+            { ...rtt, createdAtEpochMs: now, version: 2 },
+            0,
+        );
+        now = 1_002;
+        await runtime.publisher.enqueueForRtt(
+            group,
+            {
+                ...rtt,
+                sessionIdFrom: 'session-c',
+                sessionIdTo: 'session-d',
+                createdAtEpochMs: now,
+                version: 3,
+            },
+            0,
+        );
+
+        const entries = await entriesIn(queue);
+        expect(entries).toHaveLength(2);
+        const successor = entries.find((entry) =>
+            entry.status === EntityStatus.NEW
+        );
+        expect(successor).toBeDefined();
+        expect(readWork(successor!)).toMatchObject({
+            kind: 'rtt-refresh',
+            requestedRttVersion: 3,
+            requestedAtEpochMs: 1_002,
+        });
+    });
+
+    it('creates one further successor when the coalesced successor is reserved', async () => {
+        const queue = new InMemoryQueueBox();
+        let now = 1_000;
+        const runtime = createRtcTopologyOutboxPublisher({
+            outboxQueueReader: new OutboxQueueReader(queue),
+            now: () => now,
+        });
+        const group = createGroupSnapshot(3);
+        const rtt = {
+            sessionIdFrom: 'session-a',
+            sessionIdTo: 'session-b',
+            rttMs: 10,
+            createdAtEpochMs: now,
+            version: 1,
+        };
+        await runtime.publisher.enqueueForRtt(group, rtt, 0);
+        await queue.reserveEntries(
+            OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+            new Set([EntityStatus.NEW]),
+            1,
+        );
+        now = 1_001;
+        await runtime.publisher.enqueueForRtt(
+            group,
+            { ...rtt, createdAtEpochMs: now, version: 2 },
+            0,
+        );
+        await queue.reserveEntries(
+            OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+            new Set([EntityStatus.NEW]),
+            1,
+        );
+
+        now = 1_002;
+        await runtime.publisher.enqueueForRtt(
+            group,
+            { ...rtt, createdAtEpochMs: now, version: 3 },
+            0,
+        );
+
+        const entries = await entriesIn(queue);
+        expect(entries).toHaveLength(3);
+        const next = entries.find((entry) => entry.status === EntityStatus.NEW);
+        expect(next).toBeDefined();
+        expect(readWork(next!)).toMatchObject({
+            kind: 'rtt-refresh',
+            requestedRttVersion: 3,
+            requestedAtEpochMs: 1_002,
+        });
+    });
+
     it('coalesces RTT work to the newest exact group snapshot and request time', async () => {
         const queue = new InMemoryQueueBox();
         let now = 1_000;

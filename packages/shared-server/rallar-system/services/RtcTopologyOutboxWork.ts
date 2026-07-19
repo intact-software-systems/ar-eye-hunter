@@ -229,15 +229,24 @@ function createRtcTopologyWorkRuntime(
             dueAtEpochMs: requestedAtEpochMs + debounceMs,
             merge: mergeRtcTopologyRttWork,
         } as const;
-        const result = await options.service.enqueue(input);
+        let result = await options.service.enqueue(input);
 
-        if (result.blockedByReserved) {
-            await options.service.enqueue({
+        for (
+            let successorAttempt = 0;
+            result.blockedByReserved;
+            successorAttempt += 1
+        ) {
+            if (successorAttempt >= 10) {
+                throw new Error(
+                    `RTC topology RTT work exceeded reserved successor limit for ${overlayId}`,
+                );
+            }
+            result = await options.service.enqueue({
                 ...input,
                 resourceId: toRtcTopologyRttSuccessorResourceId(
-                    overlayId,
-                    requestedGroupStateRevision,
-                    rtt,
+                    result.envelope.resourceId,
+                    result.envelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]
+                        .generation,
                 ),
             });
         }
@@ -388,12 +397,10 @@ function toRtcTopologyGroupRevisionResourceId(
 }
 
 function toRtcTopologyRttSuccessorResourceId(
-    overlayId: string,
-    stateRevision: number,
-    rtt: RttMeasurementInfo,
+    reservedResourceId: string,
+    reservedGeneration: number,
 ): string {
-    const pair = [rtt.sessionIdFrom, rtt.sessionIdTo].sort().join(':');
-    return `${overlayId}:rtt:${stateRevision}:${pair}:${rtt.version}`;
+    return `${reservedResourceId}:successor:${reservedGeneration}`;
 }
 
 function toRtcTopologyQueueContextId(groupRef: GroupRef): string {

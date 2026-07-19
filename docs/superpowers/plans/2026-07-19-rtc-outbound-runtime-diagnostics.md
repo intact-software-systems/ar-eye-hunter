@@ -224,13 +224,13 @@ npm run typecheck --workspace @ar-eye-hunter/shared-server
 
 Expected: all commands exit 0.
 
-- [ ] **Step 2: Push both commits to PR #40**
+- [x] **Step 2: Push both commits to PR #40**
 
 ```sh
 git push origin codex/rtc-signaling-boundary-diagnostics
 ```
 
-- [ ] **Step 3: Dispatch iteration 4 with the unchanged manifest**
+- [x] **Step 3: Dispatch iteration 4 with the unchanged manifest**
 
 Use the same workflow inputs as iteration 3, changing only unique run/control
 identifiers and the selected branch SHA. The manifest remains:
@@ -239,7 +239,7 @@ identifiers and the selected branch SHA. The manifest remains:
 apps/rallar-black-box/manifests/hetzner/12-rtc-messages-all-peer-15-agent-30s-5hz-tree.json
 ```
 
-- [ ] **Step 4: Download and analyze GitHub artifacts**
+- [x] **Step 4: Download and analyze GitHub artifacts**
 
 Read `analysis.json`, `fix-proposal.md`, `performance.md`, `results.jsonl`, and
 `events.jsonl`. For each stream frame, correlate the completed message with
@@ -253,11 +253,58 @@ Confirmation signal: one boundary explains the slow completion batches and
 crosses the configured p95/p99 thresholds. Falsification signal: all recorded
 outbound boundaries remain short while the stream frame duration remains long.
 
-- [ ] **Step 5: Record the measured result before any correction**
+- [x] **Step 5: Record the measured result before any correction**
 
 Append the GitHub run ID, commit SHA, exact metrics, confirmed/refuted
 hypotheses, and next minimal fix area to the remediation design document. Commit
 and push the evidence to PR #40.
+
+### Task 4: Coalesce RTT work behind reserved topology recomputes
+
+**Files:**
+
+- Modify: `packages/shared-server/rallar-system/services/RtcTopologyOutboxWork.ts`
+- Test: `packages/tests/shared-server/rtc-topology-outbox-work.test.ts`
+
+**Interfaces:**
+
+- Consumes: immutable reserved `APP_OUTBOX` topology work generations.
+- Produces: at most one coalescing successor per reserved generation, with a
+  bounded successor chain when a worker has already reserved that successor.
+
+- [x] **Step 1: Reproduce the unique-successor fanout**
+
+Add a test that reserves one RTT recompute, publishes two newer RTT updates,
+and expects both updates to merge into one successor. Verify RED because the
+peer-pair/version resource IDs create two successors.
+
+- [x] **Step 2: Coalesce by reserved resource and generation**
+
+Derive the successor key from the blocked resource ID and immutable generation.
+If that successor is already reserved, continue through a bounded successor
+chain rather than dropping the new RTT update.
+
+- [x] **Step 3: Cover the reserved-successor race**
+
+Reserve the first successor, publish another RTT update, and verify a further
+drainable successor retains the newest version and request time.
+
+- [x] **Step 4: Run focused topology regressions and typecheck**
+
+```sh
+npx vitest run \
+  packages/tests/shared-server/rtc-topology-outbox-work.test.ts \
+  packages/tests/shared-server/coalesced-app-outbox-work-service.test.ts \
+  packages/tests/shared-server/rallar-rtc-topology-service.test.ts \
+  packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts
+npm run typecheck --workspace @ar-eye-hunter/shared-server
+```
+
+- [ ] **Step 5: Push and collect iteration 5**
+
+Push the correction to PR #40, rerun the unchanged 15-agent manifest, and
+compare topology churn, RTC reschedules, sender-queue wait, frame latency, and
+the recipe conclusion against iteration 4.
 
 ## Self-review
 

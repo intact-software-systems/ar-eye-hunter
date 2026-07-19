@@ -121,6 +121,46 @@ because the failure has moved to a different subsystem and the next missing
 measurement is now explicit. Applying a traffic-layer change before collecting
 that measurement would be speculative.
 
+## Iteration 4 outcome and RTT work fanout
+
+Run `29684128616` at commit `a6a657aff7725c1bc297b376c2f3b5b27989b337`
+kept the readiness recovery: all 15 agents emitted readiness and stream-started
+events. The unchanged stream still failed. Across the 12 exported stream
+results, 1,754 of 1,800 frames were attempted, 1,642 completed, 158 failed, and
+46 hit the in-flight limit. Send duration was p50 796 ms, p95 11,002 ms, p99
+15,717 ms, and max 17,517 ms.
+
+The new outbound diagnostics localize the backlog. For `rtc-overlay`, sender
+queue wait was p95 2,081 ms, p99 4,831 ms, and max 6,499 ms. Cross-context
+browser-lock wait was much smaller at p95 103 ms, and lock hold was p95 172 ms,
+so browser lock contention is not the primary boundary. Durable drains claimed
+18,257 effects, completed 3,458, and rescheduled 14,778 (81% of claims). Drain
+duration was p95 475 ms and p99 1,715 ms, with a 15,372 ms maximum.
+
+The reschedules coincide with a second topology churn burst during the stream:
+204 peer creations, 206 peer deletions, 108 lane opens, 40 lane closes, and 36
+lane errors. The burst begins approximately five seconds after lanes first
+open, matching `WebRtcHeartbeatService`'s first RTT heartbeat. Each topology
+change invalidates some prepared messages' next-hop channel; the durable effect
+runner reschedules those sends, and concurrent frames then accumulate in the
+per-sender commit queue.
+
+Root-cause tracing found why the server publishes too many RTT-derived trees.
+Normal pending RTT work merges under one overlay resource and extends its
+debounce deadline. Once that row is reserved, however,
+`RtcTopologyOutboxWork` creates successors keyed by peer pair and RTT version.
+Every heartbeat arriving while a recompute is reserved therefore becomes a
+distinct executable row instead of joining one successor generation. The
+first 5-second heartbeat wave is converted into a sequence of recomputes and
+different tree publications.
+
+Iteration 5 changes only this queue boundary. Updates blocked by the same
+reserved resource generation share one successor key and retain the existing
+newest-group/newest-RTT merge semantics. If that successor has already been
+reserved, a bounded generational chain preserves the update without restoring
+per-heartbeat fanout. The workload, topology policy, RTT cadence, debounce,
+stream rate, and thresholds remain unchanged.
+
 ## Contract change
 
 Add mandatory `provenance` to the browser-local `OverlayInfo` contract:
