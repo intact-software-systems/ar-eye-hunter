@@ -207,3 +207,4 @@ The task is complete only when:
 - Transactional correctness and retry evidence comes from production receipts,
   outbox records/effects, and timing events. Synthetic post-call evidence cannot
   prove atomicity; legacy artifact compatibility must not weaken candidate validation.
+- Synthetic prerequisite or non-invocation evidence must link to an earlier same-subject predecessor with real production exhaustion; labels alone are not causal proof.

@@ -1,5 +1,8 @@
 # Task 4 correction 14 report: validate production state evidence
 
+> Superseded by correction 15 only for final Task 4 acceptance. Correction 14's
+> historical implementation and validation evidence remains unchanged.
+
 ## Status and scope
 
 Status: implementation and validation complete; awaiting the fresh whole-range

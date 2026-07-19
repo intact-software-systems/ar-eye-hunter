@@ -603,6 +603,7 @@ describe('API-v1 state-write performance artifact contract', () => {
     ]));
 
     const prerequisite = validArtifact();
+    makeCommandExhausted(prerequisite.workloads[2].samples[0], 100);
     makeCommandExhausted(prerequisite.workloads[2].samples[0], 200);
     const prerequisiteSample = prerequisite.workloads[2].samples[0];
     const prerequisiteId = prerequisiteSample.commands[200].commandId;
@@ -646,6 +647,7 @@ describe('API-v1 state-write performance artifact contract', () => {
 
     const valid = validArtifact({ candidate: true });
     const validSample = valid.workloads[2].samples[0];
+    makeCommandExhausted(validSample, 100);
     makeCommandExhausted(validSample, 200);
     const validId = validSample.commands[200].commandId;
     validSample.attemptObservations = validSample.attemptObservations.filter(
@@ -682,6 +684,118 @@ describe('API-v1 state-write performance artifact contract', () => {
     expect(validateStateWriteArtifact(wrongService)).toEqual(expect.arrayContaining([
       expect.stringContaining('production attempt source is not a production mutation timing event'),
     ]));
+  });
+
+  it('requires prerequisite terminals to link to a same-client real production exhaustion', () => {
+    const setPrerequisite = (
+      sampleValue: any,
+      commandIndex: number,
+      prerequisite: 'membership' | 'presence-connect',
+    ) => {
+      const command = sampleValue.commands[commandIndex];
+      makeCommandExhausted(sampleValue, commandIndex);
+      sampleValue.attemptObservations = sampleValue.attemptObservations.filter(
+        (entry: any) => entry.commandId !== command.commandId,
+      );
+      sampleValue.attemptObservations.push({
+        commandId: command.commandId,
+        operationId: 'command',
+        attempt: 1,
+        outcome: 'exhausted',
+        terminal: true,
+        source: `state-write-command-envelope.prerequisite-exhausted:${prerequisite}`,
+      });
+      refreshSampleOutcomes(sampleValue);
+    };
+    const validateHot = (artifact: any) => {
+      refreshSummary(artifact.workloads[2]);
+      return validateStateWriteArtifact(artifact);
+    };
+
+    const orphan = validArtifact({ candidate: true });
+    const orphanSample = orphan.workloads[2].samples[0];
+    setPrerequisite(orphanSample, 200, 'membership');
+    orphanSample.commands[200].commandId = 'run-0:presence-connect:999';
+    orphanSample.attemptObservations.find(
+      (entry: any) => entry.commandId === 'run-0:presence-connect:0',
+    ).commandId = 'run-0:presence-connect:999';
+    expect.soft(validateHot(orphan)).toEqual(expect.arrayContaining([
+      expect.stringContaining('missing same-client prerequisite command'),
+    ]));
+
+    const acceptedPrerequisite = validArtifact({ candidate: true });
+    const acceptedSample = acceptedPrerequisite.workloads[2].samples[0];
+    setPrerequisite(acceptedSample, 200, 'membership');
+    expect.soft(validateHot(acceptedPrerequisite)).toEqual(expect.arrayContaining([
+      expect.stringContaining('prerequisite command must be production-exhausted'),
+    ]));
+
+    const differentClient = validArtifact({ candidate: true });
+    const differentSample = differentClient.workloads[2].samples[0];
+    makeCommandExhausted(differentSample, 100);
+    setPrerequisite(differentSample, 201, 'membership');
+    expect.soft(validateHot(differentClient)).toEqual(expect.arrayContaining([
+      expect.stringContaining('prerequisite command must be production-exhausted'),
+    ]));
+
+    const syntheticChain = validArtifact({ candidate: true });
+    const chainSample = syntheticChain.workloads[2].samples[0];
+    setPrerequisite(chainSample, 200, 'membership');
+    setPrerequisite(chainSample, 300, 'presence-connect');
+    expect.soft(validateHot(syntheticChain)).toEqual(expect.arrayContaining([
+      expect.stringContaining('prerequisite command must end in production conflict exhaustion'),
+    ]));
+
+    const reordered = validArtifact({ candidate: true });
+    const reorderedSample = reordered.workloads[2].samples[0];
+    makeCommandExhausted(reorderedSample, 100);
+    setPrerequisite(reorderedSample, 200, 'membership');
+    const dependentIndex = reorderedSample.commands.findIndex(
+      (command: any) => command.commandId === 'run-0:presence-connect:0',
+    );
+    const [dependent] = reorderedSample.commands.splice(dependentIndex, 1);
+    const prerequisiteIndex = reorderedSample.commands.findIndex(
+      (command: any) => command.commandId === 'run-0:membership:0',
+    );
+    reorderedSample.commands.splice(prerequisiteIndex, 0, dependent);
+    reorderedSample.latencySamplesMs = reorderedSample.commands.map(
+      (command: any) => command.latencyMs,
+    );
+    expect.soft(validateHot(reordered)).toEqual(expect.arrayContaining([
+      expect.stringContaining('prerequisite command must precede dependent command'),
+    ]));
+
+    const swappedIdentity = validArtifact({ candidate: true });
+    const swappedSample = swappedIdentity.workloads[2].samples[0];
+    makeCommandExhausted(swappedSample, 100);
+    makeCommandExhausted(swappedSample, 101);
+    setPrerequisite(swappedSample, 200, 'membership');
+    const firstMembershipId = swappedSample.commands[100].commandId;
+    const secondMembershipId = swappedSample.commands[101].commandId;
+    swappedSample.commands[100].commandId = secondMembershipId;
+    swappedSample.commands[101].commandId = firstMembershipId;
+    for (const observation of swappedSample.attemptObservations) {
+      if (observation.commandId === firstMembershipId) {
+        observation.commandId = secondMembershipId;
+      } else if (observation.commandId === secondMembershipId) {
+        observation.commandId = firstMembershipId;
+      }
+    }
+    expect.soft(validateHot(swappedIdentity)).toEqual(expect.arrayContaining([
+      expect.stringContaining('command ID must encode its canonical raw client slot'),
+    ]));
+
+    const validMembership = validArtifact({ candidate: true });
+    const validMembershipSample = validMembership.workloads[2].samples[0];
+    makeCommandExhausted(validMembershipSample, 100);
+    setPrerequisite(validMembershipSample, 200, 'membership');
+    expect(validateHot(validMembership)).toEqual([]);
+
+    const validConnect = validArtifact({ candidate: true });
+    const validConnectSample = validConnect.workloads[2].samples[0];
+    makeCommandExhausted(validConnectSample, 200);
+    setPrerequisite(validConnectSample, 300, 'presence-connect');
+    expect(validateHot(validConnect)).toEqual([]);
   });
 
   it('accepts coherent hot baseline exhaustion and enforces the candidate hot ceiling', () => {

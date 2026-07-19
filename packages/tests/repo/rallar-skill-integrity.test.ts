@@ -268,6 +268,7 @@ describe('Rallar repo skill and documentation integrity', () => {
         expectAll(performance, [
             'production receipts',
             'Synthetic post-call evidence cannot',
+            'Synthetic prerequisite or non-invocation evidence must link to an earlier same-subject predecessor with real production exhaustion',
             'must not weaken candidate validation',
         ]);
         expectAll(packageCodeStyle, [

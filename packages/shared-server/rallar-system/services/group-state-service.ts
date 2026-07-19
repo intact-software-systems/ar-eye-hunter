@@ -1408,7 +1408,10 @@ async function readGroupMutation(
         ? command.targetPrincipalId
         : command.operation === 'connectPresence'
         ? command.input.principalId
-        : targetPresence?.value.principalId ?? actorPrincipalId;
+        : command.operation === 'heartbeatPresence' ||
+                command.operation === 'disconnectPresence'
+        ? command.input.principalId ?? actorPrincipalId
+        : actorPrincipalId;
     const ownerPrincipalId = group?.value.ownerPrincipalId;
     const director = readRallarGroupDirectorAppointment(group?.value.metadata);
     const [actorMemberEntry, targetMemberEntry, targetAdmission, authorityMemberEntry,

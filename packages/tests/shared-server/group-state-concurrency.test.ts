@@ -1623,6 +1623,81 @@ describe('convergent group and presence state', () => {
         }
     });
 
+    it.each(['heartbeat', 'disconnect'] as const)(
+        'reads %s member and admission slots only from the authenticated command principal',
+        async (operation) => {
+            const runtime = new GroupBarrierRepository();
+            const groupId = 'trusted-heartbeat-slot-room';
+            const sessionId = 'alice-trusted-slot-session';
+            const generationId = 'alice-trusted-slot-generation';
+            const service = createService(runtime, 2_000);
+            await seedOpenGroup(runtime, groupId);
+            await service.connectPresenceSession(SCOPE, groupId, sessionId, {
+                principalId: 'alice',
+                generationId,
+                connectedAtEpochMs: 1_000,
+                lastHeartbeatAtEpochMs: 1_000,
+                expiresAtEpochMs: 4_102_444_800_000,
+                actorPrincipalId: 'alice',
+                actorSessionId: sessionId,
+                requestId: 'seed-trusted-slot-session',
+            });
+            const sessionKey = groupStatePresenceSessionStorageKey({
+                ...groupRef(groupId),
+                sessionId,
+            });
+            const storedSession = await runtime.findEntry('group-state:sessions', sessionKey);
+            if (!storedSession) throw new Error('Expected stored session');
+            await runtime.upsert(
+                'group-state:sessions',
+                sessionKey,
+                JSON.stringify({
+                    ...(JSON.parse(storedSession.value) as GroupPresenceSession),
+                    principalId: 'candidate-principal',
+                }),
+                storedSession.expireAtTimestamp,
+            );
+            runtime.entryReadKeys = [];
+
+            const mutation = operation === 'heartbeat'
+                ? service.heartbeatPresenceSession(SCOPE, groupId, sessionId, {
+                    generationId,
+                    lastHeartbeatAtEpochMs: 2_000,
+                    expiresAtEpochMs: 4_102_444_801_000,
+                    actorPrincipalId: 'alice',
+                    actorSessionId: sessionId,
+                    requestId: 'trusted-slot-heartbeat',
+                })
+                : service.disconnectPresenceSession(SCOPE, groupId, sessionId, {
+                    generationId,
+                    disconnectedAtEpochMs: 2_000,
+                    actorPrincipalId: 'alice',
+                    actorSessionId: sessionId,
+                    requestId: 'trusted-slot-disconnect',
+                });
+            await expect(mutation).rejects.toThrow(
+                /presence principal|command principal|canonical principal/i,
+            );
+
+            expect(runtime.entryReadKeys).toContain(groupStateMemberStorageKey({
+                ...groupRef(groupId),
+                principalId: 'alice',
+            }));
+            expect(runtime.entryReadKeys).toContain(groupStatePresenceAdmissionStorageKey({
+                ...groupRef(groupId),
+                principalId: 'alice',
+            }));
+            expect(runtime.entryReadKeys).not.toContain(groupStateMemberStorageKey({
+                ...groupRef(groupId),
+                principalId: 'candidate-principal',
+            }));
+            expect(runtime.entryReadKeys).not.toContain(groupStatePresenceAdmissionStorageKey({
+                ...groupRef(groupId),
+                principalId: 'candidate-principal',
+            }));
+        },
+    );
+
     it('rejects a canonical target session whose value belongs to another principal', () => {
         const wrongPrincipalSession = presenceFor(
             'bob', 'alice-session', 'generation-1',
@@ -3778,6 +3853,7 @@ function createMutationFacts(): GroupMutationFacts {
 }
 
 class GroupBarrierRepository extends FakeRuntimeStateRepository {
+    entryReadKeys: string[] = [];
     groupGuards = 0;
     presenceGuards = 0;
     presenceSummaryGuards = 0;
@@ -3867,6 +3943,7 @@ class GroupBarrierRepository extends FakeRuntimeStateRepository {
         namespace: string,
         key: string,
     ): Promise<RuntimeStateEntry | undefined> {
+        this.entryReadKeys.push(key);
         const value = await super.findEntry(namespace, key);
         if (namespace === 'group-state:groups' && this.groupReadsRemaining > 0) {
             await this.waitAtBarrier('group');

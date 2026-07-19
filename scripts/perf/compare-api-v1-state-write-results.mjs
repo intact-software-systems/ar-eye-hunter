@@ -509,6 +509,7 @@ function validateSample(
   const commandsById = new Map();
   const kindCounts = new Map(MUTATION_MIX.map((kind) => [kind, 0]));
   const stackCounts = [0, 0];
+  let rawCommandPrefix;
   for (const [index, command] of sample.commands.entries()) {
     const commandPath = `${path}.commands[${index}]`;
     if (
@@ -522,6 +523,18 @@ function validateSample(
     }
     commandIds.add(command.commandId);
     commandsById.set(command.commandId, command);
+    const expectedKind = MUTATION_MIX[Math.floor(index / 100)];
+    if (command.kind !== expectedKind) {
+      errors.push(`${commandPath}.kind must preserve canonical raw mutation slot order`);
+    }
+    const identity = parseRawCommandClientIdentity(command);
+    if (identity === undefined || identity.clientOrdinal !== String(index % 100)) {
+      errors.push(`${commandPath}.command ID must encode its canonical raw client slot`);
+    } else if (rawCommandPrefix === undefined) {
+      rawCommandPrefix = identity.prefix;
+    } else if (identity.prefix !== rawCommandPrefix) {
+      errors.push(`${commandPath}.command ID must share the sample command prefix`);
+    }
     if (!MUTATION_MIX.includes(command.kind)) {
       errors.push(`${commandPath}.kind is not in the mutation contract`);
     } else {
@@ -708,6 +721,9 @@ function deriveAttempts(observations, commandsById, path, errors, durableContrac
   const historiesByCommand = new Map(
     [...commandsById.keys()].map((commandId) => [commandId, []]),
   );
+  const commandOrderById = new Map(
+    [...commandsById.keys()].map((commandId, index) => [commandId, index]),
+  );
   for (const [historyKey, history] of histories) {
     const separator = historyKey.indexOf('\u0000');
     const commandId = historyKey.slice(0, separator);
@@ -732,6 +748,45 @@ function deriveAttempts(observations, commandsById, path, errors, durableContrac
         : false;
       if (!validPair) {
         errors.push(`${path}: ${commandId}/${operationId} invalid prerequisite-exhausted command pair`);
+      } else {
+        const dependent = commandsById.get(commandId);
+        const identity = parseRawCommandClientIdentity(dependent);
+        const prerequisiteCommandId = identity === undefined
+          ? undefined
+          : `${identity.prefix}:${prerequisite}:${identity.clientOrdinal}`;
+        const prerequisiteCommand = prerequisiteCommandId === undefined
+          ? undefined
+          : commandsById.get(prerequisiteCommandId);
+        if (!prerequisiteCommand || prerequisiteCommand.kind !== prerequisite) {
+          errors.push(
+            `${path}: ${commandId}/${operationId} missing same-client prerequisite command`,
+          );
+        } else {
+          if (
+            (commandOrderById.get(prerequisiteCommandId) ?? Number.MAX_SAFE_INTEGER) >=
+              (commandOrderById.get(commandId) ?? -1) ||
+            MUTATION_MIX.indexOf(prerequisiteCommand.kind) >= MUTATION_MIX.indexOf(dependent.kind)
+          ) {
+            errors.push(
+              `${path}: ${commandId}/${operationId} prerequisite command must precede dependent command`,
+            );
+          }
+          if (prerequisiteCommand.status !== 'exhausted') {
+            errors.push(
+              `${path}: ${commandId}/${operationId} prerequisite command must be production-exhausted`,
+            );
+          } else {
+            const prerequisiteHistory = histories.get(
+              `${prerequisiteCommandId}\u0000command`,
+            );
+            if (!isRealGroupProductionExhaustion(prerequisiteHistory)) {
+              errors.push(
+                `${path}: ${commandId}/${operationId} prerequisite command must end in ` +
+                  'production conflict exhaustion',
+              );
+            }
+          }
+        }
       }
     }
     const expectedFirstAttempt = durableContract.name === 'production' && !prerequisiteHistory
@@ -849,6 +904,33 @@ function deriveAttempts(observations, commandsById, path, errors, durableContrac
     exhausted += derivedStatus === 'exhausted' ? 1 : 0;
   }
   return { attempts: observations.length, conflicted, exhausted, accepted };
+}
+
+function parseRawCommandClientIdentity(command) {
+  if (!isObject(command) || typeof command.commandId !== 'string' ||
+    typeof command.kind !== 'string') {
+    return undefined;
+  }
+  const marker = `:${command.kind}:`;
+  const markerIndex = command.commandId.lastIndexOf(marker);
+  if (markerIndex <= 0) return undefined;
+  const prefix = command.commandId.slice(0, markerIndex);
+  const clientOrdinal = command.commandId.slice(markerIndex + marker.length);
+  if (!/^\d+$/.test(clientOrdinal) ||
+    command.commandId !== `${prefix}${marker}${clientOrdinal}`) {
+    return undefined;
+  }
+  return { prefix, clientOrdinal };
+}
+
+function isRealGroupProductionExhaustion(history) {
+  return Array.isArray(history) && history.length >= 2 &&
+    history.slice(0, -1).every((observation) =>
+      observation.outcome === 'conflicted' && observation.terminal === false &&
+      observation.source === 'group-state-service.mutation.conflict'
+    ) &&
+    history.at(-1)?.outcome === 'exhausted' && history.at(-1)?.terminal === true &&
+    history.at(-1)?.source === 'group-state-service.mutation.conflict';
 }
 
 function deriveDurableCorrectness(
