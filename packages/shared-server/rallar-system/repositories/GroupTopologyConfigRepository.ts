@@ -238,28 +238,18 @@ export class GroupTopologyConfigRepository extends RuntimeStateJsonStore {
             this.mutationKey(ref, requestId),
         );
         if (!raw) return undefined;
-        assertTopologyMutationSlot(raw.key, ref, requestId);
+        decodeTopologyMutationEntry(raw, ref, requestId);
+        assertRetainedTopologyEntry(raw, 'mutation record');
         const stored = await this.toLiveEntryValue<GroupTopologyConfigMutationRecord>(
             GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
             raw,
         );
         if (stored) {
-            const decoded = assertTopologyMutationSlot(
-                stored.entry.key,
+            decodeTopologyMutationValue(
+                stored.entry,
+                stored.value,
                 ref,
                 requestId,
-            );
-            validateTopologyBoundary(stored.entry.key, () => {
-                validateGroupTopologyConfigMutationRecord(stored.value, {
-                    groupRef: decoded,
-                    requestId: decoded.requestId,
-                });
-            });
-            assertTopologyGroupRef(
-                stored.value.groupRef,
-                decoded,
-                stored.entry.key,
-                'mutation value',
             );
         }
         return stored;
@@ -299,29 +289,18 @@ export class GroupTopologyConfigRepository extends RuntimeStateJsonStore {
             this.generationKey(ref, target),
         );
         if (!raw) return undefined;
-        assertTopologyGenerationSlot(raw.key, ref, target);
+        decodeTopologyGenerationEntry(raw, ref, target);
+        assertRetainedTopologyEntry(raw, 'target generation');
         const stored = await this.toLiveEntryValue<GroupTopologyConfigGeneration>(
             GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
             raw,
         );
         if (stored) {
-            const decoded = assertTopologyGenerationSlot(
-                stored.entry.key,
+            decodeTopologyGenerationValue(
+                stored.entry,
+                stored.value,
                 ref,
                 target,
-            );
-            validateTopologyBoundary(stored.entry.key, () => {
-                validateGroupTopologyConfigGeneration(
-                    stored.value,
-                    decoded,
-                    decoded.target,
-                );
-            });
-            assertTopologyGroupRef(
-                stored.value.groupRef,
-                decoded,
-                stored.entry.key,
-                'generation value',
             );
         }
         return stored;
@@ -445,7 +424,8 @@ export class GroupTopologyConfigRepository extends RuntimeStateJsonStore {
             this.invariantGenerationKey(ref),
         );
         if (!raw) return undefined;
-        assertTopologyInvariantSlot(raw.key, ref);
+        decodeTopologyInvariantEntry(raw, ref);
+        assertRetainedTopologyEntry(raw, 'invariant generation');
         const stored = await this.toLiveEntryValue<
             GroupTopologyConfigInvariantGeneration
         >(
@@ -453,19 +433,7 @@ export class GroupTopologyConfigRepository extends RuntimeStateJsonStore {
             raw,
         );
         if (stored) {
-            const decoded = assertTopologyInvariantSlot(stored.entry.key, ref);
-            validateTopologyBoundary(stored.entry.key, () => {
-                validateGroupTopologyConfigInvariantGeneration(
-                    stored.value,
-                    decoded,
-                );
-            });
-            assertTopologyGroupRef(
-                stored.value.groupRef,
-                decoded,
-                stored.entry.key,
-                'invariant-generation value',
-            );
+            decodeTopologyInvariantValue(stored.entry, stored.value, ref);
         }
         return stored;
     }
@@ -728,6 +696,129 @@ function assertTopologyInvariantSlot(
     return decoded;
 }
 
+function decodeTopologyMutationEntry(
+    entry: RuntimeStateEntry,
+    trustedRef: GroupRef,
+    trustedRequestId: string,
+): GroupTopologyConfigMutationRecord {
+    return decodeTopologyMutationValue(
+        entry,
+        parseTopologyEntryValue(entry),
+        trustedRef,
+        trustedRequestId,
+    );
+}
+
+function decodeTopologyMutationValue(
+    entry: RuntimeStateEntry,
+    value: unknown,
+    trustedRef: GroupRef,
+    trustedRequestId: string,
+): GroupTopologyConfigMutationRecord {
+    const decoded = assertTopologyMutationSlot(
+        entry.key,
+        trustedRef,
+        trustedRequestId,
+    );
+    validateTopologyBoundary(entry.key, () => {
+        validateGroupTopologyConfigMutationRecord(value, {
+            groupRef: decoded,
+            requestId: decoded.requestId,
+        });
+    });
+    const record = value as GroupTopologyConfigMutationRecord;
+    assertTopologyGroupRef(
+        record.groupRef,
+        decoded,
+        entry.key,
+        'mutation value',
+    );
+    return record;
+}
+
+function decodeTopologyGenerationEntry(
+    entry: RuntimeStateEntry,
+    trustedRef: GroupRef,
+    trustedTarget: GroupTopologyConfigGenerationTarget,
+): GroupTopologyConfigGeneration {
+    return decodeTopologyGenerationValue(
+        entry,
+        parseTopologyEntryValue(entry),
+        trustedRef,
+        trustedTarget,
+    );
+}
+
+function decodeTopologyGenerationValue(
+    entry: RuntimeStateEntry,
+    value: unknown,
+    trustedRef: GroupRef,
+    trustedTarget: GroupTopologyConfigGenerationTarget,
+): GroupTopologyConfigGeneration {
+    const decoded = assertTopologyGenerationSlot(
+        entry.key,
+        trustedRef,
+        trustedTarget,
+    );
+    validateTopologyBoundary(entry.key, () => {
+        validateGroupTopologyConfigGeneration(value, decoded, decoded.target);
+    });
+    const generation = value as GroupTopologyConfigGeneration;
+    assertTopologyGroupRef(
+        generation.groupRef,
+        decoded,
+        entry.key,
+        'generation value',
+    );
+    return generation;
+}
+
+function decodeTopologyInvariantEntry(
+    entry: RuntimeStateEntry,
+    trustedRef: GroupRef,
+): GroupTopologyConfigInvariantGeneration {
+    return decodeTopologyInvariantValue(
+        entry,
+        parseTopologyEntryValue(entry),
+        trustedRef,
+    );
+}
+
+function decodeTopologyInvariantValue(
+    entry: RuntimeStateEntry,
+    value: unknown,
+    trustedRef: GroupRef,
+): GroupTopologyConfigInvariantGeneration {
+    const decoded = assertTopologyInvariantSlot(entry.key, trustedRef);
+    validateTopologyBoundary(entry.key, () => {
+        validateGroupTopologyConfigInvariantGeneration(value, decoded);
+    });
+    const generation = value as GroupTopologyConfigInvariantGeneration;
+    assertTopologyGroupRef(
+        generation.groupRef,
+        decoded,
+        entry.key,
+        'invariant-generation value',
+    );
+    return generation;
+}
+
+function parseTopologyEntryValue(entry: RuntimeStateEntry): unknown {
+    return validateTopologyBoundary(entry.key, () => JSON.parse(entry.value));
+}
+
+function assertRetainedTopologyEntry(
+    entry: RuntimeStateEntry,
+    label: string,
+): void {
+    if (entry.expireAtTimestamp !== NEVER_EXPIRE_AT_TIMESTAMP) {
+        throw topologyConfigCorruption(
+            entry.key,
+            `Stored topology config ${label} must not expire`,
+        );
+    }
+}
+
 function decodeTopologyChildKey(
     storageKey: string,
     name: string,
@@ -880,7 +971,7 @@ function decodeTopologySourceValue(
             }`,
         );
     }
-    return validateTopologyBoundary(entry.key, () => {
+    const value = validateTopologyBoundary(entry.key, () => {
         const storedRef = storedTopologyGroupRef(parsed);
         if (expectedRef) {
             assertTopologyGroupRef(
@@ -894,6 +985,16 @@ function decodeTopologySourceValue(
             ? decodeStoredGroupTopologyConfig(parsed, storedRef)
             : decodeStoredGroupTopologyOverride(parsed, storedRef);
     });
+    const expectedExpiry = target === 'config'
+        ? NEVER_EXPIRE_AT_TIMESTAMP
+        : (value as StoredGroupTopologyOverride).expiresAtEpochMs;
+    if (entry.expireAtTimestamp !== expectedExpiry) {
+        throw topologyConfigCorruption(
+            entry.key,
+            `Stored topology ${target} physical expiry differs from its value contract`,
+        );
+    }
+    return value;
 }
 
 function validateTopologyBoundary<T>(

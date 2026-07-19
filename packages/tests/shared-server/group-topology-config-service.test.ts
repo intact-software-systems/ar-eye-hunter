@@ -50,7 +50,8 @@ describe('group topology config service', () => {
                 groupSnapshot: createGroupSnapshot(),
             },
             facts: {
-                nowEpochMs: 1_000,
+                requestedAtEpochMs: 1_000,
+                policyNowEpochMs: 1_000,
                 commandHash: `sha256:${'a'.repeat(64)}`,
                 isPlatformAdmin: false,
                 resolvedOverrideExpiresAtEpochMs: null,
@@ -62,13 +63,25 @@ describe('group topology config service', () => {
 
         const first = computeTopologyConfigMutation(input);
         const second = computeTopologyConfigMutation(input);
+        const laterPolicyInput = deepFreeze({
+            ...input,
+            facts: { ...input.facts, policyNowEpochMs: 2_000 },
+        });
+        const laterPolicy = computeTopologyConfigMutation(laterPolicyInput);
 
         expect(first).toEqual(second);
+        expect(laterPolicy).toEqual(first);
         expect(input).toEqual(before);
         expect(() => validateTopologyConfigMutation({ ...input, computed: first }))
             .not.toThrow();
         expect(() => validateTopologyConfigMutation({ ...input, computed: second }))
             .not.toThrow();
+        expect(() =>
+            validateTopologyConfigMutation({
+                ...laterPolicyInput,
+                computed: laterPolicy,
+            })
+        ).not.toThrow();
     });
 
     it('keeps pure topology config phases ambient-free and orchestration visible', () => {

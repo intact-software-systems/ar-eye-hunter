@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import {
     GroupTopologyConfigRepository,
@@ -657,6 +658,130 @@ describe('GroupTopologyManagementService', () => {
         });
     });
 
+    it('applies active and unexpired lifecycle policy to platform admins', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const base = createGroupSnapshot(createGroupRef('workspace-1'));
+        const group: GroupSnapshot = {
+            ...base,
+            group: { ...base.group, expiresAtEpochMs: 1_500 },
+        };
+        const service = createService({
+            runtimeRepository,
+            group,
+            now: () => 2_000,
+            adminPrincipalIds: new Set(['platform-admin']),
+        });
+
+        await expect(service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'tree' },
+            updatedByPrincipalId: 'platform-admin',
+            requestId: 'expired-admin-group',
+        })).rejects.toMatchObject({
+            status: 403,
+            denial: { code: 'group-not-active' },
+        });
+        await expect(service.readConfig(group.group)).resolves.toMatchObject({
+            durable: undefined,
+        });
+    });
+
+    it('rechecks lifecycle time on every non-replay conflict attempt', async () => {
+        const runtimeRepository = new FakeRuntimeStateRepository();
+        const base = createGroupSnapshot(createGroupRef('workspace-1'));
+        const group: GroupSnapshot = {
+            ...base,
+            group: { ...base.group, expiresAtEpochMs: 1_500 },
+        };
+        const configRepository = new GroupTopologyConfigRepository(runtimeRepository);
+        const seeded = topologyConfig(group.group, 1, 'tree', 'policy-time-seed');
+        await configRepository.commitConfig(seeded, null);
+        const now = vi.fn()
+            .mockReturnValueOnce(1_000)
+            .mockReturnValue(2_000);
+        const service = createService({
+            runtimeRepository,
+            group,
+            configRepository,
+            now,
+            sleep: () => Promise.resolve(),
+        });
+        await service.readConfig(group.group);
+        forceFirstTargetGenerationConflict(
+            runtimeRepository,
+            configRepository.generationKey(group.group, 'config'),
+        );
+
+        await expect(service.putConfig({
+            groupRef: group.group,
+            config: { topologyKind: 'mesh' },
+            updatedByPrincipalId: 'owner',
+            requestId: 'policy-time-retry',
+        })).rejects.toMatchObject({
+            status: 403,
+            denial: { code: 'group-not-active' },
+        });
+        expect(now).toHaveBeenCalledTimes(2);
+        await expect(configRepository.findConfig(group.group)).resolves.toEqual(
+            seeded,
+        );
+    });
+
+    it('keeps write time and relative override expiry stable across conflict retries', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(500);
+        try {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const base = createGroupSnapshot(createGroupRef('workspace-1'));
+            const group: GroupSnapshot = {
+                ...base,
+                group: { ...base.group, expiresAtEpochMs: 10_000 },
+            };
+            const configRepository = new GroupTopologyConfigRepository(
+                runtimeRepository,
+            );
+            await configRepository.commitOverride({
+                ...topologyConfig(group.group, 1, 'tree', 'stable-time-seed'),
+                createdAtEpochMs: 500,
+                updatedAtEpochMs: 500,
+                expiresAtEpochMs: 50_000,
+            }, null);
+            const now = vi.fn()
+                .mockReturnValueOnce(1_000)
+                .mockReturnValue(2_000);
+            const service = createService({
+                runtimeRepository,
+                group,
+                configRepository,
+                now,
+                sleep: () => Promise.resolve(),
+            });
+            await service.readConfig(group.group);
+            forceFirstTargetGenerationConflict(
+                runtimeRepository,
+                configRepository.generationKey(group.group, 'override'),
+            );
+
+            const accepted = await service.putOverride({
+                groupRef: group.group,
+                config: { topologyKind: 'mesh' },
+                ttlMs: 5_000,
+                updatedByPrincipalId: 'owner',
+                requestId: 'stable-time-retry',
+            });
+
+            expect(now).toHaveBeenCalledTimes(2);
+            expect(accepted.override).toMatchObject({
+                version: 2,
+                createdAtEpochMs: 500,
+                updatedAtEpochMs: 1_000,
+                expiresAtEpochMs: 6_000,
+            });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('makes identical request races first-writer-wins and rejects different command reuse', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const group = createGroupSnapshot(createGroupRef('workspace-1'));
@@ -800,7 +925,7 @@ describe('GroupTopologyManagementService', () => {
                         accepted.receipt.acceptedUpdatedAtEpochMs! + 1,
                 },
             }),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(service.putConfig(request)).rejects.toThrow(
@@ -1608,6 +1733,7 @@ function createService(options: {
     readonly sleep?: (delayMs: number) => Promise<void>;
     readonly timing?: (event: RallarTimingEvent) => void;
     readonly wakeStateMutationOutbox?: () => void;
+    readonly adminPrincipalIds?: ReadonlySet<string>;
 }): GroupTopologyManagementService {
     return new GroupTopologyManagementService({
         findGroupSnapshotByRef: async (ref) =>
@@ -1638,6 +1764,7 @@ function createService(options: {
         sleep: options.sleep,
         timing: options.timing,
         wakeStateMutationOutbox: options.wakeStateMutationOutbox,
+        adminPrincipalIds: options.adminPrincipalIds,
     });
 }
 
@@ -1672,6 +1799,37 @@ function returnFirstEntryAs(
             return entry?.entry;
         }
         return await findEntry(candidateNamespace, candidateKey);
+    };
+}
+
+function forceFirstTargetGenerationConflict(
+    runtime: FakeRuntimeStateRepository,
+    key: string,
+): void {
+    const upsertIfRevision = runtime.upsertIfRevision.bind(runtime);
+    let first = true;
+    runtime.upsertIfRevision = async (
+        namespace,
+        candidateKey,
+        value,
+        expireAtTimestamp,
+        expectedRevision,
+    ) => {
+        if (
+            first &&
+            namespace === GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE &&
+            candidateKey === key
+        ) {
+            first = false;
+            return { status: 'conflict' };
+        }
+        return await upsertIfRevision(
+            namespace,
+            candidateKey,
+            value,
+            expireAtTimestamp,
+            expectedRevision,
+        );
     };
 }
 

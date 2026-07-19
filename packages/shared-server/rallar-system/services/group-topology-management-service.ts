@@ -42,6 +42,7 @@ import {
     type GroupTopologyConfigMutationFacts,
     type GroupTopologyConfigMutationRead,
     type GroupTopologyConfigMutationReceipt,
+    type GroupTopologyConfigMutationStableFacts,
     normalizeGroupTopologyConfigPatch,
     probeTopologyConfigMutationIdempotency,
     validateTopologyConfigMutation,
@@ -325,7 +326,7 @@ export class GroupTopologyManagementService {
                 command.input.updatedByPrincipalId,
             ) ?? false,
         } as const;
-        let facts: GroupTopologyConfigMutationFacts | undefined;
+        let stableFacts: GroupTopologyConfigMutationStableFacts | undefined;
         let deleteTarget: GroupTopologyConfigDeleteTarget | null | undefined;
         let lastConflict: RuntimeStateWriteConflictError | undefined;
 
@@ -349,6 +350,7 @@ export class GroupTopologyManagementService {
                     read,
                     commandHash,
                 );
+                let facts: GroupTopologyConfigMutationFacts | undefined;
                 let computed: GroupTopologyConfigMutationComputed;
                 if (idempotency.outcome !== 'miss') {
                     computed = idempotency;
@@ -374,16 +376,17 @@ export class GroupTopologyManagementService {
                             }
                             : null;
                     }
-                    if (!facts) {
-                        const nowEpochMs = this.now();
-                        facts = {
-                            nowEpochMs,
+                    const policyNowEpochMs = this.now();
+                    if (!stableFacts) {
+                        const requestedAtEpochMs = policyNowEpochMs;
+                        stableFacts = {
+                            requestedAtEpochMs,
                             commandHash,
                             isPlatformAdmin: authorityFacts.isPlatformAdmin,
                             resolvedOverrideExpiresAtEpochMs:
                                 command.operation === 'putOverride'
                                     ? resolveOverrideExpiresAtEpochMs({
-                                        nowEpochMs,
+                                        nowEpochMs: requestedAtEpochMs,
                                         ttlMs: command.input.ttlMs ?? undefined,
                                         expiresAtEpochMs:
                                             command.input.expiresAtEpochMs ?? undefined,
@@ -392,6 +395,7 @@ export class GroupTopologyManagementService {
                             deleteTarget: deleteTarget ?? null,
                         };
                     }
+                    facts = { ...stableFacts, policyNowEpochMs };
                     computed = computeTopologyConfigMutation({
                         command,
                         read,

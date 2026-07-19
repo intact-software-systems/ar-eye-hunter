@@ -1154,8 +1154,13 @@ state scope used by clients and groups:
   `migrateLegacyGroupTopologyConfigKeys` as an explicit offline/operator step.
   Normal startup and first-access readiness never move those keys: they fail
   closed, and startup does not enable expiry eviction until the migration has
-  completed. Effective reads bracket durable config and override with the
-  invariant generation so they cannot combine states that never coexisted.
+  completed. The repository treats physical expiry as part of the stored
+  contract: durable config and retained mutation/generation rows must be
+  non-expiring, while an override row must expire exactly at its stored
+  `expiresAtEpochMs`. It validates JSON, scope, child identity, and this expiry
+  metadata before lazy expiry can delete a row. Effective reads bracket durable
+  config and override with the invariant generation so they cannot combine
+  states that never coexisted.
   Every response includes a compact receipt whose mandatory nullable replay
   timestamps let the service reconstruct a PUT replay without storing the full
   accepted config in the idempotency ledger. The route returns without waiting
@@ -1169,10 +1174,13 @@ state scope used by clients and groups:
   immediate recompute and optional publication.
 
 Topology config resolves as server defaults, durable config, temporary override,
-then request-time reconfigure options. Writes require an authenticated group
-owner/admin or a platform admin client ID from `AUTH_ADMIN_CLIENT_IDS`. Strict
-read auth (`RALLAR_STATE_STRICT_READ_AUTH`) also protects group graph and
-topology reads.
+then request-time reconfigure options. Writes require an active, unexpired group
+and an authenticated group owner/admin or a platform admin client ID from
+`AUTH_ADMIN_CLIENT_IDS`; platform administration bypasses membership/role, not
+group lifecycle. On a CAS retry, lifecycle policy receives a fresh attempt time,
+while stored write timestamps and relative override TTL stay anchored to the
+first non-replay attempt. Strict read auth (`RALLAR_STATE_STRICT_READ_AUTH`)
+also protects group graph and topology reads.
 
 ### Admin Operations REST
 

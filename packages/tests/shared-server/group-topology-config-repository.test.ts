@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import {
     groupStateGroupStorageKey,
     groupStateIdempotencyStorageKey,
@@ -113,7 +114,7 @@ describe('group topology config repository', () => {
                     updatedByPrincipalId: 'owner',
                     requestId: null,
                 }),
-                Number.MAX_SAFE_INTEGER,
+                NEVER_EXPIRE_AT_TIMESTAMP,
             );
         }
 
@@ -167,7 +168,7 @@ describe('group topology config repository', () => {
             updatedAtEpochMs: 2,
             updatedByPrincipalId: 'legacy-owner',
             ...(target === 'override'
-                ? { expiresAtEpochMs: Number.MAX_SAFE_INTEGER }
+                ? { expiresAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP }
                 : {}),
         };
         const key = target === 'config'
@@ -177,7 +178,7 @@ describe('group topology config repository', () => {
             namespace,
             key,
             JSON.stringify(legacy),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         const decoded = target === 'config'
@@ -203,7 +204,7 @@ describe('group topology config repository', () => {
                 updatedByPrincipalId: 'legacy-owner',
                 unexpected: true,
             }),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(repository.findConfig(groupRef))
@@ -218,7 +219,7 @@ describe('group topology config repository', () => {
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             repository.configKey(groupRef),
             JSON.stringify({ version: 7 }),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(repository.listGenerationSources('config')).rejects.toThrow(
@@ -263,6 +264,192 @@ describe('group topology config repository', () => {
         }
     });
 
+    it.each([
+        'mutation record',
+        'target generation',
+        'invariant generation',
+    ] as const)(
+        'validates an expired %s value before lazy expiry and preserves corruption',
+        async (boundary) => {
+            vi.useFakeTimers();
+            vi.setSystemTime(2_000);
+            try {
+                const runtimeRepository = new FakeRuntimeStateRepository();
+                const repository = new GroupTopologyConfigRepository(runtimeRepository);
+                const groupRef = createGroupRef('workspace-1');
+                const wrongRef = createGroupRef('workspace-2');
+                const commandHash = `sha256:${'f'.repeat(64)}`;
+                const seeded = boundary === 'mutation record'
+                    ? {
+                        namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                        key: repository.mutationKey(groupRef, 'expected-request'),
+                        value: {
+                            groupRef,
+                            requestId: 'different-request',
+                            commandHash,
+                            receipt: {
+                                commandId: 'different-request',
+                                commandHash,
+                                operation: 'deleteConfig',
+                                outcome: 'no-op',
+                                groupRef,
+                                target: 'config',
+                                acceptedVersion: 0,
+                                acceptedStorageRevision: null,
+                                acceptedCreatedAtEpochMs: null,
+                                acceptedUpdatedAtEpochMs: null,
+                                acceptedExpiresAtEpochMs: null,
+                                outboxId: null,
+                            },
+                        },
+                        read: () =>
+                            repository.findMutationRecord(groupRef, 'expected-request'),
+                    }
+                    : boundary === 'target generation'
+                    ? {
+                        namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+                        key: repository.generationKey(groupRef, 'config'),
+                        value: { groupRef, target: 'override', version: 1 },
+                        read: () => repository.findGenerationEntry(groupRef, 'config'),
+                    }
+                    : {
+                        namespace:
+                            GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+                        key: repository.invariantGenerationKey(groupRef),
+                        value: { groupRef: wrongRef, version: 1 },
+                        read: () => repository.findInvariantGenerationEntry(groupRef),
+                    };
+                await runtimeRepository.insertIfAbsent(
+                    seeded.namespace,
+                    seeded.key,
+                    JSON.stringify(seeded.value),
+                    1_000,
+                );
+
+                await expect(seeded.read()).rejects.toBeInstanceOf(
+                    GroupTopologyConfigRepositoryInvariantCorruptionError,
+                );
+                expect(await runtimeRepository.findEntry(
+                    seeded.namespace,
+                    seeded.key,
+                )).toBeDefined();
+            } finally {
+                vi.useRealTimers();
+            }
+        },
+    );
+
+    it.each([
+        'mutation record',
+        'target generation',
+        'invariant generation',
+    ] as const)(
+        'requires the %s physical row to be non-expiring',
+        async (boundary) => {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const repository = new GroupTopologyConfigRepository(runtimeRepository);
+            const groupRef = createGroupRef('workspace-1');
+            const requestId = 'retained-ttl';
+            const commandHash = `sha256:${'9'.repeat(64)}`;
+            const seeded = boundary === 'mutation record'
+                ? {
+                    namespace: GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+                    key: repository.mutationKey(groupRef, requestId),
+                    value: {
+                        groupRef,
+                        requestId,
+                        commandHash,
+                        receipt: {
+                            commandId: requestId,
+                            commandHash,
+                            operation: 'deleteConfig',
+                            outcome: 'no-op',
+                            groupRef,
+                            target: 'config',
+                            acceptedVersion: 0,
+                            acceptedStorageRevision: null,
+                            acceptedCreatedAtEpochMs: null,
+                            acceptedUpdatedAtEpochMs: null,
+                            acceptedExpiresAtEpochMs: null,
+                            outboxId: null,
+                        },
+                    },
+                    read: () => repository.findMutationRecord(groupRef, requestId),
+                }
+                : boundary === 'target generation'
+                ? {
+                    namespace: GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+                    key: repository.generationKey(groupRef, 'config'),
+                    value: { groupRef, target: 'config', version: 1 },
+                    read: () => repository.findGenerationEntry(groupRef, 'config'),
+                }
+                : {
+                    namespace: GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+                    key: repository.invariantGenerationKey(groupRef),
+                    value: { groupRef, version: 1 },
+                    read: () => repository.findInvariantGenerationEntry(groupRef),
+                };
+            await runtimeRepository.insertIfAbsent(
+                seeded.namespace,
+                seeded.key,
+                JSON.stringify(seeded.value),
+                NEVER_EXPIRE_AT_TIMESTAMP - 1,
+            );
+
+            await expect(seeded.read()).rejects.toBeInstanceOf(
+                GroupTopologyConfigRepositoryInvariantCorruptionError,
+            );
+            expect(await runtimeRepository.findEntry(seeded.namespace, seeded.key))
+                .toBeDefined();
+        },
+    );
+
+    it.each([
+        { target: 'config' as const, boundary: 'direct' as const },
+        { target: 'config' as const, boundary: 'source' as const },
+        { target: 'override' as const, boundary: 'direct' as const },
+        { target: 'override' as const, boundary: 'source' as const },
+    ])(
+        'requires $target physical expiry to agree at the $boundary boundary',
+        async ({ target, boundary }) => {
+            const runtimeRepository = new FakeRuntimeStateRepository();
+            const repository = new GroupTopologyConfigRepository(runtimeRepository);
+            const groupRef = createGroupRef('workspace-1');
+            const namespace = target === 'config'
+                ? GROUP_TOPOLOGY_CONFIG_NAMESPACE
+                : GROUP_TOPOLOGY_OVERRIDE_NAMESPACE;
+            const key = target === 'config'
+                ? repository.configKey(groupRef)
+                : repository.overrideKey(groupRef);
+            const value = {
+                groupRef,
+                config: { topologyKind: 'tree' as const },
+                version: 1,
+                createdAtEpochMs: 1,
+                updatedAtEpochMs: 1,
+                updatedByPrincipalId: 'owner',
+                requestId: null,
+                ...(target === 'override' ? { expiresAtEpochMs: 20_000 } : {}),
+            };
+            await runtimeRepository.insertIfAbsent(
+                namespace,
+                key,
+                JSON.stringify(value),
+                target === 'config' ? NEVER_EXPIRE_AT_TIMESTAMP - 1 : 10_000,
+            );
+
+            const read = boundary === 'source'
+                ? repository.findGenerationSource(groupRef, target)
+                : target === 'config'
+                ? repository.findConfig(groupRef)
+                : repository.findOverride(groupRef);
+            await expect(read).rejects.toBeInstanceOf(
+                GroupTopologyConfigRepositoryInvariantCorruptionError,
+            );
+            expect(await runtimeRepository.findEntry(namespace, key)).toBeDefined();
+        },
+    );
+
     it('rejects noncanonical physical keys at list and page boundaries', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
@@ -284,7 +471,7 @@ describe('group topology config repository', () => {
                 updatedByPrincipalId: 'owner',
                 requestId: null,
             }),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(repository.listGenerationSources('config')).rejects.toThrow(
@@ -326,7 +513,7 @@ describe('group topology config repository', () => {
                         updatedAtEpochMs: 1,
                         updatedByPrincipalId: 'owner',
                         requestId: 'override-boundary',
-                        expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+                        expiresAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
                     }, null),
                 read: (repository: GroupTopologyConfigRepository) =>
                     repository.findOverride(groupRef),
@@ -429,7 +616,7 @@ describe('group topology config repository', () => {
                     updatedAtEpochMs: 1,
                     updatedByPrincipalId: 'owner',
                     requestId: 'wrong-override-scope',
-                    expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+                    expiresAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
                 },
                 read: () => repository.findOverride(groupRef),
             },
@@ -480,7 +667,7 @@ describe('group topology config repository', () => {
                 boundary.namespace,
                 boundary.key,
                 JSON.stringify(boundary.value),
-                Number.MAX_SAFE_INTEGER,
+                NEVER_EXPIRE_AT_TIMESTAMP,
             );
             await expect(boundary.read(), boundary.label).rejects.toBeInstanceOf(
                 GroupTopologyConfigRepositoryInvariantCorruptionError,
@@ -572,7 +759,7 @@ describe('group topology config repository', () => {
                     outboxId: null,
                 },
             }),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(repository.findMutationRecord(groupRef, requestId))
@@ -634,7 +821,7 @@ describe('group topology config repository', () => {
                     ...receipt,
                 },
             }),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(repository.findMutationRecord(groupRef, requestId))
@@ -684,7 +871,7 @@ describe('group topology config repository', () => {
                     ...receipt,
                 },
             }),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(repository.findMutationRecord(groupRef, requestId))
@@ -740,7 +927,7 @@ describe('group topology config repository', () => {
                 GROUP_TOPOLOGY_CONFIG_NAMESPACE,
                 repository.configKey(groupRef),
                 JSON.stringify(legacyConfig),
-                Number.MAX_SAFE_INTEGER,
+                NEVER_EXPIRE_AT_TIMESTAMP,
             );
             await runtimeRepository.insertIfAbsent(
                 GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
@@ -796,7 +983,7 @@ describe('group topology config repository', () => {
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             legacyKey,
             JSON.stringify(legacy),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(migrateLegacyGroupTopologyConfigKeys(
@@ -840,7 +1027,7 @@ describe('group topology config repository', () => {
                 updatedAtEpochMs: 1,
                 updatedByPrincipalId: 'legacy-owner',
             }),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(backfillGroupTopologyConfigGenerationsForRef(
@@ -886,7 +1073,7 @@ describe('group topology config repository', () => {
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             groupStateGroupStorageKey(absentRef),
             JSON.stringify(source),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(backfillGroupTopologyConfigGenerationsForRef(
@@ -927,13 +1114,13 @@ describe('group topology config repository', () => {
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             legacyKey,
             JSON.stringify(source),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
         await runtimeRepository.insertIfAbsent(
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             groupStateGroupStorageKey(groupRef),
             JSON.stringify(winner),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(migrateLegacyGroupTopologyConfigKeys(
@@ -971,7 +1158,7 @@ describe('group topology config repository', () => {
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             legacyKey,
             JSON.stringify(source),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
         await runtimeRepository.insertIfAbsent(
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
@@ -989,7 +1176,7 @@ describe('group topology config repository', () => {
                     applicationId: groupRef.applicationId,
                 },
             }),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
         await expect(migrateLegacyGroupTopologyConfigKeys(
@@ -1031,7 +1218,7 @@ describe('group topology config repository', () => {
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             legacyKey,
             JSON.stringify(source),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
         const conflict = async (
             operation: 'insertIfAbsent' | 'upsertIfRevision' | 'deleteIfRevision',
@@ -1048,7 +1235,7 @@ describe('group topology config repository', () => {
                 namespace,
                 key,
                 JSON.stringify(source),
-                Number.MAX_SAFE_INTEGER,
+                NEVER_EXPIRE_AT_TIMESTAMP,
                 0,
             );
             runtimeRepository.beforeConditionalWrite = conflict;
@@ -1090,7 +1277,7 @@ describe('group topology config repository', () => {
                     updatedAtEpochMs: 1,
                     updatedByPrincipalId: 'legacy-owner',
                 }),
-                Number.MAX_SAFE_INTEGER,
+                NEVER_EXPIRE_AT_TIMESTAMP,
             );
         }
 
@@ -1129,7 +1316,7 @@ describe('group topology config repository', () => {
                 updatedAtEpochMs: 1,
                 updatedByPrincipalId: 'legacy-owner',
             }),
-            Number.MAX_SAFE_INTEGER,
+            NEVER_EXPIRE_AT_TIMESTAMP,
         );
         runtimeRepository.beforeConditionalWrite = async (
             operation,
@@ -1145,7 +1332,7 @@ describe('group topology config repository', () => {
                 namespace,
                 key,
                 JSON.stringify({ groupRef, target: 'config', version: 8 }),
-                Number.MAX_SAFE_INTEGER,
+                NEVER_EXPIRE_AT_TIMESTAMP,
             );
         };
 

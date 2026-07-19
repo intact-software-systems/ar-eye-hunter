@@ -12,6 +12,7 @@ export type {
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import {
+    canMutateActiveGroup,
     canUpdateGroupSnapshot,
     GroupPolicyDeniedError,
 } from '../group-policy.ts';
@@ -83,13 +84,18 @@ export type GroupTopologyConfigDeleteTarget = Readonly<{
     expiresAtEpochMs: number | null;
 }>;
 
-export type GroupTopologyConfigMutationFacts = Readonly<{
-    nowEpochMs: number;
+export type GroupTopologyConfigMutationStableFacts = Readonly<{
+    requestedAtEpochMs: number;
     commandHash: string;
     isPlatformAdmin: boolean;
     resolvedOverrideExpiresAtEpochMs: number | null;
     deleteTarget: GroupTopologyConfigDeleteTarget | null;
 }>;
+
+export type GroupTopologyConfigMutationFacts =
+    GroupTopologyConfigMutationStableFacts & Readonly<{
+        policyNowEpochMs: number;
+    }>;
 
 export type GroupTopologyConfigOutboxInput = Extract<
     CreateStateMutationOutboxRecordInput,
@@ -320,10 +326,11 @@ function computePutConfig(input: Readonly<{
         groupRef: copyGroupRef(command.aggregateRef),
         config: normalizeGroupTopologyConfigPatch(command.input.config!),
         version: nextTopologyConfigVersion(current?.value.version, generation),
-        createdAtEpochMs: current?.value.createdAtEpochMs ?? facts.nowEpochMs,
+        createdAtEpochMs: current?.value.createdAtEpochMs ??
+            facts.requestedAtEpochMs,
         updatedAtEpochMs: Math.max(
-            facts.nowEpochMs,
-            current?.value.updatedAtEpochMs ?? facts.nowEpochMs,
+            facts.requestedAtEpochMs,
+            current?.value.updatedAtEpochMs ?? facts.requestedAtEpochMs,
         ),
         updatedByPrincipalId: command.input.updatedByPrincipalId,
         requestId: command.requestId,
@@ -363,10 +370,11 @@ function computePutOverride(input: Readonly<{
         groupRef: copyGroupRef(command.aggregateRef),
         config: normalizeGroupTopologyConfigPatch(command.input.config!),
         version: nextTopologyConfigVersion(current?.value.version, generation),
-        createdAtEpochMs: current?.value.createdAtEpochMs ?? facts.nowEpochMs,
+        createdAtEpochMs: current?.value.createdAtEpochMs ??
+            facts.requestedAtEpochMs,
         updatedAtEpochMs: Math.max(
-            facts.nowEpochMs,
-            current?.value.updatedAtEpochMs ?? facts.nowEpochMs,
+            facts.requestedAtEpochMs,
+            current?.value.updatedAtEpochMs ?? facts.requestedAtEpochMs,
         ),
         updatedByPrincipalId: command.input.updatedByPrincipalId,
         requestId: command.requestId,
@@ -469,7 +477,7 @@ function writeResult(
         aggregateRef: copyGroupRef(input.command.aggregateRef),
         commandId: input.command.commandId,
         commandHash: input.facts.commandHash,
-        createdAtEpochMs: input.facts.nowEpochMs,
+        createdAtEpochMs: input.facts.requestedAtEpochMs,
         acceptedCausalRevision: {
             kind: 'group',
             stateRevision: accepted.stateRevision,
@@ -619,22 +627,18 @@ function resultFromTopologyConfigReceipt(
 function validateTopologyConfigAuthority(
     snapshot: GroupSnapshot,
     command: GroupTopologyConfigMutationCommand,
-    facts: Readonly<{ isPlatformAdmin: boolean; nowEpochMs?: number }>,
+    facts: Readonly<{ isPlatformAdmin: boolean; policyNowEpochMs?: number }>,
 ): void {
-    if (facts.isPlatformAdmin) {
-        if (snapshot.group.status !== 'active') {
-            throw new GroupPolicyDeniedError({
-                allowed: false,
-                code: 'group-not-active',
-                message: 'Topology config mutations require an active group.',
-            });
-        }
-        return;
-    }
+    const lifecyclePolicy = canMutateActiveGroup({
+        group: snapshot.group,
+        nowEpochMs: facts.policyNowEpochMs,
+    });
+    if (!lifecyclePolicy.allowed) throw new GroupPolicyDeniedError(lifecyclePolicy);
+    if (facts.isPlatformAdmin) return;
     const policy = canUpdateGroupSnapshot({
         snapshot,
         actor: { principalId: command.input.updatedByPrincipalId },
-        nowEpochMs: facts.nowEpochMs,
+        nowEpochMs: facts.policyNowEpochMs,
     });
     if (!policy.allowed) throw new GroupPolicyDeniedError(policy);
 }
@@ -776,7 +780,8 @@ export function validateGroupTopologyConfigInvariantGeneration(
 function validateTopologyConfigFacts(
     facts: GroupTopologyConfigMutationFacts,
 ): void {
-    validateStorageRevision(facts.nowEpochMs, 'fact time');
+    validateStorageRevision(facts.requestedAtEpochMs, 'request fact time');
+    validateStorageRevision(facts.policyNowEpochMs, 'policy fact time');
     if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
         throw new TypeError('Topology config command hash is invalid');
     }

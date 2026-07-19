@@ -180,9 +180,15 @@ records use the canonical optional-workspace group-state key codec. Legacy
 ambiguous topology source keys require the explicit offline
 `migrateLegacyGroupTopologyConfigKeys` operation with old writers stopped;
 ordinary startup and first access fail closed without moving them, and expiry
-eviction stays disabled until startup backfill succeeds. The idempotency row
-stores only command identity plus the compact receipt; mandatory nullable
-receipt timestamps reconstruct accepted PUT responses on replay.
+eviction stays disabled until startup backfill succeeds. Physical expiry is a
+validated storage invariant: durable config and retained request/generation
+rows are non-expiring, and override expiry must equal the value's
+`expiresAtEpochMs`; malformed scope, child, JSON, or expiry metadata fails
+before lazy deletion. Every retry re-evaluates active/unexpired group lifecycle
+at a fresh attempt time for owners and platform admins alike. Stored write time
+and relative override TTL remain fixed to the first non-replay attempt. The
+idempotency row stores only command identity plus the compact receipt; mandatory
+nullable receipt timestamps reconstruct accepted PUT responses on replay.
 DELETE uses
 `Idempotency-Key` on REST (or `requestId` in the shared browser options) for
 stable replay. They return after commit; outbox work performs recompute and
