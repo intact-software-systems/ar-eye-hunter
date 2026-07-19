@@ -17,6 +17,14 @@
   token; a changed bracket or transaction CAS forces a full reread. This
   serializes cross-target decisions without locks and prevents independently
   valid config/override writes from committing an invalid combined result.
+- Legacy config and override rows, including already-expired overrides, are
+  decoded through raw including-expired repository reads and optimistically
+  backfilled into the retained generation ledger with the same bounded
+  `[0, 2, 8]` CAS policy. API startup holds periodic runtime-state eviction
+  behind the all-scope backfill and remains fail-closed if backfill fails.
+  Reusable service access coalesces the same backfill once per group before
+  any public config-pair or override read, so lazy expiry cannot delete the
+  only legacy version source first.
 - `group-topology-management-service.ts` owns the visible three-attempt
   `[0, 2, 8]` retry loop. `readTopologyConfigMutation` reads outside a
   transaction; pure compute/validate receive explicit facts; only
@@ -32,11 +40,15 @@
   conflicting request reuse recheck fresh durable status and actor/admin role,
   but do not materialize clock-dependent mutation-admission facts.
 - Request IDs are immutable first-writer claims. The canonical command is
-  normalized before its SHA-256 digest is computed once. Records contain the
-  compact receipt plus a mandatory discriminated accepted result, so replay
-  returns the original PUT value even after later overwrite or delete. Record
-  validation binds scoped key/request ID, command ID/hash, operation/target,
-  outcome/effect/storage revision, and accepted result/version.
+  normalized before its SHA-256 digest is computed once. Records contain
+  exactly `{groupRef, requestId, commandHash, receipt}`. Mandatory nullable
+  creation/update/override-expiry scalars in the receipt reconstruct the
+  original PUT value from the verified command even after later overwrite or
+  delete; no full accepted payload is retained. Replay explicitly binds the
+  receipt operation to the freshly verified command before choosing a
+  reconstruction branch. Record validation also binds scoped key/request ID,
+  command ID/hash, operation/target, outcome/effect, version, storage revision,
+  timestamps, and expiry.
 - The repository boundary decodes exactly the legacy config/override key set
   that omitted `requestId`, normalizing it to mandatory `null` in memory. New
   writes and public types remain mandatory, malformed extra fields still fail,
@@ -96,6 +108,17 @@ Later adversarial RED tests independently proved and then fixed:
   unreadable under the new mandatory contract;
 - a temporary override masking a durable/default invariant that would become
   invalid immediately after TTL expiry.
+- an untouched expired legacy override at version `7` being lazily deleted
+  before its generation was preserved and then recreated at version `1`;
+- ordinary `readConfig` and explicit reconfigure combining config and override
+  states that never coexisted when the shared invariant changed mid-read;
+- the immutable request ledger retaining a full accepted result instead of the
+  required compact receipt-only contract;
+- a structurally valid tampered compact receipt keeping the correct command
+  hash while changing `putConfig` to `putOverride`, selecting the wrong replay
+  reconstruction branch;
+- API startup wiring that was only source-order checked rather than proving
+  eviction stays uninitialized while backfill is pending and after rejection.
 
 ## Implemented behavior
 
@@ -115,6 +138,17 @@ Later adversarial RED tests independently proved and then fixed:
   transaction has closed.
 - Stored update time is monotonic under clock skew. Override expiry is resolved
   once from stable facts and stale expiry cleanup remains revision guarded.
+- Explicit generation backfill preserves legacy config and expired override
+  version floors without rewriting/deleting source rows, never downgrades a
+  concurrently advanced generation, and uses no row/table/advisory locks.
+  Deterministic API startup tests prove eviction starts only after all-scope
+  backfill success and never starts after backfill failure.
+- Ordinary effective reads and explicit reconfigure use the same bounded
+  invariant-token bracket, so a changed config/override pair is reread rather
+  than exposing a combination that never existed.
+- Idempotency rows are compact receipt-only records. PUT replay reconstructs
+  from the verified normalized command plus accepted receipt scalars and
+  rejects a receipt whose operation does not match that command.
 - API route types, shared browser helpers, OpenAPI schemas, black-box requests,
   and product documentation no longer expose synchronous mutation controls.
   PUT/DELETE responses require the compact receipt; OpenAPI advertises typed
@@ -135,8 +169,11 @@ Later adversarial RED tests independently proved and then fixed:
 ### Focused and public surfaces
 
 ```text
-npx vitest run packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/state-mutation-outbox.test.ts
-4 files passed; 98 tests passed
+npx vitest run packages/tests/shared-server/group-topology-config-repository.test.ts packages/tests/shared-server/group-topology-management-service.test.ts packages/tests/shared-server/group-topology-config-service.test.ts packages/tests/shared-server/state-mutation-outbox.test.ts packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-server/state-write-performance-harness.test.ts
+6 files passed; 186 tests passed
+
+npx vitest run packages/tests/shared-server/group-topology-management-service.test.ts -t "rejects a compact replay receipt whose operation differs"
+1 passed; 36 skipped
 
 deno test -A --filter "PGlite topology config mutations" apps/api-v1/test/db/pglite-sql-adapter.test.ts
 1 passed; 0 failed; 18 filtered
@@ -144,29 +181,14 @@ deno test -A --filter "PGlite topology config mutations" apps/api-v1/test/db/pgl
 RALLAR_POSTGRES_INTEGRATION=1 ... -t "topology config transactions|config and override"
 2 passed; 0 failed; 6 unrelated skipped/filtered (independent PostgreSQL clients)
 
-cd apps/api-v1 && deno test -A test/routes/graph-topology-routes.test.ts test/swagger-routes.test.ts
-19 passed; 0 failed
-
-npx vitest run packages/tests/shared-web/api-workflows.test.ts packages/tests/shared-server/state-write-performance-harness.test.ts
-2 files passed; 79 tests passed
-
-Six-file topology/shared-web/performance correction slice
-6 files passed; 177 tests passed
-
-npx vitest run packages/tests/shared-server/group-topology-management-service.test.ts -t "returns the accepted receipt when the post-commit outbox wake fails"
-1 passed; 30 skipped
-
-cd apps/api-v1 && deno test -A test/rallar-server.test.ts test/routes/graph-topology-routes.test.ts
-11 passed; 0 failed
+cd apps/api-v1 && deno test --allow-env --allow-read test/services/runtime-state-expiry-startup.test.ts test/swagger-routes.test.ts
+14 passed; 0 failed
 
 cd apps/api-v1 && deno task test
-207 passed; 0 failed
+209 passed; 0 failed
 
 npm run typecheck
 all root/workspace TypeScript checks passed
-
-cd apps/api-v1 && deno task check
-passed
 
 git diff --check
 passed
@@ -190,7 +212,7 @@ durable and no topology publisher runs in the mutation call.
 ### Production performance evidence
 
 The full PostgreSQL producer was rerun from the clean Task 5 implementation
-commit `af006598f7b7bbbc5bf40bf71a57213bdb4d3ee8`:
+commit `85c33bde940108567406fcc378e84bc274e52d3e`:
 
 ```text
 npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --concurrency=10 --out=tmp/perf/api-v1-state-write-task5.json
@@ -198,16 +220,16 @@ npm run perf:api-v1:state-write -- --backend=postgres --warmup=1 --runs=3 --conc
 
 The resulting canonical artifact remains ignored and uncommitted at
 `tmp/perf/api-v1-state-write-task5.json`. Its embedded `gitCommit` is exactly
-`af006598f7b7bbbc5bf40bf71a57213bdb4d3ee8` and its SHA-256 is
-`79812d41fac0a21d384353a1fdc2a131e5f9547bf21d968c6127ae1c682548d0`.
+`85c33bde940108567406fcc378e84bc274e52d3e` and its SHA-256 is
+`08b458914932ff380879659328330e06653619a1826acf77437818c77753ffc6`.
 
 ```text
 validateStateWriteArtifact(finalArtifact)
 []
 
 uncontended: 2100 accepted/receipts; 3900 required/actual intents; DBW []
-shared:      1951 accepted/receipts; 3651 required/actual intents; DBW []
-hot:          950 accepted/receipts; 1800 required/actual intents; DBW []
+shared:      1919 accepted/receipts; 3595 required/actual intents; DBW []
+hot:          992 accepted/receipts; 1884 required/actual intents; DBW []
 ```
 
 The immutable baseline remains byte-identical at SHA-256
@@ -221,57 +243,42 @@ candidate must declare presenceSplitFromGroupAggregate=true with task10-post-rem
 ```
 
 That early return is not evidence that governance is the only failing gate. To
-audit the gated comparison without mutating either artifact, the reviewer and
-implementer each cloned the candidate in memory and changed only the clone's
-governed feature label/evidence. The canonical Task 5 artifact was never
-relabeled. The historical reviewer audit of the pre-regeneration artifact
-(SHA-256 `61bd75f0ac9eb8a807eb7358198bac4e4a6cf07669a63e516a1084681fee8c8d`)
-reported exactly these ten interim failures:
+audit every gate without mutating either artifact, the implementer cloned the
+candidate in memory and changed only the clone's governed feature label and
+evidence. The clone validated to `[]`; the canonical Task 5 artifact remained
+byte-identical and was never relabeled. The fresh clean-commit audit reported
+exactly these nine interim failures:
 
 ```text
-shared throughput regressed: baseline=752.2423201768095, candidate=617.8315971922207
-hot throughput regressed: baseline=295.1851420383843, candidate=286.74079341379974
+shared throughput regressed: baseline=752.2423201768095, candidate=631.2129021227651
+hot throughput regressed: baseline=295.1851420383843, candidate=291.31111733671145
 shared throughput must improve after presence is split from the group aggregate
-uncontended median sql.statements increased without a recorded reason: baseline=11200, candidate=12600
-uncontended median sql.rowsRead increased without a recorded reason: baseline=5400, candidate=7700
-shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13869
-shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=27890
-hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12304
-shared retry exhaustion must remain zero; received 153
-hot retry exhaustion exceeded baseline: baseline=0, candidate=1097
+uncontended median sql.statements increased without a recorded reason: baseline=11200, candidate=12900
+uncontended median sql.rowsRead increased without a recorded reason: baseline=5400, candidate=7900
+shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13568
+hot median sql.statements increased without a recorded reason: baseline=11536, candidate=12060
+shared retry exhaustion must remain zero; received 181
+hot retry exhaustion exceeded baseline: baseline=0, candidate=1108
 ```
 
-The fresh read-only audit of the clean-commit artifact also validated the clone
-to `[]` and reported exactly these ten interim failures:
-
-```text
-shared throughput regressed: baseline=752.2423201768095, candidate=619.6153677802577
-hot throughput regressed: baseline=295.1851420383843, candidate=290.80459048821035
-shared throughput must improve after presence is split from the group aggregate
-uncontended median sql.statements increased without a recorded reason: baseline=11200, candidate=12600
-uncontended median sql.rowsRead increased without a recorded reason: baseline=5400, candidate=7700
-shared median sql.statements increased without a recorded reason: baseline=11352, candidate=13777
-shared median sql.rowsRead increased without a recorded reason: baseline=27290, candidate=27446
-hot median sql.statements increased without a recorded reason: baseline=11536, candidate=11943
-shared retry exhaustion must remain zero; received 149
-hot retry exhaustion exceeded baseline: baseline=0, candidate=1150
-```
-
-Neither audit reported an uncontended p95/p99 latency regression, a serialized
-result-byte regression, or a transaction-duration regression. The lists above
-are the complete comparator outputs, including every reported throughput, SQL,
-latency, and retry gate. Task 5 therefore claims correctness evidence only, not
-performance acceptance. Later remediation tasks must address the measured
-contention/resource regressions, and Task 10 owns the governed final candidate
-and comparator acceptance.
+The audit did not report an uncontended p95/p99 latency regression, shared
+rows-read regression, serialized-result-byte regression, or
+transaction-duration regression. The list above is the complete comparator
+output, including every reported throughput, SQL, latency, and retry gate.
+Task 5 therefore claims correctness evidence only, not performance acceptance.
+Later remediation tasks must address the measured contention/resource
+regressions, and Task 10 owns the governed final candidate and comparator
+acceptance.
 
 ## Encountered non-product failures
 
 - The first corrected producer invocation was sandbox-blocked from local
-  PostgreSQL (`EACCES` on `127.0.0.1:5432`/`::1:5432`); the approved escalated
-  rerun connected and completed. An earlier connected correction run exposed
-  the valid outside-transaction split-read race described in RED evidence;
-  after its RED/GREEN fix, the final producer completed all workloads.
+  PostgreSQL; the approved escalated rerun connected and completed. A focused
+  live test invocation without `DATABASE_URL` also failed its explicit
+  preflight before the corrected invocation used the local compose URL. An
+  earlier connected correction run exposed the valid outside-transaction
+  split-read race described in RED evidence; after its RED/GREEN fix, the final
+  producer completed all workloads.
 - The recipes-only black-box command selected nine live HTTP recipes without a
   running external API; all nine skipped and the required-gates wrapper exited
   1.
@@ -286,9 +293,14 @@ and comparator acceptance.
 
 ## Follow-up and tradeoffs
 
-- The immutable request record intentionally stores the accepted result in
-  addition to the compact receipt. This is required to preserve the existing
-  full PUT response on replay without rereading mutable current state.
+- The immutable request record intentionally stores only command identity and
+  the compact receipt. Three mandatory nullable replay scalars add a small
+  fixed receipt cost while preserving the full accepted PUT response without
+  rereading mutable current state or retaining the full accepted payload.
+- API startup delays generic runtime-state eviction until the all-scope legacy
+  generation backfill succeeds. A corrupt legacy topology row therefore keeps
+  eviction fail-closed and requires operator correction instead of risking
+  silent version loss.
 - Requests without `requestId` return a receipt but do not persist an immutable
   request record; effectful writes always persist the RTC recompute outbox.
 - The Task 5 performance artifact is an interim correctness/evidence sample.
